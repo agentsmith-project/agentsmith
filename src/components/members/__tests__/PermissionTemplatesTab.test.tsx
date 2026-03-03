@@ -48,7 +48,7 @@ vi.mock('../ApplyTemplateDialog', () => ({
     return (
       <button
         data-testid="members__permission-template-apply-confirm"
-        onClick={() => onApply(['m_1', 'm_2'], ['project:endpoint:invoke'], 'admin').catch(() => {})}
+        onClick={() => onApply(['m_1', 'm_2'], ['project:endpoint:use'], 'admin').catch(() => {})}
       >
         apply
       </button>
@@ -84,7 +84,7 @@ const STABLE_PERMISSION_TEMPLATES_QUERY = {
       id: 'tpl_custom',
       name: 'Custom Template',
       description: 'custom',
-      permissions: ['project:endpoint:invoke'],
+      permissions: ['project:endpoint:use'],
       is_default: false,
       is_readonly: false,
     },
@@ -144,7 +144,7 @@ describe('PermissionTemplatesTab', () => {
     await waitFor(() => {
       expect(mockBatchApplyMutateAsync).toHaveBeenCalledWith({
         memberIds: ['m_1', 'm_2'],
-        permissions: ['project:endpoint:invoke'],
+        permissions: ['project:endpoint:use'],
         template: 'admin',
       });
     });

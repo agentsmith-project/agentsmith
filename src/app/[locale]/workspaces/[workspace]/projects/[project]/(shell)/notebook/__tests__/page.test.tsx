@@ -11,7 +11,7 @@ vi.mock('@/components/notebook/TaskList', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn((permission: string) => permission === 'project:endpoint:invoke'),
+  useHasPermission: vi.fn((permission: string) => permission === 'project:endpoint:use'),
 }));
 
 import NotebookPage from '../page';

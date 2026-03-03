@@ -32,7 +32,7 @@ export default function NotebookPage({ params }: NotebookPageProps) {
     project?: string;
     locale?: string;
   } | null>(null);
-  const canAccessNotebook = useHasPermission('project:endpoint:invoke');
+  const canAccessNotebook = useHasPermission('project:endpoint:use');
   const { layoutMode } = useProjectLayoutMode();
 
   useEffect(() => {

@@ -109,7 +109,7 @@ export default function OverviewPage() {
   const workspaceId = validateWorkspaceParam(params.workspace);
   const projectId = validateProjectParam(params.project);
   const locale = (params.locale as string) || 'en-US';
-  const canReadOverview = useHasPermission('project:endpoint:invoke');
+  const canReadOverview = useHasPermission('project:endpoint:use');
   const currentPermissions = useCurrentPermissions();
   const isValidParams = !!workspaceId && !!projectId;
 
@@ -364,28 +364,28 @@ export default function OverviewPage() {
       label: tNav('chat'),
       href: '/chat',
       description: t('actions.chat'),
-      requiresPermission: 'project:endpoint:invoke',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Wrench,
       label: tNav('notebook'),
       href: '/notebook',
       description: t('actions.notebook'),
-      requiresPermission: 'project:endpoint:invoke',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Bot,
       label: tNav('agents'),
       href: '/agents',
       description: t('actions.agents'),
-      requiresPermission: 'project:agent:create',
+      requiresPermission: 'project:agent:manage',
     },
     {
       icon: Server,
       label: tNav('endpoints'),
       href: '/endpoints',
       description: t('actions.endpoints'),
-      requiresPermission: 'project:endpoint:invoke',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Sparkles,
@@ -393,7 +393,7 @@ export default function OverviewPage() {
       // WP-03: Updated to new runtime-console route with monitoring tab
       href: '/runtime-console?tab=monitoring',
       description: t('actions.runtime_description'),
-      requiresPermission: 'project:endpoint:invoke',
+      requiresPermission: 'project:endpoint:use',
     },
     {
       icon: Gauge,
@@ -401,7 +401,7 @@ export default function OverviewPage() {
       // WP-03: Updated to new runtime-console route with control tab
       href: '/runtime-console?tab=control',
       description: t('actions.release_ops'),
-      requiresPermission: 'project:endpoint:invoke',
+      requiresPermission: 'project:endpoint:use',
     },
   ];
 

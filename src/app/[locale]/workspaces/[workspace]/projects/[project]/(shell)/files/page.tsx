@@ -19,7 +19,7 @@ export default function FilesPage({ params }: FilesPageProps) {
     project?: string;
     locale?: string;
   } | null>(null);
-  const canUseFiles = useHasPermission('project:endpoint:invoke');
+  const canUseFiles = useHasPermission('project:endpoint:use');
 
   useEffect(() => {
     params.then((p) =>

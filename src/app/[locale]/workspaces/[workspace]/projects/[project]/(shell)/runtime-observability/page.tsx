@@ -25,7 +25,7 @@ export default function RuntimeObservabilityPage({ params }: RuntimeObservabilit
   const commonT = useTranslations('common');
   const searchParams = useSearchParams();
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canReadUsage = useHasPermission('project:endpoint:invoke');
+  const canReadUsage = useHasPermission('project:endpoint:use');
   const initialFilters = parseSharedOpsFilterContext(searchParams);
 
   useEffect(() => {

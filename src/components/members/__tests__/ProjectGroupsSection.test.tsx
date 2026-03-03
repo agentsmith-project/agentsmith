@@ -35,7 +35,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
         id: 'm_1',
         name: 'Alice',
         email: 'alice@example.com',
-        permissions: ['project:endpoint:invoke'],
+        permissions: ['project:endpoint:use'],
       },
       {
         id: 'm_2',
@@ -51,7 +51,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
       {
         id: 'developer',
         name: 'Developer',
-        permissions: ['project:endpoint:invoke'],
+        permissions: ['project:endpoint:use'],
       },
     ],
   })),

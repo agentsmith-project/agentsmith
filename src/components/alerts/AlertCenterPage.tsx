@@ -72,7 +72,7 @@ export function AlertCenterPage({
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
   // Authorization checks
-  const canViewAlerts = useHasPermission('project:endpoint:invoke');
+  const canViewAlerts = useHasPermission('project:endpoint:use');
   const canManageAlerts = useHasPermission('project:manage');
 
   // Permission denied

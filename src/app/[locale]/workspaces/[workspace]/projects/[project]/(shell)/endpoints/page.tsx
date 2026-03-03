@@ -14,7 +14,7 @@ interface EndpointsRouteProps {
 export default function EndpointsPage({ params }: EndpointsRouteProps) {
   const tErrors = useTranslations('errors');
   const [resolved, setResolved] = useState<{ workspace: string | null; project: string | null; locale: string } | null>(null);
-  const canUse = useHasPermission('project:endpoint:invoke');
+  const canUse = useHasPermission('project:endpoint:use');
   const canManage = useHasPermission('project:manage');
   const canRead = canUse || canManage;
 

@@ -238,7 +238,7 @@ describe('ChatPage', () => {
   });
 
   it('shows permission denied when user lacks chat read permission', async () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission !== 'project:endpoint:invoke');
+    mockUseHasPermission.mockImplementation((permission: string) => permission !== 'project:endpoint:use');
     render(
       <ChatPage
         params={Promise.resolve({

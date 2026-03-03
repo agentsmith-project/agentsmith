@@ -26,8 +26,8 @@ export default function RuntimeConsoleRoute({ params }: RuntimeConsoleRouteProps
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
 
   // Check permissions - users need at least one of these to access the console
-  const canViewUsage = useHasPermission('project:endpoint:invoke');
-  const canViewAlerts = useHasPermission('project:endpoint:invoke');
+  const canViewUsage = useHasPermission('project:endpoint:use');
+  const canViewAlerts = useHasPermission('project:endpoint:use');
   const canManageSettings = useHasPermission('project:manage');
   const canAccessConsole = canViewUsage || canViewAlerts || canManageSettings;
 

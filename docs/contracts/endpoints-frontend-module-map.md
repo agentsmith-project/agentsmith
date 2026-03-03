@@ -32,7 +32,7 @@ Applies to route:
 ## 3. Data and API Contract
 
 - Endpoint payload follows `docs/contracts/endpoints-capability-contract.md`.
-- Catalog metadata uses offline cache contract in `docs/contracts/models-catalog-offline.md`.
+- Catalog metadata and runtime sync flow follow `docs/contracts/models-catalog-runtime-governance-contract.md`.
 - Frontend must not call remote provider catalogs at runtime.
 - Create/update/import/export must preserve capability semantics:
   - `chat_completion`

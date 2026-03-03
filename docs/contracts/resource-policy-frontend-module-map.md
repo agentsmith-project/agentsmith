@@ -26,7 +26,7 @@ Target route:
 - Keep API calls and mutation orchestration in `page.tsx` or dedicated hooks.
 - Keep resource list rendering concerns in `ResourcePolicyTable.tsx`.
 - Keep rule parsing/merging/formatting logic in pure utility modules.
-- Resource policy management scope includes `endpoint`, `source_library`, and `agent`.
+- Resource policy management scope includes `endpoint` and `agent`.
 - Add tests in:
 1. Route-level behavior: `.../resource-policy/__tests__/page.test.tsx`
 2. Pure rule helpers: `src/lib/resource-policy/__tests__/*` when helper logic expands.

@@ -27,7 +27,6 @@ This directory contains only current-state documents: functional contracts, arch
 - `endpoints-frontend-module-map.md`
 - `endpoints-capability-contract.md`
 - `endpoint-proxy-protocol-bridge-contract.md`
-- `models-catalog-offline.md`
 - `models-catalog-runtime-governance-contract.md`
 - `files-frontend-module-map.md` (Files module contract)
 - `files-object-browser-contract.md` (Files object browser backend contract)
@@ -72,3 +71,7 @@ OpenAPI diff changelog output: `specs/CHANGELOG.md`.
 - Keep documents normative and current-state only.
 - Merge updates into canonical files; do not keep temporary/process snapshots.
 - Remove stale or conflicting wording immediately.
+
+## Archived Contracts
+
+- Legacy catalog seed/offline baseline notes were moved to `docs/contracts/archive/models-catalog-offline.md`.

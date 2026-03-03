@@ -1,16 +1,16 @@
 # Frontend Token & Interaction Contract (MVP)
 
-Last updated: 2026-02-10
+Last updated: 2026-03-03
 Owner: Frontend
 Audience: Frontend, Backend Auth, QA
 
 ## Purpose
 
-Define the **single-source token contract** used by frontend route gates and interaction controls for MVP.
+Define the single-source token contract used by frontend route gates and interaction controls for MVP.
 
 This document is token-only:
 - runtime authorization depends on permission tokens only
-- role/group names are template labels for governance UX only
+- role/group names are governance labels only
 - no runtime auth decision should depend on role names
 
 Related docs:
@@ -20,42 +20,22 @@ Related docs:
 
 ## Core Principles
 
-1. Keycloak responsibility ends at identity/workspace membership.
-2. Frontend runtime gate is token-only.
-3. Chat and Notebook are access-only modules in MVP.
-4. Resource usage limits are governed by resource policy rules, not by extra chat/notebook quotas.
-5. Credentials are governed by `project:manage` only in MVP.
+1. Keycloak handles identity and workspace membership.
+2. Frontend route/action gates are token-only.
+3. Backend authorization is final.
+4. Resource usage control is policy-driven, not role-name-driven.
 
 ## Canonical Token Set (MVP)
 
 ### Workspace
 - `workspace:read`
 - `workspace:project:create`
-- `workspace:governance:update`
 
-### Project base and access
+### Project
 - `project:endpoint:use`
-- `project:endpoint:use`
-- `project:endpoint:use`
-
-### Resources
-- `project:endpoint:use`
-- `project:manage`
-- `project:endpoint:use`
-- `project:manage`
 - `project:agent:manage`
-- `project:agent:manage`
-
-### Governance
+- `project:agent:public`
 - `project:manage`
-- `project:manage`
-- `project:manage`
-- `project:manage`
-- `project:manage`
-
-### Observability
-- `project:endpoint:use`
-- `project:endpoint:use`
 
 ## Route-Level Gate Contract
 
@@ -75,51 +55,43 @@ Related docs:
 
 ## Action-Level Gate Contract
 
-- Source create/update/delete: `project:manage`
 - Endpoint create/update/delete: `project:manage`
-- Agent create/update/delete/key issue/key revoke: `project:agent:manage`
-- Members invite/remove/template/group/policy apply: `project:manage`
-- Settings update/delete project: `project:manage`
+- Credential create/rotate/delete: `project:manage`
 - Resource policy save: `project:manage`
-- Credentials create/rotate/delete: `project:manage`
+- Member/template/group management: `project:manage`
+- Agent create/update/delete/key issue/key revoke: `project:agent:manage`
+- Agent publish/unpublish visibility changes: `project:agent:public`
 
 ## UI Behavior Contract
 
 1. Missing route token:
-- render `permission_denied` page state
+- render `permission_denied` state
 
 2. Missing action token while route is accessible:
 - keep page visible
 - disable or hide mutating control
 
 3. Invalid route params:
-- render `validation_error` page state
+- render `validation_error` state
 
 4. Persisted auth state is stale (token expired/revoked):
-- detect via API `401` during authenticated bootstrap pages (for example workspace selection)
-- frontend runtime must handle `401` globally with refresh-first semantics:
-  - attempt one token refresh with stored refresh token
-  - if refresh succeeds, retry original request exactly once
-  - if refresh fails or refresh token missing, clear auth and redirect to localized login
-- logout path must clear both auth store and query cache before redirect
-- must provide explicit session-expired UI feedback
-- must offer one-step recovery action:
-  - clear persisted auth state
-  - redirect to localized login route (`/{locale}/login`)
-- must not leave user in silent empty-state with no recovery path
+- frontend retries once with refresh token
+- refresh failure clears auth store + query cache
+- redirect to localized login route (`/{locale}/login`)
+- show explicit session-expired feedback with one-step recovery action
 
 ## Backend Handoff Requirements
 
 1. Backend endpoint ACL must match the token mapping above.
-2. Backend returns deterministic `403 forbidden` for missing token.
+2. Backend returns deterministic `401`/`403`.
 3. Resource policy API supports:
 - project default rules
 - resource override rules
 - subject override rules
-- consistent rule key validation by resource type
+- consistent rule-key validation by resource type
 
 ## Freeze Checklist
 
 - No route gate depends on role names.
 - Canonical token set contains only active tokens in this contract.
-- `npm run contracts:check` pass.
+- `npm run contracts:check` passes.

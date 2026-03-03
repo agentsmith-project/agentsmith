@@ -53,16 +53,10 @@
    - `requests_per_minute`
    - `daily_token_limit`
    - `requests_per_day`
-2. `source_library`
-   - allow-all / allow-list
-   - user / group subject matching
-   - `requests_per_minute`
-   - `max_total_files`
-   - `max_file_size_bytes`
-3. `agent`
+2. `agent`
    - allow-list access
    - `requests_per_minute`
-4. source `ai-ready` entry path follows source-library access policy
+3. Files 模块采用成员隔离默认库模式，不纳入统一 resource policy 治理范围
 
 ### 2.4 Backend Authorization
 

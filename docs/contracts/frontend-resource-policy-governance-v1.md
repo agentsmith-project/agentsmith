@@ -12,7 +12,6 @@ Define the MVP model for resource access and consumption governance across manag
 
 1. Resource policy management scope includes:
 - `endpoint`
-- `source_library`
 - `agent`
 2. Only users with `project:manage` can create/update/delete resource policy.
 3. Runtime use-path checks remain resource-driven and policy-driven.
@@ -54,11 +53,7 @@ Conflict rule:
 - rate: `endpoint.requests_per_minute`
 - quota: `endpoint.daily_token_limit`, `endpoint.requests_per_day`
 
-2. `source_library`
-- rate: `source_library.requests_per_minute`
-- quota: `source_library.max_total_files`, `source_library.max_file_size_bytes`
-
-3. `agent`
+2. `agent`
 - rate: `agent.requests_per_minute`
 - quota: none in MVP
 
@@ -79,7 +74,6 @@ Conflict rule:
 
 2. `resourceType` in MVP:
 - `endpoint`
-- `source_library`
 - `agent`
 
 ## Audit Requirements

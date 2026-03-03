@@ -20,7 +20,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 const mockPermissions: Record<string, boolean> = {
-  'project:endpoint:use': true,
+  'project:endpoint:invoke': true,
   'project:manage': true,
 };
 
@@ -98,7 +98,7 @@ vi.mock('@/components/layout/PageHeader', () => ({
 describe('RuntimeConsolePage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockPermissions['project:endpoint:use'] = true;
+    mockPermissions['project:endpoint:invoke'] = true;
     mockPermissions['project:manage'] = true;
     mockSearchParams = new URLSearchParams();
     mockRouterReplace.mockReset();
@@ -113,8 +113,8 @@ describe('RuntimeConsolePage', () => {
     });
   });
 
-  it('hides endpoint-use tabs when user lacks project:endpoint:use', () => {
-    mockPermissions['project:endpoint:use'] = false;
+  it('hides endpoint-use tabs when user lacks project:endpoint:invoke', () => {
+    mockPermissions['project:endpoint:invoke'] = false;
     mockPermissions['project:manage'] = true;
 
     render(<RuntimeConsolePage workspaceId="ws_1" projectId="proj_1" />);
@@ -128,7 +128,7 @@ describe('RuntimeConsolePage', () => {
   });
 
   it('hides control tab when user lacks project:manage', () => {
-    mockPermissions['project:endpoint:use'] = true;
+    mockPermissions['project:endpoint:invoke'] = true;
     mockPermissions['project:manage'] = false;
 
     render(<RuntimeConsolePage workspaceId="ws_1" projectId="proj_1" />);
@@ -140,7 +140,7 @@ describe('RuntimeConsolePage', () => {
   });
 
   it('shows permission denied when user has no accessible tabs', () => {
-    mockPermissions['project:endpoint:use'] = false;
+    mockPermissions['project:endpoint:invoke'] = false;
     mockPermissions['project:manage'] = false;
 
     render(<RuntimeConsolePage workspaceId="ws_1" projectId="proj_1" />);
@@ -151,7 +151,7 @@ describe('RuntimeConsolePage', () => {
   });
 
   it('corrects unauthorized tab in URL to first accessible tab', () => {
-    mockPermissions['project:endpoint:use'] = false;
+    mockPermissions['project:endpoint:invoke'] = false;
     mockPermissions['project:manage'] = true;
     mockSearchParams = new URLSearchParams('tab=overview');
 

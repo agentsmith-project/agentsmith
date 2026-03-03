@@ -130,7 +130,7 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   const alertAPI = useMemo(() => new AlertAPI(getApiClient()), []);
   const timeRange = useMemo(() => defaultTimeRange(), []);
   const [localAlerts, setLocalAlerts] = useState<Alert[]>([]);
-  const canViewAlerts = useHasPermission('project:endpoint:use');
+  const canViewAlerts = useHasPermission('project:endpoint:invoke');
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';

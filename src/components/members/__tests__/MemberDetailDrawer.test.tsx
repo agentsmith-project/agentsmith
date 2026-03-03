@@ -1,6 +1,5 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -32,16 +31,6 @@ vi.mock('@/components/ui/select', () => ({
   SelectItem: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
 
-vi.mock('@/components/members/PermissionsEditor/PermissionsEditor', () => ({
-  PermissionsEditor: ({ initialPermissions }: { initialPermissions: string[] }) => (
-    <div data-testid="permissions-editor" data-count={initialPermissions.length} />
-  ),
-}));
-
-vi.mock('@/components/members/QuotaOverridesEditor', () => ({
-  QuotaOverridesEditor: () => <div data-testid="quota-overrides-editor" />,
-}));
-
 import { MemberDetailDrawer } from '../MemberDetailDrawer';
 
 describe('MemberDetailDrawer', () => {
@@ -55,58 +44,42 @@ describe('MemberDetailDrawer', () => {
     joined_at: '2026-02-01T00:00:00Z',
   };
 
-  it('preselects matching permission template from existing member permissions', async () => {
+  it('shows effective-access-only view and removes editable permissions/quota sections', () => {
     render(
       <MemberDetailDrawer
         open
         onOpenChange={() => {}}
         member={baseMember}
-        permissions={{ platform_permissions: [...GROUP_TEMPLATES.admin] }}
+        permissions={{ platform_permissions: ['project:endpoint:invoke', 'project:manage'] }}
       />
     );
 
-    await waitFor(() => {
-      const selects = screen.getAllByTestId('mock-select');
-      expect(selects[1]).toHaveAttribute('data-value', 'admin');
-    });
+    expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
+    expect(screen.queryByTestId('permissions-editor')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('quota-overrides-editor')).not.toBeInTheDocument();
+    expect(screen.getByTestId('mock-select')).toHaveAttribute('data-value', 'endpoint');
   });
 
-  it('keeps template unselected for custom permission set', async () => {
-    render(
-      <MemberDetailDrawer
-        open
-        onOpenChange={() => {}}
-        member={{ ...baseMember, id: 'u_2' }}
-        permissions={{ platform_permissions: ['project:endpoint:use', 'project:manage'] }}
-      />
-    );
-
-    await waitFor(() => {
-      const selects = screen.getAllByTestId('mock-select');
-      expect(selects[1]).toHaveAttribute('data-value', '__none__');
-    });
-  });
-
-  it('renders effective access summary and authorization result', async () => {
+  it('renders effective access summary and authorization result', () => {
     render(
       <MemberDetailDrawer
         open
         onOpenChange={() => {}}
         member={baseMember}
-        permissions={{ platform_permissions: ['project:endpoint:use'] }}
+        permissions={{ platform_permissions: ['project:endpoint:invoke'] }}
         quotaOverrides={{ endpoint: { daily_token_limit: 1000 } }}
         effectiveAccessSnapshot={{
           membership: {
             project_id: 'proj_1',
             user_id: 'u_1',
             role: 'admin',
-            permissions: ['project:endpoint:use'],
+            permissions: ['project:endpoint:invoke'],
             status: 'suspended',
             joined_at: '2026-02-01T00:00:00Z',
           },
-          permissions: { platform_permissions: ['project:endpoint:use'] },
+          permissions: { platform_permissions: ['project:endpoint:invoke'] },
           quota_overrides: { endpoint: { daily_token_limit: 1000 } },
-          effective_permissions: ['project:endpoint:use'],
+          effective_permissions: ['project:endpoint:invoke'],
           membership_status: 'suspended',
         }}
         authorizationCheckResult={{
@@ -129,7 +102,7 @@ describe('MemberDetailDrawer', () => {
 
     expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__membership-status')).toHaveTextContent('effective_access.membership_status.suspended');
-    expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:endpoint:use');
+    expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:endpoint:invoke');
     expect(screen.getByTestId('member-detail__effective-quotas')).toHaveTextContent('endpoint.daily_token_limit: 1000');
     expect(screen.getByTestId('member-detail__authorize-result')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__matched-policy')).toHaveTextContent('endpoint/endpoint_1');

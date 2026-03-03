@@ -24,7 +24,7 @@ describe('ApplyTemplateDialog', () => {
           id: 'custom_template',
           name: 'Custom',
           description: '',
-          permissions: ['project:endpoint:use'],
+          permissions: ['project:endpoint:invoke'],
           is_default: false,
           is_readonly: false,
         }}
@@ -79,7 +79,7 @@ describe('ApplyTemplateDialog', () => {
           id: 'custom_template',
           name: 'Custom',
           description: '',
-          permissions: ['project:endpoint:use'],
+          permissions: ['project:endpoint:invoke'],
           is_default: false,
           is_readonly: false,
         }}
@@ -116,7 +116,7 @@ describe('ApplyTemplateDialog', () => {
     expect(onApply).toHaveBeenNthCalledWith(
       2,
       ['m_2'],
-      ['project:endpoint:use'],
+      ['project:endpoint:invoke'],
       null
     );
   });

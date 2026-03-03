@@ -40,7 +40,7 @@ describe('explainPermissionDecision', () => {
   it('should explain custom permission granted directly', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-2',
-      permission: 'project:endpoint:use',
+      permission: 'project:endpoint:invoke',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -52,7 +52,7 @@ describe('explainPermissionDecision', () => {
 
     expect(explain.granted).toBe(true);
     expect(explain.source.type).toBe('custom');
-    expect(explain.source.custom_permissions).toContain('project:endpoint:use');
+    expect(explain.source.custom_permissions).toContain('project:endpoint:invoke');
     expect(explain.source.description).toContain('custom');
   });
 
@@ -60,7 +60,7 @@ describe('explainPermissionDecision', () => {
   it('should explain permission granted from group membership', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-3',
-      permission: 'project:endpoint:use',
+      permission: 'project:endpoint:invoke',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -100,7 +100,7 @@ describe('explainPermissionDecision', () => {
   it('should show all contributing sources when multiple apply', async () => {
     const decision: PermissionDecision = {
       member_id: 'user-5',
-      permission: 'project:endpoint:use',
+      permission: 'project:endpoint:invoke',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',

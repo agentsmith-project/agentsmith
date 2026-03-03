@@ -8,7 +8,6 @@ import { cn } from '@/lib/utils';
 import { useCanManageMemberGovernance, useHasPermission } from '@/lib/hooks/use-permissions';
 import { useMembersContext } from './MembersContext';
 import { MembersTable } from './MembersTable';
-import { BatchApplyBar } from './BatchApplyBar';
 import { MemberDetailDrawer } from './MemberDetailDrawer';
 
 export interface PeopleTabProps {
@@ -45,21 +44,9 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
     } as const;
   }, [searchParams]);
 
-  const getAccessProfile = React.useCallback((member: { permissions?: string[] }) => {
-    const permissions = new Set(member.permissions ?? []);
-    const hasGovernanceManage =
-      permissions.has('project:manage') ||
-      permissions.has('project:manage') ||
-      permissions.has('project:manage') ||
-      permissions.has('project:manage');
-    if (hasGovernanceManage) return 'governance';
-
-    const hasResourceManage =
-      permissions.has('project:manage') ||
-      permissions.has('project:manage') ||
-      permissions.has('project:agent:manage');
-    if (hasResourceManage) return 'resource_manage';
-
+  const getAccessProfile = React.useCallback((member: { role: string }) => {
+    if (member.role === 'owner' || member.role === 'admin') return 'governance';
+    if (member.role === 'developer') return 'resource_manage';
     return 'access_only';
   }, []);
 
@@ -151,7 +138,6 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
               enableSelection={canManageMembers}
               selectedMemberIds={context.selectedMemberIds}
               onSelectionChange={context.setSelectedMemberIds}
-              onEditPermissions={canManageMembers ? context.handleEditPermissions : undefined}
               onRemove={canManageMembers ? context.handleRemove : undefined}
               onViewHistory={context.handleViewHistory}
             />
@@ -188,17 +174,6 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
           </div>
         )}
 
-        {context.selectedMemberIds.length > 0 && canManageMembers && (
-          <div className="absolute bottom-0 left-0 right-0 z-10 border-t border-subtle bg-surface shadow-[0_-4px_12px_rgba(0,0,0,0.15)]">
-            <BatchApplyBar
-              overlay
-              selectedCount={context.selectedMemberIds.length}
-              onApplyPermissionTemplate={() => context.setBatchPermDialogOpen(true)}
-              onApplyQuotaTemplate={() => context.setBatchQuotaDialogOpen(true)}
-              onClearSelection={context.clearSelection}
-            />
-          </div>
-        )}
       </div>
 
       {context.selectedMember && context.drawerOpen && (
@@ -213,8 +188,6 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             quotaOverrides={context.quotaOverrides}
             _workspaceId={workspaceId}
             _projectId={projectId}
-            permissionTemplates={context.permissionTemplates}
-            quotaTemplates={context.quotaTemplates}
             effectiveAccessSnapshot={context.effectiveAccessSnapshot}
             authorizationCheckResult={context.authorizationCheckResult}
             isCheckingAuthorization={context.isCheckingAuthorization}
@@ -225,13 +198,10 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
                 action,
               })
             }
-            onSavePermissions={context.handleSavePermissions}
-            onSaveQuota={context.handleSaveQuota}
             onViewHistory={() => {
               context.setDrawerOpen(false);
               context.setHistoryDrawerOpen(true);
             }}
-            onViewQuotaHistory={context.handleViewQuotaHistory}
             initialAuthorization={initialAuthorization}
           />
         </div>
@@ -248,8 +218,6 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             quotaOverrides={context.quotaOverrides}
             _workspaceId={workspaceId}
             _projectId={projectId}
-            permissionTemplates={context.permissionTemplates}
-            quotaTemplates={context.quotaTemplates}
             effectiveAccessSnapshot={context.effectiveAccessSnapshot}
             authorizationCheckResult={context.authorizationCheckResult}
             isCheckingAuthorization={context.isCheckingAuthorization}
@@ -260,13 +228,10 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
                 action,
               })
             }
-            onSavePermissions={context.handleSavePermissions}
-            onSaveQuota={context.handleSaveQuota}
             onViewHistory={() => {
               context.setDrawerOpen(false);
               context.setHistoryDrawerOpen(true);
             }}
-            onViewQuotaHistory={context.handleViewQuotaHistory}
             initialAuthorization={initialAuthorization}
           />
         </div>

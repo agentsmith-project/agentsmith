@@ -22,7 +22,7 @@ Applies to route:
 ## 2. Permission and Behavior Rules
 
 - Read access requires one of:
-  - `project:endpoint:use`
+  - `project:endpoint:invoke`
   - `project:manage`
 - Mutations require:
   - `project:manage`

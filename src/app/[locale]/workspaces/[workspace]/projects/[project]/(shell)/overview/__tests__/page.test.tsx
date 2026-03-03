@@ -29,11 +29,11 @@ vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
   useCurrentPermissions: vi.fn(() => [
-    'project:endpoint:use',
-    'project:endpoint:use',
-    'project:agent:manage',
-    'project:endpoint:use',
-    'project:endpoint:use',
+    'project:endpoint:invoke',
+    'project:endpoint:invoke',
+    'project:agent:create',
+    'project:endpoint:invoke',
+    'project:endpoint:invoke',
   ]),
 }));
 
@@ -136,13 +136,13 @@ describe('OverviewPage', () => {
     expect(screen.getByTestId('overview__snapshot-runtime')).toBeInTheDocument();
     expect(screen.getByTestId('overview__snapshot-release')).toBeInTheDocument();
     expect(screen.getByTestId('overview__quick-actions')).toBeInTheDocument();
-    expect(screen.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(screen.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=monitoring&'));
     expect(screen.getByTestId('overview__snapshot-cost-link')).toHaveAttribute('href', expect.stringContaining('/usage?'));
-    expect(screen.getByTestId('overview__snapshot-release-link')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
-    expect(screen.getByTestId('overview__primary-action-link-0')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
-    expect(screen.getByTestId('overview__primary-action-link-1')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(screen.getByTestId('overview__snapshot-release-link')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
+    expect(screen.getByTestId('overview__primary-action-link-0')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
+    expect(screen.getByTestId('overview__primary-action-link-1')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=monitoring&'));
     expect(screen.getByTestId('overview__primary-action-link-2')).toHaveAttribute('href', expect.stringContaining('/usage?'));
-    expect(screen.getByTestId('overview__primary-action-link-3')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
+    expect(screen.getByTestId('overview__primary-action-link-3')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
   });
 
   it('renders header and toolbar layout', () => {
@@ -150,9 +150,9 @@ describe('OverviewPage', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    expect(within(header).getByTestId('overview__open-runtime')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
+    expect(within(header).getByTestId('overview__open-runtime')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=monitoring&'));
     expect(within(header).getByTestId('overview__open-usage')).toHaveAttribute('href', expect.stringContaining('/usage?'));
-    expect(within(header).getByTestId('overview__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
+    expect(within(header).getByTestId('overview__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
     const toolbar = screen.getByTestId('page-layout__toolbar');
     expect(within(toolbar).getByTestId('overview__time-range')).toBeInTheDocument();
   });
@@ -176,7 +176,7 @@ describe('OverviewPage', () => {
     render(<OverviewPage />);
 
     expect(screen.getByTestId('overview__attention-item-0')).toBeInTheDocument();
-    expect(screen.getByTestId('overview__attention-link-0')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
+    expect(screen.getByTestId('overview__attention-link-0')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
   });
 
   it('renders page state container', () => {

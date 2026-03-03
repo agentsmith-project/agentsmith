@@ -61,7 +61,7 @@ describe('Unified Authorization Engine', () => {
   it('should check multiple permissions with OR logic', async () => {
     const context: AuthorizationContext = {
       member_id: 'user-2',
-      permissions: ['project:manage', 'project:agent:manage'],
+      permissions: ['project:manage', 'project:agent:create'],
       operator: 'OR',
       resource_context: {
         workspace_id: 'ws-1',

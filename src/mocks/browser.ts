@@ -5,7 +5,8 @@ let started = false;
 
 export async function initMSW() {
   const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
-  if (!useMsw || typeof window === 'undefined' || started) {
+  const hasServiceWorkerSupport = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
+  if (!useMsw || typeof window === 'undefined' || !hasServiceWorkerSupport || started) {
     return;
   }
 

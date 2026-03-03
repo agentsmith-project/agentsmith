@@ -298,8 +298,8 @@ describe('UsagePage', () => {
     expect(screen.getByTestId('usage__report-schedules')).toBeInTheDocument();
     expect(screen.getByTestId('usage__report-evidence-runner-health')).toBeInTheDocument();
     expect(screen.getByTestId('usage__operations-webhook-destinations')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__open-runtime-observability')).toHaveAttribute('href', expect.stringContaining('/runtime-observability?'));
-    expect(screen.getByTestId('usage__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/release-ops?'));
+    expect(screen.getByTestId('usage__open-runtime-observability')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=monitoring&'));
+    expect(screen.getByTestId('usage__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();

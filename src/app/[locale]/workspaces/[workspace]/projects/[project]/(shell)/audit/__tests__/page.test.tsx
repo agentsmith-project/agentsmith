@@ -16,7 +16,7 @@ const STABLE_PROJECT = {
   created_at: '2026-02-01T00:00:00Z',
   updated_at: '2026-02-01T00:00:00Z',
   role: 'user' as const,
-  permissions: ['project:endpoint:use'],
+  permissions: ['project:endpoint:invoke'],
 };
 const mockSearchParams = new URLSearchParams();
 const mockUseSearchParams = vi.fn(() => mockSearchParams);

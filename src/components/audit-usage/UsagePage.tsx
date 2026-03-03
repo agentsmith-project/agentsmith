@@ -87,7 +87,7 @@ export function UsagePage({
   const traceEscalationId = searchParams.get('trace_escalation_id') ?? undefined;
   const traceRunId = searchParams.get('trace_run_id') ?? undefined;
   const queryClient = useQueryClient();
-  const canReadUsage = useHasPermission('project:endpoint:use');
+  const canReadUsage = useHasPermission('project:endpoint:invoke');
   const canExportUsage = useHasPermission('project:manage');
   const canManageReportSchedules = useHasPermission('project:manage');
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
@@ -383,10 +383,10 @@ export function UsagePage({
     || !!apiFilters.error_class;
   // WP-03: Updated to new runtime-console route with appropriate tabs
   const runtimeObservabilityHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(apiFilters)}`
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(apiFilters, {}, '&')}`
     : null;
   const releaseOpsHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${buildSharedOpsFilterQuery(apiFilters)}`
+    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${buildSharedOpsFilterQuery(apiFilters, {}, '&')}`
     : null;
   const traceQueryExtras = React.useMemo(
     () => ({

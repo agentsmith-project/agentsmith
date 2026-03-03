@@ -17,9 +17,9 @@ Backend enforces `401/403`; frontend applies route/component gates.
 
 ## Canonical Project Permissions (MVP)
 
-- `project:endpoint:use`
-- `project:agent:manage`
-- `project:agent:public`
+- `project:endpoint:invoke`
+- `project:agent:create`
+- `project:agent:publish`
 - `project:manage`
 
 ## Matrix
@@ -29,31 +29,31 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | projects list | view projects | `workspace:read` | `/workspaces/{ws}/projects` | error state or empty permissions fallback |
 | projects list | create project | `workspace:project:create` | `POST /workspaces/{ws}/projects` | disable create button + toast/error |
 | projects list | delete project | `project:manage` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
-| chat | access chat page and stream completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
-| notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
-| files | view/use personal file libraries | `project:endpoint:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
+| chat | access chat page and stream completion | `project:endpoint:invoke` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
+| notebook list/detail | access notebook page and task operations | `project:endpoint:invoke` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
+| files | view/use personal file libraries | `project:endpoint:invoke` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
 | files | create/update/delete file or library | `project:manage` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
-| agents | view/use visible agents | `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/runtime-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
-| agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
-| agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
-| endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
+| agents | view/use visible agents | `project:agent:create` | `GET /agents*`, `GET /agents/{id}/runtime-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
+| agents | create/update/delete own agent and keys | `project:agent:create` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
+| agents | publish/unpublish agent to project | `project:agent:publish` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
+| endpoints | view/use endpoints | `project:endpoint:invoke` | `GET /endpoints*` | page-level permission denied |
 | endpoints | create/update/delete endpoint | `project:manage` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
 | resource policy | view/update endpoint/agent policy | `project:manage` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
 | credentials | view/manage credentials | `project:manage` | `GET/POST/DELETE /credentials*` | page-level permission denied |
 | members | view/manage members/templates/groups | `project:manage` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/quota-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view/update/delete project | `project:manage` | `GET/PATCH/DELETE /projects/{id}` | page-level permission denied or save/delete disabled |
-| audit | view audit data | `project:endpoint:use` | `GET /audit` | component-level permission denied |
-| usage | view usage data | `project:endpoint:use` | `GET /usage`, `GET /usage/kpi` | component-level permission denied |
+| audit | view audit data | `project:endpoint:invoke` | `GET /audit` | component-level permission denied |
+| usage | view usage data | `project:endpoint:invoke` | `GET /usage`, `GET /usage/kpi` | component-level permission denied |
 
 ## Runtime Console
 
 | Tab | User Operation | Required Permission(s) | Backend API Group | FE Expected on 403 |
 |-----|----------------|------------------------|-------------------|-------------------|
-| overview | view runtime health and control plane | `project:endpoint:use` | `GET /projects/{id}`, `GET /runtime/*` | tab-level permission denied |
-| monitoring | view runtime metrics and traces | `project:endpoint:use` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied |
-| alerts | view and manage alert rules | `project:endpoint:use` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied |
+| overview | view runtime health and control plane | `project:endpoint:invoke` | `GET /projects/{id}`, `GET /runtime/*` | tab-level permission denied |
+| monitoring | view runtime metrics and traces | `project:endpoint:invoke` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied |
+| alerts | view and manage alert rules | `project:endpoint:invoke` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied |
 | control | view release gates and control | `project:manage` | `GET /release-ops/*`, `GET /governance/*` | tab-level permission denied |
-| reports | view release reports and history | `project:endpoint:use` | `GET /release-reports` | tab-level permission denied |
+| reports | view release reports and history | `project:endpoint:invoke` | `GET /release-reports` | tab-level permission denied |
 
 ## Notes for Backend Team
 

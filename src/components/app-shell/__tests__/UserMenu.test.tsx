@@ -35,7 +35,7 @@ describe('UserMenu', () => {
       <UserMenu
         user={{ name: 'Alice Doe', email: 'alice@example.com' }}
         workspacePermissions={['workspace:read']}
-        projectPermissions={['project:endpoint:use', 'project:manage']}
+        projectPermissions={['project:endpoint:invoke', 'project:manage']}
       />,
     );
 
@@ -43,7 +43,7 @@ describe('UserMenu', () => {
 
     expect(await screen.findByTestId('user-menu__permission-tokens')).toBeInTheDocument();
     expect(screen.getByText('workspace:read')).toBeInTheDocument();
-    expect(screen.getByText('project:endpoint:use')).toBeInTheDocument();
+    expect(screen.getByText('project:endpoint:invoke')).toBeInTheDocument();
     expect(screen.getByText('project:manage')).toBeInTheDocument();
   });
 

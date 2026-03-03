@@ -18,7 +18,7 @@ vi.mock('@/lib/api/endpoints/members', () => {
   const mockRemove = vi.fn().mockResolvedValue(undefined);
   const mockGetPermissions = vi.fn().mockResolvedValue({
     role: 'developer',
-    permissions: ['project:endpoint:use'],
+    permissions: ['project:endpoint:invoke'],
   });
   const mockUpdatePermissions = vi.fn().mockResolvedValue(undefined);
   const mockGetQuotaOverrides = vi.fn().mockResolvedValue({});
@@ -82,7 +82,7 @@ vi.mock('@/lib/api', () => ({
       remove: vi.fn().mockResolvedValue(undefined),
       getPermissions: vi.fn().mockResolvedValue({
         role: 'developer',
-        permissions: ['project:endpoint:use'],
+        permissions: ['project:endpoint:invoke'],
       }),
       updatePermissions: vi.fn().mockResolvedValue(undefined),
       getQuotaOverrides: vi.fn().mockResolvedValue({}),
@@ -295,7 +295,7 @@ describe('useMemberPermissions', () => {
 
     expect(result.current.data).toEqual({
       role: 'developer',
-      permissions: ['project:endpoint:use'],
+      permissions: ['project:endpoint:invoke'],
     });
   });
 
@@ -335,7 +335,7 @@ describe('useUpdateMemberPermissions', () => {
       }
     );
 
-    const customPermissions = ['project:endpoint:use', 'project:manage'];
+    const customPermissions = ['project:endpoint:invoke', 'project:manage'];
 
     await act(async () => {
       await result.current.mutateAsync({
@@ -358,7 +358,7 @@ describe('useApplyTemplateToMember', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberId,
-        permissions: ['project:endpoint:use', 'project:manage'],
+        permissions: ['project:endpoint:invoke', 'project:manage'],
         template: 'developer',
       });
     });
@@ -374,7 +374,7 @@ describe('useApplyTemplateToMember', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberId,
-        permissions: ['project:endpoint:use'],
+        permissions: ['project:endpoint:invoke'],
         template: null,
       });
     });
@@ -394,7 +394,7 @@ describe('useBatchApplyPermissionTemplate', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberIds,
-        permissions: ['project:endpoint:use'],
+        permissions: ['project:endpoint:invoke'],
         template: 'user',
       });
     });
@@ -410,7 +410,7 @@ describe('useBatchApplyPermissionTemplate', () => {
     await act(async () => {
       await result.current.mutateAsync({
         memberIds: [memberId],
-        permissions: ['project:endpoint:use'],
+        permissions: ['project:endpoint:invoke'],
       });
     });
 
@@ -522,7 +522,7 @@ describe('useCreatePermissionTemplate', () => {
       await result.current.mutateAsync({
         name: 'New Template',
         description: 'A new template',
-        permissions: ['project:endpoint:use'],
+        permissions: ['project:endpoint:invoke'],
       });
     });
 

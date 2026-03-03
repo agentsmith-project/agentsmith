@@ -2,18 +2,18 @@
  * Simplified MVP Permission Model
  *
  * Project-level permissions:
- * - project:endpoint:use
- * - project:agent:manage
- * - project:agent:public
+ * - project:endpoint:invoke
+ * - project:agent:create
+ * - project:agent:publish
  * - project:manage
  */
 
 export const PLATFORM_PERMISSIONS = {
   WORKSPACE: ['workspace:read', 'workspace:project:create'] as const,
   PROJECT: [
-    'project:endpoint:use',
-    'project:agent:manage',
-    'project:agent:public',
+    'project:endpoint:invoke',
+    'project:agent:create',
+    'project:agent:publish',
     'project:manage',
   ] as const,
 } as const;
@@ -26,9 +26,9 @@ export const ALL_PLATFORM_PERMISSIONS = [
 export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:read': 'View workspace info',
   'workspace:project:create': 'Create projects in workspace',
-  'project:endpoint:use': 'Use project endpoints',
-  'project:agent:manage': 'Create and manage own agents, and use visible agents',
-  'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
+  'project:endpoint:invoke': 'Invoke project endpoints',
+  'project:agent:create': 'Access agents module and create own agents',
+  'project:agent:publish': 'Publish or unpublish agents for project-wide visibility',
   'project:manage': 'Manage all project resources and governance settings',
 };
 
@@ -46,10 +46,10 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
 ] as const;
 
 export const GROUP_TEMPLATES = {
-  owner: [...PLATFORM_PERMISSIONS.PROJECT],
-  admin: [...PLATFORM_PERMISSIONS.PROJECT],
-  developer: ['project:endpoint:use', 'project:agent:manage'],
-  user: ['project:endpoint:use', 'project:agent:manage'],
+  owner: ['project:endpoint:invoke', 'project:agent:create', 'project:manage'],
+  admin: ['project:endpoint:invoke', 'project:agent:create', 'project:manage'],
+  developer: ['project:endpoint:invoke', 'project:agent:create'],
+  user: ['project:endpoint:invoke'],
 } as const;
 
 export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
@@ -60,7 +60,7 @@ export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
 } as const;
 
 export const HIGH_RISK_PERMISSIONS = [
-  'project:agent:public',
+  'project:agent:publish',
   'project:manage',
 ] as const;
 

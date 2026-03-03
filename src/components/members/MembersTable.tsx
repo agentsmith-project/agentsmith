@@ -19,7 +19,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
-import { MoreHorizontal, Settings, Trash2, History } from 'lucide-react';
+import { MoreHorizontal, Trash2, History } from 'lucide-react';
 import { EmptyState } from '@/components/ui/loading';
 import type { Member } from '@/lib/api/endpoints/members';
 import { formatRelativeTime } from '@/lib/utils/formatters';
@@ -65,7 +65,6 @@ export interface MembersTableProps {
   enableSelection?: boolean;
   selectedMemberIds?: string[];
   onSelectionChange?: (ids: string[]) => void;
-  onEditPermissions?: (member: Member) => void;
   onRemove?: (member: Member) => void;
   onViewHistory?: (member: Member) => void;
 }
@@ -76,7 +75,6 @@ export function MembersTable({
   enableSelection = false,
   selectedMemberIds = [],
   onSelectionChange,
-  onEditPermissions,
   onRemove,
   onViewHistory,
 }: MembersTableProps) {
@@ -216,12 +214,6 @@ export function MembersTable({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
-                {onEditPermissions && (
-                  <DropdownMenuItem onClick={() => onEditPermissions(member)}>
-                <Settings className="h-4 w-4 mr-2" />
-                {t('actions.edit_permissions_quota')}
-              </DropdownMenuItem>
-                )}
                 {onViewHistory && (
                   <DropdownMenuItem onClick={() => onViewHistory(member)}>
                 <History className="h-4 w-4 mr-2" />
@@ -246,7 +238,7 @@ export function MembersTable({
         },
       }),
     ],
-    [t, enableSelection, selectableIds, selectedMemberIds, onSelectionChange, onEditPermissions, onRemove, onViewHistory]
+    [t, enableSelection, selectableIds, selectedMemberIds, onSelectionChange, onRemove, onViewHistory]
   );
 
   const table = useReactTable({

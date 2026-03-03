@@ -208,8 +208,11 @@ describe('UserAPIKeysPage', () => {
       render(<UserAPIKeysPage />, { wrapper });
 
       await waitFor(() => {
-        // Should show relative time like "X days ago" or "X hours ago"
-        const timeElements = screen.getAllByText(/\d+\s+(min|hours|days)/i);
+        // Recent timestamps may render as relative text, older ones as locale dates.
+        const timeElements = [
+          ...screen.queryAllByText(/\d+\s+(min|mins|minute|minutes|hour|hours|day|days)/i),
+          ...screen.queryAllByText(/\d{1,2}\/\d{1,2}\/\d{4}/),
+        ];
         expect(timeElements.length).toBeGreaterThan(0);
       });
     });

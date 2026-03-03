@@ -60,7 +60,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const [importPayloadText, setImportPayloadText] = useState(
     '{\n  "completion": {\n    "model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
   );
-  const canProjectEndpointRead = useHasPermission('project:endpoint:use');
+  const canProjectEndpointRead = useHasPermission('project:endpoint:invoke');
   const canProjectEndpointUpdate = useHasPermission('project:manage');
   const canProjectEndpointCreate = useHasPermission('project:manage');
   const canProjectEndpointDelete = useHasPermission('project:manage');

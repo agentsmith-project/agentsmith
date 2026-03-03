@@ -32,26 +32,26 @@ Related docs:
 - `workspace:project:create`
 
 ### Project
-- `project:endpoint:use`
-- `project:agent:manage`
-- `project:agent:public`
+- `project:endpoint:invoke`
+- `project:agent:create`
+- `project:agent:publish`
 - `project:manage`
 
 ## Route-Level Gate Contract
 
 - Projects list: `workspace:read`
-- Project overview: `project:endpoint:use`
-- Chat: `project:endpoint:use`
-- Notebook list/detail: `project:endpoint:use`
-- Files: `project:endpoint:use`
-- Endpoints: `project:endpoint:use`
-- Agents: `project:agent:manage`
+- Project overview: `project:endpoint:invoke`
+- Chat: `project:endpoint:invoke`
+- Notebook list/detail: `project:endpoint:invoke`
+- Files: `project:endpoint:invoke`
+- Endpoints: `project:endpoint:invoke`
+- Agents: `project:agent:create`
 - Members: `project:manage`
 - Credentials: `project:manage`
 - Resource Policy: `project:manage`
 - Settings: `project:manage`
-- Audit: `project:endpoint:use`
-- Usage: `project:endpoint:use`
+- Audit: `project:endpoint:invoke`
+- Usage: `project:endpoint:invoke`
 
 ## Action-Level Gate Contract
 
@@ -59,8 +59,8 @@ Related docs:
 - Credential create/rotate/delete: `project:manage`
 - Resource policy save: `project:manage`
 - Member/template/group management: `project:manage`
-- Agent create/update/delete/key issue/key revoke: `project:agent:manage`
-- Agent publish/unpublish visibility changes: `project:agent:public`
+- Agent create/update/delete/key issue/key revoke: `project:agent:create`
+- Agent publish/unpublish visibility changes: `project:agent:publish`
 
 ## UI Behavior Contract
 

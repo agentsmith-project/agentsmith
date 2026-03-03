@@ -6,11 +6,11 @@
  *
  * **Permission Model**:
  * Each tab requires specific permission points. Tabs without permissions are hidden.
- * - Overview: project:endpoint:use
- * - Monitoring: project:endpoint:use
- * - Alerts: project:endpoint:use
+ * - Overview: project:endpoint:invoke
+ * - Monitoring: project:endpoint:invoke
+ * - Alerts: project:endpoint:invoke
  * - Control: project:manage
- * - Reports: project:endpoint:use
+ * - Reports: project:endpoint:invoke
  */
 
 'use client';
@@ -39,11 +39,11 @@ interface TabConfig {
 
 /** Tab configurations with their required permissions */
 const TAB_CONFIGS: readonly TabConfig[] = [
-  { value: 'overview', labelKey: 'tabs.overview', permission: 'project:endpoint:use', testId: 'tabs-trigger-overview' },
-  { value: 'monitoring', labelKey: 'tabs.monitoring', permission: 'project:endpoint:use', testId: 'tabs-trigger-monitoring' },
-  { value: 'alerts', labelKey: 'tabs.alerts', permission: 'project:endpoint:use', testId: 'tabs-trigger-alerts' },
+  { value: 'overview', labelKey: 'tabs.overview', permission: 'project:endpoint:invoke', testId: 'tabs-trigger-overview' },
+  { value: 'monitoring', labelKey: 'tabs.monitoring', permission: 'project:endpoint:invoke', testId: 'tabs-trigger-monitoring' },
+  { value: 'alerts', labelKey: 'tabs.alerts', permission: 'project:endpoint:invoke', testId: 'tabs-trigger-alerts' },
   { value: 'control', labelKey: 'tabs.control', permission: 'project:manage', testId: 'tabs-trigger-control' },
-  { value: 'reports', labelKey: 'tabs.reports', permission: 'project:endpoint:use', testId: 'tabs-trigger-reports' },
+  { value: 'reports', labelKey: 'tabs.reports', permission: 'project:endpoint:invoke', testId: 'tabs-trigger-reports' },
 ] as const;
 
 export interface RuntimeConsolePageProps {
@@ -62,11 +62,11 @@ export function RuntimeConsolePage({
 
   // Check permissions for each tab - IMPORTANT: Each permission check is separate
   // to avoid hook short-circuiting (禁止 hook 短路)
-  const canViewOverview = useHasPermission('project:endpoint:use');
-  const canViewMonitoring = useHasPermission('project:endpoint:use');
-  const canViewAlerts = useHasPermission('project:endpoint:use');
+  const canViewOverview = useHasPermission('project:endpoint:invoke');
+  const canViewMonitoring = useHasPermission('project:endpoint:invoke');
+  const canViewAlerts = useHasPermission('project:endpoint:invoke');
   const canViewControl = useHasPermission('project:manage');
-  const canViewReports = useHasPermission('project:endpoint:use');
+  const canViewReports = useHasPermission('project:endpoint:invoke');
 
   // Map of tab permissions
   const tabPermissions: Record<RuntimeConsoleTab, boolean> = React.useMemo(() => ({
@@ -204,7 +204,7 @@ export function RuntimeConsolePage({
           ))}
         </TabsList>
 
-        {/* Overview Tab - requires project:endpoint:use */}
+        {/* Overview Tab - requires project:endpoint:invoke */}
         {canViewOverview && (
           <TabsContent value="overview" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <RuntimeObservabilityConsole
@@ -214,7 +214,7 @@ export function RuntimeConsolePage({
           </TabsContent>
         )}
 
-        {/* Monitoring Tab - requires project:endpoint:use */}
+        {/* Monitoring Tab - requires project:endpoint:invoke */}
         {canViewMonitoring && (
           <TabsContent value="monitoring" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <RuntimeObservabilityConsole
@@ -224,7 +224,7 @@ export function RuntimeConsolePage({
           </TabsContent>
         )}
 
-        {/* Alerts Tab - requires project:endpoint:use */}
+        {/* Alerts Tab - requires project:endpoint:invoke */}
         {canViewAlerts && (
           <TabsContent value="alerts" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <AlertCenterPage
@@ -245,7 +245,7 @@ export function RuntimeConsolePage({
           </TabsContent>
         )}
 
-        {/* Reports Tab - requires project:endpoint:use */}
+        {/* Reports Tab - requires project:endpoint:invoke */}
         {canViewReports && (
           <TabsContent value="reports" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <ReleaseOpsDashboard />

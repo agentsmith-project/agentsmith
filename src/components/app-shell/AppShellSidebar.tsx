@@ -43,8 +43,8 @@ type ProjectMenuItem = {
   // Permission is a contract token from src/lib/constants/permissions.ts
   // Use '__multi__' for items that require multiple permission checks (handled in filter logic)
   permission:
-    | 'project:endpoint:use'
-    | 'project:agent:manage'
+    | 'project:endpoint:invoke'
+    | 'project:agent:create'
     | 'project:manage'
     | '__multi__';
   section: ProjectMenuSection;
@@ -52,20 +52,20 @@ type ProjectMenuItem = {
 
 const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   // Home section
-  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:endpoint:use', section: 'home' },
+  { icon: LayoutDashboard, labelKey: 'overview', href: 'overview', permission: 'project:endpoint:invoke', section: 'home' },
   // Use section
-  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:endpoint:use', section: 'use' },
-  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:endpoint:use', section: 'use' },
-  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:endpoint:use', section: 'use' },
+  { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:endpoint:invoke', section: 'use' },
+  { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:endpoint:invoke', section: 'use' },
+  { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:endpoint:invoke', section: 'use' },
   // Develop section
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:manage', section: 'develop' },
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:create', section: 'develop' },
   // Govern section
-  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
+  { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:invoke', section: 'govern' },
   { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:manage', section: 'govern' },
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:manage', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:manage', section: 'govern' },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:invoke', section: 'govern' },
+  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:invoke', section: 'govern' },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:manage', section: 'govern' },
   // Operate section
   // Runtime Console is accessible for users with endpoint use or settings manage.
@@ -94,15 +94,15 @@ export function AppShellSidebar({
   const pathname = usePathname();
   const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
-  const canReadOverview = useHasPermission('project:endpoint:use');
-  const canAccessChat = useHasPermission('project:endpoint:use');
-  const canAccessNotebook = useHasPermission('project:endpoint:use');
-  const canUseSources = useHasPermission('project:endpoint:use');
-  const canUseEndpoints = useHasPermission('project:endpoint:use');
-  const canViewAlerts = useHasPermission('project:endpoint:use');
-  const canReadAudit = useHasPermission('project:endpoint:use');
-  const canReadUsage = useHasPermission('project:endpoint:use');
-  const canReadAgents = useHasPermission('project:agent:manage');
+  const canReadOverview = useHasPermission('project:endpoint:invoke');
+  const canAccessChat = useHasPermission('project:endpoint:invoke');
+  const canAccessNotebook = useHasPermission('project:endpoint:invoke');
+  const canUseSources = useHasPermission('project:endpoint:invoke');
+  const canUseEndpoints = useHasPermission('project:endpoint:invoke');
+  const canViewAlerts = useHasPermission('project:endpoint:invoke');
+  const canReadAudit = useHasPermission('project:endpoint:invoke');
+  const canReadUsage = useHasPermission('project:endpoint:invoke');
+  const canReadAgents = useHasPermission('project:agent:create');
   const canManageCredentials = useHasPermission('project:manage');
   const canViewMembers = useHasPermission('project:manage');
   const canManageSettings = useHasPermission('project:manage');
@@ -115,7 +115,7 @@ export function AppShellSidebar({
 
   const projectMenuItems = currentProject
     ? PROJECT_MENU_ITEMS.filter((item) => {
-        if (item.permission === 'project:endpoint:use') {
+        if (item.permission === 'project:endpoint:invoke') {
           return (
             canReadOverview
             || canAccessChat
@@ -127,7 +127,7 @@ export function AppShellSidebar({
             || canReadUsage
           );
         }
-        if (item.permission === 'project:agent:manage') return canReadAgents;
+        if (item.permission === 'project:agent:create') return canReadAgents;
         if (item.permission === 'project:manage') {
           return canManageResourcePolicy || canManageCredentials || canViewMembers || canManageSettings;
         }

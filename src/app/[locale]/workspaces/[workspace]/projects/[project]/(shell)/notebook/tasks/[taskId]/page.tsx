@@ -35,7 +35,7 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
     taskId?: string;
     locale?: string;
   } | null>(null);
-  const canAccessNotebook = useHasPermission('project:endpoint:use');
+  const canAccessNotebook = useHasPermission('project:endpoint:invoke');
 
   useEffect(() => {
     params.then((p) =>

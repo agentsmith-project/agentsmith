@@ -1,4 +1,5 @@
 'use client';
+
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import {
@@ -19,9 +20,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { History } from 'lucide-react';
-import { PermissionsEditor } from './PermissionsEditor/PermissionsEditor';
-import { QuotaOverridesEditor } from './QuotaOverridesEditor';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import type { Member } from '@/lib/api/endpoints/members';
 import type { MemberPermissions, QuotaOverride, PermissionTemplate, QuotaTemplate } from '@/lib/api/types';
 import type {
@@ -29,11 +27,6 @@ import type {
   GovernanceEffectiveAccessSnapshot,
   GovernanceMatchedPolicy,
 } from '@/lib/api/endpoints/governance-explainability';
-
-function extractQuotasFromGovernance(governance?: Record<string, unknown>): QuotaOverride {
-  const quotas = governance?.quotas as QuotaOverride | undefined;
-  return quotas ?? {};
-}
 
 function flattenQuotaOverrides(
   source: Record<string, unknown>,
@@ -83,8 +76,6 @@ export interface MemberDetailDrawerProps {
   className?: string;
 }
 
-const PERM_TEMPLATE_IDS = ['owner', 'admin', 'developer', 'user'] as const;
-
 function formatGroupAlias(role: string): string {
   switch (role) {
     case 'owner':
@@ -92,7 +83,7 @@ function formatGroupAlias(role: string): string {
     case 'admin':
       return 'manager';
     case 'developer':
-      return 'operator';
+      return 'developer';
     case 'user':
       return 'member';
     default:
@@ -105,118 +96,31 @@ export function MemberDetailDrawer({
   onOpenChange,
   member,
   permissions,
-  projectGovernance,
   quotaOverrides,
-  _workspaceId,
-  _projectId,
-  permissionTemplates = [],
-  quotaTemplates = [],
   effectiveAccessSnapshot,
   authorizationCheckResult,
   isCheckingAuthorization = false,
   onRunAuthorizationCheck,
-  onSavePermissions,
-  onSaveQuota,
   onViewHistory,
-  onViewQuotaHistory,
   initialAuthorization,
   embedded = false,
   className,
 }: MemberDetailDrawerProps) {
   const t = useTranslations('members');
-  const tTpl = useTranslations('members.templates');
-  const [activeTab, setActiveTab] = React.useState<'effective_access' | 'permissions' | 'quota'>('effective_access');
-  const [appliedPermTemplateId, setAppliedPermTemplateId] = React.useState<string | null>(null);
-  const [appliedQuotaTemplateId, setAppliedQuotaTemplateId] = React.useState<string | null>(null);
   const [authorizeResourceType, setAuthorizeResourceType] = React.useState<'endpoint'>('endpoint');
   const [authorizeResourceId, setAuthorizeResourceId] = React.useState('');
   const [authorizeAction, setAuthorizeAction] = React.useState('read');
-  const initializedPermTemplateMemberIdRef = React.useRef<string | null>(null);
-
-  const permTemplatesForDropdown = React.useMemo(() => {
-    const defaults = PERM_TEMPLATE_IDS.map((id) => ({
-      id,
-      name: tTpl(`default_templates.${id}`),
-      permissions: [...GROUP_TEMPLATES[id]],
-    }));
-    const custom = permissionTemplates.filter((tpl) => !PERM_TEMPLATE_IDS.includes(tpl.id as typeof PERM_TEMPLATE_IDS[number]));
-    return [...defaults, ...custom];
-  }, [permissionTemplates, tTpl]);
-
-  const permInitialPermissions = React.useMemo(() => {
-    if (appliedPermTemplateId) {
-      const tpl = permTemplatesForDropdown.find((tmpl) => tmpl.id === appliedPermTemplateId);
-      return tpl?.permissions ?? permissions?.platform_permissions ?? [];
-    }
-    return permissions?.platform_permissions ?? [];
-  }, [appliedPermTemplateId, permTemplatesForDropdown, permissions]);
-
-  // Reset transient template selections when opening a different member.
-  React.useEffect(() => {
-    if (!open || !member) return;
-    setActiveTab('effective_access');
-    setAppliedPermTemplateId(null);
-    setAppliedQuotaTemplateId(null);
-    setAuthorizeResourceType('endpoint');
-    setAuthorizeResourceId('');
-    setAuthorizeAction('read');
-    initializedPermTemplateMemberIdRef.current = null;
-  }, [open, member, member?.id]);
 
   React.useEffect(() => {
     if (!open || !member || !initialAuthorization) return;
-    setActiveTab('effective_access');
     setAuthorizeResourceType(initialAuthorization.resourceType);
     setAuthorizeResourceId(initialAuthorization.resourceId);
     setAuthorizeAction(initialAuthorization.action);
   }, [initialAuthorization, member, open]);
 
-  // Initialize selected permission template from the member's existing permissions.
-  React.useEffect(() => {
-    if (!open || !member || !permissions) return;
-    if (initializedPermTemplateMemberIdRef.current === member.id) return;
-
-    const currentSet = new Set(permissions.platform_permissions ?? []);
-    const matchedTemplates = permTemplatesForDropdown.filter((tpl) => {
-      const templateSet = new Set(tpl.permissions);
-      if (templateSet.size !== currentSet.size) return false;
-      return Array.from(templateSet).every((perm) => currentSet.has(perm));
-    });
-    const matchedTemplate =
-      matchedTemplates.find((tpl) => tpl.id === member.role) ??
-      matchedTemplates[0];
-
-    setAppliedPermTemplateId(matchedTemplate?.id ?? null);
-    initializedPermTemplateMemberIdRef.current = member.id;
-  }, [open, member, permissions, permTemplatesForDropdown]);
-
-  const quotaInitialOverrides = React.useMemo(() => {
-    if (appliedQuotaTemplateId) {
-      const tpl = quotaTemplates.find((tmpl) => tmpl.id === appliedQuotaTemplateId);
-      return tpl?.overrides_json ?? quotaOverrides ?? {};
-    }
-    return quotaOverrides ?? {};
-  }, [appliedQuotaTemplateId, quotaTemplates, quotaOverrides]);
-
   const effectiveQuotaEntries = React.useMemo(
     () => flattenQuotaOverrides((effectiveAccessSnapshot?.quota_overrides ?? quotaOverrides ?? {}) as Record<string, unknown>),
     [effectiveAccessSnapshot?.quota_overrides, quotaOverrides]
-  );
-
-  const handleSavePermissions = React.useCallback(
-    (permissions: string[], mode: 'template' | 'custom', template?: string) => {
-      onSavePermissions?.(permissions, mode, template);
-      // Optionally close drawer after save
-      // onOpenChange(false);
-    },
-    [onSavePermissions]
-  );
-
-  const handleSaveQuota = React.useCallback(
-    (quota: QuotaOverride) => {
-      onSaveQuota?.(quota);
-    },
-    [onSaveQuota]
   );
 
   const handleAuthorizationCheck = React.useCallback(async () => {
@@ -232,7 +136,6 @@ export function MemberDetailDrawer({
 
   const content = (
     <>
-      {/* Header: fixed, no shrink. Design: 16-18px title, 24px padding */}
       <SheetHeader className="flex-shrink-0 px-6 pt-6 pb-4 border-b border-subtle">
         <div className="flex items-center justify-between pr-8">
           <div>
@@ -262,13 +165,10 @@ export function MemberDetailDrawer({
         </div>
       </SheetHeader>
 
-      {/* Tab content: scrollable, fixed height prevents resize on tab switch */}
       <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4">
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'effective_access' | 'permissions' | 'quota')}>
+        <Tabs value="effective_access">
           <TabsList>
             <TabsTrigger value="effective_access">{t('effective_access.title')}</TabsTrigger>
-            <TabsTrigger value="permissions">{t('permissions.title')}</TabsTrigger>
-            <TabsTrigger value="quota">{t('quota.title')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="effective_access" className="mt-4 space-y-4">
@@ -413,86 +313,6 @@ export function MemberDetailDrawer({
               ) : null}
             </div>
           </TabsContent>
-
-          <TabsContent value="permissions" className="mt-4 space-y-4">
-            <div className="flex items-center gap-3">
-              <Label className="text-sm shrink-0">{tTpl('apply_template')}:</Label>
-              <Select
-                value={appliedPermTemplateId ?? '__none__'}
-                onValueChange={(v) => setAppliedPermTemplateId(v === '__none__' ? null : v)}
-              >
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder={tTpl('select_template')} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__none__">{tTpl('select_template')}</SelectItem>
-                  {permTemplatesForDropdown.map((tpl) => (
-                    <SelectItem key={tpl.id} value={tpl.id}>
-                      {tpl.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <p className="text-sm text-tertiary">{t('permissions.title_description')}</p>
-            {permissions ? (
-              <PermissionsEditor
-                key={`${member.id}-${appliedPermTemplateId ?? 'current'}`}
-                initialPermissions={permInitialPermissions}
-                onSave={handleSavePermissions}
-                onCancel={() => onOpenChange(false)}
-              />
-            ) : (
-              <div className="text-center py-8 text-tertiary">
-                <p className="text-sm">{t('permissions.loading')}</p>
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="quota" className="mt-4">
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <Label className="text-sm shrink-0">{tTpl('apply_template')}:</Label>
-                  <Select
-                    value={appliedQuotaTemplateId ?? '__none__'}
-                    onValueChange={(v) => setAppliedQuotaTemplateId(v === '__none__' ? null : v)}
-                  >
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder={tTpl('select_template')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__none__">{tTpl('select_template')}</SelectItem>
-                      {quotaTemplates.map((tpl) => (
-                        <SelectItem key={tpl.id} value={tpl.id}>
-                          {tpl.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                {onViewQuotaHistory && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={onViewQuotaHistory}
-                    className="gap-2"
-                  >
-                    <History className="h-4 w-4" />
-                    {t('quota_history.view_history')}
-                  </Button>
-                )}
-              </div>
-              <QuotaOverridesEditor
-                key={`${member.id}-quota-${appliedQuotaTemplateId ?? 'current'}`}
-                defaultQuotas={extractQuotasFromGovernance(projectGovernance)}
-                initialOverrides={quotaInitialOverrides}
-                onSave={handleSaveQuota}
-                onCancel={() => onOpenChange(false)}
-              />
-            </div>
-          </TabsContent>
-
         </Tabs>
       </div>
     </>

@@ -14,10 +14,10 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Canonical action identifier.
 - Source of truth: `src/lib/constants/permissions.ts`.
 - Project-level permissions in MVP are intentionally reduced to four:
-  - `project:endpoint:use`
+  - `project:endpoint:invoke`
   - `project:manage`
-  - `project:agent:manage`
-  - `project:agent:public`
+  - `project:agent:create`
+  - `project:agent:publish`
 
 3. `Frontend gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).

@@ -10,6 +10,7 @@
  */
 
 import { FetchApiClient } from './adapters/fetch-adapter';
+import { MSWApiClient } from './adapters/msw-adapter';
 
 // MSWApiClient is dynamically imported to exclude it from production bundle.
 // It will only be loaded when NEXT_PUBLIC_USE_MSW=true at build time.
@@ -112,11 +113,7 @@ export const API_BASE = useMsw
  * build time.
  */
 export function createApiClient(): ApiClient {
-  // This condition is evaluated at build time by Next.js
-  // When false, the entire if block is tree-shaken from the bundle
   if (useMsw) {
-    // Dynamic require - only executed when MSW is enabled
-    const { MSWApiClient } = require('./adapters/msw-adapter');
     return new MSWApiClient();
   }
 

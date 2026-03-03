@@ -94,7 +94,7 @@ Response:
 |--------|----------|-------------|-------------|
 | GET | `/api/v1/workspaces/{workspaceId}/projects` | List projects | `workspace:read` |
 | POST | `/api/v1/workspaces/{workspaceId}/projects` | Create project | `workspace:project:create` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Get project | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Get project | `project:endpoint:invoke` |
 | PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Update project | `project:manage` |
 | DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Delete project | `project:manage` |
 
@@ -121,27 +121,27 @@ Response:
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat` | Send chat message | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/{threadId}` | Get chat thread | `project:endpoint:use` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat` | Send chat message | `project:endpoint:invoke` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/{threadId}` | Get chat thread | `project:endpoint:invoke` |
 
 ### Agents
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | List agents | `project:agent:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | Create agent | `project:agent:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Get agent | `project:agent:manage` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Update agent | `project:agent:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Delete agent | `project:agent:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/run` | Run agent task | `project:agent:manage` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | List agents | `project:agent:create` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | Create agent | `project:agent:create` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Get agent | `project:agent:create` |
+| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Update agent | `project:agent:create` |
+| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Delete agent | `project:agent:create` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/run` | Run agent task | `project:agent:create` |
 
 ### Endpoints
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | List endpoints | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | List endpoints | `project:endpoint:invoke` |
 | POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | Create endpoint | `project:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Get endpoint | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Get endpoint | `project:endpoint:invoke` |
 | PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Update endpoint | `project:manage` |
 | DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Delete endpoint | `project:manage` |
 
@@ -149,9 +149,9 @@ Response:
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | List sources | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | List sources | `project:endpoint:invoke` |
 | POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | Create source | `project:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Get source | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Get source | `project:endpoint:invoke` |
 | PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Update source | `project:manage` |
 | DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Delete source | `project:manage` |
 | POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/upload` | Upload file | `project:manage` |
@@ -179,24 +179,24 @@ Response:
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit` | Get audit logs | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit` | Get audit logs | `project:endpoint:invoke` |
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:manage` |
 
 ### Usage
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage` | Get usage stats | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage` | Get usage stats | `project:endpoint:invoke` |
 
 ### Notebook (AI Studio)
 
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks` | List tasks | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks` | Create task | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}` | Get task | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}/execute` | Execute task | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}/trace` | Get execution trace | `project:endpoint:use` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks` | List tasks | `project:endpoint:invoke` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks` | Create task | `project:endpoint:invoke` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}` | Get task | `project:endpoint:invoke` |
+| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}/execute` | Execute task | `project:endpoint:invoke` |
+| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}/trace` | Get execution trace | `project:endpoint:invoke` |
 
 ## Error Codes
 

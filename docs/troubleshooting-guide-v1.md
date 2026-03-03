@@ -140,3 +140,19 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 3. [Release Verification](./user-guides/release-verification.md)
 4. [Release Governance Control Plane](./user-guides/release-governance-control-plane.md)
 5. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+
+## Token Issues
+
+Token 排障遵循上文 `2` 和 `3` 节：先确认服务在线，再执行 `make notebook-agent-refresh-token`，最后回到对应 lane 验证。
+
+## Network Issues
+
+网络类问题先区分上游短时抖动和结构性故障，执行上文 `2` 和 `6` 节步骤，并在 release report 中核对失败分类。
+
+## Backend Issues
+
+后端行为异常统一按治理链路排障：先跑 `make governance-release-smoke`，再按 `Members / Resource Policy / Audit / Usage / Release Ops` 定位。
+
+## Timeout Issues
+
+超时问题优先检查 provider 短时波动、runner 健康、以及重试后是否恢复；无法恢复时按结构性故障处理并升级到 release evidence。

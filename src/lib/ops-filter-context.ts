@@ -42,6 +42,7 @@ export function parseSharedOpsFilterContext(searchParams: SearchParamReader): Pa
 export function buildSharedOpsFilterQuery(
   filters: Partial<SharedOpsFilterContext>,
   extras: Record<string, string | undefined> = {},
+  prefix: '?' | '&' = '?',
 ): string {
   const query = new URLSearchParams();
   const entries = {
@@ -59,5 +60,5 @@ export function buildSharedOpsFilterQuery(
   });
 
   const serialized = query.toString();
-  return serialized ? `?${serialized}` : '';
+  return serialized ? `${prefix}${serialized}` : '';
 }

@@ -13,13 +13,13 @@ describe('validateProjectWithMembership', () => {
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
       role: 'owner',
-      permissions: ['project:endpoint:use', 'project:manage'],
+      permissions: ['project:endpoint:invoke', 'project:manage'],
     };
 
     const result = validateProjectWithMembership(validProject);
     expect(result).not.toBeNull();
     expect(result?.role).toBe('owner');
-    expect(result?.permissions).toEqual(['project:endpoint:use', 'project:manage']);
+    expect(result?.permissions).toEqual(['project:endpoint:invoke', 'project:manage']);
   });
 
   it('should return null for invalid project', () => {

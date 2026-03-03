@@ -1,70 +1,19 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
 
 import UsagePage from '../page';
 
-const mockUsageFilters = vi.fn((_props: unknown) => <div data-testid="usage-filters" />);
 const mockHasPermission = vi.fn((_permission?: string) => true);
-const STABLE_USAGE_KPI_RESULT = { data: undefined, isLoading: false };
-const STABLE_USAGE_RECORDS_RESULT = { data: { items: [] }, isLoading: false, error: null };
-const mockUseUsageKPI = vi.fn((..._args: unknown[]) => STABLE_USAGE_KPI_RESULT);
-const mockUseUsageRecords = vi.fn((..._args: unknown[]) => STABLE_USAGE_RECORDS_RESULT);
-const STABLE_PROJECT = {
-  id: 'proj_1',
-  workspace_id: 'ws_1',
-  name: 'Project',
-  visibility: 'private',
-  owner_id: 'user_001',
-  status: 'active',
-  created_at: '2026-02-01T00:00:00Z',
-  updated_at: '2026-02-01T00:00:00Z',
-  role: 'user' as const,
-  permissions: ['project:endpoint:use'],
-};
+const mockUsagePageComponent = vi.fn((props: unknown) => (
+  <div data-testid="usage-page-component" data-props={JSON.stringify(props)} />
+));
 
-vi.mock('@/components/audit-usage/UsageKPICards', () => ({
-  UsageKPICards: () => <div data-testid="usage-kpi-cards" />,
-}));
-
-vi.mock('@/components/audit-usage/UsageFilters', () => ({
-  UsageFilters: (props: any) => mockUsageFilters(props),
-}));
-
-vi.mock('@/components/audit-usage/UsageTable', () => ({
-  UsageTable: () => <div data-testid="usage-table" />,
+vi.mock('@/components/audit-usage/UsagePage', () => ({
+  UsagePage: (props: unknown) => mockUsagePageComponent(props),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: (permission: string) => mockHasPermission(permission),
-}));
-
-vi.mock('@/lib/hooks/use-audit-usage', () => ({
-  useUsageKPI: (workspaceId: string, projectId: string, startTime: string, endTime: string, endUserId?: string) =>
-    mockUseUsageKPI(workspaceId, projectId, startTime, endTime, endUserId),
-  useUsageRecords: (
-    workspaceId: string,
-    projectId: string,
-    params: Record<string, unknown>,
-    options: Record<string, unknown>
-  ) => mockUseUsageRecords(workspaceId, projectId, params, options),
-}));
-
-vi.mock('@/components/ui/toast', () => ({
-  toast: { success: vi.fn() },
-}));
-
-vi.mock('@tanstack/react-query', async () => {
-  const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
-  return {
-    ...actual,
-    useQueryClient: () => ({ invalidateQueries: vi.fn() }),
-  };
-});
-
-vi.mock('@/lib/hooks/use-projects-queries', () => ({
-  useProject: () => ({
-    data: STABLE_PROJECT,
-  }),
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
@@ -92,7 +41,7 @@ describe('UsagePage route', () => {
     mockHasPermission.mockReturnValue(true);
   });
 
-  it('does not force end_user_id by role', async () => {
+  it('passes route params and current user to usage component', async () => {
     render(
       <UsagePage
         params={Promise.resolve({
@@ -104,15 +53,27 @@ describe('UsagePage route', () => {
     );
 
     await waitFor(() => {
-      expect(mockUsageFilters).toHaveBeenCalled();
+      expect(mockUsagePageComponent).toHaveBeenCalled();
     });
 
-    const props = mockUsageFilters.mock.calls[0]?.[0] as { defaultEndUserId?: string } | undefined;
-    expect(props).toBeDefined();
-    expect(props!.defaultEndUserId).toBeUndefined();
+    const props = mockUsagePageComponent.mock.calls.at(-1)?.[0] as {
+      workspaceId: string;
+      projectId: string;
+      locale: string;
+      currentUserId: string;
+      initialPanel: string;
+      initialFilters?: { end_user_id?: string };
+    };
+
+    expect(props.workspaceId).toBe('ws_1');
+    expect(props.projectId).toBe('proj_1');
+    expect(props.locale).toBe('en');
+    expect(props.currentUserId).toBe('user_001');
+    expect(props.initialPanel).toBe('usage');
+    expect(props.initialFilters?.end_user_id).toBeUndefined();
   });
 
-  it('defaults usage time range to last 24 hours', async () => {
+  it('shows usage component when params are valid', async () => {
     render(
       <UsagePage
         params={Promise.resolve({
@@ -124,41 +85,8 @@ describe('UsagePage route', () => {
     );
 
     await waitFor(() => {
-      expect(mockUseUsageRecords).toHaveBeenCalled();
+      expect(screen.getByTestId('usage-page-component')).toBeInTheDocument();
     });
-
-    const lastCall = mockUseUsageRecords.mock.calls[mockUseUsageRecords.mock.calls.length - 1];
-    const params = lastCall?.[2] as { start_time?: string; end_time?: string } | undefined;
-    expect(params?.start_time).toBeDefined();
-    expect(params?.end_time).toBeDefined();
-
-    const start = new Date(params!.start_time as string).getTime();
-    const end = new Date(params!.end_time as string).getTime();
-    const hours = (end - start) / (1000 * 60 * 60);
-    expect(hours).toBeGreaterThanOrEqual(23.5);
-    expect(hours).toBeLessThanOrEqual(24.5);
-  });
-
-  it('renders header and toolbar layout', async () => {
-    render(
-      <UsagePage
-        params={Promise.resolve({
-          workspace: 'ws_1',
-          project: 'proj_1',
-          locale: 'en',
-        })}
-      />
-    );
-
-    await waitFor(() => {
-      expect(screen.getByTestId('page-layout__header')).toBeInTheDocument();
-    });
-
-    const header = screen.getByTestId('page-layout__header');
-    expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    expect(within(header).getByRole('button', { name: /refresh/i })).toBeInTheDocument();
-    const toolbar = screen.getByTestId('page-layout__toolbar');
-    expect(within(toolbar).getByRole('tablist')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {

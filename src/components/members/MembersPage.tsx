@@ -33,11 +33,8 @@ import { ChangeHistoryDrawer } from './ChangeHistoryDrawer';
 import { InviteMemberDialog } from './InviteMemberDialog';
 import { QuotaOverrideHistoryDrawer } from './QuotaOverrideHistoryDrawer';
 import { PeopleTab } from './PeopleTab';
-import { TemplatesTab } from './TemplatesTab';
 import { GroupsTab } from './GroupsTab';
 import { JoinRequestsTab } from './JoinRequestsTab';
-import { BatchApplyPermissionDialog } from './BatchApplyPermissionDialog';
-import { BatchApplyQuotaDialog } from './BatchApplyQuotaDialog';
 import { cn } from '@/lib/utils';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
@@ -56,12 +53,12 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
   const contextValue = useMembersList({ workspaceId, projectId });
-  const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'templates' | 'groups'>('people');
+  const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'groups'>('people');
   const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
 
   React.useEffect(() => {
     const requestedTab = searchParams.get('member_tab');
-    if (requestedTab === 'people' || requestedTab === 'requests' || requestedTab === 'templates' || requestedTab === 'groups') {
+    if (requestedTab === 'people' || requestedTab === 'requests' || requestedTab === 'groups') {
       setActiveTab(requestedTab);
     }
   }, [searchParams]);
@@ -114,11 +111,10 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         {drilldownContext ? (
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'templates' | 'groups')} className="flex-1 min-h-0 flex flex-col min-w-0">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'groups')} className="flex-1 min-h-0 flex flex-col min-w-0">
           <TabsList className="flex-shrink-0">
             <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>
             <TabsTrigger value="requests">{t('tabs.requests')}</TabsTrigger>
-            <TabsTrigger value="templates">{t('tabs.templates')}</TabsTrigger>
             <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
           </TabsList>
 
@@ -134,12 +130,6 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
                 requests={Array.isArray(joinRequests) ? joinRequests : []}
                 loading={isLoadingRequests}
               />
-            </div>
-          </TabsContent>
-
-          <TabsContent value="templates" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-            <div className="flex-1 min-h-0 overflow-auto overflow-x-auto">
-              <TemplatesTab workspaceId={workspaceId} projectId={projectId} />
             </div>
           </TabsContent>
 
@@ -187,10 +177,6 @@ function MemberDetailDrawersAndDialogs({ workspaceId, projectId }: { workspaceId
 
       <InviteMemberDialogWithContext workspaceId={workspaceId} projectId={projectId} />
 
-      <BatchApplyPermissionDialogWithContext />
-
-      <BatchApplyQuotaDialogWithContext />
-
       <RemoveMemberAlertDialog />
     </>
   );
@@ -208,40 +194,6 @@ function InviteMemberDialogWithContext({ workspaceId, projectId }: { workspaceId
       onOpenChange={context.setInviteDialogOpen}
       workspaceId={workspaceId}
       projectId={projectId}
-    />
-  );
-}
-
-/**
- * Batch permission dialog with context
- */
-function BatchApplyPermissionDialogWithContext() {
-  const context = useMembersContext();
-
-  return (
-    <BatchApplyPermissionDialog
-      open={context.batchPermDialogOpen}
-      onOpenChange={context.setBatchPermDialogOpen}
-      templates={context.permissionTemplates}
-      selectedCount={context.selectedMemberIds.length}
-      onApply={context.handleBatchApplyPermission}
-    />
-  );
-}
-
-/**
- * Batch quota dialog with context
- */
-function BatchApplyQuotaDialogWithContext() {
-  const context = useMembersContext();
-
-  return (
-    <BatchApplyQuotaDialog
-      open={context.batchQuotaDialogOpen}
-      onOpenChange={context.setBatchQuotaDialogOpen}
-      templates={context.quotaTemplates}
-      selectedCount={context.selectedMemberIds.length}
-      onApply={context.handleBatchApplyQuota}
     />
   );
 }

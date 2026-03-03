@@ -109,7 +109,7 @@ export default function OverviewPage() {
   const workspaceId = validateWorkspaceParam(params.workspace);
   const projectId = validateProjectParam(params.project);
   const locale = (params.locale as string) || 'en-US';
-  const canReadOverview = useHasPermission('project:endpoint:use');
+  const canReadOverview = useHasPermission('project:endpoint:invoke');
   const currentPermissions = useCurrentPermissions();
   const isValidParams = !!workspaceId && !!projectId;
 
@@ -169,10 +169,10 @@ export default function OverviewPage() {
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   // WP-03: Updated to new runtime-console route with monitoring tab
-  const runtimeHref = `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(timeRange)}`;
+  const runtimeHref = `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(timeRange, {}, '&')}`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
   // WP-03: Updated to new runtime-console route with control tab
-  const releaseOpsHref = `${basePath}/runtime-console?tab=control${buildSharedOpsFilterQuery(timeRange)}`;
+  const releaseOpsHref = `${basePath}/runtime-console?tab=control${buildSharedOpsFilterQuery(timeRange, {}, '&')}`;
 
   const runtime = runtimeQuery.data;
   const operationsSummary = operationsSummaryQuery.data;
@@ -234,7 +234,7 @@ export default function OverviewPage() {
       href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
         ...timeRange,
         result: 'error',
-      })}`,
+      }, {}, '&')}`,
       actionLabel: t('attention.review_runtime'),
     });
   }
@@ -268,7 +268,7 @@ export default function OverviewPage() {
       href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
         ...timeRange,
         result: 'error',
-      })}`,
+      }, {}, '&')}`,
       actionLabel: t('attention.investigate_runtime'),
     });
   }
@@ -304,7 +304,7 @@ export default function OverviewPage() {
           href: `${basePath}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery({
             ...timeRange,
             result: 'error',
-          })}`,
+          }, {}, '&')}`,
           actionLabel: t('primary_actions.open_runtime'),
         }
       : {
@@ -364,28 +364,28 @@ export default function OverviewPage() {
       label: tNav('chat'),
       href: '/chat',
       description: t('actions.chat'),
-      requiresPermission: 'project:endpoint:use',
+      requiresPermission: 'project:endpoint:invoke',
     },
     {
       icon: Wrench,
       label: tNav('notebook'),
       href: '/notebook',
       description: t('actions.notebook'),
-      requiresPermission: 'project:endpoint:use',
+      requiresPermission: 'project:endpoint:invoke',
     },
     {
       icon: Bot,
       label: tNav('agents'),
       href: '/agents',
       description: t('actions.agents'),
-      requiresPermission: 'project:agent:manage',
+      requiresPermission: 'project:agent:create',
     },
     {
       icon: Server,
       label: tNav('endpoints'),
       href: '/endpoints',
       description: t('actions.endpoints'),
-      requiresPermission: 'project:endpoint:use',
+      requiresPermission: 'project:endpoint:invoke',
     },
     {
       icon: Sparkles,
@@ -393,7 +393,7 @@ export default function OverviewPage() {
       // WP-03: Updated to new runtime-console route with monitoring tab
       href: '/runtime-console?tab=monitoring',
       description: t('actions.runtime_description'),
-      requiresPermission: 'project:endpoint:use',
+      requiresPermission: 'project:endpoint:invoke',
     },
     {
       icon: Gauge,
@@ -401,7 +401,7 @@ export default function OverviewPage() {
       // WP-03: Updated to new runtime-console route with control tab
       href: '/runtime-console?tab=control',
       description: t('actions.release_ops'),
-      requiresPermission: 'project:endpoint:use',
+      requiresPermission: 'project:endpoint:invoke',
     },
   ];
 

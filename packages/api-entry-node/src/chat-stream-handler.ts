@@ -20,6 +20,7 @@ import {
   safeAssistantFinishReason,
   safeAssistantUsageTokens,
 } from './chat-openai-payload.js';
+import { anthropicResponseToOpenAiChat, openAiChatRequestToAnthropic } from './protocol-bridge.js';
 import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
@@ -957,7 +958,17 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     return true;
   }
 
-  const upstreamUrl = buildUpstreamUrl(endpoint.base_url, 'chat/completions');
+  const isAnthropicCompatible = endpoint.protocol === 'anthropic_compatible';
+  const upstreamProxyPath = isAnthropicCompatible ? 'messages' : 'chat/completions';
+  const upstreamUrl = buildUpstreamUrl(endpoint.base_url, upstreamProxyPath);
+  const sourceRequestBody = {
+    model: raw.model ?? endpoint.openai_model,
+    stream: true,
+    messages: upstreamMessages,
+  };
+  const upstreamRequestBody = isAnthropicCompatible
+    ? openAiChatRequestToAnthropic(sourceRequestBody)
+    : sourceRequestBody;
   let upstreamRes: Response;
   try {
     upstreamRes = await fetch(upstreamUrl, {
@@ -966,11 +977,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        model: raw.model ?? endpoint.openai_model,
-        stream: true,
-        messages: upstreamMessages,
-      }),
+      body: JSON.stringify(upstreamRequestBody),
       signal: streamAbortController.signal,
     });
   } catch (error) {
@@ -1236,7 +1243,13 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         }
       }
     } else {
-      const completionPayload = await upstreamRes.json().catch(() => ({}));
+      const completionPayloadRaw = await upstreamRes.json().catch(() => ({}));
+      const completionPayload = isAnthropicCompatible
+        ? anthropicResponseToOpenAiChat(
+          completionPayloadRaw as Record<string, unknown>,
+          sourceRequestBody as Record<string, unknown>,
+        )
+        : completionPayloadRaw;
       assistantText = safeAssistantContent(completionPayload);
       finishReason = safeAssistantFinishReason(completionPayload);
       usageTokens = safeAssistantUsageTokens(completionPayload);

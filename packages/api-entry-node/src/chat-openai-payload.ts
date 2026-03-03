@@ -15,13 +15,19 @@ export function parseOpenAIStreamChunk(
       }
       try {
         const payload = JSON.parse(data) as {
-          usage?: { total_tokens?: unknown };
+          type?: unknown;
+          delta?: { type?: unknown; text?: unknown; stop_reason?: unknown };
+          usage?: { output_tokens?: unknown; input_tokens?: unknown; total_tokens?: unknown };
           choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }>;
         };
         const usageTokensRaw = payload.usage?.total_tokens;
         const usageTokens = typeof usageTokensRaw === 'number' && Number.isFinite(usageTokensRaw)
           ? usageTokensRaw
-          : undefined;
+          : (
+            typeof payload.usage?.output_tokens === 'number' && Number.isFinite(payload.usage.output_tokens)
+              ? payload.usage.output_tokens
+              : undefined
+          );
         const delta = payload.choices?.[0]?.delta?.content;
         const finishReasonRaw = payload.choices?.[0]?.finish_reason;
         const finishReason = typeof finishReasonRaw === 'string' ? finishReasonRaw : null;
@@ -32,6 +38,28 @@ export function parseOpenAIStreamChunk(
           events.push({ delta: '', done: true, finishReason, usageTokens });
         } else if (usageTokens !== undefined) {
           events.push({ delta: '', done: false, finishReason: null, usageTokens });
+        }
+
+        // Anthropic SSE payload compatibility:
+        // - content_block_delta: emits text incrementally
+        // - message_delta/message_stop: marks stream completion
+        if (payload.type === 'content_block_delta' && payload.delta?.type === 'text_delta') {
+          if (typeof payload.delta.text === 'string' && payload.delta.text.length > 0) {
+            events.push({ delta: payload.delta.text, done: false, finishReason: null, usageTokens });
+          }
+        }
+        if (payload.type === 'message_delta') {
+          const stopReasonRaw = payload.delta?.stop_reason;
+          const mappedFinishReason =
+            typeof stopReasonRaw === 'string'
+              ? (stopReasonRaw === 'tool_use' ? 'tool_calls' : 'stop')
+              : null;
+          if (mappedFinishReason) {
+            events.push({ delta: '', done: true, finishReason: mappedFinishReason, usageTokens });
+          }
+        }
+        if (payload.type === 'message_stop') {
+          events.push({ delta: '', done: true, finishReason: 'stop', usageTokens });
         }
       } catch {
         // ignore invalid upstream chunks
@@ -47,7 +75,15 @@ export function safeAssistantContent(payload: unknown): string {
   }
   const choices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
   const content = choices?.[0]?.message?.content;
-  return typeof content === 'string' ? content : '';
+  if (typeof content === 'string') return content;
+  const anthropicContent = (payload as { content?: Array<{ type?: unknown; text?: unknown }> }).content;
+  if (Array.isArray(anthropicContent)) {
+    return anthropicContent
+      .map((item) => (item?.type === 'text' && typeof item.text === 'string' ? item.text : ''))
+      .filter(Boolean)
+      .join('');
+  }
+  return '';
 }
 
 export function safeAssistantFinishReason(payload: unknown): string | null {
@@ -56,7 +92,12 @@ export function safeAssistantFinishReason(payload: unknown): string | null {
   }
   const choices = (payload as { choices?: Array<{ finish_reason?: unknown }> }).choices;
   const finishReason = choices?.[0]?.finish_reason;
-  return typeof finishReason === 'string' ? finishReason : null;
+  if (typeof finishReason === 'string') return finishReason;
+  const anthropicStopReason = (payload as { stop_reason?: unknown }).stop_reason;
+  if (typeof anthropicStopReason === 'string') {
+    return anthropicStopReason === 'tool_use' ? 'tool_calls' : 'stop';
+  }
+  return null;
 }
 
 export function safeAssistantUsageTokens(payload: unknown): number | undefined {
@@ -65,5 +106,16 @@ export function safeAssistantUsageTokens(payload: unknown): number | undefined {
   }
   const usage = (payload as { usage?: { total_tokens?: unknown } }).usage;
   const totalTokens = usage?.total_tokens;
-  return typeof totalTokens === 'number' && Number.isFinite(totalTokens) ? totalTokens : undefined;
+  if (typeof totalTokens === 'number' && Number.isFinite(totalTokens)) return totalTokens;
+  const anthropicUsage = (payload as { usage?: { input_tokens?: unknown; output_tokens?: unknown } }).usage;
+  const inputTokens = typeof anthropicUsage?.input_tokens === 'number' && Number.isFinite(anthropicUsage.input_tokens)
+    ? anthropicUsage.input_tokens
+    : 0;
+  const outputTokens = typeof anthropicUsage?.output_tokens === 'number' && Number.isFinite(anthropicUsage.output_tokens)
+    ? anthropicUsage.output_tokens
+    : 0;
+  if (inputTokens > 0 || outputTokens > 0) {
+    return inputTokens + outputTokens;
+  }
+  return undefined;
 }

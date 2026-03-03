@@ -360,6 +360,47 @@ describe('CustomEndpointWizard', () => {
         expect(nextButton2).toBeEnabled();
       });
     });
+
+    it('shows explicit reason when Next is disabled on step 2', async () => {
+      renderComponent();
+      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
+      await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
+
+      const nextButtons = screen.getAllByRole('button', { name: 'Next' });
+      await user.click(nextButtons[nextButtons.length - 1]);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('wizard-model-id-input')).toBeVisible();
+      }, { timeout: 3000 });
+
+      expect(screen.getByTestId('wizard-next-disabled-reason')).toBeVisible();
+    });
+
+    it('allows cache write discount ratio greater than 1 on step 2', async () => {
+      renderComponent();
+      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
+      await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
+
+      const nextButtons = screen.getAllByRole('button', { name: 'Next' });
+      await user.click(nextButtons[nextButtons.length - 1]);
+
+      await waitFor(() => {
+        expect(screen.getByTestId('wizard-model-id-input')).toBeVisible();
+      }, { timeout: 3000 });
+
+      await user.type(screen.getByTestId('wizard-model-id-input'), 'glm-5');
+      const cacheWriteInput = screen.getByTestId('wizard-cache-write-discount-ratio-input');
+      await user.clear(cacheWriteInput);
+      await user.type(cacheWriteInput, '1.2');
+
+      const nextButtons2 = screen.getAllByRole('button', { name: 'Next' });
+      const nextButton2 = nextButtons2[nextButtons2.length - 1];
+      await waitFor(() => {
+        expect(nextButton2).toBeEnabled();
+      });
+    });
   });
 
   describe('Step 3: Validate and Create', () => {

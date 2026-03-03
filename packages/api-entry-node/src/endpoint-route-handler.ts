@@ -48,7 +48,7 @@ function hasValidRuntimeProfile(value: unknown): boolean {
   }
   if (
     typeof profile.cache_write_discount_ratio !== 'undefined'
-    && !ratio('cache_write_discount_ratio')
+    && !nonNegativeNumber('cache_write_discount_ratio')
   ) {
     return false;
   }

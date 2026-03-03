@@ -134,7 +134,7 @@ export class EndpointResourceService {
       ),
       cache_write_discount_ratio: source.cache_write_discount_ratio === undefined
         ? fallback?.cache_write_discount_ratio
-        : clampRatio(source.cache_write_discount_ratio, fallback?.cache_write_discount_ratio ?? 0),
+        : asNonNegative(source.cache_write_discount_ratio, fallback?.cache_write_discount_ratio ?? 0),
     };
   }
 

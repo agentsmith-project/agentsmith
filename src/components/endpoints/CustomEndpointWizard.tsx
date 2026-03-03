@@ -300,7 +300,7 @@ export function CustomEndpointWizard({
     if (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1) {
       errors.push({ field: 'cacheReadDiscountRatio', message: tErrors('invalid_number') });
     }
-    if (!Number.isFinite(cacheWrite) || cacheWrite < 0 || cacheWrite > 1) {
+    if (!Number.isFinite(cacheWrite) || cacheWrite < 0) {
       errors.push({ field: 'cacheWriteDiscountRatio', message: tErrors('invalid_number') });
     }
 
@@ -377,7 +377,30 @@ export function CustomEndpointWizard({
   };
 
   const getErrorForField = (field: string): string | undefined => {
-    return validationErrors.find((e) => e.field === field)?.message;
+    const submitted = validationErrors.find((e) => e.field === field)?.message;
+    if (submitted) return submitted;
+    if (step !== 2) return undefined;
+    const context = Number(maxContextTokens);
+    const output = Number(maxOutputTokens);
+    const inputPrice = Number(priceInputPer1m);
+    const outputPrice = Number(priceOutputPer1m);
+    const cacheRead = Number(cacheReadDiscountRatio);
+    const cacheWrite = Number(cacheWriteDiscountRatio);
+    if (field === 'modelId' && !modelId.trim()) return tErrors('model_required');
+    if (field === 'credentialRef' && !credentialRef) return tErrors('credential_required');
+    if (field === 'maxContextTokens' && (!Number.isFinite(context) || context <= 0)) return tErrors('invalid_number');
+    if (field === 'maxOutputTokens' && (!Number.isFinite(output) || output <= 0 || (Number.isFinite(context) && output > context))) {
+      return tErrors('invalid_number');
+    }
+    if (field === 'priceInputPer1m' && (!Number.isFinite(inputPrice) || inputPrice < 0)) return tErrors('invalid_number');
+    if (field === 'priceOutputPer1m' && (!Number.isFinite(outputPrice) || outputPrice < 0)) return tErrors('invalid_number');
+    if (field === 'cacheReadDiscountRatio' && (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1)) {
+      return tErrors('invalid_number');
+    }
+    if (field === 'cacheWriteDiscountRatio' && (!Number.isFinite(cacheWrite) || cacheWrite < 0)) {
+      return tErrors('invalid_number');
+    }
+    return undefined;
   };
 
   const getErrorCategoryMessage = (category: EndpointHealthErrorCategory): string => {
@@ -386,20 +409,57 @@ export function CustomEndpointWizard({
     return message !== key ? message : tErrors('unknown');
   };
 
+  const step1Blockers: ValidationError[] = [];
+  if (!name.trim()) {
+    step1Blockers.push({ field: 'name', message: tErrors('name_required') });
+  }
+  if (!baseUrl.trim() || !isValidHttpsUrl(baseUrl)) {
+    step1Blockers.push({ field: 'baseUrl', message: tErrors('https_required') });
+  }
+
+  const step2Blockers: ValidationError[] = [];
+  const context = Number(maxContextTokens);
+  const output = Number(maxOutputTokens);
+  const inputPrice = Number(priceInputPer1m);
+  const outputPrice = Number(priceOutputPer1m);
+  const cacheRead = Number(cacheReadDiscountRatio);
+  const cacheWrite = Number(cacheWriteDiscountRatio);
+  if (!modelId.trim()) {
+    step2Blockers.push({ field: 'modelId', message: tErrors('model_required') });
+  }
+  if (!credentialRef) {
+    step2Blockers.push({ field: 'credentialRef', message: tErrors('credential_required') });
+  }
+  if (!Number.isFinite(context) || context <= 0) {
+    step2Blockers.push({ field: 'maxContextTokens', message: tErrors('invalid_number') });
+  }
+  if (!Number.isFinite(output) || output <= 0 || (Number.isFinite(context) && output > context)) {
+    step2Blockers.push({ field: 'maxOutputTokens', message: tErrors('invalid_number') });
+  }
+  if (!Number.isFinite(inputPrice) || inputPrice < 0) {
+    step2Blockers.push({ field: 'priceInputPer1m', message: tErrors('invalid_number') });
+  }
+  if (!Number.isFinite(outputPrice) || outputPrice < 0) {
+    step2Blockers.push({ field: 'priceOutputPer1m', message: tErrors('invalid_number') });
+  }
+  if (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1) {
+    step2Blockers.push({ field: 'cacheReadDiscountRatio', message: tErrors('invalid_number') });
+  }
+  if (!Number.isFinite(cacheWrite) || cacheWrite < 0) {
+    step2Blockers.push({ field: 'cacheWriteDiscountRatio', message: tErrors('invalid_number') });
+  }
+
   const canProceed = step === 1
-    ? name.trim().length > 0 && baseUrl.trim().length > 0 && isValidHttpsUrl(baseUrl)
+    ? step1Blockers.length === 0
     : step === 2
-      ? modelId.trim().length > 0 && credentialRef.length > 0
-        && Number(maxContextTokens) > 0
-        && Number(maxOutputTokens) > 0
-        && Number(maxOutputTokens) <= Number(maxContextTokens)
-        && Number(priceInputPer1m) >= 0
-        && Number(priceOutputPer1m) >= 0
-        && Number(cacheReadDiscountRatio) >= 0
-        && Number(cacheReadDiscountRatio) <= 1
-        && Number(cacheWriteDiscountRatio) >= 0
-        && Number(cacheWriteDiscountRatio) <= 1
+      ? step2Blockers.length === 0
       : validationResult?.valid === true;
+
+  const nextDisabledReason = step === 1
+    ? step1Blockers[0]?.message
+    : step === 2
+      ? (credentials.length === 0 ? t('create_credential_first') : step2Blockers[0]?.message)
+      : undefined;
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -644,7 +704,11 @@ export function CustomEndpointWizard({
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs text-secondary">{t('runtime_profile.cache_write_discount_ratio')}</label>
-                    <Input value={cacheWriteDiscountRatio} onChange={(e) => setCacheWriteDiscountRatio(e.target.value)} />
+                    <Input
+                      value={cacheWriteDiscountRatio}
+                      onChange={(e) => setCacheWriteDiscountRatio(e.target.value)}
+                      data-testid="wizard-cache-write-discount-ratio-input"
+                    />
                     {getErrorForField('cacheWriteDiscountRatio') && <p className="text-xs text-error">{getErrorForField('cacheWriteDiscountRatio')}</p>}
                   </div>
                 </div>
@@ -822,7 +886,15 @@ export function CustomEndpointWizard({
         </div>
 
         {/* Footer Actions */}
-        <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
+        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-subtle px-6 py-4">
+          <div>
+            {step < 3 && !canProceed && nextDisabledReason ? (
+              <p className="text-xs text-error" data-testid="wizard-next-disabled-reason">
+                {nextDisabledReason}
+              </p>
+            ) : null}
+          </div>
+          <div className="flex items-center justify-end gap-2">
           <Button
             type="button"
             variant="ghost"
@@ -866,6 +938,7 @@ export function CustomEndpointWizard({
               )}
             </Button>
           )}
+          </div>
         </div>
       </SheetContent>
     </Sheet>

@@ -61,6 +61,35 @@ interface ValidationError {
   message: string;
 }
 
+function isValidHttpsUrl(value: string): boolean {
+  try {
+    const url = new URL(value.trim());
+    return url.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+function getProtocolI18nLabel(
+  t: (key: string) => string,
+  protocol: CustomEndpointProtocol,
+  fallback: string,
+): string {
+  const value = t(`protocol_options.${protocol}.name`);
+  return value === `protocol_options.${protocol}.name` ? fallback : value;
+}
+
+function getProtocolI18nDescription(
+  t: (key: string) => string,
+  protocol: CustomEndpointProtocol,
+  fallback?: string,
+): string | undefined {
+  const key = `protocol_options.${protocol}.description`;
+  const value = t(key);
+  if (value === key) return fallback;
+  return value;
+}
+
 export function CustomEndpointWizard({
   open,
   onOpenChange,
@@ -154,18 +183,8 @@ export function CustomEndpointWizard({
     // Validate URL format
     if (!baseUrl.trim()) {
       errors.push({ field: 'baseUrl', message: tErrors('invalid_url') });
-    } else if (!baseUrl.startsWith('https://')) {
+    } else if (!isValidHttpsUrl(baseUrl)) {
       errors.push({ field: 'baseUrl', message: tErrors('https_required') });
-    } else {
-      try {
-        const urlObj = new URL(baseUrl);
-        const pathname = urlObj.pathname;
-        if (!pathname.endsWith('/v1') && !pathname.endsWith('/')) {
-          errors.push({ field: 'baseUrl', message: tErrors('invalid_url') });
-        }
-      } catch {
-        errors.push({ field: 'baseUrl', message: tErrors('invalid_url') });
-      }
     }
 
     setValidationErrors(errors);
@@ -300,7 +319,7 @@ export function CustomEndpointWizard({
   };
 
   const canProceed = step === 1
-    ? name.trim().length > 0 && baseUrl.trim().length > 0 && baseUrl.startsWith('https://')
+    ? name.trim().length > 0 && baseUrl.trim().length > 0 && isValidHttpsUrl(baseUrl)
     : step === 2
       ? modelId.trim().length > 0 && credentialRef.length > 0
       : validationResult?.valid === true;
@@ -383,9 +402,13 @@ export function CustomEndpointWizard({
                       }`}
                       data-testid={`protocol-${option.protocol}`}
                     >
-                      <span className="font-medium">{option.display_name}</span>
-                      {option.description && (
-                        <span className="text-xs text-tertiary">{option.description}</span>
+                      <span className="font-medium">
+                        {getProtocolI18nLabel(t, option.protocol, option.display_name)}
+                      </span>
+                      {(getProtocolI18nDescription(t, option.protocol, option.description)) && (
+                        <span className="text-xs text-tertiary">
+                          {getProtocolI18nDescription(t, option.protocol, option.description)}
+                        </span>
                       )}
                     </button>
                   ))}
@@ -507,7 +530,13 @@ export function CustomEndpointWizard({
               <div className="rounded-sm bg-surface-low p-4 text-sm">
                 <p className="font-medium text-foreground">{t('summary_title')}</p>
                 <p className="text-tertiary">{t('summary_name')}: {name}</p>
-                <p className="text-tertiary">{t('summary_protocol')}: {CUSTOM_PROTOCOL_OPTIONS.find((o) => o.protocol === protocol)?.display_name}</p>
+                <p className="text-tertiary">
+                  {t('summary_protocol')}: {getProtocolI18nLabel(
+                    t,
+                    protocol,
+                    CUSTOM_PROTOCOL_OPTIONS.find((o) => o.protocol === protocol)?.display_name ?? protocol,
+                  )}
+                </p>
                 <p className="text-tertiary">{t('summary_base_url')}: {baseUrl}</p>
                 <p className="text-tertiary">{t('summary_capability')}: {t(`capabilities.${capability}`)}</p>
                 <p className="text-tertiary">{t('summary_model')}: {modelId || t('summary_model_id') || '(not set)'}</p>
@@ -528,7 +557,13 @@ export function CustomEndpointWizard({
                   </div>
                   <div className="flex justify-between">
                     <span className="text-tertiary">{t('summary_protocol')}:</span>
-                    <span className="font-medium text-foreground">{CUSTOM_PROTOCOL_OPTIONS.find((o) => o.protocol === protocol)?.display_name}</span>
+                    <span className="font-medium text-foreground">
+                      {getProtocolI18nLabel(
+                        t,
+                        protocol,
+                        CUSTOM_PROTOCOL_OPTIONS.find((o) => o.protocol === protocol)?.display_name ?? protocol,
+                      )}
+                    </span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-tertiary">{t('summary_base_url')}:</span>

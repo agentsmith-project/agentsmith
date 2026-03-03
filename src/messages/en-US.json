@@ -852,6 +852,8 @@
       "description": "Description",
       "name": "Name",
       "name_placeholder": "e.g. GPT-4o",
+      "name_hint": "Name maps to the model alias used in this project. It must be unique within the project.",
+      "name_conflict": "Endpoint name already exists in this project",
       "model_id": "Model ID",
       "model_id_placeholder": "e.g. gpt-4o, claude-3.5-sonnet",
       "provider": "Provider",
@@ -972,8 +974,18 @@
         "failed": "Connection failed. Please check your configuration.",
         "retry": "Retry"
       },
+      "protocol_options": {
+        "openai_compatible": {
+          "name": "OpenAI Compatible",
+          "description": "Compatible with OpenAI API format (e.g., Azure, DeepSeek, Together AI)"
+        },
+        "anthropic_compatible": {
+          "name": "Anthropic Compatible",
+          "description": "Compatible with Anthropic Messages API format"
+        }
+      },
       "errors": {
-        "invalid_url": "Invalid URL format. Must start with https:// and end with /v1 or /.",
+        "invalid_url": "Invalid URL format. Please enter a valid HTTPS URL.",
         "https_required": "HTTPS is required for secure connections.",
         "name_required": "Endpoint name is required.",
         "model_required": "Model ID is required.",

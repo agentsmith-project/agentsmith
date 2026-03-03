@@ -91,6 +91,19 @@ export function CreateEndpointDialog({
     enabled: open && !!workspaceId && !!projectId,
   });
 
+  const { data: existingEndpoints = [] } = useQuery({
+    queryKey: ['endpoints', workspaceId, projectId, 'name-check'],
+    queryFn: async () => {
+      const res = await endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 });
+      return res.items ?? [];
+    },
+    enabled: open && !!workspaceId && !!projectId,
+  });
+
+  const normalizedName = name.trim().toLowerCase();
+  const duplicateNameExists = normalizedName.length > 0
+    && existingEndpoints.some((endpoint) => endpoint.name.trim().toLowerCase() === normalizedName);
+
   const createMutation = useMutation({
     mutationFn: async (data: CreateEndpointRequest) => {
       return endpointAPI.create(workspaceId, projectId, data);
@@ -157,6 +170,10 @@ export function CreateEndpointDialog({
       }
       return;
     }
+    if (duplicateNameExists) {
+      toast.error(t('create_dialog.name_conflict'));
+      return;
+    }
     if (requiresManualBaseUrl && !baseUrl.trim()) {
       toast.error(t('create_dialog.base_url_required'));
       return;
@@ -209,6 +226,7 @@ export function CreateEndpointDialog({
 
   const canSubmit =
     name.trim().length > 0 &&
+    !duplicateNameExists &&
     openaiModel.trim().length > 0 &&
     credentialRef.length > 0 &&
     (!requiresManualBaseUrl || baseUrl.trim().length > 0) &&
@@ -228,8 +246,8 @@ export function CreateEndpointDialog({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-          <div className="space-y-2">
+          <div className="flex-1 flex flex-col gap-4 overflow-y-auto px-6 py-4">
+          <div className="space-y-2 order-4">
             <label htmlFor="endpoint-name" className="text-sm font-medium text-foreground">
               {t('create_dialog.name')} <span className="text-error">*</span>
             </label>
@@ -241,9 +259,13 @@ export function CreateEndpointDialog({
               disabled={createMutation.isPending}
               required
             />
+            <p className="text-xs text-tertiary">{t('create_dialog.name_hint')}</p>
+            {duplicateNameExists ? (
+              <p className="text-xs text-error">{t('create_dialog.name_conflict')}</p>
+            ) : null}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-5">
             <label htmlFor="endpoint-description" className="text-sm font-medium text-foreground">
               {t('create_dialog.description')}
             </label>
@@ -258,7 +280,7 @@ export function CreateEndpointDialog({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-6">
             <label htmlFor="endpoint-model" className="text-sm font-medium text-foreground">
               {t('create_dialog.model_id')} <span className="text-error">*</span>
             </label>
@@ -273,7 +295,7 @@ export function CreateEndpointDialog({
             />
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-2">
             <label className="text-sm font-medium text-foreground">
               {t('create_dialog.capability')} <span className="text-error">*</span>
             </label>
@@ -296,7 +318,7 @@ export function CreateEndpointDialog({
             </Select>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-1">
             <label className="text-sm font-medium text-foreground">
               {t('create_dialog.provider')} <span className="text-error">*</span>
             </label>
@@ -339,7 +361,7 @@ export function CreateEndpointDialog({
 
           {/* Show wizard button for custom provider */}
           {provider === 'custom' && (
-            <div className="space-y-2">
+            <div className="space-y-2 order-8">
               <div className="rounded-sm bg-accent/5 border border-accent/20 p-4">
                 <div className="flex items-start gap-3">
                   <Sparkles className="w-5 h-5 text-accent mt-0.5" />
@@ -365,7 +387,7 @@ export function CreateEndpointDialog({
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-7">
             <div className="flex items-center justify-between">
               <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
                 {t('create_dialog.base_url')}
@@ -401,7 +423,7 @@ export function CreateEndpointDialog({
           </div>
 
           {providerModels.length > 0 && (
-            <div className="space-y-2">
+            <div className="space-y-2 order-3">
               <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
               <Select
                 value={openaiModel}
@@ -422,7 +444,7 @@ export function CreateEndpointDialog({
             </div>
           )}
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-9">
             <label className="text-sm font-medium text-foreground">
               {t('create_dialog.credential')} <span className="text-error">*</span>
             </label>
@@ -456,7 +478,7 @@ export function CreateEndpointDialog({
             )}
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 order-10">
             <button
               type="button"
               onClick={() => setLimitsExpanded((v) => !v)}

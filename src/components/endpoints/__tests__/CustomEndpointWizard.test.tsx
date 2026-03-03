@@ -250,6 +250,38 @@ describe('CustomEndpointWizard', () => {
         const nextButton = nextButtons[nextButtons.length - 1];
         expect(nextButton).toBeDisabled();
       });
+
+      it('should allow valid https base URL without /v1 suffix (GLM coding path)', async () => {
+        renderComponent();
+
+        await user.type(screen.getByTestId('wizard-name-input'), 'GLM Coding Endpoint');
+        await user.type(
+          screen.getByTestId('wizard-base-url-input'),
+          'https://open.bigmodel.cn/api/coding/paas/v4',
+        );
+
+        const nextButtons = screen.getAllByRole('button', { name: 'Next' });
+        const nextButton = nextButtons[nextButtons.length - 1];
+        await waitFor(() => {
+          expect(nextButton).toBeEnabled();
+        });
+      });
+
+      it('should allow valid https base URL without trailing slash (Anthropic path)', async () => {
+        renderComponent();
+
+        await user.type(screen.getByTestId('wizard-name-input'), 'GLM Anthropic Endpoint');
+        await user.type(
+          screen.getByTestId('wizard-base-url-input'),
+          'https://open.bigmodel.cn/api/anthropic',
+        );
+
+        const nextButtons = screen.getAllByRole('button', { name: 'Next' });
+        const nextButton = nextButtons[nextButtons.length - 1];
+        await waitFor(() => {
+          expect(nextButton).toBeEnabled();
+        });
+      });
     });
   });
 

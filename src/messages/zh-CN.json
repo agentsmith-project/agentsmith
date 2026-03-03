@@ -854,6 +854,8 @@
       "description": "描述",
       "name": "名称",
       "name_placeholder": "例如 GPT-4o",
+      "name_hint": "名称将映射为本项目内的模型别名，且必须在项目内唯一。",
+      "name_conflict": "此项目中已存在同名端点",
       "model_id": "模型 ID",
       "provider": "提供商",
       "provider_openai": "OpenAI",
@@ -974,8 +976,18 @@
         "failed": "连接失败，请检查配置。",
         "retry": "重试"
       },
+      "protocol_options": {
+        "openai_compatible": {
+          "name": "OpenAI 兼容",
+          "description": "兼容 OpenAI API 格式（例如 Azure、DeepSeek、Together AI）"
+        },
+        "anthropic_compatible": {
+          "name": "Anthropic 兼容",
+          "description": "兼容 Anthropic Messages API 格式"
+        }
+      },
       "errors": {
-        "invalid_url": "URL 格式无效。必须以 https:// 开头并以 /v1 或 / 结尾。",
+        "invalid_url": "URL 格式无效。请输入有效的 HTTPS URL。",
         "https_required": "需要 HTTPS 协议以确保安全连接。",
         "name_required": "端点名称不能为空。",
         "model_required": "模型 ID 不能为空。",

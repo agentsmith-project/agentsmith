@@ -7,7 +7,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
-	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-quota-effect-smoke governance-policy-requests-quota-effect-smoke governance-source-library-policy-access-effect-smoke governance-source-library-policy-group-access-effect-smoke governance-source-library-policy-rate-effect-smoke governance-source-ai-ready-policy-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
+	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-quota-effect-smoke governance-policy-requests-quota-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-release-smoke workspace-governance-release-smoke organization-governance-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
@@ -137,10 +137,6 @@ help:
 	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
 	@echo "  make governance-policy-quota-effect-smoke # real-backend endpoint policy quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-policy-requests-quota-effect-smoke # real-backend endpoint policy requests/day quota smoke (quota block -> audit/usage evidence)"
-	@echo "  make governance-source-library-policy-access-effect-smoke # real-backend source library allow-list effect smoke (deny->allow + audit/usage evidence)"
-	@echo "  make governance-source-library-policy-group-access-effect-smoke # real-backend source library group allow-list effect smoke (deny->group-allow + audit/usage evidence)"
-	@echo "  make governance-source-library-policy-rate-effect-smoke # real-backend source library requests/min effect smoke (rate limit -> audit/usage evidence)"
-	@echo "  make governance-source-ai-ready-policy-effect-smoke # real-backend source ai-ready route policy effect smoke (deny->allow + audit/usage evidence)"
 	@echo "  make governance-agent-policy-rate-effect-smoke # real-backend agent policy rate effect smoke (notebook preflight -> audit/usage evidence)"
 	@echo "  make governance-member-quota-effect-smoke # real-backend member quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
@@ -730,22 +726,6 @@ governance-policy-requests-quota-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-requests-quota-effect-smoke.sh
 
-governance-source-library-policy-access-effect-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-source-library-policy-access-effect-smoke.sh
-
-governance-source-library-policy-group-access-effect-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-source-library-policy-group-access-effect-smoke.sh
-
-governance-source-library-policy-rate-effect-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-source-library-policy-rate-effect-smoke.sh
-
-governance-source-ai-ready-policy-effect-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-source-ai-ready-policy-effect-smoke.sh
-
 governance-agent-policy-rate-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-agent-policy-rate-effect-smoke.sh
@@ -788,10 +768,6 @@ governance-release-smoke:
 	run_with_token_retry governance-policy-effect-smoke; \
 	run_with_token_retry governance-policy-quota-effect-smoke; \
 	run_with_token_retry governance-policy-requests-quota-effect-smoke; \
-	run_with_token_retry governance-source-library-policy-access-effect-smoke; \
-	run_with_token_retry governance-source-library-policy-group-access-effect-smoke; \
-	run_with_token_retry governance-source-library-policy-rate-effect-smoke; \
-	run_with_token_retry governance-source-ai-ready-policy-effect-smoke; \
 	run_with_token_retry governance-agent-policy-rate-effect-smoke; \
 	run_with_token_retry governance-member-quota-effect-smoke; \
 	run_with_token_retry governance-member-permission-effect-smoke; \

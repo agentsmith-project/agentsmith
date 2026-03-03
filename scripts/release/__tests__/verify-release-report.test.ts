@@ -542,7 +542,7 @@ describe('verify-release-report: TDD Suite', () => {
           page_smoke: true,
           interaction_smoke: true,
           endpoint_policy_effects: true,
-          source_library_policy_effects: true,
+          agent_policy_effects: true,
           member_permission_effect: true,
           member_lifecycle_effect: true,
           sse_ticket_hardening: false,

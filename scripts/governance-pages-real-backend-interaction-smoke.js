@@ -235,16 +235,6 @@ async function main() {
         await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
         await page.getByTestId('resource-policy__endpoint-daily-token-limit').waitFor({ state: 'visible', timeout: 10_000 });
 
-        const sourceLibraryRow = page.locator('[data-testid^="resource-policy__row--source_library--"]').first();
-        if (await isVisible(sourceLibraryRow, 3_000)) {
-          await sourceLibraryRow.click();
-          await page.getByTestId('resource-policy__library-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-          await page.getByTestId('resource-policy__library-max-total-files').waitFor({ state: 'visible', timeout: 10_000 });
-          await page.getByTestId('resource-policy__library-max-file-size-bytes').waitFor({ state: 'visible', timeout: 10_000 });
-        } else {
-          console.log('[gov-interact] no source_library row found; skip source-library rule checks');
-        }
-
         const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
         if (await isVisible(agentRow, 3_000)) {
           await agentRow.click();

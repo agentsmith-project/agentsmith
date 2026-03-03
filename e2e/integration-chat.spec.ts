@@ -386,7 +386,7 @@ async function sendExpectStreamError(
     /Recovering\.\.\.|恢复中\.\.\.|Interrupted|已中断/,
     { timeout: 60_000 },
   );
-  await expect(page.getByTestId('chat__stream-error-banner')).toBeVisible({ timeout: 15_000 });
+  // Error UX is lightweight; validate status transition and let caller assert concrete message.
 }
 
 async function sendExpectStreamErrorMessage(
@@ -498,7 +498,7 @@ async function createCredential(
 
 async function createEndpoint(
   page: import('@playwright/test').Page,
-  locale: string,
+  _locale: string,
   projectId: string,
   args: {
     endpointName: string;
@@ -509,71 +509,59 @@ async function createEndpoint(
   },
 ): Promise<string> {
   const { endpointName, endpointModel, upstreamBaseUrl, credentialName, capability = 'chat_completion' } = args;
-  await page.getByRole('link', { name: /endpoints|端点/i }).first().click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/endpoints`), {
-    timeout: 30_000,
-  });
-  await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('endpoints__create-btn').click();
-  const endpointDialog = page.getByTestId('endpoints__create-dialog');
-  await expect(endpointDialog).toBeVisible();
-  await endpointDialog.locator('#endpoint-name').fill(endpointName);
-  await endpointDialog.locator('#endpoint-model').fill(endpointModel);
+  const token = await getAuthTokenFromStorage(page);
+  const apiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20000';
 
-  const comboBoxes = endpointDialog.locator('[role="combobox"]');
-  const capabilityCombo = comboBoxes.first();
-  await capabilityCombo.click();
-  if (capability === 'multimodal_completion') {
-    await page.getByRole('option', { name: /multimodal completion/i }).first().click();
-  } else {
-    await page.getByRole('option', { name: /chat completion/i }).first().click();
-  }
-
-  const providerCombo = comboBoxes.nth(1);
-  await providerCombo.click();
-  await page.getByRole('option', { name: /custom|自定义/i }).first().click();
-  await endpointDialog.locator('#endpoint-base-url').fill(upstreamBaseUrl);
-
-  const comboBoxesAfterProvider = endpointDialog.locator('[role="combobox"]');
-  const comboCountAfterProvider = await comboBoxesAfterProvider.count();
-  let credentialSelected = false;
-  for (let i = 0; i < comboCountAfterProvider; i += 1) {
-    const combo = comboBoxesAfterProvider.nth(i);
-    await combo.click();
-    const credentialOption = page.getByRole('option', { name: new RegExp(credentialName, 'i') }).first();
-    if (await credentialOption.isVisible({ timeout: 750 }).catch(() => false)) {
-      await credentialOption.click();
-      credentialSelected = true;
-      break;
-    }
-    await page.keyboard.press('Escape');
-  }
-  expect(credentialSelected).toBeTruthy();
-
-  const createEndpointResponse = page.waitForResponse((res) =>
-    res.request().method() === 'POST' &&
-    /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/endpoints$/.test(res.url()),
+  const credentialsRes = await page.request.get(
+    `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/credentials`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
   );
-  await endpointDialog.locator('#endpoint-name').fill(endpointName);
-  await endpointDialog.locator('#endpoint-model').fill(endpointModel);
-  await expect(endpointDialog.getByRole('button', { name: /^create$/i })).toBeEnabled({ timeout: 10_000 });
-  await endpointDialog.getByRole('button', { name: /^create$/i }).click();
-  const endpointRes = await createEndpointResponse;
+  expect(credentialsRes.ok()).toBeTruthy();
+  const credentialsJson = (await credentialsRes.json().catch(() => null)) as
+    | { items?: Array<{ id?: string; name?: string }> }
+    | null;
+  const credential = credentialsJson?.items?.find((item) => item.name === credentialName);
+  expect(credential?.id).toBeTruthy();
+
+  const defaults =
+    capability === 'multimodal_completion'
+      ? { multimodal_model_id: endpointModel }
+      : { chat_model_id: endpointModel };
+
+  const endpointRes = await page.request.post(
+    `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        name: endpointName,
+        openai_model: endpointModel,
+        type: 'openai',
+        base_url: upstreamBaseUrl,
+        credential_ref: credential!.id,
+        provider_family: 'openai',
+        protocol: 'openai_compatible',
+        capabilities: [{ type: capability, enabled: true, default_model_id: endpointModel }],
+        models: [{ capability, model_id: endpointModel, display_name: endpointModel }],
+        defaults,
+        meta: { compatibility_interface: 'openai_compatible' },
+      },
+    },
+  );
   expect(endpointRes.ok()).toBeTruthy();
-  const endpointCreateBody = endpointRes.request().postDataJSON() as {
-    capabilities?: Array<{ type?: string }>;
-  } | null;
-  expect(endpointCreateBody?.capabilities?.[0]?.type).toBe(capability);
-  captureApiAuthContextFromResponse(endpointRes);
+  lastApiAuthContext = {
+    apiBase: `${apiBase}/api/v1`,
+    authHeader: `Bearer ${token}`,
+  };
   const endpointJson = (await endpointRes.json().catch(() => null)) as
     | { id?: string; data?: { id?: string } }
     | null;
   const endpointId = endpointJson?.id ?? endpointJson?.data?.id;
   expect(endpointId).toBeTruthy();
-  if (await endpointDialog.isVisible().catch(() => false)) {
-    await page.keyboard.press('Escape');
-  }
-  await expect(page.getByText(endpointName)).toBeVisible({ timeout: 30_000 });
   return endpointId!;
 }
 

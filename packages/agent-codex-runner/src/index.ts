@@ -26,7 +26,6 @@ type ServerStartPayload = {
     run_id?: string;
     username?: string;
     session_id?: string;
-    endpoint_proxy_base?: string;
     api_base?: string;
     user_bearer_token?: string;
     wire_api?: 'chat' | 'responses';
@@ -445,8 +444,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       taskInputsCount: taskInputs.length,
     })}User request:\n${userPrompt}`
     : userPrompt;
-  const endpointProxyBase = normalizeProxyBase(runtimeContext.endpoint_proxy_base)
-    || connectedResourceProxyBase;
+  const endpointProxyBase = connectedResourceProxyBase;
   if (!endpointProxyBase) {
     throw new Error('resource_proxy_base_missing');
   }
@@ -474,7 +472,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model,
     wire_api: wireApi,
     endpoint_proxy_base: endpointProxyBase,
-    proxy_source: normalizeProxyBase(runtimeContext.endpoint_proxy_base) ? 'runtime_context' : 'server_hello',
+    proxy_source: 'server_hello',
     has_user_bearer_token: Boolean(runtimeContext.user_bearer_token && runtimeContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,

@@ -27,10 +27,11 @@ export function DataTable<TData>({
 
   return (
     <div
-      className="rounded-md overflow-hidden border border-border bg-surface"
+      className="rounded-md border border-border bg-surface"
       data-testid={testId}
     >
-      <table className="w-full border-collapse">
+      <div className="overflow-x-auto overflow-y-hidden">
+      <table className="min-w-full border-collapse">
         <thead className="bg-transparent border-b border-subtle">
           {table.getHeaderGroups().map(headerGroup => (
             <tr key={headerGroup.id}>
@@ -82,6 +83,7 @@ export function DataTable<TData>({
           })}
         </tbody>
       </table>
+      </div>
     </div>
   );
 }

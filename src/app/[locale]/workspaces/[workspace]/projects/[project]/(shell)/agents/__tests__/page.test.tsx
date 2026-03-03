@@ -218,4 +218,42 @@ describe('AgentsPage', () => {
 
     expect(screen.getByText('Primary agent')).toBeInTheDocument();
   });
+
+  it('renders owner/admin fallback ids when name fields are missing', async () => {
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
+    mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
+    mockList.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'agent_2',
+          name: 'Agent Two',
+          description: '',
+          mode: 'external',
+          status: 'enabled',
+          interaction_mode: 'both',
+          owner_id: 'user_owner_1',
+          admin_id: 'user_admin_1',
+        },
+      ],
+    });
+
+    render(
+      <AgentsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Agent Two')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('user_owner_1')).toBeInTheDocument();
+    expect(screen.getByText(/admin: user_admin_1/i)).toBeInTheDocument();
+  });
 });

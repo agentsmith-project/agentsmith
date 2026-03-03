@@ -128,11 +128,13 @@ function createAgentColumns(
     header: 'Owner',
     cell: (info) => {
       const a = info.row.original;
+      const ownerLabel = a.owner_name ?? a.owner_id ?? '—';
+      const adminLabel = a.admin_name ?? a.admin_id;
       return (
         <div className="text-xs text-tertiary space-y-0.5">
-          {a.owner_name ? <div>{a.owner_name}</div> : <span>—</span>}
-          {a.admin_name && a.admin_name !== a.owner_name && (
-            <div className="text-tertiary/80">{t('admin')}: {a.admin_name}</div>
+          <div>{ownerLabel}</div>
+          {adminLabel && adminLabel !== ownerLabel && (
+            <div className="text-tertiary/80">{t('admin')}: {adminLabel}</div>
           )}
         </div>
       );

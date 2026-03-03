@@ -2,12 +2,22 @@
 
 import { useMemo } from 'react';
 import { createColumnHelper } from '@tanstack/react-table';
-import { Globe, Pencil, Power, PowerOff, Server, Trash2 } from 'lucide-react';
+import { Pencil, Power, PowerOff, Trash2, Activity, MoreHorizontal } from 'lucide-react';
 
-import type { Endpoint } from '@/lib/api/types';
+import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
 
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
+import { EndpointStatusBadge } from '@/components/endpoints/EndpointStatusBadge';
+import { ProviderLogo } from '@/components/endpoints/ProviderLogo';
+import { Badge } from '@/components/ui/badge';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { categorizeEndpointError } from '@/lib/endpoints/error-categorizer';
 
 const columnHelper = createColumnHelper<Endpoint>();
 
@@ -28,6 +38,82 @@ interface UseEndpointsTableColumnsInput {
   updateEndpointMutation: UpdateEndpointMutationState;
   onEdit: (endpoint: Endpoint) => void;
   onDeleteRequest: (endpoint: Endpoint) => void;
+  onTestConnection?: (endpoint: Endpoint) => void;
+}
+
+/**
+ * Format price for display
+ */
+function formatPrice(price?: number, currency?: string): string {
+  if (price === undefined) return '-';
+  const symbol = currency === 'CNY' ? '¥' : currency === 'EUR' ? '€' : '$';
+  return `${symbol}${price}/1M`;
+}
+
+/**
+ * Get primary capability from endpoint
+ */
+function getPrimaryCapability(endpoint: Endpoint): EndpointCapabilityType | null {
+  const capabilities = endpoint.capabilities;
+  if (!capabilities || capabilities.length === 0) return null;
+
+  // Priority order for display
+  const priority: EndpointCapabilityType[] = [
+    'chat_completion',
+    'multimodal_completion',
+    'embedding',
+    'rerank',
+    'image_generation',
+    'video_generation',
+  ];
+
+  for (const type of priority) {
+    const found = capabilities.find((c) => c.type === type && c.enabled);
+    if (found) return type;
+  }
+
+  // Return first enabled capability
+  const firstEnabled = capabilities.find((c) => c.enabled);
+  return firstEnabled?.type ?? null;
+}
+
+function getCapabilityLabel(
+  t: (key: string) => string,
+  capability: EndpointCapabilityType,
+): string {
+  switch (capability) {
+    case 'chat_completion':
+      return t('create_dialog.capability_chat_completion');
+    case 'multimodal_completion':
+      return t('create_dialog.capability_multimodal_completion');
+    case 'embedding':
+      return t('create_dialog.capability_embedding');
+    case 'rerank':
+      return t('create_dialog.capability_rerank');
+    case 'image_generation':
+      return t('create_dialog.capability_image_generation');
+    case 'video_generation':
+      return t('create_dialog.capability_video_generation');
+    default:
+      return capability;
+  }
+}
+
+/**
+ * Map health status from API to component status
+ */
+function mapHealthStatus(healthStatus?: string): 'healthy' | 'degraded' | 'unavailable' | 'unknown' {
+  if (!healthStatus) return 'unknown';
+  switch (healthStatus) {
+    case 'healthy':
+      return 'healthy';
+    case 'degraded':
+      return 'degraded';
+    case 'failed':
+      return 'unavailable';
+    default:
+      return 'unknown';
+  }
 }
 
 export function useEndpointsTableColumns({
@@ -37,126 +123,280 @@ export function useEndpointsTableColumns({
   updateEndpointMutation,
   onEdit,
   onDeleteRequest,
+  onTestConnection,
 }: UseEndpointsTableColumnsInput) {
   return useMemo(
     () => [
+      // Provider column with logo
+      columnHelper.accessor('provider_family', {
+        header: t('table.provider') || 'Provider',
+        cell: (info) => {
+          const provider = info.getValue();
+          return (
+            <div className="flex items-center gap-2">
+              <ProviderLogo provider={provider || 'custom'} size="sm" />
+              <span className="text-sm capitalize">{provider || 'custom'}</span>
+            </div>
+          );
+        },
+      }),
+
+      // Name column with description
       columnHelper.accessor('name', {
-        header: t('table.name'),
+        header: t('table.name') || 'Name',
         cell: (info) => (
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
-              <Server className="w-4 h-4 text-icon-default" />
-            </div>
-            <div className="flex flex-col">
-              <span className="text-foreground font-medium">{info.getValue()}</span>
-              {info.row.original.description && (
-                <span className="text-xs text-tertiary line-clamp-1">{info.row.original.description}</span>
-              )}
-            </div>
+          <div className="flex flex-col">
+            <span className="text-sm font-medium text-foreground">{info.getValue()}</span>
+            {info.row.original.description && (
+              <span className="text-xs text-tertiary line-clamp-1 max-w-[200px]">
+                {info.row.original.description}
+              </span>
+            )}
           </div>
         ),
       }),
-      columnHelper.accessor('base_url', {
-        header: t('table.url'),
-        cell: (info) => (
-          <div className="flex items-center gap-2">
-            <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
-            <span className="text-tertiary text-sm font-mono truncate max-w-[200px]">{info.getValue()}</span>
-          </div>
-        ),
-      }),
-      columnHelper.accessor('type', {
-        header: t('table.type'),
-        cell: (info) => <span className="text-tertiary text-sm capitalize">{info.getValue()}</span>,
-      }),
+
+      // Model column
       columnHelper.accessor('openai_model', {
-        header: t('table.model'),
-        cell: (info) => <span className="text-tertiary text-sm font-mono">{info.getValue()}</span>,
-      }),
-      columnHelper.accessor((row) => row.limits, {
-        id: 'limits',
-        header: t('table.rate_limit'),
+        header: t('table.model') || 'Model',
         cell: (info) => (
-          <div className="text-xs text-tertiary leading-5">
-            <p>
-              RPM: <span className="text-primary">{info.getValue()?.max_requests_per_minute ?? '-'}</span>
-            </p>
-            <p>
-              Tokens/day: <span className="text-primary">{info.getValue()?.max_tokens_per_day ?? '-'}</span>
-            </p>
-          </div>
+          <span className="text-sm text-tertiary font-mono">{info.getValue()}</span>
         ),
       }),
+
+      // Capability column
+      columnHelper.display({
+        id: 'capability',
+        header: t('table.capability') || 'Capability',
+        cell: (info) => {
+          const capability = getPrimaryCapability(info.row.original);
+          if (!capability) return <span className="text-xs text-tertiary">-</span>;
+
+          const colors: Partial<Record<EndpointCapabilityType, string>> = {
+            chat_completion: 'bg-accent/15 text-accent border-accent/30',
+            multimodal_completion: 'bg-purple-500/15 text-purple-500 border-purple-500/30',
+            embedding: 'bg-blue-500/15 text-blue-500 border-blue-500/30',
+            rerank: 'bg-orange-500/15 text-orange-500 border-orange-500/30',
+            image_generation: 'bg-indigo-500/15 text-indigo-500 border-indigo-500/30',
+            video_generation: 'bg-pink-500/15 text-pink-500 border-pink-500/30',
+          };
+
+          return (
+            <Badge variant="outline" className={colors[capability] || 'bg-tertiary/15 text-tertiary border-tertiary/30'}>
+              {getCapabilityLabel(t, capability)}
+            </Badge>
+          );
+        },
+      }),
+
+      // Health status column
+      columnHelper.display({
+        id: 'health',
+        header: t('table.health') || 'Health',
+        cell: (info) => {
+          const health = info.row.original.health;
+          const status = mapHealthStatus(health?.status);
+          const lastCheck = health?.last_checked_at;
+
+          // Map error to error category
+          let errorCategory: 'auth' | 'network' | 'upstream' | 'timeout' | 'rate_limit' | 'unknown' | undefined;
+          if (health?.last_error) {
+            errorCategory = categorizeEndpointError({ message: health.last_error });
+          }
+
+          return (
+            <EndpointStatusBadge
+              status={status}
+              lastCheck={lastCheck}
+              errorCategory={errorCategory}
+              size="sm"
+            />
+          );
+        },
+      }),
+
+      // Pricing column
+      columnHelper.display({
+        id: 'pricing',
+        header: t('table.pricing') || 'Pricing',
+        cell: (info) => {
+          // Get pricing from first model binding
+          const firstModel = info.row.original.models?.[0];
+          const pricing = firstModel?.pricing;
+
+          if (!pricing) return <span className="text-xs text-tertiary">-</span>;
+
+          return (
+            <div className="text-xs text-tertiary">
+              <div>{t('table.pricing_input')}: {formatPrice(pricing.input_per_million, pricing.currency)}</div>
+              <div>{t('table.pricing_output')}: {formatPrice(pricing.output_per_million, pricing.currency)}</div>
+            </div>
+          );
+        },
+      }),
+
+      // Admin status column (for management)
       columnHelper.accessor('status', {
-        header: t('table.status'),
+        header: t('table.admin_status') || 'Status',
         cell: (info) => <StatusBadge status={info.getValue() === 'active' ? 'active' : 'paused'} />,
       }),
+
+      // Actions column
       columnHelper.display({
         id: 'actions',
         header: '',
         cell: (info) => {
+          const endpoint = info.row.original;
+          const isActive = endpoint.status === 'active';
+
           if (!canManageEndpoints) {
             return <span className="text-tertiary text-sm">-</span>;
           }
 
           return (
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onEdit(info.row.original)}
-                className="h-8 px-2 text-icon-default hover:bg-hover text-xs"
-                aria-label={t('action_edit')}
-                title={t('action_edit')}
-                data-testid={`endpoints__action-edit--${info.row.original.id}`}
-              >
-                <Pencil className="w-4 h-4" />
-                <span className="hidden lg:inline">{t('action_edit')}</span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() =>
-                  updateEndpointMutation.mutate({
-                    endpointId: info.row.original.id,
-                    data: { status: info.row.original.status === 'active' ? 'disabled' : 'active' },
-                  })
-                }
-                disabled={updateEndpointMutation.isPending}
-                className="h-8 px-2 text-icon-default hover:bg-hover text-xs"
-                aria-label={info.row.original.status === 'active' ? t('action_disable') : t('action_enable')}
-                title={info.row.original.status === 'active' ? t('action_disable') : t('action_enable')}
-              >
-                {info.row.original.status === 'active' ? (
-                  <PowerOff className="w-4 h-4 text-warning" />
-                ) : (
-                  <Power className="w-4 h-4 text-success" />
+            <div className="flex items-center justify-end gap-1">
+              {/* Quick action buttons - visible on larger screens */}
+              <div className="hidden md:flex items-center gap-1">
+                {/* Test connection button */}
+                {onTestConnection && (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onTestConnection(endpoint)}
+                    className="h-8 w-8 p-0 text-icon-default hover:bg-hover"
+                    aria-label={t('action_test_connection')}
+                    title={t('action_test_connection')}
+                    data-testid={`endpoints__action-test--${endpoint.id}`}
+                  >
+                    <Activity className="w-4 h-4" />
+                  </Button>
                 )}
-                <span className="hidden lg:inline">
-                  {info.row.original.status === 'active' ? t('action_disable') : t('action_enable')}
-                </span>
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => onDeleteRequest(info.row.original)}
-                disabled={deleteEndpointMutation.isPending}
-                className="h-8 px-2 text-error hover:bg-hover text-xs"
-                aria-label={t('action_delete')}
-                title={t('action_delete')}
-                data-testid={`endpoints__action-delete--${info.row.original.id}`}
-              >
-                <Trash2 className="w-4 h-4" />
-                <span className="hidden lg:inline">{t('action_delete')}</span>
-              </Button>
+
+                {/* Edit button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onEdit(endpoint)}
+                  className="h-8 w-8 p-0 text-icon-default hover:bg-hover"
+                  aria-label={t('action_edit')}
+                  title={t('action_edit')}
+                  data-testid={`endpoints__action-edit--${endpoint.id}`}
+                >
+                  <Pencil className="w-4 h-4" />
+                </Button>
+
+                {/* Enable/Disable button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() =>
+                    updateEndpointMutation.mutate({
+                      endpointId: endpoint.id,
+                      data: { status: isActive ? 'disabled' : 'active' },
+                    })
+                  }
+                  disabled={updateEndpointMutation.isPending}
+                  className="h-8 w-8 p-0 hover:bg-hover"
+                  aria-label={isActive ? t('action_disable') : t('action_enable')}
+                  title={isActive ? t('action_disable') : t('action_enable')}
+                  data-testid={`endpoints__action-toggle--${endpoint.id}`}
+                >
+                  {isActive ? (
+                    <PowerOff className="w-4 h-4 text-warning" />
+                  ) : (
+                    <Power className="w-4 h-4 text-success" />
+                  )}
+                </Button>
+
+                {/* Delete button */}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onDeleteRequest(endpoint)}
+                  disabled={deleteEndpointMutation.isPending}
+                  className="h-8 w-8 p-0 text-error hover:bg-error/10"
+                  aria-label={t('action_delete')}
+                  title={t('action_delete')}
+                  data-testid={`endpoints__action-delete--${endpoint.id}`}
+                >
+                  <Trash2 className="w-4 h-4" />
+                </Button>
+              </div>
+
+              {/* Mobile dropdown menu - visible on smaller screens */}
+              <div className="md:hidden">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-8 w-8 p-0"
+                      aria-label={t('action_menu')}
+                      data-testid={`endpoints__action-menu--${endpoint.id}`}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {onTestConnection && (
+                      <DropdownMenuItem
+                        onClick={() => onTestConnection(endpoint)}
+                        data-testid={`endpoints__action-test-mobile--${endpoint.id}`}
+                      >
+                        <Activity className="w-4 h-4 mr-2" />
+                        {t('action_test_connection')}
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem
+                      onClick={() => onEdit(endpoint)}
+                      data-testid={`endpoints__action-edit-mobile--${endpoint.id}`}
+                    >
+                      <Pencil className="w-4 h-4 mr-2" />
+                      {t('action_edit')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() =>
+                        updateEndpointMutation.mutate({
+                          endpointId: endpoint.id,
+                          data: { status: isActive ? 'disabled' : 'active' },
+                        })
+                      }
+                      disabled={updateEndpointMutation.isPending}
+                      data-testid={`endpoints__action-toggle-mobile--${endpoint.id}`}
+                    >
+                      {isActive ? (
+                        <>
+                          <PowerOff className="w-4 h-4 mr-2 text-warning" />
+                          {t('action_disable')}
+                        </>
+                      ) : (
+                        <>
+                          <Power className="w-4 h-4 mr-2 text-success" />
+                          {t('action_enable')}
+                        </>
+                      )}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onClick={() => onDeleteRequest(endpoint)}
+                      disabled={deleteEndpointMutation.isPending}
+                      className="text-error focus:text-error"
+                      data-testid={`endpoints__action-delete-mobile--${endpoint.id}`}
+                    >
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      {t('action_delete')}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
             </div>
           );
         },
       }),
     ],
-    [canManageEndpoints, deleteEndpointMutation, onDeleteRequest, onEdit, t, updateEndpointMutation],
+    [canManageEndpoints, deleteEndpointMutation, onDeleteRequest, onEdit, onTestConnection, t, updateEndpointMutation],
   );
 }

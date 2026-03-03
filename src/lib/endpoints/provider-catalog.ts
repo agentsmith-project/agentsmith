@@ -1,6 +1,6 @@
 import runtimeCatalog from './models-catalog.runtime.json';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
-import type { EndpointCapabilityType, EndpointProviderFamily } from '@/lib/api/types';
+import type { EndpointCapabilityType, EndpointProviderFamily, CustomEndpointProtocol } from '@/lib/api/types';
 
 export type ProviderOption =
   | 'openai'
@@ -27,6 +27,22 @@ export interface ProviderCatalogOption {
   protocol: CreateEndpointRequest['protocol'];
   default_base_url: string;
   models: ProviderModelOption[];
+}
+
+/**
+ * Custom endpoint protocol options for user selection.
+ * When user selects "Custom" provider, they must choose a protocol type.
+ */
+export type CustomProtocolOption = 'openai_compatible' | 'anthropic_compatible';
+
+/**
+ * Configuration for custom endpoint protocols.
+ */
+export interface CustomProtocolConfig {
+  protocol: CustomEndpointProtocol;
+  display_name: string;
+  default_base_url: string;
+  description?: string;
 }
 
 const PROVIDER_CONFIG: Record<
@@ -91,16 +107,49 @@ export const ENDPOINT_PROVIDER_OPTIONS: ProviderCatalogOption[] = DEFAULT_PROVID
 
 export const CUSTOM_PROVIDER_OPTION: ProviderCatalogOption = {
   key: 'custom',
-  display_name: 'Custom (OpenAI-compatible)',
+  display_name: 'Custom',
   family: 'custom',
-  protocol: 'openai_compatible',
+  protocol: 'openai_compatible', // Default, user can override
   default_base_url: '',
   models: [],
 };
 
+/**
+ * Available custom endpoint protocol configurations.
+ * Used when user selects "Custom" provider option.
+ */
+export const CUSTOM_PROTOCOL_OPTIONS: CustomProtocolConfig[] = [
+  {
+    protocol: 'openai_compatible',
+    display_name: 'OpenAI Compatible',
+    default_base_url: 'https://api.openai.com/v1',
+    description: 'Compatible with OpenAI API format (e.g., Azure, DeepSeek, Together AI)',
+  },
+  {
+    protocol: 'anthropic_compatible',
+    display_name: 'Anthropic Compatible',
+    default_base_url: 'https://api.anthropic.com',
+    description: 'Compatible with Anthropic Messages API format',
+  },
+];
+
 export function getProviderOption(provider: ProviderOption): ProviderCatalogOption {
   if (provider === 'custom') return CUSTOM_PROVIDER_OPTION;
   return ENDPOINT_PROVIDER_OPTIONS.find((item) => item.key === provider) ?? CUSTOM_PROVIDER_OPTION;
+}
+
+/**
+ * Get custom protocol configuration by protocol type.
+ */
+export function getCustomProtocolConfig(protocol: CustomEndpointProtocol): CustomProtocolConfig | undefined {
+  return CUSTOM_PROTOCOL_OPTIONS.find((option) => option.protocol === protocol);
+}
+
+/**
+ * Get custom protocol configuration by index (for UI selection).
+ */
+export function getCustomProtocolByIndex(index: number): CustomProtocolConfig | undefined {
+  return CUSTOM_PROTOCOL_OPTIONS[index];
 }
 
 export function getModelsByCapability(

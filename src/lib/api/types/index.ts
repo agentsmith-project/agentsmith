@@ -223,6 +223,7 @@ export type EndpointProviderFamily =
   | 'custom';
 export type EndpointProtocol =
   | 'openai_compatible'
+  | 'anthropic_compatible'
   | 'google_gemini'
   | 'glm_native'
   | 'dashscope_native';
@@ -853,3 +854,22 @@ export interface QuotaTemplate {
   overrides_json: QuotaOverride;
 }
 import type { ChatAttachmentInputRef } from '@/lib/types/input-ref';
+
+// ============================================================
+// Re-export Endpoint Extended Types
+// ============================================================
+
+export type {
+  CustomEndpointProtocol,
+  CustomEndpointConfig,
+  EndpointHealthCheck,
+  EndpointHealthErrorCategory,
+  BatchHealthCheckRequest,
+  BatchHealthCheckResponse,
+  ModelPricing,
+  PricingCurrency,
+  PricingUnit,
+  UpdatePricingRequest,
+  ValidateEndpointRequest,
+  ValidateEndpointResponse,
+} from './endpoints';

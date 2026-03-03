@@ -296,8 +296,21 @@ describe('MessageItem', () => {
       expect(screen.getByText('Streaming content here...')).toBeInTheDocument();
     });
 
-    it('should show stalled indicator when streaming stops', () => {
-      const pastTime = Date.now() - 2000; // More than 1.5s ago
+    it('shows waiting indicator when streaming has no content yet', () => {
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={mockAssistantMessage}
+          streamingOverride=''
+          streamingMeta={{ startedAt: Date.now(), lastTokenAt: Date.now() }}
+        />,
+      );
+
+      expect(screen.getByTestId('chat__message-stream-waiting')).toBeInTheDocument();
+    });
+
+    it('shows waiting indicator when no new delta for 3 seconds', () => {
+      const pastTime = Date.now() - 3500;
       render(
         <MessageItem
           {...defaultProps}
@@ -307,10 +320,21 @@ describe('MessageItem', () => {
         />,
       );
 
-      // Check for stalled animation dots
-      const pulseElements = document.querySelectorAll('.animate-pulse');
-      expect(pulseElements.length).toBeGreaterThan(0);
-    }, 10000);
+      expect(screen.getByTestId('chat__message-stream-waiting')).toBeInTheDocument();
+    });
+
+    it('hides waiting indicator when tokens are still arriving', () => {
+      render(
+        <MessageItem
+          {...defaultProps}
+          message={mockAssistantMessage}
+          streamingOverride='Still streaming'
+          streamingMeta={{ startedAt: Date.now(), lastTokenAt: Date.now() }}
+        />,
+      );
+
+      expect(screen.queryByTestId('chat__message-stream-waiting')).not.toBeInTheDocument();
+    });
   });
 
   describe('Stale Messages', () => {

@@ -109,4 +109,18 @@ describe('protocol bridge', () => {
     expect(anthropic.type).toBe('message');
     expect(Array.isArray(anthropic.content)).toBe(true);
   });
+
+  it('normalizes anthropic upstream url to /v1/messages when missing version segment', () => {
+    const plan = buildProxyBridgePlan({
+      endpointProtocol: 'anthropic_compatible',
+      proxyPath: 'chat/completions',
+      upstreamUrl: 'https://open.bigmodel.cn/api/anthropic',
+      body: {
+        model: 'glm-5',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(plan.upstreamUrl).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages');
+  });
 });

@@ -84,8 +84,12 @@ export const MessageItem = React.memo(function MessageItem({
     return () => window.clearInterval(id);
   }, [streamingMeta]);
 
-  const isStalled =
-    streamingMeta ? nowTick - streamingMeta.lastTokenAt > 1500 : false;
+  const streamingText = typeof streamingOverride === 'string' ? streamingOverride : '';
+  const shouldShowWaitingIndicator = Boolean(
+    streamingOverride != null
+    && streamingMeta
+    && (streamingText.trim().length === 0 || nowTick - streamingMeta.lastTokenAt >= 3000),
+  );
 
   const handleCopy = async () => {
     try {
@@ -111,16 +115,9 @@ export const MessageItem = React.memo(function MessageItem({
         {message.is_stale && (
           <div className="text-[11px] text-tertiary mb-1">{tChat('message_item.older_branch')}</div>
         )}
-        {streamingOverride && (
+        {streamingOverride != null && (
           <div className="text-[11px] text-tertiary mb-1 flex items-center gap-2">
             <span>{tChat('message_item.regenerating')}</span>
-            {isStalled && (
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse" />
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:120ms]" />
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:240ms]" />
-              </span>
-            )}
           </div>
         )}
 
@@ -157,7 +154,7 @@ export const MessageItem = React.memo(function MessageItem({
           </div>
         )}
 
-        <div className={cn('space-y-2', streamingOverride && 'min-h-[44px]')}>
+        <div className={cn('space-y-2', streamingOverride != null && 'min-h-[44px]')}>
           {isEditing ? (
             <div className="space-y-2">
               <textarea
@@ -193,17 +190,26 @@ export const MessageItem = React.memo(function MessageItem({
                 </div>
               )}
             </div>
-          ) : streamingOverride ? (
+          ) : streamingOverride != null ? (
             <div className="min-h-[48px]">
-              {streamingOverride.trim().length === 0 ? (
+              {streamingText.trim().length === 0 ? (
                 <div className="space-y-2">
                   <div className="h-3 w-2/3 rounded-sm bg-surface-high/60 animate-pulse" />
                   <div className="h-3 w-1/2 rounded-sm bg-surface-high/60 animate-pulse" />
                   <div className="h-3 w-1/3 rounded-sm bg-surface-high/60 animate-pulse" />
                 </div>
               ) : (
-                <Markdown content={streamingOverride || '…'} />
+                <Markdown content={streamingText || '…'} />
               )}
+              {shouldShowWaitingIndicator ? (
+                <div className="mt-2 flex justify-end" data-testid="chat__message-stream-waiting">
+                  <span className="inline-flex items-center gap-1">
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-tertiary animate-pulse" />
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:120ms]" />
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-tertiary animate-pulse [animation-delay:240ms]" />
+                  </span>
+                </div>
+              ) : null}
             </div>
           ) : (
             <Markdown content={message.content} />

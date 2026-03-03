@@ -295,6 +295,16 @@ export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
   const cleanBase = baseUrl.replace(/\/+$/, '');
   const cleanPath = proxyPath.replace(/^\/+/, '');
   if (!cleanPath) return cleanBase;
+  if (cleanPath.toLowerCase() === 'messages') {
+    const lowerBase = cleanBase.toLowerCase();
+    if (lowerBase.endsWith('/messages')) {
+      return cleanBase;
+    }
+    if (/\/v\d+$/i.test(cleanBase)) {
+      return `${cleanBase}/messages`;
+    }
+    return `${cleanBase}/v1/messages`;
+  }
 
   // Be tolerant of legacy/base URLs that already include the target API path.
   // Example: base_url ".../chat/completions" + proxyPath "chat/completions".

@@ -92,6 +92,12 @@ export function detectProxyWireProtocol(proxyPath: string): ProxyWireProtocol {
 
 function rewriteUpstreamUrl(upstreamUrl: string, targetPath: string): string {
   const trimmed = upstreamUrl.replace(/\/+$/, '');
+  if (targetPath.toLowerCase() === 'messages') {
+    const lowered = trimmed.toLowerCase();
+    if (lowered.endsWith('/messages')) return trimmed;
+    if (/\/v\d+$/i.test(trimmed)) return `${trimmed}/messages`;
+    return `${trimmed}/v1/messages`;
+  }
   const replaced = trimmed.replace(/\/(?:chat\/completions|responses|messages)$/i, `/${targetPath}`);
   if (replaced !== trimmed) return replaced;
   return trimmed.endsWith(`/${targetPath}`) ? trimmed : `${trimmed}/${targetPath}`;

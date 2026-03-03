@@ -11,6 +11,9 @@ export default defineConfig({
     maxWorkers: 2,
     minWorkers: 1,
     setupFiles: ['./src/test/setup.ts'],
+    env: {
+      NEXT_PUBLIC_USE_MSW: 'true',
+    },
     include: ['**/__tests__/**/*.{test,spec}.{js,ts,tsx}', '**/*.{test,spec}.{js,ts,tsx}'],
     exclude: [
       'node_modules/',

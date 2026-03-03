@@ -246,4 +246,147 @@ test.describe('Endpoints Page', () => {
     expect(payload.limits?.max_requests_per_minute).toBe(120);
     expect(payload.limits?.timeout_seconds).toBe(45);
   });
+
+  test.describe('Custom Endpoint Wizard', () => {
+    test('opens wizard when custom provider is selected', async ({ authedPage }) => {
+      await ensureCredentialExists(authedPage);
+      await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+      const createBtn = authedPage.getByTestId('endpoints__create-btn');
+      await createBtn.click();
+
+      const dialog = authedPage.getByTestId('endpoints__create-dialog');
+      await expect(dialog).toBeVisible();
+
+      // Select custom provider
+      await pickSelectOption(dialog, authedPage, /Custom/i);
+
+      // Verify wizard button is shown
+      await expect(dialog.getByRole('button', { name: /Open Wizard/i })).toBeVisible();
+    });
+
+    test('opens custom wizard from create dialog', async ({ authedPage }) => {
+      await ensureCredentialExists(authedPage);
+      await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+      const createBtn = authedPage.getByTestId('endpoints__create-btn');
+      await createBtn.click();
+
+      const dialog = authedPage.getByTestId('endpoints__create-dialog');
+      await expect(dialog).toBeVisible();
+
+      // Select custom provider
+      await pickSelectOption(dialog, authedPage, /Custom/i);
+
+      // Click wizard button
+      const wizardBtn = dialog.getByRole('button', { name: /Open Wizard/i });
+      await wizardBtn.click();
+
+      // Wizard should open, main dialog should close
+      await expect(authedPage.getByTestId('endpoints__custom-wizard')).toBeVisible({ timeout: 5000 });
+      await expect(dialog).not.toBeVisible({ timeout: 5000 });
+    });
+
+    test('wizard step 1: basic info flow', async ({ authedPage }) => {
+      await ensureCredentialExists(authedPage);
+      await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+      const createBtn = authedPage.getByTestId('endpoints__create-btn');
+      await createBtn.click();
+
+      const dialog = authedPage.getByTestId('endpoints__create-dialog');
+      await expect(dialog).toBeVisible();
+
+      await pickSelectOption(dialog, authedPage, /Custom/i);
+
+      const wizardBtn = dialog.getByRole('button', { name: /Open Wizard/i });
+      await wizardBtn.click();
+
+      // Wizard should be open
+      const wizard = authedPage.getByTestId('endpoints__custom-wizard');
+      await expect(wizard).toBeVisible();
+
+      // Check title and protocol buttons
+      await expect(wizard.getByText(/Create Custom Endpoint|custom_wizard\.title/i)).toBeVisible();
+      await expect(wizard.getByTestId('protocol-openai_compatible')).toBeVisible();
+      await expect(wizard.getByTestId('protocol-anthropic_compatible')).toBeVisible();
+
+      // Enter name and select protocol
+      await wizard.getByTestId('wizard-name-input').fill('E2E Custom OpenAI');
+      await wizard.getByTestId('protocol-openai_compatible').click();
+
+      // Base URL should be populated
+      await expect(wizard.getByTestId('wizard-base-url-input')).toHaveValue(/https:\/\/api\.openai\.com\/v1/i);
+    });
+
+    test('wizard step 2: model config flow', async ({ authedPage }) => {
+      await ensureCredentialExists(authedPage);
+      await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+      const createBtn = authedPage.getByTestId('endpoints__create-btn');
+      await createBtn.click();
+
+      const dialog = authedPage.getByTestId('endpoints__create-dialog');
+      await expect(dialog).toBeVisible();
+
+      await pickSelectOption(dialog, authedPage, /Custom/i);
+      await dialog.getByRole('button', { name: /Open Wizard/i }).click();
+
+      const wizard = authedPage.getByTestId('endpoints__custom-wizard');
+      await expect(wizard).toBeVisible();
+
+      // Step 1: Fill basic info
+      await wizard.getByTestId('wizard-name-input').fill('E2E Test Endpoint');
+      await wizard.getByTestId('wizard-base-url-input').fill('https://api.example.com/v1');
+
+      // Click Next
+      const nextBtn = wizard.getByRole('button', { name: 'Next' });
+      await nextBtn.click();
+
+      // Should be on step 2
+      await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible();
+      await expect(wizard.getByTestId('wizard-capability-select')).toBeVisible();
+
+      // Fill model info
+      await wizard.getByTestId('wizard-model-id-input').fill('gpt-4o-test');
+    });
+
+    test('wizard step 3: validation flow', async ({ authedPage }) => {
+      await ensureCredentialExists(authedPage);
+      await expect(authedPage.getByTestId('endpoints__table')).toBeVisible({ timeout: 10000 });
+
+      const createBtn = authedPage.getByTestId('endpoints__create-btn');
+      await createBtn.click();
+
+      const dialog = authedPage.getByTestId('endpoints__create-dialog');
+      await expect(dialog).toBeVisible();
+
+      await pickSelectOption(dialog, authedPage, /Custom/i);
+      await dialog.getByRole('button', { name: /Open Wizard/i }).click();
+
+      const wizard = authedPage.getByTestId('endpoints__custom-wizard');
+      await expect(wizard).toBeVisible();
+
+      // Step 1
+      await wizard.getByTestId('wizard-name-input').fill('E2E Test Endpoint');
+      await wizard.getByTestId('wizard-base-url-input').fill('https://api.example.com/v1');
+
+      let nextBtn = wizard.getByRole('button', { name: 'Next' });
+      await nextBtn.click();
+
+      // Step 2
+      await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible();
+      await wizard.getByTestId('wizard-model-id-input').fill('gpt-4o-test');
+
+      nextBtn = wizard.getByRole('button', { name: 'Next' });
+      await nextBtn.click();
+
+      // Step 3
+      await expect(wizard.getByTestId('wizard-check-button')).toBeVisible();
+      await expect(wizard.getByTestId('wizard-create-button')).toBeVisible();
+
+      // Create button should be enabled - validation is optional
+      await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled();
+    });
+  });
 });

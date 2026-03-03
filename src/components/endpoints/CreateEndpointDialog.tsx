@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Loader2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Loader2, ChevronDown, ChevronRight, Sparkles } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { EndpointAPI, CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
@@ -38,6 +38,7 @@ import {
   type ProviderOption,
 } from '@/lib/endpoints/provider-catalog';
 import { toast } from '@/components/ui/toast';
+import { CustomEndpointWizard } from './CustomEndpointWizard';
 
 export interface CreateEndpointDialogProps {
   open: boolean;
@@ -58,6 +59,7 @@ export function CreateEndpointDialog({
   const tErrors = useTranslations('errors');
   const commonT = useTranslations('common');
   const locale = useLocale();
+  const tWizard = useTranslations('endpoints.custom_wizard');
   type CapabilityOption = EndpointCapabilityType;
 
   const [name, setName] = React.useState('');
@@ -70,6 +72,9 @@ export function CreateEndpointDialog({
   const [limitsExpanded, setLimitsExpanded] = React.useState(false);
   const [maxRequestsPerMinute, setMaxRequestsPerMinute] = React.useState<string>('');
   const [timeoutSeconds, setTimeoutSeconds] = React.useState<string>('');
+
+  // Custom wizard state
+  const [showCustomWizard, setShowCustomWizard] = React.useState(false);
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
   const credentialsAPI = React.useMemo(() => new CredentialsAPI(getApiClient()), []);
@@ -210,6 +215,7 @@ export function CreateEndpointDialog({
     !createMutation.isPending;
 
   return (
+    <>
     <Sheet open={open} onOpenChange={handleOpenChange}>
       <SheetContent
         side="right-wide"
@@ -260,7 +266,7 @@ export function CreateEndpointDialog({
               id="endpoint-model"
               value={openaiModel}
               onChange={(e) => setOpenaiModel(e.target.value)}
-              placeholder="e.g. gpt-4o, claude-3.5-sonnet"
+              placeholder={t('create_dialog.model_id_placeholder')}
               disabled={createMutation.isPending}
               required
               className="font-mono"
@@ -269,7 +275,7 @@ export function CreateEndpointDialog({
 
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">
-              Endpoint Capability <span className="text-error">*</span>
+              {t('create_dialog.capability')} <span className="text-error">*</span>
             </label>
             <Select
               value={capability}
@@ -280,12 +286,12 @@ export function CreateEndpointDialog({
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="chat_completion">Chat Completion</SelectItem>
-                <SelectItem value="multimodal_completion">Multimodal Completion</SelectItem>
-                <SelectItem value="embedding">Embedding</SelectItem>
-                <SelectItem value="rerank">Reranker</SelectItem>
-                <SelectItem value="image_generation">Image Generation</SelectItem>
-                <SelectItem value="video_generation">Video Generation</SelectItem>
+                <SelectItem value="chat_completion">{t('create_dialog.capability_chat_completion')}</SelectItem>
+                <SelectItem value="multimodal_completion">{t('create_dialog.capability_multimodal_completion')}</SelectItem>
+                <SelectItem value="embedding">{t('create_dialog.capability_embedding')}</SelectItem>
+                <SelectItem value="rerank">{t('create_dialog.capability_rerank')}</SelectItem>
+                <SelectItem value="image_generation">{t('create_dialog.capability_image_generation')}</SelectItem>
+                <SelectItem value="video_generation">{t('create_dialog.capability_video_generation')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -321,16 +327,65 @@ export function CreateEndpointDialog({
                     </span>
                   </SelectItem>
                 ))}
-                <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
+                <SelectItem value="custom">
+                  <span className="flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-accent" />
+                    {t('create_dialog.provider_custom')}
+                  </span>
+                </SelectItem>
               </SelectContent>
             </Select>
           </div>
 
+          {/* Show wizard button for custom provider */}
+          {provider === 'custom' && (
+            <div className="space-y-2">
+              <div className="rounded-sm bg-accent/5 border border-accent/20 p-4">
+                <div className="flex items-start gap-3">
+                  <Sparkles className="w-5 h-5 text-accent mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-foreground">
+                      {tWizard('title')}
+                    </p>
+                    <p className="text-xs text-tertiary mt-1">
+                      {t('create_dialog.wizard_description')}
+                    </p>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => setShowCustomWizard(true)}
+                    >
+                      {t('create_dialog.open_wizard_button')}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           <div className="space-y-2">
-            <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
-              {t('create_dialog.base_url')}
-              {provider === 'custom' && <span className="text-error"> *</span>}
-            </label>
+            <div className="flex items-center justify-between">
+              <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
+                {t('create_dialog.base_url')}
+                {provider === 'custom' && <span className="text-error"> *</span>}
+              </label>
+              {(provider === 'openai' || selectedProvider.default_base_url) && (
+                <button
+                  type="button"
+                  onClick={() => setBaseUrl(
+                    provider === 'openai'
+                      ? 'https://api.openai.com/v1'
+                      : selectedProvider.default_base_url
+                  )}
+                  className="text-xs text-accent hover:underline"
+                  data-testid="endpoint-use-default-url"
+                >
+                  {tWizard('use_default')}
+                </button>
+              )}
+            </div>
             <Input
               id="endpoint-base-url"
               value={baseUrl}
@@ -347,14 +402,14 @@ export function CreateEndpointDialog({
 
           {providerModels.length > 0 && (
             <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">Catalog Models</label>
+              <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
               <Select
                 value={openaiModel}
                 onValueChange={setOpenaiModel}
                 disabled={createMutation.isPending}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select from catalog (optional)" />
+                  <SelectValue placeholder={t('create_dialog.select_from_catalog')} />
                 </SelectTrigger>
                 <SelectContent>
                   {providerModels.slice(0, 100).map((model) => (
@@ -426,7 +481,7 @@ export function CreateEndpointDialog({
                     min={1}
                     value={maxRequestsPerMinute}
                     onChange={(e) => setMaxRequestsPerMinute(e.target.value)}
-                    placeholder="Optional"
+                    placeholder={commonT('placeholders.optional')}
                     disabled={createMutation.isPending}
                   />
                 </div>
@@ -440,7 +495,7 @@ export function CreateEndpointDialog({
                     min={1}
                     value={timeoutSeconds}
                     onChange={(e) => setTimeoutSeconds(e.target.value)}
-                    placeholder="Optional"
+                    placeholder={commonT('placeholders.optional')}
                     disabled={createMutation.isPending}
                   />
                 </div>
@@ -474,5 +529,25 @@ export function CreateEndpointDialog({
         </form>
       </SheetContent>
     </Sheet>
+
+    {/* Custom Endpoint Wizard */}
+    <CustomEndpointWizard
+      open={showCustomWizard}
+      onOpenChange={(isOpen) => {
+        setShowCustomWizard(isOpen);
+        if (isOpen) {
+          onOpenChange(false); // Close main dialog when wizard opens
+        } else {
+          onOpenChange(true); // Reopen main dialog when wizard closes
+        }
+      }}
+      workspaceId={workspaceId}
+      projectId={projectId}
+      onSuccess={() => {
+        setShowCustomWizard(false);
+        onSuccess?.();
+      }}
+    />
+  </>
   );
 }

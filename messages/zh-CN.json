@@ -316,7 +316,68 @@
     "delete_confirm_title": "删除端点",
     "delete_confirm_description": "确定要删除 \"{name}\" 吗？此操作不可撤销。",
     "delete_confirm_cancel": "取消",
-    "delete_confirm_action": "删除"
+    "delete_confirm_action": "删除",
+    "custom_wizard": {
+      "title": "创建自定义端点",
+      "step1_title": "基本信息",
+      "step2_title": "模型配置",
+      "step3_title": "验证并创建",
+      "name": "端点名称",
+      "name_placeholder": "例如：生产环境 OpenAI",
+      "protocol": "协议类型",
+      "base_url": "Base URL",
+      "base_url_placeholder": "https://api.example.com/v1",
+      "model_id": "模型 ID",
+      "model_id_placeholder": "例如：gpt-4o, claude-3-5-sonnet-20241022",
+      "capability": "能力类型",
+      "credential": "凭据",
+      "credential_placeholder": "选择凭据",
+      "check_button": "检查连接",
+      "validating": "验证中...",
+      "validation": {
+        "success": "连接成功！延迟：{latency}ms",
+        "failed": "连接失败，请检查配置。",
+        "retry": "重试"
+      },
+      "errors": {
+        "invalid_url": "URL 格式无效。必须以 https:// 开头并以 /v1 或 / 结尾。",
+        "https_required": "需要 HTTPS 协议以确保安全连接。",
+        "name_required": "端点名称不能为空。",
+        "model_required": "模型 ID 不能为空。",
+        "credential_required": "请选择凭据。",
+        "auth": "认证失败，请检查 API 密钥。",
+        "network": "网络错误，无法访问端点。",
+        "timeout": "请求超时，端点响应时间过长。",
+        "rate_limit": "请求频率受限。",
+        "upstream": "上游错误，提供商返回了错误。",
+        "unknown": "未知错误，请重试。"
+      },
+      "create_button": "创建端点",
+      "cancel_button": "取消",
+      "back_button": "返回",
+      "next_button": "下一步",
+      "no_credentials": "没有可用的凭据。",
+      "create_credential_first": "请先创建凭据。",
+      "summary_title": "摘要",
+      "summary_name": "名称",
+      "summary_protocol": "协议",
+      "summary_base_url": "Base URL",
+      "summary_model": "模型",
+      "summary_model_id": "模型 ID",
+      "summary_capability": "能力类型",
+      "config_summary": "配置摘要",
+      "endpoint_ready": "端点已就绪。",
+      "error_type": "错误类型",
+      "use_default": "使用默认值",
+      "capabilities": {
+        "chat_completion": "对话补全",
+        "multimodal_completion": "多模态补全",
+        "embedding": "嵌入",
+        "rerank": "重排序",
+        "image_generation": "图像生成",
+        "video_generation": "视频生成"
+      }
+    }
   },
   "members": {
     "title": "成员",
@@ -633,5 +694,27 @@
       "approve_success": "加入申请已批准",
       "reject_success": "加入申请已拒绝"
     }
+  },
+  "pricing": {
+    "title": "价格配置",
+    "description": "配置模型定价费率（每百万 tokens 美元）",
+    "loading": "加载定价数据中...",
+    "save": "保存更改",
+    "saving": "保存中...",
+    "reset": "重置为默认值",
+    "reset_confirm": "确定要将所有定价重置为默认值吗？此操作无法撤销。",
+    "field_input": "输入",
+    "field_output": "输出",
+    "field_cached": "缓存读取",
+    "field_reasoning": "推理",
+    "field_cache_creation": "缓存创建",
+    "error_save_failed": "保存定价失败",
+    "error_reset_failed": "重置定价失败",
+    "error_load_failed": "加载定价数据失败",
+    "success_saved": "定价保存成功",
+    "success_reset": "定价已重置为默认值",
+    "no_data": "暂无定价数据",
+    "format_hint": "所有费率单位为每百万 tokens 美元 ($/1M tokens)",
+    "format_example": "例如：输入费率 2.50 表示每 1,000,000 个输入 tokens $2.50"
   }
 }

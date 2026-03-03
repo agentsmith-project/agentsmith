@@ -4027,6 +4027,116 @@ describe('api-entry-node projects routes', () => {
     expect(releasePod).toHaveBeenCalledWith('ws_default', 'proj_1', sanitizeWorkloadId(task.id));
   });
 
+  it('does not leak internal raw key in agent API responses', async () => {
+    const deps = createDefaultNodeApiDeps();
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'internal-sanitized',
+          mode: 'internal',
+          interaction_mode: 'chat',
+          config: {
+            image: 'runner:v1',
+          },
+        }),
+      },
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string; config?: Record<string, unknown> };
+    expect(created.config?._internal_raw_key).toBeUndefined();
+    expect(created.config?._internal_key_id).toBeUndefined();
+
+    const listRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+    );
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as { items: Array<{ id: string; config?: Record<string, unknown> }> };
+    const listed = listBody.items.find((item) => item.id === created.id);
+    expect(listed).toBeTruthy();
+    expect(listed?.config?._internal_raw_key).toBeUndefined();
+    expect(listed?.config?._internal_key_id).toBeUndefined();
+
+    const itemRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+    );
+    expect(itemRes.status).toBe(200);
+    const itemBody = (await itemRes.json()) as { config?: Record<string, unknown> };
+    expect(itemBody.config?._internal_raw_key).toBeUndefined();
+    expect(itemBody.config?._internal_key_id).toBeUndefined();
+
+    const stored = await deps.agentResourceService.getAgent('ws_default', 'proj_1', created.id);
+    expect(typeof (stored?.config as Record<string, unknown> | undefined)?._internal_raw_key).toBe('string');
+    expect(typeof (stored?.config as Record<string, unknown> | undefined)?._internal_key_id).toBe('string');
+  });
+
+  it('releases internal workload pod when notebook task is deleted', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const releasePod = vi.fn(async () => undefined);
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod,
+    };
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-delete',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      runtime_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const taskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Internal Task Delete',
+          agent_id: internalAgent.id,
+          initial_inputs: [],
+        }),
+      },
+    );
+    expect(taskRes.status).toBe(201);
+    const task = (await taskRes.json()) as { id: string };
+
+    const deleteRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+      {
+        method: 'DELETE',
+      },
+    );
+    expect(deleteRes.status).toBe(200);
+    expect(releasePod).toHaveBeenCalledWith('ws_default', 'proj_1', sanitizeWorkloadId(task.id));
+  });
+
   it('runs notebook task message through external runtime and enforces single active run per task', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();

@@ -10,6 +10,7 @@ KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-40}"
 ALLOW_VERIFY_RETRIES="${ALLOW_VERIFY_RETRIES:-3}"
+GLM_MODEL="${GLM_MODEL:-GLM-5}"
 
 info() { echo "[gov-policy-access-smoke] $*"; }
 err() { echo "[gov-policy-access-smoke] ERROR: $*" >&2; }
@@ -150,7 +151,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy access deny smoke"}]}' || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy access deny smoke"}]}))' "${GLM_MODEL}")" || true
   )"
   if [[ "${deny_code}" != "403" ]]; then
     err "expected 403 on deny policy, got HTTP ${deny_code}"
@@ -231,7 +232,7 @@ main() {
         "${proxy_url}" \
         -H "Authorization: Bearer ${token}" \
         -H "Content-Type: application/json" \
-        --data '{"model":"glm-5","messages":[{"role":"user","content":"policy access allow smoke"}]}' || true
+        --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy access allow smoke"}]}))' "${GLM_MODEL}")" || true
     )"
     if [[ "${allow_code}" == "200" ]]; then
       break

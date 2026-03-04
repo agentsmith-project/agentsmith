@@ -9,6 +9,7 @@ PROJECT_ID_FILE="${PROJECT_ID_FILE:-/tmp/agentsmith_project_id.txt}"
 ENDPOINT_ID_FILE="${ENDPOINT_ID_FILE:-/tmp/agentsmith_endpoint_id.txt}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
+GLM_MODEL="${GLM_MODEL:-GLM-5}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
 RUN_INPUTREFS_LOOP="${RUN_INPUTREFS_LOOP:-1}"
@@ -41,7 +42,7 @@ proxy_probe_status() {
     -X POST "${url}" \
     -H "Authorization: Bearer ${token}" \
     -H 'Content-Type: application/json' \
-    --data '{"model":"glm-5","messages":[{"role":"user","content":"release smoke probe"}]}' || true
+    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"release smoke probe"}]}))' "${GLM_MODEL}")" || true
 }
 
 wait_proxy_ready() {

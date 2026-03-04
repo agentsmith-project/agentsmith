@@ -11,6 +11,7 @@ KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
 SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
+GLM_MODEL="${GLM_MODEL:-GLM-5}"
 
 info() { echo "[demo-check] $*"; }
 err() { echo "[demo-check] ERROR: $*" >&2; }
@@ -83,7 +84,7 @@ main() {
       "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}/proxy/chat/completions" \
       -H "Authorization: Bearer ${token}" \
       -H 'Content-Type: application/json' \
-      --data '{"model":"glm-5","messages":[{"role":"user","content":"ping"}]}' || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"ping"}]}))' "${GLM_MODEL}")" || true
   )"
   if [[ "${proxy_code}" == "429" ]]; then
     info "endpoint proxy reachable but currently rate-limited (HTTP 429)"

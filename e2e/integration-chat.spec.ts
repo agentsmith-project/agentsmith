@@ -1957,7 +1957,7 @@ test.describe('@lane-real integration chat flow', () => {
   });
 
   if (RUN_REAL_COMPLETION) {
-    test('chat works with real deepseek completion endpoint imported from integration resource', async ({ page }) => {
+    test('chat works with real GLM-5 completion endpoint imported from integration resource', async ({ page }) => {
       test.setTimeout(300_000);
       const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
       const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';

@@ -11,11 +11,12 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 
 PROJECT_NAME="${PROJECT_NAME:-Codex Agent Regression}"
 AGENT_NAME="${AGENT_NAME:-codex-ext-$(date +%s)}"
-ENDPOINT_NAME="${ENDPOINT_NAME:-glm47-coding-$(date +%s)}"
+ENDPOINT_NAME="${ENDPOINT_NAME:-glm5-anthropic-$(date +%s)}"
 CREDENTIAL_NAME="${CREDENTIAL_NAME:-glm-key-$(date +%s)}"
 
-GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/coding/paas/v4}"
-GLM_MODEL="${GLM_MODEL:-glm-5}"
+GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/anthropic}"
+GLM_MODEL="${GLM_MODEL:-GLM-5}"
+ENDPOINT_PROTOCOL="${ENDPOINT_PROTOCOL:-anthropic_compatible}"
 GLM_API_KEY="${GLM_API_KEY:-}"
 
 WIRE_API="${WIRE_API:-responses}"
@@ -83,8 +84,8 @@ echo "[init] creating endpoint..."
 endpoint_resp="$(api_curl -X POST "${PROJECT_BASE}/endpoints" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:"openai_compatible", base_url:process.argv[2], openai_model:process.argv[3], credential_ref:process.argv[4]}))' \
-      "${ENDPOINT_NAME}" "${GLM_BASE_URL}" "${GLM_MODEL}" "${CRED_ID}")")"
+  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], openai_model:process.argv[4], credential_ref:process.argv[5]}))' \
+      "${ENDPOINT_NAME}" "${ENDPOINT_PROTOCOL}" "${GLM_BASE_URL}" "${GLM_MODEL}" "${CRED_ID}")")"
 ENDPOINT_ID="$(printf '%s' "${endpoint_resp}" | json_get id)"
 echo "${ENDPOINT_ID}" > /tmp/agentsmith_endpoint_id.txt
 echo "[init] endpoint_id=${ENDPOINT_ID}"
@@ -125,6 +126,7 @@ AGENT_ID=${AGENT_ID}
 WS_URL=${WS_URL}
 GLM_BASE_URL=${GLM_BASE_URL}
 GLM_MODEL=${GLM_MODEL}
+ENDPOINT_PROTOCOL=${ENDPOINT_PROTOCOL}
 WIRE_API=${WIRE_API}
 EOF
 

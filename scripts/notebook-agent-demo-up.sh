@@ -385,7 +385,7 @@ restart_demo_runner() {
     exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
       MBOS_AGENT_WS_URL='${ws_url}' \
       MBOS_AGENT_KEY='${agent_key}' \
-      MBOS_AGENT_BUILTIN_SKILLS_DIR='${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}' \
+      MBOS_AGENT_BUILTIN_SKILLS_DIR='${MBOS_AGENT_BUILTIN_SKILLS_DIR:-${ROOT_DIR}/packages/agent-codex-runner/builtin-skills}' \
       MBOS_AGENT_BUILTIN_SKILLS='${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}' \
       MBOS_AGENT_BUILTIN_SKILLS_REQUIRED='${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}' \
       MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \

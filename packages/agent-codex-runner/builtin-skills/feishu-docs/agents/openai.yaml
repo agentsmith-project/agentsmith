@@ -1,0 +1,4 @@
+interface:
+  display_name: "Feishu Docs"
+  short_description: "Use Feishu remote MCP without Codex MCP registration."
+  default_prompt: "Use this skill when the user wants to search, read, create, update, or comment on Feishu/Lark documents through the locally configured Feishu remote MCP bridge scripts and tokens."

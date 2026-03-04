@@ -124,7 +124,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 - `MBOS_AGENT_TASK_TIMEOUT_SEC` (optional; task watchdog, default currently 55s in code)
 - `MBOS_AGENT_RUNNER_DEBUG=1` (optional; logs spawn args/workdir/timeout)
 - `MBOS_AGENT_CODEX_YOLO=1` (optional; run codex with `--dangerously-bypass-approvals-and-sandbox`)
-- `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `/home/percy/.codex/skills`)
+- `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `<repo>/packages/agent-codex-runner/builtin-skills`)
 - `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops`)
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 

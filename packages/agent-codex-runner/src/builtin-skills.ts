@@ -1,8 +1,8 @@
 import { cp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
-const DEFAULT_SKILLS_DIR = '/home/percy/.codex/skills';
+const DEFAULT_SKILLS_DIR = resolve(process.cwd(), 'packages/agent-codex-runner/builtin-skills');
 const DEFAULT_BUILTIN_SKILLS = ['.system', 'feishu-docs', 'jira-ops'];
 
 function parseBooleanFlag(input: string | undefined, fallback: boolean): boolean {
@@ -68,4 +68,3 @@ export async function syncBuiltinSkills(args: {
   }
   return { mounted, missing, sourceDir: args.sourceDir };
 }
-

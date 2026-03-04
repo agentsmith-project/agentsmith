@@ -54,6 +54,7 @@ DATABASE_URL ?= postgresql://mbos:mbos_dev_password@localhost:15432/mbos
 REDIS_URL ?= redis://localhost:16379
 MONGO_URL ?= mongodb://mbos:mbos_dev_password@localhost:17017/admin
 MONGO_DB_NAME ?= mbos
+BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/agent-codex-runner/builtin-skills
 
 LOCALE ?= en-US
 BASE_URL ?= http://localhost:$(PORT_WEB)
@@ -667,7 +668,7 @@ agent-codex-runner:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
-	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}" \
+	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
 	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
 	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 	$(NPM) run agent:codex-runner
@@ -699,7 +700,7 @@ notebook-agent-runner:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	MBOS_AGENT_WS_URL="$$WS_URL" \
 	MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
-	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}" \
+	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
 	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
 	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 	MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
@@ -874,7 +875,7 @@ notebook-agent-smoke-full:
 	( env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 		MBOS_AGENT_WS_URL="$$WS_URL" \
 		MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
-		MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}" \
+		MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
 		MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
 		MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \

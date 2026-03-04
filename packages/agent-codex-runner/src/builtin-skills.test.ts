@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
 
@@ -14,7 +14,7 @@ describe('builtin-skills', () => {
     delete process.env.MBOS_AGENT_BUILTIN_SKILLS;
     try {
       const config = resolveBuiltinSkillsConfig();
-      expect(config.sourceDir).toBe('/home/percy/.codex/skills');
+      expect(config.sourceDir).toBe(resolve(process.cwd(), 'packages/agent-codex-runner/builtin-skills'));
       expect(config.required).toBe(true);
       expect(config.skills).toEqual(['.system', 'feishu-docs', 'jira-ops']);
     } finally {
@@ -68,4 +68,3 @@ describe('builtin-skills', () => {
     }
   });
 });
-

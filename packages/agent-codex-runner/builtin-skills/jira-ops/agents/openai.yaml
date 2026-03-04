@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jira Ops"
+  short_description: "Operate Jira with a bearer token and proxy disabled."
+  default_prompt: "Use this skill when the user wants to search issues, inspect issues, add comments, transition issues, or perform other common Jira operations using a bearer token, especially when requests to the Jira site must clear proxy environment variables first."

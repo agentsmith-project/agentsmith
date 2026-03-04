@@ -12,6 +12,7 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
 SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
+RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
 
 info() { echo "[demo-check] $*"; }
 err() { echo "[demo-check] ERROR: $*" >&2; }
@@ -105,6 +106,22 @@ main() {
     exit 1
   fi
   info "agent metadata files look sane"
+
+  if [[ -f "${RUNNER_LOG}" ]]; then
+    if rg -q "\\[agent-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then
+      info "runner log shows websocket connected"
+    else
+      err "runner log does not show websocket connection (${RUNNER_LOG})"
+      exit 1
+    fi
+    if rg -q "builtin_skills_mounted\"\\s*:\\s*\\[[^]]*\"source-read\"" "${RUNNER_LOG}" 2>/dev/null; then
+      info "runner log shows source-read mounted"
+    else
+      info "runner log has no source-read mount evidence yet (expected before first task execution)"
+    fi
+  else
+    info "runner log not found; skip runner log check (${RUNNER_LOG})"
+  fi
 
   if [[ -n "${SANDBOX_MANAGER_URL}" || -n "${SANDBOX_SERVICE_KEY}" ]]; then
     if [[ -z "${SANDBOX_MANAGER_URL}" || -z "${SANDBOX_SERVICE_KEY}" ]]; then

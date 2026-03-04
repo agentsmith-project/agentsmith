@@ -7,6 +7,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PORT_API="${PORT_API:-20000}"
 PORT_WEB="${PORT_WEB:-3001}"
 DEMO_INIT_RESOURCES="${DEMO_INIT_RESOURCES:-1}"
+DEMO_VALIDATE_SOURCE_READ_MOUNT="${DEMO_VALIDATE_SOURCE_READ_MOUNT:-1}"
 
 info() { echo "[demo-full-up] $*"; }
 err() { echo "[demo-full-up] ERROR: $*" >&2; }
@@ -96,9 +97,26 @@ main() {
   info "running readiness check"
   (cd "${ROOT_DIR}" && make notebook-agent-demo-check PORT_API="${PORT_API}")
 
+  if [[ "${DEMO_VALIDATE_SOURCE_READ_MOUNT}" == "1" ]]; then
+    info "running source-read mount smoke check"
+    (cd "${ROOT_DIR}" && make notebook-agent-source-read-mount-smoke)
+  else
+    info "skip source-read mount smoke check (DEMO_VALIDATE_SOURCE_READ_MOUNT=0)"
+  fi
+
+  local project_id endpoint_id agent_id ws_url
+  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
+  endpoint_id="$(cat /tmp/agentsmith_endpoint_id.txt 2>/dev/null || true)"
+  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  ws_url="$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)"
+
   info "done"
   info "web: http://localhost:${PORT_WEB}"
   info "api: http://localhost:${PORT_API}/api/v1/openapi.json"
+  info "project_id: ${project_id:-n/a}"
+  info "endpoint_id: ${endpoint_id:-n/a}"
+  info "agent_id: ${agent_id:-n/a}"
+  info "agent_ws: ${ws_url:-n/a}"
 }
 
 main "$@"

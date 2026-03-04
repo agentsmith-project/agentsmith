@@ -112,6 +112,7 @@ make notebook-agent-release-smoke
 
 Default bundle includes:
 - `notebook-agent-smoke-task` (basic notebook external-agent roundtrip)
+- `notebook-agent-source-read-mount-smoke` (assert task workspace has `.codex/skills/source-read`)
 - `notebook-agent-inputrefs-loop-smoke` (URL input -> artifact -> artifact input loop)
 
 ### Optional image/artifact smoke (matplotlib)

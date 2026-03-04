@@ -336,6 +336,7 @@ make notebook-agent-release-smoke
 ```
 - Default bundle includes:
   - `make notebook-agent-smoke-task`
+  - `make notebook-agent-source-read-mount-smoke`
   - `make notebook-agent-inputrefs-loop-smoke`
 - Smoke auth behavior:
   - notebook smoke scripts now auto-refresh token once on `401` and retry the failed API call (including initial `POST /tasks`).

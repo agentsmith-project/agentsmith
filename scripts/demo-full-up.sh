@@ -86,7 +86,9 @@ main() {
   require_resources_or_key
 
   info "starting dependencies"
-  (cd "${ROOT_DIR}" && make deps-up && make deps-ready && make deps-init)
+  # deps-init already depends on deps-ready, and deps-ready depends on deps-up.
+  # Call once to avoid duplicated bootstrap logs/work.
+  (cd "${ROOT_DIR}" && make deps-init)
 
   info "starting/recovering full demo environment"
   (cd "${ROOT_DIR}" && make notebook-agent-demo-up PORT_API="${PORT_API}" PORT_WEB="${PORT_WEB}" DEMO_INIT_RESOURCES="${DEMO_INIT_RESOURCES}")

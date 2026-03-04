@@ -19,6 +19,25 @@ type KeycloakClientConfig = {
   webOrigins?: string[];
 };
 
+type KeycloakRealmConfig = {
+  realm?: string;
+  accessTokenLifespan?: number;
+  accessTokenLifespanForImplicitFlow?: number;
+  ssoSessionIdleTimeout?: number;
+  ssoSessionMaxLifespan?: number;
+  ssoSessionIdleTimeoutRememberMe?: number;
+  ssoSessionMaxLifespanRememberMe?: number;
+  clientSessionIdleTimeout?: number;
+  clientSessionMaxLifespan?: number;
+  clientOfflineSessionIdleTimeout?: number;
+  clientOfflineSessionMaxLifespan?: number;
+  offlineSessionIdleTimeout?: number;
+  offlineSessionMaxLifespan?: number;
+  actionTokenGeneratedByAdminLifespan?: number;
+  actionTokenGeneratedByUserLifespan?: number;
+  [key: string]: unknown;
+};
+
 interface SeedUser {
   username: string;
   password: string;
@@ -33,6 +52,10 @@ const keycloakAdminUser = process.env.KEYCLOAK_ADMIN ?? 'admin';
 const keycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
 const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
+const keycloakAccessTokenLifespanSec = Number(process.env.KEYCLOAK_ACCESS_TOKEN_LIFESPAN_SEC ?? '28800');
+const keycloakSsoIdleSec = Number(process.env.KEYCLOAK_SSO_IDLE_TIMEOUT_SEC ?? '43200');
+const keycloakSsoMaxSec = Number(process.env.KEYCLOAK_SSO_MAX_LIFESPAN_SEC ?? '604800');
+const keycloakOfflineIdleSec = Number(process.env.KEYCLOAK_OFFLINE_IDLE_TIMEOUT_SEC ?? '2592000');
 
 const seedUsers: SeedUser[] = [
   {
@@ -266,8 +289,50 @@ async function ensureClientRedirects(token: string): Promise<void> {
   process.stdout.write(`[integration-keycloak-init] ensured redirects for ${keycloakClientId}\n`);
 }
 
+async function ensureRealmTokenLifespans(token: string): Promise<void> {
+  const realmPath = `/admin/realms/${encodeURIComponent(keycloakRealm)}`;
+  const getRes = await adminFetch(token, realmPath, { method: 'GET' });
+  if (!getRes.ok) {
+    const text = await getRes.text();
+    throw new Error(`keycloak_get_realm_failed:${keycloakRealm}:${getRes.status}:${text}`);
+  }
+  const config = (await getRes.json()) as KeycloakRealmConfig;
+
+  const next: KeycloakRealmConfig = {
+    ...config,
+    accessTokenLifespan: keycloakAccessTokenLifespanSec,
+    accessTokenLifespanForImplicitFlow: keycloakAccessTokenLifespanSec,
+    ssoSessionIdleTimeout: keycloakSsoIdleSec,
+    ssoSessionMaxLifespan: keycloakSsoMaxSec,
+    ssoSessionIdleTimeoutRememberMe: keycloakSsoIdleSec,
+    ssoSessionMaxLifespanRememberMe: keycloakSsoMaxSec,
+    clientSessionIdleTimeout: keycloakSsoIdleSec,
+    clientSessionMaxLifespan: keycloakSsoMaxSec,
+    clientOfflineSessionIdleTimeout: keycloakOfflineIdleSec,
+    clientOfflineSessionMaxLifespan: keycloakOfflineIdleSec,
+    offlineSessionIdleTimeout: keycloakOfflineIdleSec,
+    offlineSessionMaxLifespan: keycloakOfflineIdleSec,
+    actionTokenGeneratedByAdminLifespan: Math.max(900, Math.min(keycloakSsoIdleSec, 86400)),
+    actionTokenGeneratedByUserLifespan: Math.max(900, Math.min(keycloakSsoIdleSec, 86400)),
+  };
+
+  const putRes = await adminFetch(token, realmPath, {
+    method: 'PUT',
+    body: JSON.stringify(next),
+  });
+  if (!(putRes.status === 200 || putRes.status === 204)) {
+    const text = await putRes.text();
+    throw new Error(`keycloak_update_realm_failed:${keycloakRealm}:${putRes.status}:${text}`);
+  }
+  process.stdout.write(
+    `[integration-keycloak-init] ensured realm token/session lifespans for ${keycloakRealm} `
+    + `(access=${keycloakAccessTokenLifespanSec}s, sso_idle=${keycloakSsoIdleSec}s, sso_max=${keycloakSsoMaxSec}s)\n`,
+  );
+}
+
 async function main(): Promise<void> {
   const token = await getAdminToken();
+  await ensureRealmTokenLifespans(token);
   await ensureClientRedirects(token);
   for (const user of seedUsers) {
     await ensureUser(token, user);

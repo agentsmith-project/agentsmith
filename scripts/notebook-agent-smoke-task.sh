@@ -32,6 +32,7 @@ if [[ ! -f "${TOKEN_FILE}" ]]; then
   exit 1
 fi
 TOKEN="$(cat "${TOKEN_FILE}")"
+DEFAULT_WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
 
 userinfo_status="$(
   curl -sS -o /tmp/agentsmith_userinfo_check.json -w '%{http_code}' \
@@ -46,11 +47,64 @@ fi
 
 BASE="${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}"
 
+refresh_auth_token() {
+  echo "[smoke] token expired during API request; refreshing..." >&2
+  (
+    cd "${ROOT_DIR}" && \
+    BASE_URL="${DEFAULT_WEB_BASE_URL}" make notebook-agent-refresh-token >/dev/null
+  )
+  TOKEN="$(cat "${TOKEN_FILE}")"
+}
+
+api_json_request() {
+  local method="$1"
+  local url="$2"
+  local payload="${3-}"
+  local response_file status body
+
+  response_file="$(mktemp)"
+  if [[ -n "${payload}" ]]; then
+    status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X "${method}" "${url}" \
+      -H "Authorization: Bearer ${TOKEN}" \
+      -H 'Content-Type: application/json' \
+      -d "${payload}" || true)"
+  else
+    status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X "${method}" "${url}" \
+      -H "Authorization: Bearer ${TOKEN}" || true)"
+  fi
+
+  if [[ "${status}" == "401" ]]; then
+    refresh_auth_token
+    if [[ -n "${payload}" ]]; then
+      status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X "${method}" "${url}" \
+        -H "Authorization: Bearer ${TOKEN}" \
+        -H 'Content-Type: application/json' \
+        -d "${payload}" || true)"
+    else
+      status="$(curl -sS -o "${response_file}" -w '%{http_code}' -X "${method}" "${url}" \
+        -H "Authorization: Bearer ${TOKEN}" || true)"
+    fi
+  fi
+
+  body="$(cat "${response_file}" 2>/dev/null || true)"
+  rm -f "${response_file}"
+
+  if [[ ! "${status}" =~ ^[0-9]{3}$ ]]; then
+    echo "[smoke] ERROR: ${method} ${url} returned invalid HTTP status (${status})" >&2
+    return 1
+  fi
+  if [[ "${status}" -lt 200 || "${status}" -ge 300 ]]; then
+    echo "[smoke] ERROR: ${method} ${url} -> ${status}: ${body}" >&2
+    return 1
+  fi
+  printf '%s' "${body}"
+}
+
 wait_for_agent_online() {
   local diagnostics_url="${BASE}/agents/${AGENT_ID}/diagnostics"
   for i in $(seq 1 "${WAIT_AGENT_ONLINE_MAX}"); do
     local diag_json diag_presence diag_connected_at
-    diag_json="$(curl -sS "${diagnostics_url}" -H "Authorization: Bearer ${TOKEN}" || true)"
+    diag_json="$(api_json_request GET "${diagnostics_url}" || true)"
     diag_presence="$(printf '%s' "${diag_json}" | json_get presence || true)"
     diag_connected_at="$(printf '%s' "${diag_json}" | json_get connected_at || true)"
     if [[ "${diag_presence}" == "online" && -n "${diag_connected_at}" ]]; then
@@ -74,25 +128,21 @@ run_attempt() {
   local agent_tail trace_info trace_count trace_rest trace_terminal_status trace_terminal_summary
   local final_messages_json final_agent_tail settle_attempt settle_deadline
 
-  create_task_resp="$(curl -sS -X POST "${BASE}/tasks" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d "{\"title\":\"smoke-$(date +%s)\",\"agent_id\":\"${AGENT_ID}\"}")"
+  create_task_resp="$(api_json_request POST "${BASE}/tasks" \
+    "{\"title\":\"smoke-$(date +%s)\",\"agent_id\":\"${AGENT_ID}\"}")"
 
   TASK_ID="$(printf '%s' "${create_task_resp}" | json_get id)"
   echo "${TASK_ID}" > /tmp/agentsmith_last_task_id.txt
   echo "[smoke] task_id=${TASK_ID} (attempt ${attempt}/${SCENARIO_ATTEMPTS})"
 
-  curl -sS -X POST "${BASE}/tasks/${TASK_ID}/messages" \
-    -H "Authorization: Bearer ${TOKEN}" \
-    -H 'Content-Type: application/json' \
-    -d "$(node -e 'console.log(JSON.stringify({role:"user",content:process.argv[1]}))' "${PROMPT}")" >/dev/null
+  api_json_request POST "${BASE}/tasks/${TASK_ID}/messages" \
+    "$(node -e 'console.log(JSON.stringify({role:"user",content:process.argv[1]}))' "${PROMPT}")" >/dev/null
 
   for i in $(seq 1 "${POLL_MAX}"); do
-    task_json="$(curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}")"
+    task_json="$(api_json_request GET "${BASE}/tasks/${TASK_ID}")"
     status="$(printf '%s' "${task_json}" | json_get status || true)"
-    messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
-    traces_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/traces?page_size=200" -H "Authorization: Bearer ${TOKEN}" || true)"
+    messages_json="$(api_json_request GET "${BASE}/tasks/${TASK_ID}/messages")"
+    traces_json="$(api_json_request GET "${BASE}/tasks/${TASK_ID}/traces?page_size=200" || true)"
     agent_tail="$(printf '%s' "${messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").slice(-320));}catch{}})')"
     trace_info="$(printf '%s' "${traces_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);const items=Array.isArray(j.items)?j.items:[];const t=[...items].reverse().find(x=>x&&(x.status==="success"||x.status==="error"||x.status==="cancelled"));process.stdout.write(String(items.length)+"|"+(t?.status||"")+"|"+(t?.summary||""))}catch{process.stdout.write("0||")}})')"
     trace_count="${trace_info%%|*}"
@@ -107,13 +157,13 @@ run_attempt() {
   done
 
   echo "[smoke] final task:"
-  curl -sS "${BASE}/tasks/${TASK_ID}" -H "Authorization: Bearer ${TOKEN}"
+  api_json_request GET "${BASE}/tasks/${TASK_ID}"
   echo
   settle_attempt=0
   settle_deadline=$((SECONDS + FINAL_MESSAGE_SETTLE_MAX_SEC))
   while true; do
     settle_attempt=$((settle_attempt + 1))
-    final_messages_json="$(curl -sS "${BASE}/tasks/${TASK_ID}/messages" -H "Authorization: Bearer ${TOKEN}")"
+    final_messages_json="$(api_json_request GET "${BASE}/tasks/${TASK_ID}/messages")"
     final_agent_tail="$(printf '%s' "${final_messages_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const a=JSON.parse(s);const m=[...a].reverse().find(x=>x.role==="agent");process.stdout.write((m?.content||"").trim());}catch{process.exit(2)}})')"
     if [[ -z "${trace_terminal_status:-}" ]]; then
       break

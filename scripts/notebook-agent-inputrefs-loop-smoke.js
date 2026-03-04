@@ -120,8 +120,24 @@ async function runScenario() {
     throw lastError;
   }
 
+  async function fetchWithAuthRetry(
+    label,
+    requestFactory,
+  ) {
+    let refreshed = false;
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const res = await withRetry(label, () => requestFactory());
+      if (res.status !== 401) return res;
+      if (refreshed) return res;
+      process.stdout.write(`[inputrefs-loop] received 401 for ${label}; refreshing token and retrying once\n`);
+      tryRefreshToken();
+      refreshed = true;
+    }
+    throw new Error(`unreachable auth retry path for ${label}`);
+  }
+
   async function get(path) {
-    const res = await withRetry(`GET ${path}`, () => fetch(base + path, { headers: authHeaders() }));
+    const res = await fetchWithAuthRetry(`GET ${path}`, () => fetch(base + path, { headers: authHeaders() }));
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`GET ${path} -> ${res.status}: ${body.slice(0, 500)}`);
@@ -130,7 +146,7 @@ async function runScenario() {
   }
 
   async function post(path, body) {
-    const res = await withRetry(`POST ${path}`, () => fetch(base + path, {
+    const res = await fetchWithAuthRetry(`POST ${path}`, () => fetch(base + path, {
       method: 'POST',
       headers: { ...authHeaders(), 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -143,7 +159,7 @@ async function runScenario() {
   }
 
   async function getText(path) {
-    const res = await withRetry(`GET ${path}`, () => fetch(base + path, { headers: authHeaders() }));
+    const res = await fetchWithAuthRetry(`GET ${path}`, () => fetch(base + path, { headers: authHeaders() }));
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`GET ${path} -> ${res.status}: ${body.slice(0, 500)}`);
@@ -173,14 +189,19 @@ async function runScenario() {
   }
 
   async function uploadObject(libraryId, fileName, content, prefix) {
-    const fd = new FormData();
-    fd.append('file', new Blob([content], { type: 'text/plain' }), fileName);
-    if (prefix) fd.append('prefix', prefix);
-    const res = await withRetry(`POST source-libraries/${libraryId}/objects/upload`, () => fetch(`${base}/source-libraries/${libraryId}/objects/upload`, {
-      method: 'POST',
-      headers: authHeaders(),
-      body: fd,
-    }));
+    const res = await fetchWithAuthRetry(
+      `POST source-libraries/${libraryId}/objects/upload`,
+      () => {
+        const fd = new FormData();
+        fd.append('file', new Blob([content], { type: 'text/plain' }), fileName);
+        if (prefix) fd.append('prefix', prefix);
+        return fetch(`${base}/source-libraries/${libraryId}/objects/upload`, {
+          method: 'POST',
+          headers: authHeaders(),
+          body: fd,
+        });
+      },
+    );
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`POST source-libraries/${libraryId}/objects/upload -> ${res.status}: ${text.slice(0, 500)}`);

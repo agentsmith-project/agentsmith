@@ -37,4 +37,10 @@ describe('buildUpstreamUrl', () => {
       'https://api.anthropic.com/v1/messages',
     );
   });
+
+  it('supports anthropic messages/count_tokens with v1 injection', () => {
+    expect(buildUpstreamUrl('https://open.bigmodel.cn/api/anthropic', 'messages/count_tokens')).toBe(
+      'https://open.bigmodel.cn/api/anthropic/v1/messages/count_tokens',
+    );
+  });
 });

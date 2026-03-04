@@ -94,11 +94,15 @@ export async function proxyJsonRequest(
     proxyPath?: string;
     model?: string;
     timeoutSeconds?: number;
+    requestBody?: unknown;
+    passthroughHeaders?: Record<string, string>;
   },
 ): Promise<{ upstream_status: number; tokens_total?: number }> {
   const method = req.method ?? 'POST';
   const isBodyAllowed = method !== 'GET' && method !== 'HEAD';
-  const rawBody = isBodyAllowed ? await readBody(req) : {};
+  const rawBody = isBodyAllowed
+    ? (typeof options.requestBody !== 'undefined' ? options.requestBody : await readBody(req))
+    : {};
   const body =
     rawBody && typeof rawBody === 'object'
       ? ({ ...(rawBody as Record<string, unknown>) } as Record<string, unknown>)
@@ -165,6 +169,7 @@ export async function proxyJsonRequest(
       headers: {
         Authorization: `Bearer ${options.apiKey}`,
         'Content-Type': 'application/json',
+        ...(options.passthroughHeaders ?? {}),
       },
       body: isBodyAllowed ? JSON.stringify(upstreamBody) : undefined,
       signal: abortController.signal,

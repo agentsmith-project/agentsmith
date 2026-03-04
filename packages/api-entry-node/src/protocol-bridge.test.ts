@@ -14,6 +14,7 @@ describe('protocol bridge', () => {
     expect(detectProxyWireProtocol('chat/completions')).toBe('openai_completion');
     expect(detectProxyWireProtocol('/responses/')).toBe('openai_responses');
     expect(detectProxyWireProtocol('messages')).toBe('anthropic');
+    expect(detectProxyWireProtocol('messages/count_tokens')).toBe('anthropic');
   });
 
   it('converts openai chat request to anthropic messages request', () => {
@@ -122,5 +123,21 @@ describe('protocol bridge', () => {
     });
 
     expect(plan.upstreamUrl).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages');
+  });
+
+  it('keeps upstream anthropic sub-path when source and target protocol are both anthropic', () => {
+    const plan = buildProxyBridgePlan({
+      endpointProtocol: 'anthropic_compatible',
+      proxyPath: 'messages/count_tokens',
+      upstreamUrl: 'https://open.bigmodel.cn/api/anthropic/v1/messages/count_tokens',
+      body: {
+        model: 'glm-5',
+        messages: [{ role: 'user', content: 'hi' }],
+      },
+    });
+
+    expect(plan.sourceProtocol).toBe('anthropic');
+    expect(plan.targetProtocol).toBe('anthropic');
+    expect(plan.upstreamUrl).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages/count_tokens');
   });
 });

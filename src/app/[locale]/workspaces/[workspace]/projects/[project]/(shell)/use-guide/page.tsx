@@ -69,16 +69,54 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     );
   }
 
-  const endpointProxyBase = `http://localhost:20000/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints/{endpoint_id}/proxy`;
+  const gatewayBaseUrl = `http://localhost:20000/api/v1/workspaces/${workspaceId}/projects/${projectId}/llm-gateway`;
 
-  const codexSample = `export OPENAI_BASE_URL=${endpointProxyBase}\nexport OPENAI_API_KEY=<YOUR_PERSONAL_API_KEY>\n\ncodex --model <endpoint-model-name>`;
-  const claudeSample = `export ANTHROPIC_BASE_URL=${endpointProxyBase}\nexport ANTHROPIC_API_KEY=<YOUR_PERSONAL_API_KEY>\n\nclaude --model <endpoint-model-name>`;
+  const claudeEnvSample = `export ANTHROPIC_BASE_URL=${gatewayBaseUrl}\nexport ANTHROPIC_AUTH_TOKEN=<YOUR_PERSONAL_API_KEY>\nexport ANTHROPIC_DEFAULT_HAIKU_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_SONNET_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_OPUS_MODEL=<project-model-name>\nexport CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nexport CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`;
+
+  const claudeJsonSample = `{
+  "env": {
+    "ANTHROPIC_BASE_URL": "${gatewayBaseUrl}",
+    "ANTHROPIC_AUTH_TOKEN": "<YOUR_PERSONAL_API_KEY>",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "<project-model-name>",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "<project-model-name>",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "<project-model-name>",
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
+  }
+}`;
+
+  const codexSample = `export OPENAI_BASE_URL=${gatewayBaseUrl}\nexport OPENAI_API_KEY=<YOUR_PERSONAL_API_KEY>\n\ncodex --model <project-model-name>`;
+
+  const openAiCompletionCurl = `curl ${gatewayBaseUrl}/chat/completions \\
+  -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "<project-model-name>",
+    "messages": [{"role": "user", "content": "hello"}],
+    "stream": false
+  }'`;
+
+  const openAiResponsesCurl = `curl ${gatewayBaseUrl}/responses \\
+  -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "<project-model-name>",
+    "input": "hello"
+  }'`;
+
+  const anthropicCurl = `curl ${gatewayBaseUrl}/messages \\
+  -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
+  -H "anthropic-version: 2023-06-01" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "model": "<project-model-name>",
+    "max_tokens": 512,
+    "messages": [{"role": "user", "content": [{"type": "text", "text": "hello"}]}]
+  }'`;
 
   return (
     <PageState state="success">
-      <PageLayout
-        header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}
-      >
+      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
         <div className="space-y-4" data-testid="use-guide__page">
           <Card>
             <CardHeader>
@@ -89,6 +127,33 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
               <p>{t('steps.step_2')}</p>
               <p>{t('steps.step_3')}</p>
               <p>{t('steps.step_4')}</p>
+              <p>{t('steps.step_5')}</p>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('gateway.title')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 text-sm text-tertiary">
+              <p>{t('gateway.description')}</p>
+              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__gateway-base-url">
+                {gatewayBaseUrl}
+              </pre>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">{t('claude.title')}</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__claude-sample">
+                {claudeEnvSample}
+              </pre>
+              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__claude-json-sample">
+                {claudeJsonSample}
+              </pre>
             </CardContent>
           </Card>
 
@@ -105,11 +170,17 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">{t('claude.title')}</CardTitle>
+              <CardTitle className="text-base">{t('api_examples.title')}</CardTitle>
             </CardHeader>
-            <CardContent>
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__claude-sample">
-                {claudeSample}
+            <CardContent className="space-y-3">
+              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__openai-chat-curl">
+                {openAiCompletionCurl}
+              </pre>
+              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__openai-responses-curl">
+                {openAiResponsesCurl}
+              </pre>
+              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__anthropic-curl">
+                {anthropicCurl}
               </pre>
             </CardContent>
           </Card>
@@ -124,6 +195,9 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
               </Link>
               <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`} className="text-accent hover:underline" data-testid="use-guide__link-endpoints">
                 {t('quick_links.endpoints')}
+              </Link>
+              <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`} className="text-accent hover:underline" data-testid="use-guide__link-resource-policy">
+                {t('quick_links.resource_policy')}
               </Link>
               <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`} className="text-accent hover:underline" data-testid="use-guide__link-usage">
                 {t('quick_links.usage')}

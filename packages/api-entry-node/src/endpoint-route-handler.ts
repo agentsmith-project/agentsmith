@@ -76,6 +76,8 @@ interface EndpointHandlerArgs {
       proxyPath?: string;
       model?: string;
       timeoutSeconds?: number;
+      requestBody?: unknown;
+      passthroughHeaders?: Record<string, string>;
     },
   ) => Promise<{ upstream_status: number; tokens_total?: number }>;
 }
@@ -269,11 +271,55 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     if (proxyPath.startsWith('videos/generations')) return 'video_generation_create';
     return 'chat';
   };
+  const normalizeGatewayProxyPath = (value: string): string =>
+    value
+      .trim()
+      .replace(/^\/+/, '')
+      .replace(/^v1\//i, '')
+      .replace(/\/+$/, '');
+  const collectPassthroughHeaders = (request: http.IncomingMessage): Record<string, string> => {
+    const collected: Record<string, string> = {};
+    const keys = ['anthropic-version', 'anthropic-beta', 'x-stainless-helper-method'] as const;
+    for (const key of keys) {
+      const raw = request.headers[key];
+      if (typeof raw === 'string' && raw.trim()) {
+        collected[key] = raw.trim();
+      } else if (Array.isArray(raw) && raw.length > 0) {
+        const joined = raw.map((item) => item.trim()).filter(Boolean).join(',');
+        if (joined) collected[key] = joined;
+      }
+    }
+    return collected;
+  };
+  const asObject = (value: unknown): Record<string, unknown> | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  };
+  const asNonEmptyString = (value: unknown): string | undefined => {
+    if (typeof value !== 'string') return undefined;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
+  };
+  const endpointMatchesModel = (endpoint: EndpointRecord, model: string): boolean => {
+    if (endpoint.openai_model === model) return true;
+    if (Array.isArray(endpoint.models) && endpoint.models.some((item) => item.model_id === model)) return true;
+    const defaults = endpoint.defaults;
+    if (!defaults) return false;
+    return [
+      defaults.chat_model_id,
+      defaults.multimodal_model_id,
+      defaults.embedding_model_id,
+      defaults.rerank_model_id,
+      defaults.image_model_id,
+      defaults.video_model_id,
+    ].includes(model);
+  };
   const proxyEndpointRequest = async (
     endpointId: string,
     proxyPath: string,
     action: EndpointTaskAction = 'chat',
     jobId?: string,
+    requestBody?: unknown,
   ): Promise<boolean> => {
     if (!route.workspaceId || !route.projectId) {
       return false;
@@ -484,13 +530,19 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
     const startedAtMs = Date.now();
     try {
+      const effectiveProxyPath =
+        action === 'chat' && normalizeGatewayProxyPath(proxyPath) === 'messages/count_tokens'
+          ? normalizeGatewayProxyPath(proxyPath)
+          : (resolved.proxyPath || proxyPath);
       const proxyResult = await proxyJsonRequest(req, res, {
-        upstreamUrl: buildUpstreamUrl(endpoint.base_url, resolved.proxyPath || proxyPath),
+        upstreamUrl: buildUpstreamUrl(endpoint.base_url, effectiveProxyPath),
         apiKey,
         endpointProtocol: endpoint.protocol,
         proxyPath,
         model: resolvedModel,
         timeoutSeconds: endpoint.limits?.timeout_seconds,
+        requestBody,
+        passthroughHeaders: collectPassthroughHeaders(req),
       });
       await writeProjectUsageFact(deps, {
         workspaceId: route.workspaceId,
@@ -703,6 +755,57 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
   if (route.kind === 'endpointProxy' && method === 'POST' && route.workspaceId && route.projectId && route.endpointId && route.proxyPath) {
     return proxyEndpointRequest(route.endpointId, route.proxyPath, inferActionFromProxyPath(route.proxyPath));
+  }
+
+  if (route.kind === 'llmGatewayProxy' && method === 'POST' && route.workspaceId && route.projectId && route.proxyPath) {
+    const normalizedProxyPath = normalizeGatewayProxyPath(route.proxyPath);
+    const proxyPath = normalizedProxyPath === 'completions' ? 'chat/completions' : normalizedProxyPath;
+    const supportedProxyPaths = new Set([
+      'chat/completions',
+      'responses',
+      'messages',
+      'messages/count_tokens',
+    ]);
+    if (!supportedProxyPaths.has(proxyPath)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_proxy_path_not_supported' });
+      return true;
+    }
+    const body = await readBody(req);
+    const bodyObj = asObject(body);
+    const requestedModel = asNonEmptyString(bodyObj?.model);
+    const rawExplicitEndpointId = req.headers['x-agentsmith-endpoint-id'];
+    const explicitEndpointId = asNonEmptyString(
+      Array.isArray(rawExplicitEndpointId) ? rawExplicitEndpointId[0] : rawExplicitEndpointId,
+    );
+    if (!requestedModel && !explicitEndpointId) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_model_or_endpoint_required' });
+      return true;
+    }
+    const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);
+    let endpoint: EndpointRecord | undefined;
+    if (explicitEndpointId) {
+      endpoint = endpoints.find((item) => item.id === explicitEndpointId);
+      if (!endpoint) {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
+        return true;
+      }
+    } else if (requestedModel) {
+      const matched = endpoints.filter((item) => endpointMatchesModel(item, requestedModel));
+      if (matched.length === 0) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_model_not_routable' });
+        return true;
+      }
+      if (matched.length > 1) {
+        json(res, 409, { error_code: 'GATEWAY_MODEL_AMBIGUOUS', message: 'gateway_model_ambiguous' });
+        return true;
+      }
+      endpoint = matched[0];
+    }
+    if (!endpoint) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_endpoint_resolution_failed' });
+      return true;
+    }
+    return proxyEndpointRequest(endpoint.id, proxyPath, inferActionFromProxyPath(proxyPath), undefined, bodyObj ?? body);
   }
 
   if (route.kind === 'endpointRerank' && method === 'POST' && route.endpointId) {

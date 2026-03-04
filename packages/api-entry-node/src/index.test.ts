@@ -270,12 +270,15 @@ function startProtocolBridgeUpstreamServer(): {
   baseUrl: string;
   lastBody: () => unknown;
   lastPath: () => string;
+  lastHeaders: () => http.IncomingHttpHeaders;
 } {
   let body: unknown = null;
   let path = '';
+  let headers: http.IncomingHttpHeaders = {};
   const server = http.createServer((req, res) => {
     void (async () => {
       path = req.url ?? '';
+      headers = req.headers;
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -360,6 +363,7 @@ function startProtocolBridgeUpstreamServer(): {
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     lastBody: () => body,
     lastPath: () => path,
+    lastHeaders: () => headers,
   };
 }
 
@@ -8697,6 +8701,128 @@ describe('api-entry-node projects routes', () => {
     expect(payload.object).toBe('response');
     expect(payload.output_text).toBe('Hello from anthropic upstream.');
     expect(upstream.lastPath()).toBe('/v1/messages');
+  });
+
+  it('routes llm-gateway requests by model while keeping endpoint governance chain', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startProtocolBridgeUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'gateway-ant-key', type: 'api_key', value: 'sk-gateway-ant' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'gateway-anthropic-endpoint',
+          openai_model: 'glm-5',
+          type: 'anthropic',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'anthropic',
+          protocol: 'anthropic_compatible',
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+
+    const gatewayRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'glm-5',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello via gateway' }] }],
+          max_tokens: 128,
+        }),
+      },
+    );
+    expect(gatewayRes.status).toBe(200);
+    expect(gatewayRes.headers.get('x-agentsmith-proxy-source-protocol')).toBe('anthropic');
+    expect(gatewayRes.headers.get('x-agentsmith-proxy-target-protocol')).toBe('anthropic');
+    expect(upstream.lastPath()).toBe('/v1/messages');
+  });
+
+  it('forwards anthropic protocol headers through llm-gateway and preserves messages/count_tokens path', async () => {
+    const { baseUrl } = startServer();
+    const upstream = startProtocolBridgeUpstreamServer();
+
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'gateway-ant-key-headers', type: 'api_key', value: 'sk-gateway-ant-headers' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'gateway-anthropic-endpoint-headers',
+          openai_model: 'glm-4.7',
+          type: 'anthropic',
+          base_url: 'http://127.0.0.1:0/unused',
+          credential_ref: credential.id,
+          provider_family: 'anthropic',
+          protocol: 'anthropic_compatible',
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}`,
+      {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ base_url: upstream.baseUrl }),
+      },
+    );
+
+    const gatewayRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages/count_tokens',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+          'anthropic-beta': 'prompt-caching-2024-07-31',
+        },
+        body: JSON.stringify({
+          model: 'glm-4.7',
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'tokenize me' }] }],
+        }),
+      },
+    );
+    expect(gatewayRes.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/messages/count_tokens');
+    expect(upstream.lastHeaders()['anthropic-version']).toBe('2023-06-01');
+    expect(upstream.lastHeaders()['anthropic-beta']).toBe('prompt-caching-2024-07-31');
   });
 
   it('rejects webhook usage report schedule creation when credential_ref has no auth binding headers', async () => {

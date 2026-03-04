@@ -165,6 +165,32 @@ Status: Proposed (for immediate implementation)
 2. `rate_limited`
 3. `spending_limited`
 
+## 5.4 统一 LLM Gateway（单 Base URL）
+
+统一客户端出口（同一个 Base URL，支持多协议入口）：
+
+- `POST /api/v1/workspaces/{workspace}/projects/{project}/llm-gateway/chat/completions`
+- `POST /api/v1/workspaces/{workspace}/projects/{project}/llm-gateway/responses`
+- `POST /api/v1/workspaces/{workspace}/projects/{project}/llm-gateway/messages`
+- `POST /api/v1/workspaces/{workspace}/projects/{project}/llm-gateway/messages/count_tokens`
+
+路由与治理要求：
+
+1. 默认按请求体 `model` 路由到项目 endpoint。
+2. 允许通过 `x-agentsmith-endpoint-id` 显式指定 endpoint（用于调试/灰度）。
+3. 路由完成后必须执行 endpoint 级治理链路：
+   - allow-list 权限
+   - rate limit（1m/5h/1d）
+   - spending limit（1m/5h/1d）
+   - usage facts + audit events
+
+失败码（最小集合）：
+
+- `422 gateway_model_or_endpoint_required`
+- `422 gateway_model_not_routable`
+- `409 gateway_model_ambiguous`
+- `422 gateway_proxy_path_not_supported`
+
 ---
 
 ## 6. 告警 Contract（精简）
@@ -228,4 +254,3 @@ Status: Proposed (for immediate implementation)
 3. 普通用户 usage 页只看到自己
 4. 48h 以外查询返回明确错误（非静默空数据）
 5. UI 中错误分类仅 3 类，字段含义可读且一致
-

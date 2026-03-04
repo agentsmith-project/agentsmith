@@ -1383,13 +1383,18 @@
   },
   "use_guide": {
     "title": "API 接入手册",
-    "subtitle": "使用个人 API Key 通过项目端点代理连接本地 CLI 工具。",
+    "subtitle": "使用统一的项目网关 base URL 接入 Claude Code、Codex 与其他客户端。",
     "steps": {
       "title": "快速开始",
       "step_1": "在用户中心创建个人 API Key（用户 > API 密钥）。",
       "step_2": "请项目管理员在资源策略里授予你对应 endpoint 访问权限。",
-      "step_3": "在 Endpoints 页面选择目标端点，确认 endpoint ID 和模型名。",
-      "step_4": "按下面示例设置环境变量后运行本地 CLI。"
+      "step_3": "确保目标 endpoint 在项目内配置了唯一模型名（model）。",
+      "step_4": "使用统一的 /llm-gateway base URL，并设置客户端环境变量。",
+      "step_5": "若请求失败，请到用量与审计页面查看权限/限流/花费限制原因。"
+    },
+    "gateway": {
+      "title": "统一网关 Base URL",
+      "description": "所有协议共用同一个 Base URL；系统按 model 自动路由并执行 endpoint 级治理。"
     },
     "codex": {
       "title": "Codex CLI 示例"
@@ -1397,10 +1402,14 @@
     "claude": {
       "title": "Claude Code CLI 示例"
     },
+    "api_examples": {
+      "title": "协议请求示例"
+    },
     "quick_links": {
       "title": "快捷入口",
       "api_keys": "打开 API 密钥",
       "endpoints": "打开 Endpoints",
+      "resource_policy": "打开资源策略",
       "usage": "打开我的用量"
     }
   },

@@ -1381,13 +1381,18 @@
   },
   "use_guide": {
     "title": "API Access Guide",
-    "subtitle": "Use your personal API key with project endpoint proxy for local CLI tools.",
+    "subtitle": "Use one unified project gateway base URL for Claude Code, Codex, and other clients.",
     "steps": {
       "title": "Quick Setup",
       "step_1": "Create your personal API key in User > API Keys.",
       "step_2": "Ask project manager to grant endpoint access in Resource Policy.",
-      "step_3": "Pick an endpoint from Endpoints page and copy endpoint ID/model name.",
-      "step_4": "Set environment variables below and run your local CLI."
+      "step_3": "Ensure your endpoint has a unique model name configured in project endpoints.",
+      "step_4": "Use the unified /llm-gateway base URL and set your client environment variables.",
+      "step_5": "If request fails, check Usage and Audit pages for permission/rate/spending details."
+    },
+    "gateway": {
+      "title": "Unified Gateway Base URL",
+      "description": "All protocols use this same base URL. The system routes by model and applies endpoint-level governance."
     },
     "codex": {
       "title": "Codex CLI Example"
@@ -1395,10 +1400,14 @@
     "claude": {
       "title": "Claude Code CLI Example"
     },
+    "api_examples": {
+      "title": "Protocol API Examples"
+    },
     "quick_links": {
       "title": "Quick Links",
       "api_keys": "Open API Keys",
       "endpoints": "Open Endpoints",
+      "resource_policy": "Open Resource Policy",
       "usage": "Open My Usage"
     }
   },

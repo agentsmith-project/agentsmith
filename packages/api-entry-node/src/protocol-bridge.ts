@@ -86,7 +86,7 @@ export function detectProxyWireProtocol(proxyPath: string): ProxyWireProtocol {
   const normalized = proxyPath.replace(/^\/+/, '').replace(/\/+$/, '').toLowerCase();
   if (normalized === 'responses') return 'openai_responses';
   if (normalized === 'chat/completions') return 'openai_completion';
-  if (normalized === 'messages') return 'anthropic';
+  if (normalized === 'messages' || normalized.startsWith('messages/')) return 'anthropic';
   return 'unknown';
 }
 
@@ -554,7 +554,9 @@ export function buildProxyBridgePlan(params: {
   const chatRequest = toOpenAiChatRequest(sourceProtocol, params.body);
   const upstreamBody = fromOpenAiChatRequest(targetProtocol, chatRequest);
   const targetPath = targetPathFromProtocol(targetProtocol);
-  const upstreamUrl = targetPath ? rewriteUpstreamUrl(params.upstreamUrl, targetPath) : params.upstreamUrl;
+  const upstreamUrl = sourceProtocol === targetProtocol
+    ? params.upstreamUrl
+    : (targetPath ? rewriteUpstreamUrl(params.upstreamUrl, targetPath) : params.upstreamUrl);
   const isStreamingRequest = params.body.stream === true;
 
   return {

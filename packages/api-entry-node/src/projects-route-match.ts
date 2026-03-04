@@ -127,6 +127,12 @@ export type ProjectsRoute =
     endpointId: string;
     proxyPath: string;
   }
+  | {
+    kind: 'llmGatewayProxy';
+    workspaceId: string;
+    projectId: string;
+    proxyPath: string;
+  }
   | { kind: 'endpointImportOpenAICompatible'; workspaceId: string; projectId: string }
   | { kind: 'llmUnifiedChat'; workspaceId: string; projectId: string }
   | { kind: 'runtimeProviders'; workspaceId: string; projectId: string }
@@ -1097,6 +1103,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'llmUnifiedChat',
       workspaceId: decodeURIComponent(llmUnifiedChatMatched[1]),
       projectId: decodeURIComponent(llmUnifiedChatMatched[2]),
+    };
+  }
+
+  const llmGatewayProxyMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/llm-gateway\/(.+)$/,
+  );
+  if (llmGatewayProxyMatched) {
+    return {
+      kind: 'llmGatewayProxy',
+      workspaceId: decodeURIComponent(llmGatewayProxyMatched[1]),
+      projectId: decodeURIComponent(llmGatewayProxyMatched[2]),
+      proxyPath: llmGatewayProxyMatched[3],
     };
   }
 

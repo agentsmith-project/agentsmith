@@ -30,6 +30,8 @@ Current status:
   - `POST /api/v1/workspaces/:ws/projects/:prj/endpoints/import-openai-compatible`
   - `POST /api/v1/workspaces/:ws/projects/:prj/endpoints/:endpointId/proxy/{openai_path}`
     (example: `chat/completions`, `embeddings`)
+  - `POST /api/v1/workspaces/:ws/projects/:prj/llm-gateway/{path}`
+    (single-base-url gateway, supports `chat/completions`, `responses`, `messages`, `messages/count_tokens`)
 - Node API entry now serves chat runtime endpoints on real project data store:
   - `GET/POST /api/v1/workspaces/:ws/projects/:prj/chat/sessions`
   - `GET/PATCH/DELETE /api/v1/workspaces/:ws/projects/:prj/chat/sessions/:sessionId`

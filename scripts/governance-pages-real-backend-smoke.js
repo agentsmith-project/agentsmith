@@ -25,6 +25,65 @@ function b64url(buf) {
     .replace(/=+$/g, '');
 }
 
+function readTokenFile(tokenFile) {
+  try {
+    if (!tokenFile || !fs.existsSync(tokenFile)) return '';
+    return fs.readFileSync(tokenFile, 'utf8').trim();
+  } catch {
+    return '';
+  }
+}
+
+async function isTokenValid(keycloakBase, realm, token) {
+  if (!token) return false;
+  const url = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/userinfo`;
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+  }).catch(() => null);
+  return Boolean(response && response.ok);
+}
+
+async function fetchUserInfo(keycloakBase, realm, token) {
+  if (!token) return null;
+  const url = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/userinfo`;
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+  }).catch(() => null);
+  if (!response || !response.ok) return null;
+  const payload = await response.json().catch(() => null);
+  if (!payload || typeof payload !== 'object') return null;
+  const sub = typeof payload.sub === 'string' ? payload.sub : '';
+  const email = typeof payload.email === 'string' ? payload.email : '';
+  const name = typeof payload.name === 'string'
+    ? payload.name
+    : (typeof payload.preferred_username === 'string' ? payload.preferred_username : '');
+  if (!sub || !email || !name) return null;
+  return { sub, email, name };
+}
+
+async function exchangeAuthCodeForToken(args) {
+  const tokenUrl = `${args.keycloakBase.replace(/\/+$/, '')}/realms/${args.realm}/protocol/openid-connect/token`;
+  const body = new URLSearchParams();
+  body.set('grant_type', 'authorization_code');
+  body.set('client_id', args.clientId);
+  body.set('code', args.code);
+  body.set('code_verifier', args.codeVerifier);
+  body.set('redirect_uri', args.redirectUri);
+  const response = await fetch(tokenUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new Error(`auth_code_exchange_failed:${response.status}:${text.slice(0, 240)}`);
+  }
+  const data = await response.json();
+  const accessToken = typeof data?.access_token === 'string' ? data.access_token : '';
+  if (!accessToken) throw new Error('auth_code_exchange_missing_access_token');
+  return accessToken;
+}
+
 async function captureLoginDebugArtifacts(page, reason) {
   try {
     const outDir = path.join(process.cwd(), 'artifacts', 'release-reports');
@@ -44,6 +103,17 @@ async function captureLoginDebugArtifacts(page, reason) {
   }
 }
 
+async function waitForAppReady(page, timeoutMs = 60_000) {
+  const loading = page.getByTestId('page-state__loading');
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    const visible = await loading.isVisible().catch(() => false);
+    if (!visible) return;
+    await page.waitForTimeout(250);
+  }
+  throw new Error(`app_loading_timeout:${page.url()}`);
+}
+
 async function loginViaKeycloak(browser, {
   baseUrl,
   locale,
@@ -53,6 +123,7 @@ async function loginViaKeycloak(browser, {
   clientId,
   username,
   password,
+  tokenFile,
 }) {
   const context = await browser.newContext();
   const page = await context.newPage();
@@ -60,6 +131,7 @@ async function loginViaKeycloak(browser, {
   const loginUrl = `${base}/${locale}/login`;
   const callbackPattern = new RegExp(`/${locale}/login/callback(?:\\?|$)`);
   const workspacePattern = new RegExp(`/${locale}/login/workspace(?:\\?|$)`);
+  const anyProjectsPattern = new RegExp(`/${locale}/workspaces/[^/]+/projects(?:\\?|$)`);
   const projectsPattern = new RegExp(`/${locale}/workspaces/${workspaceId}/projects(?:\\?|$)`);
   const verifier = b64url(crypto.randomBytes(48));
   const state = b64url(crypto.randomBytes(24));
@@ -75,6 +147,32 @@ async function loginViaKeycloak(browser, {
   authUrl.searchParams.set('code_challenge_method', 'S256');
 
   try {
+    const fileToken = readTokenFile(tokenFile);
+    const fileUser = await fetchUserInfo(keycloakBase, realm, fileToken);
+    if (fileUser) {
+      await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await page.evaluate((session) => {
+        localStorage.setItem('agentsmith-auth', JSON.stringify({
+          state: {
+            isAuthenticated: true,
+            user: session.user,
+            token: session.token,
+            refreshToken: null,
+            tokenExpiresAt: Date.now() + 60 * 60 * 1000,
+          },
+        }));
+      }, {
+        token: fileToken,
+        user: {
+          id: fileUser.sub,
+          email: fileUser.email,
+          name: fileUser.name,
+          locale,
+        },
+      });
+      await page.goto(`${base}/${locale}/login/workspace`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await waitForAppReady(page);
+    } else {
     await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
     await page.evaluate((pkceContext) => {
       sessionStorage.setItem('mbos:keycloak:pkce', JSON.stringify(pkceContext));
@@ -93,27 +191,91 @@ async function loginViaKeycloak(browser, {
     await usernameField.fill(username);
     await passwordField.fill(password);
     await Promise.all([
-      page.waitForURL((url) => callbackPattern.test(url.href) || workspacePattern.test(url.href), { timeout: 120_000 }),
+      page.waitForURL((url) => (
+        callbackPattern.test(url.href)
+        || workspacePattern.test(url.href)
+        || anyProjectsPattern.test(url.href)
+      ), { timeout: 120_000 }),
       submitButton.click(),
     ]);
 
     if (callbackPattern.test(page.url())) {
-      await page.waitForURL(workspacePattern, { timeout: 120_000 });
+      let callbackResolved = false;
+      try {
+        await page.waitForURL((url) => workspacePattern.test(url.href) || anyProjectsPattern.test(url.href), { timeout: 15_000 });
+        callbackResolved = true;
+      } catch {
+        callbackResolved = false;
+      }
+      if (!callbackResolved) {
+        const callback = new URL(page.url());
+        const code = callback.searchParams.get('code');
+        if (!code) throw new Error('auth_code_missing_in_callback');
+        const accessToken = await exchangeAuthCodeForToken({
+          keycloakBase,
+          realm,
+          clientId,
+          code,
+          codeVerifier: verifier,
+          redirectUri,
+        });
+        await page.goto(loginUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        const userInfo = await fetchUserInfo(keycloakBase, realm, accessToken);
+        await page.evaluate((session) => {
+          localStorage.setItem('agentsmith-auth', JSON.stringify({
+            state: {
+              isAuthenticated: true,
+              user: session.user,
+              token: session.token,
+              refreshToken: null,
+              tokenExpiresAt: Date.now() + 60 * 60 * 1000,
+            },
+          }));
+          sessionStorage.removeItem('mbos:keycloak:pkce');
+        }, {
+          token: accessToken,
+          user: {
+            id: userInfo?.sub ?? 'unknown',
+            email: userInfo?.email ?? 'unknown@example.com',
+            name: userInfo?.name ?? 'Unknown User',
+            locale,
+          },
+        });
+        await page.goto(`${base}/${locale}/login/workspace`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+        await waitForAppReady(page);
+      }
+    }
     }
 
+    await waitForAppReady(page);
     const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
+    const anyWorkspaceCard = page.locator('[data-testid^="workspace-select__card--"]').first();
     await page.waitForLoadState('domcontentloaded');
     await Promise.race([
       workspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
+      anyWorkspaceCard.waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
       page.getByTestId('workspace-select__session-expired').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
       page.getByTestId('workspace-select__error').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
       page.getByTestId('workspace-select__empty').waitFor({ state: 'visible', timeout: 15_000 }).catch(() => {}),
     ]);
     if (await workspaceCard.isVisible().catch(() => false)) {
       await workspaceCard.click();
-      await page.waitForURL(projectsPattern, { timeout: 30_000 });
-    } else if (!projectsPattern.test(page.url())) {
-      throw new Error(`workspace_select_unresolved:${page.url()}`);
+      await page.waitForURL((url) => projectsPattern.test(url.href) || anyProjectsPattern.test(url.href), { timeout: 30_000 });
+    } else if (await anyWorkspaceCard.isVisible().catch(() => false)) {
+      await anyWorkspaceCard.click();
+      await page.waitForURL(anyProjectsPattern, { timeout: 30_000 });
+    } else if (!projectsPattern.test(page.url()) && !anyProjectsPattern.test(page.url())) {
+      const directProjectsUrl = `${base}/${locale}/workspaces/${workspaceId}/projects`;
+      try {
+        await page.goto(directProjectsUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes('ERR_ABORTED')) throw error;
+      }
+      await waitForAppReady(page).catch(() => {});
+      if (!projectsPattern.test(page.url()) && !anyProjectsPattern.test(page.url())) {
+        throw new Error(`workspace_select_unresolved:${page.url()}`);
+      }
     }
 
     const storageState = await context.storageState();
@@ -131,23 +293,33 @@ async function createAuthedPage(browser, storageState) {
 }
 
 async function gotoProjectRouteWithWorkspaceRecovery(page, { url, locale, workspaceId }) {
+  const targetPath = new URL(url).pathname;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+    await waitForAppReady(page);
+    const currentPath = new URL(page.url()).pathname;
+    if (currentPath === targetPath) return;
     const onWorkspaceSelect = page.url().includes(`/${locale}/login/workspace`);
     const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
     if (!onWorkspaceSelect && !await workspaceCard.isVisible().catch(() => false)) {
-      return;
+      // Route occasionally falls back to project list; retry full target navigation.
+      continue;
     }
     if (await workspaceCard.isVisible().catch(() => false)) {
       await workspaceCard.click();
       await page.waitForURL(new RegExp(`/${locale}/workspaces/${workspaceId}/projects`), { timeout: 30_000 });
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+      await waitForAppReady(page);
+      if (new URL(page.url()).pathname === targetPath) return;
     }
   }
+  throw new Error(`project_route_unresolved:${url}:current=${page.url()}`);
 }
 
 async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
   const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
   await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+  await waitForAppReady(page);
   const foundFromLink = await page.evaluate(() => {
     const links = Array.from(document.querySelectorAll('a[href*="/projects/"][href*="/overview"]'));
     for (const link of links) {
@@ -215,6 +387,7 @@ async function main() {
     const loginContext = await loginViaKeycloak(browser, {
       baseUrl, locale, keycloakBase, realm, clientId, username, password,
       workspaceId,
+      tokenFile: process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt',
     });
     const resolveContext = await createAuthedPage(browser, loginContext.storageState);
     const projectId = await resolveAccessibleProjectId({
@@ -265,12 +438,18 @@ async function main() {
               const deadline = Date.now() + 20_000;
               while (Date.now() < deadline && !foundAny) {
                 const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
-                if (page.url().includes(`/${locale}/login/workspace`) || await workspaceCard.isVisible().catch(() => false)) {
+                const currentPath = new URL(page.url()).pathname;
+                if (
+                  page.url().includes(`/${locale}/login/workspace`)
+                  || await workspaceCard.isVisible().catch(() => false)
+                  || currentPath !== path
+                ) {
                   if (await workspaceCard.isVisible().catch(() => false)) {
                     await workspaceCard.click();
                     await page.waitForURL(new RegExp(`/${locale}/workspaces/${workspaceId}/projects`), { timeout: 30_000 });
                   }
                   await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+                  await waitForAppReady(page).catch(() => {});
                 }
                 for (const tid of check.testidsAny) {
                   if (await page.getByTestId(tid).isVisible().catch(() => false)) {

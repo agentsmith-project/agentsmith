@@ -396,6 +396,14 @@ function isEndpointSpendingRuleKey(key: string): key is EndpointSpendingRuleKey 
     || key === 'endpoint.spending_usd_per_day';
 }
 
+function isEndpointRateRule(rule: PolicyRule): rule is { key: EndpointRateRuleKey; value: number } {
+  return isEndpointRateRuleKey(rule.key);
+}
+
+function isEndpointSpendingRule(rule: PolicyRule): rule is { key: EndpointSpendingRuleKey; value: number } {
+  return isEndpointSpendingRuleKey(rule.key);
+}
+
 function estimateRetryAfterSecondsFromFacts(
   nowMs: number,
   windowMs: number,
@@ -417,11 +425,11 @@ function resolveEndpointRateRules(args: {
   userId: string;
   policy: ProjectResourcePolicyRecord;
 }): Array<{ key: EndpointRateRuleKey; value: number; scope: 'policy' | 'subject' }> {
-  const baseRules = readPolicyRules(args.policy.rate_limits).filter((rule) => isEndpointRateRuleKey(rule.key));
+  const baseRules = readPolicyRules(args.policy.rate_limits).filter(isEndpointRateRule);
   const subject = getMatchingSubjectRateRules(args);
   const effective = subject.matched ? mergeRateRules(baseRules, subject.rules) : baseRules;
   return effective
-    .filter((rule) => isEndpointRateRuleKey(rule.key))
+    .filter(isEndpointRateRule)
     .map((rule) => ({
       key: rule.key,
       value: rule.value,
@@ -435,20 +443,20 @@ function resolveEndpointSpendingRules(args: {
   userId: string;
   policy: ProjectResourcePolicyRecord;
 }): Array<{ key: EndpointSpendingRuleKey; value: number; scope: 'policy' | 'subject' }> {
-  const baseRules = readPolicyRulesRaw(args.policy.spending_limits).filter((rule) => isEndpointSpendingRuleKey(rule.key));
+  const baseRules = readPolicyRulesRaw(args.policy.spending_limits).filter(isEndpointSpendingRule);
   const userRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
     .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
-    .filter((rule) => isEndpointSpendingRuleKey(rule.key));
+    .filter(isEndpointSpendingRule);
   const groupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
     .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
-    .filter((rule) => isEndpointSpendingRuleKey(rule.key));
+    .filter(isEndpointSpendingRule);
   const subjectMatched = userRules.length > 0 || groupRules.length > 0;
   const effective = subjectMatched ? mergeQuotaRules(baseRules, mergeQuotaRules(userRules, groupRules)) : baseRules;
   return effective
-    .filter((rule) => isEndpointSpendingRuleKey(rule.key))
+    .filter(isEndpointSpendingRule)
     .map((rule) => ({
       key: rule.key,
       value: rule.value,

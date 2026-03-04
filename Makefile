@@ -839,11 +839,14 @@ governance-sse-ticket-effect-smoke:
 
 governance-release-smoke:
 	@set -e; \
+	echo "[make] governance smoke preflight: restart managed API/Web in real-backend mode (MSW off)..."; \
+	$(MAKE) notebook-agent-demo-down >/dev/null 2>&1 || true; \
+	DEMO_INIT_RESOURCES=0 DEMO_START_RUNNER=1 $(MAKE) notebook-agent-demo-up; \
 	run_with_token_retry() { \
 		STEP_NAME="$$1"; \
 		if ! $(MAKE) "$$STEP_NAME"; then \
 			echo "[make] $$STEP_NAME failed; attempting token refresh and retry once"; \
-			if ! BASE_URL="$${BASE_URL:-http://localhost:3001}" $(MAKE) notebook-agent-refresh-token; then \
+			if ! BASE_URL="$${BASE_URL:-http://localhost:3001}" REFRESH_TOKEN_READ_APP_SESSION=0 $(MAKE) notebook-agent-refresh-token; then \
 				echo "[make] token refresh failed; attempting full demo self-heal before retry ($$STEP_NAME)"; \
 				DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
 			fi; \

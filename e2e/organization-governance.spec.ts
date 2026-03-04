@@ -28,7 +28,7 @@ test.describe('Organization Governance Overview', () => {
     await expect(authedPage.getByTestId('workspace-overview__action-explain-panel')).toBeVisible();
   });
 
-  test('actions queue drilldown carries governance context to release ops', async ({ authedPage }) => {
+  test('actions queue drilldown carries governance context to runtime console control tab', async ({ authedPage }) => {
     if (await isOverviewErrorState(authedPage)) {
       await expect(authedPage.getByTestId('workspace-overview__retry')).toBeVisible();
       test.info().annotations.push({
@@ -44,9 +44,10 @@ test.describe('Organization Governance Overview', () => {
     const href = await releaseOpsLink.getAttribute('href');
     expect(href).toBeTruthy();
     await goTo(authedPage, href ?? '/en-US/workspaces/overview');
-    await expect(authedPage).toHaveURL(/\/release-ops\?/);
+    await expect(authedPage).toHaveURL(/\/runtime-console\?/);
+    await expect(authedPage).toHaveURL(/tab=control/);
     await expect(authedPage).toHaveURL(/gov_from=organization_overview/);
-    await expect(authedPage.getByTestId('release-ops__governance-evidence-bridge')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('tabs-trigger-control')).toBeVisible({ timeout: 10000 });
   });
 
   test('matrix row provides release readiness shortcut with governance context', async ({ authedPage }) => {

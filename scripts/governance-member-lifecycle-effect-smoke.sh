@@ -51,6 +51,7 @@ json_get() {
 refresh_member_token() {
   local out_file="$1"
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+    REFRESH_TOKEN_READ_APP_SESSION=0 \
     BASE_URL="${BASE_URL}" \
     LOCALE="${LOCALE}" \
     USERNAME="${MEMBER_USERNAME}" \

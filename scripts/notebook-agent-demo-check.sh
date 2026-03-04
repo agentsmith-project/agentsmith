@@ -13,9 +13,20 @@ SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
 SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
 RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
+RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
+DEMO_REQUIRE_RUNNER="${DEMO_REQUIRE_RUNNER:-1}"
 
 info() { echo "[demo-check] $*"; }
 err() { echo "[demo-check] ERROR: $*" >&2; }
+
+pid_is_alive() {
+  local pid_file="$1"
+  [[ -f "${pid_file}" ]] || return 1
+  local pid
+  pid="$(cat "${pid_file}" 2>/dev/null || true)"
+  [[ -n "${pid}" ]] || return 1
+  kill -0 "${pid}" 2>/dev/null
+}
 
 require_file() {
   local path="$1"
@@ -106,6 +117,13 @@ main() {
     exit 1
   fi
   info "agent metadata files look sane"
+
+  if [[ "${DEMO_REQUIRE_RUNNER}" == "1" ]]; then
+    if ! pid_is_alive "${RUNNER_PID_FILE}"; then
+      err "managed runner is not running (${RUNNER_PID_FILE}); run: make notebook-agent-demo-up"
+      exit 1
+    fi
+  fi
 
   if [[ -f "${RUNNER_LOG}" ]]; then
     if rg -q "\\[agent-codex-runner\\] connected|websocket open" "${RUNNER_LOG}" 2>/dev/null; then

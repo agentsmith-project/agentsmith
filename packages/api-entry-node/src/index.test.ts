@@ -8737,6 +8737,7 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string; name: string };
 
     const gatewayRes = await apiFetch(
       baseUrl,
@@ -8755,6 +8756,40 @@ describe('api-entry-node projects routes', () => {
     expect(gatewayRes.headers.get('x-agentsmith-proxy-source-protocol')).toBe('anthropic');
     expect(gatewayRes.headers.get('x-agentsmith-proxy-target-protocol')).toBe('anthropic');
     expect(upstream.lastPath()).toBe('/v1/messages');
+    expect((upstream.lastBody() as { model?: string }).model).toBe('glm-5');
+
+    const gatewayResInternalModel = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: endpoint.id,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello via internal endpoint model id' }] }],
+          max_tokens: 128,
+        }),
+      },
+    );
+    expect(gatewayResInternalModel.status).toBe(200);
+    expect(upstream.lastPath()).toBe('/v1/messages');
+    // Internal endpoint model alias should be translated to the endpoint's provider model.
+    expect((upstream.lastBody() as { model?: string }).model).toBe('glm-5');
+
+    const gatewayResInternalName = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: endpoint.name,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'hello via internal endpoint model name' }] }],
+          max_tokens: 128,
+        }),
+      },
+    );
+    expect(gatewayResInternalName.status).toBe(200);
     expect((upstream.lastBody() as { model?: string }).model).toBe('glm-5');
   });
 

@@ -314,6 +314,8 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       defaults.video_model_id,
     ].includes(model);
   };
+  const endpointMatchesInternalGatewayModel = (endpoint: EndpointRecord, model: string): boolean =>
+    endpoint.id === model || endpoint.name === model;
   const proxyEndpointRequest = async (
     endpointId: string,
     proxyPath: string,
@@ -785,13 +787,36 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     }
     const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);
     let endpoint: EndpointRecord | undefined;
+    let upstreamModelOverride: string | undefined;
     if (explicitEndpointId) {
       endpoint = endpoints.find((item) => item.id === explicitEndpointId);
       if (!endpoint) {
         json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
         return true;
       }
+      if (requestedModel && !endpointMatchesInternalGatewayModel(endpoint, requestedModel)) {
+        upstreamModelOverride = requestedModel;
+      }
     } else if (requestedModel) {
+      const internalMatched = endpoints.filter((item) => endpointMatchesInternalGatewayModel(item, requestedModel));
+      if (internalMatched.length > 1) {
+        json(res, 409, { error_code: 'GATEWAY_MODEL_AMBIGUOUS', message: 'gateway_model_ambiguous' });
+        return true;
+      }
+      if (internalMatched.length === 1) {
+        endpoint = internalMatched[0];
+        upstreamModelOverride = undefined;
+      }
+      if (endpoint) {
+        return proxyEndpointRequest(
+          endpoint.id,
+          proxyPath,
+          inferActionFromProxyPath(proxyPath),
+          undefined,
+          bodyObj ?? body,
+          upstreamModelOverride,
+        );
+      }
       const matched = endpoints.filter((item) => endpointMatchesModel(item, requestedModel));
       if (matched.length === 0) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_model_not_routable' });
@@ -802,6 +827,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         return true;
       }
       endpoint = matched[0];
+      upstreamModelOverride = requestedModel;
     }
     if (!endpoint) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_endpoint_resolution_failed' });
@@ -813,7 +839,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       inferActionFromProxyPath(proxyPath),
       undefined,
       bodyObj ?? body,
-      requestedModel,
+      upstreamModelOverride,
     );
   }
 

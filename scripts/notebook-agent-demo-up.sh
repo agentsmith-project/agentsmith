@@ -4,6 +4,7 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+ENV_FILE="${ROOT_DIR}/.env.local"
 
 PORT_API="${PORT_API:-20000}"
 PORT_WEB="${PORT_WEB:-3001}"
@@ -46,6 +47,14 @@ DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"
 
 info() { echo "[demo-up] $*"; }
 err() { echo "[demo-up] ERROR: $*" >&2; }
+
+if [[ -f "${ENV_FILE}" ]]; then
+  set -a
+  # shellcheck disable=SC1090
+  . "${ENV_FILE}"
+  set +a
+  info "loaded local env from ${ENV_FILE}"
+fi
 
 init_demo_resources() {
   if [[ -z "${GLM_API_KEY}" ]]; then

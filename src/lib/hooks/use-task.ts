@@ -202,9 +202,6 @@ export function useSendMessage() {
         queryKey: queryKeys.tasks.detail(variables.workspaceId, variables.projectId, variables.taskId),
       });
     },
-    onError: (error: unknown) => {
-      handleErrorForToast(error, 'useSendMessage');
-    },
   });
 }
 

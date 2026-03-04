@@ -8,8 +8,18 @@ import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskPage } from '../TaskPage';
 import type { Task, TaskMessage, Artifact } from '@/lib/types/task';
+import { ApiError } from '@/lib/api/client';
 
 const mockTaskApiListTraces = vi.fn();
+const {
+  mockSendMessageMutateAsync,
+  mockHandleError,
+  mockToastError,
+} = vi.hoisted(() => ({
+  mockSendMessageMutateAsync: vi.fn(),
+  mockHandleError: vi.fn(),
+  mockToastError: vi.fn(),
+}));
 
 vi.mock('next-intl', () => ({
   useTranslations: (namespace?: string) => (key: string) => {
@@ -25,6 +35,11 @@ vi.mock('next-intl', () => ({
       'notebook.attached_files.url_dialog.confirm': 'Add URL',
       'notebook.conversation.trace_view': 'View execution details',
       'notebook.conversation.trace_load_more': 'Load earlier logs',
+      'notebook.conversation.send_rate_limited_title': 'Request rate limited',
+      'notebook.conversation.send_rate_limited_description': 'This request exceeded the current limit. Please retry shortly.',
+      'notebook.conversation.send_conflict_title': 'Task run still in progress',
+      'notebook.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
+      'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent runtime before sending.',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;
@@ -60,12 +75,7 @@ vi.mock('@/lib/hooks/use-task', () => ({
     refetch: vi.fn().mockResolvedValue({ data: { items: [], total: 0 } }),
   }),
   useSendMessage: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({
-      id: 'new-msg-id',
-      role: 'agent',
-      content: '',
-      created_at: new Date().toISOString(),
-    }),
+    mutateAsync: mockSendMessageMutateAsync,
     isPending: false,
   }),
   useAddFiles: () => ({
@@ -88,8 +98,17 @@ vi.mock('@/lib/hooks/use-task-sse', () => ({
 
 vi.mock('@/lib/hooks/use-error-handler', () => ({
   useErrorHandler: () => ({
-    handleError: vi.fn(),
+    handleError: mockHandleError,
   }),
+}));
+
+vi.mock('@/components/ui/toast', () => ({
+  toast: {
+    error: mockToastError,
+    success: vi.fn(),
+    warning: vi.fn(),
+    info: vi.fn(),
+  },
 }));
 
 // Mock components
@@ -273,6 +292,12 @@ describe('TaskPage', () => {
       },
     });
     vi.clearAllMocks();
+    mockSendMessageMutateAsync.mockResolvedValue({
+      id: 'new-msg-id',
+      role: 'agent',
+      content: '',
+      created_at: new Date().toISOString(),
+    });
 
     // Reset mock state to defaults
     mockTaskHookState = {
@@ -552,13 +577,13 @@ describe('TaskPage', () => {
   });
 
   describe('Disabled States', () => {
-    it('disables interaction when task is closed', () => {
-      mockTaskHookState.task = { ...mockTask, status: 'closed' };
+    it('keeps interaction enabled when task is active', () => {
+      mockTaskHookState.task = { ...mockTask, status: 'active' };
 
       renderComponent();
 
-      expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).toBeInTheDocument();
-      expect(screen.getByTestId('artifacts-panel').querySelector('[data-disabled]')).toBeInTheDocument();
+      expect(screen.getByTestId('conversation-panel').querySelector('[data-disabled]')).not.toBeInTheDocument();
+      expect(screen.getByTestId('artifacts-panel').querySelector('[data-disabled]')).not.toBeInTheDocument();
     });
 
     it('disables interaction when task is archived', () => {
@@ -588,11 +613,17 @@ describe('TaskPage', () => {
   });
 
   describe('Error Handling', () => {
-    it('handles message send errors gracefully', () => {
+    it('shows rate limit toast when message send is throttled', async () => {
+      const user = userEvent.setup();
+      mockSendMessageMutateAsync.mockRejectedValueOnce(new ApiError('RATE_LIMIT_EXCEEDED', 'Too many requests', 'req-1', 429));
       renderComponent();
 
-      // Error handling is done via the useErrorHandler hook
-      expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+      await user.click(screen.getByText('Send Message'));
+
+      expect(mockToastError).toHaveBeenCalledWith(
+        'Request rate limited: This request exceeded the current limit. Please retry shortly.',
+      );
+      expect(mockHandleError).not.toHaveBeenCalled();
     });
 
     it('handles download errors gracefully', () => {

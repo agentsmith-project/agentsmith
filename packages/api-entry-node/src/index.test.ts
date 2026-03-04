@@ -3970,7 +3970,7 @@ describe('api-entry-node projects routes', () => {
     expect(body.error_code).toBe('AGENT_SANDBOX_NOT_CONFIGURED');
   });
 
-  it('releases internal workload pod when notebook task is closed', async () => {
+  it('releases internal workload pod when notebook task is archived', async () => {
     const deps = createDefaultNodeApiDeps();
     const releasePod = vi.fn(async () => undefined);
     deps.internalAgentPodManager = {
@@ -4014,16 +4014,16 @@ describe('api-entry-node projects routes', () => {
     expect(taskRes.status).toBe(201);
     const task = (await taskRes.json()) as { id: string };
 
-    const closeRes = await apiFetch(
+    const archiveRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'closed' }),
+        body: JSON.stringify({ status: 'archived' }),
       },
     );
-    expect(closeRes.status).toBe(200);
+    expect(archiveRes.status).toBe(200);
     expect(releasePod).toHaveBeenCalledWith('ws_default', 'proj_1', sanitizeWorkloadId(task.id));
   });
 
@@ -4570,7 +4570,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(taskAfterRunRes.status).toBe(200);
     const taskAfterRun = (await taskAfterRunRes.json()) as { status: string };
-    expect(taskAfterRun.status).toBe('closed');
+    expect(taskAfterRun.status).toBe('active');
   });
 
   it('enforces agent resource policy rate limit for notebook external runtime and records governance evidence', async () => {

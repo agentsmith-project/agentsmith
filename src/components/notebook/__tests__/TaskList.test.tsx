@@ -64,7 +64,7 @@ describe('TaskList', () => {
       title: 'Test Task 2',
       agent_id: 'agent-2',
       agent_name: 'Test Agent 2',
-      status: 'closed',
+      status: 'active',
       attached_inputs: [],
       created_at: '2024-01-03T00:00:00Z',
       updated_at: '2024-01-03T00:00:00Z',
@@ -178,7 +178,7 @@ describe('TaskList', () => {
       expect(screen.getByText('Test Agent 2')).toBeInTheDocument();
     });
 
-    it('displays task status badges', () => {
+    it('does not display task status badges', () => {
       vi.mocked(useTasks).mockReturnValue({
         data: { items: mockTasks, total: 3, page: 1, page_size: 10 },
         isLoading: false,
@@ -188,9 +188,8 @@ describe('TaskList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('Active')).toBeInTheDocument();
-      expect(screen.getByText('Closed')).toBeInTheDocument();
-      expect(screen.getByText('Archived')).toBeInTheDocument();
+      expect(screen.queryByText('Active')).not.toBeInTheDocument();
+      expect(screen.queryByText('Archived')).not.toBeInTheDocument();
     });
 
     it('displays attached files count', () => {

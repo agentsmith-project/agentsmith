@@ -4,7 +4,7 @@
  * Types for Task, TaskMessage, Artifact and related operations.
  */
 
-export type TaskStatus = 'active' | 'closed' | 'archived';
+export type TaskStatus = 'active' | 'archived';
 
 export type TaskInputRef =
   | {

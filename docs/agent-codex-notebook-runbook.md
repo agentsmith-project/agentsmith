@@ -414,7 +414,7 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
     - `phase=end`
     - `status=error`
     - `details.synthesized=true`
-  - backend closes the task status (`active -> closed`) for failed runs.
+  - task stays reusable; completion/failure is represented by run terminal signals and trace events.
 - This fallback is operationally required so smoke/runbook tooling can classify completion deterministically.
 
 ## 7.2 Debug Log Correlation (Recommended)

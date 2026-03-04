@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Plus, ArrowLeft, Trash2, Loader2, Pencil } from 'lucide-react';
 import { useDeleteTask } from '@/lib/hooks/use-task';
-import type { Task, TaskStatus } from '@/lib/types/task';
+import type { Task } from '@/lib/types/task';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,12 +36,6 @@ export interface TaskHeaderProps {
   onDeleted?: () => void;
   onLeave?: () => void;
 }
-
-const getStatusConfig = (t: (key: string) => string): Record<TaskStatus, { label: string; variant: 'default' | 'secondary' | 'destructive' | 'outline' }> => ({
-  active: { label: t('status.active'), variant: 'default' },
-  closed: { label: t('status.closed'), variant: 'secondary' },
-  archived: { label: t('status.archived'), variant: 'outline' },
-});
 
 export function TaskHeader({
   task,
@@ -87,8 +81,6 @@ export function TaskHeader({
     }
   };
 
-  const statusConfig = getStatusConfig(t);
-  const statusInfo = statusConfig[task.status];
   const agentPresenceLabel = (
     agentPresence === 'online'
       ? t('agent_presence_online')
@@ -141,9 +133,6 @@ export function TaskHeader({
             <span className="text-sm text-tertiary">Agent: {task.agent_name}</span>
             <Badge variant={agentPresenceVariant} className="text-xs">
               {agentPresenceLabel}
-            </Badge>
-            <Badge variant={statusInfo.variant} className="text-xs">
-              {statusInfo.label}
             </Badge>
           </div>
         </div>

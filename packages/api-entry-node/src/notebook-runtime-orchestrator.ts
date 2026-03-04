@@ -23,7 +23,7 @@ type NotebookTaskRecord = {
   owner_user_id: string;
   title: string;
   agent_name: string;
-  status: 'active' | 'closed' | 'archived';
+  status: 'active' | 'archived';
   attached_inputs: Array<
     | { id: string; kind: 'source'; source_id: string }
     | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
@@ -479,10 +479,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
         terminal_result: terminalResult,
         error_code: terminalErrorCode ?? null,
       });
-    }
-    // Fail-fast closure for broken runs: do not leave task forever "active".
-    if (terminalResult === 'error' || missingRuntimeTrace) {
-      task.status = 'closed';
     }
     const durationMs = Math.max(0, Date.now() - startedAtMs);
     await writeProjectAuditEvent(deps, {

@@ -36,6 +36,7 @@ import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
 import { classifyNotebookTraceFailure, type NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
 import { buildAgentDiagnosticsLink, buildBuildDiagnosticsOpsQuery } from '@/lib/build-diagnostics-context';
 import { AgentAPI } from '@/lib/api/endpoints/agents';
+import { ApiError } from '@/lib/api/client';
 import { toast } from '@/components/ui/toast';
 
 export interface TaskPageProps {
@@ -503,7 +504,31 @@ export function TaskPage({
     } catch (err) {
       setIsAgentTurnRunning(false);
       setTaskUpdateCountForCurrentTurn(0);
-      handleError(err, { logContext: 'TaskPage.sendMessage' });
+      if (err instanceof ApiError) {
+        const errorCode = err.errorCode?.toUpperCase();
+        if (errorCode === 'TASK_STREAM_CONFLICT') {
+          toast.error(
+            `${tConversation('send_conflict_title')}: ${tConversation('send_conflict_description')}`,
+          );
+          return;
+        }
+        if (
+          err.statusCode === 429
+          || errorCode === 'RATE_LIMIT_EXCEEDED'
+          || errorCode === 'RESOURCE_POLICY_RATE_LIMITED'
+          || errorCode === 'RESOURCE_POLICY_QUOTA_EXCEEDED'
+        ) {
+          toast.error(
+            `${tConversation('send_rate_limited_title')}: ${tConversation('send_rate_limited_description')}`,
+          );
+          return;
+        }
+        if (errorCode === 'AGENT_OFFLINE') {
+          toast.error(tConversation('agent_offline_send_blocked'));
+          return;
+        }
+      }
+      handleError(err, { logContext: 'TaskPage.sendMessage', showToast: true });
     }
   };
 
@@ -706,7 +731,7 @@ export function TaskPage({
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
   };
 
-  const handleTaskUpdated = async (data: { title: string; status: 'active' | 'closed' | 'archived' }) => {
+  const handleTaskUpdated = async (data: { title: string }) => {
     await updateTask.mutateAsync({
       workspaceId,
       projectId,
@@ -746,7 +771,7 @@ export function TaskPage({
     );
   }
 
-  const isDisabled = task.status === 'closed' || task.status === 'archived';
+  const isDisabled = task.status === 'archived';
   const isExternalAgentOffline = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
   const isConversationInputDisabled = (
     isDisabled

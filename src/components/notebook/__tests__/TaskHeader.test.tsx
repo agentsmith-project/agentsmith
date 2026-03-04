@@ -36,9 +36,7 @@ vi.mock('next-intl', () => ({
       'edit': 'Edit',
       'edit_title': 'Edit Task',
       'new': 'New',
-      'status.active': 'Active',
-      'status.closed': 'Closed',
-      'status.archived': 'Archived',
+      'agent_presence_unknown': 'Agent Unknown',
     };
     return translations[key] || key;
   },
@@ -100,24 +98,9 @@ describe('TaskHeader', () => {
       expect(screen.getByText('Agent: Test Agent')).toBeInTheDocument();
     });
 
-    it('renders status badge for active status', () => {
+    it('renders agent presence badge instead of task status badge', () => {
       renderComponent();
-
-      expect(screen.getByText('Active')).toBeInTheDocument();
-    });
-
-    it('renders status badge for closed status', () => {
-      const closedTask: Task = { ...mockTask, status: 'closed' };
-      renderComponent(closedTask);
-
-      expect(screen.getByText('Closed')).toBeInTheDocument();
-    });
-
-    it('renders status badge for archived status', () => {
-      const archivedTask: Task = { ...mockTask, status: 'archived' };
-      renderComponent(archivedTask);
-
-      expect(screen.getByText('Archived')).toBeInTheDocument();
+      expect(screen.getByText('Agent Unknown')).toBeInTheDocument();
     });
 
     it('has data-testid for easy selection', () => {

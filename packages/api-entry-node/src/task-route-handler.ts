@@ -40,7 +40,7 @@ interface TaskRecord {
   title: string;
   agent_id: string;
   agent_name: string;
-  status: 'active' | 'closed' | 'archived';
+  status: 'active' | 'archived';
   attached_inputs: TaskInputRefRecord[];
   created_at: string;
   updated_at: string;
@@ -594,14 +594,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (typeof body.title === 'string' && body.title.trim()) {
       task.title = body.title.trim();
     }
-    if (body.status === 'active' || body.status === 'closed' || body.status === 'archived') {
+    if (body.status === 'active' || body.status === 'archived') {
       task.status = body.status;
     }
     task.updated_at = nowIso();
     await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
     if (
       previousStatus === 'active'
-      && (task.status === 'closed' || task.status === 'archived')
+      && task.status === 'archived'
     ) {
       await maybeReleaseInternalAgentWorkload(deps, route.workspaceId, route.projectId, task);
     }

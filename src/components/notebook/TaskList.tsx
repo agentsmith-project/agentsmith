@@ -2,25 +2,17 @@
 import * as React from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { Plus, Loader2, ChevronRight, Clock3, Bot } from 'lucide-react';
 import { useTasks } from '@/lib/hooks/use-task';
 import { TaskCreateDialog } from './TaskCreateDialog';
 import { EmptyState } from '@/components/ui/loading';
-import type { Task } from '@/lib/types/task';
 
 export interface TaskListProps {
   workspaceId: string;
   projectId: string;
   canCreateTask: boolean;
 }
-
-const statusConfig: Record<Task['status'], { label: string; variant: 'default' | 'secondary' | 'outline' }> = {
-  active: { label: 'Active', variant: 'default' },
-  closed: { label: 'Closed', variant: 'secondary' },
-  archived: { label: 'Archived', variant: 'outline' },
-};
 
 export function TaskList({
   workspaceId,
@@ -98,7 +90,6 @@ export function TaskList({
         ) : (
           <div className="space-y-1.5">
             {tasks.map((task) => {
-              const statusInfo = statusConfig[task.status];
               return (
                 <div
                   key={task.id}
@@ -111,9 +102,6 @@ export function TaskList({
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 min-w-0">
                         <h3 className="text-sm md:text-[15px] font-semibold text-foreground truncate">{task.title}</h3>
-                        <Badge variant={statusInfo.variant} className="text-xs shrink-0">
-                          {statusInfo.label}
-                        </Badge>
                       </div>
                       <div className="text-xs text-tertiary flex flex-wrap items-center gap-x-3 gap-y-1">
                         <span className="inline-flex items-center gap-1">

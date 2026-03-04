@@ -11,22 +11,15 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Loader2 } from 'lucide-react';
-import type { Task, TaskStatus } from '@/lib/types/task';
+import type { Task } from '@/lib/types/task';
 
 export interface EditTaskDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   task: Task;
   saving?: boolean;
-  onSubmit: (data: { title: string; status: TaskStatus }) => Promise<void> | void;
+  onSubmit: (data: { title: string }) => Promise<void> | void;
 }
 
 export function EditTaskDialog({
@@ -39,18 +32,16 @@ export function EditTaskDialog({
   const t = useTranslations('notebook.task');
   const commonT = useTranslations('common');
   const [title, setTitle] = React.useState(task.title);
-  const [status, setStatus] = React.useState<TaskStatus>(task.status);
 
   React.useEffect(() => {
     if (!open) return;
     setTitle(task.title);
-    setStatus(task.status);
-  }, [open, task.title, task.status]);
+  }, [open, task.title]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) return;
-    await onSubmit({ title: title.trim(), status });
+    await onSubmit({ title: title.trim() });
     onOpenChange(false);
   };
 
@@ -74,21 +65,6 @@ export function EditTaskDialog({
               required
               data-testid="notebook__edit-task-title"
             />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="task-edit-status" className="text-sm font-medium text-foreground">
-              {t('status_label')}
-            </label>
-            <Select value={status} onValueChange={(v) => setStatus(v as TaskStatus)} disabled={saving}>
-              <SelectTrigger id="task-edit-status" data-testid="notebook__edit-task-status">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="active">{t('status.active')}</SelectItem>
-                <SelectItem value="closed">{t('status.closed')}</SelectItem>
-                <SelectItem value="archived">{t('status.archived')}</SelectItem>
-              </SelectContent>
-            </Select>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)} disabled={saving}>

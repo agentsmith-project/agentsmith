@@ -328,6 +328,9 @@ make notebook-agent-release-smoke
 - Default bundle includes:
   - `make notebook-agent-smoke-task`
   - `make notebook-agent-inputrefs-loop-smoke`
+- Smoke auth behavior:
+  - notebook smoke scripts now auto-refresh token once on `401` and retry the failed API call (including initial `POST /tasks`).
+  - if refresh still fails or retry remains `401`, smoke fails fast with the concrete HTTP error body.
 - Optional matplotlib image-artifact smoke:
 ```bash
 RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
@@ -401,8 +404,20 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
 - `AGENT_OFFLINE`: no active runtime websocket for selected agent.
 - `AGENT_PROTOCOL_ERROR`: invalid runtime response frame shape.
 - `AGENT_TIMEOUT`: runner or runtime timeout while waiting for codex/agent stream.
+- `runtime.terminal` (trace event name): synthesized backend terminal trace used when runtime fails before any trace frame is emitted.
 
-## 7.1 Debug Log Correlation (Recommended)
+## 7.1 Terminal Fallback Semantics
+- For notebook runs, backend must not leave tasks in an indeterminate "no traces forever" state.
+- If dispatch/stream fails before any runtime trace arrives:
+  - backend emits synthesized terminal trace event:
+    - `name=runtime.terminal`
+    - `phase=end`
+    - `status=error`
+    - `details.synthesized=true`
+  - backend closes the task status (`active -> closed`) for failed runs.
+- This fallback is operationally required so smoke/runbook tooling can classify completion deterministically.
+
+## 7.2 Debug Log Correlation (Recommended)
 - `notebook-runtime` logs (`DEBUG_NOTEBOOK_RUNTIME=1`)
   - carries `task_id`, `run_id`, `request_id`, `agent_id`, `endpoint_id`
 - `agent-codex-runner` debug logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
@@ -412,7 +427,7 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
 - `agent-runtime` logs (`DEBUG_AGENT_RUNTIME=1`)
   - websocket accept/reject, request timeout signals
 
-## 7.2 Frontend Notebook SSE Debug Panel (Development Only)
+## 7.3 Frontend Notebook SSE Debug Panel (Development Only)
 - In `next dev` (`NODE_ENV=development`), the notebook task page shows `SSE Debug (latest 5)` above the conversation panel.
 - It is now **disabled by default**, even in development.
 - Enable explicitly when troubleshooting browser SSE behavior:

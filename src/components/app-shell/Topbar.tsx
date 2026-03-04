@@ -84,6 +84,10 @@ export function Topbar({ className = '' }: TopbarProps) {
     router.push(`/user/api-keys`);
   };
 
+  const handleThirdPartyAccounts = () => {
+    router.push(`/user/third-party-accounts`);
+  };
+
   const handleLanguageSwitch = (newLocale: string) => {
     router.replace(pathname, { locale: newLocale });
   };
@@ -216,6 +220,7 @@ export function Topbar({ className = '' }: TopbarProps) {
         <UserMenu
           user={user}
           onProfile={handleProfile}
+          onThirdPartyAccounts={handleThirdPartyAccounts}
           onApiKeys={handleApiKeys}
           onLanguageSwitch={handleLanguageSwitch}
           currentLocale={locale}

@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import type { JsonDocStorePort } from '@mbos/ports';
 import type { AuthenticatedUser } from './auth.js';
 import { json, readBody } from './http-utils.js';
 import {
@@ -9,6 +10,26 @@ import {
   unreadNotificationsCount,
 } from './me-notifications-store.js';
 import { listReleaseEscalations } from './release-escalation-store.js';
+import {
+  completeFeishuOAuth,
+  getFeishuOAuthConfig,
+  refreshFeishuOAuth,
+  startFeishuOAuth,
+} from './feishu-oauth.js';
+import {
+  createUserExternalConnection,
+  deleteUserExternalConnection,
+  getUserExternalConnection,
+  isUserExternalConnectionKind,
+  isUserExternalConnectionProvider,
+  isUserExternalConnectionStatus,
+  listUserExternalConnections,
+  mergeExternalConnectionFields,
+  normalizeExternalConnectionFields,
+  normalizeStringArray,
+  presentUserExternalConnection,
+  updateUserExternalConnection,
+} from './user-external-connections-store.js';
 
 interface UserProfileRecord {
   display_name?: string | null;
@@ -23,6 +44,27 @@ interface UserProfileRecord {
 }
 
 const profilesByUser = new Map<string, UserProfileRecord>();
+function getProviderConfig(provider: 'feishu' | 'jira' | 'github' | 'gitee' | 'custom') {
+  if (provider === 'feishu') {
+    const feishu = getFeishuOAuthConfig();
+    return {
+      provider,
+      interactive_login_required: true,
+      refresh_supported: true,
+      callback_uri: feishu.redirectUri,
+      auth_url: feishu.authorizeUrl,
+      auth_configured: feishu.configured,
+    };
+  }
+  return {
+    provider,
+    interactive_login_required: false,
+    refresh_supported: false,
+    callback_uri: null,
+    auth_url: null,
+    auth_configured: false,
+  };
+}
 
 function getUserProfile(user: AuthenticatedUser): UserProfileRecord {
   return profilesByUser.get(user.id) ?? {
@@ -48,9 +90,10 @@ export async function handleMeRoute(args: {
   method: string;
   requestUrl: URL;
   user: AuthenticatedUser;
+  docStore: JsonDocStorePort;
   releaseEscalationsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user, releaseEscalationsDir } = args;
+  const { req, res, method, requestUrl, user, docStore, releaseEscalationsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;
@@ -113,6 +156,182 @@ export async function handleMeRoute(args: {
       return true;
     }
     json(res, 200, { unread_count: unreadNotificationsCount(getUserNotifications(user.id)) });
+    return true;
+  }
+
+  if (pathname === '/api/v1/me/external-connections') {
+    if (method === 'GET') {
+      const items = (await listUserExternalConnections(docStore, user.id)).map(presentUserExternalConnection);
+      json(res, 200, { items, total: items.length });
+      return true;
+    }
+
+    if (method === 'POST') {
+      const body = (await readBody(req)) as Record<string, unknown> | null;
+      if (!body || !isUserExternalConnectionProvider(body.provider) || !isUserExternalConnectionKind(body.kind)) {
+        json(res, 400, { error_code: 'INVALID_REQUEST', message: 'external_connection_invalid_provider_or_kind' });
+        return true;
+      }
+      const displayName = typeof body.display_name === 'string' ? body.display_name.trim() : '';
+      if (!displayName) {
+        json(res, 400, { error_code: 'INVALID_REQUEST', message: 'external_connection_display_name_required' });
+        return true;
+      }
+      if (body.provider === 'custom') {
+        const customDomain = typeof body.custom_domain === 'string' ? body.custom_domain.trim() : '';
+        if (!customDomain) {
+          json(res, 400, { error_code: 'INVALID_REQUEST', message: 'external_connection_custom_domain_required' });
+          return true;
+        }
+      }
+      const record = await createUserExternalConnection(docStore, {
+        user_id: user.id,
+        provider: body.provider,
+        custom_domain: typeof body.custom_domain === 'string' ? body.custom_domain.trim() || null : null,
+        kind: body.kind,
+        display_name: displayName,
+        status: isUserExternalConnectionStatus(body.status) ? body.status : 'active',
+        fields: normalizeExternalConnectionFields(body.fields) ?? [],
+        account_identity: body.account_identity && typeof body.account_identity === 'object'
+          ? body.account_identity as ExternalConnectionAccountIdentity
+          : null,
+        scopes: normalizeStringArray(body.scopes) ?? null,
+        expires_at: typeof body.expires_at === 'string' ? body.expires_at : null,
+        last_refreshed_at: null,
+        last_used_at: null,
+        last_error: typeof body.last_error === 'string' ? body.last_error : null,
+      });
+      json(res, 201, presentUserExternalConnection(record));
+      return true;
+    }
+
+    json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+    return true;
+  }
+
+  if (pathname === '/api/v1/me/external-connections/providers/feishu/auth/start') {
+    if (method !== 'POST') {
+      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+      return true;
+    }
+    try {
+      json(res, 200, startFeishuOAuth(user.id));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'feishu_oauth_start_failed';
+      json(res, 400, { error_code: 'INVALID_REQUEST', message });
+    }
+    return true;
+  }
+
+  if (pathname === '/api/v1/me/external-connections/providers/feishu/auth/complete') {
+    if (method !== 'POST') {
+      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+      return true;
+    }
+    const body = (await readBody(req)) as Record<string, unknown> | null;
+    try {
+      const record = await completeFeishuOAuth({
+        docStore,
+        userId: user.id,
+        callbackUrl: typeof body?.callback_url === 'string' ? body.callback_url : undefined,
+        code: typeof body?.code === 'string' ? body.code : undefined,
+        state: typeof body?.state === 'string' ? body.state : undefined,
+      });
+      json(res, 200, presentUserExternalConnection(record));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'feishu_oauth_complete_failed';
+      json(res, 400, { error_code: 'INVALID_REQUEST', message });
+    }
+    return true;
+  }
+
+  const providerMatch = pathname.match(/^\/api\/v1\/me\/external-connections\/providers\/([^/]+)$/);
+  if (providerMatch) {
+    if (method !== 'GET') {
+      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+      return true;
+    }
+    const provider = decodeURIComponent(providerMatch[1] ?? '');
+    if (!isUserExternalConnectionProvider(provider)) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'provider_not_found' });
+      return true;
+    }
+    json(res, 200, getProviderConfig(provider));
+    return true;
+  }
+
+  const connectionMatch = pathname.match(/^\/api\/v1\/me\/external-connections\/([^/]+)$/);
+  if (connectionMatch) {
+    const connectionId = decodeURIComponent(connectionMatch[1] ?? '');
+    const existing = await getUserExternalConnection(docStore, user.id, connectionId);
+    if (!existing) {
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'external_connection_not_found' });
+      return true;
+    }
+
+    if (method === 'PATCH') {
+      const body = (await readBody(req)) as Record<string, unknown> | null;
+      const nextRecord = await updateUserExternalConnection(docStore, user.id, connectionId, {
+        custom_domain: body?.custom_domain === undefined
+          ? existing.custom_domain
+          : typeof body.custom_domain === 'string'
+            ? body.custom_domain.trim() || null
+            : null,
+        display_name: typeof body?.display_name === 'string' && body.display_name.trim()
+          ? body.display_name.trim()
+          : existing.display_name,
+        status: isUserExternalConnectionStatus(body?.status) ? body.status : existing.status,
+        fields: mergeExternalConnectionFields(existing.fields, body?.fields) ?? existing.fields,
+        account_identity: body?.account_identity === undefined
+          ? existing.account_identity
+          : body.account_identity && typeof body.account_identity === 'object'
+            ? body.account_identity as ExternalConnectionAccountIdentity
+            : null,
+        scopes: body?.scopes === undefined ? existing.scopes : normalizeStringArray(body.scopes) ?? null,
+        expires_at: body?.expires_at === undefined
+          ? existing.expires_at
+          : typeof body.expires_at === 'string'
+            ? body.expires_at
+            : null,
+        last_error: body?.last_error === undefined
+          ? existing.last_error
+          : typeof body.last_error === 'string'
+            ? body.last_error
+            : null,
+      });
+      json(res, 200, presentUserExternalConnection(nextRecord ?? existing));
+      return true;
+    }
+
+    if (method === 'DELETE') {
+      await deleteUserExternalConnection(docStore, user.id, connectionId);
+      res.statusCode = 204;
+      res.end();
+      return true;
+    }
+
+    json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+    return true;
+  }
+
+  const refreshMatch = pathname.match(/^\/api\/v1\/me\/external-connections\/([^/]+)\/refresh$/);
+  if (refreshMatch) {
+    if (method !== 'POST') {
+      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
+      return true;
+    }
+    const connectionId = decodeURIComponent(refreshMatch[1] ?? '');
+    try {
+      const updated = await refreshFeishuOAuth({
+        docStore,
+        userId: user.id,
+        connectionId,
+      });
+      json(res, 200, presentUserExternalConnection(updated));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'external_connection_refresh_failed';
+      json(res, 400, { error_code: 'INVALID_REQUEST', message });
+    }
     return true;
   }
 

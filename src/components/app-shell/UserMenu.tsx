@@ -30,6 +30,7 @@ interface UserMenuProps {
     avatar?: string;
   } | null;
   onProfile?: () => void;
+  onThirdPartyAccounts?: () => void;
   onApiKeys?: () => void;
   onLanguageSwitch?: (locale: string) => void;
   onLogout?: () => void;
@@ -39,12 +40,14 @@ interface UserMenuProps {
 
 const defaultItems: Omit<UserMenuItem, 'label'>[] = [
   { id: 'profile', icon: User },
+  { id: 'third_party_accounts', icon: Settings },
   { id: 'api_keys', icon: Settings },
 ];
 
 export function UserMenu({
   user,
   onProfile,
+  onThirdPartyAccounts,
   onApiKeys,
   onLanguageSwitch,
   onLogout,
@@ -61,6 +64,9 @@ export function UserMenu({
         break;
       case 'api_keys':
         onApiKeys?.();
+        break;
+      case 'third_party_accounts':
+        onThirdPartyAccounts?.();
         break;
       case 'logout':
         onLogout?.();
@@ -117,7 +123,7 @@ export function UserMenu({
               className="gap-3"
             >
               <item.icon className="w-4 h-4 text-icon-default" />
-              <span>{t(item.id as 'profile' | 'api_keys')}</span>
+              <span>{t(item.id as 'profile' | 'api_keys' | 'third_party_accounts')}</span>
             </DropdownMenuItem>
           ))}
 

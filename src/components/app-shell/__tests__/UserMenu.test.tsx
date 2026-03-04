@@ -10,6 +10,7 @@ vi.mock('next-intl', () => ({
       },
       'common.user_menu': {
         profile: 'Profile',
+        third_party_accounts: 'Third-Party Accounts',
         api_keys: 'API Keys',
         language: 'Language',
         logout: 'Logout',
@@ -36,6 +37,7 @@ describe('UserMenu', () => {
     openUserMenu();
 
     expect(await screen.findByText('Profile')).toBeInTheDocument();
+    expect(screen.getByText('Third-Party Accounts')).toBeInTheDocument();
     expect(screen.queryByTestId('user-menu__permission-tokens')).not.toBeInTheDocument();
   });
 });

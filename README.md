@@ -108,6 +108,21 @@ NEXT_PUBLIC_KEYCLOAK_REALM=mbos
 NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
+Third-party accounts and Feishu OAuth backend configuration:
+
+```bash
+USER_EXTERNAL_CONNECTIONS_SECRET_KEY=<strong-random-secret>
+FEISHU_APP_ID=<your-feishu-app-id>
+FEISHU_APP_SECRET=<your-feishu-app-secret>
+FEISHU_OAUTH_REDIRECT_URI=http://127.0.0.1:18181/callback
+```
+
+For normal product flow, point `FEISHU_OAUTH_REDIRECT_URI` to an AgentSmith callback page such as:
+
+```bash
+http://localhost:3001/zh-CN/user/third-party-accounts/feishu/callback
+```
+
 ## Permission Token Naming
 
 Use canonical project tokens in all new code:
@@ -143,6 +158,7 @@ src/
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [Release Governance Control Plane](./docs/user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
 - [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
+- [Third-Party Accounts & Feishu OAuth](./docs/user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth、回调模式与手动验收说明
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
 - [Design System](./DESIGN_SYSTEM.md)
 - [Development Guide](./DEVELOPMENT.md)

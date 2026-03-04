@@ -12,6 +12,7 @@ import { createUsageReportRunner } from './usage-report-runner.js';
 import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
 import { createReleaseGateRunner } from './release-gate-runner.js';
 import { ensureRuntimeCatalogBootstrap } from './runtime-catalog-service.js';
+import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
@@ -66,9 +67,21 @@ export function createNodeApiServer(
     });
   }, 200);
 
+  const feishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED !== 'false';
+  const feishuRefreshIntervalMs = Number.parseInt(process.env.FEISHU_OAUTH_REFRESH_RUNNER_INTERVAL_MS ?? '300000', 10);
+  const feishuRefreshInterval = feishuRefreshEnabled
+    ? setInterval(() => {
+      void refreshExpiringFeishuConnections(deps.docStore).catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : 'unknown_error';
+        process.stderr.write(`[api-entry-node] feishu refresh failed: ${message}\n`);
+      });
+    }, Number.isFinite(feishuRefreshIntervalMs) && feishuRefreshIntervalMs > 0 ? feishuRefreshIntervalMs : 300000)
+    : null;
+
   if (lifecycle) {
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
+      if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
       usageReportRunner.stop();
       ACTIVE_CHAT_STREAMS.clear();
       void lifecycle.shutdown();
@@ -76,6 +89,7 @@ export function createNodeApiServer(
   } else {
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
+      if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
       usageReportRunner.stop();
       ACTIVE_CHAT_STREAMS.clear();
     });

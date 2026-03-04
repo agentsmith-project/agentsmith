@@ -12,6 +12,7 @@ export { CredentialsAPI } from './credentials';
 export { MemberAPI } from './members';
 export { AuditAPI, UsageAPI } from './audit-usage';
 export { UserAPIKeyService } from './user-keys';
+export { UserExternalConnectionsAPI } from './user-external-connections';
 export { MeAPI } from './me';
 export { ChatAPI } from './chat';
 export { FilesAPI } from './files';
@@ -35,6 +36,20 @@ export type { UpdateMemberGroupRequest, JoinRequest, Member } from './members';
 export type { UsageKPI } from '../types';
 export type { UsageReportSchedule, UsageReportScheduleDeliveryResult } from './audit-usage';
 export type { CreateUserKeyRequest } from './user-keys';
+export type {
+  CreateUserExternalConnectionRequest,
+  UpdateUserExternalConnectionRequest,
+} from './user-external-connections';
+export type {
+  UserExternalConnection,
+  UserExternalConnectionProvider,
+  UserExternalConnectionKind,
+  UserExternalConnectionStatus,
+  UserExternalConnectionField,
+  UserExternalConnectionFieldInput,
+  UserExternalConnectionProviderConfig,
+  UserExternalConnectionOAuthStartResponse,
+} from '../types';
 export type { CreateSessionRequest, CreateMessageRequest } from './chat';
 export type {
   Task,

@@ -1020,7 +1020,15 @@ export async function handleRequest(
       });
       return;
     }
-    if (await handleMeRoute({ req, res, method, requestUrl, user, releaseEscalationsDir: deps.releaseEscalationsDir })) {
+    if (await handleMeRoute({
+      req,
+      res,
+      method,
+      requestUrl,
+      user,
+      docStore: deps.docStore,
+      releaseEscalationsDir: deps.releaseEscalationsDir,
+    })) {
       return;
     }
     const route = matchProjectsRoute(req.url ?? '');

@@ -8755,6 +8755,7 @@ describe('api-entry-node projects routes', () => {
     expect(gatewayRes.headers.get('x-agentsmith-proxy-source-protocol')).toBe('anthropic');
     expect(gatewayRes.headers.get('x-agentsmith-proxy-target-protocol')).toBe('anthropic');
     expect(upstream.lastPath()).toBe('/v1/messages');
+    expect((upstream.lastBody() as { model?: string }).model).toBe('glm-5');
   });
 
   it('forwards anthropic protocol headers through llm-gateway and preserves messages/count_tokens path', async () => {

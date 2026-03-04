@@ -320,6 +320,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     action: EndpointTaskAction = 'chat',
     jobId?: string,
     requestBody?: unknown,
+    forceModel?: string,
   ): Promise<boolean> => {
     if (!route.workspaceId || !route.projectId) {
       return false;
@@ -402,6 +403,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       video_generation: endpoint.defaults?.video_model_id,
     } as const;
     const resolvedModel =
+      forceModel ??
       defaultModelByCapability[capability] ??
       endpoint.models?.find((item) => item.capability === capability)?.model_id ??
       (isChatRoute
@@ -805,7 +807,14 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_endpoint_resolution_failed' });
       return true;
     }
-    return proxyEndpointRequest(endpoint.id, proxyPath, inferActionFromProxyPath(proxyPath), undefined, bodyObj ?? body);
+    return proxyEndpointRequest(
+      endpoint.id,
+      proxyPath,
+      inferActionFromProxyPath(proxyPath),
+      undefined,
+      bodyObj ?? body,
+      requestedModel,
+    );
   }
 
   if (route.kind === 'endpointRerank' && method === 'POST' && route.endpointId) {

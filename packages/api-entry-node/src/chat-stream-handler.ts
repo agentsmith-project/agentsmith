@@ -729,6 +729,12 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
 
   if (useExternalAgent) {
     const externalAgentId = session.external_agent_id ?? '';
+    let internalKeepaliveTimer: NodeJS.Timeout | undefined;
+    const clearInternalKeepalive = () => {
+      if (!internalKeepaliveTimer) return;
+      clearInterval(internalKeepaliveTimer);
+      internalKeepaliveTimer = undefined;
+    };
     try {
       const rawBearerToken = extractBearerToken(req);
       if (!rawBearerToken) {
@@ -751,6 +757,13 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           route.projectId,
           workloadId,
         ).catch(() => undefined);
+        internalKeepaliveTimer = setInterval(() => {
+          void deps.internalAgentPodManager?.keepalive(
+            route.workspaceId,
+            route.projectId,
+            workloadId,
+          ).catch(() => undefined);
+        }, 60_000);
       }
       const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
@@ -1063,6 +1076,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         res.end();
       }
       return true;
+    } finally {
+      clearInternalKeepalive();
     }
   }
 

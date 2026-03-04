@@ -15,6 +15,7 @@ import {
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
+import { resolveTaskCwd, shouldResumeNotebookSession } from './workspace-runtime.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -421,7 +422,12 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const runtimeContext = payload.runtime_context ?? {};
   const taskId = sanitizePathPart(runtimeContext.task_id, `task_${requestId.slice(0, 8)}`);
   const username = sanitizePathPart(runtimeContext.username, 'unknown_user');
-  const cwd = join('/tmp', username, taskId);
+  const cwdResult = resolveTaskCwd({
+    workspacePath: process.env.WORKSPACE_PATH,
+    username,
+    taskId,
+  });
+  const cwd = cwdResult.cwd;
   await mkdir(cwd, { recursive: true });
   const isNotebookMode = runtimeContext.notebook_mode === true;
   const userPrompt = extractPrompt(payload.messages);
@@ -452,7 +458,12 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const wireApi = 'responses';
 
   const model = runtimeContext.model ?? payload.model ?? 'gpt-5-codex';
-  const resumeLast = isNotebookMode && codexSessionReadyByCwd.has(cwd);
+  const resumeDecision = shouldResumeNotebookSession({
+    isNotebookMode,
+    cwd,
+    hasSessionInMemory: codexSessionReadyByCwd.has(cwd),
+  });
+  const resumeLast = resumeDecision.resumeLast;
   const codexConfigDir = join(cwd, '.codex');
   await mkdir(codexConfigDir, { recursive: true });
   await writeFile(
@@ -478,6 +489,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     task_inputs_count: taskInputs.length,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
     resume_last: resumeLast,
+    cwd_source: cwdResult.source,
+    resume_source: resumeDecision.source,
   });
 
   const codexArgs = buildCodexExecArgs({

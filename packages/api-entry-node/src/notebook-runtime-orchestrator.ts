@@ -145,24 +145,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
       });
     }
 
-    const endpoint = await deps.endpointResourceService.getEndpoint(
-      task.workspace_id,
-      task.project_id,
-      endpointId,
-    );
-    if (!endpoint || endpoint.status !== 'active') {
-      throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
-    }
-    const endpointPolicyCheck = isProjectResourceAccessAllowedForUser({
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      resourceType: 'endpoint',
-      resourceId: endpointId,
-      userId: user.id,
-    });
-    if (!endpointPolicyCheck.allowed) {
-      throw Object.assign(new Error('resource_policy_denied_endpoint'), { code: 'RESOURCE_POLICY_DENIED' });
-    }
     const agentPolicyCheck = isProjectResourceAccessAllowedForUser({
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -231,7 +213,29 @@ export async function runNotebookTaskWithExternalAgent(input: {
     const explicitModel = typeof notebookPreferences.model === 'string'
       ? notebookPreferences.model.trim()
       : '';
-    const model = explicitModel || endpoint.openai_model || 'gpt-5-codex';
+    let endpointModel = '';
+    if (agent.mode !== 'internal') {
+      const endpoint = await deps.endpointResourceService.getEndpoint(
+        task.workspace_id,
+        task.project_id,
+        endpointId,
+      );
+      if (!endpoint || endpoint.status !== 'active') {
+        throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
+      }
+      const endpointPolicyCheck = isProjectResourceAccessAllowedForUser({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        resourceType: 'endpoint',
+        resourceId: endpointId,
+        userId: user.id,
+      });
+      if (!endpointPolicyCheck.allowed) {
+        throw Object.assign(new Error('resource_policy_denied_endpoint'), { code: 'RESOURCE_POLICY_DENIED' });
+      }
+      endpointModel = endpoint.openai_model?.trim() ?? '';
+    }
+    const model = explicitModel || endpointModel || 'gpt-5-codex';
     if (agent.mode === 'internal') {
       if (!deps.internalAgentPodManager) {
         throw Object.assign(new Error('agent_sandbox_not_configured'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });

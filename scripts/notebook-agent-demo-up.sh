@@ -47,6 +47,32 @@ DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"
 info() { echo "[demo-up] $*"; }
 err() { echo "[demo-up] ERROR: $*" >&2; }
 
+init_demo_resources() {
+  if [[ -z "${GLM_API_KEY}" ]]; then
+    err "resource re-init requires GLM_API_KEY"
+    err "Example: GLM_API_KEY='***' make notebook-agent-demo-up"
+    return 1
+  fi
+  info "initializing notebook demo resources (project/endpoint/agent/key)"
+  (
+    cd "${ROOT_DIR}" && \
+    GLM_API_KEY="${GLM_API_KEY}" \
+    GLM_BASE_URL="${GLM_BASE_URL}" \
+    GLM_MODEL="${GLM_MODEL}" \
+    API_BASE="http://localhost:${PORT_API}" \
+    WORKSPACE_ID="${WORKSPACE_ID}" \
+    make notebook-agent-init-resources
+  )
+}
+
+has_demo_runtime_metadata() {
+  [[ -s "/tmp/agentsmith_project_id.txt" ]] \
+    && [[ -s "/tmp/agentsmith_endpoint_id.txt" ]] \
+    && [[ -s "/tmp/agentsmith_agent_id.txt" ]] \
+    && [[ -s "/tmp/agentsmith_agent_key.txt" ]] \
+    && [[ -s "/tmp/agentsmith_ws_url.txt" ]]
+}
+
 launch_detached() {
   local pid_file="$1"
   local log_file="$2"
@@ -353,6 +379,11 @@ restart_demo_runner() {
       info "runner websocket connected"
       return 0
     fi
+    if rg -q "Unexpected server response: 401|invalid_key|401" "${RUNNER_LOG}" 2>/dev/null; then
+      err "runner authentication failed (401/invalid_key)"
+      tail -n 80 "${RUNNER_LOG}" || true
+      return 42
+    fi
     sleep 1
   done
   err "runner did not connect in time; tailing log"
@@ -420,24 +451,22 @@ main() {
   fi
 
   if [[ "${DEMO_INIT_RESOURCES}" == "1" ]]; then
-    if [[ -z "${GLM_API_KEY}" ]]; then
-      err "GLM_API_KEY is required when DEMO_INIT_RESOURCES=1"
-      err "Example: GLM_API_KEY='***' make notebook-agent-demo-up"
-      exit 1
-    fi
-    info "initializing notebook demo resources (project/endpoint/agent/key)"
-    (
-      cd "${ROOT_DIR}" && \
-      GLM_API_KEY="${GLM_API_KEY}" \
-      GLM_BASE_URL="${GLM_BASE_URL}" \
-      GLM_MODEL="${GLM_MODEL}" \
-      API_BASE="http://localhost:${PORT_API}" \
-      WORKSPACE_ID="${WORKSPACE_ID}" \
-      make notebook-agent-init-resources
-    )
+    init_demo_resources || exit 1
+  elif ! has_demo_runtime_metadata; then
+    info "runtime metadata missing; forcing one-time resource init even though DEMO_INIT_RESOURCES=0"
+    init_demo_resources || exit 1
   fi
 
-  restart_demo_runner
+  restart_demo_runner || {
+    rc=$?
+    if [[ "${rc}" == "42" ]]; then
+      info "detected stale/invalid runner key; forcing one-time resource re-init and retry"
+      init_demo_resources || exit 1
+      restart_demo_runner || exit $?
+    else
+      exit "${rc}"
+    fi
+  }
 
   local project_id agent_id
   project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"

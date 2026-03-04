@@ -39,7 +39,9 @@ function getRequiredEnv(name: string): string {
 export function getFeishuOAuthConfig() {
   const clientId = process.env.FEISHU_APP_ID?.trim() ?? '';
   const clientSecret = process.env.FEISHU_APP_SECRET?.trim() ?? '';
-  const redirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim() || 'http://127.0.0.1:18181/callback';
+  const redirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI?.trim()
+    || process.env.FEISHU_REDIRECT_URI?.trim()
+    || 'http://127.0.0.1:18181/callback';
   const authorizeUrl = process.env.FEISHU_OAUTH_AUTHORIZE_URL?.trim() || 'https://accounts.feishu.cn/open-apis/authen/v1/authorize';
   const tokenUrl = process.env.FEISHU_OAUTH_TOKEN_URL?.trim() || 'https://open.feishu.cn/open-apis/authen/v2/oauth/token';
   const scopesRaw = process.env.FEISHU_OAUTH_SCOPES?.trim()
@@ -178,6 +180,7 @@ export async function completeFeishuOAuth(args: {
     kind: 'oauth_account',
     custom_domain: null,
     display_name: 'Feishu',
+    note: null,
     status: 'active',
     fields: [
       {

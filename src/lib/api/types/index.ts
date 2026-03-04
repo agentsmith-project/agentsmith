@@ -619,6 +619,7 @@ export interface UserExternalConnection {
   custom_domain?: string | null;
   kind: UserExternalConnectionKind;
   display_name: string;
+  note?: string | null;
   status: UserExternalConnectionStatus;
   fields: UserExternalConnectionField[];
   account_identity?: UserExternalConnectionAccountIdentity | null;
@@ -636,6 +637,7 @@ export interface CreateUserExternalConnectionRequest {
   custom_domain?: string;
   kind: UserExternalConnectionKind;
   display_name: string;
+  note?: string | null;
   status?: UserExternalConnectionStatus;
   fields?: UserExternalConnectionFieldInput[];
   account_identity?: UserExternalConnectionAccountIdentity;
@@ -647,6 +649,7 @@ export interface CreateUserExternalConnectionRequest {
 export interface UpdateUserExternalConnectionRequest {
   custom_domain?: string | null;
   display_name?: string;
+  note?: string | null;
   status?: UserExternalConnectionStatus;
   fields?: UserExternalConnectionFieldInput[];
   account_identity?: UserExternalConnectionAccountIdentity | null;

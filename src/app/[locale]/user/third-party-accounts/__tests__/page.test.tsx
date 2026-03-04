@@ -90,8 +90,8 @@ describe('ThirdPartyAccountsPage', () => {
     await user.click(await screen.findByTestId('third-party-accounts__create-btn'));
 
     await user.type(screen.getByLabelText('display_name_label'), 'Team Jira');
+    await user.type(screen.getByLabelText('note_label'), 'Used for team issue sync');
     await user.type(screen.getByLabelText('jira_base_url_label'), 'https://company.atlassian.net');
-    await user.type(screen.getByLabelText('jira_email_label'), 'dev@example.com');
     await user.type(screen.getByLabelText('jira_token_label'), 'jira-secret');
 
     await user.click(screen.getByRole('button', { name: 'create' }));
@@ -101,16 +101,16 @@ describe('ThirdPartyAccountsPage', () => {
         provider: 'jira',
         kind: 'secret_bundle',
         display_name: 'Team Jira',
+        note: 'Used for team issue sync',
         status: 'active',
         fields: [
           { key: 'base_url', value: 'https://company.atlassian.net', description: 'Jira base URL', secret: false },
-          { key: 'account_email', value: 'dev@example.com', description: 'Jira account email', secret: false },
           { key: 'api_token', value: 'jira-secret', description: 'Jira API token', secret: true },
         ],
         account_identity: undefined,
         scopes: undefined,
-        expires_at: null,
-        last_error: null,
+        expires_at: undefined,
+        last_error: undefined,
         custom_domain: undefined,
       });
     });
@@ -124,8 +124,9 @@ describe('ThirdPartyAccountsPage', () => {
     await user.selectOptions(screen.getByLabelText('provider_label'), 'github');
     await user.selectOptions(screen.getByLabelText('kind_label'), 'ssh_keypair');
     await user.type(screen.getByLabelText('display_name_label'), 'GitHub Deploy Key');
-    await user.clear(screen.getByLabelText('git_host_label'));
-    await user.type(screen.getByLabelText('git_host_label'), 'github.enterprise.local');
+    await user.type(screen.getByLabelText('note_label'), 'Repo deploy key');
+    await user.clear(screen.getByLabelText('git_host_optional_label'));
+    await user.type(screen.getByLabelText('git_host_optional_label'), 'github.enterprise.local');
     await user.type(screen.getByLabelText('ssh_public_key_label'), 'ssh-ed25519 AAAA');
     await user.type(screen.getByLabelText('ssh_private_key_label'), '-----BEGIN PRIVATE KEY-----');
 
@@ -136,6 +137,7 @@ describe('ThirdPartyAccountsPage', () => {
         provider: 'github',
         kind: 'ssh_keypair',
         display_name: 'GitHub Deploy Key',
+        note: 'Repo deploy key',
         fields: [
           { key: 'git_host', value: 'github.enterprise.local', description: 'Git host', secret: false },
           { key: 'public_key', value: 'ssh-ed25519 AAAA', description: 'SSH public key', secret: false },
@@ -153,6 +155,7 @@ describe('ThirdPartyAccountsPage', () => {
         provider: 'github',
         kind: 'secret_bundle',
         display_name: 'GitHub Token',
+        note: null,
         status: 'active',
         fields: [
           { key: 'api_base_url', description: 'GitHub API base URL', secret: false, masked_value: 'https://api.github.com' },
@@ -183,6 +186,7 @@ describe('ThirdPartyAccountsPage', () => {
         {
           custom_domain: undefined,
           display_name: 'GitHub Token Updated',
+          note: null,
           status: 'active',
           fields: [
             { key: 'api_base_url', value: 'https://api.github.com', description: 'GitHub API base URL', secret: false },
@@ -190,8 +194,8 @@ describe('ThirdPartyAccountsPage', () => {
           ],
           account_identity: undefined,
           scopes: undefined,
-          expires_at: null,
-          last_error: null,
+          expires_at: undefined,
+          last_error: undefined,
         },
       );
     });

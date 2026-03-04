@@ -51,13 +51,6 @@ const KINDS: readonly { value: UserExternalConnectionKind; labelKey: string }[] 
   { value: 'ssh_keypair', labelKey: 'kind_ssh_keypair' },
 ];
 
-const STATUSES: readonly { value: UserExternalConnectionStatus; labelKey: string }[] = [
-  { value: 'active', labelKey: 'status_active' },
-  { value: 'expired', labelKey: 'status_expired' },
-  { value: 'reauth_required', labelKey: 'status_reauth_required' },
-  { value: 'error', labelKey: 'status_error' },
-];
-
 function statusBadgeTone(status: UserExternalConnectionStatus) {
   if (status === 'active') return 'active';
   if (status === 'expired' || status === 'reauth_required') return 'warning';
@@ -114,21 +107,15 @@ export default function ThirdPartyAccountsPage() {
 
   const [provider, setProvider] = React.useState<UserExternalConnectionProvider>('jira');
   const [kind, setKind] = React.useState<UserExternalConnectionKind>('secret_bundle');
-  const [status, setStatus] = React.useState<UserExternalConnectionStatus>('active');
   const [displayName, setDisplayName] = React.useState('');
+  const [note, setNote] = React.useState('');
   const [customDomain, setCustomDomain] = React.useState('');
-  const [scopesText, setScopesText] = React.useState('');
-  const [expiresAt, setExpiresAt] = React.useState('');
-  const [lastError, setLastError] = React.useState('');
-  const [externalName, setExternalName] = React.useState('');
-  const [externalEmail, setExternalEmail] = React.useState('');
   const [fields, setFields] = React.useState<UserExternalConnectionFieldInput[]>([createEmptyField()]);
   const [jiraBaseUrl, setJiraBaseUrl] = React.useState('');
-  const [jiraAccountEmail, setJiraAccountEmail] = React.useState('');
   const [jiraApiToken, setJiraApiToken] = React.useState('');
   const [githubApiBaseUrl, setGithubApiBaseUrl] = React.useState('https://api.github.com');
   const [githubToken, setGithubToken] = React.useState('');
-  const [gitHost, setGitHost] = React.useState('');
+  const [gitHost, setGitHost] = React.useState('github.com');
   const [sshPublicKey, setSshPublicKey] = React.useState('');
   const [sshPrivateKey, setSshPrivateKey] = React.useState('');
 
@@ -149,21 +136,15 @@ export default function ThirdPartyAccountsPage() {
   const resetForm = React.useCallback(() => {
     setProvider('jira');
     setKind(defaultKindForProvider('jira'));
-    setStatus('active');
     setDisplayName('');
+    setNote('');
     setCustomDomain('');
-    setScopesText('');
-    setExpiresAt('');
-    setLastError('');
-    setExternalName('');
-    setExternalEmail('');
     setFields([createEmptyField()]);
     setJiraBaseUrl('');
-    setJiraAccountEmail('');
     setJiraApiToken('');
     setGithubApiBaseUrl('https://api.github.com');
     setGithubToken('');
-    setGitHost('');
+    setGitHost('github.com');
     setSshPublicKey('');
     setSshPrivateKey('');
     setEditing(null);
@@ -254,16 +235,10 @@ export default function ThirdPartyAccountsPage() {
     setEditing(item);
     setProvider(item.provider);
     setKind(item.kind);
-    setStatus(item.status);
     setDisplayName(item.display_name);
+    setNote(item.note ?? '');
     setCustomDomain(item.custom_domain ?? '');
-    setScopesText((item.scopes ?? []).join(', '));
-    setExpiresAt(item.expires_at ?? '');
-    setLastError(item.last_error ?? '');
-    setExternalName(item.account_identity?.external_name ?? '');
-    setExternalEmail(item.account_identity?.external_email ?? '');
     setJiraBaseUrl(fieldValue(item, 'base_url'));
-    setJiraAccountEmail(fieldValue(item, 'account_email'));
     setJiraApiToken('');
     setGithubApiBaseUrl(fieldValue(item, 'api_base_url') || 'https://api.github.com');
     setGithubToken('');
@@ -288,7 +263,6 @@ export default function ThirdPartyAccountsPage() {
       if (provider === 'jira') {
         return [
           { key: 'base_url', value: jiraBaseUrl.trim(), description: 'Jira base URL', secret: false },
-          { key: 'account_email', value: jiraAccountEmail.trim(), description: 'Jira account email', secret: false },
           { key: 'api_token', value: jiraApiToken, description: 'Jira API token', secret: true },
         ].filter((field) => field.key && (field.value || (editing && field.secret)));
       }
@@ -299,8 +273,9 @@ export default function ThirdPartyAccountsPage() {
         ].filter((field) => field.key && (field.value || (editing && field.secret)));
       }
       if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair') {
+        const normalizedGitHost = gitHost.trim() || (provider === 'gitee' ? 'gitee.com' : 'github.com');
         return [
-          { key: 'git_host', value: gitHost.trim(), description: 'Git host', secret: false },
+          { key: 'git_host', value: normalizedGitHost, description: 'Git host', secret: false },
           { key: 'public_key', value: sshPublicKey.trim(), description: 'SSH public key', secret: false },
           { key: 'private_key', value: sshPrivateKey, description: 'SSH private key', secret: true },
         ].filter((field) => field.key && (field.value || (editing && field.secret)));
@@ -318,26 +293,20 @@ export default function ThirdPartyAccountsPage() {
     const payloadBase = {
       custom_domain: provider === 'custom' ? customDomain.trim() || undefined : undefined,
       display_name: displayName.trim(),
-      status,
+      note: note.trim() || null,
+      status: 'active' as UserExternalConnectionStatus,
       fields: sanitizedFields,
-      account_identity: externalName || externalEmail
-        ? {
-            external_name: externalName.trim() || undefined,
-            external_email: externalEmail.trim() || undefined,
-          }
-        : undefined,
-      scopes: scopesText
-        ? scopesText.split(',').map((item) => item.trim()).filter(Boolean)
-        : undefined,
-      expires_at: expiresAt.trim() || null,
-      last_error: lastError.trim() || null,
+      account_identity: undefined,
+      scopes: undefined,
+      expires_at: undefined,
+      last_error: undefined,
     };
 
     if (!payloadBase.display_name) return;
     if (provider === 'custom' && !payloadBase.custom_domain) return;
-    if (provider === 'jira' && (!jiraBaseUrl.trim() || !jiraAccountEmail.trim() || (!editing && !jiraApiToken))) return;
+    if (provider === 'jira' && (!jiraBaseUrl.trim() || (!editing && !jiraApiToken))) return;
     if (provider === 'github' && kind === 'secret_bundle' && (!githubApiBaseUrl.trim() || (!editing && !githubToken))) return;
-    if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair' && (!gitHost.trim() || !sshPublicKey.trim() || (!editing && !sshPrivateKey))) return;
+    if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair' && (!sshPublicKey.trim() || (!editing && !sshPrivateKey))) return;
 
     if (editing) {
       updateMutation.mutate({ id: editing.id, payload: payloadBase });
@@ -438,10 +407,10 @@ export default function ThirdPartyAccountsPage() {
   const canSubmit = (() => {
     if (!displayName.trim()) return false;
     if (provider === 'custom') return Boolean(customDomain.trim());
-    if (provider === 'jira') return Boolean(jiraBaseUrl.trim() && jiraAccountEmail.trim() && (editing || jiraApiToken));
+    if (provider === 'jira') return Boolean(jiraBaseUrl.trim() && (editing || jiraApiToken));
     if (provider === 'github' && kind === 'secret_bundle') return Boolean(githubApiBaseUrl.trim() && (editing || githubToken));
     if ((provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair') {
-      return Boolean(gitHost.trim() && sshPublicKey.trim() && (editing || sshPrivateKey));
+      return Boolean(sshPublicKey.trim() && (editing || sshPrivateKey));
     }
     return true;
   })();
@@ -556,43 +525,9 @@ export default function ThirdPartyAccountsPage() {
                 <Input aria-label={t('display_name_label')} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={t('display_name_placeholder')} />
               </div>
 
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('status_label')}</label>
-                <select
-                  value={status}
-                  onChange={(event) => setStatus(event.target.value as UserExternalConnectionStatus)}
-                  aria-label={t('status_label')}
-                  className="w-full h-10 px-3 rounded-md border border-subtle bg-surface-high text-primary text-sm"
-                >
-                  {STATUSES.map((item) => (
-                    <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('expires_at_label')}</label>
-                <Input aria-label={t('expires_at_label')} value={expiresAt} onChange={(event) => setExpiresAt(event.target.value)} placeholder={t('expires_at_placeholder')} />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('external_name_label')}</label>
-                <Input aria-label={t('external_name_label')} value={externalName} onChange={(event) => setExternalName(event.target.value)} placeholder={t('external_name_placeholder')} />
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('external_email_label')}</label>
-                <Input aria-label={t('external_email_label')} value={externalEmail} onChange={(event) => setExternalEmail(event.target.value)} placeholder={t('external_email_placeholder')} />
-              </div>
-
               <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">{t('scopes_label')}</label>
-                <Input aria-label={t('scopes_label')} value={scopesText} onChange={(event) => setScopesText(event.target.value)} placeholder={t('scopes_placeholder')} />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">{t('last_error_label')}</label>
-                <Textarea aria-label={t('last_error_label')} value={lastError} onChange={(event) => setLastError(event.target.value)} rows={2} placeholder={t('last_error_placeholder')} />
+                <label className="text-sm font-medium">{t('note_label')}</label>
+                <Textarea aria-label={t('note_label')} value={note} onChange={(event) => setNote(event.target.value)} rows={2} placeholder={t('note_placeholder')} />
               </div>
 
               {provider === 'jira' ? (
@@ -602,11 +537,7 @@ export default function ThirdPartyAccountsPage() {
                       <label className="text-sm font-medium">{t('jira_base_url_label')}</label>
                       <Input aria-label={t('jira_base_url_label')} value={jiraBaseUrl} onChange={(event) => setJiraBaseUrl(event.target.value)} placeholder={t('jira_base_url_placeholder')} />
                     </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{t('jira_email_label')}</label>
-                      <Input aria-label={t('jira_email_label')} value={jiraAccountEmail} onChange={(event) => setJiraAccountEmail(event.target.value)} placeholder={t('jira_email_placeholder')} />
-                    </div>
-                    <div className="space-y-2">
+                    <div className="space-y-2 md:col-span-2">
                       <label className="text-sm font-medium">{t('jira_token_label')}</label>
                       <Input aria-label={t('jira_token_label')} type="password" value={jiraApiToken} onChange={(event) => setJiraApiToken(event.target.value)} placeholder={editing ? t('secret_keep_existing_hint') : t('jira_token_placeholder')} />
                     </div>
@@ -633,8 +564,8 @@ export default function ThirdPartyAccountsPage() {
                 <div className="space-y-3 md:col-span-2">
                   <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4">
                     <div className="space-y-2">
-                      <label className="text-sm font-medium">{t('git_host_label')}</label>
-                      <Input aria-label={t('git_host_label')} value={gitHost} onChange={(event) => setGitHost(event.target.value)} placeholder={provider === 'gitee' ? 'gitee.com' : 'github.com'} />
+                      <label className="text-sm font-medium">{t('git_host_optional_label')}</label>
+                      <Input aria-label={t('git_host_optional_label')} value={gitHost} onChange={(event) => setGitHost(event.target.value)} placeholder={provider === 'gitee' ? 'gitee.com' : 'github.com'} />
                     </div>
                     <div className="space-y-2">
                       <label className="text-sm font-medium">{t('ssh_public_key_label')}</label>

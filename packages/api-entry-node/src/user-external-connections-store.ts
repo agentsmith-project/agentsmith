@@ -34,6 +34,7 @@ export type UserExternalConnectionRecord = {
   custom_domain?: string | null;
   kind: UserExternalConnectionKind;
   display_name: string;
+  note?: string | null;
   status: UserExternalConnectionStatus;
   fields: UserExternalConnectionFieldRecord[];
   account_identity?: UserExternalConnectionAccountIdentity | null;

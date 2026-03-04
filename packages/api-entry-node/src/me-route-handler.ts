@@ -21,6 +21,7 @@ import {
   deleteUserExternalConnection,
   getUserExternalConnection,
   isUserExternalConnectionKind,
+  type UserExternalConnectionAccountIdentity,
   isUserExternalConnectionProvider,
   isUserExternalConnectionStatus,
   listUserExternalConnections,
@@ -190,10 +191,11 @@ export async function handleMeRoute(args: {
         custom_domain: typeof body.custom_domain === 'string' ? body.custom_domain.trim() || null : null,
         kind: body.kind,
         display_name: displayName,
+        note: typeof body.note === 'string' ? body.note.trim() || null : null,
         status: isUserExternalConnectionStatus(body.status) ? body.status : 'active',
         fields: normalizeExternalConnectionFields(body.fields) ?? [],
         account_identity: body.account_identity && typeof body.account_identity === 'object'
-          ? body.account_identity as ExternalConnectionAccountIdentity
+          ? body.account_identity as UserExternalConnectionAccountIdentity
           : null,
         scopes: normalizeStringArray(body.scopes) ?? null,
         expires_at: typeof body.expires_at === 'string' ? body.expires_at : null,
@@ -280,12 +282,17 @@ export async function handleMeRoute(args: {
         display_name: typeof body?.display_name === 'string' && body.display_name.trim()
           ? body.display_name.trim()
           : existing.display_name,
+        note: body?.note === undefined
+          ? existing.note
+          : typeof body.note === 'string'
+            ? body.note.trim() || null
+            : null,
         status: isUserExternalConnectionStatus(body?.status) ? body.status : existing.status,
         fields: mergeExternalConnectionFields(existing.fields, body?.fields) ?? existing.fields,
         account_identity: body?.account_identity === undefined
           ? existing.account_identity
           : body.account_identity && typeof body.account_identity === 'object'
-            ? body.account_identity as ExternalConnectionAccountIdentity
+            ? body.account_identity as UserExternalConnectionAccountIdentity
             : null,
         scopes: body?.scopes === undefined ? existing.scopes : normalizeStringArray(body.scopes) ?? null,
         expires_at: body?.expires_at === undefined

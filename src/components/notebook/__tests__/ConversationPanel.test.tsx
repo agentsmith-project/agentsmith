@@ -35,6 +35,8 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.realtime_status_ticket_network_description': 'The client could not establish the ticket needed for realtime notebook updates.',
       'notebook.conversation.realtime_status_reconcile_failed_title': 'Trace recovery needs manual refresh',
       'notebook.conversation.realtime_status_reconcile_failed_description': 'The realtime stream reconnected, but trace backfill did not complete. Refresh to rebuild the task timeline.',
+      'notebook.conversation.sandbox_starting_title': 'Preparing managed runtime',
+      'notebook.conversation.sandbox_starting_description': 'Starting internal agent sandbox. First response may take up to a minute.',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;
@@ -141,6 +143,19 @@ describe('ConversationPanel', () => {
       );
 
       expect(screen.getByTestId('streaming-message')).toHaveTextContent('Streaming...');
+    });
+
+    it('renders sandbox starting hint when sandboxStarting is true', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          sandboxStarting
+        />
+      );
+
+      expect(screen.getByTestId('notebook__sandbox-starting')).toBeInTheDocument();
+      expect(screen.getByText('Preparing managed runtime')).toBeInTheDocument();
     });
   });
 

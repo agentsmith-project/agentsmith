@@ -256,4 +256,40 @@ describe('AgentsPage', () => {
     expect(screen.getByText('user_owner_1')).toBeInTheDocument();
     expect(screen.getByText(/admin: user_admin_1/i)).toBeInTheDocument();
   });
+
+  it('renders internal online presence as running badge label', async () => {
+    mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
+    mockUseHasPermission.mockReturnValue(true);
+    mockUseIsProjectAdmin.mockReturnValue(true);
+    mockList.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'agent_3',
+          name: 'Internal Agent',
+          description: '',
+          mode: 'internal',
+          presence: 'online',
+          status: 'enabled',
+          interaction_mode: 'notebook',
+        },
+      ],
+    });
+
+    render(
+      <AgentsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('Internal Agent')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('presence_running')).toBeInTheDocument();
+  });
 });

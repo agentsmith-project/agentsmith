@@ -34,6 +34,7 @@ import {
   useResourcePolicy,
   useUpdateResourcePolicy,
 } from '@/lib/hooks/use-members';
+import { useProject } from '@/lib/hooks/use-projects-queries';
 import { useAuthorizationCheck } from '@/lib/hooks/use-governance-explainability';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
@@ -105,6 +106,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const locale = resolvedParams?.locale ?? 'en-US';
+  const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const endpointAPI = useMemo(() => new EndpointAPI(getApiClient()), []);
   const memberAPI = useMemo(() => new MemberAPI(getApiClient()), []);
@@ -409,6 +411,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
         </div>
+      </PageState>
+    );
+  }
+
+  if (permissionLoading && !canReadPolicy) {
+    return (
+      <PageState state="loading">
+        <PageLoading />
       </PageState>
     );
   }

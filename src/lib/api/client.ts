@@ -85,7 +85,9 @@ export interface ApiClient {
   connectSSE(path: string, options?: ApiRequestOptions): Promise<EventSource>;
 }
 
-const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
+const rawApiBase = (process.env.NEXT_PUBLIC_API_BASE ?? '').trim();
+const hasExplicitRemoteApiBase = /^https?:\/\//i.test(rawApiBase);
+export const USE_MSW = process.env.NEXT_PUBLIC_USE_MSW === 'true' && !hasExplicitRemoteApiBase;
 
 function normalizeApiBase(base: string): string {
   const trimmed = base.trim().replace(/\/+$/, '');
@@ -99,9 +101,9 @@ function normalizeApiBase(base: string): string {
  * When using MSW (development), use relative paths so MSW can intercept requests.
  * Otherwise, use the configured backend URL.
  */
-export const API_BASE = useMsw
+export const API_BASE = USE_MSW
   ? '/api/v1'  // Use relative path for MSW interception
-  : normalizeApiBase(process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000');
+  : normalizeApiBase(rawApiBase || 'http://localhost:20000');
 
 /**
  * Create API client instance.
@@ -113,7 +115,7 @@ export const API_BASE = useMsw
  * build time.
  */
 export function createApiClient(): ApiClient {
-  if (useMsw) {
+  if (USE_MSW) {
     return new MSWApiClient();
   }
 

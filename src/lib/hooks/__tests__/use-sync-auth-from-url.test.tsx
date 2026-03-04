@@ -281,7 +281,7 @@ describe('useSyncAuthFromUrl', () => {
       });
     });
 
-    it('should redirect to project list when project_id is invalid', async () => {
+    it('should not redirect when project_id is invalid (project page handles not found)', async () => {
       mockParams.workspace = 'ws_default';
       mockParams.project = 'proj_nonexistent';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -299,13 +299,11 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith(
-          '/workspaces/ws_default/projects'
-        );
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
-    it('should redirect to project list when project does not belong to workspace', async () => {
+    it('should not redirect when project does not belong to workspace', async () => {
       mockParams.workspace = 'ws_another';
       mockParams.project = 'proj_001'; // proj_001 belongs to ws_default
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -324,9 +322,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith(
-          '/workspaces/ws_another/projects'
-        );
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
@@ -421,7 +417,7 @@ describe('useSyncAuthFromUrl', () => {
       });
     });
 
-    it('should handle direct access to deep link with valid workspace but invalid project', async () => {
+    it('should keep deep link when workspace is valid but project is invalid', async () => {
       mockParams.workspace = 'ws_default';
       mockParams.project = 'proj_invalid';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -439,9 +435,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith(
-          '/workspaces/ws_default/projects'
-        );
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
   });
@@ -516,7 +510,7 @@ describe('useSyncAuthFromUrl', () => {
       expect(result.current.isLoading).toBe(true);
     });
 
-    it('should report loading when projects are loading', () => {
+    it('should not report loading when only projects query is loading', () => {
       mockParams.workspace = 'ws_default';
       mockParams.project = 'proj_001';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -533,7 +527,7 @@ describe('useSyncAuthFromUrl', () => {
         wrapper: createTestWrapper(),
       });
 
-      expect(result.current.isLoading).toBe(true);
+      expect(result.current.isLoading).toBe(false);
     });
 
     it('should report not loading when both are loaded', () => {
@@ -640,13 +634,11 @@ describe('useSyncAuthFromUrl', () => {
       rerender();
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith(
-          '/workspaces/ws_default/projects'
-        );
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
-    it('should handle null workspaces data gracefully', async () => {
+    it('should skip workspace redirect when workspace data is null', async () => {
       mockParams.workspace = 'ws_default';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
       vi.mocked(useWorkspaces).mockReturnValue({
@@ -663,11 +655,11 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith('/workspaces');
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
 
-    it('should handle null projects data gracefully', async () => {
+    it('should skip project redirect when project data is null', async () => {
       mockParams.workspace = 'ws_default';
       mockParams.project = 'proj_001';
       vi.mocked(useAuthStoreHydration).mockReturnValue(true);
@@ -685,9 +677,7 @@ describe('useSyncAuthFromUrl', () => {
       });
 
       await waitFor(() => {
-        expect(mockRouter.replace).toHaveBeenCalledWith(
-          '/workspaces/ws_default/projects'
-        );
+        expect(mockRouter.replace).not.toHaveBeenCalled();
       });
     });
   });

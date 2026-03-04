@@ -11,6 +11,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useProject } from '@/lib/hooks/use-projects-queries';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
 interface UsagePageProps {
@@ -31,6 +32,7 @@ export default function UsagePage({ params }: UsagePageProps) {
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('usage');
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
+  const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
 
   useEffect(() => {
     params.then((p) =>
@@ -57,6 +59,14 @@ export default function UsagePage({ params }: UsagePageProps) {
           <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
         </div>
+      </PageState>
+    );
+  }
+
+  if (permissionLoading && !canViewUsage) {
+    return (
+      <PageState state="loading">
+        <PageLoading />
       </PageState>
     );
   }

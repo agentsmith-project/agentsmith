@@ -10,6 +10,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useProject } from '@/lib/hooks/use-projects-queries';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
 interface AuditPageProps {
@@ -27,6 +28,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const canViewAudit = useHasPermission('project:manage');
+  const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
   const featureAvailability = getFeatureAvailability('audit');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('audit');
 
@@ -55,6 +57,14 @@ export default function AuditPage({ params }: AuditPageProps) {
           <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
         </div>
+      </PageState>
+    );
+  }
+
+  if (permissionLoading && !canViewAudit) {
+    return (
+      <PageState state="loading">
+        <PageLoading />
       </PageState>
     );
   }

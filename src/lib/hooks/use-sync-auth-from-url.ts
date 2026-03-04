@@ -12,7 +12,6 @@ import { useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { useRouter } from '@/lib/i18n/routing';
 import { useWorkspaces } from './use-workspaces';
-import { useProjects } from './use-projects-queries';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 
@@ -21,18 +20,20 @@ export function useSyncAuthFromUrl() {
   const router = useRouter();
   const hydrated = useAuthStoreHydration();
 
-  const { data: workspaces, isLoading: workspacesLoading } = useWorkspaces();
+  const {
+    data: workspaces,
+    isLoading: workspacesLoading,
+    isError: workspacesError,
+  } = useWorkspaces();
   const rawWorkspaceId = params?.workspace;
   const rawProjectId = params?.project;
   const workspaceId = validateWorkspaceParam(rawWorkspaceId);
   const projectId = validateProjectParam(rawProjectId);
 
-  // Get projects for current workspace (if workspace selected)
-  const { data: projects, isLoading: projectsLoading } = useProjects(workspaceId || '');
-
   // Validate workspace from URL
   useEffect(() => {
-    if (!hydrated || workspacesLoading || !workspaceId) return;
+    if (!hydrated || workspacesLoading || workspacesError || !workspaceId) return;
+    if (!Array.isArray(workspaces)) return;
 
     const workspaceExists = workspaces?.find((ws) => ws.id === workspaceId);
 
@@ -40,26 +41,11 @@ export function useSyncAuthFromUrl() {
       // Workspace not found for user, redirect to workspace list
       router.replace('/workspaces');
     }
-  }, [hydrated, workspaceId, workspaces, workspacesLoading, router]);
-
-  // Validate project from URL
-  useEffect(() => {
-    if (!hydrated || !workspaceId || projectsLoading) return;
-
-    // If no project in URL, we're on project list page - nothing to validate
-    if (!projectId) return;
-
-    const projectExists = projects?.find((p) => p.id === projectId);
-
-    if (!projectExists) {
-      // Project not found or not in this workspace, redirect to project list
-      router.replace(`/workspaces/${workspaceId}/projects`);
-    }
-  }, [hydrated, workspaceId, projectId, projects, projectsLoading, router]);
+  }, [hydrated, workspaceId, workspaces, workspacesLoading, workspacesError, router]);
 
   return {
     workspaceId,
     projectId,
-    isLoading: workspacesLoading || projectsLoading,
+    isLoading: workspacesLoading,
   };
 }

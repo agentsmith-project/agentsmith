@@ -22,7 +22,7 @@ import type {
   FileObjectShareLink,
   FileObjectItem,
 } from '../types';
-import { API_BASE } from '../client';
+import { API_BASE, USE_MSW } from '../client';
 import type { ApiClient } from '../client';
 import { APIError } from '../errors';
 
@@ -46,8 +46,6 @@ interface BackendSourceItem {
 interface BackendFilesResponse {
   items: BackendSourceItem[];
 }
-
-const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
 
 export class FilesAPI {
   constructor(private client: ApiClient) {}
@@ -141,7 +139,7 @@ export class FilesAPI {
   ): Promise<FilesListResponse> {
     const { path, page, pageSize } = this.buildFilesPath(workspaceId, projectId, params);
 
-    if (useMsw) {
+    if (USE_MSW) {
       return this.client.get<FilesListResponse>(path);
     }
 
@@ -161,7 +159,7 @@ export class FilesAPI {
    * Get a file by ID
    */
   async get(workspaceId: string, projectId: string, fileId: string): Promise<FileItemWithAIReady> {
-    if (useMsw) {
+    if (USE_MSW) {
       return this.client.get<FileItemWithAIReady>(
         `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}`,
       );
@@ -183,7 +181,7 @@ export class FilesAPI {
     libraryId?: string,
     onProgress?: (progress: number) => void,
   ): Promise<FileItem> {
-    if (!useMsw) {
+    if (!USE_MSW) {
       const effectiveLibraryId = libraryId
         ?? (await this.ensureDefaultPersonalLibrary(workspaceId, projectId)).id;
       const response = await this.client.post<BackendSourceItem>(

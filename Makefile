@@ -841,6 +841,17 @@ governance-release-smoke:
 	@set -e; \
 	echo "[make] governance smoke preflight: restart managed API/Web in real-backend mode (MSW off)..."; \
 	$(MAKE) notebook-agent-demo-down >/dev/null 2>&1 || true; \
+	for port in 20000 3001; do \
+		if command -v lsof >/dev/null 2>&1; then \
+			pids="$$(lsof -tiTCP:$$port -sTCP:LISTEN -Pn 2>/dev/null || true)"; \
+			if [ -n "$$pids" ]; then \
+				echo "[make] governance preflight: killing stale listener(s) on :$$port ($$pids)"; \
+				kill $$pids >/dev/null 2>&1 || true; \
+				sleep 1; \
+				kill -9 $$pids >/dev/null 2>&1 || true; \
+			fi; \
+		fi; \
+	done; \
 	DEMO_INIT_RESOURCES=0 DEMO_START_RUNNER=1 $(MAKE) notebook-agent-demo-up; \
 	run_with_token_retry() { \
 		STEP_NAME="$$1"; \

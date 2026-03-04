@@ -59,6 +59,21 @@ async function fetchUserInfo(keycloakBase, realm, token) {
   return { sub, email, name };
 }
 
+async function listProjectIdsFromApi({ apiBase, workspaceId, token }) {
+  if (!token) return [];
+  const normalizedApiBase = apiBase.replace(/\/+$/, '');
+  const url = `${normalizedApiBase}/api/v1/workspaces/${workspaceId}/projects`;
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+  }).catch(() => null);
+  if (!response || !response.ok) return [];
+  const payload = await response.json().catch(() => null);
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items
+    .map((item) => (item && typeof item.id === 'string' ? item.id : null))
+    .filter((id) => typeof id === 'string' && id.length > 0);
+}
+
 async function exchangeAuthCodeForToken(args) {
   const tokenUrl = `${args.keycloakBase.replace(/\/+$/, '')}/realms/${args.realm}/protocol/openid-connect/token`;
   const body = new URLSearchParams();
@@ -274,7 +289,7 @@ async function gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path, loca
   throw new Error(`project_route_unresolved:${path}:current=${page.url()}`);
 }
 
-async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
+async function resolveAccessibleProjectId({ page, baseUrl, apiBase, locale, workspaceId, fallbackProjectId, tokenFile }) {
   const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
   await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await waitForAppReady(page);
@@ -287,7 +302,13 @@ async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, 
     return null;
   });
   const parsed = parseProjectIdFromHref(foundFromLink);
-  if (parsed) return parsed;
+  const token = readTokenFile(tokenFile);
+  const apiProjectIds = await listProjectIdsFromApi({ apiBase, workspaceId, token });
+  if (parsed && apiProjectIds.includes(parsed)) return parsed;
+  if (apiProjectIds.length > 0) {
+    console.log(`[gov-interact] fallback to API project value: ${apiProjectIds[0]}`);
+    return apiProjectIds[0];
+  }
   console.log(`[gov-interact] fallback to projectId file value: ${fallbackProjectId}`);
   return fallbackProjectId;
 }
@@ -322,6 +343,7 @@ async function main() {
   const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
   const strictMode = smokeMode === 'strict';
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+  const apiBase = process.env.API_BASE || 'http://localhost:20000';
   const locale = process.env.LOCALE || 'zh-CN';
   const workspaceId = process.env.WORKSPACE_ID || 'ws_default';
   const keycloakBase = process.env.KEYCLOAK_BASE_URL || 'http://localhost:18080';
@@ -333,6 +355,7 @@ async function main() {
   requireFile(projectIdFile);
   const fallbackProjectId = fs.readFileSync(projectIdFile, 'utf8').trim();
   if (!fallbackProjectId) throw new Error(`empty_project_id:${projectIdFile}`);
+  const tokenFile = process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt';
 
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage();
@@ -348,16 +371,20 @@ async function main() {
       clientId,
       username,
       password,
-      tokenFile: process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt',
+      tokenFile,
     });
     const projectId = await resolveAccessibleProjectId({
       page,
       baseUrl,
+      apiBase,
       locale,
       workspaceId,
       fallbackProjectId,
+      tokenFile,
     });
     console.log(`[gov-interact] using project ${projectId}`);
+    const overviewPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/overview`;
+    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: overviewPath, locale, workspaceId }).catch(() => {});
 
     // Members: basic filter interactions and invite dialog UX (safe interaction).
     const membersPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/members`;
@@ -397,8 +424,18 @@ async function main() {
     const rpPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`;
     console.log(`[gov-interact] resource-policy ${rpPath}`);
     await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
-    const rpError = await isVisible(page.getByTestId('page-state__error'), 3_000);
-    if (rpError) {
+    const rpReady = await waitForAny(page, [
+      'resource-policy__table',
+      'resource-policy__editor',
+      ...(strictMode ? [] : ['page-state__error']),
+      ...(strictMode ? ['page-state__error'] : []),
+    ], 45_000, async () => {
+      const currentPath = new URL(page.url()).pathname;
+      if (page.url().includes(`/${locale}/login/workspace`) || currentPath !== rpPath) {
+        await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
+      }
+    });
+    if (rpReady === 'page-state__error') {
       if (strictMode) {
         throw new Error('resource-policy_error_state');
       }

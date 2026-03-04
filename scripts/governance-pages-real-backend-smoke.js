@@ -61,6 +61,21 @@ async function fetchUserInfo(keycloakBase, realm, token) {
   return { sub, email, name };
 }
 
+async function listProjectIdsFromApi({ apiBase, workspaceId, token }) {
+  if (!token) return [];
+  const normalizedApiBase = apiBase.replace(/\/+$/, '');
+  const url = `${normalizedApiBase}/api/v1/workspaces/${workspaceId}/projects`;
+  const response = await fetch(url, {
+    headers: { authorization: `Bearer ${token}` },
+  }).catch(() => null);
+  if (!response || !response.ok) return [];
+  const payload = await response.json().catch(() => null);
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  return items
+    .map((item) => (item && typeof item.id === 'string' ? item.id : null))
+    .filter((id) => typeof id === 'string' && id.length > 0);
+}
+
 async function exchangeAuthCodeForToken(args) {
   const tokenUrl = `${args.keycloakBase.replace(/\/+$/, '')}/realms/${args.realm}/protocol/openid-connect/token`;
   const body = new URLSearchParams();
@@ -316,7 +331,7 @@ async function gotoProjectRouteWithWorkspaceRecovery(page, { url, locale, worksp
   throw new Error(`project_route_unresolved:${url}:current=${page.url()}`);
 }
 
-async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, fallbackProjectId }) {
+async function resolveAccessibleProjectId({ page, baseUrl, apiBase, locale, workspaceId, fallbackProjectId, tokenFile }) {
   const projectsPath = `/${locale}/workspaces/${workspaceId}/projects`;
   await page.goto(`${baseUrl.replace(/\/+$/, '')}${projectsPath}`, { waitUntil: 'domcontentloaded', timeout: 60_000 });
   await waitForAppReady(page);
@@ -329,7 +344,13 @@ async function resolveAccessibleProjectId({ page, baseUrl, locale, workspaceId, 
     return null;
   });
   const parsed = parseProjectIdFromHref(foundFromLink);
-  if (parsed) return parsed;
+  const token = readTokenFile(tokenFile);
+  const apiProjectIds = await listProjectIdsFromApi({ apiBase, workspaceId, token });
+  if (parsed && apiProjectIds.includes(parsed)) return parsed;
+  if (apiProjectIds.length > 0) {
+    console.log(`[gov-smoke] fallback to API project value: ${apiProjectIds[0]}`);
+    return apiProjectIds[0];
+  }
   console.log(`[gov-smoke] fallback to projectId file value: ${fallbackProjectId}`);
   return fallbackProjectId;
 }
@@ -338,6 +359,7 @@ async function main() {
   const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
   const strictMode = smokeMode === 'strict';
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
+  const apiBase = process.env.API_BASE || 'http://localhost:20000';
   const locale = process.env.LOCALE || 'zh-CN';
   const workspaceId = process.env.WORKSPACE_ID || 'ws_default';
   const keycloakBase = process.env.KEYCLOAK_BASE_URL || 'http://localhost:18080';
@@ -350,6 +372,7 @@ async function main() {
   requireFile(projectIdFile);
   const fallbackProjectId = fs.readFileSync(projectIdFile, 'utf8').trim();
   if (!fallbackProjectId) throw new Error(`empty_project_id:${projectIdFile}`);
+  const tokenFile = process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt';
 
   const browser = await chromium.launch({ headless: true });
 
@@ -387,7 +410,7 @@ async function main() {
     const loginContext = await loginViaKeycloak(browser, {
       baseUrl, locale, keycloakBase, realm, clientId, username, password,
       workspaceId,
-      tokenFile: process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt',
+      tokenFile,
     });
     const resolveContext = await createAuthedPage(browser, loginContext.storageState);
     const projectId = await resolveAccessibleProjectId({
@@ -396,25 +419,33 @@ async function main() {
       locale,
       workspaceId,
       fallbackProjectId,
+      apiBase,
+      tokenFile,
     });
     await resolveContext.context.close().catch(() => {});
     await loginContext.context.close().catch(() => {});
     console.log(`[gov-smoke] using project ${projectId}`);
+    const overviewUrl = `${baseUrl.replace(/\/+$/, '')}/${locale}/workspaces/${workspaceId}/projects/${projectId}/overview`;
+    const checkContext = await createAuthedPage(browser, loginContext.storageState);
+    const checkPage = checkContext.page;
+    await checkPage.goto(overviewUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 }).catch(() => {});
+    await waitForAppReady(checkPage).catch(() => {});
 
-    for (const check of checks) {
-      const path = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/${check.pathSuffix}`;
-      const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
-      let checkPassed = false;
-      let lastFailure = `${check.name}: unknown`;
+    try {
+      for (const check of checks) {
+        const path = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/${check.pathSuffix}`;
+        const url = `${baseUrl.replace(/\/+$/, '')}${path}`;
+        let checkPassed = false;
+        let lastFailure = `${check.name}: unknown`;
 
-      for (let attempt = 0; attempt < 2 && !checkPassed; attempt += 1) {
-        const checkContext = await createAuthedPage(browser, loginContext.storageState);
-        const { page } = checkContext;
-        try {
+        for (let attempt = 0; attempt < 2 && !checkPassed; attempt += 1) {
+          const page = checkPage;
           console.log(`[gov-smoke] checking ${check.name}: ${url}${attempt > 0 ? ` (retry ${attempt})` : ''}`);
           await gotoProjectRouteWithWorkspaceRecovery(page, { url, locale, workspaceId });
 
-          const staleProject = await page.getByTestId('project-shell__stale-project').isVisible().catch(() => false);
+          const staleProject =
+            await page.getByTestId('project-shell__project-not-found').isVisible().catch(() => false)
+            || await page.getByTestId('project-shell__stale-project').isVisible().catch(() => false);
           if (staleProject) {
             lastFailure = `${check.name}: stale project (local in-memory backend reset)`;
             continue;
@@ -435,7 +466,7 @@ async function main() {
               }
             }
             if (!foundAny) {
-              const deadline = Date.now() + 20_000;
+              const deadline = Date.now() + 45_000;
               while (Date.now() < deadline && !foundAny) {
                 const workspaceCard = page.getByTestId(`workspace-select__card--${workspaceId}`);
                 const currentPath = new URL(page.url()).pathname;
@@ -484,14 +515,14 @@ async function main() {
           }
 
           checkPassed = true;
-        } finally {
-          await checkContext.context.close().catch(() => {});
+        }
+
+        if (!checkPassed) {
+          failures.push(lastFailure);
         }
       }
-
-      if (!checkPassed) {
-        failures.push(lastFailure);
-      }
+    } finally {
+      await checkContext.context.close().catch(() => {});
     }
   } finally {
     await browser.close().catch(() => {});

@@ -70,7 +70,7 @@ export type UsageQuery = {
   model?: string | null;
   result?: 'ok' | 'error' | null;
   errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
-  groupBy: 'day' | 'hour';
+  groupBy: 'day' | 'hour' | 'minute';
   sortBy: 'time_bucket' | 'resource_type' | 'requests';
   sortOrder: 'asc' | 'desc';
   page: number;
@@ -509,8 +509,9 @@ function inRange(ts: string, startMs: number, endMs: number): boolean {
   return Number.isFinite(ms) && ms >= startMs && ms <= endMs;
 }
 
-function formatBucket(iso: string, groupBy: 'day' | 'hour'): string {
+function formatBucket(iso: string, groupBy: 'day' | 'hour' | 'minute'): string {
   if (groupBy === 'day') return iso.slice(0, 10);
+  if (groupBy === 'minute') return `${iso.slice(0, 10)} ${iso.slice(11, 16)}`;
   return `${iso.slice(0, 10)} ${iso.slice(11, 13)}:00`;
 }
 

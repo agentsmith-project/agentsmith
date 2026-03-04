@@ -1416,7 +1416,7 @@ describe('api-entry-node projects routes', () => {
 
     const auditAfterJoinRequestRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=2020-01-01T00:00:00.000Z&end_time=2100-01-01T00:00:00.000Z&page=1&page_size=50',
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())}&end_time=${encodeURIComponent(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString())}&page=1&page_size=50`,
     );
     expect(auditAfterJoinRequestRes.status).toBe(200);
     const auditAfterJoinRequest = (await auditAfterJoinRequestRes.json()) as {
@@ -3239,7 +3239,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           access_mode: 'allow_all_members',
           allowed_subjects: [],
-          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 2 }] },
         }),
       },
     );
@@ -3257,7 +3257,7 @@ describe('api-entry-node projects routes', () => {
         }),
       },
     );
-    expect(firstRateLimitedProxy.status).toBe(200);
+    expect(firstRateLimitedProxy.status).toBe(429);
 
     const secondRateLimitedProxy = await apiFetch(
       baseUrl,
@@ -3342,8 +3342,13 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           access_mode: 'allow_all_members',
           allowed_subjects: [],
-          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
-          quota_limits: { rules: [{ key: 'endpoint.requests_per_day', value: 3 }] },
+          rate_limits: {
+            rules: [
+              { key: 'endpoint.requests_per_minute', value: 1000 },
+              { key: 'endpoint.requests_per_day', value: 3 },
+            ],
+          },
+          quota_limits: { rules: [] },
         }),
       },
     );
@@ -3363,14 +3368,14 @@ describe('api-entry-node projects routes', () => {
     );
     expect(requestQuotaLimitedProxy.status).toBe(429);
     expect(await requestQuotaLimitedProxy.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
       resource_type: 'endpoint',
       resource_id: endpoint.id,
     });
 
     const requestQuotaAuditRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=resource_policy.quota_exceeded&resource_type=endpoint&resource_id=${endpoint.id}&page=1&page_size=20`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=resource_policy.rate_limited&resource_type=endpoint&resource_id=${endpoint.id}&page=1&page_size=20`,
     );
     expect(requestQuotaAuditRes.status).toBe(200);
     const requestQuotaAuditBody = (await requestQuotaAuditRes.json()) as {
@@ -3379,10 +3384,10 @@ describe('api-entry-node projects routes', () => {
     expect(
       requestQuotaAuditBody.items.some(
         (item) =>
-          item.action === 'resource_policy.quota_exceeded'
+          item.action === 'resource_policy.rate_limited'
           && item.resource_type === 'endpoint'
           && item.resource_id === endpoint.id
-          && item.metadata_json?.quota_key === 'endpoint.requests_per_day',
+          && item.metadata_json?.rate_key === 'endpoint.requests_per_day',
       ),
     ).toBe(true);
 
@@ -8341,6 +8346,7 @@ describe('api-entry-node projects routes', () => {
       project_id: 'proj_1',
       resource_type: 'notebook_task',
       resource_id: 'task_1',
+      end_user_id: 'user_test',
       requests: 1,
       duration_ms: 1200,
       tokens_total: 42,
@@ -8353,6 +8359,7 @@ describe('api-entry-node projects routes', () => {
       project_id: 'proj_1',
       resource_type: 'chat',
       resource_id: 'sess_1',
+      end_user_id: 'user_test',
       requests: 1,
       duration_ms: 800,
       tokens_total: 12,
@@ -8366,6 +8373,7 @@ describe('api-entry-node projects routes', () => {
       project_id: 'proj_1',
       resource_type: 'agent',
       resource_id: 'agent_1',
+      end_user_id: 'user_test',
       requests: 1,
       tokens_total: 999,
       result: 'ok',

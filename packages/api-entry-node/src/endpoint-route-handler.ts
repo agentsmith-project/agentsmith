@@ -5,7 +5,8 @@ import type { EndpointImportPayload, EndpointRecord } from './resource-models.js
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 import {
-  checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectEndpointRateLimitsForUser,
+  checkProjectEndpointSpendingLimitsForUser,
   checkProjectResourceQuotaLimitsForUser,
 } from './project-resource-policy-enforcer.js';
 import { checkMemberEndpointDailyTokenQuota } from './project-member-quota-enforcer.js';
@@ -166,7 +167,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   });
   const policyRateFailure = (params: {
     retryAfterSeconds: number;
-    effectiveLimitPerMinute: number;
+    rateKey: string;
+    effectiveLimit: number;
+    currentRequests: number;
+    windowSeconds: number;
     scope?: string;
   }): GovernancePreflightFailureSpec => ({
     action: 'resource_policy.rate_limited',
@@ -176,7 +180,32 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     retryAfterSeconds: params.retryAfterSeconds,
     endUserId: user.id,
     metadata: governanceMetadata('policy_rate', {
-      effective_limit_per_minute: params.effectiveLimitPerMinute,
+      rate_key: params.rateKey,
+      effective_limit: params.effectiveLimit,
+      current_requests: params.currentRequests,
+      window_seconds: params.windowSeconds,
+      scope: params.scope,
+    }),
+  });
+  const policySpendingFailure = (params: {
+    retryAfterSeconds: number;
+    spendingKey: string;
+    effectiveLimitUsd: number;
+    currentSpendingUsd: number;
+    windowSeconds: number;
+    scope?: string;
+  }): GovernancePreflightFailureSpec => ({
+    action: 'resource_policy.spending_limited',
+    errorCode: 'RESOURCE_POLICY_SPENDING_LIMITED',
+    message: 'resource_policy_spending_limited',
+    statusCode: 429,
+    retryAfterSeconds: params.retryAfterSeconds,
+    quotaKey: params.spendingKey,
+    metadata: governanceMetadata('policy_quota', {
+      spending_key: params.spendingKey,
+      effective_limit_usd: params.effectiveLimitUsd,
+      current_spending_usd: params.currentSpendingUsd,
+      window_seconds: params.windowSeconds,
       scope: params.scope,
     }),
   });
@@ -389,10 +418,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       });
       return true;
     }
-    const rateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
+    const rateCheck = await checkProjectEndpointRateLimitsForUser({
+      docStore: deps.docStore,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      resourceType: 'endpoint',
       resourceId: endpoint.id,
       userId: user.id,
       policy: policyCheck.policy,
@@ -400,7 +429,10 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     if (!rateCheck.allowed) {
       const failure = policyRateFailure({
         retryAfterSeconds: rateCheck.retry_after_seconds,
-        effectiveLimitPerMinute: rateCheck.effective_limit_per_minute,
+        rateKey: rateCheck.rate_key,
+        effectiveLimit: rateCheck.effective_limit,
+        currentRequests: rateCheck.current_requests,
+        windowSeconds: rateCheck.window_seconds,
         scope: rateCheck.scope,
       });
       await writeGovernancePreflightFailure({
@@ -408,6 +440,43 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         projectId: route.projectId,
         endpointId: endpoint.id,
         requestId,
+        ...failure,
+      });
+      return true;
+    }
+    const estimatedCostPerTokenUsd = (() => {
+      const profile = endpoint.runtime_profile;
+      if (!profile) return undefined;
+      const inputPrice = typeof profile.price_input_per_1m === 'number' ? profile.price_input_per_1m : undefined;
+      const outputPrice = typeof profile.price_output_per_1m === 'number' ? profile.price_output_per_1m : undefined;
+      const effectivePricePer1M = Math.max(inputPrice ?? 0, outputPrice ?? 0);
+      if (!Number.isFinite(effectivePricePer1M) || effectivePricePer1M <= 0) return undefined;
+      return effectivePricePer1M / 1_000_000;
+    })();
+    const spendingCheck = await checkProjectEndpointSpendingLimitsForUser({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceId: endpoint.id,
+      userId: user.id,
+      policy: policyCheck.policy,
+      estimatedCostPerTokenUsd,
+    });
+    if (!spendingCheck.allowed) {
+      const failure = policySpendingFailure({
+        retryAfterSeconds: spendingCheck.retry_after_seconds,
+        spendingKey: spendingCheck.spending_key,
+        effectiveLimitUsd: spendingCheck.effective_limit_usd,
+        currentSpendingUsd: spendingCheck.current_spending_usd,
+        windowSeconds: spendingCheck.window_seconds,
+        scope: spendingCheck.scope,
+      });
+      await writeGovernancePreflightFailure({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        endpointId: endpoint.id,
+        requestId,
+        endUserId: user.id,
         ...failure,
       });
       return true;
@@ -435,6 +504,9 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         durationMs: Date.now() - startedAtMs,
         result: 'ok',
         metadata: {
+          ...(typeof estimatedCostPerTokenUsd === 'number' && proxyResult.tokens_total
+            ? { cost_usd: Number((proxyResult.tokens_total * estimatedCostPerTokenUsd).toFixed(6)) }
+            : {}),
           endpoint_protocol: endpoint.protocol,
           capability,
           model: resolvedModel,

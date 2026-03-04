@@ -180,6 +180,10 @@ function requireTimeRange(
   if (end.getTime() < start.getTime()) {
     return badRequest(json, res, 'end_time must be >= start_time');
   }
+  const maxRangeMs = 48 * 60 * 60 * 1000;
+  if (end.getTime() - start.getTime() > maxRangeMs) {
+    return badRequest(json, res, 'time_range_exceeds_48h');
+  }
   return { start, end };
 }
 
@@ -193,6 +197,11 @@ export async function handleAuditUsageRoute({
   deps,
   user,
 }: HandlerArgs): Promise<boolean> {
+  const enforceOwnUsageScope = (_requestedEndUserId: string | null): string | null => {
+    if (!user) return null;
+    return user.id;
+  };
+
   const deliveryDispatch = createUsageReportDeliveryDispatcher({
     getCredentialSecret: (workspaceId, projectId, credentialId) =>
       deps.endpointResourceService.getCredentialSecret(workspaceId, projectId, credentialId),
@@ -386,7 +395,7 @@ export async function handleAuditUsageRoute({
       projectId: route.projectId,
       startTime: range.start.toISOString(),
       endTime: range.end.toISOString(),
-      endUserId: requestUrl.searchParams.get('end_user_id'),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
     });
     json(res, 200, payload);
     return true;
@@ -404,7 +413,7 @@ export async function handleAuditUsageRoute({
       format,
       resourceType: requestUrl.searchParams.get('resource_type'),
       resourceId: requestUrl.searchParams.get('resource_id'),
-      endUserId: requestUrl.searchParams.get('end_user_id'),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
       provider: requestUrl.searchParams.get('provider'),
       model: requestUrl.searchParams.get('model'),
       result: requestUrl.searchParams.get('result') === 'error'
@@ -437,7 +446,8 @@ export async function handleAuditUsageRoute({
         ? 'ok'
         : null;
     const errorClass = parseRuntimeErrorClass(requestUrl.searchParams.get('error_class'));
-    const groupBy = requestUrl.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
+    const groupByRaw = requestUrl.searchParams.get('group_by');
+    const groupBy = groupByRaw === 'hour' || groupByRaw === 'minute' ? groupByRaw : 'day';
     const sortByRaw = requestUrl.searchParams.get('sort_by');
     const sortOrder = requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc';
     const sortBy =
@@ -451,7 +461,7 @@ export async function handleAuditUsageRoute({
       endTime: range.end.toISOString(),
       resourceType,
       resourceId,
-      endUserId,
+      endUserId: enforceOwnUsageScope(endUserId),
       provider,
       model,
       result,
@@ -478,7 +488,7 @@ export async function handleAuditUsageRoute({
       endTime: range.end.toISOString(),
       resourceType: requestUrl.searchParams.get('resource_type'),
       resourceId: requestUrl.searchParams.get('resource_id'),
-      endUserId: requestUrl.searchParams.get('end_user_id'),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
       provider: requestUrl.searchParams.get('provider'),
       model: requestUrl.searchParams.get('model'),
       result: requestUrl.searchParams.get('result') === 'error'
@@ -571,7 +581,7 @@ export async function handleAuditUsageRoute({
       endTime: range.end.toISOString(),
       resourceType: requestUrl.searchParams.get('resource_type'),
       resourceId: requestUrl.searchParams.get('resource_id'),
-      endUserId: requestUrl.searchParams.get('end_user_id'),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
       provider: requestUrl.searchParams.get('provider'),
       model: requestUrl.searchParams.get('model'),
       result: requestUrl.searchParams.get('result') === 'error'

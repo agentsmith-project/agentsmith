@@ -181,8 +181,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
 
   const auditTimeRange = useMemo(() => {
     const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 30);
+    const start = new Date(end.getTime() - 48 * 60 * 60 * 1000);
     return { start_time: start.toISOString(), end_time: end.toISOString() };
   }, []);
   const { data: auditData } = useQuery({

@@ -175,14 +175,34 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     return ['project:endpoint:use'];
   }
 
+  if (route.kind === 'audit') {
+    return ['project:manage'];
+  }
+
   if (
-    route.kind === 'audit'
-    || route.kind === 'usage'
+    route.kind === 'usage'
     || route.kind === 'usageKpi'
     || route.kind === 'usageTimeseries'
+    || route.kind === 'usageFacts'
+    || route.kind === 'usageRuntimeObservability'
+    || route.kind === 'usageOperationsSummary'
     || route.kind === 'quotaSummary'
   ) {
     return ['project:endpoint:use'];
+  }
+
+  if (
+    route.kind === 'usageExport'
+    || route.kind === 'usageReportSchedules'
+    || route.kind === 'usageReportSchedulesRunDue'
+    || route.kind === 'usageReportEvidence'
+    || route.kind === 'usageReportScheduleItem'
+    || route.kind === 'usageReportScheduleTestDelivery'
+    || route.kind === 'usageReportScheduleRunNow'
+    || route.kind === 'usageReportScheduleDeliveryRetry'
+    || route.kind === 'usageReportScheduleDeliveryAcknowledge'
+  ) {
+    return ['project:manage'];
   }
 
   if (

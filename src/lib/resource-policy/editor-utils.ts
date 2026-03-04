@@ -63,6 +63,19 @@ export function formatRuleValue(rule: PolicyRule, tResource: (key: string) => st
   if (rule.key === 'endpoint.daily_token_limit') {
     return `${rule.value} ${tResource('units.tokens_per_day')}`;
   }
+  if (rule.key === 'endpoint.requests_per_5_hours') {
+    return `${rule.value} ${tResource('units.requests_per_5_hours')}`;
+  }
+  if (rule.key === 'endpoint.requests_per_day') {
+    return `${rule.value} ${tResource('units.requests_per_day')}`;
+  }
+  if (
+    rule.key === 'endpoint.spending_usd_per_minute'
+    || rule.key === 'endpoint.spending_usd_per_5_hours'
+    || rule.key === 'endpoint.spending_usd_per_day'
+  ) {
+    return `$${rule.value} ${tResource(`units.${rule.key.replace('endpoint.', '')}`)}`;
+  }
   if (rule.key === 'source_library.max_total_files') {
     return `${rule.value} ${tResource('units.files')}`;
   }

@@ -142,7 +142,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
-  const canReadAudit = useHasPermission('project:endpoint:use');
+  const canReadAudit = useHasPermission('project:manage');
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const searchParams = useSearchParams();
   const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);

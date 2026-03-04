@@ -95,6 +95,7 @@ export default function UsagePage({ params }: UsagePageProps) {
         workspaceId={workspaceId}
         projectId={projectId}
         locale={resolvedParams.locale}
+        defaultEndUserId={currentUser?.id}
         currentUserId={currentUser?.id}
         initialFilters={initialFilters}
         initialPanel={initialPanel}

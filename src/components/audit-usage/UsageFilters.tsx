@@ -115,8 +115,9 @@ export function UsageFilters({
             end_time: filters.end_time,
           }}
           onChange={handleTimeRangeChange}
-          presets={['last_24h', 'last_7d', 'last_30d', 'today', 'this_month', 'custom']}
+          presets={['last_24h', 'custom']}
           showResolvedRangeLabel={false}
+          maxDays={2}
         />
 
         <div>

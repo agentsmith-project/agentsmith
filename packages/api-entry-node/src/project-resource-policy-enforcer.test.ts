@@ -3,6 +3,8 @@ import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   __resetProjectResourcePolicyRateCountersForTests,
   checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectEndpointRateLimitsForUser,
+  checkProjectEndpointSpendingLimitsForUser,
   checkProjectResourceQuotaLimitsForUser,
   checkProjectSourceLibraryQuotaLimits,
 } from './project-resource-policy-enforcer.js';
@@ -123,7 +125,7 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
-  it('enforces endpoint requests_per_day quota using request counts', async () => {
+  it('enforces endpoint daily_token_limit quota using token counts', async () => {
     const docStore = new InMemoryJsonDocStore();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'endpoint',
@@ -131,7 +133,7 @@ describe('project-resource-policy-enforcer', () => {
       access_mode: 'allow_all_members',
       allowed_subjects: [],
       quota_limits: {
-        rules: [{ key: 'endpoint.requests_per_day', value: 2 }],
+        rules: [{ key: 'endpoint.daily_token_limit', value: 200 }],
       },
     };
 
@@ -141,7 +143,7 @@ describe('project-resource-policy-enforcer', () => {
       resource_type: 'endpoint',
       resource_id: 'ep_quota_day',
       end_user_id: 'user_1',
-      requests: 2,
+      tokens_total: 210,
       result: 'ok',
       timestamp: new Date(Date.UTC(2026, 1, 26, 8, 0, 0, 0)).toISOString(),
     });
@@ -160,10 +162,89 @@ describe('project-resource-policy-enforcer', () => {
     expect(decision).toMatchObject({
       allowed: false,
       reason: 'quota_exceeded',
-      quota_key: 'endpoint.requests_per_day',
-      effective_requests_per_day: 2,
-      current_requests_today: 2,
-      usage_unit: 'requests',
+      quota_key: 'endpoint.daily_token_limit',
+      effective_daily_token_limit: 200,
+      current_tokens_today: 210,
+      usage_unit: 'tokens',
+    });
+  });
+
+  it('enforces endpoint requests_per_5_hours using usage facts', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'endpoint',
+      resource_id: 'ep_rate_5h',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      rate_limits: {
+        rules: [{ key: 'endpoint.requests_per_5_hours', value: 2 }],
+      },
+    };
+    await recordUsageFact(docStore, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      resource_id: 'ep_rate_5h',
+      end_user_id: 'user_1',
+      requests: 2,
+      result: 'ok',
+      timestamp: new Date(Date.UTC(2026, 1, 26, 8, 0, 0, 0)).toISOString(),
+    });
+    const decision = await checkProjectEndpointRateLimitsForUser({
+      docStore,
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceId: 'ep_rate_5h',
+      userId: 'user_1',
+      policy,
+      nowMs: Date.UTC(2026, 1, 26, 10, 0, 0, 0),
+    });
+    expect(decision).toMatchObject({
+      allowed: false,
+      reason: 'rate_limited',
+      rate_key: 'endpoint.requests_per_5_hours',
+      effective_limit: 2,
+      current_requests: 2,
+    });
+  });
+
+  it('enforces endpoint spending_usd_per_day using usage metadata cost', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'endpoint',
+      resource_id: 'ep_spending_day',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      quota_limits: {
+        rules: [{ key: 'endpoint.spending_usd_per_day', value: 1.5 }],
+      },
+    };
+    await recordUsageFact(docStore, {
+      workspace_id: 'ws_1',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      resource_id: 'ep_spending_day',
+      end_user_id: 'user_1',
+      requests: 1,
+      result: 'ok',
+      metadata_json: { cost_usd: 1.6 },
+      timestamp: new Date(Date.UTC(2026, 1, 26, 8, 0, 0, 0)).toISOString(),
+    });
+    const decision = await checkProjectEndpointSpendingLimitsForUser({
+      docStore,
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceId: 'ep_spending_day',
+      userId: 'user_1',
+      policy,
+      nowMs: Date.UTC(2026, 1, 26, 12, 0, 0, 0),
+    });
+    expect(decision).toMatchObject({
+      allowed: false,
+      reason: 'spending_limited',
+      spending_key: 'endpoint.spending_usd_per_day',
+      effective_limit_usd: 1.5,
+      current_spending_usd: 1.6,
     });
   });
 

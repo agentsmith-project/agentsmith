@@ -44,7 +44,7 @@
 │  POST /v1/.../keepalive                                      │
 │  POST /v1/.../exec                                           │
 │                                                              │
-│  改动: storage=nil 时纯目录模式 (不依赖任何外部库)            │
+│  改动: 纯目录模式 (MkdirAll + PVC subPath, 不依赖外部库)      │
 │  MkdirAll({basePath}/{ws}/{wl}) → PVC subPath 挂载           │
 └──────────┬───────────────────────────────────────────────────┘
            │ K8s API
@@ -105,71 +105,45 @@ os.MkdirAll(fullPath, 0755)    // 目录不存在就建，存在就跳过
 
 ### 改动范围
 
-共 2 个文件，约 20 行。目标：`storage` 为 nil 时 handler 自己处理目录创建和 subPath 计算。
+共 2 个文件，约 20 行。目标：handler 直接创建目录并计算 subPath，无外部存储依赖。
 
 ### 3.1 `manager-service/internal/workload/handler.go`
 
-**现状**: `handleCreatePod` 要求 `h.storage != nil`，调用 `h.storage.PrepareWorkspace()` 和 `h.storage.PayloadSubPath()`。
-
-**改动**: storage 为 nil 时走直接目录模式。
+Handler 使用纯目录模式：
 
 ```go
-// Handler 新增字段
 type Handler struct {
     k8sClient *k8s.Client
     executor  *k8s.Executor
-    storage   *workspace.Storage  // 可为 nil
     pvcName   string
-    basePath  string              // 新增: JuiceFS 挂载根路径
+    basePath  string   // JuiceFS 挂载根路径
 }
 
-// NewHandler 签名变更
 func NewHandler(k8sClient *k8s.Client, executor *k8s.Executor,
-    storage *workspace.Storage, pvcName string, basePath string) *Handler {
+    pvcName string, basePath string) *Handler {
     return &Handler{
         k8sClient: k8sClient,
         executor:  executor,
-        storage:   storage,
         pvcName:   pvcName,
         basePath:  basePath,
     }
 }
 ```
 
-`handleCreatePod` 中替换 storage 调用:
+`handleCreatePod` 中直接创建目录:
 
 ```go
-// 替换原来的:
-//   if h.storage == nil { return error }
-//   payloadPath, err := h.storage.PrepareWorkspace(...)
-//   subPath := h.storage.PayloadSubPath(...)
-//
-// 改为:
-var subPath string
-if h.storage != nil {
-    payloadPath, err := h.storage.PrepareWorkspace(ctx, workspaceID, workloadID)
-    if err != nil {
-        log.Printf("workload/%s: workspace prepare failed: %v", workloadID, err)
-        jsonError(w, http.StatusInternalServerError, "workspace preparation failed: "+err.Error())
-        return
-    }
-    log.Printf("workload/%s: workspace ready at %s", workloadID, payloadPath)
-    subPath = h.storage.PayloadSubPath(workspaceID, workloadID)
-} else {
-    subPath = filepath.Join(workspaceID, workloadID)
-    fullPath := filepath.Join(h.basePath, subPath)
-    if err := os.MkdirAll(fullPath, 0755); err != nil {
-        log.Printf("workload/%s: mkdir failed: %v", workloadID, err)
-        jsonError(w, http.StatusInternalServerError, "workspace dir creation failed: "+err.Error())
-        return
-    }
-    log.Printf("workload/%s: workspace dir ready at %s", workloadID, fullPath)
+subPath := filepath.Join(workspaceID, workloadID)
+fullPath := filepath.Join(h.basePath, subPath)
+if err := os.MkdirAll(fullPath, 0755); err != nil {
+    log.Printf("workload/%s: mkdir failed: %v", workloadID, err)
+    jsonError(w, http.StatusInternalServerError, "workspace dir creation failed: "+err.Error())
+    return
 }
+log.Printf("workload/%s: workspace dir ready at %s", workloadID, fullPath)
 ```
 
 ### 3.2 `manager-service/internal/app/app.go`
-
-**改动**: 根据环境变量决定是否创建 workspace.Storage。
 
 ```go
 juicefsBasePath := getEnvOrDefault("JUICEFS_BASE_PATH", "/mnt/juicefs/workloads")
@@ -1294,7 +1268,7 @@ Notebook/Chat 等待 Pod 启动期间，前端通过 SSE `trace_event`（`name=s
 
 | # | 天数 | 内容 | 可并行 |
 |---|------|------|--------|
-| 1 | 0.5 | Sandbox Manager: storage=nil 纯目录模式 | — |
+| 1 | 0.5 | Sandbox Manager: 纯目录模式 (MkdirAll + subPath) | — |
 | 2 | 1 | sandbox-manager-client.ts + 测试 | 与 1 并行 |
 | 3 | 1 | server.hello 推送 resource_proxy + runner 适配 (cwd/hello/resume) + 测试 | 与 1,2 并行 |
 | 4 | 2 | internal-agent-pod-manager.ts + 并发控制 + 测试 | 等 2 |

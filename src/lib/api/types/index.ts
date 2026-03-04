@@ -544,7 +544,7 @@ export interface UsageListParams extends PaginationParams {
   model?: string;
   result?: 'ok' | 'error';
   error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
-  group_by?: 'day' | 'hour';
+  group_by?: 'day' | 'hour' | 'minute';
   sort_by?: 'time_bucket' | 'resource_type' | 'requests';
   sort_order?: 'asc' | 'desc';
 }
@@ -758,8 +758,12 @@ export type PolicySubjectType = 'group' | 'user';
 export type PolicyRuleKey =
   | 'agent.requests_per_minute'
   | 'endpoint.requests_per_minute'
+  | 'endpoint.requests_per_5_hours'
   | 'endpoint.requests_per_day'
   | 'endpoint.daily_token_limit'
+  | 'endpoint.spending_usd_per_minute'
+  | 'endpoint.spending_usd_per_5_hours'
+  | 'endpoint.spending_usd_per_day'
   | 'source_library.requests_per_minute'
   | 'source_library.max_total_files'
   | 'source_library.max_file_size_bytes';
@@ -814,10 +818,19 @@ export interface ProjectGovernanceDefaults {
   endpoint: {
     access_mode: 'allow_all_members' | 'allow_list';
     rate_limits?: {
-      rules: PolicyRule<'endpoint.requests_per_minute'>[];
+      rules: Array<
+        PolicyRule<'endpoint.requests_per_minute'>
+        | PolicyRule<'endpoint.requests_per_5_hours'>
+        | PolicyRule<'endpoint.requests_per_day'>
+      >;
     };
     quota_limits?: {
-      rules: Array<PolicyRule<'endpoint.daily_token_limit'> | PolicyRule<'endpoint.requests_per_day'>>;
+      rules: Array<
+        PolicyRule<'endpoint.daily_token_limit'>
+        | PolicyRule<'endpoint.spending_usd_per_minute'>
+        | PolicyRule<'endpoint.spending_usd_per_5_hours'>
+        | PolicyRule<'endpoint.spending_usd_per_day'>
+      >;
     };
   };
   source_library: {

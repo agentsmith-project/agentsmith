@@ -86,12 +86,17 @@ interface ProjectSourceHandlerArgs {
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
 const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
-  endpoint: ['endpoint.requests_per_minute'],
+  endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
   source_library: ['source_library.requests_per_minute'],
   agent: ['agent.requests_per_minute'],
 };
 const RESOURCE_POLICY_ALLOWED_QUOTA_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
-  endpoint: ['endpoint.daily_token_limit', 'endpoint.requests_per_day'],
+  endpoint: [
+    'endpoint.daily_token_limit',
+    'endpoint.spending_usd_per_minute',
+    'endpoint.spending_usd_per_5_hours',
+    'endpoint.spending_usd_per_day',
+  ],
   source_library: ['source_library.max_total_files', 'source_library.max_file_size_bytes'],
   agent: [],
 };

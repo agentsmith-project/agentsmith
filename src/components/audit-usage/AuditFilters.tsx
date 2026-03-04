@@ -106,6 +106,8 @@ export function AuditFilters({
             end_time: filters.end_time,
           }}
           onChange={handleTimeRangeChange}
+          presets={['last_24h', 'custom']}
+          maxDays={2}
         />
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

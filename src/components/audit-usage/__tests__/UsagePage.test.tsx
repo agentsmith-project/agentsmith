@@ -3,25 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 
-const replaceMock = vi.fn();
-
-if (!HTMLElement.prototype.hasPointerCapture) {
-  HTMLElement.prototype.hasPointerCapture = () => false;
-}
-
-if (!HTMLElement.prototype.setPointerCapture) {
-  HTMLElement.prototype.setPointerCapture = () => {};
-}
-
-if (!HTMLElement.prototype.releasePointerCapture) {
-  HTMLElement.prototype.releasePointerCapture = () => {};
-}
-
-if (!HTMLElement.prototype.scrollIntoView) {
-  HTMLElement.prototype.scrollIntoView = () => {};
-}
-
 const invalidateQueries = vi.fn();
+const exportReportMock = vi.fn();
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
@@ -29,8 +12,6 @@ vi.mock('next-intl', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: replaceMock }),
-  usePathname: () => '/en-US/workspaces/ws_1/projects/proj_1/usage',
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -38,25 +19,13 @@ vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual<object>('@tanstack/react-query');
   return {
     ...actual,
-    useQueryClient: () => ({
-      invalidateQueries,
-    }),
+    useQueryClient: () => ({ invalidateQueries }),
   };
 });
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
+  useHasPermission: (permission: string) => permission === 'project:endpoint:use' || permission === 'project:manage',
 }));
-
-const exportReportMock = vi.fn();
-const createReportScheduleMock = vi.fn();
-const updateReportScheduleMock = vi.fn();
-const deleteReportScheduleMock = vi.fn();
-const testReportScheduleDeliveryMock = vi.fn();
-const runReportScheduleNowMock = vi.fn();
-const retryReportScheduleDeliveryMock = vi.fn();
-const acknowledgeReportScheduleDeliveryMock = vi.fn();
-const runDueReportSchedulesMock = vi.fn();
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<object>('@/lib/api');
@@ -65,14 +34,6 @@ vi.mock('@/lib/api', async () => {
     getApiClient: () => ({ getToken: () => null }),
     UsageAPI: class {
       exportReport = exportReportMock;
-      createReportSchedule = createReportScheduleMock;
-      updateReportSchedule = updateReportScheduleMock;
-      deleteReportSchedule = deleteReportScheduleMock;
-      testReportScheduleDelivery = testReportScheduleDeliveryMock;
-      runReportScheduleNow = runReportScheduleNowMock;
-      retryReportScheduleDelivery = retryReportScheduleDeliveryMock;
-      acknowledgeReportScheduleDelivery = acknowledgeReportScheduleDeliveryMock;
-      runDueReportSchedules = runDueReportSchedulesMock;
     },
   };
 });
@@ -88,7 +49,7 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
           resource_type: 'endpoint',
-          resource_id: 'endpoint_runtime_primary',
+          resource_id: 'ep_1',
           end_user_id: 'user_001',
           requests: 2,
           duration_p95_ms: 1000,
@@ -114,169 +75,21 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
           resource_type: 'endpoint',
-          resource_id: 'endpoint_runtime_primary',
+          resource_id: 'ep_1',
           request_id: 'req_1',
           requests: 1,
           result: 'ok',
           runtime: {
-            provider: 'secondaryok',
-            resolved_model: 'model-b',
-            fallback_hops: 1,
-            pricing_version: 'runtime-pricing-v1',
-            estimated_cost: 0.0068,
-            attempts: [
-              { index: 0, provider: 'primaryfail', model: 'model-a', outcome: 'fallback_upstream_error' },
-              { index: 1, provider: 'secondaryok', model: 'model-b', outcome: 'success' },
-            ],
+            provider: 'zhipu',
+            resolved_model: 'glm-5',
+            fallback_hops: 0,
           },
-          metadata_json: {
-            provider: 'secondaryok',
-          },
+          metadata_json: {},
         },
       ],
     },
     isLoading: false,
   }),
-  useUsageOperationsSummary: () => ({
-    data: {
-      top_providers: [{ provider: 'secondaryok', requests: 2, errors: 0, estimated_cost: 0.0068 }],
-      top_models: [{ provider: 'secondaryok', model: 'model-b', requests: 2, errors: 0, estimated_cost: 0.0068 }],
-      top_end_users: [{ end_user_id: 'user_001', requests: 2, errors: 0, estimated_cost: 0.0068 }],
-      anomaly_peaks: [],
-      recent_requests: [{ id: 'req_1', timestamp: '2026-02-28T15:10:00.000Z', request_id: 'req_1', provider: 'secondaryok', model: 'model-b', end_user_id: 'user_001', result: 'ok', estimated_cost: 0.0068 }],
-      webhook_destinations: [{
-        host: 'hooks.example.internal',
-        path: '/usage',
-        protocol: 'https',
-        deliveries: 2,
-        successes: 1,
-        failures: 1,
-        success_rate: 0.5,
-        p95_latency_ms: 240,
-        timeout_failures: 0,
-        network_failures: 0,
-        auth_failures: 0,
-        client_failures: 0,
-        server_failures: 1,
-        last_status: 'success',
-        last_delivery_at: '2026-02-28T00:00:03.000Z',
-      }],
-    },
-    isLoading: false,
-  }),
-  useRuntimeObservability: () => ({
-    data: {
-      total_requests: 12,
-      total_errors: 1,
-      error_rate: 0.0833,
-      fallback_hops_histogram: { '0': 10, '1': 2 },
-      error_class_counts: {
-        provider_retryable: 1,
-        provider_non_retryable: 0,
-        system_error: 0,
-      },
-      avg_estimated_cost: 0.002,
-      p95_estimated_cost: 0.0068,
-      health_summary: {
-        recovered_requests: 2,
-        terminal_error_requests: 1,
-        missing_price_facts: 0,
-        provider_count: 2,
-        model_count: 2,
-      },
-      request_trend: [],
-      latency_distribution_ms: {},
-      cost_distribution_usd: {},
-      degradation_signals: [],
-      provider_breakdown: [],
-      model_breakdown: [],
-      time_range: {
-        start: '2026-02-27T00:00:00.000Z',
-        end: '2026-02-28T00:00:00.000Z',
-      },
-    },
-    isLoading: false,
-    isFetching: false,
-    refetch: vi.fn(),
-  }),
-  useUsageReportSchedules: () => ({
-    data: {
-      items: [
-        {
-          id: 'usage_schedule_1',
-          workspace_id: 'ws_1',
-          project_id: 'proj_1',
-          name: 'Daily Ops',
-          cadence: 'daily',
-          status: 'active',
-          format: 'json',
-          time_window: 'last_7d',
-          delivery_channel: 'in_app',
-          delivery_config: undefined,
-          release_evidence_required: true,
-          empty_result_policy: 'deliver',
-          created_at: '2026-02-28T00:00:00.000Z',
-          updated_at: '2026-02-28T00:00:00.000Z',
-          next_run_at: '2026-03-01T00:00:00.000Z',
-          recent_deliveries: [
-            {
-              id: 'delivery_1',
-              workspace_id: 'ws_1',
-              project_id: 'proj_1',
-              schedule_id: 'usage_schedule_1',
-              trigger: 'manual',
-              status: 'success',
-              attempt_count: 1,
-              report_period_start: '2026-02-27T00:00:00.000Z',
-              report_period_end: '2026-02-28T00:00:00.000Z',
-              created_at: '2026-02-28T00:00:00.000Z',
-              completed_at: '2026-02-28T00:00:00.000Z',
-              preview_filename: 'usage-report-proj_1.json',
-              content_type: 'application/json; charset=utf-8',
-              summary: { requests: 2, errors: 0, top_provider: 'secondaryok', estimated_cost: 0.0068 },
-              delivery_metadata: {
-                response_status: 200,
-                duration_ms: 128,
-                response_body_snippet: '{"ok":true}',
-                response_headers: {
-                  'content-type': 'application/json',
-                  'x-request-id': 'req-hook-1',
-                },
-              },
-            },
-          ],
-        },
-      ],
-    },
-    isLoading: false,
-  }),
-  useUsageReportEvidence: () => ({
-    data: {
-      source: 'artifact',
-      generated_at: '2026-02-28T00:00:00.000Z',
-      release_readiness: 'ready',
-      blockers: [],
-      warnings: [],
-      active_schedules: 1,
-      required_schedules: 1,
-      successful_deliveries_last_7d: 1,
-      failed_deliveries_last_7d: 0,
-      unacknowledged_required_deliveries: 0,
-      runner_health: {
-        enabled: true,
-        interval_ms: 60000,
-        running: false,
-        run_count: 3,
-        last_status: 'success',
-        last_completed_at: '2026-02-28T00:00:00.000Z',
-      },
-    },
-    isLoading: false,
-  }),
-}));
-
-vi.mock('@/components/dashboard', () => ({
-  CostDashboardPage: () => <div data-testid="usage-dashboard" />,
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -287,123 +100,42 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 describe('UsagePage', () => {
-  it('opens request detail drawer from usage table row', async () => {
+  it('renders simplified my-usage view and opens detail drawer', async () => {
     const user = userEvent.setup();
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    expect(screen.getByTestId('usage__operations-summary')).toBeInTheDocument();
-    expect(screen.getByTestId('release-ops__dashboard')).toBeInTheDocument();
-    expect(screen.getByTestId('release-ops__webhook-destination-0')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__export-trigger')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__report-schedules')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__report-evidence-runner-health')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__operations-webhook-destinations')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__open-runtime-observability')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=monitoring&'));
-    expect(screen.getByTestId('usage__open-release-ops')).toHaveAttribute('href', expect.stringContaining('/runtime-console?tab=control&'));
+    expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__open-runtime-observability')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__open-release-ops')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
+
     await user.click(screen.getByTestId('usage__table__row'));
 
     expect(screen.getByText('detail.title')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__detail-summary__cost')).toHaveTextContent('$0.006800');
     expect(screen.getByTestId('usage__detail-fact-usgf_1')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__detail-pricing-version-usgf_1')).toHaveTextContent('runtime-pricing-v1');
-    expect(screen.getByTestId('usage__detail-timeline-usgf_1')).toBeInTheDocument();
   });
 
-  it('creates a usage report schedule from dialog', async () => {
+  it('exports usage report', async () => {
     const user = userEvent.setup();
-    createReportScheduleMock.mockResolvedValue({
-      id: 'usage_schedule_2',
+    const createObjectURLMock = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:usage');
+    const revokeObjectURLMock = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
+    exportReportMock.mockResolvedValue({
+      blob: new Blob(['ok'], { type: 'text/csv' }),
+      filename: 'usage.csv',
     });
 
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    await user.click(screen.getByTestId('usage__report-schedules-create'));
-    await user.type(screen.getByTestId('usage__report-schedules-form-name'), 'Weekly Runtime Digest');
-    await user.click(screen.getByTestId('usage__report-schedules-form-submit'));
+    await user.click(screen.getByTestId('usage__export-trigger'));
+    await user.click(screen.getByTestId('usage__export-option-csv'));
 
-    expect(createReportScheduleMock).toHaveBeenCalledWith(
+    expect(exportReportMock).toHaveBeenCalledWith(
       'ws_1',
       'proj_1',
-      expect.objectContaining({
-        name: 'Weekly Runtime Digest',
-        delivery_channel: 'in_app',
-        delivery_config: undefined,
-        release_evidence_required: true,
-        empty_result_policy: 'deliver',
-      }),
+      expect.objectContaining({ end_user_id: 'user_001', format: 'csv' }),
     );
-  });
 
-  it('creates a webhook usage report schedule from dialog', async () => {
-    const user = userEvent.setup();
-    createReportScheduleMock.mockResolvedValue({
-      id: 'usage_schedule_3',
-    });
-
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    await user.click(screen.getByTestId('usage__report-schedules-create'));
-    await user.type(screen.getByTestId('usage__report-schedules-form-name'), 'Webhook Digest');
-    await user.click(screen.getByTestId('usage__report-schedules-form-delivery-channel'));
-    await user.keyboard('{ArrowDown}{Enter}');
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-url'), 'https://example.internal/report-hook');
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-credential-ref'), 'cred_webhook');
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-secret-header'), 'x-webhook-secret');
-    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-signature-header'));
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-signature-header'), 'x-agentsmith-signature');
-    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-timeout'));
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-timeout'), '15');
-    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-retry-attempts'));
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-retry-attempts'), '2');
-    await user.clear(screen.getByTestId('usage__report-schedules-form-webhook-retry-backoff'));
-    await user.type(screen.getByTestId('usage__report-schedules-form-webhook-retry-backoff'), '250');
-    await user.click(screen.getByTestId('usage__report-schedules-form-submit'));
-
-    expect(createReportScheduleMock).toHaveBeenCalledWith(
-      'ws_1',
-      'proj_1',
-      expect.objectContaining({
-        name: 'Webhook Digest',
-        delivery_channel: 'webhook',
-        delivery_config: {
-          webhook_url: 'https://example.internal/report-hook',
-          credential_ref: 'cred_webhook',
-          secret_header_name: 'x-webhook-secret',
-          signature_header_name: 'x-agentsmith-signature',
-          timeout_seconds: 15,
-          retry_attempts: 2,
-          retry_backoff_ms: 250,
-        },
-      }),
-    );
-  });
-
-  it('runs report schedule actions from the panel', async () => {
-    const user = userEvent.setup();
-    runReportScheduleNowMock.mockResolvedValue({
-      delivery_id: 'delivery_2',
-      schedule_id: 'usage_schedule_1',
-      delivery_channel: 'in_app',
-      generated_at: '2026-02-28T01:00:00.000Z',
-      preview_filename: 'usage-report-proj_1.json',
-      content_type: 'application/json; charset=utf-8',
-      status: 'success',
-      summary: { requests: 2, errors: 0, top_provider: 'secondaryok', estimated_cost: 0.0068 },
-    });
-    acknowledgeReportScheduleDeliveryMock.mockResolvedValue({ id: 'delivery_1' });
-    runDueReportSchedulesMock.mockResolvedValue({ processed: 1, deliveries: [] });
-
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    await user.click(screen.getByTestId('usage__report-schedules-run-due'));
-    await user.click(screen.getByTestId('usage__report-schedule-run-usage_schedule_1'));
-    await user.click(screen.getByTestId('usage__report-delivery-ack-delivery_1'));
-
-    expect(runDueReportSchedulesMock).toHaveBeenCalledWith('ws_1', 'proj_1');
-    expect(runReportScheduleNowMock).toHaveBeenCalledWith('ws_1', 'proj_1', 'usage_schedule_1');
-    expect(acknowledgeReportScheduleDeliveryMock).toHaveBeenCalledWith('ws_1', 'proj_1', 'usage_schedule_1', 'delivery_1');
-    expect(screen.getByTestId('usage__report-evidence')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__report-delivery-response-snippet-delivery_1')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__report-delivery-response-headers-delivery_1')).toBeInTheDocument();
+    createObjectURLMock.mockRestore();
+    revokeObjectURLMock.mockRestore();
   });
 });

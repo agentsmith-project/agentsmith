@@ -1,6 +1,6 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-03-03
+Last updated: 2026-03-04
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
@@ -42,22 +42,14 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | credentials | view/manage credentials | `project:manage` | `GET/POST/DELETE /credentials*` | page-level permission denied |
 | members | view/manage members/templates/groups | `project:manage` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/quota-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view/update/delete project | `project:manage` | `GET/PATCH/DELETE /projects/{id}` | page-level permission denied or save/delete disabled |
-| audit | view audit data | `project:endpoint:use` | `GET /audit` | component-level permission denied |
-| usage | view usage data | `project:endpoint:use` | `GET /usage`, `GET /usage/kpi` | component-level permission denied |
-
-## Runtime Console
-
-| Tab | User Operation | Required Permission(s) | Backend API Group | FE Expected on 403 |
-|-----|----------------|------------------------|-------------------|-------------------|
-| overview | view runtime health and control plane | `project:endpoint:use` | `GET /projects/{id}`, `GET /runtime/*` | tab-level permission denied |
-| monitoring | view runtime metrics and traces | `project:endpoint:use` | `GET /runtime/metrics`, `GET /runtime/traces` | tab-level permission denied |
-| alerts | view and manage alert rules | `project:endpoint:use` | `GET /alert-rules`, `GET /alert-notifications` | tab-level permission denied |
-| control | view release gates and control | `project:manage` | `GET /release-ops/*`, `GET /governance/*` | tab-level permission denied |
-| reports | view release reports and history | `project:endpoint:use` | `GET /release-reports` | tab-level permission denied |
+| audit | view audit data | `project:manage` | `GET /audit` | component-level permission denied |
+| usage | view own usage data (read-only) | `project:endpoint:use` | `GET /usage`, `GET /usage/kpi`, `GET /usage/facts` | component-level permission denied |
+| use guide | view API access handbook | `project:endpoint:use` | N/A (static guidance page) | page-level permission denied |
 
 ## Notes for Backend Team
 
 1. Keep ACLs aligned with this matrix and `src/lib/constants/permissions.ts`.
 2. Return stable `401/403` semantics and deterministic error payload.
 3. Frontend treats `403` as non-retryable for identical payloads.
-4. Do not introduce new project permission points without updating this matrix and permission constants.
+4. `usage` module is user-self scope only; backend must always enforce `end_user_id = current_user_id`.
+5. Do not introduce new project permission points without updating this matrix and permission constants.

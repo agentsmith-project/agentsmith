@@ -1,17 +1,14 @@
 'use client';
 import * as React from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
 import { Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
 import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
-import { UsageOperationsSummary } from './UsageOperationsSummary';
-import { UsageReportSchedulesPanel } from './UsageReportSchedulesPanel';
 import { UsageTable } from './UsageTable';
-import { useRuntimeObservability, useUsageFacts, useUsageKPI, useUsageOperationsSummary, useUsageRecords, useUsageReportEvidence, useUsageReportSchedules } from '@/lib/hooks/use-audit-usage';
+import { useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -20,23 +17,17 @@ import { PageToolbar } from '@/components/layout/PageToolbar';
 import { ErrorState } from '@/components/ui/error-state';
 import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { CostDashboardPage } from '@/components/dashboard';
 import type { UsageRecord } from '@/lib/api/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getApiClient, UsageAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
-import type { UsageReportDelivery, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
-import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
-import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
-import { cn } from '@/lib/utils';
 
 export interface UsagePageProps {
   workspaceId: string;
   projectId: string;
   locale?: string;
-  defaultEndUserId?: string; // When set, user can only see own usage (locked)
-  currentUserId?: string; // For scope switch when user has project-wide permission
+  defaultEndUserId?: string;
+  currentUserId?: string;
   initialFilters?: Partial<UsageListParams>;
   initialPanel?: 'usage' | 'dashboard';
 }
@@ -50,11 +41,21 @@ function getDefaultTimeRange() {
   };
 }
 
-function getBucketRange(timeBucket: string, groupBy: 'day' | 'hour'): { start: string; end: string } | null {
+function getBucketRange(timeBucket: string, groupBy: 'day' | 'hour' | 'minute'): { start: string; end: string } | null {
   if (groupBy === 'day') {
     const start = new Date(`${timeBucket}T00:00:00.000Z`);
     if (Number.isNaN(start.getTime())) return null;
     const end = new Date(start.getTime() + 24 * 60 * 60 * 1000 - 1);
+    return { start: start.toISOString(), end: end.toISOString() };
+  }
+
+  if (groupBy === 'hour') {
+    const normalized = /^\d{4}-\d{2}-\d{2}\s\d{2}:\d{2}$/.test(timeBucket)
+      ? `${timeBucket.replace(' ', 'T')}:00.000Z`
+      : timeBucket;
+    const start = new Date(normalized);
+    if (Number.isNaN(start.getTime())) return null;
+    const end = new Date(start.getTime() + 60 * 60 * 1000 - 1);
     return { start: start.toISOString(), end: end.toISOString() };
   }
 
@@ -63,7 +64,7 @@ function getBucketRange(timeBucket: string, groupBy: 'day' | 'hour'): { start: s
     : timeBucket;
   const start = new Date(normalized);
   if (Number.isNaN(start.getTime())) return null;
-  const end = new Date(start.getTime() + 60 * 60 * 1000 - 1);
+  const end = new Date(start.getTime() + 60 * 1000 - 1);
   return { start: start.toISOString(), end: end.toISOString() };
 }
 
@@ -74,12 +75,9 @@ export function UsagePage({
   defaultEndUserId,
   currentUserId,
   initialFilters,
-  initialPanel,
 }: UsagePageProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const traceSource = searchParams.get('trace_source') ?? undefined;
   const traceRef = searchParams.get('trace_ref') ?? undefined;
@@ -89,38 +87,27 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const canExportUsage = useHasPermission('project:manage');
-  const canManageReportSchedules = useHasPermission('project:manage');
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
-  // If defaultEndUserId is provided, scope is locked to the current user usage.
-  const isScopeLocked = !!defaultEndUserId;
-  const [scope, setScope] = React.useState<'my' | 'project'>(defaultEndUserId ? 'my' : 'project');
-  const [panel, setPanel] = React.useState<'usage' | 'dashboard'>(initialPanel ?? 'usage');
+  const effectiveEndUserId = defaultEndUserId ?? currentUserId;
   const [selectedUsageRecord, setSelectedUsageRecord] = React.useState<UsageRecord | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'json' | null>(null);
-
-  const effectiveEndUserId = isScopeLocked
-    ? defaultEndUserId
-    : scope === 'my' && currentUserId
-      ? currentUserId
-      : undefined;
-
   const [filters, setFilters] = React.useState<UsageListParams>(() => ({
     ...getDefaultTimeRange(),
     page: 1,
     page_size: 25,
     sort_by: 'time_bucket',
     sort_order: 'desc',
-    group_by: 'day',
+    group_by: 'minute',
     ...initialFilters,
     ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
   }));
 
   const apiFilters = React.useMemo(
     () => ({ ...filters, end_user_id: effectiveEndUserId }),
-    [filters, effectiveEndUserId]
+    [filters, effectiveEndUserId],
   );
 
   const { data: kpiData, isLoading: kpiLoading } = useUsageKPI(
@@ -129,34 +116,26 @@ export function UsagePage({
     apiFilters.start_time,
     apiFilters.end_time,
     apiFilters.end_user_id,
-    { enabled: canReadUsage }
+    { enabled: canReadUsage },
   );
+
   const { data, isLoading, error } = useUsageRecords(workspaceId, projectId, apiFilters, {
     enabled: canReadUsage,
   });
-  const operationsSummaryQuery = useUsageOperationsSummary(workspaceId, projectId, apiFilters, {
-    enabled: canReadUsage && panel === 'usage',
-  });
-  const runtimeOpsQuery = useRuntimeObservability(workspaceId, projectId, {
-    start_time: apiFilters.start_time,
-    end_time: apiFilters.end_time,
-    provider: apiFilters.provider,
-    model: apiFilters.model,
-    result: apiFilters.result,
-    error_class: apiFilters.error_class,
-  }, {
-    enabled: canReadUsage && panel === 'usage',
-  });
-  const reportSchedulesQuery = useUsageReportSchedules(workspaceId, projectId, {
-    enabled: canReadUsage && panel === 'usage',
-  });
-  const reportEvidenceQuery = useUsageReportEvidence(workspaceId, projectId, {
-    enabled: canReadUsage && panel === 'usage',
-  });
+
   const usageDetailRange = React.useMemo(
-    () => selectedUsageRecord ? getBucketRange(selectedUsageRecord.time_bucket, apiFilters.group_by === 'hour' ? 'hour' : 'day') : null,
+    () =>
+      selectedUsageRecord
+        ? getBucketRange(
+            selectedUsageRecord.time_bucket,
+            apiFilters.group_by === 'day' || apiFilters.group_by === 'hour'
+              ? apiFilters.group_by
+              : 'minute',
+          )
+        : null,
     [selectedUsageRecord, apiFilters.group_by],
   );
+
   const usageFactsQuery = useUsageFacts(
     workspaceId,
     projectId,
@@ -182,153 +161,43 @@ export function UsagePage({
     toast.success(commonT('refreshed_data') || 'Refreshed usage data');
   }, [queryClient, commonT]);
 
-  const handleExport = React.useCallback(async (format: 'csv' | 'json') => {
-    setExportingFormat(format);
-    try {
-      const exportResult = await usageApi.exportReport(workspaceId, projectId, {
-        start_time: apiFilters.start_time,
-        end_time: apiFilters.end_time,
-        format,
-        resource_type: apiFilters.resource_type,
-        resource_id: apiFilters.resource_id,
-        end_user_id: apiFilters.end_user_id,
-        provider: apiFilters.provider,
-        model: apiFilters.model,
-        result: apiFilters.result,
-        error_class: apiFilters.error_class,
-      });
-      const url = window.URL.createObjectURL(exportResult.blob);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = exportResult.filename;
-      document.body.appendChild(anchor);
-      anchor.click();
-      anchor.remove();
-      window.URL.revokeObjectURL(url);
-      toast.success(t('export.success'));
-    } catch (error) {
-      toast.error(
-        t('export.failed_with_reason', {
-          reason: error instanceof Error ? error.message : commonT('unknown_error'),
-        }),
-      );
-    } finally {
-      setExportingFormat(null);
-    }
-  }, [usageApi, workspaceId, projectId, apiFilters, t, commonT]);
-
-  const refreshUsagePanels = React.useCallback(() => {
-    queryClient.invalidateQueries({ queryKey: queryKeys.usage.reportSchedules(workspaceId, projectId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.usage.reportEvidence(workspaceId, projectId) });
-    queryClient.invalidateQueries({ queryKey: queryKeys.usage._def });
-  }, [projectId, queryClient, workspaceId]);
-
-  const handleCreateReportSchedule = React.useCallback(async (
-    payload: Parameters<React.ComponentProps<typeof UsageReportSchedulesPanel>['onCreate']>[0],
-  ) => {
-    try {
-      await usageApi.createReportSchedule(workspaceId, projectId, payload);
-      refreshUsagePanels();
-      toast.success(t('report_schedules.create_success'));
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleUpdateScheduleStatus = React.useCallback(async (
-    schedule: { id: string },
-    status: 'active' | 'paused',
-  ) => {
-    try {
-      await usageApi.updateReportSchedule(workspaceId, projectId, schedule.id, { status });
-      refreshUsagePanels();
-      toast.success(t('report_schedules.update_success'));
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleDeleteSchedule = React.useCallback(async (schedule: { id: string }) => {
-    try {
-      await usageApi.deleteReportSchedule(workspaceId, projectId, schedule.id);
-      refreshUsagePanels();
-      toast.success(t('report_schedules.delete_success'));
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleTestScheduleDelivery = React.useCallback(async (schedule: { id: string }) => {
-    try {
-      const result = await usageApi.testReportScheduleDelivery(workspaceId, projectId, schedule.id);
-      refreshUsagePanels();
-      toast.success(t('report_schedules.test_success'));
-      return result;
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-      return null;
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleRunScheduleNow = React.useCallback(async (schedule: UsageReportSchedule) => {
-    try {
-      const result = await usageApi.runReportScheduleNow(workspaceId, projectId, schedule.id);
-      refreshUsagePanels();
-      toast.success(result.status === 'success' ? t('report_schedules.run_now_success') : t('report_schedules.run_now_failed'));
-      return result;
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-      return null;
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleRetryScheduleDelivery = React.useCallback(async (schedule: UsageReportSchedule, delivery: UsageReportDelivery) => {
-    try {
-      const result = await usageApi.retryReportScheduleDelivery(workspaceId, projectId, schedule.id, delivery.id);
-      refreshUsagePanels();
-      toast.success(result.status === 'success' ? t('report_schedules.retry_success') : t('report_schedules.retry_failed'));
-      return result;
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-      return null;
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleAcknowledgeDelivery = React.useCallback(async (schedule: UsageReportSchedule, delivery: UsageReportDelivery) => {
-    try {
-      await usageApi.acknowledgeReportScheduleDelivery(workspaceId, projectId, schedule.id, delivery.id);
-      refreshUsagePanels();
-      toast.success(t('report_schedules.acknowledge_success'));
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
-
-  const handleRunDueSchedules = React.useCallback(async () => {
-    try {
-      const result = await usageApi.runDueReportSchedules(workspaceId, projectId);
-      refreshUsagePanels();
-      toast.success(t('report_schedules.run_due_success', { count: result.deliveries.length }));
-    } catch (error) {
-      toast.error(t('report_schedules.failed_with_reason', {
-        reason: error instanceof Error ? error.message : commonT('unknown_error'),
-      }));
-    }
-  }, [commonT, projectId, refreshUsagePanels, t, usageApi, workspaceId]);
+  const handleExport = React.useCallback(
+    async (format: 'csv' | 'json') => {
+      setExportingFormat(format);
+      try {
+        const exportResult = await usageApi.exportReport(workspaceId, projectId, {
+          start_time: apiFilters.start_time,
+          end_time: apiFilters.end_time,
+          format,
+          resource_type: apiFilters.resource_type,
+          resource_id: apiFilters.resource_id,
+          end_user_id: apiFilters.end_user_id,
+          provider: apiFilters.provider,
+          model: apiFilters.model,
+          result: apiFilters.result,
+          error_class: apiFilters.error_class,
+        });
+        const url = window.URL.createObjectURL(exportResult.blob);
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.download = exportResult.filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.URL.revokeObjectURL(url);
+        toast.success(t('export.success'));
+      } catch (err) {
+        toast.error(
+          t('export.failed_with_reason', {
+            reason: err instanceof Error ? err.message : commonT('unknown_error'),
+          }),
+        );
+      } finally {
+        setExportingFormat(null);
+      }
+    },
+    [usageApi, workspaceId, projectId, apiFilters, t, commonT],
+  );
 
   const handleClearFilters = React.useCallback(() => {
     setFilters({
@@ -337,7 +206,7 @@ export function UsagePage({
       page_size: 25,
       sort_by: 'time_bucket',
       sort_order: 'desc',
-      group_by: 'day',
+      group_by: 'minute',
       ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
     });
   }, [effectiveEndUserId]);
@@ -351,21 +220,7 @@ export function UsagePage({
         ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
       }));
     },
-    [effectiveEndUserId]
-  );
-
-  const applyDrillDown = React.useCallback(
-    (payload: { resourceId?: string; resourceType?: string; endUserId?: string }) => {
-      setPanel('usage');
-      setFilters((prev) => ({
-        ...prev,
-        resource_id: payload.resourceId,
-        resource_type: payload.resourceType,
-        end_user_id: payload.endUserId,
-        page: 1,
-      }));
-    },
-    []
+    [effectiveEndUserId],
   );
 
   const currentPage = data?.page ?? filters.page ?? 1;
@@ -381,31 +236,6 @@ export function UsagePage({
     || !!apiFilters.model
     || !!apiFilters.result
     || !!apiFilters.error_class;
-  // WP-03: Updated to new runtime-console route with appropriate tabs
-  const runtimeObservabilityHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=monitoring${buildSharedOpsFilterQuery(apiFilters, {}, '&')}`
-    : null;
-  const releaseOpsHref = locale
-    ? `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${buildSharedOpsFilterQuery(apiFilters, {}, '&')}`
-    : null;
-  const traceQueryExtras = React.useMemo(
-    () => ({
-      trace_source: traceSource,
-      trace_ref: traceRef,
-      trace_incident_id: traceIncidentId,
-      trace_escalation_id: traceEscalationId,
-      trace_run_id: traceRunId,
-    }),
-    [traceEscalationId, traceIncidentId, traceRef, traceRunId, traceSource],
-  );
-
-  React.useEffect(() => {
-    const nextQuery = buildSharedOpsFilterQuery(apiFilters, { panel, ...traceQueryExtras });
-    const currentQuery = searchParams.toString();
-    const normalizedCurrent = currentQuery ? `?${currentQuery}` : '';
-    if (nextQuery === normalizedCurrent) return;
-    router.replace(`${pathname}${nextQuery}`, { scroll: false });
-  }, [apiFilters, panel, pathname, router, searchParams, traceQueryExtras]);
 
   const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
     setSelectedUsageRecord(record);
@@ -450,48 +280,20 @@ export function UsagePage({
               {canExportUsage && (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="action"
-                      disabled={exportingFormat !== null}
-                      data-testid="usage__export-trigger"
-                    >
+                    <Button variant="action" disabled={exportingFormat !== null} data-testid="usage__export-trigger">
                       <Download className="h-4 w-4 mr-2" />
                       {t('export.label')}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
-                    <DropdownMenuItem
-                      onClick={() => void handleExport('csv')}
-                      data-testid="usage__export-option-csv"
-                    >
+                    <DropdownMenuItem onClick={() => void handleExport('csv')} data-testid="usage__export-option-csv">
                       {t('export.csv')}
                     </DropdownMenuItem>
-                    <DropdownMenuItem
-                      onClick={() => void handleExport('json')}
-                      data-testid="usage__export-option-json"
-                    >
+                    <DropdownMenuItem onClick={() => void handleExport('json')} data-testid="usage__export-option-json">
                       {t('export.json')}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-              )}
-              {runtimeObservabilityHref && (
-                <Link
-                  href={runtimeObservabilityHref}
-                  className={cn(buttonVariants({ variant: 'outline' }))}
-                  data-testid="usage__open-runtime-observability"
-                >
-                  {commonT('open_runtime')}
-                </Link>
-              )}
-              {releaseOpsHref && (
-                <Link
-                  href={releaseOpsHref}
-                  className={cn(buttonVariants({ variant: 'outline' }))}
-                  data-testid="usage__open-release-ops"
-                >
-                  {commonT('open_release_ops')}
-                </Link>
               )}
               <Button variant="outline" onClick={handleRefresh} disabled={isLoading || kpiLoading}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${isLoading || kpiLoading ? 'animate-spin' : ''}`} />
@@ -503,146 +305,88 @@ export function UsagePage({
       )}
       toolbar={(
         <PageToolbar className="w-full">
-          <div className="flex flex-wrap items-center gap-3">
-            <Tabs value={panel} onValueChange={(value) => setPanel(value as 'usage' | 'dashboard')}>
-              <TabsList>
-                <TabsTrigger value="usage" data-testid="usage__panel-tab--usage">{t('title')}</TabsTrigger>
-                <TabsTrigger value="dashboard" data-testid="usage__panel-tab--dashboard">{t('dashboard')}</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            {!isScopeLocked && currentUserId && (
-              <Tabs value={scope} onValueChange={(value) => setScope(value as 'my' | 'project')}>
-                <TabsList>
-                  <TabsTrigger value="my">{t('scope_my_usage')}</TabsTrigger>
-                  <TabsTrigger value="project">{t('scope_project_usage')}</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            )}
+          <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2 text-xs text-tertiary" data-testid="usage__my-scope-badge">
+            {t('scope_my_usage')}
           </div>
         </PageToolbar>
       )}
     >
-      {panel === 'dashboard' ? (
-        <CostDashboardPage
-          workspaceId={workspaceId}
-          projectId={projectId}
-          embedded
-          onResourceDrillDown={(resourceId, resourceType) => {
-            applyDrillDown({ resourceId, resourceType });
-          }}
-          onUserDrillDown={(endUserId) => {
-            applyDrillDown({ endUserId });
-          }}
-          onAnomalyDrillDown={(resourceId, resourceType) => {
-            applyDrillDown({ resourceId, resourceType });
-          }}
-        />
-      ) : (
-        <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
-          {traceRef ? (
-            <div className="rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="usage__trace-context">
-              <p className="text-xs font-medium text-foreground">{commonT('trace_context_title')}</p>
-              <p className="mt-1 text-xs text-tertiary">
-                {commonT('trace_context_summary', {
-                  source: traceSource ?? 'unknown',
-                  ref: traceRef,
-                })}
-              </p>
-              <p className="mt-1 text-xs text-tertiary">
-                {traceIncidentId ? `incident=${traceIncidentId}` : null}
-                {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
-                {traceRunId ? ` · run=${traceRunId}` : null}
-              </p>
-            </div>
-          ) : null}
-          <UsageKPICards kpi={kpiData} loading={kpiLoading} />
-
-          <div data-testid="usage__filters">
-            <UsageFilters
-              filters={apiFilters}
-              onChange={handleFiltersChange}
-              onClear={handleClearFilters}
-              defaultEndUserId={effectiveEndUserId}
-            />
+      <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
+        {traceRef ? (
+          <div className="rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="usage__trace-context">
+            <p className="text-xs font-medium text-foreground">{commonT('trace_context_title')}</p>
+            <p className="mt-1 text-xs text-tertiary">
+              {commonT('trace_context_summary', {
+                source: traceSource ?? 'unknown',
+                ref: traceRef,
+              })}
+            </p>
+            <p className="mt-1 text-xs text-tertiary">
+              {traceIncidentId ? `incident=${traceIncidentId}` : null}
+              {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
+              {traceRunId ? ` · run=${traceRunId}` : null}
+            </p>
           </div>
+        ) : null}
 
-          <ReleaseOpsDashboard
-            runtime={runtimeOpsQuery.data}
-            usageEvidence={reportEvidenceQuery.data}
-            operationsSummary={operationsSummaryQuery.data}
-            loading={runtimeOpsQuery.isLoading || operationsSummaryQuery.isLoading || reportEvidenceQuery.isLoading}
+        <UsageKPICards kpi={kpiData} loading={kpiLoading} />
+
+        <div data-testid="usage__filters">
+          <UsageFilters
+            filters={apiFilters}
+            onChange={handleFiltersChange}
+            onClear={handleClearFilters}
+            defaultEndUserId={effectiveEndUserId}
           />
+        </div>
 
-          <UsageOperationsSummary
-            summary={operationsSummaryQuery.data}
-            loading={operationsSummaryQuery.isLoading}
-          />
-
-          <UsageReportSchedulesPanel
-            schedules={reportSchedulesQuery.data?.items ?? []}
-            loading={reportSchedulesQuery.isLoading}
-            evidence={reportEvidenceQuery.data}
-            evidenceLoading={reportEvidenceQuery.isLoading}
-            canManage={canManageReportSchedules}
-            currentFilters={apiFilters}
-            onCreate={handleCreateReportSchedule}
-            onUpdateStatus={handleUpdateScheduleStatus}
-            onDelete={handleDeleteSchedule}
-            onTestDelivery={handleTestScheduleDelivery}
-            onRunNow={handleRunScheduleNow}
-            onRetryDelivery={handleRetryScheduleDelivery}
-            onAcknowledgeDelivery={handleAcknowledgeDelivery}
-            onRunDue={handleRunDueSchedules}
-          />
-
-          <div className="flex-1 min-h-0 overflow-y-auto">
-            <div className="rounded-xl border border-border bg-surface p-3">
-              <UsageTable
-                data={data?.items || []}
-                loading={isLoading}
-                onClearFilters={handleClearFilters}
-                hasActiveFilters={hasActiveFilters}
-                onSelectRecord={handleSelectUsageRecord}
-              />
-              <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
-                <p className="text-xs text-tertiary">
-                  {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
-                  {' '}
-                  {commonT('total_items', { count: String(totalItems) })}
-                </p>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canGoPrev || isLoading}
-                    onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
-                  >
-                    {commonT('previous')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canGoNext || isLoading}
-                    onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
-                  >
-                    {commonT('next')}
-                  </Button>
-                </div>
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <div className="rounded-xl border border-border bg-surface p-3">
+            <UsageTable
+              data={data?.items || []}
+              loading={isLoading}
+              onClearFilters={handleClearFilters}
+              hasActiveFilters={hasActiveFilters}
+              onSelectRecord={handleSelectUsageRecord}
+            />
+            <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
+              <p className="text-xs text-tertiary">
+                {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·{' '}
+                {commonT('total_items', { count: String(totalItems) })}
+              </p>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!canGoPrev || isLoading}
+                  onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
+                >
+                  {commonT('previous')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={!canGoNext || isLoading}
+                  onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
+                >
+                  {commonT('next')}
+                </Button>
               </div>
             </div>
           </div>
-          <UsageFactDetailDrawer
-            open={detailOpen}
-            onOpenChange={setDetailOpen}
-            facts={usageFactsQuery.data?.items ?? []}
-            loading={usageFactsQuery.isLoading}
-            aggregateLabel={selectedUsageRecord?.time_bucket}
-            basePath={basePath}
-          />
         </div>
-      )}
+
+        <UsageFactDetailDrawer
+          open={detailOpen}
+          onOpenChange={setDetailOpen}
+          facts={usageFactsQuery.data?.items ?? []}
+          loading={usageFactsQuery.isLoading}
+          aggregateLabel={selectedUsageRecord?.time_bucket}
+          basePath={basePath}
+        />
+      </div>
     </PageLayout>
   );
 }

@@ -161,6 +161,7 @@
     "members": "Members",
     "audit": "Audit",
     "usage": "Usage",
+    "api_access_guide": "API Access Guide",
     "runtime_observability": "Runtime Ops",
     "release_ops": "Release Ops",
     "settings": "Settings",
@@ -1376,6 +1377,29 @@
       "test_result_requests": "Requests",
       "test_result_errors": "Errors",
       "test_result_provider": "Top provider"
+    }
+  },
+  "use_guide": {
+    "title": "API Access Guide",
+    "subtitle": "Use your personal API key with project endpoint proxy for local CLI tools.",
+    "steps": {
+      "title": "Quick Setup",
+      "step_1": "Create your personal API key in User > API Keys.",
+      "step_2": "Ask project manager to grant endpoint access in Resource Policy.",
+      "step_3": "Pick an endpoint from Endpoints page and copy endpoint ID/model name.",
+      "step_4": "Set environment variables below and run your local CLI."
+    },
+    "codex": {
+      "title": "Codex CLI Example"
+    },
+    "claude": {
+      "title": "Claude Code CLI Example"
+    },
+    "quick_links": {
+      "title": "Quick Links",
+      "api_keys": "Open API Keys",
+      "endpoints": "Open Endpoints",
+      "usage": "Open My Usage"
     }
   },
   "dashboard": {

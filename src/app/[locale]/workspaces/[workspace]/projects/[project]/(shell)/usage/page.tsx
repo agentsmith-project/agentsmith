@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { UsagePage as UsagePageComponent } from '@/components/audit-usage/UsagePage';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
@@ -13,7 +12,6 @@ import { useAuthStore } from '@/lib/stores/authStore';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
-import { parseSharedOpsFilterContext } from '@/lib/ops-filter-context';
 
 interface UsagePageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -22,7 +20,6 @@ interface UsagePageProps {
 export default function UsagePage({ params }: UsagePageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('usage');
-  const searchParams = useSearchParams();
   const [resolvedParams, setResolvedParams] = useState<{
     workspace?: string;
     project?: string;
@@ -34,8 +31,6 @@ export default function UsagePage({ params }: UsagePageProps) {
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('usage');
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const initialFilters = parseSharedOpsFilterContext(searchParams);
-  const initialPanel = searchParams.get('panel') === 'dashboard' ? 'dashboard' : 'usage';
 
   useEffect(() => {
     params.then((p) =>
@@ -97,8 +92,6 @@ export default function UsagePage({ params }: UsagePageProps) {
         locale={resolvedParams.locale}
         defaultEndUserId={currentUser?.id}
         currentUserId={currentUser?.id}
-        initialFilters={initialFilters}
-        initialPanel={initialPanel}
       />
     </PageState>
   );

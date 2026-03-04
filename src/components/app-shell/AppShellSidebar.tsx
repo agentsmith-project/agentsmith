@@ -12,6 +12,7 @@ import {
   LayoutDashboard,
   LucideIcon,
   MessageSquare,
+  BookOpen,
   Wrench,
   FolderOpen,
   Bot,
@@ -25,7 +26,6 @@ import {
   Shield,
   BarChart3,
   SlidersHorizontal,
-  Monitor,
 } from 'lucide-react';
 
 interface AppShellSidebarProps {
@@ -57,6 +57,8 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: MessageSquare, labelKey: 'chat', href: 'chat', permission: 'project:endpoint:use', section: 'use' },
   { icon: Wrench, labelKey: 'notebook', href: 'notebook', permission: 'project:endpoint:use', section: 'use' },
   { icon: FolderOpen, labelKey: 'files', href: 'files', permission: 'project:endpoint:use', section: 'use' },
+  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'use' },
+  { icon: BookOpen, labelKey: 'api_access_guide', href: 'use-guide', permission: 'project:endpoint:use', section: 'use' },
   // Develop section
   { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:manage', section: 'develop' },
   // Govern section
@@ -64,12 +66,8 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:manage', section: 'govern' },
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:manage', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:manage', section: 'govern' },
-  { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'govern' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:manage', section: 'govern' },
-  // Operate section
-  // Runtime Console is accessible for users with endpoint use or settings manage.
-  { icon: Monitor, labelKey: 'runtime_console', href: 'runtime-console', permission: '__multi__', section: 'operate' },
 ];
 
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
@@ -94,18 +92,9 @@ export function AppShellSidebar({
   const pathname = usePathname();
   const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
-  const canReadOverview = useHasPermission('project:endpoint:use');
-  const canAccessChat = useHasPermission('project:endpoint:use');
-  const canAccessNotebook = useHasPermission('project:endpoint:use');
-  const canUseSources = useHasPermission('project:endpoint:use');
-  const canUseEndpoints = useHasPermission('project:endpoint:use');
-  const canViewAlerts = useHasPermission('project:endpoint:use');
-  const canReadAudit = useHasPermission('project:endpoint:use');
-  const canReadUsage = useHasPermission('project:endpoint:use');
+  const canUseProject = useHasPermission('project:endpoint:use');
   const canReadAgents = useHasPermission('project:agent:manage');
-  const canManageCredentials = useHasPermission('project:manage');
-  const canViewMembers = useHasPermission('project:manage');
-  const canManageSettings = useHasPermission('project:manage');
+  const canManageProject = useHasPermission('project:manage');
   const canManageResourcePolicy = useCanManageResourcePolicy();
 
   const workspaceId = params?.workspace as string | undefined;
@@ -116,23 +105,11 @@ export function AppShellSidebar({
   const projectMenuItems = currentProject
     ? PROJECT_MENU_ITEMS.filter((item) => {
         if (item.permission === 'project:endpoint:use') {
-          return (
-            canReadOverview
-            || canAccessChat
-            || canAccessNotebook
-            || canUseSources
-            || canUseEndpoints
-            || canViewAlerts
-            || canReadAudit
-            || canReadUsage
-          );
+          return canUseProject;
         }
         if (item.permission === 'project:agent:manage') return canReadAgents;
         if (item.permission === 'project:manage') {
-          return canManageResourcePolicy || canManageCredentials || canViewMembers || canManageSettings;
-        }
-        if (item.permission === '__multi__') {
-          return canReadUsage || canViewAlerts || canManageSettings;
+          return canManageResourcePolicy || canManageProject;
         }
         return true;
       })

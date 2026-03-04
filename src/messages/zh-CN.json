@@ -163,6 +163,7 @@
     "members": "成员",
     "audit": "审计",
     "usage": "用量",
+    "api_access_guide": "API 接入手册",
     "runtime_observability": "运行时运营",
     "release_ops": "Release Ops",
     "settings": "设置",
@@ -1378,6 +1379,29 @@
       "test_result_requests": "请求数",
       "test_result_errors": "错误数",
       "test_result_provider": "Top 提供商"
+    }
+  },
+  "use_guide": {
+    "title": "API 接入手册",
+    "subtitle": "使用个人 API Key 通过项目端点代理连接本地 CLI 工具。",
+    "steps": {
+      "title": "快速开始",
+      "step_1": "在用户中心创建个人 API Key（用户 > API 密钥）。",
+      "step_2": "请项目管理员在资源策略里授予你对应 endpoint 访问权限。",
+      "step_3": "在 Endpoints 页面选择目标端点，确认 endpoint ID 和模型名。",
+      "step_4": "按下面示例设置环境变量后运行本地 CLI。"
+    },
+    "codex": {
+      "title": "Codex CLI 示例"
+    },
+    "claude": {
+      "title": "Claude Code CLI 示例"
+    },
+    "quick_links": {
+      "title": "快捷入口",
+      "api_keys": "打开 API 密钥",
+      "endpoints": "打开 Endpoints",
+      "usage": "打开我的用量"
     }
   },
   "dashboard": {

@@ -61,16 +61,14 @@ describe('UsagePage route', () => {
       projectId: string;
       locale: string;
       currentUserId: string;
-      initialPanel: string;
-      initialFilters?: { end_user_id?: string };
+      defaultEndUserId: string;
     };
 
     expect(props.workspaceId).toBe('ws_1');
     expect(props.projectId).toBe('proj_1');
     expect(props.locale).toBe('en');
     expect(props.currentUserId).toBe('user_001');
-    expect(props.initialPanel).toBe('usage');
-    expect(props.initialFilters?.end_user_id).toBeUndefined();
+    expect(props.defaultEndUserId).toBe('user_001');
   });
 
   it('shows usage component when params are valid', async () => {

@@ -10,16 +10,11 @@ import { useProject } from './use-projects';
 import {
   useMembers,
   useMemberPermissions,
-  useMemberQuotaOverrides,
   useMemberChangeHistory,
-  useMemberQuotaOverridesHistory,
   useUpdateMemberPermissions,
-  useUpdateMemberQuotaOverrides,
   useRemoveMember,
   usePermissionTemplates,
-  useQuotaTemplates,
   useBatchApplyPermissionTemplate,
-  useBatchApplyQuotaTemplate,
 } from './use-members';
 import {
   useAuthorizationCheck,
@@ -63,7 +58,6 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
   const { data: project } = useProject(workspaceId, projectId);
   const { data: members, isLoading } = useMembers(workspaceId, projectId);
   const { data: permissionTemplates = [] } = usePermissionTemplates(workspaceId, projectId);
-  const { data: quotaTemplates = [] } = useQuotaTemplates(workspaceId, projectId);
 
   const membersList = useMemo(() => (Array.isArray(members) ? members : []), [members]);
 
@@ -79,23 +73,12 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     projectId,
     dialogs.selectedMember?.id || ''
   );
-  const updateQuotaOverrides = useUpdateMemberQuotaOverrides(
-    workspaceId,
-    projectId,
-    dialogs.selectedMember?.id || ''
-  );
   const removeMember = useRemoveMember(workspaceId, projectId);
   const batchApplyPermission = useBatchApplyPermissionTemplate(workspaceId, projectId);
-  const batchApplyQuota = useBatchApplyQuotaTemplate(workspaceId, projectId);
   const authorizationCheck = useAuthorizationCheck(workspaceId, projectId);
 
   // Selected member data queries
   const { data: permissions } = useMemberPermissions(
-    workspaceId,
-    projectId,
-    dialogs.selectedMember?.id || ''
-  );
-  const { data: quotaOverrides } = useMemberQuotaOverrides(
     workspaceId,
     projectId,
     dialogs.selectedMember?.id || ''
@@ -110,21 +93,12 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     projectId,
     dialogs.selectedMember?.id || ''
   );
-  const { data: quotaHistoryData, isLoading: quotaHistoryLoading } = useMemberQuotaOverridesHistory(
-    workspaceId,
-    projectId,
-    dialogs.selectedMember?.id || '',
-    { page: dialogs.quotaHistoryPage, page_size: 20 },
-    { enabled: dialogs.quotaHistoryDrawerOpen }
-  );
 
   // Actions
   const actions = useMemberActions({
     updatePermissions,
-    updateQuotaOverrides,
     removeMember,
     batchApplyPermission,
-    batchApplyQuota,
     selectedMember: dialogs.selectedMember,
     closeDrawer: dialogs.closeEditDrawer,
     clearMemberToRemove: () => dialogs.setMemberToRemove(null),
@@ -137,19 +111,13 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     project,
     members: membersList,
     permissionTemplates,
-    quotaTemplates,
     isLoading,
 
     // Selected member data
     selectedMember: dialogs.selectedMember,
     permissions,
-    quotaOverrides,
     effectiveAccessSnapshot,
     changeHistory,
-    quotaHistoryData,
-    quotaHistoryLoading,
-    quotaHistoryPage: dialogs.quotaHistoryPage,
-    setQuotaHistoryPage: dialogs.setQuotaHistoryPage,
 
     // Selection state
     selectedMemberIds: selection.selectedIds,
@@ -160,15 +128,12 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     // Dialog states
     drawerOpen: dialogs.drawerOpen,
     historyDrawerOpen: dialogs.historyDrawerOpen,
-    quotaHistoryDrawerOpen: dialogs.quotaHistoryDrawerOpen,
     inviteDialogOpen: dialogs.inviteDialogOpen,
     batchPermDialogOpen: dialogs.batchPermDialogOpen,
-    batchQuotaDialogOpen: dialogs.batchQuotaDialogOpen,
     memberToRemove: dialogs.memberToRemove,
 
     // Mutation states
     isUpdatingPermissions: updatePermissions.isPending,
-    isUpdatingQuota: updateQuotaOverrides.isPending,
     isRemovingMember: removeMember.isPending,
     isCheckingAuthorization: authorizationCheck.isPending,
     authorizationCheckResult: authorizationCheck.data ?? null,
@@ -177,26 +142,21 @@ export function useMembersList({ workspaceId, projectId }: UseMembersListOptions
     setSelectedMember: dialogs.setSelectedMember,
     setDrawerOpen: dialogs.setDrawerOpen,
     setHistoryDrawerOpen: dialogs.setHistoryDrawerOpen,
-    setQuotaHistoryDrawerOpen: dialogs.setQuotaHistoryDrawerOpen,
     setInviteDialogOpen: dialogs.setInviteDialogOpen,
     setBatchPermDialogOpen: dialogs.setBatchPermDialogOpen,
-    setBatchQuotaDialogOpen: dialogs.setBatchQuotaDialogOpen,
     setMemberToRemove: dialogs.setMemberToRemove,
 
     // Actions
     handleEditPermissions: dialogs.openEditDrawer,
     handleCloseDrawer: dialogs.closeEditDrawer,
     handleViewHistory: dialogs.openHistoryDrawer,
-    handleViewQuotaHistory: dialogs.openQuotaHistory,
     handleSavePermissions: actions.handleSavePermissions,
-    handleSaveQuota: actions.handleSaveQuota,
     handleRemove: (member: Member) => dialogs.setMemberToRemove(member),
     handleConfirmRemove: () => actions.handleConfirmRemove(dialogs.memberToRemove),
     handleToggleSelection: selection.toggleSelection,
     handleToggleAll: selection.toggleAll,
     clearSelection: selection.clearSelection,
     handleBatchApplyPermission: actions.handleBatchApplyPermission,
-    handleBatchApplyQuota: actions.handleBatchApplyQuota,
     handleAuthorizationCheck: authorizationCheck.mutateAsync,
   };
 }

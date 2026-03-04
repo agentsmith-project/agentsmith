@@ -44,7 +44,7 @@ describe('MemberDetailDrawer', () => {
     joined_at: '2026-02-01T00:00:00Z',
   };
 
-  it('shows effective-access-only view and removes editable permissions/quota sections', () => {
+  it('shows effective-access-only view and removes editable sections', () => {
     render(
       <MemberDetailDrawer
         open
@@ -56,7 +56,6 @@ describe('MemberDetailDrawer', () => {
 
     expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
     expect(screen.queryByTestId('permissions-editor')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('quota-overrides-editor')).not.toBeInTheDocument();
     expect(screen.getByTestId('mock-select')).toHaveAttribute('data-value', 'endpoint');
   });
 
@@ -67,7 +66,6 @@ describe('MemberDetailDrawer', () => {
         onOpenChange={() => {}}
         member={baseMember}
         permissions={{ platform_permissions: ['project:endpoint:use'] }}
-        quotaOverrides={{ endpoint: { daily_token_limit: 1000 } }}
         effectiveAccessSnapshot={{
           membership: {
             project_id: 'proj_1',
@@ -78,7 +76,6 @@ describe('MemberDetailDrawer', () => {
             joined_at: '2026-02-01T00:00:00Z',
           },
           permissions: { platform_permissions: ['project:endpoint:use'] },
-          quota_overrides: { endpoint: { daily_token_limit: 1000 } },
           effective_permissions: ['project:endpoint:use'],
           membership_status: 'suspended',
         }}
@@ -103,7 +100,6 @@ describe('MemberDetailDrawer', () => {
     expect(screen.getByTestId('member-detail__effective-access-summary')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__membership-status')).toHaveTextContent('effective_access.membership_status.suspended');
     expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:endpoint:use');
-    expect(screen.getByTestId('member-detail__effective-quotas')).toHaveTextContent('endpoint.daily_token_limit: 1000');
     expect(screen.getByTestId('member-detail__authorize-result')).toBeInTheDocument();
     expect(screen.getByTestId('member-detail__matched-policy')).toHaveTextContent('endpoint/endpoint_1');
   });

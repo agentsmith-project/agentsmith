@@ -132,7 +132,7 @@ main() {
         "access_mode":"allow_list",
         "allowed_subjects":[{"subject_type":"user","subject_id":"someone_else"}],
         "rate_limits":{"rules":[{"key":"endpoint.requests_per_minute","value":1000}]},
-        "quota_limits":{"rules":[]}
+        "spending_limits":{"rules":[]}
       }' || true
   )"
   if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then
@@ -214,7 +214,7 @@ main() {
       -X PATCH "${policy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "{\"access_mode\":\"allow_list\",\"allowed_subjects\":[{\"subject_type\":\"user\",\"subject_id\":\"${user_id}\"}],\"rate_limits\":{\"rules\":[{\"key\":\"endpoint.requests_per_minute\",\"value\":1000}]},\"quota_limits\":{\"rules\":[]}}" || true
+      --data "{\"access_mode\":\"allow_list\",\"allowed_subjects\":[{\"subject_type\":\"user\",\"subject_id\":\"${user_id}\"}],\"rate_limits\":{\"rules\":[{\"key\":\"endpoint.requests_per_minute\",\"value\":1000}]},\"spending_limits\":{\"rules\":[]}}" || true
   )"
   if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then
     err "failed to patch allow policy (HTTP ${patch_code})"

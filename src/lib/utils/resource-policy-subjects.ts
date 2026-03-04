@@ -6,7 +6,7 @@ export type EditableSubjectDraft = {
   subject_id: string;
   draftRules: Partial<Record<PolicyRuleKey, string>>;
   existingRateRules: PolicyRule[];
-  existingQuotaRules: PolicyRule[];
+  existingSpendingRules: PolicyRule[];
 };
 
 export type DuplicateSubjectConflict = {
@@ -67,4 +67,3 @@ export function findStaleSubjectRowIds(
   }
   return staleRowIds;
 }
-

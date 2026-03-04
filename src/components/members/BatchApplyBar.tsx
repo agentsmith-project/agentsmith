@@ -4,12 +4,11 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { UserPlus, Layers } from 'lucide-react';
+import { Layers } from 'lucide-react';
 
 export interface BatchApplyBarProps {
   selectedCount: number;
   onApplyPermissionTemplate: () => void;
-  onApplyQuotaTemplate: () => void;
   onClearSelection: () => void;
   /** Overlay mode: no border/radius, for floating bar at bottom */
   overlay?: boolean;
@@ -18,7 +17,6 @@ export interface BatchApplyBarProps {
 export function BatchApplyBar({
   selectedCount,
   onApplyPermissionTemplate,
-  onApplyQuotaTemplate,
   onClearSelection,
   overlay = false,
 }: BatchApplyBarProps) {
@@ -48,15 +46,6 @@ export function BatchApplyBar({
         >
           <Layers className="h-4 w-4" />
           {t('apply_permission_template')}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onApplyQuotaTemplate}
-          className="gap-2"
-        >
-          <UserPlus className="h-4 w-4" />
-          {t('apply_quota_template')}
         </Button>
       </div>
     </div>

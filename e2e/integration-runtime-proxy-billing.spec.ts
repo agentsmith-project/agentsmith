@@ -576,13 +576,13 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       expect(runtimeObsPayload.error_class_counts?.provider_non_retryable ?? 0).toBeGreaterThanOrEqual(0);
       expect(runtimeObsPayload.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
 
-      const quotaRes = await page.request.get(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/quota/summary`,
+      const limitsRes = await page.request.get(
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/limits/summary`,
         {
           headers: { Authorization: `Bearer ${token}` },
         },
       );
-      expect(quotaRes.ok()).toBeTruthy();
+      expect(limitsRes.ok()).toBeTruthy();
 
       const createScheduleRes = await page.request.post(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules`,

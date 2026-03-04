@@ -1,8 +1,8 @@
 import type {
-  PolicyQuotaLimit,
   PolicyRateLimit,
   PolicyResourceType,
   ResourcePolicy,
+  PolicySpendingLimit,
   PolicyRule,
   PolicyRuleKey,
 } from '@/lib/api/types';
@@ -11,23 +11,22 @@ export const RESOURCE_POLICY_RULE_MATRIX: Record<
   PolicyResourceType,
   {
     rate: PolicyRuleKey[];
-    quota: PolicyRuleKey[];
+    spending: PolicyRuleKey[];
   }
 > = {
   endpoint: {
     rate: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
-    quota: [
-      'endpoint.daily_token_limit',
+    spending: [
       'endpoint.spending_usd_per_minute',
       'endpoint.spending_usd_per_5_hours',
       'endpoint.spending_usd_per_day',
     ],
   },
-  source_library: { rate: [], quota: [] },
-  agent: { rate: [], quota: [] },
+  source_library: { rate: [], spending: [] },
+  agent: { rate: [], spending: [] },
 };
 
-export type PolicyRuleBucket = 'rate' | 'quota';
+export type PolicyRuleBucket = 'rate' | 'spending';
 
 export interface ResourcePolicyRuleDefinition {
   key: PolicyRuleKey;
@@ -50,15 +49,6 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_minute',
     },
     {
-      key: 'endpoint.daily_token_limit',
-      bucket: 'quota',
-      labelKey: 'rules.endpoint.daily_token_limit',
-      window: 'day',
-      rootInputId: 'resource-policy-endpoint-daily-tokens',
-      rootTestId: 'resource-policy__endpoint-daily-token-limit',
-      subjectPlaceholderKey: 'subject_placeholders.endpoint.daily_token_limit',
-    },
-    {
       key: 'endpoint.requests_per_5_hours',
       bucket: 'rate',
       labelKey: 'rules.endpoint.requests_per_5_hours',
@@ -77,7 +67,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
     },
     {
       key: 'endpoint.spending_usd_per_minute',
-      bucket: 'quota',
+      bucket: 'spending',
       labelKey: 'rules.endpoint.spending_usd_per_minute',
       rootInputId: 'resource-policy-endpoint-spending-usd-per-minute',
       rootTestId: 'resource-policy__endpoint-spending-usd-per-minute',
@@ -85,7 +75,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
     },
     {
       key: 'endpoint.spending_usd_per_5_hours',
-      bucket: 'quota',
+      bucket: 'spending',
       labelKey: 'rules.endpoint.spending_usd_per_5_hours',
       rootInputId: 'resource-policy-endpoint-spending-usd-per-5-hours',
       rootTestId: 'resource-policy__endpoint-spending-usd-per-5-hours',
@@ -93,7 +83,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
     },
     {
       key: 'endpoint.spending_usd_per_day',
-      bucket: 'quota',
+      bucket: 'spending',
       labelKey: 'rules.endpoint.spending_usd_per_day',
       window: 'day',
       rootInputId: 'resource-policy-endpoint-spending-usd-per-day',
@@ -157,8 +147,8 @@ export function getResourcePolicyStatus(policy: ResourcePolicy | undefined): Res
 
   const hasSubjectOverrides = policy.allowed_subjects.length > 0;
   const hasRootRateRules = (policy.rate_limits?.rules.length ?? 0) > 0;
-  const hasRootQuotaRules = (policy.quota_limits?.rules.length ?? 0) > 0;
-  if (hasSubjectOverrides || hasRootRateRules || hasRootQuotaRules) {
+  const hasRootSpendingRules = (policy.spending_limits?.rules.length ?? 0) > 0;
+  if (hasSubjectOverrides || hasRootRateRules || hasRootSpendingRules) {
     return {
       status: 'overridden',
       labelKey: 'resource_status.overridden',
@@ -186,12 +176,12 @@ function findInvalidRuleKeys(
 export function validatePolicyRulesForResource(
   resourceType: PolicyResourceType,
   rateLimits?: PolicyRateLimit,
-  quotaLimits?: PolicyQuotaLimit
+  spendingLimits?: PolicySpendingLimit
 ): { valid: true } | { valid: false; invalidKeys: PolicyRuleKey[] } {
   if (resourceType !== 'endpoint') {
     const unsupportedKeys = [
       ...(rateLimits?.rules?.map((rule) => rule.key) ?? []),
-      ...(quotaLimits?.rules?.map((rule) => rule.key) ?? []),
+      ...(spendingLimits?.rules?.map((rule) => rule.key) ?? []),
     ];
     return {
       valid: false,
@@ -200,8 +190,8 @@ export function validatePolicyRulesForResource(
   }
   const allowed = RESOURCE_POLICY_RULE_MATRIX[resourceType];
   const invalidRateKeys = findInvalidRuleKeys(rateLimits?.rules, allowed.rate);
-  const invalidQuotaKeys = findInvalidRuleKeys(quotaLimits?.rules, allowed.quota);
-  const invalidKeys = [...invalidRateKeys, ...invalidQuotaKeys];
+  const invalidSpendingKeys = findInvalidRuleKeys(spendingLimits?.rules, allowed.spending);
+  const invalidKeys = [...invalidRateKeys, ...invalidSpendingKeys];
 
   if (invalidKeys.length > 0) {
     return { valid: false, invalidKeys };

@@ -137,9 +137,9 @@ export function useUsageTimeseries(
 }
 
 /**
- * Hook to query quota summary data
+ * Hook to query limits summary data
  */
-export function useQuotaSummary(
+export function useLimitsSummary(
   workspaceId: string,
   projectId: string,
   options?: { enabled?: boolean },
@@ -148,8 +148,8 @@ export function useQuotaSummary(
   const enabled = (options?.enabled ?? true) && !!workspaceId && !!projectId;
 
   return useQuery({
-    queryKey: queryKeys.usage.quotaSummary(workspaceId, projectId),
-    queryFn: () => usageAPI.getQuotaSummary(workspaceId, projectId),
+    queryKey: queryKeys.usage.limitsSummary(workspaceId, projectId),
+    queryFn: () => usageAPI.getLimitsSummary(workspaceId, projectId),
     enabled,
     staleTime: 30000,
   });

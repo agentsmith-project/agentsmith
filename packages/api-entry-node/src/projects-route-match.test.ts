@@ -483,21 +483,6 @@ describe('matchProjectsRoute', () => {
       templateId: 'pt_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates'),
-    ).toEqual({
-      kind: 'projectQuotaTemplates',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/qt_1'),
-    ).toEqual({
-      kind: 'projectQuotaTemplateItem',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      templateId: 'qt_1',
-    });
-    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/groups'),
     ).toEqual({
       kind: 'projectGroups',
@@ -516,22 +501,6 @@ describe('matchProjectsRoute', () => {
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/permissions'),
     ).toEqual({
       kind: 'projectMemberPermissions',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      userId: 'user_test',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides'),
-    ).toEqual({
-      kind: 'projectMemberQuotaOverrides',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      userId: 'user_test',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides/history'),
-    ).toEqual({
-      kind: 'projectMemberQuotaOverridesHistory',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       userId: 'user_test',
@@ -587,14 +556,6 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       groupId: 'grp_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/qt_1/apply'),
-    ).toEqual({
-      kind: 'projectQuotaTemplateApply',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      templateId: 'qt_1',
     });
   });
 
@@ -679,9 +640,9 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/quota/summary'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/limits/summary'),
     ).toEqual({
-      kind: 'quotaSummary',
+      kind: 'limitsSummary',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });

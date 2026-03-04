@@ -27,11 +27,11 @@ describe('validatePolicyRulesForResource', () => {
     }
   });
 
-  it('accepts endpoint daily token limit rule in quota bucket', () => {
+  it('accepts endpoint spending-per-day rule in spending bucket', () => {
     const result = validatePolicyRulesForResource(
       'endpoint',
       undefined,
-      { rules: [{ key: 'endpoint.daily_token_limit', value: 100000, window: 'day' }] }
+      { rules: [{ key: 'endpoint.spending_usd_per_day', value: 100, window: 'day' }] }
     );
     expect(result.valid).toBe(true);
   });
@@ -42,7 +42,7 @@ describe('validatePolicyRulesForResource', () => {
     >) {
       const allowedKeys = new Set([
         ...RESOURCE_POLICY_RULE_MATRIX[resourceType].rate,
-        ...RESOURCE_POLICY_RULE_MATRIX[resourceType].quota,
+        ...RESOURCE_POLICY_RULE_MATRIX[resourceType].spending,
       ]);
       for (const definition of RESOURCE_POLICY_RULE_DEFINITIONS[resourceType]) {
         expect(allowedKeys.has(definition.key)).toBe(true);

@@ -28,7 +28,7 @@ screenshots/   # 手动拷贝后使用
 │   ├── member-detail-overview.png
 │   ├── member-permissions-template.png
 │   ├── member-permissions-advanced.png   # 权限配置详情（高级模式）
-│   ├── member-quota.png                  # 配额覆盖
+│   ├── member-limits.png                  # 配额覆盖
 │   └── member-resource-acl.png           # 资源 ACL
 ├── 09-audit/                   # 审计日志
 │   └── audit.png

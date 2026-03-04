@@ -18,7 +18,7 @@
 - `make verify-contracts`
 - `npm run test:run -- src/lib/api/__tests__/sse-client.test.ts` (21/21)
 - `BASE_URL=http://localhost:3002 npx playwright test --project=smoke e2e/smoke.spec.ts --workers=1` (26/26)
-- `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-quota-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` (62/62)
+- `BASE_URL=http://localhost:3002 npx playwright test --project=chromium e2e/governance.spec.ts e2e/resource-policy.spec.ts e2e/epic-b-security.spec.ts e2e/cost-limits-dashboard.spec.ts e2e/alerts.spec.ts --workers=1` (62/62)
 - `BASE_URL=http://localhost:3001 make governance-release-smoke`（PASS）
 
 3. Structured release report generated (PASS):
@@ -57,7 +57,7 @@
 2. C1/C2 gap closure checklist:
 - `docs/release/prd-c1-c2-e2e-gap-closure-checklist.md`
 3. New/updated E2E specs:
-- `e2e/cost-quota-dashboard.spec.ts`
+- `e2e/cost-limits-dashboard.spec.ts`
 - `e2e/alerts.spec.ts`
 
 ---

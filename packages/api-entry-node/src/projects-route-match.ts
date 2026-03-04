@@ -22,7 +22,6 @@ export type ProjectsRoute =
   | { kind: 'sourceLibraryAIReadyJobs'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryAIReadyJobItem'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
   | { kind: 'sourceLibraryAIReadyJobCancel'; workspaceId: string; projectId: string; libraryId: string; jobId: string }
-  | { kind: 'sourcesQuota'; workspaceId: string; projectId: string }
   | { kind: 'sourceAIReadyStart'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'sourceAIReadyCancel'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'sourceAIReadyRetry'; workspaceId: string; projectId: string; sourceId: string }
@@ -74,23 +73,18 @@ export type ProjectsRoute =
   | { kind: 'usageTimeseries'; workspaceId: string; projectId: string }
   | { kind: 'usageRuntimeObservability'; workspaceId: string; projectId: string }
   | { kind: 'usageOperationsSummary'; workspaceId: string; projectId: string }
-  | { kind: 'quotaSummary'; workspaceId: string; projectId: string }
+  | { kind: 'limitsSummary'; workspaceId: string; projectId: string }
   | { kind: 'projectMembers'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequests'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequestApprove'; workspaceId: string; projectId: string; joinId: string }
   | { kind: 'projectJoinRequestReject'; workspaceId: string; projectId: string; joinId: string }
   | { kind: 'projectPermissionTemplates'; workspaceId: string; projectId: string }
   | { kind: 'projectPermissionTemplateItem'; workspaceId: string; projectId: string; templateId: string }
-  | { kind: 'projectQuotaTemplates'; workspaceId: string; projectId: string }
-  | { kind: 'projectQuotaTemplateItem'; workspaceId: string; projectId: string; templateId: string }
-  | { kind: 'projectQuotaTemplateApply'; workspaceId: string; projectId: string; templateId: string }
   | { kind: 'projectGroups'; workspaceId: string; projectId: string }
   | { kind: 'projectGroupItem'; workspaceId: string; projectId: string; groupId: string }
   | { kind: 'projectGroupApplyTemplate'; workspaceId: string; projectId: string; groupId: string }
   | { kind: 'projectMembershipItem'; workspaceId: string; projectId: string; userId: string }
   | { kind: 'projectMemberPermissions'; workspaceId: string; projectId: string; userId: string }
-  | { kind: 'projectMemberQuotaOverrides'; workspaceId: string; projectId: string; userId: string }
-  | { kind: 'projectMemberQuotaOverridesHistory'; workspaceId: string; projectId: string; userId: string }
   | { kind: 'projectMemberChangeHistory'; workspaceId: string; projectId: string; userId: string }
   | {
     kind: 'projectResourcePolicy';
@@ -402,14 +396,14 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const quotaSummaryMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota\/summary\/?$/,
+  const limitsSummaryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/limits\/summary\/?$/,
   );
-  if (quotaSummaryMatched) {
+  if (limitsSummaryMatched) {
     return {
-      kind: 'quotaSummary',
-      workspaceId: decodeURIComponent(quotaSummaryMatched[1]),
-      projectId: decodeURIComponent(quotaSummaryMatched[2]),
+      kind: 'limitsSummary',
+      workspaceId: decodeURIComponent(limitsSummaryMatched[1]),
+      projectId: decodeURIComponent(limitsSummaryMatched[2]),
     };
   }
 
@@ -480,40 +474,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const projectQuotaTemplatesMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota-templates\/?$/,
-  );
-  if (projectQuotaTemplatesMatched) {
-    return {
-      kind: 'projectQuotaTemplates',
-      workspaceId: decodeURIComponent(projectQuotaTemplatesMatched[1]),
-      projectId: decodeURIComponent(projectQuotaTemplatesMatched[2]),
-    };
-  }
-
-  const projectQuotaTemplateApplyMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota-templates\/([^/]+)\/apply\/?$/,
-  );
-  if (projectQuotaTemplateApplyMatched) {
-    return {
-      kind: 'projectQuotaTemplateApply',
-      workspaceId: decodeURIComponent(projectQuotaTemplateApplyMatched[1]),
-      projectId: decodeURIComponent(projectQuotaTemplateApplyMatched[2]),
-      templateId: decodeURIComponent(projectQuotaTemplateApplyMatched[3]),
-    };
-  }
-
-  const projectQuotaTemplateItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/quota-templates\/([^/]+)\/?$/,
-  );
-  if (projectQuotaTemplateItemMatched) {
-    return {
-      kind: 'projectQuotaTemplateItem',
-      workspaceId: decodeURIComponent(projectQuotaTemplateItemMatched[1]),
-      projectId: decodeURIComponent(projectQuotaTemplateItemMatched[2]),
-      templateId: decodeURIComponent(projectQuotaTemplateItemMatched[3]),
-    };
-  }
 
   const projectGroupsMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/groups\/?$/,
@@ -562,29 +522,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const projectMemberQuotaOverridesHistoryMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/quota-overrides\/history\/?$/,
-  );
-  if (projectMemberQuotaOverridesHistoryMatched) {
-    return {
-      kind: 'projectMemberQuotaOverridesHistory',
-      workspaceId: decodeURIComponent(projectMemberQuotaOverridesHistoryMatched[1]),
-      projectId: decodeURIComponent(projectMemberQuotaOverridesHistoryMatched[2]),
-      userId: decodeURIComponent(projectMemberQuotaOverridesHistoryMatched[3]),
-    };
-  }
-
-  const projectMemberQuotaOverridesMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/quota-overrides\/?$/,
-  );
-  if (projectMemberQuotaOverridesMatched) {
-    return {
-      kind: 'projectMemberQuotaOverrides',
-      workspaceId: decodeURIComponent(projectMemberQuotaOverridesMatched[1]),
-      projectId: decodeURIComponent(projectMemberQuotaOverridesMatched[2]),
-      userId: decodeURIComponent(projectMemberQuotaOverridesMatched[3]),
-    };
-  }
 
   const projectMemberPermissionsMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/members\/([^/]+)\/permissions\/?$/,
@@ -788,17 +725,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       projectId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[2]),
       libraryId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[3]),
       jobId: decodeURIComponent(sourceLibraryAIReadyJobItemMatched[4]),
-    };
-  }
-
-  const sourcesQuotaMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/quota\/?$/,
-  );
-  if (sourcesQuotaMatched) {
-    return {
-      kind: 'sourcesQuota',
-      workspaceId: decodeURIComponent(sourcesQuotaMatched[1]),
-      projectId: decodeURIComponent(sourcesQuotaMatched[2]),
     };
   }
 

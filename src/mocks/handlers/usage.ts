@@ -2049,7 +2049,7 @@ export const usageHandlers = [
     });
     return HttpResponse.json(buildUsageOperationsSummary([...runtimeFacts, ...fixtureFacts]));
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/quota/summary', () => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/limits/summary', () => {
     const resources = p0.top_resources as Array<{
       resource_id: string;
       resource_name: string;

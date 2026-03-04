@@ -96,7 +96,7 @@ Conclusion:
   - page open
   - basic interaction
   - one policy effect
-  - one member-permission or member-quota effect
+  - one member-permission or member-limits effect
 - No mock-only UX fallbacks remain on supported governance flows
 
 ## Notes

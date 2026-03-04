@@ -7,9 +7,7 @@ import { isProjectResourceAccessAllowedForUser } from './project-resource-policy
 import {
   checkProjectEndpointRateLimitsForUser,
   checkProjectEndpointSpendingLimitsForUser,
-  checkProjectResourceQuotaLimitsForUser,
 } from './project-resource-policy-enforcer.js';
-import { checkMemberEndpointDailyTokenQuota } from './project-member-quota-enforcer.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -92,19 +90,17 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     metadata: Record<string, unknown>;
     endUserId?: string;
     retryAfterSeconds?: number;
-    quotaKey?: string;
+    spendingKey?: string;
   };
   const governanceMetadata = (
-    kind: 'access_denied' | 'policy_quota' | 'member_quota' | 'policy_rate',
+    kind: 'access_denied' | 'policy_spending' | 'policy_rate',
     extra: Record<string, unknown> = {},
   ): Record<string, unknown> => {
     switch (kind) {
       case 'access_denied':
         return { governance_kind: 'resource_policy', enforcement_kind: 'allow_list', ...extra };
-      case 'policy_quota':
-        return { governance_kind: 'resource_policy', enforcement_kind: 'quota_limit', ...extra };
-      case 'member_quota':
-        return { governance_kind: 'member_quota', enforcement_kind: 'quota_limit', ...extra };
+      case 'policy_spending':
+        return { governance_kind: 'resource_policy', enforcement_kind: 'spending_limit', ...extra };
       case 'policy_rate':
         return { governance_kind: 'resource_policy', enforcement_kind: 'rate_limit', ...extra };
     }
@@ -115,57 +111,6 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     message: 'resource_policy_denied',
     statusCode: 403,
     metadata: governanceMetadata('access_denied', { reason }),
-  });
-  const policyQuotaFailure = (params: {
-    retryAfterSeconds: number;
-    quotaKey: string;
-    effectiveLimit: number;
-    currentUsage: number;
-    usageUnit: 'tokens' | 'requests';
-    scope?: string;
-  }): GovernancePreflightFailureSpec => ({
-    action: 'resource_policy.quota_exceeded',
-    errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-    message: 'resource_policy_quota_exceeded',
-    statusCode: 429,
-    retryAfterSeconds: params.retryAfterSeconds,
-    quotaKey: params.quotaKey,
-    metadata: governanceMetadata('policy_quota', {
-      quota_key: params.quotaKey,
-      effective_limit: params.effectiveLimit,
-      current_usage: params.currentUsage,
-      usage_unit: params.usageUnit,
-      scope: params.scope,
-      ...(params.quotaKey === 'endpoint.daily_token_limit'
-        ? {
-            effective_daily_token_limit: params.effectiveLimit,
-            current_tokens_today: params.currentUsage,
-          }
-        : {}),
-      ...(params.quotaKey === 'endpoint.requests_per_day'
-        ? {
-            effective_requests_per_day: params.effectiveLimit,
-            current_requests_today: params.currentUsage,
-          }
-        : {}),
-    }),
-  });
-  const memberQuotaFailure = (params: {
-    retryAfterSeconds: number;
-    effectiveDailyTokenLimit: number;
-    currentTokensToday: number;
-  }): GovernancePreflightFailureSpec => ({
-    action: 'member_quota.quota_exceeded',
-    errorCode: 'MEMBER_QUOTA_EXCEEDED',
-    message: 'member_quota_exceeded',
-    statusCode: 429,
-    retryAfterSeconds: params.retryAfterSeconds,
-    endUserId: user.id,
-    metadata: governanceMetadata('member_quota', {
-      effective_daily_token_limit: params.effectiveDailyTokenLimit,
-      current_tokens_today: params.currentTokensToday,
-      quota_key: 'endpoint.daily_token_limit',
-    }),
   });
   const policyRateFailure = (params: {
     retryAfterSeconds: number;
@@ -202,8 +147,8 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     message: 'resource_policy_spending_limited',
     statusCode: 429,
     retryAfterSeconds: params.retryAfterSeconds,
-    quotaKey: params.spendingKey,
-    metadata: governanceMetadata('policy_quota', {
+    spendingKey: params.spendingKey,
+    metadata: governanceMetadata('policy_spending', {
       spending_key: params.spendingKey,
       effective_limit_usd: params.effectiveLimitUsd,
       current_spending_usd: params.currentSpendingUsd,
@@ -223,7 +168,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     metadata?: Record<string, unknown>;
     endUserId?: string;
     retryAfterSeconds?: number;
-    quotaKey?: string;
+    spendingKey?: string;
   }): Promise<void> => {
     await writeProjectAuditEvent(deps, {
       workspaceId: params.workspaceId,
@@ -262,7 +207,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       resource_type: 'endpoint',
       resource_id: params.endpointId,
       ...(params.retryAfterSeconds ? { retry_after_seconds: params.retryAfterSeconds } : {}),
-      ...(params.quotaKey ? { quota_key: params.quotaKey } : {}),
+      ...(params.spendingKey ? { spending_key: params.spendingKey } : {}),
     });
   };
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
@@ -418,56 +363,6 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     }
 
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-    const quotaCheck = await checkProjectResourceQuotaLimitsForUser({
-      docStore: deps.docStore,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      resourceType: 'endpoint',
-      resourceId: endpoint.id,
-      userId: user.id,
-      policy: policyCheck.policy,
-    });
-    if (!quotaCheck.allowed) {
-      const failure = policyQuotaFailure({
-        retryAfterSeconds: quotaCheck.retry_after_seconds,
-        quotaKey: quotaCheck.quota_key,
-        effectiveLimit: quotaCheck.effective_limit,
-        currentUsage: quotaCheck.current_usage,
-        usageUnit: quotaCheck.usage_unit,
-        scope: quotaCheck.scope,
-      });
-      await writeGovernancePreflightFailure({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        endpointId: endpoint.id,
-        requestId,
-        endUserId: user.id,
-        ...failure,
-      });
-      return true;
-    }
-    const memberQuotaCheck = await checkMemberEndpointDailyTokenQuota({
-      docStore: deps.docStore,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      endpointId: endpoint.id,
-      userId: user.id,
-    });
-    if (!memberQuotaCheck.allowed) {
-      const failure = memberQuotaFailure({
-        retryAfterSeconds: memberQuotaCheck.retry_after_seconds,
-        effectiveDailyTokenLimit: memberQuotaCheck.effective_daily_token_limit,
-        currentTokensToday: memberQuotaCheck.current_tokens_today,
-      });
-      await writeGovernancePreflightFailure({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        endpointId: endpoint.id,
-        requestId,
-        ...failure,
-      });
-      return true;
-    }
     const rateCheck = await checkProjectEndpointRateLimitsForUser({
       docStore: deps.docStore,
       workspaceId: route.workspaceId,

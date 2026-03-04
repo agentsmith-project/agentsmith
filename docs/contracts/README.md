@@ -62,6 +62,7 @@ Before merge / pre-release: run `npm run contracts:check` (permission gates, rou
 - `npm run openapi:changelog`
 
 `contracts:check-openapi-breaking` runs in strict mode on CI (fails if `origin/main` baseline is unavailable).
+Intentional contract removals must be explicitly recorded in `specs/openapi-breaking-allowlist.json`.
 
 Route-kind mapping source: `specs/openapi-route-kind-map.json`.
 OpenAPI diff changelog output: `specs/CHANGELOG.md`.

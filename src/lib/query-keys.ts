@@ -64,16 +64,6 @@ export const queryKeys = {
       ['members', workspaceId, projectId] as const,
     permissions: (workspaceId: string, projectId: string, memberId: string) =>
       ['member-permissions', workspaceId, projectId, memberId] as const,
-    quotaOverrides: (workspaceId: string, projectId: string, memberId: string) =>
-      ['member-quota-overrides', workspaceId, projectId, memberId] as const,
-    quotaOverridesHistory: (
-      workspaceId: string,
-      projectId: string,
-      memberId: string,
-      page: number,
-      pageSize: number,
-    ) =>
-      ['member-quota-overrides-history', workspaceId, projectId, memberId, page, pageSize] as const,
     changeHistory: (workspaceId: string, projectId: string, memberId: string) =>
       ['member-change-history', workspaceId, projectId, memberId] as const,
   },
@@ -92,15 +82,6 @@ export const queryKeys = {
       ['permission-templates', workspaceId, projectId] as const,
   },
 
-  /** Quota templates */
-  quotaTemplates: {
-    _def: ['quota-templates'] as const,
-    list: (workspaceId: string, projectId: string) =>
-      ['quota-templates', workspaceId, projectId] as const,
-    detail: (workspaceId: string, projectId: string, templateId: string) =>
-      ['quota-templates', workspaceId, projectId, templateId] as const,
-  },
-
   /** Project groups */
   projectGroups: {
     _def: ['project-groups'] as const,
@@ -108,7 +89,7 @@ export const queryKeys = {
       ['project-groups', workspaceId, projectId] as const,
   },
 
-  /** Resource policy (access + rate/quota) */
+  /** Resource policy (access + rate/spending) */
   resourcePolicy: {
     _def: ['resource-policy'] as const,
     detail: (workspaceId: string, projectId: string, resourceType: string, resourceId: string) =>
@@ -241,8 +222,8 @@ export const queryKeys = {
       ['usage-report-schedules', workspaceId, projectId] as const,
     reportEvidence: (workspaceId: string, projectId: string) =>
       ['usage-report-evidence', workspaceId, projectId] as const,
-    quotaSummary: (workspaceId: string, projectId: string) =>
-      ['usage-quota-summary', workspaceId, projectId] as const,
+    limitsSummary: (workspaceId: string, projectId: string) =>
+      ['usage-limits-summary', workspaceId, projectId] as const,
   },
 
   releaseOps: {

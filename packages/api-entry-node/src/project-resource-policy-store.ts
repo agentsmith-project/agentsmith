@@ -9,11 +9,11 @@ export type ProjectResourcePolicyRecord = {
     subject_type: SubjectType;
     subject_id: string;
     rate_limits?: Record<string, unknown>;
-    quota_limits?: Record<string, unknown>;
+    spending_limits?: Record<string, unknown>;
     updated_at?: string;
   }>;
   rate_limits?: Record<string, unknown>;
-  quota_limits?: Record<string, unknown>;
+  spending_limits?: Record<string, unknown>;
 };
 
 const PROJECT_RESOURCE_POLICIES_BY_PROJECT = new Map<string, Map<string, ProjectResourcePolicyRecord>>();
@@ -98,4 +98,3 @@ export function isProjectResourceAccessAllowedForUser(args: {
   return { allowed: false, policy, reason: 'not_in_allow_list' };
 }
 import { getProjectGroupIdsForUser } from './project-groups-store.js';
-

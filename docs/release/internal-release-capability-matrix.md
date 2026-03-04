@@ -33,15 +33,13 @@
 
 1. join request create / approve / reject
 2. group CRUD + template apply
-3. permission template / quota template CRUD
+3. permission template CRUD
 4. member permission overrides
-5. member quota overrides
-6. membership `suspend / restore / revoke`
-7. revoke downstream cleanup
+5. membership `suspend / restore / revoke`
+6. revoke downstream cleanup
    - group membership
    - member permission state
-   - member quota overrides
-8. suspend / restore downstream effect correctness
+7. suspend / restore downstream effect correctness
 
 ### 2.3 Resource Policy
 
@@ -51,8 +49,8 @@
    - allow-all / allow-list
    - user / group subject matching
    - `requests_per_minute`
-   - `daily_token_limit`
    - `requests_per_day`
+   - `spending_usd_per_minute` / `spending_usd_per_day`
 2. `agent`
    - allow-list access
    - `requests_per_minute`

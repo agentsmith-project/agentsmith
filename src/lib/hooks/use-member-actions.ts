@@ -2,31 +2,24 @@
  * Member Actions Hook
  *
  * Business logic for member operations.
- * Handles save permissions, save quota, remove, and batch operations.
+ * Handles save permissions, remove, and batch operations.
  */
 
 import { useCallback } from 'react';
-import type { QuotaOverride } from '@/lib/api/types';
 import type {
   useUpdateMemberPermissions,
-  useUpdateMemberQuotaOverrides,
   useRemoveMember,
   useBatchApplyPermissionTemplate,
-  useBatchApplyQuotaTemplate,
 } from './use-members';
 import type { Member } from '@/lib/api/endpoints/members';
 
 export interface UseMemberActionsOptions {
   /** Update permissions mutation */
   updatePermissions: ReturnType<typeof useUpdateMemberPermissions>;
-  /** Update quota overrides mutation */
-  updateQuotaOverrides: ReturnType<typeof useUpdateMemberQuotaOverrides>;
   /** Remove member mutation */
   removeMember: ReturnType<typeof useRemoveMember>;
   /** Batch apply permission template mutation */
   batchApplyPermission: ReturnType<typeof useBatchApplyPermissionTemplate>;
-  /** Batch apply quota template mutation */
-  batchApplyQuota: ReturnType<typeof useBatchApplyQuotaTemplate>;
   /** Currently selected member */
   selectedMember: Member | null;
   /** Close drawer callback */
@@ -46,8 +39,6 @@ export interface UseMemberActionsReturn {
     mode: 'template' | 'custom',
     template?: string
   ) => Promise<void>;
-  /** Save member quota overrides */
-  handleSaveQuota: (quota: QuotaOverride) => Promise<void>;
   /** Confirm and remove member */
   handleConfirmRemove: (member: Member | null) => Promise<void>;
   /** Batch apply permission template */
@@ -56,8 +47,6 @@ export interface UseMemberActionsReturn {
     permissions: string[],
     template?: string | null
   ) => Promise<void>;
-  /** Batch apply quota template */
-  handleBatchApplyQuota: (templateId: string) => Promise<void>;
 }
 
 /**
@@ -70,7 +59,6 @@ export interface UseMemberActionsReturn {
  * ```tsx
  * const actions = useMemberActions({
  *   updatePermissions,
- *   updateQuotaOverrides,
  *   removeMember,
  *   selectedMember,
  *   closeDrawer: () => setDrawerOpen(false),
@@ -81,10 +69,8 @@ export interface UseMemberActionsReturn {
  */
 export function useMemberActions({
   updatePermissions,
-  updateQuotaOverrides,
   removeMember,
   batchApplyPermission,
-  batchApplyQuota,
   selectedMember,
   closeDrawer,
   clearMemberToRemove,
@@ -103,16 +89,6 @@ export function useMemberActions({
       closeDrawer();
     },
     [selectedMember, updatePermissions, closeDrawer]
-  );
-
-  const handleSaveQuota = useCallback(
-    async (quota: QuotaOverride) => {
-      if (!selectedMember) return;
-
-      await updateQuotaOverrides.mutateAsync(quota);
-      closeDrawer();
-    },
-    [selectedMember, updateQuotaOverrides, closeDrawer]
   );
 
   const handleConfirmRemove = useCallback(
@@ -137,22 +113,9 @@ export function useMemberActions({
     [selectedMemberIds, batchApplyPermission, clearSelection]
   );
 
-  const handleBatchApplyQuota = useCallback(
-    async (templateId: string) => {
-      await batchApplyQuota.mutateAsync({
-        templateId,
-        memberIds: selectedMemberIds,
-      });
-      clearSelection();
-    },
-    [selectedMemberIds, batchApplyQuota, clearSelection]
-  );
-
   return {
     handleSavePermissions,
-    handleSaveQuota,
     handleConfirmRemove,
     handleBatchApplyPermission,
-    handleBatchApplyQuota,
   };
 }

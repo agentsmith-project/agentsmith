@@ -51,10 +51,6 @@ Status: Proposed (for immediate implementation)
 - `endpoint.spending_usd_per_5_hours`
 - `endpoint.spending_usd_per_day`
 
-兼容保留（可选）：
-
-- `endpoint.daily_token_limit`（若已在线上数据使用）
-
 ## 3.2 Rule 结构
 
 ```json
@@ -83,11 +79,11 @@ Status: Proposed (for immediate implementation)
       "subject_type": "user|group",
       "subject_id": "u_1",
       "rate_limits": { "rules": [] },
-      "quota_limits": { "rules": [] }
+      "spending_limits": { "rules": [] }
     }
   ],
   "rate_limits": { "rules": [] },
-  "quota_limits": { "rules": [] }
+  "spending_limits": { "rules": [] }
 }
 ```
 

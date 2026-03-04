@@ -6625,7 +6625,7 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/limits/summary": {
       "parameters": [
         {
           "$ref": "#/components/parameters/workspaceId"
@@ -6638,7 +6638,7 @@
         "tags": [
           "Governance"
         ],
-        "operationId": "getQuotaSummary",
+        "operationId": "getLimitsSummary",
         "summary": "Get quota summary for all resources",
         "description": "Returns quota usage summary across all resource types (endpoints, source libraries, agents).\nIncludes current usage, limits, percentage used, and reset times.\n",
         "responses": {
@@ -9656,6 +9656,44 @@
           },
           "404": {
             "$ref": "#/components/responses/NotFound"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm-gateway/{proxyPath}": {
+      "post": {
+        "tags": [
+          "Endpoints"
+        ],
+        "operationId": "post_llmGatewayProxy",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
           }
         }
       }

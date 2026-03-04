@@ -14,7 +14,7 @@ import { TopUsersList, type UserUsageRank } from './TopUsersList';
 import { AnomalyAlertsPanel, type AnomalyAlert } from './AnomalyAlertsPanel';
 import { DashboardFilters } from './DashboardFilters';
 import type { DashboardFiltersProps } from './DashboardFilters';
-import { useQuotaSummary, useUsageKPI, useUsageRecords, useUsageTimeseries } from '@/lib/hooks/use-audit-usage';
+import { useLimitsSummary, useUsageKPI, useUsageRecords, useUsageTimeseries } from '@/lib/hooks/use-audit-usage';
 import { useQueryClient } from '@tanstack/react-query';
 
 export interface CostDashboardPageProps {
@@ -209,7 +209,7 @@ export function CostDashboardPage({
       end_user_id: filters.end_user_id,
     },
   );
-  const { data: quotaOverview } = useQuotaSummary(workspaceId, projectId);
+  const { data: limitsOverview } = useLimitsSummary(workspaceId, projectId);
 
   const trendData = React.useMemo(
     () => toTrendSeries(timeseriesData?.data_points ?? []),
@@ -233,18 +233,18 @@ export function CostDashboardPage({
   );
 
   const totalQuotaPercentage = React.useMemo(() => {
-    if (!quotaOverview?.total_quota_limit || !quotaOverview.total_quota_used) return undefined;
+    if (!limitsOverview?.total_quota_limit || !limitsOverview.total_quota_used) return undefined;
     return Math.min(
       100,
-      (quotaOverview.total_quota_used / Math.max(1, quotaOverview.total_quota_limit)) * 100,
+      (limitsOverview.total_quota_used / Math.max(1, limitsOverview.total_quota_limit)) * 100,
     );
-  }, [quotaOverview?.total_quota_limit, quotaOverview?.total_quota_used]);
+  }, [limitsOverview?.total_quota_limit, limitsOverview?.total_quota_used]);
 
   const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['usage-timeseries', workspaceId, projectId] });
     queryClient.invalidateQueries({ queryKey: ['usage-kpi', workspaceId, projectId] });
     queryClient.invalidateQueries({ queryKey: ['usage', workspaceId, projectId] });
-    queryClient.invalidateQueries({ queryKey: ['usage-quota-summary', workspaceId, projectId] });
+    queryClient.invalidateQueries({ queryKey: ['usage-limits-summary', workspaceId, projectId] });
     toast.success(t('refreshed_data'));
   }, [projectId, queryClient, t, workspaceId]);
 

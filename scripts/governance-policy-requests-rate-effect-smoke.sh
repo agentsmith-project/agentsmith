@@ -8,10 +8,10 @@ WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-CURL_MAX_TIME="${CURL_MAX_TIME:-40}"
+WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
 
-info() { echo "[gov-policy-quota-smoke] $*"; }
-err() { echo "[gov-policy-quota-smoke] ERROR: $*" >&2; }
+info() { echo "[gov-policy-requests-rate-smoke] $*"; }
+err() { echo "[gov-policy-requests-rate-smoke] ERROR: $*" >&2; }
 
 require_file() {
   local path="$1"
@@ -46,35 +46,39 @@ urlencode() {
   node -e 'process.stdout.write(encodeURIComponent(process.argv[1] || ""))' "$1"
 }
 
-utc_day_range() {
-  node -e 'const n=new Date(); const s=new Date(Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate(),0,0,0,0)); const e=new Date(Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate(),23,59,59,999)); process.stdout.write(`${s.toISOString()}\n${e.toISOString()}\n`);'
+wait_until_next_minute() {
+  local now sec sleep_for
+  now="$(date +%s)"
+  sec=$(( now % 60 ))
+  sleep_for=$(( 61 - sec ))
+  if (( sleep_for < 1 )); then sleep_for=1; fi
+  info "waiting ${sleep_for}s for a fresh minute bucket"
+  sleep "${sleep_for}"
 }
 
-usage_tokens_for_user_endpoint() {
+usage_ok_requests_for_user_endpoint_today() {
   local base="$1"
   local token="$2"
   local endpoint_id="$3"
   local user_id="$4"
-  local out_file
+  local out_file start_time end_time enc_start enc_end code
   out_file="$(mktemp)"
-  local start_time end_time enc_start enc_end code
-  mapfile -t _day_range < <(utc_day_range)
-  start_time="${_day_range[0]}"
-  end_time="${_day_range[1]}"
+  start_time="$(node -e 'const n=new Date(); const s=new Date(Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate(),0,0,0,0)); process.stdout.write(s.toISOString())')"
+  end_time="$(node -e 'const n=new Date(); const e=new Date(Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate(),23,59,59,999)); process.stdout.write(e.toISOString())')"
   enc_start="$(urlencode "${start_time}")"
   enc_end="$(urlencode "${end_time}")"
   code="$(
     curl -sS -o "${out_file}" -w '%{http_code}' \
-      "${base}/usage?start_time=${enc_start}&end_time=${enc_end}&resource_type=endpoint&resource_id=${endpoint_id}&end_user_id=$(urlencode "${user_id}")&group_by=day&page=1&page_size=50" \
+      "${base}/usage/facts?start_time=${enc_start}&end_time=${enc_end}&resource_type=endpoint&resource_id=${endpoint_id}&end_user_id=$(urlencode "${user_id}")&result=ok&page=1&page_size=200" \
       -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${code}" != "200" ]]; then
-    err "usage query failed while reading current tokens (HTTP ${code})"
+    err "usage facts query failed while reading baseline requests (HTTP ${code})"
     cat "${out_file}" >&2 || true
     rm -f "${out_file}"
     return 1
   fi
-  cat "${out_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const row=items.find(i=>String(i.resource_type||'')==='endpoint'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.end_user_id||'')==='${user_id}'); process.stdout.write(String(Number(row?.tokens||0)));"
+  cat "${out_file}" | json_get 'const items=Array.isArray(data.items)?data.items:[]; process.stdout.write(String(items.length));'
   rm -f "${out_file}"
 }
 
@@ -97,10 +101,11 @@ main() {
     exit 1
   fi
 
-  local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
-  local endpoint_url="${base}/endpoints/${endpoint_id}"
-  local proxy_url="${endpoint_url}/proxy/chat/completions"
-  local policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
+  local base endpoint_url proxy_url policy_url
+  base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
+  endpoint_url="${base}/endpoints/${endpoint_id}"
+  proxy_url="${endpoint_url}/proxy/chat/completions"
+  policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
 
   local endpoint_code
   endpoint_code="$(
@@ -112,14 +117,14 @@ main() {
     exit 1
   fi
 
-  local original_policy_file patch_resp_file req_file audit_file usage_file warmup_file
+  local original_policy_file patch_resp_file req1_file req2_file audit_file usage_file
   original_policy_file="$(mktemp)"
   patch_resp_file="$(mktemp)"
-  req_file="$(mktemp)"
+  req1_file="$(mktemp)"
+  req2_file="$(mktemp)"
   audit_file="$(mktemp)"
   usage_file="$(mktemp)"
-  warmup_file="$(mktemp)"
-  trap 'rm -f "${original_policy_file}" "${patch_resp_file}" "${req_file}" "${audit_file}" "${usage_file}" "${warmup_file}"; if [[ -n "${token:-}" && -s "${original_policy_file}" ]]; then curl -sS -o /dev/null -X PATCH "${policy_url}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @"${original_policy_file}" || true; fi' EXIT
+  trap 'rm -f "${original_policy_file}" "${patch_resp_file}" "${req1_file}" "${req2_file}" "${audit_file}" "${usage_file}"; if [[ -n "${token:-}" && -s "${original_policy_file}" ]]; then curl -sS -o /dev/null -X PATCH "${policy_url}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @"${original_policy_file}" || true; fi' EXIT
 
   info "reading current endpoint policy"
   local policy_get_code
@@ -132,38 +137,12 @@ main() {
     exit 1
   fi
 
-  local current_tokens
-  current_tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${user_id}")"
-  info "current endpoint tokens for user ${user_id} today: ${current_tokens}"
+  local baseline_ok_requests day_limit
+  baseline_ok_requests="$(usage_ok_requests_for_user_endpoint_today "${base}" "${token}" "${endpoint_id}" "${user_id}")"
+  day_limit="$(( baseline_ok_requests + 1 ))"
+  info "baseline ok requests today=${baseline_ok_requests}, setting requests/day limit=${day_limit}"
 
-  if [[ "${current_tokens}" == "0" ]]; then
-    info "no endpoint token usage found; sending warm-up request"
-    local warmup_code
-    warmup_code="$(
-      curl -sS -o "${warmup_file}" -w '%{http_code}' \
-        --max-time "${CURL_MAX_TIME}" \
-        "${proxy_url}" \
-        -H "Authorization: Bearer ${token}" \
-        -H "Content-Type: application/json" \
-        --data '{"model":"glm-5","messages":[{"role":"user","content":"policy quota smoke warmup"}]}' || true
-    )"
-    if [[ ! "${warmup_code}" =~ ^2[0-9][0-9]$ ]]; then
-      err "warm-up request failed (HTTP ${warmup_code}); endpoint upstream may be unavailable"
-      cat "${warmup_file}" >&2 || true
-      exit 1
-    fi
-    sleep 2
-    current_tokens="$(usage_tokens_for_user_endpoint "${base}" "${token}" "${endpoint_id}" "${user_id}")"
-    info "endpoint tokens after warm-up: ${current_tokens}"
-  fi
-  if [[ "${current_tokens}" == "0" ]]; then
-    err "unable to observe endpoint token usage for user ${user_id}; cannot deterministically trigger policy quota"
-    exit 1
-  fi
-
-  local quota_limit patch_code
-  quota_limit="${current_tokens}"
-  info "patching endpoint policy with daily token quota=${quota_limit}"
+  local patch_code
   patch_code="$(
     curl -sS -o "${patch_resp_file}" -w '%{http_code}' \
       -X PATCH "${policy_url}" \
@@ -172,8 +151,11 @@ main() {
       --data "{
         \"access_mode\":\"allow_all_members\",
         \"allowed_subjects\":[],
-        \"rate_limits\":{\"rules\":[{\"key\":\"endpoint.requests_per_minute\",\"value\":1000}]},
-        \"quota_limits\":{\"rules\":[{\"key\":\"endpoint.daily_token_limit\",\"value\":${quota_limit}}]}
+        \"rate_limits\":{\"rules\":[
+          {\"key\":\"endpoint.requests_per_minute\",\"value\":1000},
+          {\"key\":\"endpoint.requests_per_day\",\"value\":${day_limit}}
+        ]},
+        \"spending_limits\":{\"rules\":[]}
       }" || true
   )"
   if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then
@@ -182,31 +164,47 @@ main() {
     exit 1
   fi
 
-  local start_time end_time req_code body_err_code
+  if [[ "${WAIT_NEXT_MINUTE}" == "1" ]]; then
+    wait_until_next_minute
+  fi
+
+  local start_time end_time req1_code req2_code body_err_code
   start_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
-  info "sending endpoint request (should hit policy quota)"
-  req_code="$(
-    curl -sS -D /tmp/gov_policy_quota_smoke_headers.$$ -o "${req_file}" -w '%{http_code}' \
-      --max-time "${CURL_MAX_TIME}" \
+
+  info "sending first endpoint request (should pass)"
+  req1_code="$(
+    curl -sS -o "${req1_file}" -w '%{http_code}' \
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy quota smoke blocked request"}]}' || true
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy req/day smoke first"}]}' || true
   )"
-  if [[ "${req_code}" != "429" ]]; then
-    err "request did not hit policy quota (HTTP ${req_code})"
-    cat "${req_file}" >&2 || true
-    rm -f /tmp/gov_policy_quota_smoke_headers.$$ || true
+  if [[ ! "${req1_code}" =~ ^2[0-9][0-9]$ ]]; then
+    err "first request failed (HTTP ${req1_code})"
+    cat "${req1_file}" >&2 || true
     exit 1
   fi
-  body_err_code="$(cat "${req_file}" | json_get 'process.stdout.write(String(data.error_code||""))' || true)"
-  if [[ "${body_err_code}" != "RESOURCE_POLICY_QUOTA_EXCEEDED" ]]; then
-    err "unexpected error_code on quota-limited response: ${body_err_code}"
-    cat "${req_file}" >&2 || true
-    rm -f /tmp/gov_policy_quota_smoke_headers.$$ || true
+
+  info "sending second endpoint request (should hit requests/day rate limit)"
+  req2_code="$(
+    curl -sS -o "${req2_file}" -w '%{http_code}' \
+      "${proxy_url}" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      --data '{"model":"glm-5","messages":[{"role":"user","content":"policy req/day smoke second"}]}' || true
+  )"
+  if [[ "${req2_code}" != "429" ]]; then
+    err "second request did not hit requests/day rate limit (HTTP ${req2_code})"
+    cat "${req2_file}" >&2 || true
     exit 1
   fi
-  rm -f /tmp/gov_policy_quota_smoke_headers.$$ || true
+  body_err_code="$(cat "${req2_file}" | json_get 'process.stdout.write(String(data.error_code||""))' || true)"
+  if [[ "${body_err_code}" != "RESOURCE_POLICY_RATE_LIMITED" ]]; then
+    err "unexpected error_code on rate-limited response: ${body_err_code}"
+    cat "${req2_file}" >&2 || true
+    exit 1
+  fi
+
   sleep 2
   end_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
@@ -217,7 +215,7 @@ main() {
   info "checking audit evidence"
   audit_code="$(
     curl -sS -o "${audit_file}" -w '%{http_code}' \
-      "${base}/audit?start_time=${enc_start}&end_time=${enc_end}&action=resource_policy.quota_exceeded&actor_id=$(urlencode "${user_id}")&resource_type=endpoint&resource_id=${endpoint_id}&page=1&page_size=50" \
+      "${base}/audit?start_time=${enc_start}&end_time=${enc_end}&action=resource_policy.rate_limited&actor_id=$(urlencode "${user_id}")&resource_type=endpoint&resource_id=${endpoint_id}&page=1&page_size=50" \
       -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${audit_code}" != "200" ]]; then
@@ -226,9 +224,9 @@ main() {
     exit 1
   fi
   local audit_has
-  audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.quota_exceeded'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.actor_id||'')==='${user_id}'); process.stdout.write(ok?'1':'0');")"
+  audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.rate_limited'&&String(i.resource_id||'')==='${endpoint_id}'&&String(i.actor_id||'')==='${user_id}'&&String((i.metadata_json||{}).rate_key||'')==='endpoint.requests_per_day'); process.stdout.write(ok?'1':'0');")"
   if [[ "${audit_has}" != "1" ]]; then
-    err "audit does not contain resource_policy.quota_exceeded for endpoint ${endpoint_id} user ${user_id}"
+    err "audit does not contain resource_policy.rate_limited(endpoint.requests_per_day) for endpoint ${endpoint_id}"
     cat "${audit_file}" >&2 || true
     exit 1
   fi
@@ -267,7 +265,7 @@ main() {
   fi
   : > "${original_policy_file}"
   trap - EXIT
-  rm -f "${patch_resp_file}" "${req_file}" "${audit_file}" "${usage_file}" "${warmup_file}" "${original_policy_file}"
+  rm -f "${patch_resp_file}" "${req1_file}" "${req2_file}" "${audit_file}" "${usage_file}" "${original_policy_file}"
 
   info "OK"
 }

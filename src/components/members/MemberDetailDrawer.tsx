@@ -21,28 +21,12 @@ import {
 } from '@/components/ui/select';
 import { History } from 'lucide-react';
 import type { Member } from '@/lib/api/endpoints/members';
-import type { MemberPermissions, QuotaOverride, PermissionTemplate, QuotaTemplate } from '@/lib/api/types';
+import type { MemberPermissions, PermissionTemplate } from '@/lib/api/types';
 import type {
   GovernanceAuthorizationResponse,
   GovernanceEffectiveAccessSnapshot,
   GovernanceMatchedPolicy,
 } from '@/lib/api/endpoints/governance-explainability';
-
-function flattenQuotaOverrides(
-  source: Record<string, unknown>,
-  prefix = ''
-): Array<{ key: string; value: string }> {
-  return Object.entries(source).flatMap(([key, value]) => {
-    const nextKey = prefix ? `${prefix}.${key}` : key;
-    if (value === null || value === undefined) {
-      return [];
-    }
-    if (typeof value === 'object' && !Array.isArray(value)) {
-      return flattenQuotaOverrides(value as Record<string, unknown>, nextKey);
-    }
-    return [{ key: nextKey, value: String(value) }];
-  });
-}
 
 export interface MemberDetailDrawerProps {
   open: boolean;
@@ -50,11 +34,9 @@ export interface MemberDetailDrawerProps {
   member: Member | null;
   permissions?: MemberPermissions;
   projectGovernance?: Record<string, unknown>;
-  quotaOverrides?: QuotaOverride;
   _workspaceId?: string;
   _projectId?: string;
   permissionTemplates?: PermissionTemplate[];
-  quotaTemplates?: QuotaTemplate[];
   effectiveAccessSnapshot?: GovernanceEffectiveAccessSnapshot | null;
   authorizationCheckResult?: GovernanceAuthorizationResponse | null;
   isCheckingAuthorization?: boolean;
@@ -64,9 +46,7 @@ export interface MemberDetailDrawerProps {
     action: string;
   }) => Promise<unknown>;
   onSavePermissions?: (permissions: string[], mode: 'template' | 'custom', template?: string) => void;
-  onSaveQuota?: (quota: QuotaOverride) => void;
   onViewHistory?: () => void;
-  onViewQuotaHistory?: () => void;
   initialAuthorization?: {
     resourceType: 'endpoint';
     resourceId: string;
@@ -96,7 +76,6 @@ export function MemberDetailDrawer({
   onOpenChange,
   member,
   permissions,
-  quotaOverrides,
   effectiveAccessSnapshot,
   authorizationCheckResult,
   isCheckingAuthorization = false,
@@ -117,11 +96,6 @@ export function MemberDetailDrawer({
     setAuthorizeResourceId(initialAuthorization.resourceId);
     setAuthorizeAction(initialAuthorization.action);
   }, [initialAuthorization, member, open]);
-
-  const effectiveQuotaEntries = React.useMemo(
-    () => flattenQuotaOverrides((effectiveAccessSnapshot?.quota_overrides ?? quotaOverrides ?? {}) as Record<string, unknown>),
-    [effectiveAccessSnapshot?.quota_overrides, quotaOverrides]
-  );
 
   const handleAuthorizationCheck = React.useCallback(async () => {
     if (!onRunAuthorizationCheck || !member) return;
@@ -216,21 +190,6 @@ export function MemberDetailDrawer({
                 </div>
               </div>
 
-              <div className="mt-4 space-y-2">
-                <p className="text-xs font-medium uppercase tracking-wide text-tertiary">
-                  {t('effective_access.quota_label')}
-                </p>
-                <div className="flex flex-wrap gap-2" data-testid="member-detail__effective-quotas">
-                  {effectiveQuotaEntries.map(({ key, value }) => (
-                    <Badge key={key} variant="outline">
-                      {key}: {value}
-                    </Badge>
-                  ))}
-                  {effectiveQuotaEntries.length === 0 ? (
-                    <span className="text-sm text-tertiary">{t('effective_access.no_quota_overrides')}</span>
-                  ) : null}
-                </div>
-              </div>
             </div>
 
             <div className="rounded-lg border border-subtle bg-surface p-4" data-testid="member-detail__authorization-check">

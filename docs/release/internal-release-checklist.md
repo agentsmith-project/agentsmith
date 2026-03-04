@@ -125,8 +125,8 @@ RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 - `governance-policy-access-effect-smoke` (endpoint policy allow-list access deny -> allow + audit/usage evidence)
 - `governance-policy-group-access-effect-smoke` (endpoint policy group-subject allow-list effect + audit/usage evidence)
 - `governance-policy-effect-smoke` (endpoint policy rate-limit effect + audit/usage evidence)
-- `governance-policy-quota-effect-smoke` (endpoint policy quota effect + audit/usage evidence)
-- `governance-member-quota-effect-smoke` (member endpoint quota effect + audit/usage evidence)
+- `governance-policy-spending-effect-smoke` (endpoint policy spending-limit effect + audit/usage evidence)
+- `governance-policy-requests-rate-effect-smoke` (endpoint policy requests/day rate-limit effect + audit/usage evidence)
 - `governance-member-permission-effect-smoke` (member permission route authz deny -> allow effect)
 - `governance-member-lifecycle-effect-smoke` (member lifecycle active -> suspended -> removed -> restore effect)
 

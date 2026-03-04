@@ -1181,6 +1181,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/limits/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        /**
+         * Get quota summary for all resources
+         * @description Returns quota usage summary across all resource types (endpoints, source libraries, agents).
+         *     Includes current usage, limits, percentage used, and reset times.
+         */
+        get: operations["getLimitsSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm-gateway/{proxyPath}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_llmGatewayProxy"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions": {
         parameters: {
             query?: never;
@@ -1395,30 +1435,6 @@ export interface paths {
          *     Returns quota status including remaining amount, limit, and reset time.
          */
         post: operations["checkQuota"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        /**
-         * Get quota summary for all resources
-         * @description Returns quota usage summary across all resource types (endpoints, source libraries, agents).
-         *     Includes current usage, limits, percentage used, and reset times.
-         */
-        get: operations["getQuotaSummary"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6496,6 +6512,61 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    getLimitsSummary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Quota summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuotaOverview"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    post_llmGatewayProxy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
     createUnifiedChatCompletion: {
         parameters: {
             query?: never;
@@ -7150,31 +7221,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    getQuotaSummary: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Quota summary */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["QuotaOverview"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
     get_projectResourcePolicy: {
         parameters: {
             query?: never;
@@ -7222,10 +7268,10 @@ export interface operations {
                     /** @enum {string} */
                     access_mode: "allow_all_members" | "allow_list";
                     allowed_subjects: ({
-                        quota_limits?: {
+                        rate_limits?: {
                             rules?: ({
                                 /** @enum {string} */
-                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_day" | "endpoint.daily_token_limit" | "source_library.requests_per_minute" | "source_library.max_total_files" | "source_library.max_file_size_bytes" | "agent.requests_per_minute";
+                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute" | "agent.requests_per_minute";
                                 value: number;
                             } & {
                                 [key: string]: unknown;
@@ -7233,10 +7279,10 @@ export interface operations {
                         } & {
                             [key: string]: unknown;
                         };
-                        rate_limits?: {
+                        spending_limits?: {
                             rules?: ({
                                 /** @enum {string} */
-                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_day" | "endpoint.daily_token_limit" | "source_library.requests_per_minute" | "source_library.max_total_files" | "source_library.max_file_size_bytes" | "agent.requests_per_minute";
+                                key: "endpoint.spending_usd_per_minute" | "endpoint.spending_usd_per_5_hours" | "endpoint.spending_usd_per_day" | "source_library.max_total_files" | "source_library.max_file_size_bytes";
                                 value: number;
                             } & {
                                 [key: string]: unknown;
@@ -7250,10 +7296,10 @@ export interface operations {
                     } & {
                         [key: string]: unknown;
                     })[];
-                    quota_limits?: {
+                    rate_limits?: {
                         rules?: ({
                             /** @enum {string} */
-                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_day" | "endpoint.daily_token_limit" | "source_library.requests_per_minute" | "source_library.max_total_files" | "source_library.max_file_size_bytes" | "agent.requests_per_minute";
+                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute" | "agent.requests_per_minute";
                             value: number;
                         } & {
                             [key: string]: unknown;
@@ -7261,10 +7307,10 @@ export interface operations {
                     } & {
                         [key: string]: unknown;
                     };
-                    rate_limits?: {
+                    spending_limits?: {
                         rules?: ({
                             /** @enum {string} */
-                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_day" | "endpoint.daily_token_limit" | "source_library.requests_per_minute" | "source_library.max_total_files" | "source_library.max_file_size_bytes" | "agent.requests_per_minute";
+                            key: "endpoint.spending_usd_per_minute" | "endpoint.spending_usd_per_5_hours" | "endpoint.spending_usd_per_day" | "source_library.max_total_files" | "source_library.max_file_size_bytes";
                             value: number;
                         } & {
                             [key: string]: unknown;

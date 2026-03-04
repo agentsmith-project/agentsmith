@@ -53,4 +53,22 @@ describe('UseGuidePage route', () => {
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     mockHasPermission.mockReturnValue(true);
   });
+
+  it('shows validation_error for invalid parameters', async () => {
+    render(
+      <UseGuidePage
+        params={Promise.resolve({
+          workspace: '../unsafe-workspace',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('validation_error')).toBeInTheDocument();
+  });
 });

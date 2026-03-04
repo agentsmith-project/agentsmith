@@ -47,7 +47,7 @@ export type FailureType =
   | 'assertion'   // Test assertion failures
   | 'timeout'     // Timeout issues (distinct from network)
   | 'authorization' // Authorization/governance issues (Epic A)
-  | 'quota'       // Quota exceeded (Epic A)
+  | 'spending_limit' // Spending limit exceeded (Epic A)
   | 'rate_limit'  // Rate limited (Epic A)
   | 'permission'  // Permission/access issues
   | 'unknown';    // Unclassified
@@ -254,23 +254,26 @@ const FAILURE_PATTERNS: FailurePattern[] = [
       '5. Check if you are in allowed groups',
     ],
   },
-  // QUOTA - Quota exceeded (Epic A)
+  // SPENDING_LIMIT - Spending limit exceeded (Epic A)
   {
-    category: 'quota',
+    category: 'spending_limit',
     patterns: [
+      /resource_policy_spending_limited/i,
+      /spending[_\\s-]*limit(ed)?/i,
+      /spending[_\\s-]*capped/i,
       /quota\s+exceeded/i,
       /quota\s+limit\s+reached/i,
       /daily\s+quota\s+exhausted/i,
       /usage\s+limit\s+exceeded/i,
       /resource\s+quota\s+exceeded/i,
     ],
-    recommendation: 'Quota issue: Check usage stats and request quota increase.',
+    recommendation: 'Spending limit issue: Check usage stats and spending limits.',
     documentationLink: '/docs/troubleshooting-guide-v1.md#authorization-governance-issues',
     priority: 72,
     steps: [
       '1. Check current usage: Usage page in UI',
-      '2. Verify quota limits for your project',
-      '3. Check if quota can be increased in Resource Policy',
+      '2. Verify spending limits for your project',
+      '3. Check if spending limits can be adjusted in Resource Policy',
       '4. Review usage breakdown by resource type',
     ],
   },

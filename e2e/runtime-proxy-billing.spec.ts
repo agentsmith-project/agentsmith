@@ -110,9 +110,9 @@ test.describe('runtime proxy billing (mock lane)', () => {
       const runtimeObservability = await get(
         `/usage/runtime-observability?start_time=${encodeURIComponent(start.toISOString())}&end_time=${encodeURIComponent(end.toISOString())}`,
       );
-      const quotaSummary = await get('/quota/summary');
+      const limitsSummary = await get('/limits/summary');
 
-      return { direct, alias, combo, usageTimeseries, runtimeObservability, quotaSummary };
+      return { direct, alias, combo, usageTimeseries, runtimeObservability, limitsSummary };
     }, { wsId: WS_ID, projectId: PROJECT_ID });
 
     expect(result.direct.status).toBe(200);
@@ -150,7 +150,7 @@ test.describe('runtime proxy billing (mock lane)', () => {
     expect(runtimeObs.error_class_counts?.provider_retryable ?? 0).toBeGreaterThanOrEqual(0);
     expect(runtimeObs.error_class_counts?.provider_non_retryable ?? 0).toBeGreaterThanOrEqual(0);
     expect(runtimeObs.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
-    expect(result.quotaSummary.status).toBe(200);
+    expect(result.limitsSummary.status).toBe(200);
   });
 
   test('supports runtime release workflow from planning to usage detail', async ({ authedPage }) => {

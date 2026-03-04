@@ -8,9 +8,6 @@ import type { ApiClient } from '../client';
 import { validatePolicyRulesForResource } from '@/lib/constants/resource-policy';
 import type {
   MemberPermissions,
-  QuotaOverride,
-  QuotaOverrideHistoryItem,
-  QuotaTemplate,
   ResourcePolicyUpdateRequest,
   ResourcePolicy,
   PermissionTemplate,
@@ -24,7 +21,6 @@ export interface Member {
   avatar?: string;
   role: 'owner' | 'admin' | 'developer' | 'user'; // project group alias id (template key)
   permissions: string[]; // 平台层权限点
-  quota_overrides?: QuotaOverride;
   status: 'active' | 'removed';
   joined_at: string;
 }
@@ -199,54 +195,6 @@ export class MemberAPI {
   }
 
   /**
-   * Get member quota overrides. Returns { overrides } from backend.
-   */
-  async getQuotaOverrides(
-    workspaceId: string,
-    projectId: string,
-    memberId: string
-  ): Promise<QuotaOverride> {
-    const res = await this.client.get<{ overrides: QuotaOverride }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides`
-    );
-    return res.overrides ?? {};
-  }
-
-  /**
-   * Get quota overrides history (paginated)
-   */
-  async getQuotaOverridesHistory(
-    workspaceId: string,
-    projectId: string,
-    memberId: string,
-    params?: { page?: number; page_size?: number }
-  ): Promise<{ items: QuotaOverrideHistoryItem[]; total: number; page: number; page_size: number }> {
-    const searchParams = new URLSearchParams();
-    if (params?.page) searchParams.set('page', params.page.toString());
-    if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
-    const query = searchParams.toString();
-    return this.client.get<{ items: QuotaOverrideHistoryItem[]; total: number; page: number; page_size: number }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides/history${query ? `?${query}` : ''}`
-    );
-  }
-
-  /**
-   * Update member quota overrides
-   */
-  async updateQuotaOverrides(
-    workspaceId: string,
-    projectId: string,
-    memberId: string,
-    data: QuotaOverride
-  ): Promise<QuotaOverride> {
-    const res = await this.client.patch<{ overrides: QuotaOverride }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides`,
-      { overrides: data }
-    );
-    return res.overrides ?? data;
-  }
-
-  /**
    * Get resource policy for a resource
    */
   async getResourcePolicy(
@@ -273,7 +221,7 @@ export class MemberAPI {
     const rootValidation = validatePolicyRulesForResource(
       resourceType,
       data.rate_limits,
-      data.quota_limits
+      data.spending_limits
     );
     if (!rootValidation.valid) {
       throw new Error(`Invalid policy rules for ${resourceType}: ${rootValidation.invalidKeys.join(', ')}`);
@@ -283,7 +231,7 @@ export class MemberAPI {
       const subjectValidation = validatePolicyRulesForResource(
         resourceType,
         subject.rate_limits,
-        subject.quota_limits
+        subject.spending_limits
       );
       if (!subjectValidation.valid) {
         throw new Error(
@@ -381,89 +329,6 @@ export class MemberAPI {
    */
   async declineInvite(token: string): Promise<JoinInviteActionResponse> {
     return this.client.post<JoinInviteActionResponse>('/join/decline', { token });
-  }
-
-  /**
-   * List quota templates
-   */
-  async listQuotaTemplates(
-    workspaceId: string,
-    projectId: string
-  ): Promise<QuotaTemplate[]> {
-    const response = await this.client.get<QuotaTemplate[]>(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates`
-    );
-    return Array.isArray(response) ? response : [];
-  }
-
-  /**
-   * Get a quota template by ID
-   */
-  async getQuotaTemplate(
-    workspaceId: string,
-    projectId: string,
-    templateId: string
-  ): Promise<QuotaTemplate> {
-    return this.client.get<QuotaTemplate>(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}`
-    );
-  }
-
-  /**
-   * Create a quota template
-   */
-  async createQuotaTemplate(
-    workspaceId: string,
-    projectId: string,
-    data: { name: string; description?: string; overrides_json: QuotaOverride }
-  ): Promise<QuotaTemplate> {
-    return this.client.post<QuotaTemplate>(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates`,
-      data
-    );
-  }
-
-  /**
-   * Update a quota template
-   */
-  async updateQuotaTemplate(
-    workspaceId: string,
-    projectId: string,
-    templateId: string,
-    data: { name?: string; description?: string; overrides_json?: QuotaOverride }
-  ): Promise<QuotaTemplate> {
-    return this.client.patch<QuotaTemplate>(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}`,
-      data
-    );
-  }
-
-  /**
-   * Delete a quota template
-   */
-  async deleteQuotaTemplate(
-    workspaceId: string,
-    projectId: string,
-    templateId: string
-  ): Promise<void> {
-    await this.client.delete(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}`
-    );
-  }
-
-  /**
-   * Apply a quota template to members
-   */
-  async applyQuotaTemplate(
-    workspaceId: string,
-    projectId: string,
-    templateId: string,
-    memberIds: string[]
-  ): Promise<{ applied_count: number }> {
-    return this.client.post<{ applied_count: number }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota-templates/${templateId}/apply`,
-      { member_ids: memberIds }
-    );
   }
 
   /**

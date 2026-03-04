@@ -31,7 +31,6 @@ import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { useJoinRequests } from '@/lib/hooks/use-join-requests';
 import { ChangeHistoryDrawer } from './ChangeHistoryDrawer';
 import { InviteMemberDialog } from './InviteMemberDialog';
-import { QuotaOverrideHistoryDrawer } from './QuotaOverrideHistoryDrawer';
 import { PeopleTab } from './PeopleTab';
 import { GroupsTab } from './GroupsTab';
 import { JoinRequestsTab } from './JoinRequestsTab';
@@ -160,17 +159,6 @@ function MemberDetailDrawersAndDialogs({ workspaceId, projectId }: { workspaceId
             onOpenChange={context.setHistoryDrawerOpen}
             memberName={context.selectedMember.name || context.selectedMember.email}
             history={context.changeHistory ?? []}
-          />
-          <QuotaOverrideHistoryDrawer
-            open={context.quotaHistoryDrawerOpen}
-            onOpenChange={context.setQuotaHistoryDrawerOpen}
-            memberName={context.selectedMember.name || context.selectedMember.email}
-            items={context.quotaHistoryData?.items ?? []}
-            total={context.quotaHistoryData?.total ?? 0}
-            page={context.quotaHistoryPage}
-            pageSize={20}
-            isLoading={context.quotaHistoryLoading}
-            onPageChange={context.setQuotaHistoryPage}
           />
         </>
       )}

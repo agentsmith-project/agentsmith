@@ -38,7 +38,7 @@
 1. `GET /usage`：支持 provider/model/cost 维度过滤与返回。
 2. `GET /usage/kpi`：支持成本 KPI。
 3. `GET /usage/timeseries`：支持 cost 维度。
-4. `GET /quota/summary`：与成本视图联动字段一致。
+4. `GET /limits/summary`：与成本视图联动字段一致。
 
 ---
 

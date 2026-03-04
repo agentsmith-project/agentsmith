@@ -91,8 +91,8 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/operations-summary",
     "method": "get"
   },
-  "quotaSummary": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary",
+  "limitsSummary": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/limits/summary",
     "method": "get"
   },
   "projectMembers": {
@@ -118,18 +118,6 @@
   "projectPermissionTemplateItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/permission-templates/{templateId}",
     "method": "patch"
-  },
-  "projectQuotaTemplates": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates",
-    "method": "get"
-  },
-  "projectQuotaTemplateItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}",
-    "method": "patch"
-  },
-  "projectQuotaTemplateApply": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply",
-    "method": "post"
   },
   "projectGroups": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/groups",
@@ -202,10 +190,6 @@
   "sourceLibraryAIReadyJobCancel": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel",
     "method": "post"
-  },
-  "sourcesQuota": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota",
-    "method": "get"
   },
   "sourceAIReadyStart": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start",
@@ -443,6 +427,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}/proxy/{proxyPath}",
     "method": "post"
   },
+  "llmGatewayProxy": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm-gateway/{proxyPath}",
+    "method": "post"
+  },
   "endpointImportOpenAICompatible": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/import-openai-compatible",
     "method": "post"
@@ -501,14 +489,6 @@
   },
   "projectMemberPermissions": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/permissions",
-    "method": "get"
-  },
-  "projectMemberQuotaOverrides": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides",
-    "method": "get"
-  },
-  "projectMemberQuotaOverridesHistory": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides/history",
     "method": "get"
   },
   "projectMemberChangeHistory": {

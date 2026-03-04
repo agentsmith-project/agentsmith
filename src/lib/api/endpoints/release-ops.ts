@@ -61,7 +61,7 @@ export interface ReleaseGateRunDetail extends ReleaseGateRunListItem {
   failed_step_names: string[];
   failed_check_ids?: string[];
   requested_check_ids?: string[];
-  failure_categories: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
+  failure_categories: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'spending_limit' | 'rate_limit' | 'permission' | 'unknown'>;
 }
 
 export interface ReleaseGateRunnerOperation {
@@ -104,7 +104,7 @@ export interface ReleaseEscalationEvent {
   governance_blockers?: GovernanceEvidenceIssue[];
   governance_warnings?: GovernanceEvidenceIssue[];
   failed_step_name?: string;
-  failure_categories?: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'quota' | 'rate_limit' | 'permission' | 'unknown'>;
+  failure_categories?: Array<'token' | 'network' | 'backend' | 'assertion' | 'timeout' | 'authorization' | 'spending_limit' | 'rate_limit' | 'permission' | 'unknown'>;
   acknowledged_at?: string;
   acknowledged_by_user_id?: string;
   acknowledged_by_name?: string;

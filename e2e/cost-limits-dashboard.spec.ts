@@ -1,6 +1,6 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 
-test.describe('Cost & Quota Dashboard', () => {
+test.describe('Cost & Limits Dashboard', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'usage');
     await authedPage.getByTestId('usage__panel-tab--dashboard').click();

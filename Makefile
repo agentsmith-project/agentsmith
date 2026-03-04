@@ -9,7 +9,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
-	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-quota-effect-smoke governance-policy-requests-quota-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-quota-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
+	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-release-smoke workspace-governance-release-smoke organization-governance-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
@@ -118,7 +118,7 @@ help:
 	@echo "  make e2e-int-runtime-proxy-billing-auto # auto start deps+api+web and run runtime proxy/billing integration spec"
 	@echo "  make e2e-int-core-local-api # run MVP real-backend core smoke against already-running API/Web"
 	@echo "  make e2e-int-core-auto      # auto start deps+api+web and run MVP real-backend core smoke"
-	@echo "  make release-core-smoke     # MVP release baseline: core real-lane smoke + endpoint quota policy smoke + release report"
+	@echo "  make release-core-smoke     # MVP release baseline: core real-lane smoke + endpoint rate/spending policy smoke + release report"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
@@ -145,10 +145,9 @@ help:
 	@echo "  make governance-policy-access-effect-smoke # real-backend endpoint policy allow-list effect smoke (deny->allow + audit/usage evidence)"
 	@echo "  make governance-policy-group-access-effect-smoke # real-backend endpoint policy group allow-list effect smoke (deny->group-allow)"
 	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
-	@echo "  make governance-policy-quota-effect-smoke # real-backend endpoint policy quota effect smoke (quota block -> audit/usage evidence)"
-	@echo "  make governance-policy-requests-quota-effect-smoke # real-backend endpoint policy requests/day quota smoke (quota block -> audit/usage evidence)"
+	@echo "  make governance-policy-spending-effect-smoke # real-backend endpoint policy spending-limit effect smoke (block -> audit/usage evidence)"
+	@echo "  make governance-policy-requests-rate-effect-smoke # real-backend endpoint policy requests/day rate effect smoke (block -> audit/usage evidence)"
 	@echo "  make governance-agent-policy-rate-effect-smoke # real-backend agent policy rate effect smoke (notebook preflight -> audit/usage evidence)"
-	@echo "  make governance-member-quota-effect-smoke # real-backend member quota effect smoke (quota block -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
@@ -199,7 +198,7 @@ quick-help:
 	@echo "    Run MVP core real-backend smoke against existing API/Web."
 	@echo ""
 	@echo "  make release-core-smoke"
-	@echo "    Run MVP release baseline (core real-lane + endpoint quota policy + archived report)."
+	@echo "    Run MVP release baseline (core real-lane + endpoint rate/spending policy + archived report)."
 	@echo ""
 	@echo "  make verify-contracts"
 	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
@@ -640,7 +639,7 @@ release-core-smoke:
 	@set -e; \
 	$(MAKE) e2e-int-core-local-api; \
 	BASE_URL=$${BASE_URL:-http://localhost:3001} $(MAKE) notebook-agent-refresh-token; \
-	$(MAKE) governance-policy-requests-quota-effect-smoke; \
+	$(MAKE) governance-policy-requests-rate-effect-smoke; \
 	$(MAKE) release-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 
 agent-test-runner:
@@ -800,21 +799,17 @@ governance-policy-update-audit-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-update-audit-smoke.sh
 
-governance-policy-quota-effect-smoke:
+governance-policy-spending-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-policy-quota-effect-smoke.sh
+	./scripts/governance-policy-spending-effect-smoke.sh
 
-governance-policy-requests-quota-effect-smoke:
+governance-policy-requests-rate-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-policy-requests-quota-effect-smoke.sh
+	./scripts/governance-policy-requests-rate-effect-smoke.sh
 
 governance-agent-policy-rate-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-agent-policy-rate-effect-smoke.sh
-
-governance-member-quota-effect-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-member-quota-effect-smoke.sh
 
 governance-member-permission-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -848,10 +843,9 @@ governance-release-smoke:
 	run_with_token_retry governance-policy-group-access-effect-smoke; \
 	run_with_token_retry governance-policy-update-audit-smoke; \
 	run_with_token_retry governance-policy-effect-smoke; \
-	run_with_token_retry governance-policy-quota-effect-smoke; \
-	run_with_token_retry governance-policy-requests-quota-effect-smoke; \
+	run_with_token_retry governance-policy-spending-effect-smoke; \
+	run_with_token_retry governance-policy-requests-rate-effect-smoke; \
 	run_with_token_retry governance-agent-policy-rate-effect-smoke; \
-	run_with_token_retry governance-member-quota-effect-smoke; \
 	run_with_token_retry governance-member-permission-effect-smoke; \
 	run_with_token_retry governance-member-lifecycle-effect-smoke; \
 	run_with_token_retry governance-sse-ticket-effect-smoke; \

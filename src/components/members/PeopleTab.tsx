@@ -185,7 +185,6 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             member={context.selectedMember}
             permissions={context.permissions}
             projectGovernance={context.project?.governance_json as Record<string, unknown> | undefined}
-            quotaOverrides={context.quotaOverrides}
             _workspaceId={workspaceId}
             _projectId={projectId}
             effectiveAccessSnapshot={context.effectiveAccessSnapshot}
@@ -215,7 +214,6 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             member={context.selectedMember}
             permissions={context.permissions}
             projectGovernance={context.project?.governance_json as Record<string, unknown> | undefined}
-            quotaOverrides={context.quotaOverrides}
             _workspaceId={workspaceId}
             _projectId={projectId}
             effectiveAccessSnapshot={context.effectiveAccessSnapshot}

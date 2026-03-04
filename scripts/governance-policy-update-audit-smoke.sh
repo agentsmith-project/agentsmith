@@ -90,7 +90,7 @@ main() {
         "access_mode":"allow_list",
         "allowed_subjects":[{"subject_type":"group","subject_id":"grp_policy_audit_smoke"}],
         "rate_limits":{"rules":[{"key":"endpoint.requests_per_minute","value":1000}]},
-        "quota_limits":{"rules":[]}
+        "spending_limits":{"rules":[]}
       }' || true
   )"
   if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then

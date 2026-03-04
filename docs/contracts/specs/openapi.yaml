@@ -1794,6 +1794,30 @@ paths:
             schema:
               type: object
               additionalProperties: true
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/llm-gateway/{proxyPath}:
+    post:
+      tags:
+        - Endpoints
+      operationId: post_llmGatewayProxy
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:import-openai-compatible:
     post:
       tags:
@@ -3852,18 +3876,16 @@ paths:
                                   type: string
                                   enum:
                                     - endpoint.requests_per_minute
+                                    - endpoint.requests_per_5_hours
                                     - endpoint.requests_per_day
-                                    - endpoint.daily_token_limit
                                     - source_library.requests_per_minute
-                                    - source_library.max_total_files
-                                    - source_library.max_file_size_bytes
                                     - agent.requests_per_minute
                                 value:
                                   type: number
                                   exclusiveMinimum: 0
                               additionalProperties: true
                         additionalProperties: true
-                      quota_limits:
+                      spending_limits:
                         type: object
                         properties:
                           rules:
@@ -3877,13 +3899,11 @@ paths:
                                 key:
                                   type: string
                                   enum:
-                                    - endpoint.requests_per_minute
-                                    - endpoint.requests_per_day
-                                    - endpoint.daily_token_limit
-                                    - source_library.requests_per_minute
+                                    - endpoint.spending_usd_per_minute
+                                    - endpoint.spending_usd_per_5_hours
+                                    - endpoint.spending_usd_per_day
                                     - source_library.max_total_files
                                     - source_library.max_file_size_bytes
-                                    - agent.requests_per_minute
                                 value:
                                   type: number
                                   exclusiveMinimum: 0
@@ -3905,18 +3925,16 @@ paths:
                             type: string
                             enum:
                               - endpoint.requests_per_minute
+                              - endpoint.requests_per_5_hours
                               - endpoint.requests_per_day
-                              - endpoint.daily_token_limit
                               - source_library.requests_per_minute
-                              - source_library.max_total_files
-                              - source_library.max_file_size_bytes
                               - agent.requests_per_minute
                           value:
                             type: number
                             exclusiveMinimum: 0
                         additionalProperties: true
                   additionalProperties: true
-                quota_limits:
+                spending_limits:
                   type: object
                   properties:
                     rules:
@@ -3930,13 +3948,11 @@ paths:
                           key:
                             type: string
                             enum:
-                              - endpoint.requests_per_minute
-                              - endpoint.requests_per_day
-                              - endpoint.daily_token_limit
-                              - source_library.requests_per_minute
+                              - endpoint.spending_usd_per_minute
+                              - endpoint.spending_usd_per_5_hours
+                              - endpoint.spending_usd_per_day
                               - source_library.max_total_files
                               - source_library.max_file_size_bytes
-                              - agent.requests_per_minute
                           value:
                             type: number
                             exclusiveMinimum: 0
@@ -4116,14 +4132,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/limits/summary:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
     get:
       tags:
         - Governance
-      operationId: getQuotaSummary
+      operationId: getLimitsSummary
       summary: Get quota summary for all resources
       description: |
         Returns quota usage summary across all resource types (endpoints, source libraries, agents).

@@ -38,11 +38,6 @@ import {
   getProjectPermissionTemplatesState,
   setProjectPermissionTemplatesState,
 } from './project-permission-templates-store.js';
-import {
-  getProjectQuotaTemplatesState,
-  setProjectQuotaTemplatesState,
-} from './project-quota-templates-store.js';
-import { getMemberQuotaState } from './project-member-quota-store.js';
 import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
 import {
   getProjectMembershipsState,
@@ -92,7 +87,6 @@ const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 
 };
 const RESOURCE_POLICY_ALLOWED_QUOTA_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
   endpoint: [
-    'endpoint.daily_token_limit',
     'endpoint.spending_usd_per_minute',
     'endpoint.spending_usd_per_5_hours',
     'endpoint.spending_usd_per_day',
@@ -118,7 +112,7 @@ const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, Arr
   timestamp: string;
   actor_id: string;
   actor_email: string;
-  change_type: 'permissions' | 'quota' | 'resource_policy' | 'role' | 'membership';
+  change_type: 'permissions' | 'resource_policy' | 'role' | 'membership';
   changes: {
     added?: string[];
     removed?: string[];
@@ -136,7 +130,7 @@ function projectScopedKey(workspaceId: string, projectId: string) {
 
 function validatePolicyRuleKeys(args: {
   resourceType: 'endpoint' | 'source_library' | 'agent';
-  kind: 'rate_limits' | 'quota_limits';
+  kind: 'rate_limits' | 'spending_limits';
   payload: unknown;
 }): { ok: true } | { ok: false; message: string } {
   if (args.payload === undefined) return { ok: true };
@@ -175,7 +169,7 @@ function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
     timestamp: string;
     actor_id: string;
     actor_email: string;
-    change_type: 'permissions' | 'quota' | 'resource_policy' | 'role' | 'membership';
+    change_type: 'permissions' | 'resource_policy' | 'role' | 'membership';
     changes: { added?: string[]; removed?: string[]; updated?: Record<string, { from: unknown; to: unknown }> };
   }>>();
   PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.set(key, map);
@@ -195,7 +189,6 @@ function clearMemberGovernanceState(workspaceId: string, projectId: string, user
     setProjectGroupsState(workspaceId, projectId, groups);
   }
   getProjectMemberPermissionsState(workspaceId, projectId).delete(userId);
-  getMemberQuotaState(workspaceId, projectId).delete(userId);
 }
 
 function isDefaultPersonalLibraryForUser(
@@ -997,165 +990,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return true;
   }
 
-  if (route.kind === 'projectQuotaTemplates' && method === 'GET') {
-    if (!route.workspaceId || !route.projectId) {
-      json(res, 200, []);
-      return true;
-    }
-    json(res, 200, getProjectQuotaTemplatesState(route.workspaceId, route.projectId));
-    return true;
-  }
-
-  if (route.kind === 'projectQuotaTemplates' && method === 'POST' && route.workspaceId && route.projectId) {
-    const body = await readBody(req) as {
-      name?: string;
-      description?: string;
-      overrides_json?: Record<string, unknown>;
-    };
-    if (
-      !body
-      || typeof body.name !== 'string'
-      || body.name.trim().length === 0
-      || !body.overrides_json
-      || typeof body.overrides_json !== 'object'
-      || Array.isArray(body.overrides_json)
-    ) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'name and overrides_json are required' });
-      return true;
-    }
-    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
-    const now = new Date().toISOString();
-    const created = {
-      id: `qt_${Math.random().toString(36).slice(2, 10)}`,
-      project_id: route.projectId,
-      name: body.name.trim(),
-      description: typeof body.description === 'string' ? body.description : undefined,
-      overrides_json: body.overrides_json,
-      built_in: false,
-      created_at: now,
-      updated_at: now,
-    };
-    items.push(created);
-    setProjectQuotaTemplatesState(route.workspaceId, route.projectId, items);
-    json(res, 200, created);
-    return true;
-  }
-
-  if (
-    route.kind === 'projectQuotaTemplateItem'
-    && method === 'GET'
-    && route.workspaceId
-    && route.projectId
-    && route.templateId
-  ) {
-    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
-    const item = items.find((it) => it.id === route.templateId);
-    if (!item) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
-      return true;
-    }
-    json(res, 200, item);
-    return true;
-  }
-
-  if (
-    route.kind === 'projectQuotaTemplateItem'
-    && method === 'PATCH'
-    && route.workspaceId
-    && route.projectId
-    && route.templateId
-  ) {
-    const body = await readBody(req) as {
-      name?: string;
-      description?: string;
-      overrides_json?: Record<string, unknown>;
-    };
-    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
-    const item = items.find((it) => it.id === route.templateId);
-    if (!item) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
-      return true;
-    }
-    if (item.built_in) {
-      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be modified' });
-      return true;
-    }
-    if (typeof body.name === 'string') item.name = body.name;
-    if (typeof body.description === 'string' || body.description === undefined) item.description = body.description;
-    if (body.overrides_json && typeof body.overrides_json === 'object' && !Array.isArray(body.overrides_json)) {
-      item.overrides_json = body.overrides_json;
-    }
-    item.updated_at = new Date().toISOString();
-    json(res, 200, item);
-    return true;
-  }
-
-  if (
-    route.kind === 'projectQuotaTemplateItem'
-    && method === 'DELETE'
-    && route.workspaceId
-    && route.projectId
-    && route.templateId
-  ) {
-    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
-    const target = items.find((it) => it.id === route.templateId);
-    if (!target) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
-      return true;
-    }
-    if (target.built_in) {
-      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be deleted' });
-      return true;
-    }
-    setProjectQuotaTemplatesState(
-      route.workspaceId,
-      route.projectId,
-      items.filter((it) => it.id !== route.templateId),
-    );
-    res.statusCode = 204;
-    res.end();
-    return true;
-  }
-
-  if (
-    route.kind === 'projectQuotaTemplateApply'
-    && method === 'POST'
-    && route.workspaceId
-    && route.projectId
-    && route.templateId
-  ) {
-    const body = await readBody(req) as { member_ids?: string[] };
-    const items = getProjectQuotaTemplatesState(route.workspaceId, route.projectId);
-    const template = items.find((it) => it.id === route.templateId);
-    if (!template) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'Quota template not found' });
-      return true;
-    }
-    const memberIds = Array.isArray(body.member_ids)
-      ? body.member_ids.filter((v): v is string => typeof v === 'string')
-      : [];
-    const quotaState = getMemberQuotaState(route.workspaceId, route.projectId);
-    const now = new Date().toISOString();
-    for (const memberId of memberIds) {
-      const prev = quotaState.get(memberId) ?? { overrides: {}, history: [] };
-      const nextOverrides = template.overrides_json;
-      quotaState.set(memberId, {
-        overrides: nextOverrides,
-        history: [
-          {
-            id: `qoh_${Math.random().toString(36).slice(2, 10)}`,
-            created_at: now,
-            created_by_user_id: user.id,
-            overrides_json: nextOverrides,
-          },
-          ...prev.history,
-        ],
-      });
-    }
-    json(res, 200, { applied_count: memberIds.length });
-    return true;
-  }
-
   if (route.kind === 'projectGroups' && method === 'GET' && route.workspaceId && route.projectId) {
     json(res, 200, { items: getProjectGroupsState(route.workspaceId, route.projectId) });
     return true;
@@ -1468,70 +1302,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return true;
   }
 
-  if (route.kind === 'projectMemberQuotaOverrides' && method === 'GET' && route.workspaceId && route.projectId && route.userId) {
-    const state = getMemberQuotaState(route.workspaceId, route.projectId);
-    const current = state.get(route.userId);
-    json(res, 200, { overrides: current?.overrides ?? {} });
-    return true;
-  }
-
-  if (route.kind === 'projectMemberQuotaOverrides' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
-    const body = await readBody(req) as { overrides?: Record<string, unknown> };
-    if (!body || !body.overrides || typeof body.overrides !== 'object' || Array.isArray(body.overrides)) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'overrides is required' });
-      return true;
-    }
-    const state = getMemberQuotaState(route.workspaceId, route.projectId);
-    const prev = state.get(route.userId) ?? { overrides: {}, history: [] as Array<{ id: string; created_at: string; created_by_user_id: string; overrides_json: Record<string, unknown> }> };
-    const nextOverrides = body.overrides;
-    const now = new Date().toISOString();
-    const historyEntry = {
-      id: `qoh_${Math.random().toString(36).slice(2, 10)}`,
-      created_at: now,
-      created_by_user_id: user.id,
-      overrides_json: nextOverrides,
-    };
-    const history = [historyEntry, ...prev.history];
-    state.set(route.userId, { overrides: nextOverrides, history });
-
-    const historyState = getMemberChangeHistoryState(route.workspaceId, route.projectId);
-    const items = historyState.get(route.userId) ?? [];
-    items.unshift({
-      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
-      timestamp: now,
-      actor_id: user.id,
-      actor_email: user.email,
-      change_type: 'quota',
-      changes: {
-        updated: {
-          overrides: { from: prev.overrides, to: nextOverrides },
-        },
-      },
-    });
-    historyState.set(route.userId, items);
-
-    json(res, 200, { overrides: nextOverrides });
-    return true;
-  }
-
-  if (
-    route.kind === 'projectMemberQuotaOverridesHistory'
-    && method === 'GET'
-    && route.workspaceId
-    && route.projectId
-    && route.userId
-  ) {
-    const page = Math.max(1, Number.parseInt(requestUrl.searchParams.get('page') ?? '1', 10) || 1);
-    const pageSize = Math.min(200, Math.max(1, Number.parseInt(requestUrl.searchParams.get('page_size') ?? '20', 10) || 20));
-    const state = getMemberQuotaState(route.workspaceId, route.projectId);
-    const history = state.get(route.userId)?.history ?? [];
-    const total = history.length;
-    const start = (page - 1) * pageSize;
-    const items = history.slice(start, start + pageSize);
-    json(res, 200, { items, total, page, page_size: pageSize });
-    return true;
-  }
-
   if (route.kind === 'projectMemberChangeHistory' && method === 'GET' && route.workspaceId && route.projectId && route.userId) {
     const state = getMemberChangeHistoryState(route.workspaceId, route.projectId);
     json(res, 200, { items: state.get(route.userId) ?? [] });
@@ -1550,16 +1320,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'unsupported_resource_type' });
       return true;
     }
-    json(
-      res,
-      200,
-      getProjectResourcePolicyOrDefault(
-        route.workspaceId,
-        route.projectId,
-        route.resourceType,
-        route.resourceId,
-      ),
+    const policy = getProjectResourcePolicyOrDefault(
+      route.workspaceId,
+      route.projectId,
+      route.resourceType,
+      route.resourceId,
     );
+    json(res, 200, {
+      ...policy,
+      allowed_subjects: policy.allowed_subjects.map((subject) => ({
+        ...subject,
+      })),
+    });
     return true;
   }
 
@@ -1581,10 +1353,10 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         subject_type: 'group' | 'user';
         subject_id: string;
         rate_limits?: Record<string, unknown>;
-        quota_limits?: Record<string, unknown>;
+        spending_limits?: Record<string, unknown>;
       }>;
       rate_limits?: Record<string, unknown>;
-      quota_limits?: Record<string, unknown>;
+      spending_limits?: Record<string, unknown>;
     };
     if (!body || (body.access_mode !== 'allow_all_members' && body.access_mode !== 'allow_list') || !Array.isArray(body.allowed_subjects)) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
@@ -1600,13 +1372,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: rateValidation.message });
       return true;
     }
-    const quotaValidation = validatePolicyRuleKeys({
+    const spendingValidation = validatePolicyRuleKeys({
       resourceType,
-      kind: 'quota_limits',
-      payload: body.quota_limits,
+      kind: 'spending_limits',
+      payload: body.spending_limits,
     });
-    if (!quotaValidation.ok) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: quotaValidation.message });
+    if (!spendingValidation.ok) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: spendingValidation.message });
       return true;
     }
     const previousPolicy = getProjectResourcePolicyOrDefault(
@@ -1619,7 +1391,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       subject_type: 'group' | 'user';
       subject_id: string;
       rate_limits?: Record<string, unknown>;
-      quota_limits?: Record<string, unknown>;
+      spending_limits?: Record<string, unknown>;
     }> = [];
     for (const subject of body.allowed_subjects) {
       if (
@@ -1635,7 +1407,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         subject_type: 'group' | 'user';
         subject_id: string;
         rate_limits?: Record<string, unknown>;
-        quota_limits?: Record<string, unknown>;
+        spending_limits?: Record<string, unknown>;
       };
       const subjectRateValidation = validatePolicyRuleKeys({
         resourceType,
@@ -1646,16 +1418,18 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectRateValidation.message });
         return true;
       }
-      const subjectQuotaValidation = validatePolicyRuleKeys({
+      const subjectSpendingValidation = validatePolicyRuleKeys({
         resourceType,
-        kind: 'quota_limits',
-        payload: typedSubject.quota_limits,
+        kind: 'spending_limits',
+        payload: typedSubject.spending_limits,
       });
-      if (!subjectQuotaValidation.ok) {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectQuotaValidation.message });
+      if (!subjectSpendingValidation.ok) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectSpendingValidation.message });
         return true;
       }
-      validatedSubjects.push(typedSubject);
+      validatedSubjects.push({
+        ...typedSubject,
+      });
     }
     const normalizedAllowedSubjects = validatedSubjects.map((s) => ({ ...s, updated_at: new Date().toISOString() }));
     upsertProjectResourcePolicy(route.workspaceId, route.projectId, {
@@ -1664,7 +1438,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       access_mode: body.access_mode,
       allowed_subjects: normalizedAllowedSubjects,
       rate_limits: body.rate_limits,
-      quota_limits: body.quota_limits,
+      spending_limits: body.spending_limits,
     });
     await writeProjectAuditEvent(deps, {
       workspaceId: route.workspaceId,
@@ -2285,17 +2059,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       jobId: route.jobId,
     });
     json(res, 200, updated);
-    return true;
-  }
-
-  if (route.kind === 'sourcesQuota' && method === 'GET' && route.workspaceId && route.projectId) {
-    const libraryId = requestUrl.searchParams.get('library_id') ?? undefined;
-    const quota = await deps.getSourcesQuotaUseCase.execute({
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      libraryId,
-    });
-    json(res, 200, quota);
     return true;
   }
 

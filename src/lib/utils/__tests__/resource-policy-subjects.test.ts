@@ -12,16 +12,16 @@ describe('normalizeSubjectId', () => {
 describe('findDuplicateSubjects', () => {
   it('returns empty when no duplicates', () => {
     const subjects = [
-      { rowId: 'r1', subject_type: 'user' as const, subject_id: 'u1', draftRules: {}, existingRateRules: [], existingQuotaRules: [] },
-      { rowId: 'r2', subject_type: 'user' as const, subject_id: 'u2', draftRules: {}, existingRateRules: [], existingQuotaRules: [] },
+      { rowId: 'r1', subject_type: 'user' as const, subject_id: 'u1', draftRules: {}, existingRateRules: [], existingSpendingRules: [] },
+      { rowId: 'r2', subject_type: 'user' as const, subject_id: 'u2', draftRules: {}, existingRateRules: [], existingSpendingRules: [] },
     ];
     expect(findDuplicateSubjects(subjects)).toHaveLength(0);
   });
 
   it('returns duplicate when same user appears twice', () => {
     const subjects = [
-      { rowId: 'r1', subject_type: 'user' as const, subject_id: 'u1', draftRules: {}, existingRateRules: [], existingQuotaRules: [] },
-      { rowId: 'r2', subject_type: 'user' as const, subject_id: 'u1', draftRules: {}, existingRateRules: [], existingQuotaRules: [] },
+      { rowId: 'r1', subject_type: 'user' as const, subject_id: 'u1', draftRules: {}, existingRateRules: [], existingSpendingRules: [] },
+      { rowId: 'r2', subject_type: 'user' as const, subject_id: 'u1', draftRules: {}, existingRateRules: [], existingSpendingRules: [] },
     ];
     const result = findDuplicateSubjects(subjects);
     expect(result).toHaveLength(1);

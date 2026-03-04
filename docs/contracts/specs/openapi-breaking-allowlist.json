@@ -1,0 +1,11 @@
+{
+  "operations": [
+    "parameters /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary",
+    "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary"
+  ],
+  "responses": [
+    "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary -> 200",
+    "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary -> 401",
+    "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary -> 403"
+  ]
+}

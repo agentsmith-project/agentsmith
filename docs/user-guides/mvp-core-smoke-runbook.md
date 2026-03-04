@@ -10,7 +10,7 @@ Provide a single operational path to validate MVP core readiness on real backend
 - Keycloak login and workspace/project entry
 - Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
 - Chat stream error surfacing and recovery
-- Endpoint quota/rate policy effect
+- Endpoint rate/spending policy effect
 
 ## Prerequisites
 
@@ -30,7 +30,7 @@ Default test user:
 ```bash
 make notebook-agent-no-sandbox-smoke
 make e2e-int-core-local-api
-make governance-policy-requests-quota-effect-smoke
+make governance-policy-requests-rate-effect-smoke
 make release-report REPORT_ARCHIVE=1
 ```
 
@@ -43,7 +43,7 @@ make release-core-smoke
 This runs:
 
 1. `e2e-int-core-local-api`
-2. `governance-policy-requests-quota-effect-smoke`
+2. `governance-policy-requests-rate-effect-smoke`
 3. `release-report REPORT_ARCHIVE=1`
 
 ## Auto Bootstrap Path
@@ -72,6 +72,6 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 - Verify selected endpoint protocol and base URL
 - Re-run `make e2e-int-core-local-api`
 
-3. Policy/quota not taking effect
-- Re-run `make governance-policy-requests-quota-effect-smoke`
+3. Policy rate/spending limits not taking effect
+- Re-run `make governance-policy-requests-rate-effect-smoke`
 - Check audit/usage evidence for deny/rate-limit records

@@ -38,10 +38,6 @@ vi.mock('../InviteMemberDialog', () => ({
   InviteMemberDialog: () => <div data-testid="invite-member-dialog" />,
 }));
 
-vi.mock('../QuotaOverrideHistoryDrawer', () => ({
-  QuotaOverrideHistoryDrawer: () => <div data-testid="quota-override-history-drawer" />,
-}));
-
 vi.mock('../JoinRequestsTab', () => ({
   JoinRequestsTab: () => <div data-testid="join-requests-tab" />,
 }));
@@ -66,10 +62,6 @@ vi.mock('../BatchApplyPermissionDialog', () => ({
   BatchApplyPermissionDialog: () => <div data-testid="batch-apply-permission-dialog" />,
 }));
 
-vi.mock('../BatchApplyQuotaDialog', () => ({
-  BatchApplyQuotaDialog: () => <div data-testid="batch-apply-quota-dialog" />,
-}));
-
 import { MembersPage } from '../MembersPage';
 import { useMembersList } from '@/lib/hooks/use-members-list';
 import { useCanManageMemberGovernance, useHasPermission } from '@/lib/hooks/use-permissions';
@@ -90,54 +82,40 @@ describe('MembersPage', () => {
       project: null,
       members: [],
       permissionTemplates: [],
-      quotaTemplates: [],
       isLoading: false,
       selectedMember: null,
       permissions: [],
-      quotaOverrides: [],
       effectiveAccessSnapshot: null,
       changeHistory: [],
-      quotaHistoryData: null,
-      quotaHistoryLoading: false,
-      quotaHistoryPage: 1,
-      setQuotaHistoryPage: vi.fn(),
       selectedMemberIds: [],
       allSelected: false,
       someSelected: false,
       setSelectedMemberIds: vi.fn(),
       drawerOpen: false,
       historyDrawerOpen: false,
-      quotaHistoryDrawerOpen: false,
       inviteDialogOpen: false,
       batchPermDialogOpen: false,
-      batchQuotaDialogOpen: false,
       memberToRemove: null,
       isUpdatingPermissions: false,
-      isUpdatingQuota: false,
       isRemovingMember: false,
       isCheckingAuthorization: false,
       authorizationCheckResult: null,
       setSelectedMember: vi.fn(),
       setDrawerOpen: vi.fn(),
       setHistoryDrawerOpen: vi.fn(),
-      setQuotaHistoryDrawerOpen: vi.fn(),
       setInviteDialogOpen: vi.fn(),
       setBatchPermDialogOpen: vi.fn(),
-      setBatchQuotaDialogOpen: vi.fn(),
       setMemberToRemove: vi.fn(),
       handleEditPermissions: vi.fn(),
       handleCloseDrawer: vi.fn(),
       handleViewHistory: vi.fn(),
-      handleViewQuotaHistory: vi.fn(),
       handleSavePermissions: vi.fn(),
-      handleSaveQuota: vi.fn(),
       handleRemove: vi.fn(),
       handleConfirmRemove: vi.fn(),
       handleToggleSelection: vi.fn(),
       handleToggleAll: vi.fn(),
       clearSelection: vi.fn(),
       handleBatchApplyPermission: vi.fn(),
-      handleBatchApplyQuota: vi.fn(),
       handleAuthorizationCheck: vi.fn(),
     } as any);
   });

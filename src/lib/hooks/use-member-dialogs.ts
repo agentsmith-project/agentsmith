@@ -15,16 +15,10 @@ export interface UseMemberDialogsReturn {
   drawerOpen: boolean;
   /** Whether the history drawer is open */
   historyDrawerOpen: boolean;
-  /** Whether the quota history drawer is open */
-  quotaHistoryDrawerOpen: boolean;
-  /** Current quota history page */
-  quotaHistoryPage: number;
   /** Whether the invite dialog is open */
   inviteDialogOpen: boolean;
   /** Whether the batch permission dialog is open */
   batchPermDialogOpen: boolean;
-  /** Whether the batch quota dialog is open */
-  batchQuotaDialogOpen: boolean;
   /** Member to be removed */
   memberToRemove: Member | null;
   /** Set the selected member */
@@ -33,16 +27,10 @@ export interface UseMemberDialogsReturn {
   setDrawerOpen: (open: boolean) => void;
   /** Open/close history drawer */
   setHistoryDrawerOpen: (open: boolean) => void;
-  /** Open/close quota history drawer */
-  setQuotaHistoryDrawerOpen: (open: boolean) => void;
-  /** Set quota history page */
-  setQuotaHistoryPage: (page: number) => void;
   /** Open/close invite dialog */
   setInviteDialogOpen: (open: boolean) => void;
   /** Open/close batch permission dialog */
   setBatchPermDialogOpen: (open: boolean) => void;
-  /** Open/close batch quota dialog */
-  setBatchQuotaDialogOpen: (open: boolean) => void;
   /** Set member to remove */
   setMemberToRemove: (member: Member | null) => void;
   /** Open edit drawer for a member */
@@ -51,8 +39,6 @@ export interface UseMemberDialogsReturn {
   closeEditDrawer: () => void;
   /** Open history drawer for a member */
   openHistoryDrawer: (member: Member) => void;
-  /** Open quota history from edit drawer */
-  openQuotaHistory: () => void;
 }
 
 /**
@@ -80,11 +66,8 @@ export function useMemberDialogs(): UseMemberDialogsReturn {
   const [selectedMember, setSelectedMember] = useState<Member | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [historyDrawerOpen, setHistoryDrawerOpen] = useState(false);
-  const [quotaHistoryDrawerOpen, setQuotaHistoryDrawerOpen] = useState(false);
-  const [quotaHistoryPage, setQuotaHistoryPage] = useState(1);
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [batchPermDialogOpen, setBatchPermDialogOpen] = useState(false);
-  const [batchQuotaDialogOpen, setBatchQuotaDialogOpen] = useState(false);
   const [memberToRemove, setMemberToRemove] = useState<Member | null>(null);
 
   const openEditDrawer = useCallback((member: Member) => {
@@ -102,34 +85,21 @@ export function useMemberDialogs(): UseMemberDialogsReturn {
     setHistoryDrawerOpen(true);
   }, []);
 
-  const openQuotaHistory = useCallback(() => {
-    setDrawerOpen(false);
-    setQuotaHistoryPage(1);
-    setQuotaHistoryDrawerOpen(true);
-  }, []);
-
   return {
     selectedMember,
     drawerOpen,
     historyDrawerOpen,
-    quotaHistoryDrawerOpen,
-    quotaHistoryPage,
     inviteDialogOpen,
     batchPermDialogOpen,
-    batchQuotaDialogOpen,
     memberToRemove,
     setSelectedMember,
     setDrawerOpen,
     setHistoryDrawerOpen,
-    setQuotaHistoryDrawerOpen,
-    setQuotaHistoryPage,
     setInviteDialogOpen,
     setBatchPermDialogOpen,
-    setBatchQuotaDialogOpen,
     setMemberToRemove,
     openEditDrawer,
     closeEditDrawer,
     openHistoryDrawer,
-    openQuotaHistory,
   };
 }

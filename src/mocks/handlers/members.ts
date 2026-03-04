@@ -2,12 +2,7 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
-import type {
-  ChangeHistoryEntry,
-  QuotaOverride,
-  QuotaOverrideHistoryItem,
-  QuotaTemplate,
-} from '@/lib/api/types';
+import type { ChangeHistoryEntry } from '@/lib/api/types';
 
 const members = p0.members.length ? p0.members : memberFixtures.map((m, i) => ({
   ...m,
@@ -42,18 +37,15 @@ type ResourcePolicy = {
     subject_type: 'group' | 'user';
     subject_id: string;
     rate_limits?: { rules: Array<{ key: string; value: number; window?: 'day' | null }> };
-    quota_limits?: { rules: Array<{ key: string; value: number; window?: 'day' | null }> };
+    spending_limits?: { rules: Array<{ key: string; value: number; window?: 'day' | null }> };
   }>;
   rate_limits?: { rules: Array<{ key: string; value: number; window?: 'day' | null }> };
-  quota_limits?: { rules: Array<{ key: string; value: number; window?: 'day' | null }> };
+  spending_limits?: { rules: Array<{ key: string; value: number; window?: 'day' | null }> };
 };
 
 const customPermissionTemplates: PermissionTemplate[] = [];
 const projectGroups: ProjectGroup[] = [];
 const resourcePolicyStore: Record<string, ResourcePolicy> = {};
-const quotaTemplatesByProject: Record<string, QuotaTemplate[]> = {};
-const memberQuotaOverridesStore: Record<string, QuotaOverride> = {};
-const memberQuotaHistoryStore: Record<string, QuotaOverrideHistoryItem[]> = {};
 const memberChangeHistoryStore: Record<string, ChangeHistoryEntry[]> = {};
 
 const joinRequests = [...joinRequestFixtures];
@@ -95,7 +87,7 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
       rate_limits: {
         rules: [{ key: 'source_library.requests_per_minute', value: 120 }],
       },
-      quota_limits: {
+      spending_limits: {
         rules: [
           { key: 'source_library.max_total_files', value: 2000 },
           { key: 'source_library.max_file_size_bytes', value: 104857600 },
@@ -109,8 +101,8 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
     resource_id: resourceId,
     access_mode: 'allow_all_members',
     allowed_subjects: [],
-    quota_limits: {
-      rules: [{ key: 'endpoint.daily_token_limit', value: 200000, window: 'day' }],
+    spending_limits: {
+      rules: [{ key: 'endpoint.usd_spending_per_day', value: 200000, window: 'day' }],
     },
   };
 }
@@ -242,54 +234,6 @@ export const memberHandlers = [
 
     return HttpResponse.json({ ok: true });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/members/:id/quota-overrides', ({ params }) => {
-    const projectId = String(params.prj ?? '');
-    const memberId = String(params.id ?? '');
-    const key = memberProjectKey(projectId, memberId);
-    return HttpResponse.json({ overrides: memberQuotaOverridesStore[key] ?? {} });
-  }),
-  http.patch('/api/v1/workspaces/:ws/projects/:prj/members/:id/quota-overrides', async ({ params, request }) => {
-    const projectId = String(params.prj ?? '');
-    const memberId = String(params.id ?? '');
-    const key = memberProjectKey(projectId, memberId);
-    const body = (await request.json().catch(() => ({}))) as { overrides?: QuotaOverride };
-    const overrides = body.overrides ?? {};
-    memberQuotaOverridesStore[key] = overrides;
-
-    const historyEntry: QuotaOverrideHistoryItem = {
-      id: `qoh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      created_at: new Date().toISOString(),
-      created_by_user_id: 'user_001',
-      overrides_json: overrides,
-    };
-    const history = memberQuotaHistoryStore[key] ?? [];
-    memberQuotaHistoryStore[key] = [historyEntry, ...history].slice(0, 100);
-
-    appendMemberChangeHistory(projectId, memberId, {
-      actor_id: 'user_001',
-      actor_email: 'owner@example.com',
-      change_type: 'quota',
-      changes: {
-        updated: {
-          overrides_json: { from: history[0]?.overrides_json ?? {}, to: overrides },
-        },
-      },
-    });
-
-    return HttpResponse.json({ overrides });
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/members/:id/quota-overrides/history', ({ params, request }) => {
-    const projectId = String(params.prj ?? '');
-    const memberId = String(params.id ?? '');
-    const key = memberProjectKey(projectId, memberId);
-    const url = new URL(request.url);
-    const page = Math.max(1, Number(url.searchParams.get('page') ?? '1'));
-    const pageSize = Math.max(1, Number(url.searchParams.get('page_size') ?? '20'));
-    const all = memberQuotaHistoryStore[key] ?? [];
-    const start = (page - 1) * pageSize;
-    const items = all.slice(start, start + pageSize);
-    return HttpResponse.json({ items, total: all.length, page, page_size: pageSize });
-  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/members/:id/change-history', ({ params }) => {
     const projectId = String(params.prj ?? '');
     const memberId = String(params.id ?? '');
@@ -303,109 +247,6 @@ export const memberHandlers = [
     );
     if (!membership) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     return HttpResponse.json(membership);
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/quota-templates', ({ params }) => {
-    const projectId = String(params.prj ?? '');
-    return HttpResponse.json(quotaTemplatesByProject[projectId] ?? []);
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/quota-templates/:id', ({ params }) => {
-    const projectId = String(params.prj ?? '');
-    const templates = quotaTemplatesByProject[projectId] ?? [];
-    const template = templates.find((item) => item.id === params.id);
-    if (!template) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    return HttpResponse.json(template);
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/quota-templates', async ({ params, request }) => {
-    const projectId = String(params.prj ?? '');
-    const body = (await request.json().catch(() => ({}))) as {
-      name?: string;
-      description?: string;
-      overrides_json?: QuotaOverride;
-    };
-    if (!body.name || !body.overrides_json || typeof body.overrides_json !== 'object') {
-      return HttpResponse.json({ error: 'invalid_request' }, { status: 400 });
-    }
-    const nextTemplate: QuotaTemplate = {
-      id: `qtpl_${Date.now()}`,
-      name: body.name,
-      description: body.description,
-      overrides_json: body.overrides_json,
-    };
-    const templates = quotaTemplatesByProject[projectId] ?? [];
-    quotaTemplatesByProject[projectId] = [...templates, nextTemplate];
-    return HttpResponse.json(nextTemplate, { status: 201 });
-  }),
-  http.patch('/api/v1/workspaces/:ws/projects/:prj/quota-templates/:id', async ({ params, request }) => {
-    const projectId = String(params.prj ?? '');
-    const templates = quotaTemplatesByProject[projectId] ?? [];
-    const index = templates.findIndex((item) => item.id === params.id);
-    if (index === -1) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    const body = (await request.json().catch(() => ({}))) as {
-      name?: string;
-      description?: string;
-      overrides_json?: QuotaOverride;
-    };
-    const current = templates[index];
-    const updated: QuotaTemplate = {
-      ...current,
-      ...(typeof body.name === 'string' ? { name: body.name } : {}),
-      ...(typeof body.description === 'string' ? { description: body.description } : {}),
-      ...(body.overrides_json ? { overrides_json: body.overrides_json } : {}),
-    };
-    templates[index] = updated;
-    quotaTemplatesByProject[projectId] = templates;
-    return HttpResponse.json(updated);
-  }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/quota-templates/:id', ({ params }) => {
-    const projectId = String(params.prj ?? '');
-    const templates = quotaTemplatesByProject[projectId] ?? [];
-    const index = templates.findIndex((item) => item.id === params.id);
-    if (index === -1) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    templates.splice(index, 1);
-    quotaTemplatesByProject[projectId] = templates;
-    return HttpResponse.json(null, { status: 204 });
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/quota-templates/:id/apply', async ({ params, request }) => {
-    const projectId = String(params.prj ?? '');
-    const templateId = String(params.id ?? '');
-    const templates = quotaTemplatesByProject[projectId] ?? [];
-    const template = templates.find((item) => item.id === templateId);
-    if (!template) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    const body = (await request.json().catch(() => ({}))) as { member_ids?: string[] };
-    const targetMemberIds = Array.isArray(body.member_ids) ? body.member_ids : [];
-
-    let appliedCount = 0;
-    for (const memberId of targetMemberIds) {
-      const membership = memberProjectMembershipFixtures.find(
-        (item) => item.project_id === projectId && item.user_id === memberId
-      );
-      if (!membership) continue;
-      const key = memberProjectKey(projectId, memberId);
-      memberQuotaOverridesStore[key] = template.overrides_json;
-      const history = memberQuotaHistoryStore[key] ?? [];
-      memberQuotaHistoryStore[key] = [
-        {
-          id: `qoh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          created_at: new Date().toISOString(),
-          created_by_user_id: 'user_001',
-          overrides_json: template.overrides_json,
-        },
-        ...history,
-      ].slice(0, 100);
-      appendMemberChangeHistory(projectId, memberId, {
-        actor_id: 'user_001',
-        actor_email: 'owner@example.com',
-        change_type: 'quota',
-        changes: {
-          updated: {
-            overrides_json: { from: history[0]?.overrides_json ?? {}, to: template.overrides_json },
-          },
-        },
-      });
-      appliedCount += 1;
-    }
-
-    return HttpResponse.json({ applied_count: appliedCount });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/resources/:type/:id/policy', ({ params }) => {
     const projectId = String(params.prj ?? '');
@@ -429,7 +270,7 @@ export const memberHandlers = [
       access_mode: body.access_mode ?? 'allow_all_members',
       allowed_subjects: Array.isArray(body.allowed_subjects) ? body.allowed_subjects : [],
       rate_limits: body.rate_limits,
-      quota_limits: body.quota_limits,
+      spending_limits: body.spending_limits,
     };
     return HttpResponse.json({ ok: true });
   }),

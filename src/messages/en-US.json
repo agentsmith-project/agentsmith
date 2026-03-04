@@ -65,7 +65,7 @@
     "governance_drilldown_description": "Source: {from} · Target kind: {kind} · Reason: {reason}",
     "governance_drilldown_reason_none": "n/a",
     "governance_drilldown_focus": "Evidence focus: {focus} · signals: {count}",
-    "governance_drilldown_focus_quota": "quota limits",
+    "governance_drilldown_focus_quota": "limit controls",
     "governance_drilldown_focus_deny": "access denials",
     "governance_drilldown_focus_cost": "cost and usage",
     "governance_drilldown_focus_exposure": "public exposure",
@@ -1133,7 +1133,7 @@
       "governance_title": "Governance Evidence",
       "governance_kind": "Governance Kind",
       "enforcement_kind": "Enforcement Kind",
-      "quota_key": "Quota Key",
+      "quota_key": "Limit Key",
       "scope": "Scope",
       "effective_limit": "Effective Limit",
       "current_usage": "Current Usage",
@@ -1157,7 +1157,7 @@
   },
   "usage": {
     "title": "Usage",
-    "dashboard": "Cost & Quota Dashboard",
+    "dashboard": "Cost & Limits Dashboard",
     "subtitle": "Usage statistics and resource consumption",
     "kpi": {
       "requests_today": "Requests Today",
@@ -1223,7 +1223,7 @@
       "governance_title": "Governance Evidence",
       "governance_kind": "Governance Kind",
       "enforcement_kind": "Enforcement Kind",
-      "quota_key": "Quota Key",
+      "quota_key": "Limit Key",
       "scope": "Scope",
       "effective_limit": "Effective Limit",
       "current_usage": "Current Usage",
@@ -1412,7 +1412,7 @@
     }
   },
   "dashboard": {
-    "title": "Cost & Quota Dashboard",
+    "title": "Cost & Limits Dashboard",
     "subtitle": "Trend, top usage, and anomaly insights",
     "refresh": "Refresh",
     "refreshed_data": "Dashboard data refreshed",
@@ -1595,7 +1595,7 @@
     "release_ops_overrides_reject": "Reject",
     "release_ops_governance_evidence_title": "Governance Evidence Bridge",
     "release_ops_governance_evidence_subtitle": "Map organization governance context to live release evidence and escalation pressure before intervention.",
-    "release_ops_governance_focus_quota": "Quota focus",
+    "release_ops_governance_focus_quota": "Limit focus",
     "release_ops_governance_focus_deny": "Deny focus",
     "release_ops_governance_focus_cost": "Cost focus",
     "release_ops_governance_focus_exposure": "Exposure focus",
@@ -1643,11 +1643,11 @@
     "workspace_explainability_subtitle": "Summarize blocked and warning governance signals and jump directly to the most relevant remediation surfaces.",
     "workspace_explainability_blocked_projects": "Blocked projects",
     "workspace_explainability_blocked_members": "Blocked members",
-    "workspace_explainability_quota_gap_projects": "Projects missing source library quota",
+    "workspace_explainability_quota_gap_projects": "Projects missing source library limits",
     "workspace_explainability_exposed_projects": "Projects with exposure risk",
     "workspace_explainability_open_audit": "Open blocked project audit",
     "workspace_explainability_open_members": "Open blocked member scope",
-    "workspace_explainability_open_policy": "Open quota policy",
+    "workspace_explainability_open_policy": "Open limit policy",
     "workspace_explainability_open_release_ops": "Open release ops",
     "workspace_explainability_warnings": "{projects} project warnings · {members} member warnings",
     "workspace_attention_eyebrow": "Review",
@@ -1662,7 +1662,7 @@
     "workspace_attention_open_release_ops": "Open release ops",
     "workspace_projects_eyebrow": "Act",
     "workspace_projects_title": "Project governance attention",
-    "workspace_projects_subtitle": "Review project-level governance posture, exposure, and source library quota coverage.",
+    "workspace_projects_subtitle": "Review project-level governance posture, exposure, and source library limits coverage.",
     "workspace_projects_empty": "No projects in this workspace yet.",
     "workspace_projects_status_info": "Archived",
     "workspace_projects_meta": "{visibility} · {joinPolicy} · {status}",
@@ -1677,7 +1677,7 @@
     "workspace_projects_risk_public_open_access": "Public project with open join",
     "workspace_projects_risk_public_visibility": "Public visibility",
     "workspace_projects_risk_open_join_policy": "Open join policy",
-    "workspace_projects_risk_missing_source_library_quota": "Missing source library quota",
+    "workspace_projects_risk_missing_source_library_quota": "Missing source library limits",
     "workspace_projects_risk_archived_project": "Archived project",
     "workspace_members_eyebrow": "Manage",
     "workspace_members_subtitle": "Maintain workspace governance groups for each member.",
@@ -1988,7 +1988,7 @@
     "runtime_probe_reason_runtime_provider_connection_not_found": "No active provider connection matched this attempt.",
     "runtime_probe_reason_runtime_provider_credential_missing": "The provider connection exists, but no credential reference is configured.",
     "runtime_probe_reason_runtime_provider_credential_not_found": "The credential reference exists, but the secret could not be resolved.",
-    "governance_help": "Per-member quotas, rate limits, and guardrails. Changes affect all members. Member quota overrides can customize per user.",
+    "governance_help": "Per-member limits, rate limits, and guardrails. Changes affect all members. Member limit overrides can customize per user.",
     "governance_form": {
       "guardrails": "Guardrails",
       "content_filter": "Enable content filtering",
@@ -2031,8 +2031,8 @@
     "permission_denied_hint": "You don't have permission to access this resource.",
     "rate_limited_title": "Rate Limited",
     "rate_limited_hint": "Too many requests. Please try again later.",
-    "quota_exceeded_title": "Quota Exceeded",
-    "quota_exceeded_hint": "You have exceeded your quota.",
+    "quota_exceeded_title": "Limit Exceeded",
+    "quota_exceeded_hint": "You have exceeded your limit.",
     "model_not_found_title": "Model Not Found",
     "model_not_found_hint": "The requested model is not available.",
     "endpoint_disabled_title": "Endpoint Disabled",
@@ -2134,8 +2134,8 @@
       "agent": "Agent"
     },
     "editor_hint": {
-      "endpoint": "Configure endpoint access and token quota for this model endpoint.",
-      "source_library": "Configure who can access this library and file-related quota limits.",
+      "endpoint": "Configure endpoint access and token limit for this model endpoint.",
+      "source_library": "Configure who can access this library and file-related limit controls.",
       "agent": "Configure agent access and requests-per-minute limits."
     },
     "subjects": {
@@ -2192,8 +2192,11 @@
     "rules": {
       "endpoint": {
         "requests_per_minute": "Endpoint requests per minute",
-        "daily_token_limit": "Endpoint daily token limit",
-        "requests_per_day": "Endpoint requests per day"
+        "requests_per_5_hours": "Endpoint requests per 5 hours",
+        "requests_per_day": "Endpoint requests per day",
+        "spending_usd_per_minute": "Endpoint spending limit (USD/min)",
+        "spending_usd_per_5_hours": "Endpoint spending limit (USD/5h)",
+        "spending_usd_per_day": "Endpoint spending limit (USD/day)"
       },
       "source_library": {
         "requests_per_minute": "Source library requests per minute",
@@ -2207,8 +2210,11 @@
     "subject_placeholders": {
       "endpoint": {
         "requests_per_minute": "subject requests per minute",
-        "daily_token_limit": "subject daily token limit",
-        "requests_per_day": "subject requests per day"
+        "requests_per_5_hours": "subject requests per 5 hours",
+        "requests_per_day": "subject requests per day",
+        "spending_usd_per_minute": "subject spending limit (USD/min)",
+        "spending_usd_per_5_hours": "subject spending limit (USD/5h)",
+        "spending_usd_per_day": "subject spending limit (USD/day)"
       },
       "source_library": {
         "requests_per_minute": "subject requests per minute",
@@ -2250,7 +2256,7 @@
       "success_description": "Share this link with the invitee. They can use it to join the project.",
       "create_success": "Invite created successfully"
     },
-    "description": "Manage project members, permissions, and quotas",
+    "description": "Manage project members, permissions, and limits",
     "action_block": "Block",
     "action_unblock": "Unblock",
     "action_remove": "Remove",
@@ -2314,8 +2320,8 @@
       "no_template_to_reset": "No template to reset to"
     },
     "quota": {
-      "title": "Quota Overrides",
-      "description": "Default quotas are inherited from project policy. Override specific quotas for this user below.",
+      "title": "Limit Overrides",
+      "description": "Default limits are inherited from project policy. Override specific limits for this user below.",
       "use_default": "Use Default",
       "override": "Override",
       "reset_all": "Reset All",
@@ -2338,16 +2344,16 @@
         "files": "files",
         "concurrency": "concurrency"
       },
-      "update_success": "Quota overrides updated successfully",
-      "coming_soon": "Quota editor is managed in the current panel.",
+      "update_success": "Limit overrides updated successfully",
+      "coming_soon": "Limit editor is managed in the current panel.",
       "cancel": "Cancel",
       "save_changes": "Save Changes"
     },
     "quota_history": {
-      "title": "Quota Override History",
-      "view_history": "View Quota History",
+      "title": "Limit Override History",
+      "view_history": "View Limit History",
       "loading": "Loading...",
-      "empty": "No quota override history",
+      "empty": "No limit override history",
       "by": "by",
       "page_info": "Page {page} of {totalPages} ({total} total)",
       "prev": "Previous",
@@ -2370,11 +2376,11 @@
       "title": "Change History",
       "view_history": "View Change History",
       "permissions_updated": "Permissions updated",
-      "quota_updated": "Quota override",
+      "quota_updated": "Limit override",
       "acl_updated": "Resource policy updated"
     },
     "actions": {
-      "edit_permissions_quota": "Edit Permissions & Quota",
+      "edit_permissions_quota": "Edit Permissions & Limit",
       "view_history": "View Change History",
       "remove_member": "Remove Member"
     },
@@ -2456,7 +2462,7 @@
       "empty_custom_title": "No custom templates yet",
       "empty_custom_description": "Create a custom template to define permission sets beyond the default templates.",
       "permission_templates": "Permission Templates",
-      "quota_templates": "Quota Templates",
+      "quota_templates": "Limit Templates",
       "group_templates": "Project Groups",
       "group_templates_description": "Create project groups, bind a permission template, and apply to group members.",
       "group_name": "Group Name",
@@ -2477,29 +2483,29 @@
       "copy_failed_members_success": "Failed member list copied",
       "group_preview_title": "Permission changes preview (per member)",
       "group_preview_empty": "No members in this group",
-      "quota_coming_soon": "Quota templates are available. Create and apply quota presets (e.g. Standard, High Usage) to members.",
+      "quota_coming_soon": "Limit templates are available. Create and apply limit presets (e.g. Standard, High Usage) to members.",
       "template_name": "Template Name",
       "template_description": "Description (optional)",
       "name_required": "Name is required",
       "cancel": "Cancel",
       "creating": "Creating...",
-      "quota_create_success": "Quota template created successfully",
-      "quota_update_success": "Quota template updated successfully",
-      "quota_delete_success": "Quota template deleted successfully",
-      "quota_apply_success": "Quota template applied to member",
-      "quota_apply_batch_success": "Quota template applied to {count} members",
-      "quota_apply_partial_success": "Quota template applied partially. Some members could not be updated.",
-      "quota_title": "Quota Templates",
-      "quota_description": "Manage reusable quota presets (e.g. Standard, High Usage, Restricted) for endpoint, source library, and agent limits.",
-      "quota_empty_title": "No quota templates yet",
-      "quota_empty_description": "Create a quota template to define preset overrides for endpoint token limits, source library file limits, and agent concurrency.",
+      "quota_create_success": "Limit template created successfully",
+      "quota_update_success": "Limit template updated successfully",
+      "quota_delete_success": "Limit template deleted successfully",
+      "quota_apply_success": "Limit template applied to member",
+      "quota_apply_batch_success": "Limit template applied to {count} members",
+      "quota_apply_partial_success": "Limit template applied partially. Some members could not be updated.",
+      "quota_title": "Limit Templates",
+      "quota_description": "Manage reusable limit presets (e.g. Standard, High Usage, Restricted) for endpoint, source library, and agent limits.",
+      "quota_empty_title": "No limit templates yet",
+      "quota_empty_description": "Create a limit template to define preset overrides for endpoint token limits, source library file limits, and agent concurrency.",
       "save_changes": "Save Changes",
       "delete": "Delete",
       "delete_confirm_title": "Delete Template",
-      "delete_confirm_message": "Delete quota template \"{name}\"? This will not affect members who already have this template applied.",
+      "delete_confirm_message": "Delete limit template \"{name}\"? This will not affect members who already have this template applied.",
       "select_template": "Select template",
       "batch_apply_permission_hint": "Apply a permission template to {count} selected member(s).",
-      "batch_apply_quota_hint": "Apply a quota template to {count} selected member(s).",
+      "batch_apply_quota_hint": "Apply a limit template to {count} selected member(s).",
       "apply_failed_members_title": "Some members failed to update:",
       "apply_failed_members_count": "{count} member(s) failed to update.",
       "retry_failed_members": "Retry Failed",
@@ -2510,7 +2516,7 @@
       "selected_count": "{count} selected",
       "clear_selection": "Clear selection",
       "apply_permission_template": "Apply Permission Template",
-      "apply_quota_template": "Apply Quota Template"
+      "apply_quota_template": "Apply Limit Template"
     },
     "join_requests": {
       "title": "Join Requests",
@@ -2542,13 +2548,13 @@
     "effective_access": {
       "title": "Effective Access",
       "current_state_title": "Current effective state",
-      "current_state_description": "Inspect the member's current lifecycle, effective permissions, and active quota overrides.",
+      "current_state_description": "Inspect the member's current lifecycle, effective permissions, and active limit overrides.",
       "membership_status_label": "Membership status",
       "role_label": "Resolved role",
       "permissions_label": "Effective permissions",
-      "quota_label": "Quota overrides",
+      "quota_label": "Limit overrides",
       "no_permissions": "No effective permissions",
-      "no_quota_overrides": "No quota overrides",
+      "no_quota_overrides": "No limit overrides",
       "authorize_title": "Run authorization check",
       "authorize_description": "Verify whether this member can perform an action on a specific governed resource.",
       "resource_type": "Resource type",
@@ -3004,7 +3010,7 @@
       "vectordb": "VectorDB",
       "used": "Used",
       "limit": "Limit",
-      "exceeded": "Quota Exceeded"
+      "exceeded": "Limit Exceeded"
     },
     "batch": {
       "selected": "{count} selected",
@@ -3060,7 +3066,7 @@
     "error": {
       "upload_failed": "Upload failed",
       "process_failed": "Processing failed",
-      "quota_exceeded": "Quota exceeded. Cannot start AIReady.",
+      "quota_exceeded": "Limit exceeded. Cannot start AIReady.",
       "delete_failed": "Delete failed"
     },
     "filter_status_all": "All",
@@ -3080,7 +3086,7 @@
     "selection_bar_label": "Selection actions",
     "selection_count": "file(s) selected",
     "selection_clear": "Clear",
-    "quota_exceeded_hint": "Quota exceeded. Cannot start AIReady.",
+    "quota_exceeded_hint": "Limit exceeded. Cannot start AIReady.",
     "action_clear_attachments": "Clear Attachments",
     "action_retry": "Retry",
     "action_delete": "Delete",

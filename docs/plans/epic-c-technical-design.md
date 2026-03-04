@@ -134,7 +134,7 @@ src/components/dashboard/ (new directory)
 
 #### New API Endpoints Needed
 ```typescript
-// GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/summary
+// GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/limits/summary
 interface QuotaSummary {
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_id: string;
@@ -211,7 +211,7 @@ export function useCostDashboard(
   timeRange: TimeRange
 ) {
   const quotaSummary = useQuery({
-    queryKey: ['quota-summary', workspaceId, projectId],
+    queryKey: ['limits-summary'], workspaceId, projectId],
     queryFn: () => quotaAPI.getSummary(workspaceId, projectId),
     staleTime: 60000, // 1 minute
   });
@@ -450,7 +450,7 @@ export function useQuotaAlerts(
 **Week 1:**
 1. Install Recharts
 2. Create `QuotaOverview.tsx` component
-3. Implement `useQuotaSummary` hook
+3. Implement `useLimitsSummary` hook
 4. Mock quota data for development
 
 **Week 2:**

@@ -233,7 +233,7 @@ async function main() {
         await page.getByTestId('resource-policy__save').waitFor({ state: 'visible', timeout: 10_000 });
         await page.getByTestId('resource-policy__endpoint-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
         await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__endpoint-daily-token-limit').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.getByTestId('resource-policy__endpoint-spending-usd-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
 
         const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
         if (await isVisible(agentRow, 3_000)) {

@@ -6,7 +6,7 @@ Comprehensive guides for using AgentSmith features.
 
 | Guide | Description |
 |-------|-------------|
-| [Cost & Quota Dashboard](./cost-quota-dashboard.md) | Monitor resource usage, track costs, and manage quotas |
+| [Cost & Limits Dashboard](./cost-limits-dashboard.md) | Monitor resource usage, track costs, and manage rate/spending limits |
 | [Alert Center](./alert-center.md) | Configure alert rules and manage notifications |
 | [Audit & Usage Reports](./audit-usage-reports.md) | View audit logs and generate usage reports |
 | [Release Verification](./release-verification.md) | Generate and verify release reports |

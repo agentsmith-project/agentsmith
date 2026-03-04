@@ -765,7 +765,7 @@ const MOCK_ERROR_MESSAGES: Record<FailureType, string[]> = {
   authorization: [
     'permission denied by policy: subject not in allow list',
   ],
-  quota: [
+  spending_limit: [
     'quota exceeded: daily limit exhausted',
   ],
   rate_limit: [

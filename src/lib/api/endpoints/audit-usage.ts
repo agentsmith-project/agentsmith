@@ -48,7 +48,7 @@ export interface UsageTimeseriesResponse {
   total_cost?: number;
 }
 
-export interface QuotaSummaryItem {
+export interface LimitsSummaryItem {
   resource_id: string;
   resource_name: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
@@ -59,10 +59,10 @@ export interface QuotaSummaryItem {
   percentage_used: number;
 }
 
-export interface QuotaOverview {
-  endpoints?: QuotaSummaryItem[];
-  source_libraries?: QuotaSummaryItem[];
-  agents?: QuotaSummaryItem[];
+export interface LimitsOverview {
+  endpoints?: LimitsSummaryItem[];
+  source_libraries?: LimitsSummaryItem[];
+  agents?: LimitsSummaryItem[];
   total_quota_limit?: number;
   total_quota_used?: number;
 }
@@ -584,14 +584,14 @@ export class UsageAPI {
   }
 
   /**
-   * Get aggregate quota summary for the project
+   * Get aggregate limits summary for the project
    */
-  async getQuotaSummary(
+  async getLimitsSummary(
     workspaceId: string,
     projectId: string,
-  ): Promise<QuotaOverview> {
-    return this.client.get<QuotaOverview>(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota/summary`,
+  ): Promise<LimitsOverview> {
+    return this.client.get<LimitsOverview>(
+      `/workspaces/${workspaceId}/projects/${projectId}/limits/summary`,
     );
   }
 

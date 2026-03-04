@@ -181,7 +181,7 @@ export type UsageTimeseriesResponse = {
   total_cost?: number;
 };
 
-export type QuotaSummaryItem = {
+export type LimitsSummaryItem = {
   resource_id: string;
   resource_name: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
@@ -192,10 +192,10 @@ export type QuotaSummaryItem = {
   percentage_used: number;
 };
 
-export type QuotaOverview = {
-  endpoints?: QuotaSummaryItem[];
-  source_libraries?: QuotaSummaryItem[];
-  agents?: QuotaSummaryItem[];
+export type LimitsOverview = {
+  endpoints?: LimitsSummaryItem[];
+  source_libraries?: LimitsSummaryItem[];
+  agents?: LimitsSummaryItem[];
   total_quota_limit?: number;
   total_quota_used?: number;
 };
@@ -991,10 +991,10 @@ export async function getUsageTimeseries(
   };
 }
 
-export async function getQuotaSummary(
+export async function getLimitsSummary(
   docStore: JsonDocStorePort,
   query: { workspaceId: string; projectId: string },
-): Promise<QuotaOverview> {
+): Promise<LimitsOverview> {
   const now = new Date();
   const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
   const tomorrowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
@@ -1028,13 +1028,13 @@ export async function getQuotaSummary(
   };
   const resetAt = tomorrowStart;
 
-  const endpoints: QuotaSummaryItem[] = [];
-  const sourceLibraries: QuotaSummaryItem[] = [];
-  const agents: QuotaSummaryItem[] = [];
+  const endpoints: LimitsSummaryItem[] = [];
+  const sourceLibraries: LimitsSummaryItem[] = [];
+  const agents: LimitsSummaryItem[] = [];
 
   for (const item of byResource.values()) {
     const limit = limitByResourceType[item.resourceType];
-    const row: QuotaSummaryItem = {
+    const row: LimitsSummaryItem = {
       resource_id: item.resourceId,
       resource_name: item.resourceId,
       resource_type: item.resourceType,
@@ -1049,8 +1049,8 @@ export async function getQuotaSummary(
     if (item.resourceType === 'agent') agents.push(row);
   }
 
-  const totalQuotaUsed = [...endpoints, ...sourceLibraries, ...agents].reduce((sum, item) => sum + item.quota_used, 0);
-  const totalQuotaLimit = endpoints.length * limitByResourceType.endpoint
+  const totalLimitsUsed = [...endpoints, ...sourceLibraries, ...agents].reduce((sum, item) => sum + item.quota_used, 0);
+  const totalLimitsCapacity = endpoints.length * limitByResourceType.endpoint
     + sourceLibraries.length * limitByResourceType.source_library
     + agents.length * limitByResourceType.agent;
 
@@ -1058,8 +1058,8 @@ export async function getQuotaSummary(
     endpoints,
     source_libraries: sourceLibraries,
     agents,
-    total_quota_used: totalQuotaUsed || undefined,
-    total_quota_limit: totalQuotaLimit || undefined,
+    total_quota_used: totalLimitsUsed || undefined,
+    total_quota_limit: totalLimitsCapacity || undefined,
   };
 }
 

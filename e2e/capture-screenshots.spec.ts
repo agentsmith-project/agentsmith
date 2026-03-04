@@ -168,7 +168,7 @@ test.describe('Screenshot Capture', () => {
       }
       await drawerTabs.nth(1).click();
       await page.waitForTimeout(600);
-      await page.screenshot({ path: path.join(BASE, '08-members', 'member-quota.png'), fullPage: true });
+      await page.screenshot({ path: path.join(BASE, '08-members', 'member-limits.png'), fullPage: true });
       await drawerTabs.nth(2).click();
       await page.waitForTimeout(600);
       await page.screenshot({ path: path.join(BASE, '08-members', 'member-resource-acl.png'), fullPage: true });

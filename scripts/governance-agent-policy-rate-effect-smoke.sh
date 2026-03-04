@@ -110,7 +110,7 @@ main() {
         "access_mode":"allow_all_members",
         "allowed_subjects":[],
         "rate_limits":{"rules":[{"key":"agent.requests_per_minute","value":1}]},
-        "quota_limits":{"rules":[]}
+        "spending_limits":{"rules":[]}
       }' || true
   )"
   if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then

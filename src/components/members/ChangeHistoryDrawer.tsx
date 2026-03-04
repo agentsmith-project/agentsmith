@@ -44,8 +44,6 @@ export function ChangeHistoryDrawer({
     switch (type) {
       case 'permissions':
         return t('permissions_updated');
-      case 'quota':
-        return t('quota_updated');
       case 'resource_policy':
         return t('acl_updated');
       case 'role':

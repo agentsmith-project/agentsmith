@@ -86,7 +86,7 @@ make gate-premerge
 make gate-release
 make release-core-smoke
 ```
-`release-core-smoke` runs core real-lane smoke + endpoint requests/day quota smoke, then archives a release report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
+`release-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives a release report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
 
 ### Dependency Recovery (only when environment is broken)
 

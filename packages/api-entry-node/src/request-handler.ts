@@ -186,7 +186,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'usageFacts'
     || route.kind === 'usageRuntimeObservability'
     || route.kind === 'usageOperationsSummary'
-    || route.kind === 'quotaSummary'
+    || route.kind === 'limitsSummary'
   ) {
     return ['project:endpoint:use'];
   }
@@ -212,16 +212,11 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectJoinRequestReject'
     || route.kind === 'projectPermissionTemplates'
     || route.kind === 'projectPermissionTemplateItem'
-    || route.kind === 'projectQuotaTemplates'
-    || route.kind === 'projectQuotaTemplateItem'
-    || route.kind === 'projectQuotaTemplateApply'
     || route.kind === 'projectGroups'
     || route.kind === 'projectGroupItem'
     || route.kind === 'projectGroupApplyTemplate'
     || route.kind === 'projectMembershipItem'
     || route.kind === 'projectMemberPermissions'
-    || route.kind === 'projectMemberQuotaOverrides'
-    || route.kind === 'projectMemberQuotaOverridesHistory'
     || route.kind === 'projectMemberChangeHistory'
     || route.kind === 'projectResourcePolicy'
   ) {

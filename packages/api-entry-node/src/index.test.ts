@@ -683,19 +683,6 @@ describe('api-entry-node projects routes', () => {
     const detail = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`);
     expect(detail.status).toBe(200);
 
-    const quota = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources/quota');
-    expect(quota.status).toBe(200);
-    const quotaJson = (await quota.json()) as { storage: { used: number } };
-    expect(quotaJson.storage.used).toBe(8);
-
-    const quotaLibA = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/sources/quota?library_id=${defaultLibrary.id}`,
-    );
-    expect(quotaLibA.status).toBe(200);
-    const quotaLibAJson = (await quotaLibA.json()) as { storage: { used: number } };
-    expect(quotaLibAJson.storage.used).toBe(8);
-
     const aiReadyStart = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}/ai-ready/start`,
@@ -1125,10 +1112,6 @@ describe('api-entry-node projects routes', () => {
     expect(permissionTemplatesRes.status).toBe(200);
     expect(await permissionTemplatesRes.json()).toEqual({ items: [] });
 
-    const quotaTemplatesRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates');
-    expect(quotaTemplatesRes.status).toBe(200);
-    expect(await quotaTemplatesRes.json()).toEqual([]);
-
     const groupsRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
     expect(groupsRes.status).toBe(200);
     expect(await groupsRes.json()).toEqual({ items: [] });
@@ -1315,19 +1298,6 @@ describe('api-entry-node projects routes', () => {
     );
     expect(patchAltPermissionsRes.status).toBe(204);
 
-    const patchAltQuotaRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/quota-overrides',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          overrides: { endpoint: { daily_token_limit: 50 } },
-        }),
-      },
-    );
-    expect(patchAltQuotaRes.status).toBe(200);
-
     const patchGroupForAltRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
@@ -1360,15 +1330,6 @@ describe('api-entry-node projects routes', () => {
     expect(await suspendedAltPermissionsRes.json()).toEqual({
       platform_permissions: ['project:endpoint:use'],
       resource_permissions: undefined,
-    });
-
-    const suspendedAltQuotaRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/quota-overrides',
-    );
-    expect(suspendedAltQuotaRes.status).toBe(200);
-    expect(await suspendedAltQuotaRes.json()).toEqual({
-      overrides: { endpoint: { daily_token_limit: 50 } },
     });
 
     const groupsWhileSuspendedRes = await apiFetch(
@@ -1467,13 +1428,6 @@ describe('api-entry-node projects routes', () => {
       platform_permissions: [],
       resource_permissions: undefined,
     });
-
-    const altQuotaRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/quota-overrides',
-    );
-    expect(altQuotaRes.status).toBe(200);
-    expect(await altQuotaRes.json()).toEqual({ overrides: {} });
 
     const groupsAfterDeleteRes = await apiFetch(
       baseUrl,
@@ -2026,20 +1980,6 @@ describe('api-entry-node projects routes', () => {
     );
     expect(patchAltPermissionsRes.status).toBe(204);
 
-    const patchAltQuotaRes = await apiFetchWithToken(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/quota-overrides`,
-      'owner-token',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          overrides: { endpoint: { daily_token_limit: 50 } },
-        }),
-      },
-    );
-    expect(patchAltQuotaRes.status).toBe(200);
-
     const suspendRes = await apiFetchWithToken(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_alt`,
@@ -2076,16 +2016,6 @@ describe('api-entry-node projects routes', () => {
     expect(await suspendedPermissionsRes.json()).toEqual({
       platform_permissions: ['project:endpoint:use'],
       resource_permissions: undefined,
-    });
-
-    const suspendedQuotaRes = await apiFetchWithToken(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_alt/quota-overrides`,
-      'owner-token',
-    );
-    expect(suspendedQuotaRes.status).toBe(200);
-    expect(await suspendedQuotaRes.json()).toEqual({
-      overrides: { endpoint: { daily_token_limit: 50 } },
     });
 
     const groupsWhileSuspendedRes = await apiFetchWithToken(
@@ -2127,95 +2057,6 @@ describe('api-entry-node projects routes', () => {
     expect(restoredRouteRes.status).toBe(200);
   });
 
-  it('supports minimal quota template CRUD endpoints', async () => {
-    const { baseUrl } = startServer();
-
-    const listBeforeRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates',
-    );
-    expect(listBeforeRes.status).toBe(200);
-    expect(await listBeforeRes.json()).toEqual([]);
-
-    const createRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Starter quota',
-          description: 'Base limits',
-          overrides_json: {
-            endpoint: { max_qpm: 20 },
-            chat: { daily_tokens: 10000 },
-          },
-        }),
-      },
-    );
-    expect(createRes.status).toBe(200);
-    const created = (await createRes.json()) as {
-      id: string;
-      project_id: string;
-      name: string;
-      overrides_json: Record<string, unknown>;
-    };
-    expect(created.project_id).toBe('proj_1');
-    expect(created.name).toBe('Starter quota');
-
-    const getRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}`,
-    );
-    expect(getRes.status).toBe(200);
-    const fetched = (await getRes.json()) as { id: string };
-    expect(fetched.id).toBe(created.id);
-
-    const patchRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Starter quota v2',
-          overrides_json: { notebook: { max_runs_per_hour: 5 } },
-        }),
-      },
-    );
-    expect(patchRes.status).toBe(200);
-    const patched = (await patchRes.json()) as { name: string; overrides_json: Record<string, unknown> };
-    expect(patched.name).toBe('Starter quota v2');
-    expect(patched.overrides_json).toEqual({ notebook: { max_runs_per_hour: 5 } });
-
-    const applyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}/apply`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ member_ids: ['u1', 'u2'] }),
-      },
-    );
-    expect(applyRes.status).toBe(200);
-    expect(await applyRes.json()).toEqual({ applied_count: 2 });
-
-    const deleteRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/quota-templates/${created.id}`,
-      { method: 'DELETE' },
-    );
-    expect(deleteRes.status).toBe(204);
-
-    const listFinalRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/quota-templates',
-    );
-    expect(listFinalRes.status).toBe(200);
-    const listFinal = (await listFinalRes.json()) as Array<{ id: string }>;
-    expect(listFinal.map((i) => i.id)).not.toContain(created.id);
-  });
-
   it('supports member governance overrides, history, and resource policy endpoints', async () => {
     const { baseUrl } = startServer();
 
@@ -2253,52 +2094,6 @@ describe('api-entry-node projects routes', () => {
       resource_permissions: undefined,
     });
 
-    const getQuotaBeforeRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides',
-    );
-    expect(getQuotaBeforeRes.status).toBe(200);
-    expect(await getQuotaBeforeRes.json()).toEqual({ overrides: {} });
-
-    const patchQuotaRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          overrides: {
-            endpoint: { daily_token_limit: 5000 },
-            agent: { max_concurrency: 2 },
-          },
-        }),
-      },
-    );
-    expect(patchQuotaRes.status).toBe(200);
-    const quotaBody = (await patchQuotaRes.json()) as { overrides: Record<string, unknown> };
-    expect(quotaBody.overrides).toMatchObject({
-      endpoint: { daily_token_limit: 5000 },
-      agent: { max_concurrency: 2 },
-    });
-
-    const quotaHistoryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides/history?page=1&page_size=10',
-    );
-    expect(quotaHistoryRes.status).toBe(200);
-    const quotaHistory = (await quotaHistoryRes.json()) as {
-      items: Array<{ overrides_json: Record<string, unknown> }>;
-      total: number;
-      page: number;
-      page_size: number;
-    };
-    expect(quotaHistory.total).toBe(1);
-    expect(quotaHistory.page).toBe(1);
-    expect(quotaHistory.page_size).toBe(10);
-    expect(quotaHistory.items[0]?.overrides_json).toMatchObject({
-      endpoint: { daily_token_limit: 5000 },
-    });
-
     const changeHistoryRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/change-history',
@@ -2307,7 +2102,7 @@ describe('api-entry-node projects routes', () => {
     const changeHistory = (await changeHistoryRes.json()) as {
       items: Array<{ change_type: string }>;
     };
-    expect(changeHistory.items.map((i) => i.change_type)).toEqual(['quota', 'permissions']);
+    expect(changeHistory.items.map((i) => i.change_type)).toEqual(['permissions']);
 
     const getPolicyRes = await apiFetch(
       baseUrl,
@@ -2333,10 +2128,10 @@ describe('api-entry-node projects routes', () => {
             {
               subject_type: 'group',
               subject_id: 'grp_1',
-              quota_limits: { rules: [{ key: 'endpoint.daily_token_limit', value: 1234 }] },
+              spending_limits: { rules: [{ key: 'endpoint.spending_usd_per_day', value: 1234 }] },
             },
           ],
-          quota_limits: { rules: [{ key: 'endpoint.daily_token_limit', value: 9999 }] },
+          spending_limits: { rules: [{ key: 'endpoint.spending_usd_per_day', value: 9999 }] },
         }),
       },
     );
@@ -2372,12 +2167,12 @@ describe('api-entry-node projects routes', () => {
     const policy = (await getPolicyAfterRes.json()) as {
       access_mode: string;
       allowed_subjects: Array<{ subject_id: string; updated_at?: string }>;
-      quota_limits?: unknown;
+      spending_limits?: unknown;
     };
     expect(policy.access_mode).toBe('allow_list');
     expect(policy.allowed_subjects[0]).toMatchObject({ subject_id: 'grp_1' });
     expect(policy.allowed_subjects[0]?.updated_at).toBeTruthy();
-    expect(policy.quota_limits).toEqual({ rules: [{ key: 'endpoint.daily_token_limit', value: 9999 }] });
+    expect(policy.spending_limits).toEqual({ rules: [{ key: 'endpoint.spending_usd_per_day', value: 9999 }] });
 
     const patchInvalidRootRateKeyRes = await apiFetch(
       baseUrl,
@@ -2929,7 +2724,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           access_mode: 'allow_all_members',
           allowed_subjects: [],
-          quota_limits: {
+          spending_limits: {
             rules: [
               { key: 'source_library.max_total_files', value: 1 },
               { key: 'source_library.max_file_size_bytes', value: 4 },
@@ -3045,7 +2840,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           access_mode: 'allow_all_members',
           allowed_subjects: [],
-          quota_limits: {
+          spending_limits: {
             rules: [{ key: 'source_library.max_file_size_bytes', value: 4 }],
           },
         }),
@@ -3322,7 +3117,7 @@ describe('api-entry-node projects routes', () => {
           access_mode: 'allow_all_members',
           allowed_subjects: [],
           rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
-          quota_limits: { rules: [] },
+          spending_limits: { rules: [] },
         }),
       },
     );
@@ -3352,7 +3147,7 @@ describe('api-entry-node projects routes', () => {
               { key: 'endpoint.requests_per_day', value: 3 },
             ],
           },
-          quota_limits: { rules: [] },
+          spending_limits: { rules: [] },
         }),
       },
     );
@@ -3395,6 +3190,70 @@ describe('api-entry-node projects routes', () => {
       ),
     ).toBe(true);
 
+    await recordUsageFact(deps.docStore, {
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+      end_user_id: 'user_test',
+      requests: 1,
+      result: 'ok',
+      metadata_json: { cost_usd: 2 },
+    });
+    const spendingLimitedPolicyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          access_mode: 'allow_all_members',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
+          spending_limits: { rules: [{ key: 'endpoint.spending_usd_per_day', value: 1.5 }] },
+        }),
+      },
+    );
+    expect(spendingLimitedPolicyRes.status).toBe(204);
+
+    const spendingLimitedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'blocked by endpoint spending/day policy' }],
+        }),
+      },
+    );
+    expect(spendingLimitedProxy.status).toBe(429);
+    expect(await spendingLimitedProxy.json()).toMatchObject({
+      error_code: 'RESOURCE_POLICY_SPENDING_LIMITED',
+      resource_type: 'endpoint',
+      resource_id: endpoint.id,
+      spending_key: 'endpoint.spending_usd_per_day',
+    });
+
+    const spendingAuditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=resource_policy.spending_limited&resource_type=endpoint&resource_id=${endpoint.id}&page=1&page_size=20`,
+    );
+    expect(spendingAuditRes.status).toBe(200);
+    const spendingAuditBody = (await spendingAuditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; metadata_json?: Record<string, unknown> }>;
+    };
+    expect(
+      spendingAuditBody.items.some(
+        (item) =>
+          item.action === 'resource_policy.spending_limited'
+          && item.resource_type === 'endpoint'
+          && item.resource_id === endpoint.id
+          && item.metadata_json?.spending_key === 'endpoint.spending_usd_per_day',
+      ),
+    ).toBe(true);
+
     const clearRequestsQuotaPolicyRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
@@ -3405,38 +3264,13 @@ describe('api-entry-node projects routes', () => {
           access_mode: 'allow_all_members',
           allowed_subjects: [],
           rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1000 }] },
-          quota_limits: { rules: [] },
+          spending_limits: { rules: [] },
         }),
       },
     );
     expect(clearRequestsQuotaPolicyRes.status).toBe(204);
 
-    const memberQuotaPatchRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_test/quota-overrides',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          overrides: {
-            endpoint: { daily_token_limit: 10 },
-          },
-        }),
-      },
-    );
-    expect(memberQuotaPatchRes.status).toBe(200);
-    await recordUsageFact(deps.docStore, {
-      workspace_id: 'ws_default',
-      project_id: 'proj_1',
-      resource_type: 'endpoint',
-      resource_id: endpoint.id,
-      end_user_id: 'user_test',
-      requests: 1,
-      tokens_total: 10,
-      result: 'ok',
-    });
-
-    const quotaLimitedProxy = await apiFetch(
+    const postResetProxy = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
       {
@@ -3444,16 +3278,11 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: 'ignored',
-          messages: [{ role: 'user', content: 'blocked by member quota' }],
+          messages: [{ role: 'user', content: 'request should pass after rate/spending reset' }],
         }),
       },
     );
-    expect(quotaLimitedProxy.status).toBe(429);
-    expect(await quotaLimitedProxy.json()).toMatchObject({
-      error_code: 'MEMBER_QUOTA_EXCEEDED',
-      resource_type: 'endpoint',
-      resource_id: endpoint.id,
-    });
+    expect(postResetProxy.status).toBe(200);
   });
 
   it('streams chat via external agent websocket runtime', async () => {

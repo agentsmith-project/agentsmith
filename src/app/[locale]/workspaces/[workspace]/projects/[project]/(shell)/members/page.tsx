@@ -1,7 +1,7 @@
 /**
  * Members Page
  *
- * Manage project members, permissions, and quotas.
+ * Manage project members and groups.
  */
 
 'use client';

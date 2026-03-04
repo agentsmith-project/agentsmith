@@ -115,7 +115,7 @@ Response:
 | Method | Endpoint | Description | Permission |
 |--------|----------|-------------|-------------|
 | GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check` | Check quota before operation | `project:manage` |
+| PATCH | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/resources/endpoint/{endpointId}/policy` | Update endpoint rate/spending policy | `project:manage` |
 
 ### Chat
 
@@ -241,7 +241,7 @@ Response:
 | `RESOURCE_ALREADY_EXISTS` | Conflict with existing resource |
 | `VALIDATION_ERROR` | Invalid request parameters |
 | `RATE_LIMIT_EXCEEDED` | Too many requests |
-| `QUOTA_EXCEEDED` | Resource quota exceeded |
+| `RESOURCE_POLICY_SPENDING_LIMITED` | Endpoint spending limit exceeded |
 | `INTERNAL_ERROR` | Unexpected server error |
 
 ### Chat Multimodal Validation Notes

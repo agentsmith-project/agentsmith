@@ -4,7 +4,7 @@
 
 The Alert Center helps you stay informed about important events in your project by:
 
-- Creating custom alert rules for cost, quota, and policy events
+- Creating custom alert rules for cost, limits, and policy events
 - Receiving real-time notifications via in-app alerts
 - Managing alert preferences and notification channels
 - Viewing alert history and resolution status
@@ -35,7 +35,7 @@ An alert rule defines:
    - **Name**: Descriptive name for the rule
    - **Trigger Type**: Select from:
      - Cost: Daily/weekly spending thresholds
-     - Quota: Resource usage percentage
+     - Limit: Resource usage percentage
      - Rate Limit: API request rate exceeded
      - Policy: Access denied events
      - Endpoint Error: API endpoint failures
@@ -56,15 +56,15 @@ Notify when spending exceeds a threshold:
 
 Example: "Alert when daily cost exceeds $10"
 
-#### Quota Alerts
+#### Limit Alerts
 
 Notify when resource usage nears limits:
 
-- **Endpoint Quota**: API request count vs. limit
-- **Source Library Quota**: Storage usage vs. limit
-- **Agent Quota**: Agent execution count vs. limit
+- **Endpoint Limit**: API request count vs. limit
+- **Source Library Limit**: Storage usage vs. limit
+- **Agent Limit**: Agent execution count vs. limit
 
-Example: "Alert when endpoint quota exceeds 80%"
+Example: "Alert when endpoint usage exceeds 80% of limit"
 
 #### Rate Limit Alerts
 
@@ -130,8 +130,8 @@ From the **Rules** tab:
 | Severity | Color | Description | Example |
 |----------|-------|-------------|---------|
 | **Info** | Blue | Informational | Daily summary |
-| **Warning** | Yellow | Caution advised | Quota at 80% |
-| **Error** | Orange | Action required | Quota exceeded |
+| **Warning** | Yellow | Caution advised | Limit usage at 80% |
+| **Error** | Orange | Action required | Limit exceeded |
 | **Critical** | Red | Immediate attention | Service down |
 
 ### Managing Notifications
@@ -148,7 +148,7 @@ From the **Rules** tab:
 
 Filter notifications by:
 - **Severity**: Show only critical alerts
-- **Type**: Cost, quota, policy, etc.
+- **Type**: Cost, limit, policy, etc.
 - **Date Range**: Specific time period
 - **Status**: Unread vs. all
 
@@ -215,11 +215,11 @@ Set times to suppress non-critical alerts:
 
 1. **Set Meaningful Thresholds**: Avoid alert fatigue
    - Don't alert on every minor fluctuation
-   - Use percentage-based thresholds for quotas
+   - Use percentage-based thresholds for limits
    - Set cost alerts based on budget
 
 2. **Use Severity Appropriately**:
-   - Critical: Service down, quota exceeded
+   - Critical: Service down, limit exceeded
    - Error: Action required soon
    - Warning: Approaching limit
    - Info: Informational updates
@@ -270,7 +270,7 @@ Required permissions:
 
 ## Related Features
 
-- [Cost & Quota Dashboard](./cost-quota-dashboard.md) - Monitor metrics that trigger alerts
+- [Cost & Limits Dashboard](./cost-limits-dashboard.md) - Monitor metrics that trigger alerts
 - [Audit Logs](./audit-usage-reports.md) - Investigate alert causes
 - [Settings](../../DEVELOPMENT.md) - Configure alert preferences
 
@@ -288,5 +288,5 @@ A: Dismissed alerts are hidden but retained in your history for 30 days.
 **Q: Can I forward alerts to external systems?**
 A: Yes, use webhooks to integrate with Slack, PagerDuty, or other tools.
 
-**Q: What happens if I exceed quota?**
+**Q: What happens if I exceed a limit?**
 A: You'll receive a critical alert. The system may throttle requests depending on your plan.

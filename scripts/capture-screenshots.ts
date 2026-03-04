@@ -179,11 +179,11 @@ async function main() {
         await page.waitForTimeout(500);
         await capture(page, '10c-member-permissions', 'members');
       }
-      const quotaTab = page.getByRole('tab', { name: /配额|Quota/i });
-      if (await quotaTab.isVisible()) {
-        await quotaTab.click();
+      const limitsTab = page.getByRole('tab', { name: /限额|Limit|限制/i });
+      if (await limitsTab.isVisible()) {
+        await limitsTab.click();
         await page.waitForTimeout(500);
-        await capture(page, '10d-member-quota', 'members');
+        await capture(page, '10d-member-limits', 'members');
       }
       await page.keyboard.press('Escape');
     }

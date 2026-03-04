@@ -1,19 +1,19 @@
-# Cost & Quota Dashboard User Guide
+# Cost & Limits Dashboard User Guide
 
 ## Overview
 
-The Cost & Quota Dashboard provides real-time visibility into your resource consumption, costs, and quota utilization. It helps you:
+The Cost & Limits Dashboard provides real-time visibility into your resource consumption, costs, and limit utilization. It helps you:
 
 - Track API usage and costs across endpoints and agents
-- Monitor quota limits and usage thresholds
+- Monitor rate/spending limits and usage thresholds
 - Identify cost trends and optimize resource allocation
-- Set up alerts for quota thresholds
+- Set up alerts for limit thresholds
 
 ## Accessing the Dashboard
 
 1. Navigate to your project
 2. Click on **Usage** in the sidebar navigation
-3. The dashboard displays your project's cost and quota metrics
+3. The dashboard displays your project's cost and limit metrics
 
 ## Dashboard Components
 
@@ -23,7 +23,7 @@ At the top of the dashboard, you'll see key performance indicators:
 
 - **Total Cost**: Month-to-date spending for your project
 - **Request Count**: Total API requests in the selected time period
-- **Quota Usage**: Percentage of quota consumed vs. limit
+- **Limit Usage**: Percentage of limit consumed vs. threshold
 - **Avg Response Time**: Average API response time
 
 ### 2. Cost Chart
@@ -35,15 +35,15 @@ Visual representation of your spending over time:
 - **Line graph**: Shows cost trend over the selected period
 - **Hover**: View exact cost for any time point
 
-### 3. Quota Usage Cards
+### 3. Limit Usage Cards
 
-Individual cards showing quota status for each resource type:
+Individual cards showing limit status for each resource type:
 
-- **Endpoint Quota**: API endpoint requests vs. limit
-- **Source Library Quota**: Storage/library usage vs. limit
-- **Agent Quota**: Agent executions vs. limit
-- **Progress Bar**: Visual indicator of quota consumed
-- **Reset Date**: When the quota resets
+- **Endpoint Limits**: API endpoint request and spending limits
+- **Source Library Limits**: Storage/library limits
+- **Agent Limits**: Agent execution/rate limits
+- **Progress Bar**: Visual indicator of limit utilization
+- **Reset Date**: When the window resets
 
 ### 4. Top Resources Table
 
@@ -66,11 +66,11 @@ Adjust the time range to analyze different periods:
    - Custom range
 3. Dashboard updates automatically
 
-## Quota Management
+## Limit Management
 
-### Viewing Quota Status
+### Viewing Limit Status
 
-Each quota card displays:
+Each limit card displays:
 
 - **Current Usage**: Number of requests used
 - **Limit**: Maximum allowed requests
@@ -80,13 +80,13 @@ Each quota card displays:
   - 🟡 Yellow: 80-95% of limit
   - 🔴 Red: Over 95% of limit
 
-### Responding to Quota Warnings
+### Responding to Limit Warnings
 
-When you approach quota limits:
+When you approach configured limits:
 
 1. **Review Top Resources**: Identify highest consumers
 2. **Optimize Usage**: Consider reducing non-essential requests
-3. **Request Increase**: Contact administrator to raise quota
+3. **Adjust Policy**: Ask project manager to adjust resource policy limits
 4. **Set Up Alerts**: Configure notifications for future thresholds
 
 ## Cost Analysis
@@ -118,12 +118,12 @@ The dashboard integrates with the Alert Center for proactive monitoring:
 4. Set threshold (e.g., "when daily cost exceeds $10")
 5. Configure notification preferences
 
-### Setting Up Quota Alerts
+### Setting Up Limit Alerts
 
 1. Go to **Alert Center**
 2. Create a new alert rule
-3. Select **Quota** as the trigger type
-4. Set threshold percentage (e.g., "when quota exceeds 80%")
+3. Select **Limit** as the trigger type
+4. Set threshold percentage (e.g., "when usage exceeds 80%")
 5. Choose notification channel (email, in-app)
 
 ## Troubleshooting
@@ -157,7 +157,7 @@ Required permissions to access dashboard features:
 
 ## Related Features
 
-- [Alert Center](./alert-center.md) - Set up cost and quota alerts
+- [Alert Center](./alert-center.md) - Set up cost and limit alerts
 - [Audit Logs](./audit-usage-reports.md) - Review detailed usage history
 - [Settings](../../DEVELOPMENT.md) - Configure project settings
 

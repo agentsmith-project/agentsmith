@@ -5,7 +5,6 @@ import {
   checkAndConsumeProjectResourceRateLimitsForUser,
   checkProjectEndpointRateLimitsForUser,
   checkProjectEndpointSpendingLimitsForUser,
-  checkProjectResourceQuotaLimitsForUser,
   checkProjectSourceLibraryQuotaLimits,
 } from './project-resource-policy-enforcer.js';
 import { getProjectGroupsState } from './project-groups-store.js';
@@ -125,50 +124,6 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
-  it('enforces endpoint daily_token_limit quota using token counts', async () => {
-    const docStore = new InMemoryJsonDocStore();
-    const policy: ProjectResourcePolicyRecord = {
-      resource_type: 'endpoint',
-      resource_id: 'ep_quota_day',
-      access_mode: 'allow_all_members',
-      allowed_subjects: [],
-      quota_limits: {
-        rules: [{ key: 'endpoint.daily_token_limit', value: 200 }],
-      },
-    };
-
-    await recordUsageFact(docStore, {
-      workspace_id: 'ws_1',
-      project_id: 'proj_1',
-      resource_type: 'endpoint',
-      resource_id: 'ep_quota_day',
-      end_user_id: 'user_1',
-      tokens_total: 210,
-      result: 'ok',
-      timestamp: new Date(Date.UTC(2026, 1, 26, 8, 0, 0, 0)).toISOString(),
-    });
-
-    const decision = await checkProjectResourceQuotaLimitsForUser({
-      docStore,
-      workspaceId: 'ws_1',
-      projectId: 'proj_1',
-      resourceType: 'endpoint',
-      resourceId: 'ep_quota_day',
-      userId: 'user_1',
-      policy,
-      nowMs: Date.UTC(2026, 1, 26, 12, 0, 0, 0),
-    });
-
-    expect(decision).toMatchObject({
-      allowed: false,
-      reason: 'quota_exceeded',
-      quota_key: 'endpoint.daily_token_limit',
-      effective_daily_token_limit: 200,
-      current_tokens_today: 210,
-      usage_unit: 'tokens',
-    });
-  });
-
   it('enforces endpoint requests_per_5_hours using usage facts', async () => {
     const docStore = new InMemoryJsonDocStore();
     const policy: ProjectResourcePolicyRecord = {
@@ -215,7 +170,7 @@ describe('project-resource-policy-enforcer', () => {
       resource_id: 'ep_spending_day',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
-      quota_limits: {
+      spending_limits: {
         rules: [{ key: 'endpoint.spending_usd_per_day', value: 1.5 }],
       },
     };
@@ -254,7 +209,7 @@ describe('project-resource-policy-enforcer', () => {
       resource_id: 'lib_quota',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
-      quota_limits: {
+      spending_limits: {
         rules: [
           { key: 'source_library.max_total_files', value: 1 },
           { key: 'source_library.max_file_size_bytes', value: 4 },

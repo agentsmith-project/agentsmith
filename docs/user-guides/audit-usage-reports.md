@@ -125,7 +125,7 @@ The Usage page displays:
 
 - **Request Volume**: Total API calls over time
 - **Cost Trend**: Spending patterns
-- **Quota Utilization**: Resource limit usage
+- **Limit Utilization**: Resource limit usage
 - **Error Rates**: Failed request percentage
 
 ### Usage Time Series
@@ -136,7 +136,7 @@ View metrics over time:
 2. Chart updates to show:
    - **Request Count**: Line graph of API calls
    - **Cost**: Bar chart of spending
-   - **Quota**: Progress bars for each resource type
+   - **Limits**: Progress bars for each resource type
 
 ### Resource Breakdown
 
@@ -264,7 +264,7 @@ Required permissions:
 
 ## Related Features
 
-- [Cost & Quota Dashboard](./cost-quota-dashboard.md) - Visual usage metrics
+- [Cost & Limits Dashboard](./cost-limits-dashboard.md) - Visual usage metrics
 - [Alert Center](./alert-center.md) - Set up usage-based alerts
 - [API Documentation](../contracts/API_GUIDE.md) - API access to audit data
 

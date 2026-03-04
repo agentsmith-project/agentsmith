@@ -291,7 +291,7 @@ describe('verify-release-report: TDD Suite', () => {
           expect(cat).toHaveProperty('category');
           expect([
             'token', 'network', 'backend', 'assertion', 'timeout',
-            'authorization', 'quota', 'rate_limit', 'permission', 'unknown',
+            'authorization', 'spending_limit', 'rate_limit', 'permission', 'unknown',
           ]).toContain(cat.category);
           expect(cat).toHaveProperty('count');
           expect(cat).toHaveProperty('checks');

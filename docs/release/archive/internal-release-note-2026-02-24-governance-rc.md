@@ -80,7 +80,7 @@ Impact:
 
 ### 3. Governance real-backend effect smoke coverage expansion
 
-- Added `governance-policy-quota-effect-smoke`
+- Added `governance-policy-spending-effect-smoke`
   - verifies `RESOURCE_POLICY_QUOTA_EXCEEDED` on endpoint `daily_token_limit`
   - verifies `Audit` / `Usage` evidence and restores original endpoint policy
 - Added `governance-policy-access-effect-smoke`
@@ -91,7 +91,7 @@ Impact:
   - verifies group-subject allow-list matching can clear deny for current user via group membership
   - verifies deny-path `Audit` / `Usage` evidence and restores policy/group state
 
-- Added `governance-member-quota-effect-smoke`
+- Added `governance-member-permission-effect-smoke`
   - verifies member endpoint quota enforcement returns `MEMBER_QUOTA_EXCEEDED`
   - verifies `Audit` / `Usage` evidence and restores original member quota overrides
 - Added `governance-member-permission-effect-smoke`
@@ -178,9 +178,9 @@ Result:
   - Includes policy allow-list deny (`RESOURCE_POLICY_DENIED`) + `Audit/Usage` evidence + allow-path verification + restore
 - `governance-policy-group-access-effect-smoke` ✅
   - Includes policy group-subject allow-list effect verification + deny-path `Audit/Usage` evidence + restore
-- `governance-policy-quota-effect-smoke` ✅
+- `governance-policy-spending-effect-smoke` ✅
   - Includes policy quota deny (`RESOURCE_POLICY_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
-- `governance-member-quota-effect-smoke` ✅
+- `governance-member-permission-effect-smoke` ✅
   - Includes member quota deny (`MEMBER_QUOTA_EXCEEDED`) + `Audit/Usage` evidence + restore
 - `governance-member-permission-effect-smoke` ✅
   - Includes member route authz deny (`403`) -> grant -> allow (`200`) + restore

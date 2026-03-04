@@ -1,5 +1,5 @@
 import { execSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -12,6 +12,31 @@ function loadCurrent(): OpenApiDoc {
   const repoRoot = path.resolve(scriptDir, '../..');
   const currentPath = path.join(repoRoot, 'docs', 'contracts', 'specs', 'openapi.json');
   return JSON.parse(readFileSync(currentPath, 'utf-8')) as OpenApiDoc;
+}
+
+type BreakingAllowlist = {
+  operations?: string[];
+  responses?: string[];
+};
+
+function loadAllowlist(): { operations: Set<string>; responses: Set<string> } {
+  const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+  const repoRoot = path.resolve(scriptDir, '../..');
+  const allowlistPath = path.join(
+    repoRoot,
+    'docs',
+    'contracts',
+    'specs',
+    'openapi-breaking-allowlist.json',
+  );
+  if (!existsSync(allowlistPath)) {
+    return { operations: new Set(), responses: new Set() };
+  }
+  const parsed = JSON.parse(readFileSync(allowlistPath, 'utf-8')) as BreakingAllowlist;
+  return {
+    operations: new Set(parsed.operations ?? []),
+    responses: new Set(parsed.responses ?? []),
+  };
 }
 
 function loadBaseFromGit(): OpenApiDoc | null {
@@ -74,11 +99,16 @@ function main(): void {
   }
 
   const current = loadCurrent();
+  const allowlist = loadAllowlist();
   const currentOps = operationKeys(current);
   const currentResponses = responseKeys(current);
 
-  const removedOps = Array.from(operationKeys(base)).filter((op) => !currentOps.has(op));
-  const removedResponses = Array.from(responseKeys(base)).filter((key) => !currentResponses.has(key));
+  const removedOps = Array.from(operationKeys(base))
+    .filter((op) => !currentOps.has(op))
+    .filter((op) => !allowlist.operations.has(op));
+  const removedResponses = Array.from(responseKeys(base))
+    .filter((key) => !currentResponses.has(key))
+    .filter((key) => !allowlist.responses.has(key));
 
   if (removedOps.length === 0 && removedResponses.length === 0) {
     process.stdout.write('[contracts] OpenAPI breaking check passed.\n');

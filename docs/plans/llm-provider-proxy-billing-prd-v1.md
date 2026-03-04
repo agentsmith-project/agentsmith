@@ -217,7 +217,7 @@ D3. 防错与反馈
 1. `GET /usage`（增强聚合维度）
 2. `GET /usage/kpi`（增强成本 KPI）
 3. `GET /usage/timeseries`（requests/tokens/cost）
-4. `GET /quota/summary`（与成本视图联动）
+4. `GET /limits/summary`（与成本视图联动）
 
 ---
 

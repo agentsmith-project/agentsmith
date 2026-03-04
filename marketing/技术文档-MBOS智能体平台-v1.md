@@ -189,7 +189,7 @@ E2E 脚本生成到 `test-results/screenshots/`（临时）。用于 marketing �
 | 05-studio | studio.png | AI Studio |
 | 06-agents | agents.png | 智能体管理 |
 | 07-endpoints | endpoints.png | 端点管理 |
-| 08-members | members-list.png, member-detail-overview.png, member-permissions-template.png, member-permissions-advanced.png, member-quota.png, member-resource-acl.png | 成员、权限配置详情、配额覆盖、资源 ACL |
+| 08-members | members-list.png, member-detail-overview.png, member-permissions-template.png, member-permissions-advanced.png, member-limits.png, member-resource-acl.png | 成员、权限配置详情、配额覆盖、资源 ACL |
 | 09-audit | audit.png | 审计日志 |
 | 10-usage | usage.png | 用量统计 |
 | 11-settings | settings-general.png, settings-runtime-with-tokens.png, settings-governance-with-tokens.png, settings-limits-with-tokens.png | 常规、运行偏好、治理规则、资源限制（含全部 token） |

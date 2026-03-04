@@ -8,7 +8,7 @@ import {
   createUsageReportSchedule,
   deleteUsageReportSchedule,
   exportUsageData,
-  getQuotaSummary,
+  getLimitsSummary,
   getUsageReportEvidence,
   getRuntimeObservability,
   getUsageOperationsSummary,
@@ -541,8 +541,8 @@ export async function handleAuditUsageRoute({
     return true;
   }
 
-  if (route.kind === 'quotaSummary' && method === 'GET') {
-    const payload = await getQuotaSummary(deps.docStore, {
+  if (route.kind === 'limitsSummary' && method === 'GET') {
+    const payload = await getLimitsSummary(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
     });

@@ -65,7 +65,7 @@
     "governance_drilldown_description": "来源：{from} · 目标类型：{kind} · 原因：{reason}",
     "governance_drilldown_reason_none": "无",
     "governance_drilldown_focus": "证据焦点：{focus} · 信号数：{count}",
-    "governance_drilldown_focus_quota": "配额限制",
+    "governance_drilldown_focus_quota": "限额约束",
     "governance_drilldown_focus_deny": "访问拒绝",
     "governance_drilldown_focus_cost": "成本与用量",
     "governance_drilldown_focus_exposure": "公开暴露",
@@ -1135,7 +1135,7 @@
       "governance_title": "治理证据",
       "governance_kind": "治理类型",
       "enforcement_kind": "生效方式",
-      "quota_key": "配额键",
+      "quota_key": "限额键",
       "scope": "作用域",
       "effective_limit": "生效上限",
       "current_usage": "当前使用量",
@@ -1159,7 +1159,7 @@
   },
   "usage": {
     "title": "用量",
-    "dashboard": "成本与配额看板",
+    "dashboard": "成本与限额看板",
     "subtitle": "用量统计与资源消耗",
     "kpi": {
       "requests_today": "今日请求数",
@@ -1225,7 +1225,7 @@
       "governance_title": "治理证据",
       "governance_kind": "治理类型",
       "enforcement_kind": "生效方式",
-      "quota_key": "配额键",
+      "quota_key": "限额键",
       "scope": "作用域",
       "effective_limit": "生效上限",
       "current_usage": "当前使用量",
@@ -1414,7 +1414,7 @@
     }
   },
   "dashboard": {
-    "title": "成本与配额看板",
+    "title": "成本与限额看板",
     "subtitle": "趋势、Top 消耗与异常洞察",
     "refresh": "刷新",
     "refreshed_data": "看板数据已刷新",
@@ -1597,7 +1597,7 @@
     "release_ops_overrides_reject": "驳回",
     "release_ops_governance_evidence_title": "治理证据桥接",
     "release_ops_governance_evidence_subtitle": "将组织治理上下文映射到实时发布证据与升级压力，先判断再处置。",
-    "release_ops_governance_focus_quota": "配额焦点",
+    "release_ops_governance_focus_quota": "限额焦点",
     "release_ops_governance_focus_deny": "拒绝焦点",
     "release_ops_governance_focus_cost": "成本焦点",
     "release_ops_governance_focus_exposure": "暴露焦点",
@@ -1645,11 +1645,11 @@
     "workspace_explainability_subtitle": "汇总 blocked / warning 治理信号，并直接跳到最相关的处置页面。",
     "workspace_explainability_blocked_projects": "Blocked 项目数",
     "workspace_explainability_blocked_members": "Blocked 成员数",
-    "workspace_explainability_quota_gap_projects": "缺少文件库配额的项目",
+    "workspace_explainability_quota_gap_projects": "缺少文件库限额的项目",
     "workspace_explainability_exposed_projects": "存在暴露风险的项目",
     "workspace_explainability_open_audit": "打开 blocked 项目审计",
     "workspace_explainability_open_members": "打开 blocked 成员范围",
-    "workspace_explainability_open_policy": "打开配额策略",
+    "workspace_explainability_open_policy": "打开限额策略",
     "workspace_explainability_open_release_ops": "打开 Release Ops",
     "workspace_explainability_warnings": "{projects} 个项目 warning · {members} 个成员 warning",
     "workspace_attention_eyebrow": "审查",
@@ -1664,7 +1664,7 @@
     "workspace_attention_open_release_ops": "打开 Release Ops",
     "workspace_projects_eyebrow": "处理",
     "workspace_projects_title": "项目治理关注项",
-    "workspace_projects_subtitle": "查看项目级治理态势、暴露面以及文件库配额覆盖情况。",
+    "workspace_projects_subtitle": "查看项目级治理态势、暴露面以及文件库限额覆盖情况。",
     "workspace_projects_empty": "此工作区暂无项目。",
     "workspace_projects_status_info": "已归档",
     "workspace_projects_meta": "{visibility} · {joinPolicy} · {status}",
@@ -1679,7 +1679,7 @@
     "workspace_projects_risk_public_open_access": "公开项目且开放加入",
     "workspace_projects_risk_public_visibility": "公开可见",
     "workspace_projects_risk_open_join_policy": "开放加入策略",
-    "workspace_projects_risk_missing_source_library_quota": "缺少文件库配额",
+    "workspace_projects_risk_missing_source_library_quota": "缺少文件库限额",
     "workspace_projects_risk_archived_project": "已归档项目",
     "workspace_members_eyebrow": "管理",
     "workspace_members_subtitle": "维护每个成员的工作区治理分组。",
@@ -1990,7 +1990,7 @@
     "runtime_probe_reason_runtime_provider_connection_not_found": "没有匹配此尝试的活动提供商连接。",
     "runtime_probe_reason_runtime_provider_credential_missing": "提供商连接存在，但未配置凭证引用。",
     "runtime_probe_reason_runtime_provider_credential_not_found": "凭证引用存在，但未能解析到实际密钥。",
-    "governance_help": "每成员配额、限流与护栏。更改影响所有成员。成员配额覆盖可为每个用户定制。",
+    "governance_help": "每成员限额、限流与护栏。更改影响所有成员。成员限额覆盖可为每个用户定制。",
     "governance_form": {
       "guardrails": "防护规则",
       "content_filter": "启用内容过滤",
@@ -2033,8 +2033,8 @@
     "permission_denied_hint": "您没有权限访问此资源。",
     "rate_limited_title": "请求过于频繁",
     "rate_limited_hint": "请求过于频繁，请稍后再试。",
-    "quota_exceeded_title": "配额已用尽",
-    "quota_exceeded_hint": "您已超出配额限制。",
+    "quota_exceeded_title": "限额已用尽",
+    "quota_exceeded_hint": "您已超出限额约束。",
     "model_not_found_title": "模型不存在",
     "model_not_found_hint": "请求的模型不可用。",
     "endpoint_disabled_title": "端点已禁用",
@@ -2136,8 +2136,8 @@
       "agent": "智能体"
     },
     "editor_hint": {
-      "endpoint": "配置该模型端点的访问范围与 token 配额。",
-      "source_library": "配置该文件库的可访问主体与文件配额限制。",
+      "endpoint": "配置该模型端点的访问范围与 token 限额。",
+      "source_library": "配置该文件库的可访问主体与文件限额约束。",
       "agent": "配置该智能体的可访问主体与每分钟请求限制。"
     },
     "subjects": {
@@ -2194,8 +2194,11 @@
     "rules": {
       "endpoint": {
         "requests_per_minute": "端点每分钟请求数上限",
-        "daily_token_limit": "端点每日 Token 限额",
-        "requests_per_day": "端点每日请求数上限"
+        "requests_per_5_hours": "端点每 5 小时请求数上限",
+        "requests_per_day": "端点每日请求数上限",
+        "spending_usd_per_minute": "端点每分钟费用上限（USD）",
+        "spending_usd_per_5_hours": "端点每 5 小时费用上限（USD）",
+        "spending_usd_per_day": "端点每日费用上限（USD）"
       },
       "source_library": {
         "requests_per_minute": "文件库每分钟请求数上限",
@@ -2209,8 +2212,11 @@
     "subject_placeholders": {
       "endpoint": {
         "requests_per_minute": "主体每分钟请求数上限",
-        "daily_token_limit": "主体每日 token 限额",
-        "requests_per_day": "主体每日请求数上限"
+        "requests_per_5_hours": "主体每 5 小时请求数上限",
+        "requests_per_day": "主体每日请求数上限",
+        "spending_usd_per_minute": "主体每分钟费用上限（USD）",
+        "spending_usd_per_5_hours": "主体每 5 小时费用上限（USD）",
+        "spending_usd_per_day": "主体每日费用上限（USD）"
       },
       "source_library": {
         "requests_per_minute": "主体每分钟请求数上限",
@@ -2252,7 +2258,7 @@
       "success_description": "将此链接分享给被邀请人，他们可通过链接加入项目。",
       "create_success": "邀请已创建"
     },
-    "description": "管理项目成员、权限和配额",
+    "description": "管理项目成员、权限和限额",
     "action_block": "冻结",
     "action_unblock": "解冻",
     "action_remove": "移除",
@@ -2316,8 +2322,8 @@
       "no_template_to_reset": "没有模板可重置"
     },
     "quota": {
-      "title": "配额覆盖",
-      "description": "默认配额继承自项目策略。在下方为此用户覆盖特定配额。",
+      "title": "限额覆盖",
+      "description": "默认限额继承自项目策略。在下方为此用户覆盖特定限额。",
       "use_default": "使用默认值",
       "override": "覆盖",
       "reset_all": "重置全部",
@@ -2340,16 +2346,16 @@
         "files": "个文件",
         "concurrency": "并发"
       },
-      "update_success": "配额覆盖更新成功",
-      "coming_soon": "配额编辑器已在当前面板提供。",
+      "update_success": "限额覆盖更新成功",
+      "coming_soon": "限额编辑器已在当前面板提供。",
       "cancel": "取消",
       "save_changes": "保存更改"
     },
     "quota_history": {
-      "title": "配额覆盖历史",
-      "view_history": "查看配额历史",
+      "title": "限额覆盖历史",
+      "view_history": "查看限额历史",
       "loading": "加载中...",
-      "empty": "暂无配额覆盖历史",
+      "empty": "暂无限额覆盖历史",
       "by": "由",
       "page_info": "第 {page} 页，共 {totalPages} 页（共 {total} 条）",
       "prev": "上一页",
@@ -2372,11 +2378,11 @@
       "title": "变更历史",
       "view_history": "查看变更历史",
       "permissions_updated": "权限已更新",
-      "quota_updated": "配额覆盖",
+      "quota_updated": "限额覆盖",
       "acl_updated": "资源策略已更新"
     },
     "actions": {
-      "edit_permissions_quota": "编辑权限和配额",
+      "edit_permissions_quota": "编辑权限和限额",
       "view_history": "查看变更历史",
       "remove_member": "移除成员"
     },
@@ -2458,7 +2464,7 @@
       "empty_custom_title": "暂无自定义模板",
       "empty_custom_description": "创建自定义模板以定义默认模板之外的权限组合。",
       "permission_templates": "权限模板",
-      "quota_templates": "配额模板",
+      "quota_templates": "限额模板",
       "group_templates": "项目分组",
       "group_templates_description": "创建项目分组，绑定权限模板，并批量应用到组成员。",
       "group_name": "分组名称",
@@ -2479,29 +2485,29 @@
       "copy_failed_members_success": "失败成员列表已复制",
       "group_preview_title": "权限变更预览（按成员）",
       "group_preview_empty": "该分组暂无成员",
-      "quota_coming_soon": "配额模板已可用。可创建并应用配额预设（如标准、高用量）到成员。",
+      "quota_coming_soon": "限额模板已可用。可创建并应用限额预设（如标准、高用量）到成员。",
       "template_name": "模板名称",
       "template_description": "描述（可选）",
       "name_required": "名称为必填项",
       "cancel": "取消",
       "creating": "创建中...",
-      "quota_create_success": "配额模板创建成功",
-      "quota_update_success": "配额模板更新成功",
-      "quota_delete_success": "配额模板已删除",
-      "quota_apply_success": "配额模板已应用到成员",
-      "quota_apply_batch_success": "配额模板已应用到 {count} 位成员",
-      "quota_apply_partial_success": "配额模板已部分应用，部分成员更新失败。",
-      "quota_title": "配额模板",
-      "quota_description": "管理可复用的配额预设（如标准、高用量、受限），覆盖 endpoint、文件库与 agent 限额。",
-      "quota_empty_title": "暂无配额模板",
-      "quota_empty_description": "创建配额模板以定义 endpoint token、文件库文件数/大小、agent 并发的预设覆盖。",
+      "quota_create_success": "限额模板创建成功",
+      "quota_update_success": "限额模板更新成功",
+      "quota_delete_success": "限额模板已删除",
+      "quota_apply_success": "限额模板已应用到成员",
+      "quota_apply_batch_success": "限额模板已应用到 {count} 位成员",
+      "quota_apply_partial_success": "限额模板已部分应用，部分成员更新失败。",
+      "quota_title": "限额模板",
+      "quota_description": "管理可复用的限额预设（如标准、高用量、受限），覆盖 endpoint、文件库与 agent 限额。",
+      "quota_empty_title": "暂无限额模板",
+      "quota_empty_description": "创建限额模板以定义 endpoint token、文件库文件数/大小、agent 并发的预设覆盖。",
       "save_changes": "保存更改",
       "delete": "删除",
       "delete_confirm_title": "删除模板",
-      "delete_confirm_message": "确定要删除配额模板「{name}」吗？已应用此模板的成员不会受影响。",
+      "delete_confirm_message": "确定要删除限额模板「{name}」吗？已应用此模板的成员不会受影响。",
       "select_template": "选择模板",
       "batch_apply_permission_hint": "将权限模板应用到 {count} 位已选成员。",
-      "batch_apply_quota_hint": "将配额模板应用到 {count} 位已选成员。",
+      "batch_apply_quota_hint": "将限额模板应用到 {count} 位已选成员。",
       "apply_failed_members_title": "以下成员更新失败：",
       "apply_failed_members_count": "{count} 位成员更新失败。",
       "retry_failed_members": "重试失败成员",
@@ -2512,7 +2518,7 @@
       "selected_count": "已选择 {count} 位",
       "clear_selection": "清除选择",
       "apply_permission_template": "应用权限模板",
-      "apply_quota_template": "应用配额模板"
+      "apply_quota_template": "应用限额模板"
     },
     "join_requests": {
       "title": "加入申请",
@@ -2544,13 +2550,13 @@
     "effective_access": {
       "title": "有效访问",
       "current_state_title": "当前生效状态",
-      "current_state_description": "查看该成员当前的生命周期状态、生效权限与配额覆盖。",
+      "current_state_description": "查看该成员当前的生命周期状态、生效权限与限额覆盖。",
       "membership_status_label": "成员状态",
       "role_label": "生效角色",
       "permissions_label": "生效权限",
-      "quota_label": "配额覆盖",
+      "quota_label": "限额覆盖",
       "no_permissions": "当前没有生效权限",
-      "no_quota_overrides": "当前没有配额覆盖",
+      "no_quota_overrides": "当前没有限额覆盖",
       "authorize_title": "运行授权检查",
       "authorize_description": "验证该成员是否能对指定治理资源执行某个动作。",
       "resource_type": "资源类型",
@@ -3006,7 +3012,7 @@
       "vectordb": "向量数据库",
       "used": "已使用",
       "limit": "限制",
-      "exceeded": "配额超限"
+      "exceeded": "限额超限"
     },
     "batch": {
       "selected": "已选择 {count} 个",
@@ -3062,7 +3068,7 @@
     "error": {
       "upload_failed": "上传失败",
       "process_failed": "处理失败",
-      "quota_exceeded": "配额超限，无法启动 AIReady。",
+      "quota_exceeded": "限额超限，无法启动 AIReady。",
       "delete_failed": "删除失败"
     },
     "filter_status_all": "全部",
@@ -3082,7 +3088,7 @@
     "selection_bar_label": "已选操作",
     "selection_count": "个文件已选",
     "selection_clear": "清除选择",
-    "quota_exceeded_hint": "配额超限，无法启动 AIReady。",
+    "quota_exceeded_hint": "限额超限，无法启动 AIReady。",
     "action_clear_attachments": "清空附件",
     "action_retry": "重试",
     "action_delete": "删除",

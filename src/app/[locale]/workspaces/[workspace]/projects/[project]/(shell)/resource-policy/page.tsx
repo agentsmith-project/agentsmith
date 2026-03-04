@@ -71,7 +71,7 @@ type EditableSubject = EditableSubjectDraft & {
   subject_id: string;
   draftRules: Partial<Record<PolicyRuleKey, string>>;
   existingRateRules: PolicyRule[];
-  existingQuotaRules: PolicyRule[];
+  existingSpendingRules: PolicyRule[];
 };
 
 export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) {
@@ -238,19 +238,20 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     setAccessMode(selectedPolicy.access_mode);
     setRootDraftRules(buildDraftRuleValues(selectedResource?.type ?? selectedPolicy.resource_type, {
       rateRules: selectedPolicy.rate_limits?.rules,
-      quotaRules: selectedPolicy.quota_limits?.rules,
+      spendingRules: selectedPolicy.spending_limits?.rules,
     }));
     setSubjects(
       (selectedPolicy.allowed_subjects ?? []).map((subject) => ({
+        ...subject,
         rowId: createSubjectRowId(),
         subject_type: subject.subject_type,
         subject_id: subject.subject_id,
         draftRules: buildDraftRuleValues(selectedResource?.type ?? selectedPolicy.resource_type, {
           rateRules: subject.rate_limits?.rules,
-          quotaRules: subject.quota_limits?.rules,
+          spendingRules: subject.spending_limits?.rules,
         }),
         existingRateRules: subject.rate_limits?.rules ?? [],
-        existingQuotaRules: subject.quota_limits?.rules ?? [],
+        existingSpendingRules: subject.spending_limits?.rules ?? [],
       }))
     );
   }, [selectedPolicy, selectedResource?.type]);
@@ -306,14 +307,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       const subjectRuleSet = buildRuleSetFromDraft(
         selectedType,
         subject.existingRateRules,
-        subject.existingQuotaRules,
+        subject.existingSpendingRules,
         subject.draftRules
       );
       return {
         subject_type: subject.subject_type,
         subject_id: normalizeSubjectId(subject.subject_id),
         rate_limits: subjectRuleSet.rateRules.length > 0 ? { rules: subjectRuleSet.rateRules } : undefined,
-        quota_limits: subjectRuleSet.quotaRules.length > 0 ? { rules: subjectRuleSet.quotaRules } : undefined,
+        spending_limits: subjectRuleSet.spendingRules.length > 0 ? { rules: subjectRuleSet.spendingRules } : undefined,
       };
     });
   const allowListInvalid = accessMode === 'allow_list' && validSubjects.length === 0;
@@ -321,7 +322,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const draftRootRuleSet = buildRuleSetFromDraft(
     selectedType,
     selectedPolicy?.rate_limits?.rules,
-    selectedPolicy?.quota_limits?.rules,
+    selectedPolicy?.spending_limits?.rules,
     rootDraftRules
   );
 
@@ -332,7 +333,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     const nextRuleSet = buildRuleSetFromDraft(
       selectedResource.type,
       selectedPolicy.rate_limits?.rules,
-      selectedPolicy.quota_limits?.rules,
+      selectedPolicy.spending_limits?.rules,
       rootDraftRules
     );
 
@@ -340,7 +341,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       access_mode: accessMode,
       allowed_subjects: validSubjects,
       rate_limits: nextRuleSet.rateRules.length > 0 ? { rules: nextRuleSet.rateRules } : undefined,
-      quota_limits: nextRuleSet.quotaRules.length > 0 ? { rules: nextRuleSet.quotaRules } : undefined,
+      spending_limits: nextRuleSet.spendingRules.length > 0 ? { rules: nextRuleSet.spendingRules } : undefined,
     };
 
     await updatePolicyMutation.mutateAsync(payload);
@@ -371,7 +372,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
         subject_id: '',
         draftRules: {},
         existingRateRules: [],
-        existingQuotaRules: [],
+        existingSpendingRules: [],
       },
     ]);
   };
@@ -765,7 +766,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                     <div className="space-y-1">
                       {renderRuleSummary(
                         draftRootRuleSet.rateRules,
-                        draftRootRuleSet.quotaRules,
+                        draftRootRuleSet.spendingRules,
                         (key) => tResource(getRuleLabel(key)),
                         tResource('effective_summary.no_explicit_limits'),
                         (rule) => formatRuleValue(rule, tResource),
@@ -779,15 +780,15 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                             draftRootRuleSet.rateRules,
                             subject.rate_limits?.rules ?? []
                           );
-                          const effectiveQuota = mergeRuleSets(
-                            draftRootRuleSet.quotaRules,
-                            subject.quota_limits?.rules ?? []
+                          const effectiveSpending = mergeRuleSets(
+                            draftRootRuleSet.spendingRules,
+                            subject.spending_limits?.rules ?? []
                           );
                           const effectiveTrace = mergeRuleSources(
                             draftRootRuleSet.rateRules,
-                            draftRootRuleSet.quotaRules,
+                            draftRootRuleSet.spendingRules,
                             subject.rate_limits?.rules ?? [],
-                            subject.quota_limits?.rules ?? [],
+                            subject.spending_limits?.rules ?? [],
                           );
                           return (
                             <div
@@ -801,7 +802,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
                               </p>
                               {renderRuleSummary(
                                 effectiveRate,
-                                effectiveQuota,
+                                effectiveSpending,
                                 (key) => tResource(getRuleLabel(key)),
                                 tResource('effective_summary.no_explicit_limits'),
                                 (rule) => formatRuleValue(rule, tResource),
@@ -990,13 +991,13 @@ function getDefaultActionForResourceType(resourceType: ResourceRow['type']): str
 
 function renderRuleSummary(
   rateRules: PolicyRule[],
-  quotaRules: PolicyRule[],
+  spendingRules: PolicyRule[],
   labelForKey: (key: PolicyRuleKey) => string,
   noRulesText: string,
   valueForRule: (rule: PolicyRule) => string,
   sourceForRule?: (rule: PolicyRule) => string
 ) {
-  const rules = [...rateRules, ...quotaRules];
+  const rules = [...rateRules, ...spendingRules];
   if (rules.length === 0) {
     return <p className="text-xs text-tertiary">{noRulesText}</p>;
   }

@@ -29,7 +29,7 @@
 - Evidence: `e2e/alerts.spec.ts`
 - Verify: `BASE_URL=http://localhost:3001 npm run test:e2e -- e2e/alerts.spec.ts --project=chromium --workers=1` -> 13 passed, 1 skipped
 2. ✅ 2026-02-27: 已补 `C1-1/2/3`（趋势过滤、Top 钻取、异常钻取）
-- Evidence: `e2e/cost-quota-dashboard.spec.ts`, `src/components/dashboard/CostDashboardPage.tsx`
+- Evidence: `e2e/cost-limits-dashboard.spec.ts`, `src/components/dashboard/CostDashboardPage.tsx`
 3. ✅ 2026-02-27: 已补 `C2-2/3/4`（防抖可见性、恢复通知、webhook 投递证据）
 - Evidence: `e2e/alerts.spec.ts`, `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/alerts/page.tsx`, `src/components/alerts/AlertNotificationsPanel.tsx`
 4. ✅ 当前状态：C1/C2 收口完成
@@ -39,7 +39,7 @@
 ## C1 Minimum Test Set
 
 ### C1-1 Trend filter drives API query and chart refresh
-- New test: `e2e/cost-quota-dashboard.spec.ts` -> `trend supports workspace/project/resource_type filters`
+- New test: `e2e/cost-limits-dashboard.spec.ts` -> `trend supports workspace/project/resource_type filters`
 - Status: ✅ Done
 - Assertions:
   1. 切换过滤项后，发起 `GET /usage/timeseries`（含 `resource_type` 查询参数）
@@ -50,7 +50,7 @@
 - Estimate: 0.5 day
 
 ### C1-2 Top users/resources list render and drill-down
-- New test: `e2e/cost-quota-dashboard.spec.ts` -> `top lists support drill-down to filtered usage detail`
+- New test: `e2e/cost-limits-dashboard.spec.ts` -> `top lists support drill-down to filtered usage detail`
 - Status: ✅ Done
 - Assertions:
   1. Top Users / Top Resources 列表可见
@@ -60,7 +60,7 @@
 - Estimate: 0.5 day
 
 ### C1-3 Anomaly card links to usage detail slice
-- New test: `e2e/cost-quota-dashboard.spec.ts` -> `anomaly click opens scoped detail slice`
+- New test: `e2e/cost-limits-dashboard.spec.ts` -> `anomaly click opens scoped detail slice`
 - Status: ✅ Done
 - Assertions:
   1. 异常面板 `dashboard-anomalies` 可见

@@ -178,7 +178,7 @@ export type FailureType =
   | 'assertion'  // Test assertion failures
   | 'timeout'    // Operation timeout
   | 'authorization' // Governance authorization failures
-  | 'quota'      // Quota exceeded
+  | 'spending_limit' // Spending limit exceeded
   | 'rate_limit' // Upstream/provider throttling
   | 'permission' // Access control failures
   | 'unknown';   // Unclassified

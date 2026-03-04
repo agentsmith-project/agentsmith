@@ -760,7 +760,6 @@ export type PolicyRuleKey =
   | 'endpoint.requests_per_minute'
   | 'endpoint.requests_per_5_hours'
   | 'endpoint.requests_per_day'
-  | 'endpoint.daily_token_limit'
   | 'endpoint.spending_usd_per_minute'
   | 'endpoint.spending_usd_per_5_hours'
   | 'endpoint.spending_usd_per_day'
@@ -784,12 +783,16 @@ export interface PolicyQuotaLimit {
   rules: PolicyRule[];
   [key: string]: unknown;
 }
+export interface PolicySpendingLimit {
+  rules: PolicyRule[];
+  [key: string]: unknown;
+}
 
 export interface ResourcePolicySubject {
   subject_type: PolicySubjectType;
   subject_id: string;
   rate_limits?: PolicyRateLimit;
-  quota_limits?: PolicyQuotaLimit;
+  spending_limits?: PolicySpendingLimit;
   updated_at?: string;
 }
 
@@ -799,7 +802,7 @@ export interface ResourcePolicy {
   access_mode: 'allow_all_members' | 'allow_list';
   allowed_subjects: ResourcePolicySubject[];
   rate_limits?: PolicyRateLimit;
-  quota_limits?: PolicyQuotaLimit;
+  spending_limits?: PolicySpendingLimit;
 }
 
 export interface ResourcePolicyUpdateRequest {
@@ -808,10 +811,10 @@ export interface ResourcePolicyUpdateRequest {
     subject_type: PolicySubjectType;
     subject_id: string;
     rate_limits?: PolicyRateLimit;
-    quota_limits?: PolicyQuotaLimit;
+    spending_limits?: PolicySpendingLimit;
   }>;
   rate_limits?: PolicyRateLimit;
-  quota_limits?: PolicyQuotaLimit;
+  spending_limits?: PolicySpendingLimit;
 }
 
 export interface ProjectGovernanceDefaults {
@@ -824,10 +827,9 @@ export interface ProjectGovernanceDefaults {
         | PolicyRule<'endpoint.requests_per_day'>
       >;
     };
-    quota_limits?: {
+    spending_limits?: {
       rules: Array<
-        PolicyRule<'endpoint.daily_token_limit'>
-        | PolicyRule<'endpoint.spending_usd_per_minute'>
+        PolicyRule<'endpoint.spending_usd_per_minute'>
         | PolicyRule<'endpoint.spending_usd_per_5_hours'>
         | PolicyRule<'endpoint.spending_usd_per_day'>
       >;
@@ -838,7 +840,7 @@ export interface ProjectGovernanceDefaults {
     rate_limits?: {
       rules: PolicyRule<'source_library.requests_per_minute'>[];
     };
-    quota_limits?: {
+    spending_limits?: {
       rules: Array<
         PolicyRule<'source_library.max_total_files'> | PolicyRule<'source_library.max_file_size_bytes'>
       >;
@@ -866,7 +868,7 @@ export interface ChangeHistoryEntry {
   timestamp: string;
   actor_id: string;
   actor_email: string;
-  change_type: 'permissions' | 'quota' | 'resource_policy' | 'role';
+  change_type: 'permissions' | 'resource_policy' | 'role';
   changes: {
     added?: string[];
     removed?: string[];

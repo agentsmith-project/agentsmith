@@ -15,7 +15,6 @@ type RateLimitDecision =
   | { allowed: false; reason: 'rate_limited'; retry_after_seconds: number; effective_limit_per_minute: number; scope: 'policy' | 'subject' };
 
 type QuotaRuleKey =
-  | 'endpoint.daily_token_limit'
   | 'endpoint.spending_usd_per_minute'
   | 'endpoint.spending_usd_per_5_hours'
   | 'endpoint.spending_usd_per_day'
@@ -123,7 +122,7 @@ function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null 
 }
 
 function getQuotaRuleKeys(resourceType: ResourceType): QuotaRuleKey[] {
-  if (resourceType === 'endpoint') return ['endpoint.daily_token_limit'];
+  if (resourceType === 'endpoint') return [];
   return [];
 }
 
@@ -169,11 +168,11 @@ function getMatchingSubjectQuotaRules(args: {
 }): { rules: PolicyRule[]; matched: boolean } {
   const userRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
-    .flatMap((s) => readPolicyRules(s.quota_limits));
+    .flatMap((s) => readPolicyRules(s.spending_limits));
   const groupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
-    .flatMap((s) => readPolicyRules(s.quota_limits));
+    .flatMap((s) => readPolicyRules(s.spending_limits));
   const merged = mergeQuotaRules(userRules, groupRules);
   return { rules: merged, matched: merged.length > 0 };
 }
@@ -187,7 +186,7 @@ function getEffectiveQuotaRule(args: {
 }): { key?: QuotaRuleKey; value?: number; scope?: 'policy' | 'subject' } {
   const quotaRuleKeys = getQuotaRuleKeys(args.resourceType);
   if (quotaRuleKeys.length === 0) return {};
-  const baseRules = readPolicyRules(args.policy.quota_limits);
+  const baseRules = readPolicyRules(args.policy.spending_limits);
   const subject = getMatchingSubjectQuotaRules(args);
   const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
   const quotaRule = quotaRuleKeys
@@ -437,15 +436,15 @@ function resolveEndpointSpendingRules(args: {
   userId: string;
   policy: ProjectResourcePolicyRecord;
 }): Array<{ key: EndpointSpendingRuleKey; value: number; scope: 'policy' | 'subject' }> {
-  const baseRules = readPolicyRulesRaw(args.policy.quota_limits).filter((rule) => isEndpointSpendingRuleKey(rule.key));
+  const baseRules = readPolicyRulesRaw(args.policy.spending_limits).filter((rule) => isEndpointSpendingRuleKey(rule.key));
   const userRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
-    .flatMap((s) => readPolicyRulesRaw(s.quota_limits))
+    .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
     .filter((rule) => isEndpointSpendingRuleKey(rule.key));
   const groupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
-    .flatMap((s) => readPolicyRulesRaw(s.quota_limits))
+    .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
     .filter((rule) => isEndpointSpendingRuleKey(rule.key));
   const subjectMatched = userRules.length > 0 || groupRules.length > 0;
   const effective = subjectMatched ? mergeQuotaRules(baseRules, mergeQuotaRules(userRules, groupRules)) : baseRules;
@@ -656,7 +655,7 @@ function getEffectiveSourceLibraryQuotaRule(args: {
   policy: ProjectResourcePolicyRecord;
   key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
 }): { value?: number; scope?: 'policy' | 'subject' } {
-  const baseRules = readPolicyRules(args.policy.quota_limits);
+  const baseRules = readPolicyRules(args.policy.spending_limits);
   const subject = getMatchingSubjectQuotaRules(args);
   const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
   const rule = effective.find((item) => item.key === args.key);

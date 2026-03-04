@@ -313,7 +313,7 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('drawer-member-permissions.png');
   });
 
-  test('member permissions drawer - quota tab', async ({ authedPage }) => {
+  test('member permissions drawer - limits tab', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('members'));
     const rows = authedPage.getByTestId('members__table__row');
     await expect(rows.first()).toBeVisible();
@@ -328,7 +328,7 @@ test.describe('Visual - Overlays', () => {
     await expect(drawer).toBeVisible({ timeout: 5000 });
     await drawer.getByRole('tab', { name: /quota/i }).click();
     await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('drawer-member-quota.png');
+    await expect(authedPage).toHaveScreenshot('drawer-member-limits.png');
   });
 
   test('members templates - project groups tab', async ({ authedPage }) => {

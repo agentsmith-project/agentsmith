@@ -11,11 +11,11 @@ export function createSubjectRowId(): string {
 
 export function buildDraftRuleValues(
   resourceType: PolicyResourceType,
-  current: { rateRules?: PolicyRule[]; quotaRules?: PolicyRule[] },
+  current: { rateRules?: PolicyRule[]; spendingRules?: PolicyRule[] },
 ): Partial<Record<PolicyRuleKey, string>> {
   const draft: Partial<Record<PolicyRuleKey, string>> = {};
   for (const definition of getRuleDefinitionsForResource(resourceType)) {
-    const sourceRules = definition.bucket === 'rate' ? current.rateRules : current.quotaRules;
+    const sourceRules = definition.bucket === 'rate' ? current.rateRules : current.spendingRules;
     const matched = sourceRules?.find((rule) => rule.key === definition.key);
     if (matched) {
       draft[definition.key] = String(matched.value);
@@ -27,42 +27,39 @@ export function buildDraftRuleValues(
 export function buildRuleSetFromDraft(
   resourceType: PolicyResourceType,
   currentRateRules: PolicyRule[] | undefined,
-  currentQuotaRules: PolicyRule[] | undefined,
+  currentSpendingRules: PolicyRule[] | undefined,
   draftValues: Partial<Record<PolicyRuleKey, string>>,
-): { rateRules: PolicyRule[]; quotaRules: PolicyRule[] } {
+): { rateRules: PolicyRule[]; spendingRules: PolicyRule[] } {
   let rateRules = [...(currentRateRules ?? [])];
-  let quotaRules = [...(currentQuotaRules ?? [])];
+  let spendingRules = [...(currentSpendingRules ?? [])];
   for (const definition of getRuleDefinitionsForResource(resourceType)) {
     const value = parsePositiveNumber(draftValues[definition.key] ?? '');
     if (definition.bucket === 'rate') {
       rateRules = upsertRule(rateRules, definition.key, value, definition.window);
     } else {
-      quotaRules = upsertRule(quotaRules, definition.key, value, definition.window);
+      spendingRules = upsertRule(spendingRules, definition.key, value, definition.window);
     }
   }
-  return { rateRules, quotaRules };
+  return { rateRules, spendingRules };
 }
 
 export function mergeRuleSources(
   rootRateRules: PolicyRule[],
-  rootQuotaRules: PolicyRule[],
+  rootSpendingRules: PolicyRule[],
   subjectRateRules: PolicyRule[],
-  subjectQuotaRules: PolicyRule[],
+  subjectSpendingRules: PolicyRule[],
 ): Map<PolicyRuleKey, 'resource' | 'subject'> {
   const sourceMap = new Map<PolicyRuleKey, 'resource' | 'subject'>();
-  [...rootRateRules, ...rootQuotaRules].forEach((rule) => {
+  [...rootRateRules, ...rootSpendingRules].forEach((rule) => {
     sourceMap.set(rule.key, 'resource');
   });
-  [...subjectRateRules, ...subjectQuotaRules].forEach((rule) => {
+  [...subjectRateRules, ...subjectSpendingRules].forEach((rule) => {
     sourceMap.set(rule.key, 'subject');
   });
   return sourceMap;
 }
 
 export function formatRuleValue(rule: PolicyRule, tResource: (key: string) => string): string {
-  if (rule.key === 'endpoint.daily_token_limit') {
-    return `${rule.value} ${tResource('units.tokens_per_day')}`;
-  }
   if (rule.key === 'endpoint.requests_per_5_hours') {
     return `${rule.value} ${tResource('units.requests_per_5_hours')}`;
   }

@@ -47,7 +47,7 @@
 - 判定：页面展示覆盖较好；“关键治理动作 100% 写审计 + 可导出”未见完整验收级 E2E 闭环。
 
 5. **C1 成本与配额看板**（E2E 覆盖：**已覆盖**）
-- 证据：`e2e/cost-quota-dashboard.spec.ts`（趋势图、resource_type 过滤触发 `usage/timeseries`、Top/异常钻取回填 usage 过滤）；`src/components/dashboard/CostDashboardPage.tsx` 已接入 `usage/kpi`、`usage/timeseries`、`quota/summary`。
+- 证据：`e2e/cost-limits-dashboard.spec.ts`（趋势图、resource_type 过滤触发 `usage/timeseries`、Top/异常钻取回填 usage 过滤）；`src/components/dashboard/CostDashboardPage.tsx` 已接入 `usage/kpi`、`usage/timeseries`、`quota/summary`。
 - 判定：过滤、趋势、Top、异常、联动钻取链路已形成可执行验收闭环。
 
 6. **C2 告警中心（基础版）**（E2E 覆盖：**已覆盖**）

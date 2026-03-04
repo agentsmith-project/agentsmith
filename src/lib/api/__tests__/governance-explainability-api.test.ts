@@ -83,9 +83,6 @@ describe('GovernanceExplainabilityAPI', () => {
       })
       .mockResolvedValueOnce({
         platform_permissions: ['project:endpoint:use', 'project:manage'],
-      })
-      .mockResolvedValueOnce({
-        overrides: { daily_tokens: 5000 },
       });
 
     const api = new GovernanceExplainabilityAPI(toApiClient(mock));
@@ -93,10 +90,8 @@ describe('GovernanceExplainabilityAPI', () => {
 
     expect(mock.get).toHaveBeenNthCalledWith(1, '/workspaces/ws_1/projects/proj_1/memberships/user_1');
     expect(mock.get).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_1/members/user_1/permissions');
-    expect(mock.get).toHaveBeenNthCalledWith(3, '/workspaces/ws_1/projects/proj_1/members/user_1/quota-overrides');
     expect(snapshot.membership_status).toBe('suspended');
     expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:manage']);
-    expect(snapshot.quota_overrides).toEqual({ daily_tokens: 5000 });
   });
 
   it('extracts governance quota error details from APIError', () => {

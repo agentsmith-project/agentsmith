@@ -1,6 +1,6 @@
 import type { ApiClient } from '../client';
 import { APIError } from '../errors';
-import type { MemberPermissions, QuotaOverride } from '../types';
+import type { MemberPermissions } from '../types';
 import type { Membership } from './members';
 
 export type GovernanceSubjectType = 'user' | 'group' | 'agent';
@@ -115,7 +115,6 @@ export interface GovernanceRouteForbiddenDetails {
 export interface GovernanceEffectiveAccessSnapshot {
   membership: Membership;
   permissions: MemberPermissions;
-  quota_overrides: QuotaOverride;
   effective_permissions: string[];
   membership_status: Extract<Membership['status'], 'active' | 'pending' | 'suspended'>;
 }
@@ -200,15 +199,12 @@ export class GovernanceExplainabilityAPI {
     projectId: string,
     memberId: string,
   ): Promise<GovernanceEffectiveAccessSnapshot> {
-    const [membership, permissions, quotaOverrides] = await Promise.all([
+    const [membership, permissions] = await Promise.all([
       this.client.get<Membership>(
         `/workspaces/${workspaceId}/projects/${projectId}/memberships/${memberId}`,
       ),
       this.client.get<MemberPermissions>(
         `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/permissions`,
-      ),
-      this.client.get<{ overrides: QuotaOverride }>(
-        `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/quota-overrides`,
       ),
     ]);
 
@@ -218,7 +214,6 @@ export class GovernanceExplainabilityAPI {
         platform_permissions: permissions.platform_permissions ?? [],
         resource_permissions: permissions.resource_permissions,
       },
-      quota_overrides: quotaOverrides.overrides ?? {},
       effective_permissions: permissions.platform_permissions ?? [],
       membership_status: membership.status,
     };

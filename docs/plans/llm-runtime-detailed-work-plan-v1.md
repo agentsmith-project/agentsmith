@@ -235,7 +235,7 @@
 1. `GET /usage`
 2. `GET /usage/kpi`
 3. `GET /usage/timeseries`
-4. `GET /quota/summary`
+4. `GET /limits/summary`
 5. `GET /usage/runtime-observability`
 
 ---

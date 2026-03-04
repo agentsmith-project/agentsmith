@@ -79,16 +79,84 @@ main() {
   local endpoint_url="${base}/endpoints/${endpoint_id}"
   local proxy_url="${endpoint_url}/proxy/chat/completions"
   local policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
+  local endpoint_meta_file temp_endpoint_meta_file temp_endpoint_id=""
+  local endpoint_protocol endpoint_base_url endpoint_model endpoint_credential_ref
+  endpoint_meta_file="$(mktemp)"
+  temp_endpoint_meta_file="$(mktemp)"
 
   local endpoint_code
   endpoint_code="$(
-    curl -sS -o /dev/null -w '%{http_code}' \
+    curl -sS -o "${endpoint_meta_file}" -w '%{http_code}' \
       "${endpoint_url}" -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${endpoint_code}" != "200" ]]; then
     err "endpoint lookup failed (HTTP ${endpoint_code}); stale /tmp metadata? run init-resources"
     exit 1
   fi
+  endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_compatible"))')"
+  endpoint_base_url="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.base_url||""))')"
+  endpoint_model="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.openai_model||""))')"
+  endpoint_credential_ref="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.credential_ref||""))')"
+  if [[ -z "${endpoint_base_url}" || -z "${endpoint_model}" || -z "${endpoint_credential_ref}" ]]; then
+    err "endpoint metadata incomplete for smoke endpoint clone"
+    cat "${endpoint_meta_file}" >&2 || true
+    exit 1
+  fi
+
+  info "creating isolated temporary endpoint for deterministic rate-limit smoke"
+  local temp_endpoint_name temp_create_code temp_model endpoints_list_file
+  endpoints_list_file="$(mktemp)"
+  temp_endpoint_name="gov-policy-smoke-$(date +%s)"
+  temp_create_code=""
+  curl -sS -o "${endpoints_list_file}" \
+    "${base}/endpoints" \
+    -H "Authorization: Bearer ${token}" || true
+  for candidate_model in "${endpoint_model}" "glm-4.6v-flash" "glm-4.6" "glm-4-plus" "glm-4.5-air" "glm-5"; do
+    local model_in_use
+    model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.openai_model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
+    if [[ "${model_in_use}" == "1" ]]; then
+      continue
+    fi
+    temp_create_code="$(
+      curl -sS -o "${temp_endpoint_meta_file}" -w '%{http_code}' \
+        -X POST "${base}/endpoints" \
+        -H "Authorization: Bearer ${token}" \
+        -H "Content-Type: application/json" \
+        --data "{
+          \"name\":\"${temp_endpoint_name}-${candidate_model//./-}\",
+          \"protocol\":\"${endpoint_protocol}\",
+          \"base_url\":\"${endpoint_base_url}\",
+          \"openai_model\":\"${candidate_model}\",
+          \"credential_ref\":\"${endpoint_credential_ref}\"
+        }" || true
+    )"
+    if [[ "${temp_create_code}" == "201" ]]; then
+      temp_model="${candidate_model}"
+      break
+    fi
+    local create_error_code
+    create_error_code="$(cat "${temp_endpoint_meta_file}" | json_get 'process.stdout.write(String(data.error_code||""))' || true)"
+    if [[ "${create_error_code}" != "ENDPOINT_MODEL_CONFLICT" ]]; then
+      err "failed to create temporary endpoint for smoke (HTTP ${temp_create_code})"
+      cat "${temp_endpoint_meta_file}" >&2 || true
+      exit 1
+    fi
+  done
+  if [[ "${temp_create_code}" != "201" || -z "${temp_model:-}" ]]; then
+    err "failed to create temporary endpoint: all candidate models conflicted"
+    cat "${temp_endpoint_meta_file}" >&2 || true
+    exit 1
+  fi
+  temp_endpoint_id="$(cat "${temp_endpoint_meta_file}" | json_get 'process.stdout.write(String(data.id||""))')"
+  if [[ -z "${temp_endpoint_id}" ]]; then
+    err "temporary endpoint create response missing id"
+    cat "${temp_endpoint_meta_file}" >&2 || true
+    exit 1
+  fi
+  endpoint_id="${temp_endpoint_id}"
+  endpoint_url="${base}/endpoints/${endpoint_id}"
+  proxy_url="${endpoint_url}/proxy/chat/completions"
+  policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
 
   info "reading current endpoint policy"
   local original_policy_file patch_resp_file req1_file req2_file audit_file usage_file
@@ -98,7 +166,7 @@ main() {
   req2_file="$(mktemp)"
   audit_file="$(mktemp)"
   usage_file="$(mktemp)"
-  trap 'op="${original_policy_file:-}"; pr="${patch_resp_file:-}"; r1="${req1_file:-}"; r2="${req2_file:-}"; au="${audit_file:-}"; us="${usage_file:-}"; tk="${token:-}"; pu="${policy_url:-}"; rm -f "${op}" "${pr}" "${r1}" "${r2}" "${au}" "${us}"; if [[ -n "${tk}" && -n "${op}" && -s "${op}" && -n "${pu}" ]]; then curl -sS -o /dev/null -X PATCH "${pu}" -H "Authorization: Bearer ${tk}" -H "Content-Type: application/json" --data-binary @"${op}" || true; fi' EXIT
+  trap 'op="${original_policy_file:-}"; pr="${patch_resp_file:-}"; r1="${req1_file:-}"; r2="${req2_file:-}"; au="${audit_file:-}"; us="${usage_file:-}"; em="${endpoint_meta_file:-}"; tm="${temp_endpoint_meta_file:-}"; el="${endpoints_list_file:-}"; teid="${temp_endpoint_id:-}"; tk="${token:-}"; pu="${policy_url:-}"; b="${base:-}"; rm -f "${op}" "${pr}" "${r1}" "${r2}" "${au}" "${us}" "${em}" "${tm}" "${el}"; if [[ -n "${tk}" && -n "${op}" && -s "${op}" && -n "${pu}" ]]; then curl -sS -o /dev/null -X PATCH "${pu}" -H "Authorization: Bearer ${tk}" -H "Content-Type: application/json" --data-binary @"${op}" || true; fi; if [[ -n "${tk}" && -n "${teid}" && -n "${b}" ]]; then curl -sS -o /dev/null -X DELETE "${b}/endpoints/${teid}" -H "Authorization: Bearer ${tk}" || true; fi' EXIT
 
   local policy_get_code
   policy_get_code="$(
@@ -121,7 +189,7 @@ main() {
         "access_mode":"allow_all_members",
         "allowed_subjects":[],
         "rate_limits":{"rules":[{"key":"endpoint.requests_per_minute","value":1}]},
-        "quota_limits":{"rules":[]}
+        "spending_limits":{"rules":[]}
       }' || true
   )"
   if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then
@@ -143,7 +211,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-5","messages":[{"role":"user","content":"ping"}]}' || true
+      --data "{\"model\":\"${temp_model}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping\"}]}" || true
   )"
   if [[ "${req1_code}" == "429" ]]; then
     if is_upstream_429_payload "${req1_file}"; then
@@ -163,7 +231,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data '{"model":"glm-5","messages":[{"role":"user","content":"ping again"}]}' || true
+      --data "{\"model\":\"${temp_model}\",\"messages\":[{\"role\":\"user\",\"content\":\"ping again\"}]}" || true
   )"
   if [[ "${req2_code}" != "429" ]]; then
     err "second request did not hit rate limit (HTTP ${req2_code})"
@@ -246,6 +314,11 @@ main() {
     exit 1
   fi
   : > "${original_policy_file}" # prevent trap restore duplicate call
+  if [[ -n "${temp_endpoint_id}" ]]; then
+    curl -sS -o /dev/null -X DELETE "${base}/endpoints/${temp_endpoint_id}" \
+      -H "Authorization: Bearer ${token}" || true
+    temp_endpoint_id=""
+  fi
   trap - EXIT
 
   info "OK"

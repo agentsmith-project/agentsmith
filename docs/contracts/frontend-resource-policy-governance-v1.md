@@ -30,7 +30,7 @@ Define the MVP model for resource access and consumption governance across manag
 ## Terminology
 
 1. `permission token`: can/cannot perform management operations.
-2. `resource policy`: access + rate/quota constraints on usage path.
+2. `resource policy`: access + rate/spending constraints on usage path.
 3. `project defaults`: baseline governance rules.
 4. `resource override`: per-resource exception to defaults.
 5. `subject override`: per-user/per-group exception to resource/default policy.
@@ -50,12 +50,12 @@ Conflict rule:
 ## Resource Type Rule Matrix (MVP)
 
 1. `endpoint`
-- rate: `endpoint.requests_per_minute`
-- quota: `endpoint.daily_token_limit`, `endpoint.requests_per_day`
+- rate: `endpoint.requests_per_minute`, `endpoint.requests_per_5_hours`, `endpoint.requests_per_day`
+- spending: `endpoint.spending_usd_per_minute`, `endpoint.spending_usd_per_5_hours`, `endpoint.spending_usd_per_day`
 
 2. `agent`
 - rate: `agent.requests_per_minute`
-- quota: none in MVP
+- spending: none in MVP
 
 ## Runtime Enforcement Flow
 
@@ -63,7 +63,7 @@ Conflict rule:
 2. Resolve policy (subject > resource > default).
 3. Check access allow.
 4. Check rate limits.
-5. Check quota limits.
+5. Check spending limits.
 6. Return deterministic deny/limit errors when blocked.
 
 ## API Contract Direction
@@ -90,4 +90,4 @@ Every policy mutation should record:
 
 1. Cross-project governance templates.
 2. Advanced override conflict explainers beyond current preview UX.
-3. Chat/Notebook-specific independent quota dimensions.
+3. Chat/Notebook-specific independent spending dimensions.

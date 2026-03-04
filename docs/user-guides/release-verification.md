@@ -69,7 +69,7 @@ When focusing on MVP go-live readiness, run this smaller real-backend baseline f
 ```bash
 make notebook-agent-no-sandbox-smoke
 make e2e-int-core-local-api
-make governance-policy-requests-quota-effect-smoke
+make governance-policy-requests-rate-effect-smoke
 make release-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 ```
 
@@ -85,7 +85,7 @@ This baseline covers:
 2. Keycloak login + workspace/project entry
 3. Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
 4. Chat stream-error surfacing and recovery (429/401/403)
-5. Endpoint requests-per-minute quota policy effect
+5. Endpoint requests-per-minute rate-limit policy effect
 6. Archived release report generation (contract/type check subset)
 
 ### Basic Usage
@@ -407,7 +407,7 @@ Test application logic and invariants:
 | **assertion** | Test expectation failures | Update tests for new behavior |
 | **timeout** | Operation/step timeout | Increase timeout budget or fix slow path |
 | **rate_limit** | Upstream/provider throttling (429/retry limit) | Retry with backoff, validate saturation handling |
-| **authorization/quota/permission** | Governance policy denial | Verify policy and member permissions |
+| **authorization/rate_limit/permission** | Governance policy denial | Verify policy and member permissions |
 
 ### Severity Levels
 

@@ -2737,6 +2737,12 @@
     },
     "interests": "兴趣",
     "interests_placeholder": "逗号分隔（如：AI、设计、效率）",
+    "permission_tokens_title": "权限 Token",
+    "permission_tokens_description": "查看当前工作区与项目上下文中的有效权限 token。",
+    "permission_tokens_context_hint": "请从具体项目上下文进入个人资料页，以查看对应工作区和项目的权限 token。",
+    "workspace_permissions": "工作区权限",
+    "project_permissions": "项目权限",
+    "no_permissions": "无权限",
     "save": "保存更改",
     "saving": "保存中...",
     "saved": "资料已保存"

@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { User, Mail, Bot, Save } from 'lucide-react';
+import { useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,8 @@ import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { MeAPI, getApiClient } from '@/lib/api';
+import { MemberAPI } from '@/lib/api/endpoints/members';
+import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { handleErrorForToast } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 
@@ -26,8 +29,13 @@ const GREETING_OPTIONS = [
 export default function ProfilePage() {
   const t = useTranslations('profile');
   const user = useAuthStore((state) => state.user);
+  const searchParams = useSearchParams();
   const queryClient = useQueryClient();
   const api = React.useMemo(() => new MeAPI(getApiClient()), []);
+  const memberApi = React.useMemo(() => new MemberAPI(getApiClient()), []);
+  const contextWorkspaceId = searchParams.get('workspace') ?? '';
+  const contextProjectId = searchParams.get('project') ?? '';
+  const { data: contextMembers = [] } = useWorkspaceMembers(contextWorkspaceId);
 
   const [displayName, setDisplayName] = React.useState('');
   const [bio, setBio] = React.useState('');
@@ -41,6 +49,11 @@ export default function ProfilePage() {
   const { data: profile, isLoading } = useQuery({
     queryKey: ['me', 'profile'],
     queryFn: () => api.getProfile(),
+  });
+  const { data: contextMembership } = useQuery({
+    queryKey: ['profile', 'context-membership', contextWorkspaceId, contextProjectId, user?.id],
+    queryFn: () => memberApi.getMembership(contextWorkspaceId, contextProjectId, user?.id ?? ''),
+    enabled: Boolean(contextWorkspaceId && contextProjectId && user?.id),
   });
 
   React.useEffect(() => {
@@ -78,6 +91,16 @@ export default function ProfilePage() {
   });
 
   const handleSave = () => saveMutation.mutate();
+  const workspacePermissions = React.useMemo<readonly string[]>(() => {
+    if (!contextWorkspaceId || !user?.id) return [];
+    const member = contextMembers.find((item) => item.user_id === user.id);
+    return member?.permissions ?? [];
+  }, [contextMembers, contextWorkspaceId, user?.id]);
+  const projectPermissions = React.useMemo<readonly string[]>(
+    () => contextMembership?.permissions ?? [],
+    [contextMembership],
+  );
+  const hasContext = Boolean(contextWorkspaceId && contextProjectId);
 
   if (!user) {
     return (
@@ -256,6 +279,53 @@ export default function ProfilePage() {
             />
           </div>
         </div>
+      </div>
+
+      <div className="p-5 rounded-md border border-border bg-surface" data-testid="profile__permission-tokens">
+        <h2 className="text-base font-medium text-foreground mb-1">
+          {t('permission_tokens_title')}
+        </h2>
+        <p className="text-sm text-tertiary mb-4">{t('permission_tokens_description')}</p>
+        {!hasContext ? (
+          <p className="text-sm text-tertiary">{t('permission_tokens_context_hint')}</p>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <p className="text-xs text-secondary mb-2">{t('workspace_permissions')}</p>
+              {workspacePermissions.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {workspacePermissions.map((permission: string) => (
+                    <span
+                      key={`profile-workspace-${permission}`}
+                      className="rounded-sm border border-subtle bg-surface-high px-2 py-1 text-[11px] font-mono text-foreground"
+                    >
+                      {permission}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-tertiary">{t('no_permissions')}</p>
+              )}
+            </div>
+            <div>
+              <p className="text-xs text-secondary mb-2">{t('project_permissions')}</p>
+              {projectPermissions.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {projectPermissions.map((permission: string) => (
+                    <span
+                      key={`profile-project-${permission}`}
+                      className="rounded-sm border border-subtle bg-surface-high px-2 py-1 text-[11px] font-mono text-foreground"
+                    >
+                      {permission}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-xs text-tertiary">{t('no_permissions')}</p>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex justify-end">

@@ -2735,6 +2735,12 @@
     },
     "interests": "Interests",
     "interests_placeholder": "Comma-separated (e.g. AI, design, productivity)",
+    "permission_tokens_title": "Permission Tokens",
+    "permission_tokens_description": "View effective permission tokens in the current workspace/project context.",
+    "permission_tokens_context_hint": "Open Profile from a project context to view workspace and project permission tokens.",
+    "workspace_permissions": "Workspace Permissions",
+    "project_permissions": "Project Permissions",
+    "no_permissions": "No permissions",
     "save": "Save Changes",
     "saving": "Saving...",
     "saved": "Profile saved"

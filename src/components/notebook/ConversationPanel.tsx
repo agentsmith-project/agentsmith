@@ -31,6 +31,7 @@ export interface ConversationPanelProps {
     releaseOps: string;
     agent?: string | null;
   };
+  sandboxStarting?: boolean;
 }
 
 export function ConversationPanel({
@@ -51,6 +52,7 @@ export function ConversationPanel({
   disabled = false,
   sending = false,
   diagnosticsLinks,
+  sandboxStarting = false,
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const [inputValue, setInputValue] = React.useState('');
@@ -151,6 +153,12 @@ export function ConversationPanel({
           ) : null}
         </div>
       )}
+      {sandboxStarting ? (
+        <div className="border-b border-subtle px-4 py-2" data-testid="notebook__sandbox-starting">
+          <div className="text-xs font-medium text-primary">{t('sandbox_starting_title')}</div>
+          <div className="mt-0.5 text-xs text-tertiary">{t('sandbox_starting_description')}</div>
+        </div>
+      ) : null}
       <div className="flex-1 min-h-0">
         <MessageList
           messages={messages}

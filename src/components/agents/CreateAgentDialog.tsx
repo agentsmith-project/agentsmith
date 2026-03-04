@@ -12,9 +12,10 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
-import { AgentAPI, getApiClient } from '@/lib/api';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { AgentAPI, EndpointAPI, getApiClient } from '@/lib/api';
 import type { CreateAgentRequest } from '@/lib/api/endpoints/agents';
+import type { Endpoint } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
 
@@ -61,6 +62,17 @@ export function CreateAgentDialog({
   const [maxLifetimeSec, setMaxLifetimeSec] = React.useState('86400');
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
+  const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
+
+  const { data: endpointsData } = useQuery({
+    queryKey: ['agents', workspaceId, projectId, 'endpoint-options'],
+    queryFn: () => endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
+    enabled: open && !!workspaceId && !!projectId,
+  });
+  const endpointOptions = React.useMemo(
+    () => (endpointsData?.items ?? []).filter((item) => item.status === 'active'),
+    [endpointsData?.items],
+  );
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateAgentRequest) => {
@@ -103,6 +115,12 @@ export function CreateAgentDialog({
       resetForm();
     }
   }, [open]);
+
+  React.useEffect(() => {
+    if (notebookEndpointId) return;
+    if (endpointOptions.length === 0) return;
+    setNotebookEndpointId(endpointOptions[0].id);
+  }, [notebookEndpointId, endpointOptions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -209,6 +227,11 @@ export function CreateAgentDialog({
     );
 
   const canSubmit = name.trim().length > 0 && !createMutation.isPending;
+  const endpointLabel = (endpoint: Endpoint) => {
+    const model = endpoint.openai_model?.trim() || 'n/a';
+    const family = endpoint.provider_family ?? 'custom';
+    return `${endpoint.name} (${family}/${model})`;
+  };
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -302,13 +325,22 @@ export function CreateAgentDialog({
               <label htmlFor="notebook-endpoint-id" className="text-sm font-medium text-foreground">
                 {t('create_dialog.notebook_endpoint_id')}
               </label>
-              <Input
+              <select
                 id="notebook-endpoint-id"
                 value={notebookEndpointId}
                 onChange={(event) => setNotebookEndpointId(event.target.value)}
-                placeholder="ep_xxx"
                 disabled={createMutation.isPending}
-              />
+                className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                {endpointOptions.length === 0 ? (
+                  <option value="">{t('create_dialog.notebook_endpoint_empty')}</option>
+                ) : null}
+                {endpointOptions.map((endpoint) => (
+                  <option key={endpoint.id} value={endpoint.id}>
+                    {endpointLabel(endpoint)}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -334,14 +366,22 @@ export function CreateAgentDialog({
                 <label htmlFor="internal-notebook-endpoint-id" className="text-sm text-primary">
                   {t('create_dialog.notebook_endpoint_id')} <span className="text-error">*</span>
                 </label>
-                <Input
+                <select
                   id="internal-notebook-endpoint-id"
                   value={notebookEndpointId}
                   onChange={(event) => setNotebookEndpointId(event.target.value)}
-                  placeholder="ep_xxx"
                   disabled={createMutation.isPending}
-                  className="font-mono text-sm"
-                />
+                  className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  {endpointOptions.length === 0 ? (
+                    <option value="">{t('create_dialog.notebook_endpoint_empty')}</option>
+                  ) : null}
+                  {endpointOptions.map((endpoint) => (
+                    <option key={endpoint.id} value={endpoint.id}>
+                      {endpointLabel(endpoint)}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="space-y-2">

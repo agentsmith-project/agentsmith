@@ -95,6 +95,34 @@ function createAgentColumns(
     ),
   }),
   columnHelper.display({
+    id: 'presence',
+    header: 'Presence',
+    cell: (info) => {
+      const agent = info.row.original;
+      const presence = agent.presence ?? 'offline';
+      const label = agent.mode === 'internal' && presence === 'online'
+        ? t('presence_running')
+        : presence === 'managed'
+          ? t('presence_managed')
+          : presence === 'online'
+            ? t('presence_online')
+            : t('presence_offline');
+      const dotClass = agent.mode === 'internal' && presence === 'online'
+        ? 'bg-success'
+        : presence === 'managed'
+          ? 'bg-accent'
+          : presence === 'online'
+            ? 'bg-success'
+            : 'bg-tertiary';
+      return (
+        <span className="inline-flex items-center gap-2 text-xs text-tertiary">
+          <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
+          {label}
+        </span>
+      );
+    },
+  }),
+  columnHelper.display({
     id: 'mode_stats',
     header: 'Stats',
     cell: (info) => {

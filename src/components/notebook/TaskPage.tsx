@@ -773,6 +773,11 @@ export function TaskPage({
 
   const isDisabled = task.status === 'archived';
   const isExternalAgentOffline = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
+  const activeTraceEvents = streamingMessageId ? (traceEventsByMessageId[streamingMessageId] ?? []) : [];
+  const showSandboxStarting = isAgentTurnRunning
+    && activeTraceEvents.some((item) => item.name === 'sandbox_starting')
+    && (streamingContent ?? '').trim().length === 0
+    && !activeTraceEvents.some((item) => item.status === 'success' || item.status === 'error' || item.status === 'cancelled');
   const isConversationInputDisabled = (
     isDisabled
     || !canUpdateTask
@@ -834,6 +839,7 @@ export function TaskPage({
           onTraceExpand={fetchTracesForMessage}
           onTraceLoadMore={loadMoreTracesForMessage}
           onSendMessage={handleSendMessage}
+          sandboxStarting={showSandboxStarting}
             disabled={isConversationInputDisabled}
             sending={sendMessage.isPending}
           />

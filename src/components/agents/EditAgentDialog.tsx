@@ -11,11 +11,11 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, ChevronDown, ChevronRight } from 'lucide-react';
-import { useMutation } from '@tanstack/react-query';
-import { AgentAPI, getApiClient } from '@/lib/api';
+import { Loader2, ChevronDown, ChevronRight, Plus, Trash2 } from 'lucide-react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { AgentAPI, EndpointAPI, getApiClient } from '@/lib/api';
 import type { UpdateAgentRequest } from '@/lib/api/endpoints/agents';
-import type { Agent } from '@/lib/api/types';
+import type { Agent, Endpoint } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
 import { useApiError } from '@/lib/hooks/use-api-error';
@@ -28,6 +28,11 @@ export interface EditAgentDialogProps {
   agent: Agent | null;
   canSetVisibility?: boolean;
   onSuccess?: () => void;
+}
+
+interface EnvEntry {
+  key: string;
+  value: string;
 }
 
 export function EditAgentDialog({
@@ -60,8 +65,19 @@ export function EditAgentDialog({
   const [memoryLimit, setMemoryLimit] = React.useState('4Gi');
   const [idleTimeoutSec, setIdleTimeoutSec] = React.useState('1800');
   const [maxLifetimeSec, setMaxLifetimeSec] = React.useState('86400');
+  const [envEntries, setEnvEntries] = React.useState<EnvEntry[]>([{ key: '', value: '' }]);
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
+  const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
+  const { data: endpointsData } = useQuery({
+    queryKey: ['agents', workspaceId, projectId, 'endpoint-options'],
+    queryFn: () => endpointAPI.list(workspaceId, projectId, { page: 1, page_size: 500 }),
+    enabled: open && !!workspaceId && !!projectId,
+  });
+  const endpointOptions = React.useMemo(
+    () => (endpointsData?.items ?? []).filter((item) => item.status === 'active'),
+    [endpointsData?.items],
+  );
 
   const updateMutation = useMutation({
     mutationFn: async (data: UpdateAgentRequest) => {
@@ -95,6 +111,13 @@ export function EditAgentDialog({
       setMemoryLimit(typeof config.memory_limit === 'string' ? config.memory_limit : '4Gi');
       setIdleTimeoutSec(typeof config.idle_timeout_sec === 'number' ? String(config.idle_timeout_sec) : '1800');
       setMaxLifetimeSec(typeof config.max_lifetime_sec === 'number' ? String(config.max_lifetime_sec) : '86400');
+      const env = typeof config.env === 'object' && config.env !== null
+        ? (config.env as Record<string, unknown>)
+        : {};
+      const nextEnvEntries = Object.entries(env)
+        .filter(([key]) => key.trim().length > 0)
+        .map(([key, value]) => ({ key, value: typeof value === 'string' ? value : String(value) }));
+      setEnvEntries(nextEnvEntries.length > 0 ? nextEnvEntries : [{ key: '', value: '' }]);
       setExternalMultimodal(agent.capabilities?.multimodal_completion ?? false);
       setExternalAcceptedMimeTypes((agent.capabilities?.accepted_mime_types ?? []).join(','));
       setExternalMaxFileCount(
@@ -110,6 +133,12 @@ export function EditAgentDialog({
       setVisibility(agent.visibility === 'public' ? 'public' : 'private');
     }
   }, [open, agent]);
+
+  React.useEffect(() => {
+    if (notebookEndpointId) return;
+    if (endpointOptions.length === 0) return;
+    setNotebookEndpointId(endpointOptions[0].id);
+  }, [notebookEndpointId, endpointOptions]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -153,6 +182,15 @@ export function EditAgentDialog({
           max_lifetime_sec: Number.isFinite(Number.parseInt(maxLifetimeSec, 10))
             ? Number.parseInt(maxLifetimeSec, 10)
             : undefined,
+          env: (() => {
+            const env: Record<string, string> = {};
+            for (const { key, value } of envEntries) {
+              const trimmedKey = key.trim();
+              if (!trimmedKey) continue;
+              env[trimmedKey] = value;
+            }
+            return Object.keys(env).length > 0 ? env : undefined;
+          })(),
         }
         : undefined,
       capabilities: agent.mode === 'external'
@@ -196,6 +234,18 @@ export function EditAgentDialog({
   };
 
   const canSubmit = name.trim().length > 0 && !updateMutation.isPending;
+  const endpointLabel = (endpoint: Endpoint) => {
+    const model = endpoint.openai_model?.trim() || 'n/a';
+    const family = endpoint.provider_family ?? 'custom';
+    return `${endpoint.name} (${family}/${model})`;
+  };
+  const addEnvEntry = () => setEnvEntries((prev) => [...prev, { key: '', value: '' }]);
+  const removeEnvEntry = (i: number) =>
+    setEnvEntries((prev) => prev.filter((_, idx) => idx !== i));
+  const updateEnvEntry = (i: number, field: 'key' | 'value', val: string) =>
+    setEnvEntries((prev) =>
+      prev.map((entry, idx) => (idx === i ? { ...entry, [field]: val } : entry))
+    );
 
   if (!agent) return null;
 
@@ -276,13 +326,22 @@ export function EditAgentDialog({
               <label htmlFor="edit-notebook-endpoint-id" className="text-sm font-medium text-foreground">
                 {t('create_dialog.notebook_endpoint_id')}
               </label>
-              <Input
+              <select
                 id="edit-notebook-endpoint-id"
                 value={notebookEndpointId}
                 onChange={(event) => setNotebookEndpointId(event.target.value)}
-                placeholder="ep_xxx"
                 disabled={updateMutation.isPending}
-              />
+                className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+              >
+                {endpointOptions.length === 0 ? (
+                  <option value="">{t('create_dialog.notebook_endpoint_empty')}</option>
+                ) : null}
+                {endpointOptions.map((endpoint) => (
+                  <option key={endpoint.id} value={endpoint.id}>
+                    {endpointLabel(endpoint)}
+                  </option>
+                ))}
+              </select>
             </div>
           )}
 
@@ -341,12 +400,61 @@ export function EditAgentDialog({
               </div>
               <div className="space-y-2">
                 <label className="text-sm text-primary">{t('create_dialog.notebook_endpoint_id')}</label>
-                <Input
+                <select
                   value={notebookEndpointId}
                   onChange={(event) => setNotebookEndpointId(event.target.value)}
-                  placeholder="ep_xxx"
                   disabled={updateMutation.isPending}
-                />
+                  className="w-full px-3 py-2.5 rounded-md border border-border-input bg-input text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-accent/50"
+                >
+                  {endpointOptions.length === 0 ? (
+                    <option value="">{t('create_dialog.notebook_endpoint_empty')}</option>
+                  ) : null}
+                  {endpointOptions.map((endpoint) => (
+                    <option key={endpoint.id} value={endpoint.id}>
+                      {endpointLabel(endpoint)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm text-primary">{t('create_dialog.env')}</label>
+                <div className="space-y-2">
+                  {envEntries.map((entry, index) => (
+                    <div key={index} className="flex gap-2">
+                      <Input
+                        value={entry.key}
+                        onChange={(event) => updateEnvEntry(index, 'key', event.target.value)}
+                        placeholder="KEY"
+                        disabled={updateMutation.isPending}
+                        className="font-mono text-sm flex-1"
+                      />
+                      <Input
+                        value={entry.value}
+                        onChange={(event) => updateEnvEntry(index, 'value', event.target.value)}
+                        placeholder="value"
+                        disabled={updateMutation.isPending}
+                        className="font-mono text-sm flex-1"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeEnvEntry(index)}
+                        disabled={updateMutation.isPending || envEntries.length <= 1}
+                        className="p-2 text-tertiary hover:text-error disabled:opacity-50"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addEnvEntry}
+                    disabled={updateMutation.isPending}
+                    className="flex items-center gap-1 text-sm text-accent hover:underline"
+                  >
+                    <Plus className="w-4 h-4" />
+                    {t('create_dialog.add_env')}
+                  </button>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">

@@ -17,6 +17,7 @@ import {
 } from './artifact-scan.js';
 import { resolveTaskCwd, shouldResumeNotebookSession } from './workspace-runtime.js';
 import { applyRuntimeContextFiles, type RuntimeContextFileItem } from './runtime-context-files.js';
+import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -431,6 +432,13 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
   const cwd = cwdResult.cwd;
   await mkdir(cwd, { recursive: true });
+  const builtinSkillsConfig = resolveBuiltinSkillsConfig();
+  const builtinSkillsResult = await syncBuiltinSkills({
+    cwd,
+    sourceDir: builtinSkillsConfig.sourceDir,
+    skills: builtinSkillsConfig.skills,
+    required: builtinSkillsConfig.required,
+  });
   const isNotebookMode = runtimeContext.notebook_mode === true;
   const userPrompt = extractPrompt(payload.messages);
   const taskInputs = Array.isArray(runtimeContext.task_inputs) ? runtimeContext.task_inputs : [];
@@ -495,6 +503,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     task_inputs_count: taskInputs.length,
     credential_files_count: runtimeFilesResult.written,
     credential_files_bytes: runtimeFilesResult.totalBytes,
+    builtin_skills_source_dir: builtinSkillsResult.sourceDir,
+    builtin_skills_mounted: builtinSkillsResult.mounted,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
     resume_last: resumeLast,
     cwd_source: cwdResult.source,
@@ -555,6 +565,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,
       credential_files_count: runtimeFilesResult.written,
+      builtin_skills_count: builtinSkillsResult.mounted.length,
       artifacts_dir: isNotebookMode ? 'artifacts/' : null,
     },
   });

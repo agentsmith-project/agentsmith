@@ -103,13 +103,13 @@ help:
 	@echo "  make e2e-int-minimal   # run minimal integration e2e (real backend)"
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
 	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
-	@echo "  make e2e-int-chat-real # run real deepseek chat integration e2e (real upstream)"
+	@echo "  make e2e-int-chat-real # run real GLM-5 (Anthropic-compatible) chat integration e2e (real upstream)"
 	@echo "  make e2e-int-runtime-proxy-billing # run runtime proxy/billing integration e2e (real backend)"
 	@echo "  make e2e-int-local     # run integration e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-agent-local-api    # run external-agent integration e2e with current node api (requires frontend already running)"
-	@echo "  make e2e-int-chat-real-local-api # run real deepseek chat e2e with current node api (requires frontend already running)"
+	@echo "  make e2e-int-chat-real-local-api # run real GLM-5 (Anthropic-compatible) chat e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-runtime-proxy-billing-local-api # run runtime proxy/billing integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
 	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
@@ -120,10 +120,10 @@ help:
 	@echo "  make e2e-int-core-auto      # auto start deps+api+web and run MVP real-backend core smoke"
 	@echo "  make release-core-smoke     # MVP release baseline: core real-lane smoke + endpoint rate/spending policy smoke + release report"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
-	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY)"
+	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
 	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write /tmp/agentsmith_*.txt"
-	@echo "  make notebook-agent-runner         # start codex runner using /tmp/agentsmith_ws_url.txt + agent_key"
+	@echo "  make notebook-agent-runner         # start codex runner using /tmp/agentsmith_ws_url.txt + agent_key (auto mounts builtin skills)"
 	@echo "  make notebook-agent-demo-up        # one-command demo bootstrap: start api/web, refresh token, init resources, start runner"
 	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
 	@echo "  make notebook-agent-demo-status    # show demo managed process/health/token/agent status"
@@ -667,6 +667,9 @@ agent-codex-runner:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
+	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}" \
+	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
+	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 	$(NPM) run agent:codex-runner
 
 notebook-agent-refresh-token:
@@ -696,6 +699,9 @@ notebook-agent-runner:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	MBOS_AGENT_WS_URL="$$WS_URL" \
 	MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
+	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}" \
+	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
+	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 	MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 	MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
 	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
@@ -868,6 +874,9 @@ notebook-agent-smoke-full:
 	( env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 		MBOS_AGENT_WS_URL="$$WS_URL" \
 		MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
+		MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}" \
+		MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
+		MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 		MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
 		MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \

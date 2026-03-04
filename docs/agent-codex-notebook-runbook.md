@@ -124,18 +124,27 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 - `MBOS_AGENT_TASK_TIMEOUT_SEC` (optional; task watchdog, default currently 55s in code)
 - `MBOS_AGENT_RUNNER_DEBUG=1` (optional; logs spawn args/workdir/timeout)
 - `MBOS_AGENT_CODEX_YOLO=1` (optional; run codex with `--dangerously-bypass-approvals-and-sandbox`)
+- `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `/home/percy/.codex/skills`)
+- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops`)
+- `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 
 ### 5.3 API debug env vars (recommended for troubleshooting)
 - `DEBUG_AGENT_RUNTIME=1` (runtime websocket accept/timeout logs)
 - `DEBUG_ENDPOINT_PROXY=1` (proxy request summaries + SSE translation counters)
 - `DEBUG_NOTEBOOK_RUNTIME=1` (task/run/request_id level dispatch + terminal events)
 
-### 5.3.1 Unified Env Switch Reference (quick lookup)
+### 5.3.1 Builtin Skills Mount Policy (MVP)
+- Every new task auto-mounts builtin skills into task workspace: `.codex/skills/.system`, `.codex/skills/feishu-docs`, `.codex/skills/jira-ops`.
+- Mount happens before `codex exec` starts.
+- Default policy is fail-fast if required builtin skills are missing (`MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1`).
+
+### 5.3.2 Unified Env Switch Reference (quick lookup)
 - Runner (`agent-codex-runner`)
   - `MBOS_AGENT_WS_URL`, `MBOS_AGENT_KEY`, `CODEX_BIN`
   - `MBOS_AGENT_TASK_TIMEOUT_SEC`
   - `MBOS_AGENT_RUNNER_DEBUG`
   - `MBOS_AGENT_CODEX_YOLO`
+  - `MBOS_AGENT_BUILTIN_SKILLS_DIR`, `MBOS_AGENT_BUILTIN_SKILLS`, `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED`
 - API (`@mbos/api-entry-node`)
   - `DEBUG_AGENT_RUNTIME`, `DEBUG_ENDPOINT_PROXY`, `DEBUG_NOTEBOOK_RUNTIME`
   - `AGENT_RUNTIME_REQUEST_TIMEOUT_MS`
@@ -155,7 +164,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
   - This runbook is the current **single place** for notebook/external-agent runtime switches.
   - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
 
-### 5.3.2 Default Personal Upload Library (Chat object-first attachments)
+### 5.3.3 Default Personal Upload Library (Chat object-first attachments)
 - Chat local uploads now use an object-first flow:
   1. ensure backend default personal library (`GET /source-libraries/default-personal`)
   2. upload object under `chat/<session_id>/uploads/`
@@ -167,15 +176,15 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
   - default personal library is protected from rename/delete on standard library routes
   - default personal library is marked with `system_managed_kind=default_personal_uploads`
 
-### 5.3.3 Notebook URL Inputs (object-first)
+### 5.3.4 Notebook URL Inputs (object-first)
 - Notebook "Add URL" now stores the generated URL note file in the backend default personal library, then attaches it as a first-class `url` input ref (with imported object provenance) to the task.
 - This keeps notebook URL inputs aligned with the object-first input architecture while preserving URL semantics in `attached_inputs`.
 
-### 5.3.4 Notebook Artifact Inputs (output-to-input loop)
+### 5.3.5 Notebook Artifact Inputs (output-to-input loop)
 - Notebook artifacts can be attached back into task inputs as first-class `artifact` refs.
 - The runner `notebook-inputs` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
 
-### 5.3.5 Notebook Local Upload Inputs (object-first)
+### 5.3.6 Notebook Local Upload Inputs (object-first)
 - Notebook local file uploads now follow the same object-first flow as Chat uploads:
   1. ensure backend default personal library
   2. upload local files as library objects under `notebook/<task_id>/inputs/`

@@ -43,8 +43,8 @@ WEB_PID_FILE="${WEB_PID_FILE:-/tmp/agentsmith_demo_web.pid}"
 RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
 
 GLM_API_KEY="${GLM_API_KEY:-}"
-GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/coding/paas/v4}"
-GLM_MODEL="${GLM_MODEL:-glm-5}"
+GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/anthropic}"
+GLM_MODEL="${GLM_MODEL:-GLM-5}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 DEMO_REFRESH_TIMEOUT_SEC="${DEMO_REFRESH_TIMEOUT_SEC:-180}"
 DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"
@@ -385,6 +385,9 @@ restart_demo_runner() {
     exec env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
       MBOS_AGENT_WS_URL='${ws_url}' \
       MBOS_AGENT_KEY='${agent_key}' \
+      MBOS_AGENT_BUILTIN_SKILLS_DIR='${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/home/percy/.codex/skills}' \
+      MBOS_AGENT_BUILTIN_SKILLS='${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}' \
+      MBOS_AGENT_BUILTIN_SKILLS_REQUIRED='${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}' \
       MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
       MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \
       MBOS_AGENT_CODEX_YOLO='${MBOS_AGENT_CODEX_YOLO:-1}' \

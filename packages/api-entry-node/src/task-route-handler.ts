@@ -47,6 +47,17 @@ interface TaskRecord {
   last_activity_at: string;
 }
 
+interface TaskListItem extends TaskRecord {
+  agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
+  run_state?: 'running' | 'idle';
+  stats?: {
+    user_turn_count: number;
+    message_count: number;
+    artifact_count: number;
+    attached_input_count: number;
+  };
+}
+
 type TaskInputRefRecord =
   | {
       id: string;
@@ -510,8 +521,34 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
     const start = (page - 1) * pageSize;
     const items = all.slice(start, start + pageSize);
+    const enrichedItems: TaskListItem[] = await Promise.all(items.map(async (task) => {
+      await Promise.all([
+        loadTaskMessages(deps, task.id),
+        loadTaskArtifacts(deps, task.id),
+      ]);
+      const messages = getTaskMessages(task.id);
+      const artifacts = getTaskArtifacts(task.id);
+      const userTurnCount = messages.filter((item) => item.role === 'user').length;
+      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, task.agent_id);
+      const agentPresence: TaskListItem['agent_presence'] = (
+        !agent ? 'unknown'
+        : agent.mode === 'internal' ? 'managed'
+        : (agent.presence === 'online' ? 'online' : 'offline')
+      );
+      return {
+        ...task,
+        agent_presence: agentPresence,
+        run_state: ACTIVE_RUNS_BY_TASK.has(task.id) ? 'running' : 'idle',
+        stats: {
+          user_turn_count: userTurnCount,
+          message_count: messages.length,
+          artifact_count: artifacts.length,
+          attached_input_count: task.attached_inputs.length,
+        },
+      };
+    }));
     json(res, 200, {
-      items,
+      items: enrichedItems,
       total: all.length,
       page,
       page_size: pageSize,

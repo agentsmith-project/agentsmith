@@ -9,6 +9,28 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskList } from '../TaskList';
 import type { Task } from '@/lib/types/task';
 
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
+    const dict: Record<string, string> = {
+      'new_task': 'New Task',
+      'create_task': 'Create Task',
+      'empty_title': 'No tasks yet',
+      'empty_description': 'Create your first task to start collaborating with an agent',
+      'agent_online': 'Agent Online',
+      'agent_offline': 'Agent Offline',
+      'agent_managed': 'Agent Managed',
+      'agent_unknown': 'Agent Unknown',
+      'run_running': 'Running',
+      'last_activity': 'Last activity',
+      'created_at': 'Created',
+    };
+    if (key === 'turns') return `Turns ${values?.count ?? '0'}`;
+    if (key === 'artifacts') return `Artifacts ${values?.count ?? '0'}`;
+    if (key === 'inputs') return `Inputs ${values?.count ?? '0'}`;
+    return dict[key] ?? key;
+  },
+}));
+
 // Mock the hooks
 vi.mock('@/lib/hooks/use-task', () => ({
   useTasks: vi.fn(),
@@ -55,6 +77,14 @@ describe('TaskList', () => {
       created_at: '2024-01-01T00:00:00Z',
       updated_at: '2024-01-02T00:00:00Z',
       last_activity_at: '2024-01-02T12:00:00Z',
+      agent_presence: 'online',
+      run_state: 'running',
+      stats: {
+        user_turn_count: 3,
+        message_count: 6,
+        artifact_count: 2,
+        attached_input_count: 2,
+      },
     },
     {
       id: 'task-2',
@@ -69,6 +99,14 @@ describe('TaskList', () => {
       created_at: '2024-01-03T00:00:00Z',
       updated_at: '2024-01-03T00:00:00Z',
       last_activity_at: '2024-01-03T08:00:00Z',
+      agent_presence: 'offline',
+      run_state: 'idle',
+      stats: {
+        user_turn_count: 1,
+        message_count: 2,
+        artifact_count: 0,
+        attached_input_count: 0,
+      },
     },
     {
       id: 'task-3',
@@ -83,6 +121,14 @@ describe('TaskList', () => {
       created_at: '2024-01-04T00:00:00Z',
       updated_at: '2024-01-04T00:00:00Z',
       last_activity_at: '2024-01-04T16:00:00Z',
+      agent_presence: 'managed',
+      run_state: 'idle',
+      stats: {
+        user_turn_count: 4,
+        message_count: 8,
+        artifact_count: 5,
+        attached_input_count: 1,
+      },
     },
   ];
 
@@ -192,7 +238,7 @@ describe('TaskList', () => {
       expect(screen.queryByText('Archived')).not.toBeInTheDocument();
     });
 
-    it('displays attached files count', () => {
+    it('displays turns and artifact stats', () => {
       vi.mocked(useTasks).mockReturnValue({
         data: { items: mockTasks, total: 3, page: 1, page_size: 10 },
         isLoading: false,
@@ -202,7 +248,9 @@ describe('TaskList', () => {
         wrapper,
       });
 
-      expect(screen.getByText('2 file(s)')).toBeInTheDocument();
+      expect(screen.getByText('Turns 3')).toBeInTheDocument();
+      expect(screen.getByText('Artifacts 2')).toBeInTheDocument();
+      expect(screen.getByText('Inputs 2')).toBeInTheDocument();
     });
 
     it('displays last activity time', () => {

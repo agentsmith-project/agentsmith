@@ -97,6 +97,14 @@ export interface Task {
   created_at: string; // ISO 8601
   updated_at: string; // ISO 8601
   last_activity_at: string; // ISO 8601
+  agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
+  run_state?: 'running' | 'idle';
+  stats?: {
+    user_turn_count: number;
+    message_count: number;
+    artifact_count: number;
+    attached_input_count: number;
+  };
 }
 
 export interface TaskMessage {

@@ -1,9 +1,11 @@
 'use client';
 import * as React from 'react';
 import { useRouter, useParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { Plus, Loader2, ChevronRight, Clock3, Bot } from 'lucide-react';
+import { Plus, Loader2, ChevronRight, Clock3, Bot, MessageSquare, FileText, CalendarClock, Activity } from 'lucide-react';
 import { useTasks } from '@/lib/hooks/use-task';
 import { TaskCreateDialog } from './TaskCreateDialog';
 import { EmptyState } from '@/components/ui/loading';
@@ -21,6 +23,7 @@ export function TaskList({
 }: TaskListProps) {
   const router = useRouter();
   const params = useParams();
+  const t = useTranslations('notebook.task_list');
   const locale = (params?.locale as string) || 'en-US';
   const [createDialogOpen, setCreateDialogOpen] = React.useState(false);
   const { data: tasksData, isLoading } = useTasks(workspaceId, projectId, {
@@ -52,6 +55,33 @@ export function TaskList({
     if (diffDays < 7) return `${diffDays}d ago`;
     return date.toLocaleDateString();
   };
+  const formatDateTime = (dateString: string) => {
+    return new Date(dateString).toLocaleString();
+  };
+  const getPresenceLabel = (presence?: 'online' | 'offline' | 'managed' | 'unknown') => {
+    switch (presence) {
+      case 'online':
+        return t('agent_online');
+      case 'offline':
+        return t('agent_offline');
+      case 'managed':
+        return t('agent_managed');
+      default:
+        return t('agent_unknown');
+    }
+  };
+  const getPresenceVariant = (presence?: 'online' | 'offline' | 'managed' | 'unknown'): 'default' | 'secondary' | 'destructive' | 'outline' => {
+    switch (presence) {
+      case 'online':
+        return 'default';
+      case 'managed':
+        return 'secondary';
+      case 'offline':
+        return 'destructive';
+      default:
+        return 'outline';
+    }
+  };
 
   return (
     <div className="h-full flex flex-col bg-background" data-testid="notebook__task-list">
@@ -63,7 +93,7 @@ export function TaskList({
             data-testid="notebook__create-task-btn"
           >
             <Plus className="h-4 w-4 mr-2" />
-            New Task
+            {t('new_task')}
           </Button>
         </PageToolbar>
       </div>
@@ -76,10 +106,10 @@ export function TaskList({
         ) : tasks.length === 0 ? (
           <div className="flex items-center justify-center h-full">
             <EmptyState
-              title="No tasks yet"
-              description="Create your first task to start working with an agent"
+              title={t('empty_title')}
+              description={t('empty_description')}
               action={{
-                label: 'Create Task',
+                label: t('create_task'),
                 onClick: () => {
                   if (!canCreateTask) return;
                   setCreateDialogOpen(true);
@@ -102,6 +132,12 @@ export function TaskList({
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2 min-w-0">
                         <h3 className="text-sm md:text-[15px] font-semibold text-foreground truncate">{task.title}</h3>
+                        <Badge variant={getPresenceVariant(task.agent_presence)} className="text-[11px]">
+                          {getPresenceLabel(task.agent_presence)}
+                        </Badge>
+                        {task.run_state === 'running' ? (
+                          <Badge variant="secondary" className="text-[11px]">{t('run_running')}</Badge>
+                        ) : null}
                       </div>
                       <div className="text-xs text-tertiary flex flex-wrap items-center gap-x-3 gap-y-1">
                         <span className="inline-flex items-center gap-1">
@@ -109,10 +145,25 @@ export function TaskList({
                           {task.agent_name}
                         </span>
                         <span className="inline-flex items-center gap-1">
-                          <Clock3 className="h-3.5 w-3.5" />
-                          {formatTime(task.last_activity_at)}
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          {t('turns', { count: String(task.stats?.user_turn_count ?? 0) })}
                         </span>
-                        <span>{task.attached_inputs.length} file(s)</span>
+                        <span className="inline-flex items-center gap-1">
+                          <FileText className="h-3.5 w-3.5" />
+                          {t('artifacts', { count: String(task.stats?.artifact_count ?? 0) })}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Activity className="h-3.5 w-3.5" />
+                          {t('inputs', { count: String(task.stats?.attached_input_count ?? task.attached_inputs.length) })}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <Clock3 className="h-3.5 w-3.5" />
+                          {t('last_activity')}: {formatTime(task.last_activity_at)}
+                        </span>
+                        <span className="inline-flex items-center gap-1">
+                          <CalendarClock className="h-3.5 w-3.5" />
+                          {t('created_at')}: {formatDateTime(task.created_at)}
+                        </span>
                       </div>
                     </div>
                     <ChevronRight className="h-4 w-4 text-tertiary shrink-0" />

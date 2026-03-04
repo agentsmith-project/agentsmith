@@ -544,6 +544,22 @@
       "not_found_description": "您要访问的任务不存在或已被删除。",
       "back_to_notebook": "返回 Notebook"
     },
+    "task_list": {
+      "new_task": "新建任务",
+      "create_task": "创建任务",
+      "empty_title": "暂无任务",
+      "empty_description": "创建您的第一个任务并开始与智能体协作",
+      "agent_online": "Agent 在线",
+      "agent_offline": "Agent 离线",
+      "agent_managed": "Agent 托管",
+      "agent_unknown": "Agent 未知",
+      "run_running": "运行中",
+      "turns": "交互轮次 {count}",
+      "artifacts": "产出 {count}",
+      "inputs": "输入 {count}",
+      "last_activity": "最后交互",
+      "created_at": "创建于"
+    },
     "attached_files": {
       "title": "已附加输入",
       "subtitle": "附加到此笔记本的文件",

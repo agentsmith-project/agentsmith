@@ -542,6 +542,22 @@
       "not_found_description": "The task you're looking for doesn't exist or has been deleted.",
       "back_to_notebook": "Go back to Notebook"
     },
+    "task_list": {
+      "new_task": "New Task",
+      "create_task": "Create Task",
+      "empty_title": "No tasks yet",
+      "empty_description": "Create your first task to start collaborating with an agent",
+      "agent_online": "Agent Online",
+      "agent_offline": "Agent Offline",
+      "agent_managed": "Agent Managed",
+      "agent_unknown": "Agent Unknown",
+      "run_running": "Running",
+      "turns": "Turns {count}",
+      "artifacts": "Artifacts {count}",
+      "inputs": "Inputs {count}",
+      "last_activity": "Last activity",
+      "created_at": "Created"
+    },
     "attached_files": {
       "title": "Attached Inputs",
       "subtitle": "Files attached to this notebook",

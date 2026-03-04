@@ -23,6 +23,10 @@ import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './htt
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
+import {
+  completeFeishuOAuthFromCallback,
+  getFeishuOAuthFrontendConfig,
+} from './feishu-oauth.js';
 import { appendUserNotification } from './me-notifications-store.js';
 import { getReleaseEscalationDetail, listReleaseEscalations } from './release-escalation-store.js';
 import {
@@ -434,6 +438,29 @@ export async function handleRequest(
 
   const requestUrl = new URL(req.url ?? '', 'http://localhost');
   if (handleApiDocsRoute(req, res, requestUrl, json)) {
+    return;
+  }
+
+  if (requestUrl.pathname === '/api/v1/me/external-connections/providers/feishu/callback' && method === 'GET') {
+    try {
+      await completeFeishuOAuthFromCallback({
+        docStore: deps.docStore,
+        code: requestUrl.searchParams.get('code') ?? undefined,
+        state: requestUrl.searchParams.get('state') ?? undefined,
+      });
+      const frontend = getFeishuOAuthFrontendConfig();
+      const redirectUrl = new URL(`/${frontend.locale}/user/third-party-accounts`, `${frontend.webBaseUrl}/`);
+      redirectUrl.searchParams.set('provider', 'feishu');
+      redirectUrl.searchParams.set('connected', '1');
+      res.statusCode = 302;
+      res.setHeader('location', redirectUrl.toString());
+      res.end();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'feishu_callback_failed';
+      res.statusCode = 400;
+      res.setHeader('content-type', 'text/html; charset=utf-8');
+      res.end(`<!doctype html><html><body><h1>Feishu callback failed</h1><p>${message}</p></body></html>`);
+    }
     return;
   }
 

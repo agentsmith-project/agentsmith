@@ -61,6 +61,15 @@ export function getFeishuOAuthConfig() {
   };
 }
 
+export function getFeishuOAuthFrontendConfig() {
+  const webBaseUrl = process.env.MBOS_WEB_BASE_URL?.trim() || 'http://localhost:3001';
+  const locale = process.env.MBOS_DEFAULT_LOCALE?.trim() || 'zh-CN';
+  return {
+    webBaseUrl: webBaseUrl.replace(/\/+$/, ''),
+    locale,
+  };
+}
+
 function parseFeishuTokenResponse(payload: unknown): FeishuTokenPayload {
   const raw = payload && typeof payload === 'object'
     ? payload as Record<string, unknown>
@@ -144,9 +153,9 @@ function parseCallbackInput(callbackUrl?: string, code?: string, state?: string)
   };
 }
 
-export async function completeFeishuOAuth(args: {
+async function completeFeishuOAuthInternal(args: {
   docStore: JsonDocStorePort;
-  userId: string;
+  userId?: string;
   callbackUrl?: string;
   code?: string;
   state?: string;
@@ -156,7 +165,10 @@ export async function completeFeishuOAuth(args: {
     throw new Error('feishu_callback_missing_code_or_state');
   }
   const session = FEISHU_AUTH_SESSIONS.get(parsed.state);
-  if (!session || session.userId !== args.userId || session.expiresAt < Date.now()) {
+  if (!session || session.expiresAt < Date.now()) {
+    throw new Error('feishu_callback_state_invalid');
+  }
+  if (args.userId && session.userId !== args.userId) {
     throw new Error('feishu_callback_state_invalid');
   }
   const config = getFeishuOAuthConfig();
@@ -175,7 +187,7 @@ export async function completeFeishuOAuth(args: {
     ? token.scope.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean)
     : config.scopes;
   return upsertUserExternalConnectionByProvider(args.docStore, {
-    user_id: args.userId,
+    user_id: session.userId,
     provider: 'feishu',
     kind: 'oauth_account',
     custom_domain: null,
@@ -208,6 +220,25 @@ export async function completeFeishuOAuth(args: {
     last_used_at: null,
     last_error: null,
   });
+}
+
+export async function completeFeishuOAuth(args: {
+  docStore: JsonDocStorePort;
+  userId: string;
+  callbackUrl?: string;
+  code?: string;
+  state?: string;
+}): Promise<UserExternalConnectionRecord> {
+  return completeFeishuOAuthInternal(args);
+}
+
+export async function completeFeishuOAuthFromCallback(args: {
+  docStore: JsonDocStorePort;
+  callbackUrl?: string;
+  code?: string;
+  state?: string;
+}): Promise<UserExternalConnectionRecord> {
+  return completeFeishuOAuthInternal(args);
 }
 
 export async function refreshFeishuOAuth(args: {

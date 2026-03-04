@@ -23,6 +23,10 @@ MINIO_USE_SSL="${MINIO_USE_SSL:-false}"
 MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
 MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
 MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}"
+REDIS_URL="${REDIS_URL:-redis://localhost:16379}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 DEMO_REFRESH_TOKEN="${DEMO_REFRESH_TOKEN:-1}"
 DEMO_INIT_RESOURCES="${DEMO_INIT_RESOURCES:-1}"
@@ -281,6 +285,10 @@ start_api_if_needed() {
       PORT='${PORT_API}' \
       KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
       KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
+      DATABASE_URL='${DATABASE_URL}' \
+      REDIS_URL='${REDIS_URL}' \
+      MONGO_URL='${MONGO_URL}' \
+      MONGO_DB_NAME='${MONGO_DB_NAME}' \
       MINIO_ENDPOINT='${MINIO_ENDPOINT}' \
       MINIO_PORT='${MINIO_PORT}' \
       MINIO_USE_SSL='${MINIO_USE_SSL}' \

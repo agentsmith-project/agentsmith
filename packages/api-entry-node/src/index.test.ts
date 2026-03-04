@@ -5409,7 +5409,7 @@ describe('api-entry-node projects routes', () => {
     const feishu = startMockFeishuOAuthServer();
     process.env.FEISHU_APP_ID = 'cli_test';
     process.env.FEISHU_APP_SECRET = 'secret_test';
-    process.env.FEISHU_OAUTH_REDIRECT_URI = 'http://127.0.0.1:18181/callback';
+    process.env.FEISHU_OAUTH_REDIRECT_URI = 'http://localhost:20000/api/v1/me/external-connections/providers/feishu/callback';
     process.env.FEISHU_OAUTH_AUTHORIZE_URL = feishu.authorizeUrl;
     process.env.FEISHU_OAUTH_TOKEN_URL = feishu.tokenUrl;
 
@@ -5435,13 +5435,13 @@ describe('api-entry-node projects routes', () => {
       redirect_uri: string;
     };
     expect(startPayload.authorization_url).toContain(feishu.authorizeUrl);
-    expect(startPayload.redirect_uri).toBe('http://127.0.0.1:18181/callback');
+    expect(startPayload.redirect_uri).toBe('http://localhost:20000/api/v1/me/external-connections/providers/feishu/callback');
 
     const completeRes = await apiFetch(baseUrl, '/api/v1/me/external-connections/providers/feishu/auth/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        callback_url: `http://127.0.0.1:18181/callback?code=oauth_code_1&state=${encodeURIComponent(startPayload.state)}`,
+        callback_url: `http://localhost:20000/api/v1/me/external-connections/providers/feishu/callback?code=oauth_code_1&state=${encodeURIComponent(startPayload.state)}`,
       }),
     });
     expect(completeRes.status).toBe(200);
@@ -5505,6 +5505,17 @@ describe('api-entry-node projects routes', () => {
     };
     expect(refreshed.status).toBe('active');
     expect(refreshed.fields.find((field) => field.key === 'access_token')?.masked_value).toBeDefined();
+
+    const startCallbackRes = await apiFetch(baseUrl, '/api/v1/me/external-connections/providers/feishu/auth/start', {
+      method: 'POST',
+    });
+    const startCallbackPayload = (await startCallbackRes.json()) as { state: string };
+    const callbackRes = await fetch(
+      `${baseUrl}/api/v1/me/external-connections/providers/feishu/callback?code=oauth_code_2&state=${encodeURIComponent(startCallbackPayload.state)}`,
+      { redirect: 'manual' },
+    );
+    expect(callbackRes.status).toBe(302);
+    expect(callbackRes.headers.get('location')).toBe('http://localhost:3001/zh-CN/user/third-party-accounts?provider=feishu&connected=1');
 
     const deleteRes = await apiFetch(baseUrl, `/api/v1/me/external-connections/${created.id}`, {
       method: 'DELETE',

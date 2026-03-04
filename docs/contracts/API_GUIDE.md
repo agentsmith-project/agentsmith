@@ -1,6 +1,6 @@
 # MBOS API Developer Guide
 
-**Last Updated:** 2026-02-27
+**Last Updated:** 2026-03-04
 **API Version:** 1.0.0
 **Base URL:** `/api/v1`
 
@@ -243,6 +243,12 @@ Response:
 | `RATE_LIMIT_EXCEEDED` | Too many requests |
 | `QUOTA_EXCEEDED` | Resource quota exceeded |
 | `INTERNAL_ERROR` | Unexpected server error |
+
+### Chat Multimodal Validation Notes
+
+- `422 VALIDATION_ERROR` + `chat_endpoint_not_multimodal`: endpoint binding does not support image/file parts.
+- `422 VALIDATION_ERROR` + `external_agent_not_multimodal`: external agent binding does not support image/file parts.
+- `422 VALIDATION_ERROR` + `chat_attachment_image_data_url_unavailable`: image attachment cannot be converted into required `data:image/*;base64,...` payload for upstream request.
 
 ## Rate Limiting
 

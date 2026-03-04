@@ -33,6 +33,8 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
   - Hide attachment actions in composer
   - Keep text send available
   - Frontend must pre-block attachment input attempts with explicit message
+- Image attachments must be transformed into `data:image/*;base64,...` payloads before upstream proxy send.
+- Backend must fail fast with `422 VALIDATION_ERROR` (`chat_attachment_image_data_url_unavailable`) when image attachment bytes cannot be resolved to a data URL.
 - Supported attachment entry points:
   - local file picker
   - source-library picker
@@ -53,7 +55,7 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
 - Any change to invariants in sections 2-4 must update tests in all three layers.
 
 ## 6. Stream Error Mapping Contract
-- Stream errors must show user-visible banner (`chat__stream-error-banner`) with deterministic copy.
+- Stream errors must show user-visible toast with deterministic copy and no forced redirect/navigation side effects.
 - For external-agent sessions, frontend maps server/SSE error codes:
   - `AGENT_OFFLINE` -> reconnect agent and retry hint
   - `AGENT_TIMEOUT` -> timeout/retry hint

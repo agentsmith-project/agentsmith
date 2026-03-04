@@ -386,7 +386,7 @@ restart_demo_runner() {
       MBOS_AGENT_WS_URL='${ws_url}' \
       MBOS_AGENT_KEY='${agent_key}' \
       MBOS_AGENT_BUILTIN_SKILLS_DIR='${MBOS_AGENT_BUILTIN_SKILLS_DIR:-${ROOT_DIR}/packages/agent-codex-runner/builtin-skills}' \
-      MBOS_AGENT_BUILTIN_SKILLS='${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}' \
+      MBOS_AGENT_BUILTIN_SKILLS='${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops,source-read}' \
       MBOS_AGENT_BUILTIN_SKILLS_REQUIRED='${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}' \
       MBOS_AGENT_RUNNER_DEBUG='${MBOS_AGENT_RUNNER_DEBUG:-1}' \
       MBOS_AGENT_TASK_TIMEOUT_SEC='${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}' \

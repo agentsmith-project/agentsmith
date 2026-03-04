@@ -3,7 +3,7 @@ import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 
 const DEFAULT_SKILLS_DIR = resolve(process.cwd(), 'packages/agent-codex-runner/builtin-skills');
-const DEFAULT_BUILTIN_SKILLS = ['.system', 'feishu-docs', 'jira-ops'];
+const DEFAULT_BUILTIN_SKILLS = ['.system', 'feishu-docs', 'jira-ops', 'source-read'];
 
 function parseBooleanFlag(input: string | undefined, fallback: boolean): boolean {
   if (typeof input !== 'string') return fallback;

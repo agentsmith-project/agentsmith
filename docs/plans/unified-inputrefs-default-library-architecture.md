@@ -108,7 +108,7 @@ The UI only attaches `InputRef`.
 - Notebook migrated from `attached_source_ids` to unified `attached_inputs` (`/tasks/:taskId/inputs`)
 - Notebook supports direct `library_object` refs
 - Runner manifest (`.mbos/task-inputs.json`) includes `kind`
-- `notebook-inputs` skill helper supports fetching `library_object` refs
+- `source-read` skill helper supports fetching `library_object` refs
 
 ### Phase 2 (completed)
 - Chat local uploads and library picks share a unified object-first attachment path

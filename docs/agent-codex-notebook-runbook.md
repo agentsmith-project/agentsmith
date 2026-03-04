@@ -125,7 +125,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 - `MBOS_AGENT_RUNNER_DEBUG=1` (optional; logs spawn args/workdir/timeout)
 - `MBOS_AGENT_CODEX_YOLO=1` (optional; run codex with `--dangerously-bypass-approvals-and-sandbox`)
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `<repo>/packages/agent-codex-runner/builtin-skills`)
-- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops`)
+- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops,source-read`)
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 
 ### 5.3 API debug env vars (recommended for troubleshooting)
@@ -134,7 +134,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 - `DEBUG_NOTEBOOK_RUNTIME=1` (task/run/request_id level dispatch + terminal events)
 
 ### 5.3.1 Builtin Skills Mount Policy (MVP)
-- Every new task auto-mounts builtin skills into task workspace: `.codex/skills/.system`, `.codex/skills/feishu-docs`, `.codex/skills/jira-ops`.
+- Every new task auto-mounts builtin skills into task workspace: `.codex/skills/.system`, `.codex/skills/feishu-docs`, `.codex/skills/jira-ops`, `.codex/skills/source-read`.
 - Mount happens before `codex exec` starts.
 - Default policy is fail-fast if required builtin skills are missing (`MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1`).
 
@@ -182,7 +182,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 
 ### 5.3.5 Notebook Artifact Inputs (output-to-input loop)
 - Notebook artifacts can be attached back into task inputs as first-class `artifact` refs.
-- The runner `notebook-inputs` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
+- The runner `source-read` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
 
 ### 5.3.6 Notebook Local Upload Inputs (object-first)
 - Notebook local file uploads now follow the same object-first flow as Chat uploads:
@@ -885,8 +885,8 @@ Runner runtime-context/task-input behavior:
   - `<task_cwd>/.mbos/task-inputs.json`
 - runner writes a task-local `AGENTS.md` with mandatory notebook rules (headless/artifacts/input helper)
 - runner installs a task-local Codex skill:
-  - `./.codex/skills/notebook-inputs/`
-  - helper command: `node ./.codex/skills/notebook-inputs/fetch_input.mjs ...`
+  - `./.codex/skills/source-read/`
+  - helper command: `node ./.codex/skills/source-read/fetch_input.mjs ...`
 - Codex is instructed to use the manifest and produce file outputs in `artifacts/`
 
 Session continuity behavior:

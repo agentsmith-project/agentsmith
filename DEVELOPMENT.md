@@ -684,7 +684,7 @@ This follow-up extends the external notebook-agent runtime line toward a Noteboo
 - runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
 - runner writes task-local `AGENTS.md` (headless rules, artifact dir rules, input helper guidance)
 - runner installs task-local Codex skill:
-  - `./.codex/skills/notebook-inputs/`
+  - `./.codex/skills/source-read/`
   - helper: `fetch_input.mjs` (downloads attached source files through AgentSmith API)
 - runner uses per-task session continuity:
   - first turn `codex exec ...`

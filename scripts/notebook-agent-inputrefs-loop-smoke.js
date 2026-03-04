@@ -355,7 +355,7 @@ async function runScenario() {
   await postTaskMessage(taskId, {
     role: 'user',
     content:
-      'Use notebook-inputs helper to list and fetch the URL input. Then create ./artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
+      'Use source-read helper to list and fetch the URL input. Then create ./artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
   });
   const firstTurn = await waitTaskTerminal(taskId);
   const firstTurnStatus = String(firstTurn?.terminal?.status || '');
@@ -395,7 +395,7 @@ async function runScenario() {
 
   await postTaskMessage(taskId, {
     role: 'user',
-    content: 'Use notebook-inputs helper to fetch the artifact input and reply exactly: url artifact loop ok',
+    content: 'Use source-read helper to fetch the artifact input and reply exactly: url artifact loop ok',
   });
   await waitTaskTerminal(taskId);
   const settledSecond = await waitSecondTurnOutput(taskId, 'url artifact loop ok');

@@ -1,5 +1,6 @@
 .PHONY: help quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
+	demo-full-up demo-full-down \
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-runtime-proxy-billing e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api e2e-int-runtime-proxy-billing-local-api \
@@ -63,6 +64,8 @@ help:
 	@echo "  make help-glossary  # explain common testing/release terms in plain language"
 	@echo "  make dev-up         # start/recover demo API+Web+Runner and refresh/init if needed"
 	@echo "  make dev-down       # stop demo API+Web+Runner"
+	@echo "  make demo-full-up   # kill leftovers + start deps + init deps + recover full demo(API/Web/Runner/resources)"
+	@echo "  make demo-full-down # stop demo(API/Web/Runner) and integration deps"
 	@echo "  make smoke-main     # mainline release smoke (auto demo-check + token fallback)"
 	@echo "  make smoke-governance # governance release smoke (strict page gate + effects)"
 	@echo "  make smoke-all      # run mainline + governance release smokes"
@@ -254,6 +257,15 @@ dev-up:
 
 dev-down:
 	$(MAKE) notebook-agent-demo-down
+
+demo-full-up:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/demo-full-up.sh
+
+demo-full-down:
+	@set -e; \
+	$(MAKE) notebook-agent-demo-down; \
+	$(MAKE) deps-down
 
 smoke-main:
 	$(MAKE) notebook-agent-release-smoke-full

@@ -68,6 +68,16 @@ make notebook-agent-init-resources
 make e2e-int-core-local-api
 ```
 
+### No-Sandbox Deployment Baseline
+
+```bash
+make notebook-agent-no-sandbox-smoke
+```
+
+This validates the required behavior for MVP deployment without sandbox:
+- mainline API/Web/Runner path is healthy (`notebook-agent-demo-check`)
+- internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
+
 ### Quality Gates
 
 ```bash

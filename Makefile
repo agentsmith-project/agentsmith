@@ -13,6 +13,7 @@
 	build-reliability-release-smoke workspace-governance-release-smoke organization-governance-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
+	notebook-agent-no-sandbox-smoke \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
@@ -127,6 +128,7 @@ help:
 	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
 	@echo "  make notebook-agent-demo-status    # show demo managed process/health/token/agent status"
 	@echo "  make notebook-agent-demo-check     # non-destructive demo readiness checks (status + metadata + proxy reachability)"
+	@echo "  make notebook-agent-no-sandbox-smoke # verify AgentSmith works without sandbox deployment (mainline + fail-fast internal paths)"
 	@echo "  make notebook-agent-demo-restart-runner # restart only the managed demo runner"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
@@ -183,6 +185,9 @@ quick-help:
 	@echo ""
 	@echo "  make smoke-main"
 	@echo "    Run notebook mainline release smoke."
+	@echo ""
+	@echo "  make notebook-agent-no-sandbox-smoke"
+	@echo "    Validate no-sandbox deployment baseline (services + endpoint proxy + internal fail-fast)."
 	@echo ""
 	@echo "  make smoke-governance"
 	@echo "    Run governance release smoke with strict page gate."
@@ -708,6 +713,13 @@ notebook-agent-demo-status:
 notebook-agent-demo-check:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-demo-check.sh
+
+notebook-agent-no-sandbox-smoke:
+	@set -e; \
+	echo "[make] no-sandbox smoke: demo readiness check"; \
+	$(MAKE) notebook-agent-demo-check; \
+	echo "[make] no-sandbox smoke: internal path must fail fast when sandbox is absent"; \
+	$(NPM) -s run test -- packages/api-entry-node/src/index.test.ts -t "AGENT_SANDBOX_NOT_CONFIGURED for internal agent"
 
 notebook-agent-demo-restart-runner:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

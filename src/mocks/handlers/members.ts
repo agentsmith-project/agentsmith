@@ -72,9 +72,6 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
       resource_id: resourceId,
       access_mode: 'allow_all_members',
       allowed_subjects: [],
-      rate_limits: {
-        rules: [{ key: 'agent.requests_per_minute', value: 60 }],
-      },
     };
   }
 

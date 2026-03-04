@@ -3,7 +3,7 @@
  *
  * Epic A2: Resource Policy Execution Completion
  * Requirements:
- * - endpoint/source_library/agent rate/quota/access behavior consistent
+ * - endpoint/source_library policy behavior consistent
  * - Policy priority stable: subject > resource > project-default
  *
  * Acceptance Criteria:
@@ -63,25 +63,7 @@ describe('Resource Policy Execution', () => {
     expect(result.matched_rules).toBeDefined();
   });
 
-  // Test Case 3: Consistent behavior across resource types (agent)
-  it('should evaluate agent policy with rate limits consistently', async () => {
-    const evaluationContext: PolicyEvaluationContext = {
-      resource_type: 'agent',
-      resource_id: 'ag-1',
-      subject_id: 'user-3',
-      subject_type: 'user',
-      action: 'use',
-      workspace_id: 'ws-1',
-      project_id: 'proj-1',
-    };
-
-    const result: PolicyEvaluationResult = await evaluateResourcePolicy(evaluationContext);
-
-    expect(result.decision).toBeDefined();
-    expect(result.matched_rules).toBeDefined();
-  });
-
-  // Test Case 4: Policy priority - subject > resource > project-default
+  // Test Case 3: Policy priority - subject > resource > project-default
   it('should apply policy priority: subject > resource > project-default', async () => {
     // Create a scenario where subject has an override
     const evaluationContext: PolicyEvaluationContext = {
@@ -101,7 +83,7 @@ describe('Resource Policy Execution', () => {
     expect(result.matched_rules).toBeDefined();
   });
 
-  // Test Case 5: Audit evidence for deny decisions
+  // Test Case 4: Audit evidence for deny decisions
   it('should create audit evidence for deny decisions', async () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'endpoint',

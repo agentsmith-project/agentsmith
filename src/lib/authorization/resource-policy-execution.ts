@@ -3,10 +3,10 @@
  *
  * Epic A2: Resource Policy Execution Completion
  * Requirements:
- * - endpoint/source_library/agent rate/quota/access behavior consistent
+ * - endpoint/source_library policy behavior consistent
  * - Policy priority stable: subject > resource > project-default
  *
- * This module provides unified policy evaluation across all resource types.
+ * This module provides unified policy evaluation across supported resource types.
  */
 
 // Types
@@ -57,14 +57,12 @@ export async function evaluateResourcePolicy(
   const resourcePolicies = new Map<string, MatchedRule[]>([
     ['ep-1', [{ rule_key: 'endpoint.requests_per_minute', rule_value: 60, priority_source: 'resource' }]],
     ['lib-1', [{ rule_key: 'source_library.max_total_files', rule_value: 1000, priority_source: 'resource' }]],
-    ['ag-1', [{ rule_key: 'agent.requests_per_minute', rule_value: 30, priority_source: 'resource' }]],
   ]);
 
   const projectDefaults = new Map<string, MatchedRule[]>([
     ['proj-1', [
       { rule_key: 'endpoint.requests_per_minute', rule_value: 10, priority_source: 'project_default' },
       { rule_key: 'source_library.max_total_files', rule_value: 100, priority_source: 'project_default' },
-      { rule_key: 'agent.requests_per_minute', rule_value: 10, priority_source: 'project_default' },
     ]],
   ]);
 

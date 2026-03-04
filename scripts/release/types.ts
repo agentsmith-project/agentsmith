@@ -334,7 +334,6 @@ export interface GovernanceReleaseEvidence {
     page_smoke: boolean;
     interaction_smoke: boolean;
     endpoint_policy_effects: boolean;
-    agent_policy_effects: boolean;
     member_permission_effect: boolean;
     member_lifecycle_effect: boolean;
     sse_ticket_hardening: boolean;

@@ -6201,8 +6201,7 @@
                                       "endpoint.daily_token_limit",
                                       "source_library.requests_per_minute",
                                       "source_library.max_total_files",
-                                      "source_library.max_file_size_bytes",
-                                      "agent.requests_per_minute"
+                                      "source_library.max_file_size_bytes"
                                     ]
                                   },
                                   "value": {
@@ -6236,8 +6235,7 @@
                                       "endpoint.daily_token_limit",
                                       "source_library.requests_per_minute",
                                       "source_library.max_total_files",
-                                      "source_library.max_file_size_bytes",
-                                      "agent.requests_per_minute"
+                                      "source_library.max_file_size_bytes"
                                     ]
                                   },
                                   "value": {
@@ -6275,8 +6273,7 @@
                                 "endpoint.daily_token_limit",
                                 "source_library.requests_per_minute",
                                 "source_library.max_total_files",
-                                "source_library.max_file_size_bytes",
-                                "agent.requests_per_minute"
+                                "source_library.max_file_size_bytes"
                               ]
                             },
                             "value": {
@@ -6310,8 +6307,7 @@
                                 "endpoint.daily_token_limit",
                                 "source_library.requests_per_minute",
                                 "source_library.max_total_files",
-                                "source_library.max_file_size_bytes",
-                                "agent.requests_per_minute"
+                                "source_library.max_file_size_bytes"
                               ]
                             },
                             "value": {

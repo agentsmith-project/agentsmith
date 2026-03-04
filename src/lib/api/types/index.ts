@@ -756,7 +756,6 @@ export type PolicyResourceType = 'endpoint' | 'source_library' | 'agent';
 export type PolicySubjectType = 'group' | 'user';
 
 export type PolicyRuleKey =
-  | 'agent.requests_per_minute'
   | 'endpoint.requests_per_minute'
   | 'endpoint.requests_per_5_hours'
   | 'endpoint.requests_per_day'
@@ -848,9 +847,6 @@ export interface ProjectGovernanceDefaults {
   };
   agent: {
     access_mode: 'allow_all_members' | 'allow_list';
-    rate_limits?: {
-      rules: PolicyRule<'agent.requests_per_minute'>[];
-    };
   };
 }
 

@@ -7271,7 +7271,7 @@ export interface operations {
                         rate_limits?: {
                             rules?: ({
                                 /** @enum {string} */
-                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute" | "agent.requests_per_minute";
+                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute";
                                 value: number;
                             } & {
                                 [key: string]: unknown;
@@ -7299,7 +7299,7 @@ export interface operations {
                     rate_limits?: {
                         rules?: ({
                             /** @enum {string} */
-                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute" | "agent.requests_per_minute";
+                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute";
                             value: number;
                         } & {
                             [key: string]: unknown;

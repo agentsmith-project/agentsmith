@@ -7,23 +7,25 @@ import {
 
 describe('validatePolicyRulesForResource', () => {
   it('rejects non-endpoint resource policy rules', () => {
+    const invalidAgentRateKey = 'agent.requests_per_minute' as never;
     const result = validatePolicyRulesForResource(
       'agent',
-      { rules: [{ key: 'agent.requests_per_minute', value: 3 }] },
+      { rules: [{ key: invalidAgentRateKey, value: 3 }] },
       undefined
     );
     expect(result.valid).toBe(false);
   });
 
   it('rejects endpoint agent-rate rule', () => {
+    const invalidAgentRateKey = 'agent.requests_per_minute' as never;
     const result = validatePolicyRulesForResource(
       'endpoint',
-      { rules: [{ key: 'agent.requests_per_minute', value: 3 }] },
+      { rules: [{ key: invalidAgentRateKey, value: 3 }] },
       undefined
     );
     expect(result.valid).toBe(false);
     if (!result.valid) {
-      expect(result.invalidKeys).toContain('agent.requests_per_minute');
+      expect(result.invalidKeys).toContain(invalidAgentRateKey);
     }
   });
 

@@ -9,7 +9,6 @@ PROJECT_ID_FILE="${PROJECT_ID_FILE:-/tmp/agentsmith_project_id.txt}"
 ENDPOINT_ID_FILE="${ENDPOINT_ID_FILE:-/tmp/agentsmith_endpoint_id.txt}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
-MIN_AGENT_RPM="${MIN_AGENT_RPM:-30}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
 RUN_INPUTREFS_LOOP="${RUN_INPUTREFS_LOOP:-1}"
@@ -24,93 +23,6 @@ read_file_trim() {
   local path="$1"
   [[ -f "${path}" ]] || return 1
   tr -d '\r\n' < "${path}"
-}
-
-ensure_agent_rate_limit_baseline() {
-  local token project_id agent_id base_url policy_url policy_json policy_get_code next_policy tmp_policy patch_code
-  token="$(read_file_trim "${TOKEN_FILE}" || true)"
-  project_id="$(read_file_trim "${PROJECT_ID_FILE}" || true)"
-  agent_id="$(read_file_trim /tmp/agentsmith_agent_id.txt || true)"
-  if [[ -z "${token}" || -z "${project_id}" || -z "${agent_id}" ]]; then
-    warn "skip agent policy baseline: missing token/project/agent metadata"
-    return 0
-  fi
-
-  base_url="${API_BASE}/workspaces/${WORKSPACE_ID}/projects/${project_id}"
-  policy_url="${base_url}/resources/agent/${agent_id}/policy"
-  tmp_policy="$(mktemp)"
-  policy_get_code="$(
-    curl -sS -o "${tmp_policy}" -w '%{http_code}' \
-      "${policy_url}" -H "Authorization: Bearer ${token}" || true
-  )"
-  if [[ "${policy_get_code}" == "401" ]]; then
-    info "agent policy baseline precheck got 401; refreshing token once"
-    (cd "${ROOT_DIR}" && BASE_URL="${BASE_URL:-http://localhost:3001}" make notebook-agent-refresh-token)
-    token="$(read_file_trim "${TOKEN_FILE}" || true)"
-    policy_get_code="$(
-      curl -sS -o "${tmp_policy}" -w '%{http_code}' \
-        "${policy_url}" -H "Authorization: Bearer ${token}" || true
-    )"
-  fi
-  if [[ "${policy_get_code}" != "200" ]]; then
-    warn "skip agent policy baseline: cannot read policy (HTTP ${policy_get_code})"
-    rm -f "${tmp_policy}"
-    return 0
-  fi
-
-  policy_json="$(cat "${tmp_policy}")"
-  rm -f "${tmp_policy}"
-
-  next_policy="$(printf '%s' "${policy_json}" | node -e '
-let s="";
-process.stdin.on("data", (d) => (s += d));
-process.stdin.on("end", () => {
-  const minRpm = Number(process.argv[1] || "30");
-  let p;
-  try {
-    p = JSON.parse(s);
-  } catch {
-    process.stdout.write("");
-    return;
-  }
-  if (!p || typeof p !== "object") {
-    process.stdout.write("");
-    return;
-  }
-  if (!p.rate_limits || !Array.isArray(p.rate_limits.rules)) p.rate_limits = { rules: [] };
-  const idx = p.rate_limits.rules.findIndex((r) => r && r.key === "agent.requests_per_minute");
-  if (idx >= 0) {
-    const current = Number(p.rate_limits.rules[idx]?.value || 0);
-    if (current >= minRpm) {
-      process.stdout.write("");
-      return;
-    }
-    p.rate_limits.rules[idx].value = minRpm;
-  } else {
-    p.rate_limits.rules.push({ key: "agent.requests_per_minute", value: minRpm });
-  }
-  process.stdout.write(JSON.stringify(p));
-});
-' "${MIN_AGENT_RPM}")"
-
-  if [[ -z "${next_policy}" ]]; then
-    info "agent policy baseline already satisfies min rpm=${MIN_AGENT_RPM}"
-    return 0
-  fi
-
-  info "normalizing agent policy rate limit to min rpm=${MIN_AGENT_RPM} before release smoke"
-  patch_code="$(
-    curl -sS -o /tmp/release-smoke-agent-policy-patch.json -w '%{http_code}' \
-      -X PATCH "${policy_url}" \
-      -H "Authorization: Bearer ${token}" \
-      -H 'Content-Type: application/json' \
-      --data "${next_policy}" || true
-  )"
-  if [[ "${patch_code}" != "200" && "${patch_code}" != "204" ]]; then
-    err "failed to patch agent policy baseline (HTTP ${patch_code})"
-    cat /tmp/release-smoke-agent-policy-patch.json >&2 || true
-    return 1
-  fi
 }
 
 proxy_probe_status() {
@@ -233,13 +145,11 @@ run_make_target_with_token_retry() {
 
 run_basic_smoke() {
   info "running notebook-agent-smoke-task"
-  ensure_agent_rate_limit_baseline
   run_make_target_with_token_retry notebook-agent-smoke-task notebook-agent-smoke-task
 }
 
 run_inputrefs_loop_smoke() {
   info "running notebook-agent-inputrefs-loop-smoke"
-  ensure_agent_rate_limit_baseline
   run_make_target_with_token_retry notebook-agent-inputrefs-loop-smoke notebook-agent-inputrefs-loop-smoke
 }
 

@@ -83,7 +83,7 @@ const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
 const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
   endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
   source_library: ['source_library.requests_per_minute'],
-  agent: ['agent.requests_per_minute'],
+  agent: [],
 };
 const RESOURCE_POLICY_ALLOWED_QUOTA_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
   endpoint: [

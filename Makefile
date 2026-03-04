@@ -9,7 +9,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task \
 	notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
-	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-agent-policy-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
+	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-release-smoke workspace-governance-release-smoke organization-governance-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
@@ -147,7 +147,6 @@ help:
 	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
 	@echo "  make governance-policy-spending-effect-smoke # real-backend endpoint policy spending-limit effect smoke (block -> audit/usage evidence)"
 	@echo "  make governance-policy-requests-rate-effect-smoke # real-backend endpoint policy requests/day rate effect smoke (block -> audit/usage evidence)"
-	@echo "  make governance-agent-policy-rate-effect-smoke # real-backend agent policy rate effect smoke (notebook preflight -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
@@ -807,10 +806,6 @@ governance-policy-requests-rate-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-requests-rate-effect-smoke.sh
 
-governance-agent-policy-rate-effect-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/governance-agent-policy-rate-effect-smoke.sh
-
 governance-member-permission-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-member-permission-effect-smoke.sh
@@ -845,7 +840,6 @@ governance-release-smoke:
 	run_with_token_retry governance-policy-effect-smoke; \
 	run_with_token_retry governance-policy-spending-effect-smoke; \
 	run_with_token_retry governance-policy-requests-rate-effect-smoke; \
-	run_with_token_retry governance-agent-policy-rate-effect-smoke; \
 	run_with_token_retry governance-member-permission-effect-smoke; \
 	run_with_token_retry governance-member-lifecycle-effect-smoke; \
 	run_with_token_retry governance-sse-ticket-effect-smoke; \

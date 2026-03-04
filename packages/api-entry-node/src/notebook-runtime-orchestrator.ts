@@ -12,9 +12,6 @@ import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from 
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
-import {
-  checkAndConsumeProjectResourceRateLimitsForUser,
-} from './project-resource-policy-enforcer.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -145,67 +142,6 @@ export async function runNotebookTaskWithExternalAgent(input: {
       });
     }
 
-    const agentPolicyCheck = isProjectResourceAccessAllowedForUser({
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      resourceType: 'agent',
-      resourceId: agentId,
-      userId: user.id,
-    });
-    if (!agentPolicyCheck.allowed) {
-      throw Object.assign(new Error('resource_policy_denied_agent'), { code: 'RESOURCE_POLICY_DENIED' });
-    }
-    const agentRateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
-      workspaceId: task.workspace_id,
-      projectId: task.project_id,
-      resourceType: 'agent',
-      resourceId: agentId,
-      userId: user.id,
-      policy: agentPolicyCheck.policy,
-    });
-    if (!agentRateCheck.allowed) {
-      await writeProjectAuditEvent(deps, {
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        actor: { type: 'user', id: user.id },
-        action: 'resource_policy.rate_limited',
-        result: 'error',
-        resourceType: 'agent',
-        resourceId: agentId,
-        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
-        errorMessage: 'resource_policy_rate_limited',
-        metadata: {
-          governance_kind: 'resource_policy',
-          enforcement_kind: 'rate_limit',
-          effective_limit_per_minute: agentRateCheck.effective_limit_per_minute,
-          retry_after_seconds: agentRateCheck.retry_after_seconds,
-          scope: agentRateCheck.scope,
-          rate_key: 'agent.requests_per_minute',
-          task_id: task.id,
-        },
-      });
-      await writeProjectUsageFact(deps, {
-        workspaceId: task.workspace_id,
-        projectId: task.project_id,
-        resourceType: 'agent',
-        resourceId: agentId,
-        endUserId: user.id,
-        requests: 1,
-        result: 'error',
-        errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
-        metadata: {
-          stage: 'preflight',
-          governance_kind: 'resource_policy',
-          enforcement_kind: 'rate_limit',
-          effective_limit_per_minute: agentRateCheck.effective_limit_per_minute,
-          retry_after_seconds: agentRateCheck.retry_after_seconds,
-          scope: agentRateCheck.scope,
-          rate_key: 'agent.requests_per_minute',
-          task_id: task.id,
-        },
-      });
-      throw Object.assign(new Error('resource_policy_rate_limited_agent'), { code: 'RESOURCE_POLICY_RATE_LIMITED' });
-    }
     if (!rawBearerToken) {
       throw Object.assign(new Error('user_token_missing'), { code: 'UNAUTHORIZED' });
     }

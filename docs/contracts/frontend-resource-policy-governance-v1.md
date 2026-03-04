@@ -54,8 +54,7 @@ Conflict rule:
 - spending: `endpoint.spending_usd_per_minute`, `endpoint.spending_usd_per_5_hours`, `endpoint.spending_usd_per_day`
 
 2. `agent`
-- rate: `agent.requests_per_minute`
-- spending: none in MVP
+- runtime rate/spending enforcement: none in MVP
 
 ## Runtime Enforcement Flow
 
@@ -74,7 +73,6 @@ Conflict rule:
 
 2. `resourceType` in MVP:
 - `endpoint`
-- `agent`
 
 ## Audit Requirements
 

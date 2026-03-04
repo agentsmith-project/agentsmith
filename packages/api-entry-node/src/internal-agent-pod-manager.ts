@@ -153,8 +153,11 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
 
     const lockKey = `${workspaceId}/${projectId}/${workloadId}`;
-    while (this.locks.has(lockKey)) {
-      await this.locks.get(lockKey);
+    for (;;) {
+      const existing = this.locks.get(lockKey);
+      if (!existing) break;
+      await existing;
+      if (this.agentRuntime.getAgentOnlineState(agent.id)) return;
     }
 
     if (this.agentRuntime.getAgentOnlineState(agent.id)) return;

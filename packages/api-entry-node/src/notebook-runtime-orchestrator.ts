@@ -12,6 +12,7 @@ import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from 
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
+import { buildRuntimeThirdPartyCredentialFiles } from './third-party-runtime-files.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -205,6 +206,10 @@ export async function runNotebookTaskWithExternalAgent(input: {
       attachedInputs: task.attached_inputs as NotebookTaskInputRefRecord[],
       debugLog,
     });
+    const thirdPartyCredentialFiles = await buildRuntimeThirdPartyCredentialFiles(
+      deps.docStore,
+      user.id,
+    );
     const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -224,6 +229,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
         wire_api: wireApi,
         model,
         task_inputs: taskInputs,
+        credential_files: thirdPartyCredentialFiles,
         notebook_mode: true,
       },
     });

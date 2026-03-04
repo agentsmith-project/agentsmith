@@ -34,6 +34,7 @@ import {
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { buildRuntimeThirdPartyCredentialFiles } from './third-party-runtime-files.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -698,6 +699,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           ).catch(() => undefined);
         }, 60_000);
       }
+      const thirdPartyCredentialFiles = await buildRuntimeThirdPartyCredentialFiles(
+        deps.docStore,
+        user.id,
+      );
       const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -710,6 +715,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           project_id: route.projectId,
           username: buildProxyUsername(user),
           user_bearer_token: rawBearerToken,
+          credential_files: thirdPartyCredentialFiles,
           model: raw.model ?? session.model,
           notebook_mode: false,
         },

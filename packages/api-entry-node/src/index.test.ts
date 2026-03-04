@@ -4046,6 +4046,8 @@ describe('api-entry-node projects routes', () => {
       userToken: string;
       notebookMode: boolean | null;
       taskInputsCount: number | null;
+      credentialFilesCount: number | null;
+      hasCredentialIndexFile: boolean;
       close: () => void;
     }>((resolve) => {
       let helloProxyBase = '';
@@ -4067,6 +4069,7 @@ describe('api-entry-node projects routes', () => {
               user_bearer_token?: string;
               notebook_mode?: boolean;
               task_inputs?: unknown[];
+              credential_files?: Array<{ relative_path?: string }>;
             };
           };
         };
@@ -4087,6 +4090,12 @@ describe('api-entry-node projects routes', () => {
           taskInputsCount: Array.isArray(msg.payload?.runtime_context?.task_inputs)
             ? msg.payload.runtime_context.task_inputs.length
             : null,
+          credentialFilesCount: Array.isArray(msg.payload?.runtime_context?.credential_files)
+            ? msg.payload.runtime_context.credential_files.length
+            : null,
+          hasCredentialIndexFile: Array.isArray(msg.payload?.runtime_context?.credential_files)
+            ? msg.payload.runtime_context.credential_files.some((item) => item?.relative_path === '.codex/credential/index.json')
+            : false,
           close: () => ws.close(),
         });
         ws.send(JSON.stringify({
@@ -4146,6 +4155,26 @@ describe('api-entry-node projects routes', () => {
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
 
+    const createExternalConnectionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/me/external-connections',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          provider: 'jira',
+          kind: 'secret_bundle',
+          display_name: 'runtime-jira',
+          note: 'runtime sync test',
+          fields: [
+            { key: 'base_url', value: 'https://jira.example.com', secret: false },
+            { key: 'api_token', value: 'jira-test-token', secret: true },
+          ],
+        }),
+      },
+    );
+    expect(createExternalConnectionRes.status).toBe(201);
+
     const postMessageRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
@@ -4180,6 +4209,8 @@ describe('api-entry-node projects routes', () => {
     expect(runtime.apiBase).toBe(baseUrl);
     expect(runtime.notebookMode).toBe(true);
     expect(runtime.taskInputsCount).toBe(0);
+    expect(runtime.credentialFilesCount).toBeGreaterThan(0);
+    expect(runtime.hasCredentialIndexFile).toBe(true);
     expect(runtime.helloProxyBase).toBe(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy`,
     );

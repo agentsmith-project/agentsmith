@@ -16,6 +16,7 @@ import {
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
 import { resolveTaskCwd, shouldResumeNotebookSession } from './workspace-runtime.js';
+import { applyRuntimeContextFiles, type RuntimeContextFileItem } from './runtime-context-files.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -48,6 +49,7 @@ type ServerStartPayload = {
       file_size?: number;
       ai_ready_status?: string;
     }>;
+    credential_files?: RuntimeContextFileItem[];
   };
 };
 
@@ -432,6 +434,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const isNotebookMode = runtimeContext.notebook_mode === true;
   const userPrompt = extractPrompt(payload.messages);
   const taskInputs = Array.isArray(runtimeContext.task_inputs) ? runtimeContext.task_inputs : [];
+  const credentialFiles = Array.isArray(runtimeContext.credential_files)
+    ? runtimeContext.credential_files
+    : [];
   let artifactsDir = join(cwd, 'artifacts');
   let taskInputsManifestPath = join(cwd, '.mbos', 'task-inputs.json');
   if (isNotebookMode) {
@@ -443,6 +448,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     artifactsDir = preparedAssets.artifactsDir;
     taskInputsManifestPath = preparedAssets.taskInputsManifestPath;
   }
+  const runtimeFilesResult = await applyRuntimeContextFiles(cwd, credentialFiles);
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
       artifactsDir,
@@ -487,6 +493,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     has_user_bearer_token: Boolean(runtimeContext.user_bearer_token && runtimeContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,
+    credential_files_count: runtimeFilesResult.written,
+    credential_files_bytes: runtimeFilesResult.totalBytes,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
     resume_last: resumeLast,
     cwd_source: cwdResult.source,
@@ -546,6 +554,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       yolo: codexYolo,
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,
+      credential_files_count: runtimeFilesResult.written,
       artifacts_dir: isNotebookMode ? 'artifacts/' : null,
     },
   });

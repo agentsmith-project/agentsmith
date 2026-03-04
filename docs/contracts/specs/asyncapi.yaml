@@ -272,6 +272,21 @@ components:
                           minimum: 0
                         ai_ready_status:
                           type: string
+                  credential_files:
+                    type: array
+                    items:
+                      type: object
+                      additionalProperties: false
+                      required:
+                      - relative_path
+                      - content
+                      properties:
+                        relative_path:
+                          type: string
+                        content:
+                          type: string
+                        description:
+                          type: string
     serverRequestCancel:
       name: server.request.cancel
       payload:

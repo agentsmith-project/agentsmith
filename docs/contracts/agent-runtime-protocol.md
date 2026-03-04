@@ -49,6 +49,9 @@ All frames are JSON objects:
       - `model: string`
       - `notebook_mode?: boolean`
       - `task_inputs?: Array<{ source_id?: string; filename?: string; file_type?: string; file_size?: number; ai_ready_status?: string }>`
+      - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
+        - Backend provides user third-party credential files per request.
+        - Runner writes these files under workspace-relative paths before executing the turn.
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`

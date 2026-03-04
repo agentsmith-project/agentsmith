@@ -3970,6 +3970,79 @@ describe('api-entry-node projects routes', () => {
     expect(body.error_code).toBe('AGENT_SANDBOX_NOT_CONFIGURED');
   });
 
+  it('starts and clears internal chat keepalive timer when streaming via internal agent', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const ensureAgentReady = vi.fn(async () => undefined);
+    const keepalive = vi.fn(async () => undefined);
+    deps.internalAgentPodManager = {
+      ensureAgentReady,
+      keepalive,
+      releasePod: vi.fn(async () => undefined),
+    };
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_internal_chat_keepalive',
+      stream: (async function* streamEvents() {
+        yield { type: 'delta', delta: 'hello' };
+        yield { type: 'done', finish_reason: 'stop', usage_tokens: 5 };
+      })(),
+      cancel: vi.fn(),
+    }));
+    deps.agentRuntimeService.dispatchStreamingRequest = dispatchStreamingRequest as typeof deps.agentRuntimeService.dispatchStreamingRequest;
+    const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
+    const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-chat-keepalive',
+      mode: 'internal',
+      interaction_mode: 'chat',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      runtime_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createSessionRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ external_agent_id: internalAgent.id, model: 'gpt-5-codex' }),
+      },
+    );
+    expect(createSessionRes.status).toBe(201);
+    const session = (await createSessionRes.json()) as { id: string };
+
+    const streamRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/messages/stream`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          input: { role: 'user', content: 'hello internal keepalive' },
+        }),
+      },
+    );
+    expect(streamRes.status).toBe(200);
+    expect(ensureAgentReady).toHaveBeenCalledTimes(1);
+    expect(keepalive).toHaveBeenCalled();
+    expect(dispatchStreamingRequest).toHaveBeenCalledTimes(1);
+    expect(setIntervalSpy.mock.calls.some((call) => call[1] === 60_000)).toBe(true);
+    expect(clearIntervalSpy).toHaveBeenCalled();
+    setIntervalSpy.mockRestore();
+    clearIntervalSpy.mockRestore();
+  });
+
   it('releases internal workload pod when notebook task is archived', async () => {
     const deps = createDefaultNodeApiDeps();
     const releasePod = vi.fn(async () => undefined);

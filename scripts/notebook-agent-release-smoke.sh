@@ -12,6 +12,7 @@ API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
 RUN_INPUTREFS_LOOP="${RUN_INPUTREFS_LOOP:-1}"
+RUN_CREDENTIAL_SYNC_SMOKE="${RUN_CREDENTIAL_SYNC_SMOKE:-1}"
 RUN_MATPLOTLIB_SMOKE="${RUN_MATPLOTLIB_SMOKE:-0}"
 MATPLOTLIB_TIMEOUT_SEC="${MATPLOTLIB_TIMEOUT_SEC:-180}"
 
@@ -153,6 +154,11 @@ run_inputrefs_loop_smoke() {
   run_make_target_with_token_retry notebook-agent-inputrefs-loop-smoke notebook-agent-inputrefs-loop-smoke
 }
 
+run_credential_sync_smoke() {
+  info "running notebook-agent-credential-sync-smoke"
+  run_make_target_with_token_retry notebook-agent-credential-sync-smoke notebook-agent-credential-sync-smoke
+}
+
 run_matplotlib_smoke() {
   info "running matplotlib artifact smoke (manual API calls)"
   local token project_id agent_id api_base ws
@@ -206,6 +212,9 @@ main() {
   fi
   if [[ "${RUN_INPUTREFS_LOOP}" == "1" ]]; then
     run_inputrefs_loop_smoke || failures=$((failures + 1))
+  fi
+  if [[ "${RUN_CREDENTIAL_SYNC_SMOKE}" == "1" ]]; then
+    run_credential_sync_smoke || failures=$((failures + 1))
   fi
   if [[ "${RUN_MATPLOTLIB_SMOKE}" == "1" ]]; then
     run_matplotlib_smoke || failures=$((failures + 1))

@@ -67,6 +67,7 @@ Operational guide:
 When focusing on MVP go-live readiness, run this smaller real-backend baseline first:
 
 ```bash
+make notebook-agent-no-sandbox-smoke
 make e2e-int-core-local-api
 make governance-policy-requests-quota-effect-smoke
 make release-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
@@ -80,11 +81,12 @@ make release-core-smoke
 
 This baseline covers:
 
-1. Keycloak login + workspace/project entry
-2. Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
-3. Chat stream-error surfacing and recovery (429/401/403)
-4. Endpoint requests-per-minute quota policy effect
-5. Archived release report generation (contract/type check subset)
+1. No-sandbox deployment baseline (`AGENT_SANDBOX_NOT_CONFIGURED` fail-fast on internal path)
+2. Keycloak login + workspace/project entry
+3. Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
+4. Chat stream-error surfacing and recovery (429/401/403)
+5. Endpoint requests-per-minute quota policy effect
+6. Archived release report generation (contract/type check subset)
 
 ### Basic Usage
 

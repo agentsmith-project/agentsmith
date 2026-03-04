@@ -6,6 +6,7 @@ Last updated: 2026-03-04
 
 Provide a single operational path to validate MVP core readiness on real backend:
 
+- No-sandbox deployment baseline (sandbox optional; internal path fail-fast)
 - Keycloak login and workspace/project entry
 - Endpoint protocol bridge chat streaming (`openai_compatible` / `anthropic_compatible`)
 - Chat stream error surfacing and recovery
@@ -27,6 +28,7 @@ Default test user:
 ## Fast Path (services already running)
 
 ```bash
+make notebook-agent-no-sandbox-smoke
 make e2e-int-core-local-api
 make governance-policy-requests-quota-effect-smoke
 make release-report REPORT_ARCHIVE=1

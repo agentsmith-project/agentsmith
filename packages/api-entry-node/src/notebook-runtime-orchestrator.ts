@@ -111,6 +111,8 @@ export async function runNotebookTaskWithExternalAgent(input: {
   const taskId = task.id;
   const runId = buildRunId();
   let reachedTerminal = false;
+  let traceEventCount = 0;
+  let maxTraceSequence = 0;
   let endpointIdForLog: string | null = null;
   const startedAtMs = Date.now();
   let terminalResult: 'ok' | 'error' = 'ok';
@@ -316,6 +318,8 @@ export async function runNotebookTaskWithExternalAgent(input: {
           payload: event.event as AgentRuntimeTraceEventPayload,
         });
         await storeTaskTraceEvent(deps, task.id, traceEvent);
+        traceEventCount += 1;
+        maxTraceSequence = Math.max(maxTraceSequence, traceEvent.seq);
         emitTaskEvent(taskId, { type: 'trace_event', data: traceEvent });
         continue;
       }
@@ -398,11 +402,14 @@ export async function runNotebookTaskWithExternalAgent(input: {
     reachedTerminal = true;
     terminalResult = 'error';
     recordNotebookTaskRunFailed();
+    const message = error instanceof Error ? error.message : 'agent_runtime_error';
     const codeCandidate = error instanceof Error
       ? (error as Error & { code?: unknown }).code
       : undefined;
     const code = typeof codeCandidate === 'string'
       ? codeCandidate
+      : message === 'agent_offline'
+        ? 'AGENT_OFFLINE'
       : 'AGENT_UPSTREAM_ERROR';
     terminalErrorCode = code;
     debugLog('runtime_dispatch_exception', {
@@ -411,12 +418,12 @@ export async function runNotebookTaskWithExternalAgent(input: {
       agent_id: agentId,
       endpoint_id: endpointIdForLog,
       code,
-      message: error instanceof Error ? error.message : 'agent_runtime_error',
+      message,
     });
     emitTaskEvent(taskId, {
       type: 'error',
       data: {
-        message: error instanceof Error ? error.message : 'agent_runtime_error',
+        message,
         code,
       },
     });
@@ -435,6 +442,47 @@ export async function runNotebookTaskWithExternalAgent(input: {
         endpoint_id: endpointIdForLog,
         agent_chars: assistantMessage.content.length,
       });
+    }
+    const missingRuntimeTrace = traceEventCount === 0;
+    if (missingRuntimeTrace) {
+      const fallbackStatus = terminalResult === 'ok' ? 'success' : 'error';
+      const fallbackTrace = buildTaskTraceEvent({
+        taskId: task.id,
+        messageId: assistantMessage.id,
+        runId,
+        payload: {
+          sequence: Math.max(1, maxTraceSequence + 1),
+          at: new Date().toISOString(),
+          category: fallbackStatus === 'success' ? 'lifecycle' : 'error',
+          phase: 'end',
+          status: fallbackStatus,
+          name: 'runtime.terminal',
+          summary: fallbackStatus === 'success'
+            ? 'runtime terminal synthesized: stream completed without trace events'
+            : `runtime terminal synthesized: ${terminalErrorCode ?? 'AGENT_UPSTREAM_ERROR'}`,
+          details: {
+            synthesized: true,
+            reason: 'missing_runtime_trace',
+            terminal_result: terminalResult,
+            error_code: terminalErrorCode ?? null,
+          },
+        },
+      });
+      await storeTaskTraceEvent(deps, task.id, fallbackTrace);
+      traceEventCount += 1;
+      maxTraceSequence = Math.max(maxTraceSequence, fallbackTrace.seq);
+      emitTaskEvent(taskId, { type: 'trace_event', data: fallbackTrace });
+      debugLog('runtime_fallback_terminal_trace_emitted', {
+        task_id: task.id,
+        run_id: runId,
+        trace_id: fallbackTrace.id,
+        terminal_result: terminalResult,
+        error_code: terminalErrorCode ?? null,
+      });
+    }
+    // Fail-fast closure for broken runs: do not leave task forever "active".
+    if (terminalResult === 'error' || missingRuntimeTrace) {
+      task.status = 'closed';
     }
     const durationMs = Math.max(0, Date.now() - startedAtMs);
     await writeProjectAuditEvent(deps, {

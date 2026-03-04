@@ -4454,6 +4454,125 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
+  it('synthesizes terminal trace and closes task when notebook runtime dispatch fails', async () => {
+    const { baseUrl } = startServer();
+
+    const createCredentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'task-runner-key-offline',
+          type: 'api_key',
+          value: 'sk-task-offline',
+        }),
+      },
+    );
+    expect(createCredentialRes.status).toBe(201);
+    const credential = (await createCredentialRes.json()) as { id: string };
+
+    const createEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'task-endpoint-offline',
+          openai_model: 'gpt-5-codex',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'https://example.com/v1',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(createEndpointRes.status).toBe(201);
+    const endpoint = (await createEndpointRes.json()) as { id: string };
+
+    const createAgentRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'notebook-runner-offline',
+          mode: 'external',
+          interaction_mode: 'notebook',
+          runtime_preferences: {
+            notebook: {
+              endpoint_id: endpoint.id,
+              wire_api: 'chat',
+              model: 'gpt-5-codex',
+            },
+          },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
+        }),
+      },
+    );
+    expect(createAgentRes.status).toBe(201);
+    const agent = (await createAgentRes.json()) as { id: string };
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Notebook task offline runtime',
+          agent_id: agent.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const postMessageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'run this despite offline runtime',
+        }),
+      },
+    );
+    expect(postMessageRes.status).toBe(200);
+
+    let tracesBody: { items: Array<{ status?: string; name?: string; summary?: string; details?: Record<string, unknown> }> } | null = null;
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const tracesRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`,
+      );
+      expect(tracesRes.status).toBe(200);
+      tracesBody = (await tracesRes.json()) as {
+        items: Array<{ status?: string; name?: string; summary?: string; details?: Record<string, unknown> }>;
+      };
+      if (tracesBody.items.some((item) => item.name === 'runtime.terminal' && item.status === 'error')) break;
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    expect(tracesBody).not.toBeNull();
+    const terminalTrace = tracesBody!.items.find((item) => item.name === 'runtime.terminal');
+    expect(terminalTrace?.status).toBe('error');
+    expect(terminalTrace?.summary).toContain('AGENT_OFFLINE');
+    expect((terminalTrace?.details as { synthesized?: boolean } | undefined)?.synthesized).toBe(true);
+
+    const taskAfterRunRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}`,
+    );
+    expect(taskAfterRunRes.status).toBe(200);
+    const taskAfterRun = (await taskAfterRunRes.json()) as { status: string };
+    expect(taskAfterRun.status).toBe('closed');
+  });
+
   it('enforces agent resource policy rate limit for notebook external runtime and records governance evidence', async () => {
     const { baseUrl } = startServer();
 

@@ -1078,7 +1078,9 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       if (!res.headersSent) {
         const statusCode = mappedError.code === 'UNAUTHORIZED'
           ? 401
-          : (mappedError.code.startsWith('AGENT_SANDBOX_') ? 422 : 502);
+          : mappedError.code === 'AGENT_SANDBOX_RATE_LIMITED'
+            ? 429
+            : (mappedError.code.startsWith('AGENT_SANDBOX_') ? 422 : 502);
         json(res, statusCode, { error_code: mappedError.code, message: mappedError.message });
       } else if (isWritable(res)) {
         broadcast(streamId, 'error', {

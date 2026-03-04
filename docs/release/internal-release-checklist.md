@@ -51,6 +51,15 @@ What `demo-check` validates:
 - endpoint proxy is reachable
 - agent websocket metadata files look sane
 
+### No-sandbox baseline check (required for current MVP deployment model)
+```bash
+make notebook-agent-no-sandbox-smoke
+```
+
+What `notebook-agent-no-sandbox-smoke` validates:
+- `demo-check` passes (mainline path healthy)
+- internal-agent path fails fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED` when sandbox is not configured
+
 Common remediation:
 - Token expired:
 ```bash
@@ -179,6 +188,7 @@ If not enforced, behavior may be inconsistent for:
 
 ## 8. Go/No-Go Rule
 Release is **GO** (internal/controlled) when all are true:
+- `notebook-agent-no-sandbox-smoke` passes (for non-sandbox deployment baseline)
 - `demo-up` works and prints healthy status
 - `demo-check` passes
 - `release-smoke-full` passes

@@ -378,7 +378,9 @@ async function maybeReleaseInternalAgentWorkload(
     workspaceId,
     projectId,
     sanitizeWorkloadId(task.id),
-  ).catch(() => undefined);
+  ).catch((err: unknown) => {
+    console.warn('[sandbox] releasePod failed for task %s: %s', task.id, err instanceof Error ? err.message : err);
+  });
 }
 
 async function createTaskArtifactRecord(

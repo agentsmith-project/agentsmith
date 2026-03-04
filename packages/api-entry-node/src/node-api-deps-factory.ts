@@ -189,7 +189,9 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
-    throw new Error('sandbox_manager_config_incomplete');
+    throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
+      code: 'SANDBOX_MANAGER_CONFIG_INCOMPLETE',
+    });
   }
 
   const factory = createProjectRepoFactoryResult({

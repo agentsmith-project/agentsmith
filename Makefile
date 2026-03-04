@@ -13,7 +13,7 @@
 	build-reliability-release-smoke workspace-governance-release-smoke organization-governance-release-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
-	notebook-agent-no-sandbox-smoke \
+	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
@@ -274,6 +274,8 @@ demo-full-down:
 	$(MAKE) deps-down
 
 smoke-main:
+	@set -e; \
+	$(MAKE) notebook-agent-no-sandbox-assert; \
 	$(MAKE) notebook-agent-release-smoke-full
 
 smoke-governance:
@@ -719,6 +721,9 @@ notebook-agent-no-sandbox-smoke:
 	echo "[make] no-sandbox smoke: demo readiness check"; \
 	$(MAKE) notebook-agent-demo-check; \
 	echo "[make] no-sandbox smoke: internal path must fail fast when sandbox is absent"; \
+	$(MAKE) notebook-agent-no-sandbox-assert
+
+notebook-agent-no-sandbox-assert:
 	$(NPM) -s run test -- packages/api-entry-node/src/index.test.ts -t "AGENT_SANDBOX_NOT_CONFIGURED for internal agent"
 
 notebook-agent-demo-restart-runner:

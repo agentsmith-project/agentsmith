@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { SandboxManagerClient } from './sandbox-manager-client.js';
+import { SandboxManagerClient, SandboxManagerHttpError } from './sandbox-manager-client.js';
 
 const originalFetch = globalThis.fetch;
 
@@ -39,8 +39,43 @@ describe('SandboxManagerClient', () => {
     globalThis.fetch = vi.fn(async () => new Response('boom', { status: 500 })) as unknown as typeof fetch;
 
     const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
-    await expect(client.exec('ws_1', 'proj_1', 'workload_1', ['bash', '-lc', 'echo 1'])).rejects.toThrow(
-      'sandbox_manager_error: 500 boom',
-    );
+    await expect(client.exec('ws_1', 'proj_1', 'workload_1', ['bash', '-lc', 'echo 1'])).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_UNAVAILABLE',
+    });
+  });
+
+  it('checks readyz with service key header', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('http://sandbox:8080/readyz');
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['X-Service-Key']).toBe('svc-key');
+      return new Response('ok', { status: 200 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new SandboxManagerClient('http://sandbox:8080/', 'svc-key');
+    await expect(client.checkReady()).resolves.toBeUndefined();
+  });
+
+  it('retries transient 503 and then succeeds', async () => {
+    globalThis.fetch = vi.fn()
+      .mockResolvedValueOnce(new Response('temporary', { status: 503 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ phase: 'Running' }), { status: 200 })) as unknown as typeof fetch;
+
+    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const status = await client.getPodStatus('ws_1', 'proj_1', 'workload_1');
+    expect(status.phase).toBe('Running');
+  });
+
+  it('maps 403 to AGENT_SANDBOX_FORBIDDEN', async () => {
+    globalThis.fetch = vi.fn(async () => new Response('forbidden', { status: 403 })) as unknown as typeof fetch;
+
+    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const request = client.keepalive('ws_1', 'proj_1', 'workload_1');
+    await expect(request).rejects.toBeInstanceOf(SandboxManagerHttpError);
+    await expect(request).rejects.toMatchObject({
+      code: 'AGENT_SANDBOX_FORBIDDEN',
+      status: 403,
+    });
   });
 });

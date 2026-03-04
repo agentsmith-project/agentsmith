@@ -20,7 +20,8 @@
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
-	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release
+	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
+	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
 
 NPM ?= npm
 
@@ -993,3 +994,108 @@ urls:
 	@echo "MinIO console:    http://localhost:19001  (mbos/mbos_dev_password)"
 	@echo "Test user 1:      dev-admin / dev-admin-123"
 	@echo "Test user 2:      integration-user / integration-user-123"
+
+# ---------------------------------------------------------------------------
+# Internal Agent Sandbox — Joint Integration
+# ---------------------------------------------------------------------------
+
+SANDBOX_MANAGER_URL ?=
+SANDBOX_SERVICE_KEY ?=
+INTERNAL_AGENT_WS_HOST ?= ws://localhost:$(PORT_API)
+INTERNAL_AGENT_IMAGE ?=
+
+sandbox-preflight:
+	@echo "==> Internal Agent Sandbox Preflight Check"
+	@echo ""
+	@PASS=0; FAIL=0; \
+	echo "--- 1. Environment variables ---"; \
+	if [ -z "$(SANDBOX_MANAGER_URL)" ]; then \
+		echo "  [FAIL] SANDBOX_MANAGER_URL not set"; FAIL=$$((FAIL+1)); \
+	else \
+		echo "  [OK]   SANDBOX_MANAGER_URL=$(SANDBOX_MANAGER_URL)"; PASS=$$((PASS+1)); \
+	fi; \
+	if [ -z "$(SANDBOX_SERVICE_KEY)" ]; then \
+		echo "  [FAIL] SANDBOX_SERVICE_KEY not set"; FAIL=$$((FAIL+1)); \
+	else \
+		echo "  [OK]   SANDBOX_SERVICE_KEY=<set>"; PASS=$$((PASS+1)); \
+	fi; \
+	if [ -z "$(INTERNAL_AGENT_IMAGE)" ]; then \
+		echo "  [FAIL] INTERNAL_AGENT_IMAGE not set"; FAIL=$$((FAIL+1)); \
+	else \
+		echo "  [OK]   INTERNAL_AGENT_IMAGE=$(INTERNAL_AGENT_IMAGE)"; PASS=$$((PASS+1)); \
+	fi; \
+	echo ""; \
+	echo "--- 2. Sandbox Manager health ---"; \
+	if [ -n "$(SANDBOX_MANAGER_URL)" ]; then \
+		if curl -sf -o /dev/null -w "" --max-time 5 "$(SANDBOX_MANAGER_URL)/healthz" 2>/dev/null; then \
+			echo "  [OK]   $(SANDBOX_MANAGER_URL)/healthz → 200"; PASS=$$((PASS+1)); \
+		else \
+			echo "  [FAIL] $(SANDBOX_MANAGER_URL)/healthz not reachable"; FAIL=$$((FAIL+1)); \
+		fi; \
+		if curl -sf -o /dev/null -w "" --max-time 5 "$(SANDBOX_MANAGER_URL)/readyz" 2>/dev/null; then \
+			echo "  [OK]   $(SANDBOX_MANAGER_URL)/readyz → 200"; PASS=$$((PASS+1)); \
+		else \
+			echo "  [FAIL] $(SANDBOX_MANAGER_URL)/readyz not reachable"; FAIL=$$((FAIL+1)); \
+		fi; \
+	else \
+		echo "  [SKIP] SANDBOX_MANAGER_URL not set"; \
+	fi; \
+	echo ""; \
+	echo "--- 3. Keycloak ---"; \
+	if curl -sf -o /dev/null -w "" --max-time 5 "$(KEYCLOAK_BASE_URL)/$(KEYCLOAK_REALM)" 2>/dev/null; then \
+		echo "  [OK]   Keycloak reachable"; PASS=$$((PASS+1)); \
+	else \
+		echo "  [FAIL] Keycloak not reachable at $(KEYCLOAK_BASE_URL)/$(KEYCLOAK_REALM)"; FAIL=$$((FAIL+1)); \
+	fi; \
+	echo ""; \
+	echo "--- 4. AgentSmith API ---"; \
+	if curl -sf -o /dev/null -w "" --max-time 5 "http://localhost:$(PORT_API)/docs" 2>/dev/null; then \
+		echo "  [OK]   API at :$(PORT_API)"; PASS=$$((PASS+1)); \
+	else \
+		echo "  [FAIL] API not reachable at :$(PORT_API)"; FAIL=$$((FAIL+1)); \
+	fi; \
+	echo ""; \
+	echo "--- 5. AgentSmith Web ---"; \
+	if curl -sf -o /dev/null -w "" --max-time 5 "http://localhost:$(PORT_WEB)/" 2>/dev/null; then \
+		echo "  [OK]   Web at :$(PORT_WEB)"; PASS=$$((PASS+1)); \
+	else \
+		echo "  [WARN] Web not reachable at :$(PORT_WEB) (optional for backend-only testing)"; \
+	fi; \
+	echo ""; \
+	echo "==> Preflight: $$PASS passed, $$FAIL failed"; \
+	if [ $$FAIL -gt 0 ]; then echo "==> BLOCKED — fix failures above before proceeding"; exit 1; fi; \
+	echo "==> READY for joint integration"
+
+sandbox-api-dev: check-api-port
+	@if [ -z "$(SANDBOX_MANAGER_URL)" ] || [ -z "$(SANDBOX_SERVICE_KEY)" ]; then \
+		echo "[FAIL] Set SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY first."; \
+		echo "  Example: make sandbox-api-dev SANDBOX_MANAGER_URL=http://sandbox-manager:8080 SANDBOX_SERVICE_KEY=sk_xxx"; \
+		exit 1; \
+	fi
+	PORT=$(PORT_API) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	DATABASE_URL=$(DATABASE_URL) \
+	REDIS_URL=$(REDIS_URL) \
+	MONGO_URL=$(MONGO_URL) \
+	MONGO_DB_NAME=$(MONGO_DB_NAME) \
+	MINIO_ENDPOINT=$(MINIO_ENDPOINT) \
+	MINIO_PORT=$(MINIO_PORT) \
+	MINIO_USE_SSL=$(MINIO_USE_SSL) \
+	MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
+	MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) \
+	MINIO_BUCKET=$(MINIO_BUCKET) \
+	SANDBOX_MANAGER_URL=$(SANDBOX_MANAGER_URL) \
+	SANDBOX_SERVICE_KEY=$(SANDBOX_SERVICE_KEY) \
+	AGENT_RUNTIME_WS_BASE_URL=$(INTERNAL_AGENT_WS_HOST) \
+	$(NPM) run api:node:dev
+
+sandbox-joint-smoke:
+	@if [ -z "$(SANDBOX_MANAGER_URL)" ] || [ -z "$(SANDBOX_SERVICE_KEY)" ]; then \
+		echo "[FAIL] Set SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY."; exit 1; \
+	fi
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	API_BASE=http://localhost:$(PORT_API) \
+	SANDBOX_MANAGER_URL=$(SANDBOX_MANAGER_URL) \
+	SANDBOX_SERVICE_KEY=$(SANDBOX_SERVICE_KEY) \
+	bash ./scripts/sandbox-joint-integration-smoke.sh

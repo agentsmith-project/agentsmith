@@ -18,6 +18,7 @@ interface SandboxManagerClientLike {
     cmd: string[],
     timeoutSeconds?: number,
   ): Promise<ExecResponse>;
+  checkReady(): Promise<void>;
 }
 
 interface AgentRuntimeLike {
@@ -222,6 +223,16 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
     const config = readInternalConfig(agent);
     const deadline = Date.now() + this.startupTimeoutMs;
+    try {
+      await this.sandboxClient.checkReady();
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error
+        ? (error as { code?: unknown }).code
+        : undefined;
+      throw Object.assign(new Error('sandbox_not_ready'), {
+        code: typeof code === 'string' ? code : 'AGENT_SANDBOX_UNAVAILABLE',
+      });
+    }
     let status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
 
     if (status.phase === 'Failed') {

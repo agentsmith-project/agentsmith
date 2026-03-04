@@ -172,23 +172,12 @@ if h.storage != nil {
 **改动**: 根据环境变量决定是否创建 workspace.Storage。
 
 ```go
-// 替换原来的:
-//   workspaceStorage := workspace.NewStorage(juicefsBasePath)
-//
-// 改为（系统未发布，无需兼容旧逻辑）:
-var workspaceStorage *workspace.Storage
-if getEnvOrDefault("WORKSPACE_MODE", "direct") == "snapshot" {
-    workspaceStorage = workspace.NewStorage(juicefsBasePath)
-    log.Printf("Workspace storage initialized with snapshot support (basePath=%s)", juicefsBasePath)
-} else {
-    log.Printf("Workspace storage: direct directory mode (basePath=%s)", juicefsBasePath)
-}
-
-// NewHandler 调用增加 basePath 参数
-workloadHandler := workload.NewHandler(k8sClient, k8sExecutor, workspaceStorage, juicefsPVCName, juicefsBasePath)
+juicefsBasePath := getEnvOrDefault("JUICEFS_BASE_PATH", "/mnt/juicefs/workloads")
+juicefsPVCName := getEnvOrDefault("JUICEFS_PVC_NAME", "juicefs-workloads-pvc")
+workloadHandler := workload.NewHandler(k8sClient, k8sExecutor, juicefsPVCName, juicefsBasePath)
 ```
 
-**新环境变量**: `WORKSPACE_MODE`，默认 `direct`（纯目录模式）。如需快照功能设为 `snapshot`。
+工作区使用纯目录模式：`MkdirAll` 创建 `{basePath}/{wsID}/{wlID}` 目录，通过 PVC subPath 挂载到 Pod。
 
 ---
 
@@ -1229,10 +1218,6 @@ Notebook/Chat 等待 Pod 启动期间，前端通过 SSE `trace_event`（`name=s
 
 ### Sandbox Manager
 
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `WORKSPACE_MODE` | `direct` | `direct`=纯目录(默认), `snapshot`=带快照(保留扩展) |
-
 ### Pod 内 Agent Runner（由 Sandbox Manager 自动注入）
 
 | 变量 | 说明 |
@@ -1300,8 +1285,8 @@ Notebook/Chat 等待 Pod 启动期间，前端通过 SSE `trace_event`（`name=s
 | `src/lib/api/types/index.ts` | agentsmith | 前端 AgentConfig 类型 |
 | `src/components/agents/CreateAgentDialog.tsx` | agentsmith | internal agent UI |
 | `src/components/agents/EditAgentDialog.tsx` | agentsmith | internal agent UI |
-| `manager-service/internal/workload/handler.go` | mbos-sandbox-v1 | storage=nil 纯目录模式 |
-| `manager-service/internal/app/app.go` | mbos-sandbox-v1 | WORKSPACE_MODE 环境变量 |
+| `manager-service/internal/workload/handler.go` | mbos-sandbox-v1 | 纯目录模式 (MkdirAll + PVC subPath) |
+| `manager-service/internal/app/app.go` | mbos-sandbox-v1 | Handler 初始化 |
 
 ---
 
@@ -1452,3 +1437,59 @@ CMD ["tail", "-f", "/dev/null"]
 ### 19.6 发布检查修正
 
 - [ ] Agent WS 连接后 `server.hello` 包含 `resource_proxy.base_url`
+
+### 19.7 JuiceFS 挂载策略与权限模型（2026-03-04 复核改进）
+
+**背景:** 参照 [JuiceFS K8s 部署文档](https://juicefs.com/docs/zh/community/how_to_use_on_kubernetes) 复核后，发现原设计存在三个结构性缺陷并已修复。
+
+**JuiceFS 挂载方式选择:**
+
+JuiceFS 在 K8s 中有三种使用方式:
+1. **hostPath** — 节点预挂载 JuiceFS，Pod 通过 hostPath 使用。最简单，但缺少隔离性、所有节点需预配置、挂载进程不受 K8s 管控。
+2. **CSI Driver (PVC)** — 通过 JuiceFS CSI 驱动以 PVC 形式挂载。K8s 原生、支持挂载点自动恢复、权限可控。
+3. **容器内挂载** — 容器内运行 JuiceFS 客户端，需要 `privileged: true`。安全风险高。
+
+**我们的选择: PVC + subPath（方式 2）**
+
+理由:
+- `ReadWriteMany` PVC 天然支持 Manager 和 workload Pod 共享同一文件系统
+- CSI 驱动提供挂载点自动恢复（hostPath 下 JuiceFS 进程异常退出 → 所有 Pod 受影响）
+- 不需要在每个 K8s 节点预安装 JuiceFS
+- 不需要 privileged 模式，符合安全约束
+
+**权限模型:**
+
+JuiceFS 完整实现 POSIX 权限模型。核心规则:
+- Manager Pod 以 `uid=1000, gid=1000` 运行（与 workload Pod 一致）
+- Manager 创建目录后显式 `chown(1000, 1000)` 作为防御性编码
+- Workload Pod SecurityContext 设置 `RunAsUser/RunAsGroup/FSGroup = 1000`
+- `FSGroupChangePolicy: OnRootMismatch` — 仅在根目录 GID 不匹配时修正，避免大目录递归 chown 性能开销
+
+**已修复的结构性问题:**
+
+| # | 问题 | 修复 |
+|---|------|------|
+| 1 | Manager Deployment 未挂载 JuiceFS PVC | 增加 `juicefs-workloads-pvc` volumeMount |
+| 2 | Manager uid 与 workload Pod uid 不一致 → 目录权限不匹配 | Manager Pod SecurityContext 设为 uid=1000; direct mode 增加 `os.Chown` |
+| 3 | NetworkPolicy 未放行 AgentSmith WS 端口(20000) | egress 规则增加 TCP/20000 |
+| 4 | Workload Pod 缺少 FSGroup → PVC 子路径 GID 不受控 | 增加 `RunAsGroup/FSGroup/FSGroupChangePolicy` |
+
+### 19.8 Sandbox Manager Direct-Directory Mode（2026-03-04 实施）
+
+AgentSmith 侧已完成 pre-sandbox 收口（见 `docs/release/internal-agent-pre-sandbox-readiness-2026-03-04.md`），Sandbox Manager 侧完成了以下适配:
+
+**已完成:**
+1. `handler.go`: 纯目录模式 — `MkdirAll` + `filepath.Join(wsID, wlID)` 作为 PVC subPath
+2. `handler.go`: 业务指标接入 (RecordWorkloadCreate/Delete/Keepalive/Exec)
+3. `handler.go`: K8s Delete/PatchActivity 操作增加重试 (retryutil.Retry)
+4. K8s namespace 统一为 `sandbox-system` + `sandbox-workloads` 两个 namespace
+5. 所有现有测试通过（unit + integration + build）
+
+**subPath 格式:** `{workspaceID}/{workloadID}` — PVC 子目录即 workspace 目录
+
+**联调准备:**
+- `make sandbox-preflight` — 环境健康检查（Manager/Keycloak/API/Web）
+- `make sandbox-api-dev` — 带 sandbox 环境变量启动 API
+- `make sandbox-joint-smoke` — 自动化联调烟测（Phase 2 checklist）
+- `secrets/sandbox-integration.demo.env` — 环境变量模板
+- `docs/release/internal-agent-sandbox-joint-integration-report-template.md` — 联调报告模板

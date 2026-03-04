@@ -70,6 +70,18 @@ function mapAgentDispatchError(error: unknown): AgentStreamRouteError {
     return new AgentStreamRouteError(codeCandidate, codeCandidate.toLowerCase());
   }
   const message = error instanceof Error ? error.message : 'agent_stream_error';
+  const sandboxStatusMatch = message.match(/sandbox_manager_error:\s*[a-z_]+\s+(\d{3})\b/i)
+    ?? message.match(/sandbox_manager_error:\s*(\d{3})\b/i);
+  const sandboxStatus = sandboxStatusMatch ? Number.parseInt(sandboxStatusMatch[1], 10) : null;
+  if (sandboxStatus === 403) {
+    return new AgentStreamRouteError('AGENT_SANDBOX_FORBIDDEN', 'agent_sandbox_forbidden');
+  }
+  if (sandboxStatus === 404) {
+    return new AgentStreamRouteError('AGENT_SANDBOX_NOT_FOUND', 'agent_sandbox_not_found');
+  }
+  if (sandboxStatus !== null && sandboxStatus >= 500) {
+    return new AgentStreamRouteError('AGENT_SANDBOX_UNAVAILABLE', 'agent_sandbox_unavailable');
+  }
   if (message === 'agent_offline') {
     return new AgentStreamRouteError('AGENT_OFFLINE', 'agent_offline');
   }

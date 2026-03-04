@@ -37,6 +37,7 @@ describe('internal-agent-pod-manager', () => {
     };
     const manager = new InternalAgentPodManagerImpl(
       {
+        checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus,
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
@@ -69,6 +70,7 @@ describe('internal-agent-pod-manager', () => {
   it('fails fast when internal key is missing', async () => {
     const manager = new InternalAgentPodManagerImpl(
       {
+        checkReady: vi.fn().mockResolvedValue(undefined),
         getPodStatus: vi.fn().mockResolvedValue({ phase: 'offline' }),
         createOrEnsurePod: vi.fn(),
         deletePod: vi.fn(),
@@ -87,5 +89,29 @@ describe('internal-agent-pod-manager', () => {
         agent: buildAgent({ image: 'runner:v1' }),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
+  });
+
+  it('fails with AGENT_SANDBOX_UNAVAILABLE when sandbox readyz preflight fails', async () => {
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockRejectedValue(new Error('sandbox_not_ready')),
+        getPodStatus: vi.fn(),
+        createOrEnsurePod: vi.fn(),
+        deletePod: vi.fn(),
+        keepalive: vi.fn(),
+        exec: vi.fn(),
+      },
+      { getAgentOnlineState: vi.fn().mockReturnValue(false) },
+      'ws://api:20000',
+    );
+
+    await expect(
+      manager.ensureAgentReady({
+        workspaceId: 'ws_1',
+        projectId: 'proj_1',
+        workloadId: 'task_1',
+        agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
+      }),
+    ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_UNAVAILABLE' });
   });
 });

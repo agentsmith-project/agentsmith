@@ -222,9 +222,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentResourceService = new AgentResourceService(docStore);
   const agentRuntimeService = new AgentRuntimeService(agentResourceService);
-  const internalAgentPodManager = sandboxUrl && sandboxServiceKey
+  const sandboxClient = sandboxUrl && sandboxServiceKey
+    ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
+    : undefined;
+  const internalAgentPodManager = sandboxClient
     ? new InternalAgentPodManagerImpl(
-      new SandboxManagerClient(sandboxUrl, sandboxServiceKey),
+      sandboxClient,
       agentRuntimeService,
       (env.AGENT_RUNTIME_WS_BASE_URL?.trim() || `ws://localhost:${env.PORT ?? '20000'}`).replace(/\/+$/, ''),
       {
@@ -232,6 +235,13 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       },
     )
     : undefined;
+  if (sandboxClient) {
+    // Startup preflight is advisory only. AgentSmith must still run without sandbox reachability.
+    void sandboxClient.checkReady().catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'unknown_error';
+      process.stderr.write(`[api-entry-node] sandbox readyz preflight failed: ${message}\n`);
+    });
+  }
   const sourceBucket = env.MINIO_BUCKET ?? 'mbos-dev';
   const parser = new Utf8DocumentParser();
   const chunker = new FixedCharTextChunker({

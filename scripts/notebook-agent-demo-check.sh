@@ -9,6 +9,8 @@ WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
+SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
 
 info() { echo "[demo-check] $*"; }
 err() { echo "[demo-check] ERROR: $*" >&2; }
@@ -102,6 +104,27 @@ main() {
     exit 1
   fi
   info "agent metadata files look sane"
+
+  if [[ -n "${SANDBOX_MANAGER_URL}" || -n "${SANDBOX_SERVICE_KEY}" ]]; then
+    if [[ -z "${SANDBOX_MANAGER_URL}" || -z "${SANDBOX_SERVICE_KEY}" ]]; then
+      err "sandbox env is incomplete: SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must both be set"
+      exit 1
+    fi
+    info "checking sandbox manager readyz"
+    local sandbox_ready_code
+    sandbox_ready_code="$(
+      curl -sS -o /dev/null -w '%{http_code}' \
+        "${SANDBOX_MANAGER_URL%/}/readyz" \
+        -H "X-Service-Key: ${SANDBOX_SERVICE_KEY}" || true
+    )"
+    if [[ "${sandbox_ready_code}" != "200" ]]; then
+      err "sandbox manager readyz failed (HTTP ${sandbox_ready_code})"
+      exit 1
+    fi
+    info "sandbox manager readyz OK"
+  else
+    info "sandbox manager check skipped (optional integration not configured)"
+  fi
 
   info "demo-check OK"
 }

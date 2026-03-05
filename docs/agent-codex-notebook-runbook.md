@@ -422,6 +422,9 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
     - `details.synthesized=true`
   - task stays reusable; completion/failure is represented by run terminal signals and trace events.
 - This fallback is operationally required so smoke/runbook tooling can classify completion deterministically.
+- Frontend run-state rule (must stay consistent with runner protocol):
+  - step-level trace success (for example `codex.exec`, `runner.artifact`) does **not** end a run;
+  - only `run.lifecycle` with `phase=end` or `run.summary` with `phase=end` may clear the active-run busy state.
 
 ## 7.2 Debug Log Correlation (Recommended)
 - `notebook-runtime` logs (`DEBUG_NOTEBOOK_RUNTIME=1`)

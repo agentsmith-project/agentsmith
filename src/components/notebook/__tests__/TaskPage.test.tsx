@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskPage } from '../TaskPage';
@@ -13,12 +13,24 @@ import { ApiError } from '@/lib/api/client';
 const mockTaskApiListTraces = vi.fn();
 const {
   mockSendMessageMutateAsync,
+  mockSendMessageIsPending,
   mockHandleError,
   mockToastError,
+  mockToastInfo,
+  latestTaskSseOptionsRef,
+  latestConversationPanelPropsRef,
+  latestTaskHeaderPropsRef,
+  mockTaskApiCancelRun,
 } = vi.hoisted(() => ({
   mockSendMessageMutateAsync: vi.fn(),
+  mockSendMessageIsPending: { value: false },
   mockHandleError: vi.fn(),
   mockToastError: vi.fn(),
+  mockToastInfo: vi.fn(),
+  latestTaskSseOptionsRef: { current: null as any },
+  latestConversationPanelPropsRef: { current: null as any },
+  latestTaskHeaderPropsRef: { current: null as any },
+  mockTaskApiCancelRun: vi.fn(),
 }));
 
 vi.mock('next-intl', () => ({
@@ -76,7 +88,7 @@ vi.mock('@/lib/hooks/use-task', () => ({
   }),
   useSendMessage: () => ({
     mutateAsync: mockSendMessageMutateAsync,
-    isPending: false,
+    isPending: mockSendMessageIsPending.value,
   }),
   useAddFiles: () => ({
     mutateAsync: vi.fn().mockResolvedValue({}),
@@ -89,11 +101,14 @@ vi.mock('@/lib/hooks/use-task', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-task-sse', () => ({
-  useTaskSSE: () => ({
+  useTaskSSE: (_workspaceId: string, _projectId: string, _taskId: string, options: unknown) => {
+    latestTaskSseOptionsRef.current = options;
+    return ({
     connectionStatus: 'connected',
     connect: vi.fn(),
     disconnect: vi.fn(),
-  }),
+    });
+  },
 }));
 
 vi.mock('@/lib/hooks/use-error-handler', () => ({
@@ -107,20 +122,25 @@ vi.mock('@/components/ui/toast', () => ({
     error: mockToastError,
     success: vi.fn(),
     warning: vi.fn(),
-    info: vi.fn(),
+    info: mockToastInfo,
   },
 }));
 
 // Mock components
 vi.mock('../TaskHeader', () => ({
-  TaskHeader: ({ task, onDeleted, onCreateNew, onLeave }: any) => (
-    <div data-testid="task-header">
+  TaskHeader: (props: any) => {
+    latestTaskHeaderPropsRef.current = props;
+    const { task, onDeleted, onCreateNew, onLeave, agentRunActivity } = props;
+    return (
+      <div data-testid="task-header">
       <div data-testid="task-title">{task.title}</div>
+      <div data-testid="task-header-busy">{String(!!agentRunActivity?.active)}</div>
       <button onClick={onLeave}>Leave</button>
       <button onClick={onDeleted}>Delete</button>
       <button onClick={onCreateNew}>New</button>
     </div>
-  ),
+    );
+  },
 }));
 
 vi.mock('../AttachedFilesPanel', () => ({
@@ -132,19 +152,36 @@ vi.mock('../AttachedFilesPanel', () => ({
 }));
 
 vi.mock('../ConversationPanel', () => ({
-  ConversationPanel: ({ onSendMessage, onTraceExpand, onTraceLoadMore, disabled, sending, messages }: any) => (
-    <div data-testid="conversation-panel">
+  ConversationPanel: (props: any) => {
+    latestConversationPanelPropsRef.current = props;
+    const {
+      onSendMessage,
+      onTraceExpand,
+      onTraceLoadMore,
+      onCancelActiveRun,
+      runActivity,
+      pendingQueue,
+      disabled,
+      sending,
+      messages,
+    } = props;
+    return (
+      <div data-testid="conversation-panel">
       <button onClick={() => onSendMessage('Test message')}>Send Message</button>
+      <button onClick={() => onCancelActiveRun?.()}>Cancel Active Run</button>
       {messages?.some((m: any) => m.role === 'agent') && (
         <>
           <button onClick={() => onTraceExpand?.('msg-2')}>Expand Trace</button>
           <button onClick={() => onTraceLoadMore?.('msg-2')}>Load More Trace</button>
         </>
       )}
+      <div data-testid="conversation-run-active">{String(!!runActivity?.active)}</div>
+      <div data-testid="conversation-pending-count">{String((pendingQueue ?? []).length)}</div>
       {disabled && <div data-disabled>disabled</div>}
       {sending && <div data-sending>sending</div>}
     </div>
-  ),
+    );
+  },
 }));
 
 vi.mock('../ArtifactsPanel', () => ({
@@ -207,6 +244,7 @@ vi.mock('@/lib/api', () => ({
     return {
       getSSEUrl: vi.fn(() => 'http://test/sse'),
       listTraces: mockTaskApiListTraces,
+      cancelRun: mockTaskApiCancelRun,
       downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
       saveArtifact: vi.fn().mockResolvedValue({}),
     };
@@ -314,6 +352,18 @@ describe('TaskPage', () => {
     vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     mockTaskApiListTraces.mockReset();
     mockTaskApiListTraces.mockResolvedValue({ items: [], total: 0, has_more: false, next_after_id: null });
+    mockTaskApiCancelRun.mockReset();
+    mockTaskApiCancelRun.mockResolvedValue({
+      status: 'cancelling',
+      task_id: mockTaskId,
+      run_id: 'run-1',
+      request_id: 'req-1',
+    });
+    mockToastInfo.mockReset();
+    mockSendMessageIsPending.value = false;
+    latestTaskSseOptionsRef.current = null;
+    latestConversationPanelPropsRef.current = null;
+    latestTaskHeaderPropsRef.current = null;
   });
 
   const wrapper = ({ children }: { children: React.ReactNode }) => (
@@ -421,6 +471,69 @@ describe('TaskPage', () => {
 
       // Streaming state is managed internally
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
+    });
+
+    it('keeps busy state during non-terminal step success and clears on run terminal', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByText('Send Message'));
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('true');
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onTraceEvent?.({
+          id: 'trace_step_success',
+          task_id: mockTaskId,
+          message_id: 'new-msg-id',
+          run_id: 'run-1',
+          seq: 11,
+          at: '2026-03-06T04:00:00.000Z',
+          category: 'progress',
+          phase: 'end',
+          status: 'success',
+          name: 'codex.exec',
+          summary: 'Step completed',
+        });
+      });
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('true');
+
+      await act(async () => {
+        latestTaskSseOptionsRef.current?.onTraceEvent?.({
+          id: 'trace_run_done',
+          task_id: mockTaskId,
+          message_id: 'new-msg-id',
+          run_id: 'run-1',
+          seq: 12,
+          at: '2026-03-06T04:00:01.000Z',
+          category: 'lifecycle',
+          phase: 'end',
+          status: 'success',
+          name: 'run.lifecycle',
+          summary: 'Run completed',
+        });
+      });
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('false');
+      expect(screen.getByTestId('task-header-busy')).toHaveTextContent('false');
+    });
+
+    it('queues new input while busy and allows cancel current run', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByText('Send Message'));
+      expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
+
+      await user.click(screen.getByText('Send Message'));
+      expect(mockSendMessageMutateAsync).toHaveBeenCalledTimes(1);
+      expect(screen.getByTestId('conversation-pending-count')).toHaveTextContent('1');
+      expect(mockToastInfo).toHaveBeenCalled();
+
+      await user.click(screen.getByText('Cancel Active Run'));
+      expect(mockTaskApiCancelRun).toHaveBeenCalledWith(mockWorkspaceId, mockProjectId, mockTaskId);
+      expect(mockToastInfo).toHaveBeenCalled();
     });
 
     it('loads earlier trace page with before_id when requested', async () => {

@@ -3593,7 +3593,7 @@
             "description": "Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)"
           },
           "502": {
-            "description": "External agent runtime error (AGENT_OFFLINE/AGENT_TIMEOUT/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)"
+            "description": "External agent runtime error (AGENT_OFFLINE/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)"
           }
         },
         "requestBody": {
@@ -3605,6 +3605,40 @@
                 "additionalProperties": true
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/cancel": {
+      "post": {
+        "tags": [
+          "Notebook"
+        ],
+        "operationId": "cancelTaskRun",
+        "description": "Requests cancellation of the currently active notebook run.",
+        "responses": {
+          "202": {
+            "description": "Cancel request accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "description": "task_not_found"
+          },
+          "409": {
+            "description": "TASK_RUN_NOT_ACTIVE"
           }
         }
       }

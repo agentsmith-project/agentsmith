@@ -2292,6 +2292,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Requests cancellation of the currently active notebook run. */
+        post: operations["cancelTaskRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/events": {
         parameters: {
             query?: never;
@@ -9178,6 +9195,44 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    cancelTaskRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancel request accepted */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description task_not_found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description TASK_RUN_NOT_ACTIVE */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
     listTaskEvents: {
         parameters: {
             query?: never;
@@ -9314,7 +9369,7 @@ export interface operations {
                 };
                 content?: never;
             };
-            /** @description External agent runtime error (AGENT_OFFLINE/AGENT_TIMEOUT/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR) */
+            /** @description External agent runtime error (AGENT_OFFLINE/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR) */
             502: {
                 headers: {
                     [name: string]: unknown;

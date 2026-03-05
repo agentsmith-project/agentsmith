@@ -471,6 +471,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/messages",
     "method": "get"
   },
+  "taskCancelRun": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/cancel",
+    "method": "post"
+  },
   "taskInputItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/inputs/{inputId}",
     "method": "get"

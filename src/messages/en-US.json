@@ -625,6 +625,7 @@
       "run_action_kind_lifecycle": "State",
       "run_action_kind_error": "Error",
       "run_action_kind_system": "System",
+      "run_action_time_ago": "{duration} ago",
       "pending_enqueued": "Queued for sending. It will be sent after the current run finishes.",
       "pending_hint_running": "Agent is currently running. New sends will go to the pending queue.",
       "pending_queue_title": "Pending queue ({count})",

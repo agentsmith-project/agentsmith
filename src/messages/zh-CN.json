@@ -627,6 +627,7 @@
       "run_action_kind_lifecycle": "状态",
       "run_action_kind_error": "错误",
       "run_action_kind_system": "系统",
+      "run_action_time_ago": "{duration} 前",
       "pending_enqueued": "已加入待发送队列，当前轮结束后会自动发送。",
       "pending_hint_running": "Agent 正在执行中。你现在发送的内容会进入待发送队列。",
       "pending_queue_title": "待发送队列（{count}）",

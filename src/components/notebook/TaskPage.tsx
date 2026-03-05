@@ -891,59 +891,80 @@ export function TaskPage({
     ? Math.max(0, Math.floor((runClockNow - runStartedAt) / 1000))
     : 0;
   const activeTraceEvents = streamingMessageId ? (traceEventsByMessageId[streamingMessageId] ?? []) : [];
-  const latestRunAction = (() => {
-    const sorted = [...activeTraceEvents].sort((a, b) => (a.seq !== b.seq ? b.seq - a.seq : b.at.localeCompare(a.at)));
-    const preferred = sorted.find((evt) => evt.name !== 'run.summary');
-    const evt = preferred ?? sorted[0];
+  type RunActionKind = 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
+  const toRunAction = (evt: TaskTraceEvent | undefined): { kind: RunActionKind; summary: string } => {
     if (!evt) {
       return {
-        kind: 'system' as const,
+        kind: 'system',
         summary: lastRunActionSummary || tConversation('run_active_default_action'),
       };
     }
     if (evt.name === 'codex.command') {
       const command = typeof evt.details?.command === 'string' ? evt.details.command.trim() : '';
       return {
-        kind: 'command' as const,
+        kind: 'command',
         summary: command || evt.summary || tConversation('run_active_default_action'),
       };
     }
     if (evt.name === 'codex.tool') {
       const toolName = typeof evt.details?.tool_name === 'string' ? evt.details.tool_name.trim() : '';
       return {
-        kind: 'tool' as const,
+        kind: 'tool',
         summary: toolName ? `tool: ${toolName}` : (evt.summary || tConversation('run_active_default_action')),
       };
     }
     if (evt.name === 'runner.artifact') {
       const filename = typeof evt.details?.filename === 'string' ? evt.details.filename.trim() : '';
       return {
-        kind: 'artifact' as const,
+        kind: 'artifact',
         summary: filename || evt.summary || tConversation('run_active_default_action'),
       };
     }
     if (evt.name === 'run.lifecycle') {
       return {
-        kind: 'lifecycle' as const,
+        kind: 'lifecycle',
         summary: evt.summary || tConversation('run_active_default_action'),
       };
     }
     if (evt.category === 'error' || evt.status === 'error') {
       return {
-        kind: 'error' as const,
+        kind: 'error',
         summary: evt.summary || tConversation('run_active_default_action'),
       };
     }
     if (evt.name === 'codex.output' || evt.category === 'progress') {
       return {
-        kind: 'output' as const,
+        kind: 'output',
         summary: evt.summary || tConversation('run_active_default_action'),
       };
     }
     return {
-      kind: 'system' as const,
+      kind: 'system',
       summary: evt.summary || tConversation('run_active_default_action'),
     };
+  };
+  const sortedActions = [...activeTraceEvents].sort((a, b) => (a.seq !== b.seq ? b.seq - a.seq : b.at.localeCompare(a.at)));
+  const latestRunAction = toRunAction(sortedActions.find((evt) => evt.name !== 'run.summary') ?? sortedActions[0]);
+  const recentRunActions = (() => {
+    const now = Date.now();
+    const allowKinds: RunActionKind[] = ['command', 'tool', 'artifact', 'lifecycle', 'error'];
+    const selected: Array<{ id: string; kind: RunActionKind; summary: string; ageSeconds: number }> = [];
+    for (const evt of sortedActions) {
+      const mapped = toRunAction(evt);
+      if (!allowKinds.includes(mapped.kind)) continue;
+      if (mapped.summary.trim().length === 0) continue;
+      if (selected.some((item) => item.summary === mapped.summary && item.kind === mapped.kind)) continue;
+      const at = Date.parse(evt.at);
+      const ageSeconds = Number.isFinite(at) ? Math.max(0, Math.floor((now - at) / 1000)) : 0;
+      selected.push({
+        id: evt.id,
+        kind: mapped.kind,
+        summary: mapped.summary,
+        ageSeconds,
+      });
+      if (selected.length >= 3) break;
+    }
+    return selected;
   })();
   const showSandboxStarting = isAgentTurnRunning
     && activeTraceEvents.some((item) => item.name === 'sandbox_starting')
@@ -1013,6 +1034,7 @@ export function TaskPage({
             elapsedSeconds: runElapsedSeconds,
             lastSummary: latestRunAction.summary,
             lastKind: latestRunAction.kind,
+            recentActions: recentRunActions,
           }}
           showExecutionDetails={showExecutionDetails}
           onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}

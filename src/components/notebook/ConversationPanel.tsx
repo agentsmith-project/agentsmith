@@ -33,6 +33,12 @@ export interface ConversationPanelProps {
     elapsedSeconds: number;
     lastSummary?: string | null;
     lastKind?: 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
+    recentActions?: Array<{
+      id: string;
+      kind: 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
+      summary: string;
+      ageSeconds: number;
+    }>;
   };
   showExecutionDetails?: boolean;
   onToggleExecutionDetails?: () => void;
@@ -213,6 +219,21 @@ export function ConversationPanel({
                   : t('run_action_kind_system')}
               </span>
               <span className="truncate">{t('run_active_last_action', { summary: runActivity.lastSummary })}</span>
+            </div>
+          ) : null}
+          {runActivity.recentActions && runActivity.recentActions.length > 0 ? (
+            <div className="mt-2 space-y-1" data-testid="notebook__run-active-recent">
+              {runActivity.recentActions.map((item) => (
+                <div key={item.id} className="flex items-start gap-2 text-[11px] text-blue-100/90">
+                  <span className="inline-flex shrink-0 items-center rounded border border-blue-300/20 bg-blue-400/5 px-1.5 py-0.5 text-[10px] text-blue-200">
+                    {t(`run_action_kind_${item.kind}`)}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{item.summary}</span>
+                  <span className="shrink-0 text-blue-200/70">
+                    {t('run_action_time_ago', { duration: formatElapsed(item.ageSeconds) })}
+                  </span>
+                </div>
+              ))}
             </div>
           ) : null}
         </div>

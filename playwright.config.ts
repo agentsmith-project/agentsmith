@@ -28,6 +28,7 @@ const chromiumMvpSpecMatch = [
   /credentials\.spec\.ts$/,
   /endpoints\.spec\.ts$/,
   /files\.spec\.ts$/,
+  /organization-governance\.spec\.ts$/,
   /runtime-console\.spec\.ts$/,
 ];
 

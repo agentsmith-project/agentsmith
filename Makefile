@@ -337,7 +337,7 @@ lane-real-smoke:
 gate-l0:
 	@set -e; \
 	$(NPM) run lint; \
-	$(NPM) run ws:typecheck; \
+	./scripts/ws-typecheck-safe.sh; \
 	$(NPM) run openapi:check-generated; \
 	$(NPM) run contracts:check-openapi
 

@@ -119,7 +119,9 @@ test.describe('Files Page (object browser)', () => {
     await authedPage.getByTestId('files__library-item--lib_large_bench').click();
     const loadMoreButton = authedPage.getByTestId('files__load-more');
     await expect(loadMoreButton).toBeVisible();
-    await loadMoreButton.click();
+    await expect(async () => {
+      await authedPage.getByTestId('files__load-more').first().click();
+    }).toPass({ timeout: 10000 });
     await expect(authedPage.getByTestId('files__load-more')).toHaveCount(0, { timeout: 10000 });
 
     await authedPage.getByTestId('files__search').fill('bulk-0250');

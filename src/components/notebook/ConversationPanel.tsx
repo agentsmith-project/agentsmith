@@ -24,6 +24,10 @@ export interface ConversationPanelProps {
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
   onSendMessage: (content: string) => void;
+  agentRunning?: boolean;
+  pendingQueue?: Array<{ id: string; content: string }>;
+  onPendingUpdate?: (id: string, content: string) => void;
+  onPendingRemove?: (id: string) => void;
   disabled?: boolean;
   sending?: boolean;
   diagnosticsLinks?: {
@@ -49,6 +53,10 @@ export function ConversationPanel({
   onTraceExpand,
   onTraceLoadMore,
   onSendMessage,
+  agentRunning = false,
+  pendingQueue = [],
+  onPendingUpdate,
+  onPendingRemove,
   disabled = false,
   sending = false,
   diagnosticsLinks,
@@ -178,6 +186,10 @@ export function ConversationPanel({
         value={inputValue}
         onChange={setInputValue}
         onSend={handleSend}
+        agentRunning={agentRunning}
+        pendingQueue={pendingQueue}
+        onPendingUpdate={onPendingUpdate}
+        onPendingRemove={onPendingRemove}
         disabled={disabled}
         sending={sending}
       />

@@ -80,6 +80,7 @@ interface ProjectSourceHandlerArgs {
 }
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
+const DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE = new Map<string, Promise<void>>();
 const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
   endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
   source_library: ['source_library.requests_per_minute'],
@@ -204,28 +205,75 @@ function isDefaultPersonalLibraryForUser(
   );
 }
 
+function defaultPersonalLibraryScopeKey(workspaceId: string, projectId: string, userId: string): string {
+  return `${workspaceId}:${projectId}:${userId}`;
+}
+
+type DefaultCandidateLibrary = {
+  id: string;
+  created_by_user_id: string;
+  system_managed_kind?: string;
+  name: string;
+  created_at?: string;
+};
+
+function pickCanonicalDefaultPersonalLibrary<T extends DefaultCandidateLibrary>(items: T[], userId: string): T | null {
+  const defaults = items.filter((item) => isDefaultPersonalLibraryForUser(item, userId));
+  if (defaults.length === 0) return null;
+  const sorted = [...defaults].sort((a, b) => {
+    const aSystem = a.system_managed_kind === 'default_personal_uploads' ? 0 : 1;
+    const bSystem = b.system_managed_kind === 'default_personal_uploads' ? 0 : 1;
+    if (aSystem !== bSystem) return aSystem - bSystem;
+    const aCreated = typeof a.created_at === 'string' ? Date.parse(a.created_at) : NaN;
+    const bCreated = typeof b.created_at === 'string' ? Date.parse(b.created_at) : NaN;
+    const aScore = Number.isFinite(aCreated) ? aCreated : Number.MAX_SAFE_INTEGER;
+    const bScore = Number.isFinite(bCreated) ? bCreated : Number.MAX_SAFE_INTEGER;
+    if (aScore !== bScore) return aScore - bScore;
+    return a.id.localeCompare(b.id);
+  });
+  return sorted[0] ?? null;
+}
+
+function dedupeDefaultPersonalLibraries<T extends DefaultCandidateLibrary>(items: T[], userId: string): T[] {
+  const canonical = pickCanonicalDefaultPersonalLibrary(items, userId);
+  if (!canonical) return items;
+  return items.filter((item) => !isDefaultPersonalLibraryForUser(item, userId) || item.id === canonical.id);
+}
+
 async function ensureDefaultPersonalLibraryForUser(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
   deps: NodeApiDeps;
 }): Promise<void> {
-  const listed = await args.deps.listSourceLibrariesUseCase.execute({
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
+  const scopeKey = defaultPersonalLibraryScopeKey(args.workspaceId, args.projectId, args.userId);
+  const inFlight = DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE.get(scopeKey);
+  if (inFlight) {
+    await inFlight;
+    return;
+  }
+  const runner = (async () => {
+    const listed = await args.deps.listSourceLibrariesUseCase.execute({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+    });
+    const exists = listed.items.some((item) => isDefaultPersonalLibraryForUser(item, args.userId));
+    if (exists) return;
+    await args.deps.createSourceLibraryUseCase.execute({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      actorId: args.userId,
+      input: {
+        name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
+        visibility: 'shared',
+        system_managed_kind: 'default_personal_uploads',
+      },
+    });
+  })().finally(() => {
+    DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE.delete(scopeKey);
   });
-  const exists = listed.items.some((item) => isDefaultPersonalLibraryForUser(item, args.userId));
-  if (exists) return;
-  await args.deps.createSourceLibraryUseCase.execute({
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    actorId: args.userId,
-    input: {
-      name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
-      visibility: 'shared',
-      system_managed_kind: 'default_personal_uploads',
-    },
-  });
+  DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE.set(scopeKey, runner);
+  await runner;
 }
 
 async function parseUploadAndExecute(
@@ -1477,7 +1525,10 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
     });
-    const ownedLibraries = libraries.items.filter((item) => item.created_by_user_id === user.id);
+    const ownedLibraries = dedupeDefaultPersonalLibraries(
+      libraries.items.filter((item) => item.created_by_user_id === user.id),
+      user.id,
+    );
     const libraryId = requestedLibraryId ?? ownedLibraries[0]?.id;
     if (!libraryId) {
       json(res, 200, { items: [] });
@@ -1545,9 +1596,10 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
     });
+    const owned = listed.items.filter((item) => item.created_by_user_id === user.id);
     json(res, 200, {
       ...listed,
-      items: listed.items.filter((item) => item.created_by_user_id === user.id),
+      items: dedupeDefaultPersonalLibraries(owned, user.id),
     });
     return true;
   }
@@ -1557,7 +1609,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
     });
-    const existing = listed.items.find((item) => isDefaultPersonalLibraryForUser(item, user.id));
+    const existing = pickCanonicalDefaultPersonalLibrary(listed.items, user.id);
     if (existing) {
       json(res, 200, existing);
       return true;

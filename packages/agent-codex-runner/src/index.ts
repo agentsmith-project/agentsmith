@@ -207,6 +207,21 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   const type = typeof evt.type === 'string' ? evt.type : 'unknown';
   const itemObj = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : null;
   const itemType = itemObj && typeof itemObj.type === 'string' ? itemObj.type : null;
+  const readCommandText = (item: Record<string, unknown> | null): string => {
+    if (!item) return '';
+    if (typeof item.command === 'string' && item.command.trim()) return item.command.trim();
+    if (typeof item.cmd === 'string' && item.cmd.trim()) return item.cmd.trim();
+    if (typeof item.shell_command === 'string' && item.shell_command.trim()) return item.shell_command.trim();
+    if (Array.isArray(item.argv)) {
+      const argv = item.argv
+        .filter((part): part is string => typeof part === 'string' && part.trim().length > 0)
+        .join(' ')
+        .trim();
+      if (argv) return argv;
+    }
+    return '';
+  };
+  const commandText = readCommandText(itemObj);
   // Always emit a high-fidelity raw/debug event so the UI Raw view can show more of Codex's console semantics.
   sendTraceEvent(requestId, {
     category: 'debug',
@@ -288,6 +303,20 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   }
   const item = itemObj ?? {};
   if (type === 'item.started' || type === 'item.updated') {
+    if (item.type === 'command_execution') {
+      const commandLabel = commandText || 'shell command';
+      sendTraceEvent(requestId, {
+        category: 'tool',
+        phase: type === 'item.started' ? 'start' : 'update',
+        status: 'running',
+        name: 'codex.command',
+        summary: `Command ${type === 'item.started' ? 'started' : 'updated'}: ${commandLabel}`,
+        details: {
+          ...(commandText ? { command: commandText } : {}),
+        },
+      });
+      return;
+    }
     if (item.type === 'function_call') {
       const toolName = typeof item.name === 'string' ? item.name : 'unknown';
       sendTraceEvent(requestId, {
@@ -325,6 +354,27 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
       details: {
         tool_name: toolName,
         ...(typeof item.arguments === 'string' ? { arguments: item.arguments } : {}),
+      },
+    });
+    return;
+  }
+  if (item.type === 'command_execution') {
+    const exitCode = typeof item.exit_code === 'number' && Number.isFinite(item.exit_code)
+      ? Math.trunc(item.exit_code)
+      : null;
+    const status = exitCode === null || exitCode === 0 ? 'success' : 'error';
+    const commandLabel = commandText || 'shell command';
+    sendTraceEvent(requestId, {
+      category: status === 'success' ? 'tool' : 'error',
+      phase: 'end',
+      status,
+      name: 'codex.command',
+      summary: status === 'success'
+        ? `Command completed: ${commandLabel}`
+        : `Command failed${exitCode !== null ? ` (exit ${exitCode})` : ''}: ${commandLabel}`,
+      details: {
+        ...(commandText ? { command: commandText } : {}),
+        ...(exitCode !== null ? { exit_code: exitCode } : {}),
       },
     });
     return;

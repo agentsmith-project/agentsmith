@@ -58,6 +58,7 @@ export function TaskPage({
   canDeleteTask,
   diagnosticsBasePath,
 }: TaskPageProps) {
+  type PendingMessage = { id: string; content: string; createdAt: string };
   const t = useTranslations('notebook.attached_files.url_dialog');
   const tTask = useTranslations('notebook.task');
   const tConversation = useTranslations('notebook.conversation');
@@ -78,6 +79,7 @@ export function TaskPage({
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
   const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
+  const [pendingMessages, setPendingMessages] = React.useState<PendingMessage[]>([]);
   const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
   const [traceEventsByMessageId, setTraceEventsByMessageId] = React.useState<Record<string, TaskTraceEvent[]>>({});
   const [traceMetaByMessageId, setTraceMetaByMessageId] = React.useState<TaskTraceMetaByMessageId>({});
@@ -95,6 +97,7 @@ export function TaskPage({
   const taskAPI = React.useMemo(() => new TaskAPI(getApiClient()), []);
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const localFileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const pendingFlushInFlightRef = React.useRef(false);
   const traceBackfillRequestedMessageIdsRef = React.useRef<Set<string>>(new Set());
   const { data: task, isLoading: taskLoading } = useTask(workspaceId, projectId, taskId);
   const { data: taskAgent } = useQuery({
@@ -468,7 +471,19 @@ export function TaskPage({
     }
   }, [appendSseDebugEvent, connectionStatus, handleError, mergeTraceEvents, projectId, taskAPI, taskId, workspaceId]);
 
-  const handleSendMessage = async (content: string) => {
+  const buildPendingMessage = React.useCallback((content: string): PendingMessage => ({
+    id: `pending_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    content,
+    createdAt: new Date().toISOString(),
+  }), []);
+
+  const enqueuePendingMessage = React.useCallback((content: string) => {
+    const normalized = content.trim();
+    if (!normalized) return;
+    setPendingMessages((prev) => [...prev, buildPendingMessage(normalized)]);
+  }, [buildPendingMessage]);
+
+  const sendMessageNow = React.useCallback(async (content: string, source: 'direct' | 'queue') => {
     if (taskAgent?.mode === 'external' && taskAgent.presence !== 'online') {
       setRealtimeFailureCode('AGENT_OFFLINE');
       setRealtimeFailureMessage(tConversation('agent_offline'));
@@ -507,9 +522,12 @@ export function TaskPage({
       if (err instanceof ApiError) {
         const errorCode = err.errorCode?.toUpperCase();
         if (errorCode === 'TASK_STREAM_CONFLICT') {
-          toast.error(
-            `${tConversation('send_conflict_title')}: ${tConversation('send_conflict_description')}`,
-          );
+          if (source === 'queue') {
+            setPendingMessages((prev) => [buildPendingMessage(content), ...prev]);
+          } else {
+            enqueuePendingMessage(content);
+            toast.info(tConversation('pending_enqueued'));
+          }
           return;
         }
         if (
@@ -530,7 +548,63 @@ export function TaskPage({
       }
       handleError(err, { logContext: 'TaskPage.sendMessage', showToast: true });
     }
+  }, [
+    buildPendingMessage,
+    enqueuePendingMessage,
+    handleError,
+    projectId,
+    sendMessage,
+    tConversation,
+    taskAgent?.mode,
+    taskAgent?.presence,
+    taskId,
+    workspaceId,
+  ]);
+
+  const handleSendMessage = async (content: string) => {
+    const normalized = content.trim();
+    if (!normalized) return;
+    if (isAgentTurnRunning || sendMessage.isPending) {
+      enqueuePendingMessage(normalized);
+      toast.info(tConversation('pending_enqueued'));
+      return;
+    }
+    await sendMessageNow(normalized, 'direct');
   };
+
+  const handlePendingUpdate = React.useCallback((id: string, content: string) => {
+    setPendingMessages((prev) => prev.map((item) => (item.id === id ? { ...item, content } : item)));
+  }, []);
+
+  const handlePendingRemove = React.useCallback((id: string) => {
+    setPendingMessages((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  React.useEffect(() => {
+    const isAgentUnavailable = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
+    const taskArchived = task?.status === 'archived';
+    if (isAgentUnavailable || taskArchived || !canUpdateTask) return;
+    if (isAgentTurnRunning || sendMessage.isPending) return;
+    if (pendingFlushInFlightRef.current) return;
+    const next = pendingMessages[0];
+    if (!next) return;
+    const content = next.content.trim();
+    setPendingMessages((prev) => prev.slice(1));
+    if (!content) return;
+    pendingFlushInFlightRef.current = true;
+    void sendMessageNow(content, 'queue').finally(() => {
+      pendingFlushInFlightRef.current = false;
+    });
+  }, [
+    canUpdateTask,
+    isAgentTurnRunning,
+    pendingMessages,
+    sendMessage.isPending,
+    sendMessageNow,
+    task?.status,
+    taskAgent?.mode,
+    taskAgent?.presence,
+  ]);
 
   const handleAddFiles = async (inputs: Array<
     | { kind: 'source'; source_id: string }
@@ -778,13 +852,7 @@ export function TaskPage({
     && activeTraceEvents.some((item) => item.name === 'sandbox_starting')
     && (streamingContent ?? '').trim().length === 0
     && !activeTraceEvents.some((item) => item.status === 'success' || item.status === 'error' || item.status === 'cancelled');
-  const isConversationInputDisabled = (
-    isDisabled
-    || !canUpdateTask
-    || sendMessage.isPending
-    || isAgentTurnRunning
-    || isExternalAgentOffline
-  );
+  const isConversationInputDisabled = isDisabled || !canUpdateTask || isExternalAgentOffline;
 
   return (
     <div className="h-full flex flex-col">
@@ -839,6 +907,10 @@ export function TaskPage({
           onTraceExpand={fetchTracesForMessage}
           onTraceLoadMore={loadMoreTracesForMessage}
           onSendMessage={handleSendMessage}
+          agentRunning={sendMessage.isPending || isAgentTurnRunning}
+          pendingQueue={pendingMessages}
+          onPendingUpdate={handlePendingUpdate}
+          onPendingRemove={handlePendingRemove}
           sandboxStarting={showSandboxStarting}
             disabled={isConversationInputDisabled}
             sending={sendMessage.isPending}

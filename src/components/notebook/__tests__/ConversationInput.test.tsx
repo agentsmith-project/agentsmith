@@ -179,7 +179,7 @@ describe('ConversationInput', () => {
       );
 
       const sendButton = screen.getByRole('button', { name: /send/i });
-      expect(sendButton).toBeDisabled();
+      expect(sendButton).toBeEnabled();
       // Should have loader icon
       expect(sendButton.querySelector('.animate-spin')).toBeInTheDocument();
     });
@@ -245,7 +245,7 @@ describe('ConversationInput', () => {
       expect(mockOnSend).not.toHaveBeenCalled();
     });
 
-    it('does not send when sending is in progress', async () => {
+    it('still sends when sending is in progress', async () => {
       const user = userEvent.setup();
       render(
         <ConversationInput
@@ -260,7 +260,7 @@ describe('ConversationInput', () => {
       await user.click(textarea);
       await user.keyboard('{Enter}');
 
-      expect(mockOnSend).not.toHaveBeenCalled();
+      expect(mockOnSend).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -309,7 +309,7 @@ describe('ConversationInput', () => {
   });
 
   describe('Sending State', () => {
-    it('disables textarea while sending', () => {
+    it('keeps textarea editable while sending', () => {
       render(
         <ConversationInput
           value="Test"
@@ -320,7 +320,7 @@ describe('ConversationInput', () => {
       );
 
       const textarea = screen.getByRole('textbox');
-      expect(textarea).toBeDisabled();
+      expect(textarea).not.toBeDisabled();
     });
 
     it('shows loading spinner in send button', () => {
@@ -335,6 +335,52 @@ describe('ConversationInput', () => {
 
       const sendButton = screen.getByRole('button', { name: /send/i });
       expect(sendButton).toContainHTML('svg');
+    });
+  });
+
+  describe('Pending Queue', () => {
+    it('renders running hint and queue items', () => {
+      render(
+        <ConversationInput
+          value=""
+          onChange={mockOnChange}
+          onSend={mockOnSend}
+          agentRunning
+          pendingQueue={[
+            { id: 'p1', content: 'first pending' },
+            { id: 'p2', content: 'second pending' },
+          ]}
+        />,
+      );
+
+      expect(screen.getByTestId('notebook__pending-hint')).toBeInTheDocument();
+      expect(screen.getByTestId('notebook__pending-queue')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('first pending')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('second pending')).toBeInTheDocument();
+    });
+
+    it('supports update/remove callbacks', async () => {
+      const user = userEvent.setup();
+      const onPendingUpdate = vi.fn();
+      const onPendingRemove = vi.fn();
+      render(
+        <ConversationInput
+          value=""
+          onChange={mockOnChange}
+          onSend={mockOnSend}
+          pendingQueue={[{ id: 'p1', content: 'pending body' }]}
+          onPendingUpdate={onPendingUpdate}
+          onPendingRemove={onPendingRemove}
+        />,
+      );
+
+      const pendingTextarea = screen.getByTestId('notebook__pending-item-input--p1');
+      await user.clear(pendingTextarea);
+      await user.type(pendingTextarea, 'updated');
+      expect(onPendingUpdate).toHaveBeenCalled();
+
+      await user.click(screen.getByTestId('notebook__pending-item-remove--p1'));
+      expect(onPendingRemove).toHaveBeenCalledWith('p1');
     });
   });
 

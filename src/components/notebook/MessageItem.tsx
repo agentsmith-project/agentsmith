@@ -334,7 +334,7 @@ export function MessageItem({
   const [traceExpanded, setTraceExpanded] = React.useState(false);
   const [expandedStepKeys, setExpandedStepKeys] = React.useState<Record<string, boolean>>({});
   const [traceViewMode, setTraceViewMode] = React.useState<TraceViewMode>('timeline');
-  const [traceFilterMode, setTraceFilterMode] = React.useState<TraceFilterMode>('all');
+  const [traceFilterMode, setTraceFilterMode] = React.useState<TraceFilterMode>('progress');
 
   const rawDisplayContent = streamingContent ?? message.content;
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
@@ -392,6 +392,20 @@ export function MessageItem({
       : traceSummary.status === 'cancelled'
         ? 'text-amber-300'
       : 'text-blue-300';
+  const getTraceStatusText = (status: TraceSummary['status']) => (
+    tNotebookConversation(formatTraceStatusKey(status))
+  );
+  const formatTraceEventTitle = (evt: TaskTraceEvent): string => {
+    if (evt.name === 'codex.command') {
+      const command = typeof evt.details?.command === 'string' ? evt.details.command : '';
+      if (command) return command;
+    }
+    if (evt.name === 'codex.tool') {
+      const toolName = typeof evt.details?.tool_name === 'string' ? evt.details.tool_name : '';
+      if (toolName) return `tool: ${toolName}`;
+    }
+    return evt.summary || evt.name;
+  };
 
   React.useEffect(() => {
     // Prune stale step expansion state when trace list changes.
@@ -667,7 +681,7 @@ export function MessageItem({
                               )}
                             />
                             <span className="text-primary font-medium">{step.title || step.name}</span>
-                            <span className="text-tertiary">{step.status}</span>
+                            <span className="text-tertiary">{getTraceStatusText(step.status)}</span>
                             {step.durationMs != null ? (
                               <span className="text-tertiary">{formatDuration(step.durationMs)}</span>
                             ) : null}
@@ -691,7 +705,7 @@ export function MessageItem({
                                     <span>{evt.category}</span>
                                     {evt.phase ? <span>{evt.phase}</span> : null}
                                   </div>
-                                  <div className="mt-0.5 text-primary">{evt.summary || evt.name}</div>
+                                  <div className="mt-0.5 text-primary">{formatTraceEventTitle(evt)}</div>
                                   {evt.details && Object.keys(evt.details).length > 0 && (
                                     <pre className="mt-1 whitespace-pre-wrap break-words rounded bg-black/20 p-2 text-[11px] text-tertiary">
                                       {JSON.stringify(evt.details, null, 2)}

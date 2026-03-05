@@ -6,6 +6,10 @@ import { describe, it, expect, vi } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+const { mockListLibraries } = vi.hoisted(() => ({
+  mockListLibraries: vi.fn().mockResolvedValue({ items: [] }),
+}));
+
 // Mock the FilesAPI class
 vi.mock('@/lib/api/endpoints/files', () => {
   const mockList = vi.fn().mockResolvedValue({
@@ -46,6 +50,7 @@ vi.mock('@/lib/api/endpoints/files', () => {
     retryAIReady = mockRetryAIReady;
     batchStartAIReady = mockBatchStart;
     batchCancelAIReady = mockBatchCancel;
+    listLibraries = mockListLibraries;
   }
 
   return {
@@ -89,6 +94,7 @@ vi.mock('@/lib/api', () => ({
       retryAIReady: vi.fn().mockResolvedValue({ id: 'job1' }),
       batchStartAIReady: vi.fn().mockResolvedValue({ jobs: [] }),
       batchCancelAIReady: vi.fn().mockResolvedValue({ jobs: [] }),
+      listLibraries: mockListLibraries,
     };
   }),
 }));
@@ -140,6 +146,7 @@ import {
   useQuota,
   useUploadFile,
   useDeleteFile,
+  useFileLibraries,
   useAIReadyActions,
   useBatchAIReadyActions,
 } from '../use-files';
@@ -276,6 +283,57 @@ describe('useQuota', () => {
     });
 
     expect(result.current).toBeDefined();
+  });
+});
+
+describe('useFileLibraries', () => {
+  it('should return libraries list successfully', async () => {
+    const { result } = renderHook(() => useFileLibraries(workspaceId, projectId), {
+      wrapper: createTestWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual({ items: [] });
+  });
+
+  it('should dedupe duplicated default personal libraries', async () => {
+    mockListLibraries.mockResolvedValueOnce({
+      items: [
+        {
+          id: 'lib_new',
+          name: 'My Uploads',
+          scope: 'personal',
+          owner_user_id: 'u1',
+          system_managed_kind: 'default_personal_uploads',
+          created_at: '2026-03-06T10:00:00.000Z',
+          updated_at: '2026-03-06T10:00:00.000Z',
+        },
+        {
+          id: 'lib_old',
+          name: 'My Uploads',
+          scope: 'personal',
+          owner_user_id: 'u1',
+          system_managed_kind: 'default_personal_uploads',
+          created_at: '2026-03-01T10:00:00.000Z',
+          updated_at: '2026-03-01T10:00:00.000Z',
+        },
+        {
+          id: 'lib_shared',
+          name: 'Shared',
+          scope: 'shared',
+          owner_user_id: 'u1',
+          created_at: '2026-03-01T10:00:00.000Z',
+          updated_at: '2026-03-01T10:00:00.000Z',
+        },
+      ],
+    });
+
+    const { result } = renderHook(() => useFileLibraries(workspaceId, projectId), {
+      wrapper: createTestWrapper(),
+    });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.items.map((x: any) => x.id)).toEqual(['lib_old', 'lib_shared']);
   });
 });
 

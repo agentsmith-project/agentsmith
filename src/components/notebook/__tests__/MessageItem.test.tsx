@@ -465,8 +465,11 @@ describe('MessageItem', () => {
       await user.click(screen.getByTestId('notebook__message-trace-toggle'));
       const stats = screen.getByTestId('notebook__message-trace-stats');
       expect(stats).toHaveTextContent(/trace_stats_events/);
-      expect(stats).toHaveTextContent(/trace_stats_errors/);
       expect(stats).toHaveTextContent(/trace_stats_truncated/);
+      expect(stats).not.toHaveTextContent(/trace_stats_errors/);
+
+      await user.click(screen.getByTestId('notebook__message-trace-filter-all'));
+      expect(stats).toHaveTextContent(/trace_stats_errors/);
     });
 
     it('surfaces transport recovery phases in timeline view', async () => {

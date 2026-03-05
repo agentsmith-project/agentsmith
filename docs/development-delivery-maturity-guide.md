@@ -57,7 +57,7 @@
 npm run lint
 npx tsc --noEmit
 npm test
-# 涉及 runtime-console 域时必须执行
+# 涉及 runtime-console 域时必须执行（专项回归，不属于默认 MVP release gate）
 npx playwright test --project=chromium e2e/runtime-console.spec.ts
 ```
 
@@ -89,7 +89,7 @@ npx playwright test --project=chromium e2e/runtime-console.spec.ts
 
 2. 本地门禁先通过再提交
 - 提交前必须通过：`npm run lint && npx tsc --noEmit && npm test`。
-- 涉及 runtime-console、权限、URL 状态时，额外必须通过：
+- 涉及 runtime-console、权限、URL 状态时，额外必须通过专项回归（不并入默认 MVP gate）：
   `npx playwright test --project=chromium e2e/runtime-console.spec.ts`。
 
 3. 提交信息和说明最小要求

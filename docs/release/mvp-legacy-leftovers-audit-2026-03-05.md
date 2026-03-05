@@ -4,7 +4,7 @@ This file tracks legacy surfaces that still exist after scope contraction to MVP
 
 ## A. Confirmed leftovers
 
-1. `runtime-console` route/tests still exist in mock lane and docs.
+1. `runtime-console` route/tests still exist in codebase/docs (already removed from default MVP mock lane).
 2. `source_library` governance/resource types still appear in frontend/backend types and test fixtures.
 3. Old `quota template` / `permission template` copy still exists in i18n/messages and some member/governance tests.
 4. Release docs still include older governance-heavy narratives that exceed current MVP focus.

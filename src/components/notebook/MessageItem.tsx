@@ -12,6 +12,7 @@ import { Markdown } from '@/components/chat/Markdown';
 export interface MessageItemProps {
   message: TaskMessage;
   streamingContent?: string | null;
+  showExecutionDetails?: boolean;
   traceEvents?: TaskTraceEvent[];
   traceDetailsLoading?: boolean;
   traceHasMore?: boolean;
@@ -318,6 +319,7 @@ function aggregateTraceSteps(traceEvents: TaskTraceEvent[]): TraceStep[] {
 export function MessageItem({
   message,
   streamingContent,
+  showExecutionDetails = true,
   traceEvents = [],
   traceDetailsLoading = false,
   traceHasMore = false,
@@ -340,7 +342,10 @@ export function MessageItem({
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
   const traceSummary = !isUser ? summarizeTraceEvents(traceEvents) : { status: 'idle' as const, stepCount: 0 };
   const hasTrace = !isUser && traceEvents.length > 0;
-  const canShowTraceToggle = !isUser;
+  const canShowTraceToggle = !isUser && showExecutionDetails;
+  const visibleRunStatus: TraceSummary['status'] = !isUser && streamingContent != null && traceSummary.status === 'idle'
+    ? 'running'
+    : traceSummary.status;
   const sortedTraceEvents = React.useMemo(
     () => [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at))),
     [traceEvents],
@@ -392,6 +397,13 @@ export function MessageItem({
       : traceSummary.status === 'cancelled'
         ? 'text-amber-300'
       : 'text-blue-300';
+  const visibleRunStatusClass = visibleRunStatus === 'success'
+    ? 'text-green-300 border-green-500/30 bg-green-500/10'
+    : visibleRunStatus === 'error'
+      ? 'text-red-300 border-red-500/30 bg-red-500/10'
+      : visibleRunStatus === 'cancelled'
+        ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
+        : 'text-blue-300 border-blue-500/30 bg-blue-500/10';
   const getTraceStatusText = (status: TraceSummary['status']) => (
     tNotebookConversation(formatTraceStatusKey(status))
   );
@@ -484,6 +496,17 @@ export function MessageItem({
         </div>
 
         <div className="mt-2 flex items-center gap-2 justify-end">
+          {!isUser ? (
+            <span
+              className={cn(
+                'mr-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium',
+                visibleRunStatusClass,
+              )}
+              data-testid="notebook__message-run-status"
+            >
+              {tNotebookConversation(formatTraceStatusKey(visibleRunStatus))}
+            </span>
+          ) : null}
           {canShowTraceToggle && (
             <button
               type="button"

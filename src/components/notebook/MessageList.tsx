@@ -9,6 +9,7 @@ export interface MessageListProps {
   messages: TaskMessage[];
   streamingMessageId?: string | null;
   streamingContent?: string | null;
+  showExecutionDetails?: boolean;
   traceEventsByMessageId?: Record<string, TaskTraceEvent[]>;
   traceHasMoreByMessageId?: Record<string, boolean>;
   traceLoadingByMessageId?: Record<string, boolean>;
@@ -23,6 +24,7 @@ export function MessageList({
   messages,
   streamingMessageId,
   streamingContent,
+  showExecutionDetails = false,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
   traceLoadingByMessageId,
@@ -75,6 +77,7 @@ export function MessageList({
         <MessageItem
           key={message.id}
           message={message}
+          showExecutionDetails={showExecutionDetails}
           streamingContent={
             streamingMessageId === message.id ? streamingContent : null
           }
@@ -97,6 +100,7 @@ export function MessageList({
             content: '',
             created_at: new Date().toISOString(),
           }}
+          showExecutionDetails={showExecutionDetails}
           streamingContent={streamingContent}
           traceEvents={traceEventsByMessageId?.[streamingMessageId] ?? []}
           traceHasMore={traceHasMoreByMessageId?.[streamingMessageId] ?? false}

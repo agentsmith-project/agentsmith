@@ -28,6 +28,8 @@ export interface ConversationPanelProps {
   pendingQueue?: Array<{ id: string; content: string }>;
   onPendingUpdate?: (id: string, content: string) => void;
   onPendingRemove?: (id: string) => void;
+  showExecutionDetails?: boolean;
+  onToggleExecutionDetails?: () => void;
   disabled?: boolean;
   sending?: boolean;
   diagnosticsLinks?: {
@@ -57,6 +59,8 @@ export function ConversationPanel({
   pendingQueue = [],
   onPendingUpdate,
   onPendingRemove,
+  showExecutionDetails = false,
+  onToggleExecutionDetails,
   disabled = false,
   sending = false,
   diagnosticsLinks,
@@ -167,11 +171,26 @@ export function ConversationPanel({
           <div className="mt-0.5 text-xs text-tertiary">{t('sandbox_starting_description')}</div>
         </div>
       ) : null}
+      <div className="border-b border-subtle px-4 py-2 flex items-center justify-between" data-testid="notebook__execution-visibility">
+        <div className="text-xs text-tertiary">{t('execution_visibility_label')}</div>
+        <button
+          type="button"
+          className="text-xs text-primary hover:underline disabled:text-tertiary disabled:no-underline"
+          onClick={onToggleExecutionDetails}
+          disabled={disabled}
+          data-testid="notebook__execution-visibility-toggle"
+        >
+          {showExecutionDetails
+            ? t('execution_visibility_hide')
+            : t('execution_visibility_show')}
+        </button>
+      </div>
       <div className="flex-1 min-h-0">
         <MessageList
           messages={messages}
           streamingMessageId={streamingMessageId}
           streamingContent={streamingContent}
+          showExecutionDetails={showExecutionDetails}
           traceEventsByMessageId={traceEventsByMessageId}
           traceHasMoreByMessageId={traceHasMoreByMessageId}
           traceLoadingByMessageId={traceLoadingByMessageId}

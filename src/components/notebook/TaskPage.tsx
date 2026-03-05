@@ -79,6 +79,7 @@ export function TaskPage({
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
   const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
+  const [showExecutionDetails, setShowExecutionDetails] = React.useState(false);
   const [pendingMessages, setPendingMessages] = React.useState<PendingMessage[]>([]);
   const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
   const [traceEventsByMessageId, setTraceEventsByMessageId] = React.useState<Record<string, TaskTraceEvent[]>>({});
@@ -205,6 +206,21 @@ export function TaskPage({
       mergeTraceEvents([buildTransportTraceEvent('reconcile', 'error')]);
     }
   }, [activeTraceMessageId, mergeTraceEvents, taskId]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storage = window.localStorage as Storage | undefined;
+    if (!storage || typeof storage.getItem !== 'function') return;
+    const saved = storage.getItem('notebook.showExecutionDetails');
+    if (saved === '1') setShowExecutionDetails(true);
+  }, []);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const storage = window.localStorage as Storage | undefined;
+    if (!storage || typeof storage.setItem !== 'function') return;
+    storage.setItem('notebook.showExecutionDetails', showExecutionDetails ? '1' : '0');
+  }, [showExecutionDetails]);
 
   const fetchTracesForMessage = React.useCallback(async (messageId: string) => {
     if (!messageId) return;
@@ -911,6 +927,8 @@ export function TaskPage({
           pendingQueue={pendingMessages}
           onPendingUpdate={handlePendingUpdate}
           onPendingRemove={handlePendingRemove}
+          showExecutionDetails={showExecutionDetails}
+          onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
           sandboxStarting={showSandboxStarting}
             disabled={isConversationInputDisabled}
             sending={sendMessage.isPending}

@@ -79,6 +79,10 @@ All frames are JSON objects:
     - `name: string`
     - `summary: string`
     - `details?: object` (must be sanitized; no secrets/tokens)
+      - normalized run lifecycle events use:
+        - `name = "run.lifecycle"` with `details.run_phase` in:
+          `queued|dispatching|running|streaming|completed|failed|cancelled|stalled|recovered`
+        - `name = "run.summary"` with final run metrics (for example `final_status`, `duration_ms`, `artifacts_count`)
       - recommended for trace fidelity UX:
         - preserve sanitized provider/codex event metadata (e.g. original event type/source labels)
         - avoid semantic rewrites; frontend may render `Raw` view directly from `details`

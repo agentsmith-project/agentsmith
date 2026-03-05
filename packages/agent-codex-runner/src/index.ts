@@ -92,6 +92,7 @@ const timeoutByRequestId = new Map<string, NodeJS.Timeout>();
 const hardKillTimeoutByRequestId = new Map<string, NodeJS.Timeout>();
 const timedOutRequestIds = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
+const runStartedAtByRequestId = new Map<string, number>();
 const codexSessionReadyByCwd = new Set<string>();
 const reportedArtifactsByCwd = new Map<string, Set<string>>();
 let connectedResourceProxyBase = '';
@@ -150,6 +151,52 @@ function sendTraceEvent(
     sequence: nextTraceSequence(requestId),
     at: new Date().toISOString(),
     ...event,
+  });
+}
+
+function computeRunDurationMs(requestId: string): number | null {
+  const startedAt = runStartedAtByRequestId.get(requestId);
+  if (!startedAt || !Number.isFinite(startedAt)) return null;
+  return Math.max(0, Date.now() - startedAt);
+}
+
+function sendRunLifecycleEvent(
+  requestId: string,
+  phase: 'queued' | 'dispatching' | 'running' | 'streaming' | 'completed' | 'failed' | 'cancelled' | 'stalled' | 'recovered',
+  status: 'running' | 'success' | 'error' | 'cancelled',
+  summary: string,
+  details?: Record<string, unknown>,
+): void {
+  sendTraceEvent(requestId, {
+    category: 'lifecycle',
+    phase: status === 'running' ? 'update' : 'end',
+    status,
+    name: 'run.lifecycle',
+    summary,
+    details: {
+      run_phase: phase,
+      ...(details ?? {}),
+    },
+  });
+}
+
+function sendRunSummaryEvent(
+  requestId: string,
+  finalStatus: 'success' | 'error' | 'cancelled',
+  details?: Record<string, unknown>,
+): void {
+  const durationMs = computeRunDurationMs(requestId);
+  sendTraceEvent(requestId, {
+    category: 'progress',
+    phase: 'end',
+    status: finalStatus,
+    name: 'run.summary',
+    summary: `Run ${finalStatus}`,
+    details: {
+      final_status: finalStatus,
+      ...(durationMs != null ? { duration_ms: durationMs } : {}),
+      ...(details ?? {}),
+    },
   });
 }
 
@@ -602,6 +649,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     }),
   });
   runningByRequestId.set(requestId, child);
+  sendRunLifecycleEvent(requestId, 'dispatching', 'running', 'Dispatching agent run', {
+    model,
+    wire_api: wireApi,
+  });
+  sendRunLifecycleEvent(requestId, 'running', 'running', 'Agent run in progress');
   sendTraceEvent(requestId, {
     category: 'progress',
     phase: 'start',
@@ -644,6 +696,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       error_code: 'AGENT_TIMEOUT',
       error_message: `codex_task_timeout_${taskTimeoutSec}s`,
     });
+    sendRunLifecycleEvent(requestId, 'failed', 'error', `Run timeout (${taskTimeoutSec}s)`);
+    sendRunSummaryEvent(requestId, 'error', { reason: 'timeout' });
     sendTraceEvent(requestId, {
       category: 'error',
       phase: 'end',
@@ -689,6 +743,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     if (timedOutRequestIds.has(requestId)) {
       timedOutRequestIds.delete(requestId);
       traceSeqByRequestId.delete(requestId);
+      runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
       return;
     }
@@ -703,10 +758,13 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       error_code: 'AGENT_UPSTREAM_ERROR',
       error_message: error.message,
     });
+    sendRunLifecycleEvent(requestId, 'failed', 'error', error.message);
+    sendRunSummaryEvent(requestId, 'error', { reason: 'runner_error' });
     if (runnerDebug) {
       const stats = filterStatsByRequestId.get(requestId);
       if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
     }
+    runStartedAtByRequestId.delete(requestId);
     filterStatsByRequestId.delete(requestId);
   });
 
@@ -785,6 +843,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         if (isNotebookMode) {
           codexSessionReadyByCwd.add(cwd);
         }
+        sendRunLifecycleEvent(requestId, 'completed', 'success', 'Run completed');
+        sendRunSummaryEvent(requestId, 'success', {
+          artifacts_count: artifacts.length,
+          exit_code: 0,
+        });
         sendTraceEvent(requestId, {
           category: 'progress',
           phase: 'end',
@@ -797,6 +860,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           usage_tokens: Math.max(1, userPrompt.length),
         });
         traceSeqByRequestId.delete(requestId);
+        runStartedAtByRequestId.delete(requestId);
         filterStatsByRequestId.delete(requestId);
         return;
       }
@@ -815,11 +879,23 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         error_code: signal ? 'AGENT_CANCELLED' : 'AGENT_UPSTREAM_ERROR',
         error_message: signal ? `codex_terminated_${signal}` : `codex_exit_code_${String(code ?? 'unknown')}`,
       });
+      sendRunLifecycleEvent(
+        requestId,
+        signal ? 'cancelled' : 'failed',
+        signal ? 'cancelled' : 'error',
+        signal ? `Run cancelled (${signal})` : `Run failed with exit code ${String(code ?? 'unknown')}`,
+      );
+      sendRunSummaryEvent(requestId, signal ? 'cancelled' : 'error', {
+        ...(signal ? { signal } : {}),
+        ...(code !== null ? { exit_code: code } : {}),
+        artifacts_count: artifacts.length,
+      });
       if (isNotebookMode && !resumeLast && code !== null && code > 0) {
         // Keep first-run failures from incorrectly enabling resume for subsequent turns.
         codexSessionReadyByCwd.delete(cwd);
       }
       traceSeqByRequestId.delete(requestId);
+      runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
     })().catch((error) => {
       sendTraceEvent(requestId, {
@@ -833,7 +909,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         error_code: 'AGENT_UPSTREAM_ERROR',
         error_message: error instanceof Error ? error.message : 'artifact_scan_failed',
       });
+      sendRunLifecycleEvent(requestId, 'failed', 'error', error instanceof Error ? error.message : 'artifact_scan_failed');
+      sendRunSummaryEvent(requestId, 'error', { reason: 'artifact_scan_failed' });
       traceSeqByRequestId.delete(requestId);
+      runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
     });
   });
@@ -900,6 +979,7 @@ ws.on('message', (raw) => {
         name: 'codex.exec',
         summary: 'Execution cancelled by server',
       });
+      sendRunLifecycleEvent(message.request_id, 'cancelled', 'cancelled', 'Run cancelled by server');
       child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
@@ -915,6 +995,8 @@ ws.on('message', (raw) => {
     return;
   }
   const startPayload = message.payload as ServerStartPayload;
+  runStartedAtByRequestId.set(message.request_id, Date.now());
+  sendRunLifecycleEvent(message.request_id, 'queued', 'running', 'Run queued');
   debugLog('received start', {
     request_id: message.request_id,
     model: startPayload.runtime_context?.model ?? startPayload.model ?? null,
@@ -923,6 +1005,13 @@ ws.on('message', (raw) => {
   });
 
   void runCodexRequest(message.request_id, startPayload).catch((error) => {
+    sendRunLifecycleEvent(
+      message.request_id!,
+      'failed',
+      'error',
+      error instanceof Error ? error.message : 'codex_request_failed',
+    );
+    sendRunSummaryEvent(message.request_id!, 'error', { reason: 'request_start_failed' });
     sendTraceEvent(message.request_id!, {
       category: 'error',
       phase: 'end',
@@ -934,6 +1023,7 @@ ws.on('message', (raw) => {
       error_code: 'AGENT_UPSTREAM_ERROR',
       error_message: error instanceof Error ? error.message : 'codex_request_failed',
     });
+    runStartedAtByRequestId.delete(message.request_id!);
   });
 });
 
@@ -951,6 +1041,7 @@ ws.on('close', () => {
   }
   timedOutRequestIds.clear();
   traceSeqByRequestId.clear();
+  runStartedAtByRequestId.clear();
 });
 
 ws.on('error', (error) => {

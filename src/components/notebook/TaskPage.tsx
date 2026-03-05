@@ -405,19 +405,6 @@ export function TaskPage({
       );
     },
     onTaskUpdate: (updatedTask) => {
-      if (isAgentTurnRunning && streamingMessageId) {
-        const hasTraceForCurrentTurn = (traceEventsByMessageId[streamingMessageId] ?? []).length > 0;
-        if (!hasTraceForCurrentTurn) {
-          setTaskUpdateCountForCurrentTurn((prev) => {
-            const next = prev + 1;
-            if (next >= 2) {
-              resetCurrentRunUiState();
-              return 0;
-            }
-            return next;
-          });
-        }
-      }
       queryClient.setQueryData(taskDetailKey, updatedTask);
     },
     onTraceEvent: (traceEvent) => {
@@ -433,7 +420,12 @@ export function TaskPage({
       });
       if (
         streamingMessageId === traceEvent.message_id
-        && (traceEvent.status === 'success' || traceEvent.status === 'error' || traceEvent.status === 'cancelled')
+        && (
+          (traceEvent.name === 'run.lifecycle'
+            && traceEvent.phase === 'end'
+            && (traceEvent.status === 'success' || traceEvent.status === 'error' || traceEvent.status === 'cancelled'))
+          || (traceEvent.name === 'run.summary' && traceEvent.phase === 'end')
+        )
       ) {
         setTaskUpdateCountForCurrentTurn(0);
         resetCurrentRunUiState();

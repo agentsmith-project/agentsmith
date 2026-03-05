@@ -32,14 +32,12 @@
 已验证：
 
 1. join request create / approve / reject
-2. group CRUD + template apply
-3. permission template CRUD
-4. member permission overrides
-5. membership `suspend / restore / revoke`
-6. revoke downstream cleanup
+2. group CRUD + member binding
+3. membership `suspend / restore / revoke`
+4. revoke downstream cleanup
    - group membership
    - member permission state
-7. suspend / restore downstream effect correctness
+5. suspend / restore downstream effect correctness
 
 ### 2.3 Resource Policy
 

@@ -71,9 +71,6 @@ const key = process.env.MBOS_AGENT_KEY;
 const codexBin = process.env.CODEX_BIN ?? 'codex';
 const runnerDebug = process.env.MBOS_AGENT_RUNNER_DEBUG === '1';
 const codexYolo = process.env.MBOS_AGENT_CODEX_YOLO === '1';
-// Keep runner watchdog below api-entry-node's current per-request timeout (60s default)
-// so the user sees a deterministic runner timeout instead of the generic runtime timeout.
-const taskTimeoutSec = Math.max(5, Number(process.env.MBOS_AGENT_TASK_TIMEOUT_SEC ?? '55') || 55);
 
 if (!wsUrl || !key) {
   process.stderr.write(
@@ -88,9 +85,6 @@ const ws = new WebSocket(wsUrl, {
 
 type RunningProcess = ChildProcessByStdio<null, Readable, Readable>;
 const runningByRequestId = new Map<string, RunningProcess>();
-const timeoutByRequestId = new Map<string, NodeJS.Timeout>();
-const hardKillTimeoutByRequestId = new Map<string, NodeJS.Timeout>();
-const timedOutRequestIds = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const runStartedAtByRequestId = new Map<string, number>();
 const codexSessionReadyByCwd = new Set<string>();
@@ -204,19 +198,6 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   if (!runnerDebug) return;
   const payload = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[agent-codex-runner][debug] ${message}${payload}\n`);
-}
-
-function clearRequestTimers(requestId: string): void {
-  const timeout = timeoutByRequestId.get(requestId);
-  if (timeout) {
-    clearTimeout(timeout);
-    timeoutByRequestId.delete(requestId);
-  }
-  const hardKill = hardKillTimeoutByRequestId.get(requestId);
-  if (hardKill) {
-    clearTimeout(hardKill);
-    hardKillTimeoutByRequestId.delete(requestId);
-  }
 }
 
 function extractPrompt(messages: Array<{ role?: string; content?: unknown }> | undefined): string {
@@ -685,37 +666,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     });
   }
 
-  const timeoutHandle = setTimeout(() => {
-    if (child.exitCode !== null) return;
-    timedOutRequestIds.add(requestId);
-    debugLog('task watchdog timeout', {
-      request_id: requestId,
-      timeout_sec: taskTimeoutSec,
-    });
-    sendFrame('agent.response.error', requestId, {
-      error_code: 'AGENT_TIMEOUT',
-      error_message: `codex_task_timeout_${taskTimeoutSec}s`,
-    });
-    sendRunLifecycleEvent(requestId, 'failed', 'error', `Run timeout (${taskTimeoutSec}s)`);
-    sendRunSummaryEvent(requestId, 'error', { reason: 'timeout' });
-    sendTraceEvent(requestId, {
-      category: 'error',
-      phase: 'end',
-      status: 'error',
-      name: 'codex.exec',
-      summary: `Execution timeout (${taskTimeoutSec}s)`,
-    });
-    child.kill('SIGTERM');
-    const hardKillHandle = setTimeout(() => {
-      if (child.exitCode === null) {
-        debugLog('task watchdog hard kill', { request_id: requestId });
-        child.kill('SIGKILL');
-      }
-    }, 3_000);
-    hardKillTimeoutByRequestId.set(requestId, hardKillHandle);
-  }, taskTimeoutSec * 1000);
-  timeoutByRequestId.set(requestId, timeoutHandle);
-
   let stdoutBuffer = '';
   const workspaceBeforeSnapshot = isNotebookMode ? await scanWorkspaceFilesSnapshot(cwd) : null;
   child.stdout.on('data', (buffer: Buffer) => {
@@ -738,15 +688,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
 
   child.on('error', (error) => {
-    clearRequestTimers(requestId);
     runningByRequestId.delete(requestId);
-    if (timedOutRequestIds.has(requestId)) {
-      timedOutRequestIds.delete(requestId);
-      traceSeqByRequestId.delete(requestId);
-      runStartedAtByRequestId.delete(requestId);
-      filterStatsByRequestId.delete(requestId);
-      return;
-    }
     sendTraceEvent(requestId, {
       category: 'error',
       phase: 'end',
@@ -769,7 +711,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
 
   child.on('close', (code, signal) => {
-    clearRequestTimers(requestId);
     stdoutBuffer = flushCodexStdoutBuffer(requestId, stdoutBuffer);
     const trailingLine = stdoutBuffer.trim();
     if (trailingLine.length > 0) {
@@ -788,12 +729,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
     }
     runningByRequestId.delete(requestId);
-    if (timedOutRequestIds.has(requestId)) {
-      timedOutRequestIds.delete(requestId);
-      traceSeqByRequestId.delete(requestId);
-      filterStatsByRequestId.delete(requestId);
-      return;
-    }
     void (async () => {
       if (isNotebookMode && workspaceBeforeSnapshot) {
         try {
@@ -987,7 +922,6 @@ ws.on('message', (raw) => {
         }
       }, 3000);
     }
-    clearRequestTimers(message.request_id);
     return;
   }
 
@@ -1036,10 +970,6 @@ ws.on('close', () => {
   }
   runningByRequestId.clear();
   connectedResourceProxyBase = '';
-  for (const requestId of timeoutByRequestId.keys()) {
-    clearRequestTimers(requestId);
-  }
-  timedOutRequestIds.clear();
   traceSeqByRequestId.clear();
   runStartedAtByRequestId.clear();
 });

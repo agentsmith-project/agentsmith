@@ -10,6 +10,9 @@ export interface MessageListProps {
   streamingMessageId?: string | null;
   streamingContent?: string | null;
   showExecutionDetails?: boolean;
+  focusTraceMessageId?: string | null;
+  focusTraceName?: string | null;
+  focusTraceToken?: number;
   traceEventsByMessageId?: Record<string, TaskTraceEvent[]>;
   traceHasMoreByMessageId?: Record<string, boolean>;
   traceLoadingByMessageId?: Record<string, boolean>;
@@ -25,6 +28,9 @@ export function MessageList({
   streamingMessageId,
   streamingContent,
   showExecutionDetails = false,
+  focusTraceMessageId = null,
+  focusTraceName = null,
+  focusTraceToken = 0,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
   traceLoadingByMessageId,
@@ -78,6 +84,8 @@ export function MessageList({
           key={message.id}
           message={message}
           showExecutionDetails={showExecutionDetails}
+          focusTraceName={focusTraceMessageId === message.id ? focusTraceName : null}
+          focusTraceToken={focusTraceMessageId === message.id ? focusTraceToken : 0}
           streamingContent={
             streamingMessageId === message.id ? streamingContent : null
           }
@@ -101,6 +109,8 @@ export function MessageList({
             created_at: new Date().toISOString(),
           }}
           showExecutionDetails={showExecutionDetails}
+          focusTraceName={focusTraceMessageId === streamingMessageId ? focusTraceName : null}
+          focusTraceToken={focusTraceMessageId === streamingMessageId ? focusTraceToken : 0}
           streamingContent={streamingContent}
           traceEvents={traceEventsByMessageId?.[streamingMessageId] ?? []}
           traceHasMore={traceHasMoreByMessageId?.[streamingMessageId] ?? false}

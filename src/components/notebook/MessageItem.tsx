@@ -13,6 +13,8 @@ export interface MessageItemProps {
   message: TaskMessage;
   streamingContent?: string | null;
   showExecutionDetails?: boolean;
+  focusTraceName?: string | null;
+  focusTraceToken?: number;
   traceEvents?: TaskTraceEvent[];
   traceDetailsLoading?: boolean;
   traceHasMore?: boolean;
@@ -365,6 +367,8 @@ export function MessageItem({
   message,
   streamingContent,
   showExecutionDetails = true,
+  focusTraceName = null,
+  focusTraceToken = 0,
   traceEvents = [],
   traceDetailsLoading = false,
   traceHasMore = false,
@@ -380,8 +384,11 @@ export function MessageItem({
   const isUser = message.role === 'user';
   const [traceExpanded, setTraceExpanded] = React.useState(false);
   const [expandedStepKeys, setExpandedStepKeys] = React.useState<Record<string, boolean>>({});
+  const [focusedStepKey, setFocusedStepKey] = React.useState<string | null>(null);
   const [traceViewMode, setTraceViewMode] = React.useState<TraceViewMode>('timeline');
   const [traceFilterMode, setTraceFilterMode] = React.useState<TraceFilterMode>('progress');
+  const appliedFocusTokenRef = React.useRef<number>(0);
+  const stepElementRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
 
   const rawDisplayContent = streamingContent ?? message.content;
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
@@ -485,6 +492,31 @@ export function MessageItem({
     if (!traceExpanded) return;
     onTraceExpand?.(message.id);
   }, [message.id, onTraceExpand, traceExpanded]);
+
+  React.useEffect(() => {
+    if (!focusTraceName || focusTraceToken <= 0) return;
+    if (appliedFocusTokenRef.current === focusTraceToken) return;
+    appliedFocusTokenRef.current = focusTraceToken;
+    setTraceExpanded(true);
+    setTraceViewMode('timeline');
+    setTraceFilterMode('all');
+  }, [focusTraceName, focusTraceToken]);
+
+  React.useEffect(() => {
+    if (!traceExpanded || !focusTraceName || focusTraceToken <= 0) return;
+    const target = traceSteps.find((step) => step.name === focusTraceName);
+    if (!target) return;
+    setExpandedStepKeys((prev) => ({ ...prev, [target.key]: true }));
+    setFocusedStepKey(target.key);
+    const timer = setTimeout(() => {
+      setFocusedStepKey((current) => (current === target.key ? null : current));
+    }, 2200);
+    const el = stepElementRefs.current[target.key];
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    return () => clearTimeout(timer);
+  }, [focusTraceName, focusTraceToken, traceExpanded, traceSteps]);
 
   const handleCopy = async () => {
     try {
@@ -734,7 +766,15 @@ export function MessageItem({
                         </div>
                       ) : null}
                       {traceSteps.map((step) => (
-                        <div key={step.key} className="rounded-md border border-subtle/70 bg-background/50 p-2" data-testid="notebook__trace-step">
+                        <div
+                          key={step.key}
+                          ref={(el) => { stepElementRefs.current[step.key] = el; }}
+                          className={cn(
+                            'rounded-md border border-subtle/70 bg-background/50 p-2',
+                            focusedStepKey === step.key && 'border-blue-400/60 bg-blue-500/10',
+                          )}
+                          data-testid="notebook__trace-step"
+                        >
                           <div className="flex items-center gap-2 text-xs">
                             <span
                               className={cn(

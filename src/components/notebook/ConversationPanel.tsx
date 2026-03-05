@@ -38,8 +38,13 @@ export interface ConversationPanelProps {
       kind: 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
       summary: string;
       ageSeconds: number;
+      traceName?: string;
     }>;
   };
+  onRunActionClick?: (action: { traceName?: string; summary: string }) => void;
+  focusTraceMessageId?: string | null;
+  focusTraceName?: string | null;
+  focusTraceToken?: number;
   showExecutionDetails?: boolean;
   onToggleExecutionDetails?: () => void;
   disabled?: boolean;
@@ -72,6 +77,10 @@ export function ConversationPanel({
   onPendingUpdate,
   onPendingRemove,
   runActivity,
+  onRunActionClick,
+  focusTraceMessageId,
+  focusTraceName,
+  focusTraceToken,
   showExecutionDetails = false,
   onToggleExecutionDetails,
   disabled = false,
@@ -224,7 +233,13 @@ export function ConversationPanel({
           {runActivity.recentActions && runActivity.recentActions.length > 0 ? (
             <div className="mt-2 space-y-1" data-testid="notebook__run-active-recent">
               {runActivity.recentActions.map((item) => (
-                <div key={item.id} className="flex items-start gap-2 text-[11px] text-blue-100/90">
+                <button
+                  key={item.id}
+                  type="button"
+                  className="w-full text-left flex items-start gap-2 text-[11px] text-blue-100/90 hover:text-blue-50"
+                  onClick={() => onRunActionClick?.({ traceName: item.traceName, summary: item.summary })}
+                  data-testid={`notebook__run-active-action-${item.id}`}
+                >
                   <span className="inline-flex shrink-0 items-center rounded border border-blue-300/20 bg-blue-400/5 px-1.5 py-0.5 text-[10px] text-blue-200">
                     {t(`run_action_kind_${item.kind}`)}
                   </span>
@@ -232,7 +247,7 @@ export function ConversationPanel({
                   <span className="shrink-0 text-blue-200/70">
                     {t('run_action_time_ago', { duration: formatElapsed(item.ageSeconds) })}
                   </span>
-                </div>
+                </button>
               ))}
             </div>
           ) : null}
@@ -244,6 +259,9 @@ export function ConversationPanel({
           streamingMessageId={streamingMessageId}
           streamingContent={streamingContent}
           showExecutionDetails={showExecutionDetails}
+          focusTraceMessageId={focusTraceMessageId}
+          focusTraceName={focusTraceName}
+          focusTraceToken={focusTraceToken}
           traceEventsByMessageId={traceEventsByMessageId}
           traceHasMoreByMessageId={traceHasMoreByMessageId}
           traceLoadingByMessageId={traceLoadingByMessageId}

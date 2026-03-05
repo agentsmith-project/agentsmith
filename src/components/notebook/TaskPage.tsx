@@ -83,6 +83,9 @@ export function TaskPage({
   const [lastRunActionSummary, setLastRunActionSummary] = React.useState<string | null>(null);
   const [runClockNow, setRunClockNow] = React.useState<number>(Date.now());
   const [showExecutionDetails, setShowExecutionDetails] = React.useState(false);
+  const [traceFocusMessageId, setTraceFocusMessageId] = React.useState<string | null>(null);
+  const [traceFocusName, setTraceFocusName] = React.useState<string | null>(null);
+  const [traceFocusToken, setTraceFocusToken] = React.useState(0);
   const [pendingMessages, setPendingMessages] = React.useState<PendingMessage[]>([]);
   const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
   const [traceEventsByMessageId, setTraceEventsByMessageId] = React.useState<Record<string, TaskTraceEvent[]>>({});
@@ -948,7 +951,7 @@ export function TaskPage({
   const recentRunActions = (() => {
     const now = Date.now();
     const allowKinds: RunActionKind[] = ['command', 'tool', 'artifact', 'lifecycle', 'error'];
-    const selected: Array<{ id: string; kind: RunActionKind; summary: string; ageSeconds: number }> = [];
+    const selected: Array<{ id: string; kind: RunActionKind; summary: string; ageSeconds: number; traceName: string }> = [];
     for (const evt of sortedActions) {
       const mapped = toRunAction(evt);
       if (!allowKinds.includes(mapped.kind)) continue;
@@ -961,6 +964,7 @@ export function TaskPage({
         kind: mapped.kind,
         summary: mapped.summary,
         ageSeconds,
+        traceName: evt.name,
       });
       if (selected.length >= 3) break;
     }
@@ -1036,6 +1040,16 @@ export function TaskPage({
             lastKind: latestRunAction.kind,
             recentActions: recentRunActions,
           }}
+          onRunActionClick={(action) => {
+            if (!action.traceName || !activeTraceMessageId) return;
+            setShowExecutionDetails(true);
+            setTraceFocusMessageId(activeTraceMessageId);
+            setTraceFocusName(action.traceName);
+            setTraceFocusToken((prev) => prev + 1);
+          }}
+          focusTraceMessageId={traceFocusMessageId}
+          focusTraceName={traceFocusName}
+          focusTraceToken={traceFocusToken}
           showExecutionDetails={showExecutionDetails}
           onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
           sandboxStarting={showSandboxStarting}

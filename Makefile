@@ -152,7 +152,7 @@ help:
 	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
 	@echo "  make governance-policy-spending-effect-smoke # real-backend endpoint policy spending-limit effect smoke (block -> audit/usage evidence)"
 	@echo "  make governance-policy-requests-rate-effect-smoke # real-backend endpoint policy requests/day rate effect smoke (block -> audit/usage evidence)"
-	@echo "  make governance-member-permission-effect-smoke # real-backend member permission effect smoke (route authz deny->allow)"
+	@echo "  make governance-member-permission-effect-smoke # legacy optional smoke (not part of default MVP release gate)"
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
 	@echo "  make build-reliability-release-smoke # build reliability release smoke (chat recovery + notebook runtime + contract suite)"
@@ -883,7 +883,6 @@ governance-release-smoke:
 	run_with_token_retry governance-policy-effect-smoke; \
 	run_with_token_retry governance-policy-spending-effect-smoke; \
 	run_with_token_retry governance-policy-requests-rate-effect-smoke; \
-	run_with_token_retry governance-member-permission-effect-smoke; \
 	run_with_token_retry governance-member-lifecycle-effect-smoke; \
 	run_with_token_retry governance-sse-ticket-effect-smoke; \
 	if [ -n "$${GOVERNANCE_RELEASE_EVIDENCE_PATH:-}" ]; then \

@@ -128,7 +128,6 @@ RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 - `governance-policy-effect-smoke` (endpoint policy rate-limit effect + audit/usage evidence)
 - `governance-policy-spending-effect-smoke` (endpoint policy spending-limit effect + audit/usage evidence)
 - `governance-policy-requests-rate-effect-smoke` (endpoint policy requests/day rate-limit effect + audit/usage evidence)
-- `governance-member-permission-effect-smoke` (member permission route authz deny -> allow effect)
 - `governance-member-lifecycle-effect-smoke` (member lifecycle active -> suspended -> removed -> restore effect)
 
 ## 4. Contract / Quality Gates

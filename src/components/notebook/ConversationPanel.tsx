@@ -32,6 +32,7 @@ export interface ConversationPanelProps {
     active: boolean;
     elapsedSeconds: number;
     lastSummary?: string | null;
+    lastKind?: 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
   };
   showExecutionDetails?: boolean;
   onToggleExecutionDetails?: () => void;
@@ -200,12 +201,18 @@ export function ConversationPanel({
       </div>
       {runActivity?.active ? (
         <div className="border-b border-blue-500/30 bg-blue-500/10 px-4 py-2" data-testid="notebook__run-active">
-          <div className="text-xs font-medium text-blue-300">
+          <div className="text-xs font-medium text-blue-300 flex items-center gap-2">
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-300 animate-pulse" aria-hidden />
             {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
           </div>
           {runActivity.lastSummary ? (
-            <div className="mt-0.5 text-xs text-blue-200/90">
-              {t('run_active_last_action', { summary: runActivity.lastSummary })}
+            <div className="mt-1 flex items-start gap-2 text-xs text-blue-200/90">
+              <span className="inline-flex shrink-0 items-center rounded border border-blue-300/30 bg-blue-400/10 px-1.5 py-0.5 text-[10px] tracking-wide text-blue-200">
+                {runActivity.lastKind
+                  ? t(`run_action_kind_${runActivity.lastKind}`)
+                  : t('run_action_kind_system')}
+              </span>
+              <span className="truncate">{t('run_active_last_action', { summary: runActivity.lastSummary })}</span>
             </div>
           ) : null}
         </div>

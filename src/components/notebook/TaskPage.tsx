@@ -891,6 +891,60 @@ export function TaskPage({
     ? Math.max(0, Math.floor((runClockNow - runStartedAt) / 1000))
     : 0;
   const activeTraceEvents = streamingMessageId ? (traceEventsByMessageId[streamingMessageId] ?? []) : [];
+  const latestRunAction = (() => {
+    const sorted = [...activeTraceEvents].sort((a, b) => (a.seq !== b.seq ? b.seq - a.seq : b.at.localeCompare(a.at)));
+    const preferred = sorted.find((evt) => evt.name !== 'run.summary');
+    const evt = preferred ?? sorted[0];
+    if (!evt) {
+      return {
+        kind: 'system' as const,
+        summary: lastRunActionSummary || tConversation('run_active_default_action'),
+      };
+    }
+    if (evt.name === 'codex.command') {
+      const command = typeof evt.details?.command === 'string' ? evt.details.command.trim() : '';
+      return {
+        kind: 'command' as const,
+        summary: command || evt.summary || tConversation('run_active_default_action'),
+      };
+    }
+    if (evt.name === 'codex.tool') {
+      const toolName = typeof evt.details?.tool_name === 'string' ? evt.details.tool_name.trim() : '';
+      return {
+        kind: 'tool' as const,
+        summary: toolName ? `tool: ${toolName}` : (evt.summary || tConversation('run_active_default_action')),
+      };
+    }
+    if (evt.name === 'runner.artifact') {
+      const filename = typeof evt.details?.filename === 'string' ? evt.details.filename.trim() : '';
+      return {
+        kind: 'artifact' as const,
+        summary: filename || evt.summary || tConversation('run_active_default_action'),
+      };
+    }
+    if (evt.name === 'run.lifecycle') {
+      return {
+        kind: 'lifecycle' as const,
+        summary: evt.summary || tConversation('run_active_default_action'),
+      };
+    }
+    if (evt.category === 'error' || evt.status === 'error') {
+      return {
+        kind: 'error' as const,
+        summary: evt.summary || tConversation('run_active_default_action'),
+      };
+    }
+    if (evt.name === 'codex.output' || evt.category === 'progress') {
+      return {
+        kind: 'output' as const,
+        summary: evt.summary || tConversation('run_active_default_action'),
+      };
+    }
+    return {
+      kind: 'system' as const,
+      summary: evt.summary || tConversation('run_active_default_action'),
+    };
+  })();
   const showSandboxStarting = isAgentTurnRunning
     && activeTraceEvents.some((item) => item.name === 'sandbox_starting')
     && (streamingContent ?? '').trim().length === 0
@@ -957,7 +1011,8 @@ export function TaskPage({
           runActivity={{
             active: sendMessage.isPending || isAgentTurnRunning,
             elapsedSeconds: runElapsedSeconds,
-            lastSummary: lastRunActionSummary,
+            lastSummary: latestRunAction.summary,
+            lastKind: latestRunAction.kind,
           }}
           showExecutionDetails={showExecutionDetails}
           onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}

@@ -22,6 +22,7 @@ This file tracks legacy surfaces that still exist after scope contraction to MVP
    - 2026-03-05 batch-1: `runtime-console.spec.ts` removed from default `chromium` mock lane whitelist.
    - 2026-03-05 batch-2: `governance-member-permission-effect-smoke` removed from default `governance-release-smoke` bundle (kept as optional legacy command).
    - 2026-03-05 batch-3: core baseline docs removed explicit `permission/quota template` wording from active MVP references.
+   - 2026-03-05 batch-4: user guide navigation switched to MVP-first index to reduce accidental use of legacy-heavy runbooks.
 3. Purge obsolete i18n keys and message blocks for quota-template/source-library governance once page contracts are finalized.
 4. Narrow backend/frontend type unions from `endpoint|source_library|agent` to true MVP set where contracts already changed.
 

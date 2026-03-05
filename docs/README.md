@@ -41,6 +41,7 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 
 ## Release / Validation
 
+- [User Guides Index](./user-guides/README.md) — 用户手册总入口（MVP-first）
 - [Release Verification](./user-guides/release-verification.md) — 当前发布验证、lane/gate、report、runner 与排障入口
 - [MVP Freeze Checklist](./release/mvp-freeze-checklist.md) — 预发布冻结阶段一键检查、手工验收与回滚基线
 - [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线

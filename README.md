@@ -158,6 +158,7 @@ src/
 ## Documentation
 
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
+- [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
 - [Release Governance Control Plane](./docs/user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
 - [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
 - [MVP Freeze Checklist](./docs/release/mvp-freeze-checklist.md) — 预发布冻结执行清单（命令+手工验收+回滚基线）

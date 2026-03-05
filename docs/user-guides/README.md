@@ -1,20 +1,26 @@
 # User Guides
 
-Comprehensive guides for using AgentSmith features.
+User-facing runbooks for AgentSmith. This index is MVP-first.
 
-## Available Guides
+## MVP Core (use these first)
 
 | Guide | Description |
 |-------|-------------|
-| [Cost & Limits Dashboard](./cost-limits-dashboard.md) | Monitor resource usage, track costs, and manage rate/spending limits |
-| [Alert Center](./alert-center.md) | Configure alert rules and manage notifications |
-| [Audit & Usage Reports](./audit-usage-reports.md) | View audit logs and generate usage reports |
-| [Release Verification](./release-verification.md) | Generate and verify release reports |
-| [Release Governance Control Plane](./release-governance-control-plane.md) | Operate release policy, overrides, gate runs, escalations, and incidents |
+| [MVP Core Smoke Runbook](./mvp-core-smoke-runbook.md) | Real-backend MVP core regression path (chat/notebook/endpoint policy). |
+| [Release Verification](./release-verification.md) | Lane/gate execution and release report generation. |
+| [Third-Party Accounts & Feishu OAuth](./third-party-accounts-feishu.md) | User third-party account binding and Feishu OAuth callback flow. |
+
+## Governance / Ops (extended)
+
+| Guide | Description |
+|-------|-------------|
+| [Release Governance Control Plane](./release-governance-control-plane.md) | Operate release policy, gate runs, escalations, and incidents. |
+| [Audit & Usage Reports](./audit-usage-reports.md) | Audit and usage query workflows. |
+| [Cost & Limits Dashboard](./cost-limits-dashboard.md) | Usage/cost and rate/spending dashboard operations. |
+| [Alert Center](./alert-center.md) | Alert rules and notification operations. |
 
 ## Quick Links
 
-- [Getting Started](../README.md)
+- [Documentation Index](../README.md)
 - [Development Guide](../../DEVELOPMENT.md)
 - [Troubleshooting](../troubleshooting-guide-v1.md)
-- [Product/Engineering/Governance Methodology](../design/agentsmith-product-engineering-governance-methodology-v1.md)

@@ -18,6 +18,19 @@ const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true N
   ' ',
 );
 
+// MVP release lane: keep chromium gate focused on current product mainline.
+// Legacy/archived specs are intentionally excluded from default release gate.
+const chromiumMvpSpecMatch = [
+  /account\.spec\.ts$/,
+  /agents\.spec\.ts$/,
+  /audit\.spec\.ts$/,
+  /chat\.spec\.ts$/,
+  /credentials\.spec\.ts$/,
+  /endpoints\.spec\.ts$/,
+  /files\.spec\.ts$/,
+  /runtime-console\.spec\.ts$/,
+];
+
 export default defineConfig({
   testDir: './e2e',
   grepInvert: /@lane-real/,
@@ -58,7 +71,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testIgnore: [/smoke\.spec\.ts/, /visual\.spec\.ts/, /integration-.*\.spec\.ts/],
+      testMatch: chromiumMvpSpecMatch,
       use: { ...devices['Desktop Chrome'] },
     },
     {

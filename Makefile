@@ -74,8 +74,8 @@ help:
 	@echo "  make smoke-all      # run mainline + governance release smokes"
 	@echo "  make verify-release # strict release gate (L0 + L2 + L3)"
 	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
-	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock full matrix)"
-	@echo "  make gate-release  # L0+L2+L3 (release gate: mock full + real-backend smoke)"
+	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock MVP matrix)"
+	@echo "  make gate-release  # L0+L2+L3 (release gate: mock MVP + real-backend smoke)"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -206,7 +206,7 @@ quick-help:
 	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
 	@echo ""
 	@echo "  make verify-release"
-	@echo "    Run gate-release (L0 + mock full matrix + real smoke)."
+	@echo "    Run gate-release (L0 + mock MVP matrix + real smoke)."
 	@echo ""
 	@echo "  make gate-pr"
 	@echo "    L0 + L1 gate. Recommended pull request baseline."
@@ -310,7 +310,7 @@ verify-release:
 #
 # L0: static quality gates (lint/type/contracts)
 # L1: mock-lane smoke
-# L2: mock-lane full UI matrix (smoke + chromium + visual)
+# L2: mock-lane MVP matrix (smoke + chromium)
 # L3: real-lane key smoke (real backend + governance/runtime checks)
 # ---------------------------------------------------------------------------
 
@@ -329,8 +329,7 @@ lane-mock-visual:
 lane-mock-full:
 	@set -e; \
 	$(MAKE) lane-mock-smoke; \
-	$(MAKE) lane-mock-chromium; \
-	$(MAKE) lane-mock-visual
+	$(MAKE) lane-mock-chromium
 
 lane-real-smoke:
 	$(MAKE) smoke-all

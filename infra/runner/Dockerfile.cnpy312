@@ -1,0 +1,38 @@
+FROM agentsmith-deploy:d0a7aae
+
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+
+RUN set -eux; \
+  if [ -n "${HTTP_PROXY:-}" ]; then echo "Acquire::http::Proxy \"${HTTP_PROXY}\";" > /etc/apt/apt.conf.d/99proxy; fi; \
+  if [ -n "${HTTPS_PROXY:-}" ]; then echo "Acquire::https::Proxy \"${HTTPS_PROXY}\";" >> /etc/apt/apt.conf.d/99proxy; fi; \
+  apt-get update; \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    ca-certificates curl wget git openssh-client \
+    build-essential pkg-config \
+    libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+    libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev \
+    fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei \
+    && rm -rf /var/lib/apt/lists/*;
+
+RUN set -eux; \
+  cd /tmp; \
+  wget -O Python-3.12.8.tgz https://www.python.org/ftp/python/3.12.8/Python-3.12.8.tgz; \
+  tar -xzf Python-3.12.8.tgz; \
+  cd Python-3.12.8; \
+  ./configure --prefix=/opt/python312 --enable-optimizations --with-ensurepip=install; \
+  make -j"$(nproc)"; \
+  make altinstall; \
+  ln -sf /opt/python312/bin/python3.12 /usr/local/bin/python3.12; \
+  ln -sf /opt/python312/bin/pip3.12 /usr/local/bin/pip3.12; \
+  python3.12 -m pip install --no-cache-dir --upgrade pip setuptools wheel; \
+  python3.12 -m pip install --no-cache-dir \
+    numpy pandas scipy matplotlib scikit-learn seaborn jupyterlab; \
+  rm -rf /tmp/Python-3.12*;
+
+RUN npm install -g @openai/codex@0.110.0
+
+RUN set -eux; \
+  rm -f /etc/apt/apt.conf.d/99proxy; \
+  unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY no_proxy NO_PROXY || true

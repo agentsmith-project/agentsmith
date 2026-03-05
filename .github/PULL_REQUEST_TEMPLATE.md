@@ -115,7 +115,7 @@
 #### 4.2.3 Runtime Console 证据（如涉及）
 
 ```txt
-# 粘贴 npx playwright test --project=chromium e2e/runtime-console.spec.ts 输出
+# 粘贴 npx playwright test --project=chromium e2e/legacy/runtime-console.spec.ts 输出
 ✅ X passed (Y)
 ```
 

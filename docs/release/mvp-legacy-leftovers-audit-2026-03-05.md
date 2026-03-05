@@ -23,6 +23,9 @@ This file tracks legacy surfaces that still exist after scope contraction to MVP
    - 2026-03-05 batch-2: `governance-member-permission-effect-smoke` removed from default `governance-release-smoke` bundle (kept as optional legacy command).
    - 2026-03-05 batch-3: core baseline docs removed explicit `permission/quota template` wording from active MVP references.
    - 2026-03-05 batch-4: user guide navigation switched to MVP-first index to reduce accidental use of legacy-heavy runbooks.
+   - 2026-03-05 batch-5: legacy e2e specs moved to `e2e/legacy/` (`runtime-console`, `alerts`, `route-redirect`) and scoped regression docs updated.
+   - 2026-03-05 batch-6: `make help` switched to MVP concise view; full catalog moved to `make help-extended`.
+   - 2026-03-05 batch-7: removed zero-reference i18n keys (`quota_templates`, `quota_coming_soon`, `apply_quota_template`) from `en-US/zh-CN`.
 3. Purge obsolete i18n keys and message blocks for quota-template/source-library governance once page contracts are finalized.
 4. Narrow backend/frontend type unions from `endpoint|source_library|agent` to true MVP set where contracts already changed.
 

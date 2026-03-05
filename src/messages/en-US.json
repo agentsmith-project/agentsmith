@@ -2465,7 +2465,6 @@
       "empty_custom_title": "No custom templates yet",
       "empty_custom_description": "Create a custom template to define permission sets beyond the default templates.",
       "permission_templates": "Permission Templates",
-      "quota_templates": "Limit Templates",
       "group_templates": "Project Groups",
       "group_templates_description": "Create project groups, bind a permission template, and apply to group members.",
       "group_name": "Group Name",
@@ -2486,7 +2485,6 @@
       "copy_failed_members_success": "Failed member list copied",
       "group_preview_title": "Permission changes preview (per member)",
       "group_preview_empty": "No members in this group",
-      "quota_coming_soon": "Limit templates are available. Create and apply limit presets (e.g. Standard, High Usage) to members.",
       "template_name": "Template Name",
       "template_description": "Description (optional)",
       "name_required": "Name is required",
@@ -2518,8 +2516,7 @@
     "batch": {
       "selected_count": "{count} selected",
       "clear_selection": "Clear selection",
-      "apply_permission_template": "Apply Permission Template",
-      "apply_quota_template": "Apply Limit Template"
+      "apply_permission_template": "Apply Permission Template"
     },
     "join_requests": {
       "title": "Join Requests",

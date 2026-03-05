@@ -1,4 +1,4 @@
-.PHONY: help quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
+.PHONY: help help-extended quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
 	demo-full-up demo-full-down \
 	e2e e2e-local \
@@ -61,6 +61,15 @@ LOCALE ?= en-US
 BASE_URL ?= http://localhost:$(PORT_WEB)
 
 help:
+	@echo "MBOS MVP Help"
+	@echo ""
+	@$(MAKE) quick-help
+	@echo ""
+	@echo "More commands:"
+	@echo "  make help-extended  # full command catalog"
+	@echo "  make help-glossary  # term definitions"
+
+help-extended:
 	@echo "MBOS Dev Commands"
 	@echo ""
 	@echo "Recommended (Low Cognitive Load):"

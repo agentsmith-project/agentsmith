@@ -102,6 +102,92 @@ Runner container uses:
 - image: `agentsmith-codex-runner:cnpy312-v1`
 - command: `npm run agent:codex-runner`
 
+## Docker: Start and Connect External Agent Runner
+
+This section is the executable path for starting one real external runner container and connecting it to AgentSmith.
+
+### 1) Load runner image on server
+
+```bash
+cd /home/mbos/agentsmith_deploy_20260305
+docker load -i agentsmith-codex-runner-cnpy312-v1.tar
+docker image inspect agentsmith-codex-runner:cnpy312-v1 --format '{{.Id}}'
+```
+
+### 2) Create agent key and fetch connection info
+
+Use UI (`Agents -> <target external agent> -> Connection Info`) or API.
+
+API example (replace ids):
+
+```bash
+TOKEN='<your access token>'
+API='http://mbos.imotion.ai:20000/api/v1'
+WS='ws_default'
+PROJ='proj_xxx'
+AGENT='ag_xxx'
+
+curl -sS -X POST \
+  "$API/workspaces/$WS/projects/$PROJ/agents/$AGENT/service-key" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}' | jq
+
+curl -sS \
+  "$API/workspaces/$WS/projects/$PROJ/agents/$AGENT/connection-info" \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+Expected fields:
+
+- websocket URL: `ws://mbos.imotion.ai:20000/api/v1/agent-runtime/ws?agent_id=<agent_id>`
+- service key: `ask_...`
+
+### 3) Run the external runner container
+
+```bash
+docker rm -f agentsmith-preprod-agent-codex >/dev/null 2>&1 || true
+
+docker run -d \
+  --name agentsmith-preprod-agent-codex \
+  --restart unless-stopped \
+  -e MBOS_AGENT_WS_URL='ws://mbos.imotion.ai:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' \
+  -e MBOS_AGENT_KEY='ask_xxx' \
+  -e MBOS_AGENT_RUNNER_DEBUG=1 \
+  -e MBOS_AGENT_CODEX_YOLO=1 \
+  -e MBOS_AGENT_BUILTIN_SKILLS_DIR=/app/packages/agent-codex-runner/builtin-skills \
+  agentsmith-codex-runner:cnpy312-v1 \
+  npm run agent:codex-runner
+```
+
+### 4) Verify runner connection
+
+```bash
+docker logs --tail=120 agentsmith-preprod-agent-codex
+docker ps --filter name=agentsmith-preprod-agent-codex
+```
+
+Then verify in UI:
+
+- `Agents` page shows this external agent as online.
+- Notebook task dispatch to this agent streams output normally.
+
+### 5) Rotate key / restart safely
+
+When rotating service key:
+
+1. Create new service key in UI/API.
+2. Update `MBOS_AGENT_KEY` in `docker run` command.
+3. Recreate container (`docker rm -f ...` then `docker run ...`).
+
+### 6) Multi-agent pattern
+
+Run one container per external agent. Keep unique:
+
+- container name
+- `MBOS_AGENT_WS_URL` (`agent_id`)
+- `MBOS_AGENT_KEY`
+
 ## Incidents and Fixes
 
 1. Login failed with `HTTPS required`
@@ -131,6 +217,30 @@ Runner container uses:
 - Keycloak login round-trip succeeds
 - `Demos` project exists and `GLM-5` endpoint exists
 - `agentsmith-preprod-agent-codex` is online in diagnostics
+
+## Regression Snapshot (2026-03-05)
+
+Executed locally against real backend line (no MSW), with managed demo recovery enabled by scripts.
+
+### Passed gates
+
+- `npm run contracts:check`
+- `npm run contracts:check-openapi`
+- `npm run openapi:check-generated`
+- `make smoke-main`
+  - includes `notebook-agent-no-sandbox-assert`
+  - includes `notebook-agent-release-smoke-full`
+  - includes notebook smoke task / source-read mount smoke / inputrefs loop smoke / credential sync smoke
+- `make smoke-governance`
+  - strict governance page smoke
+  - strict governance interaction smoke
+  - policy access / group-access / update-audit / requests-rate / spending / member lifecycle / SSE ticket effect smokes
+
+### Noted non-blocking observation
+
+- In `governance-policy-spending-effect-smoke`, spending-limit hit can be non-deterministic in single run due to minute-window + model cost variance.
+- Current script already treats this path as non-blocking and continues with other release checks.
+- Recommendation for deterministic gate hardening: move this item to a seeded deterministic mock-cost lane, keep real-lane as evidence-only.
 
 ## Operational Guidance
 

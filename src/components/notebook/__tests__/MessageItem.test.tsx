@@ -472,6 +472,90 @@ describe('MessageItem', () => {
       expect(stats).toHaveTextContent(/trace_stats_errors/);
     });
 
+    it('prefers run lifecycle and run summary events for status and duration', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_lifecycle_running',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'lifecycle',
+              phase: 'update',
+              status: 'running',
+              name: 'run.lifecycle',
+              summary: 'Run in progress',
+              details: { run_phase: 'running' },
+            },
+            {
+              id: 'trace_lifecycle_done',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:02Z',
+              category: 'lifecycle',
+              phase: 'end',
+              status: 'success',
+              name: 'run.lifecycle',
+              summary: 'Run completed',
+              details: { run_phase: 'completed' },
+            },
+            {
+              id: 'trace_summary',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 3,
+              at: '2024-01-01T14:31:03Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'success',
+              name: 'run.summary',
+              summary: 'Run success',
+              details: { final_status: 'success', duration_ms: 4200 },
+            },
+          ]}
+        />
+      );
+
+      const statusBadge = screen.getByTestId('notebook__message-run-status');
+      expect(statusBadge).toHaveTextContent(/trace_status_success/);
+      const toggle = screen.getByTestId('notebook__message-trace-toggle');
+      expect(toggle).toHaveTextContent(/4s/);
+    });
+
+    it('hides trace toggle when execution details visibility is disabled', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          showExecutionDetails={false}
+          traceEvents={[
+            {
+              id: 'trace_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+          ]}
+        />
+      );
+
+      expect(screen.getByTestId('notebook__message-run-status')).toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__message-trace-toggle')).not.toBeInTheDocument();
+    });
+
     it('surfaces transport recovery phases in timeline view', async () => {
       const user = userEvent.setup();
       render(

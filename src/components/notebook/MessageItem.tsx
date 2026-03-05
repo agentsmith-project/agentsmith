@@ -200,7 +200,48 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
     if (a.seq !== b.seq) return a.seq - b.seq;
     return a.at.localeCompare(b.at);
   });
-  const stepEvents = sorted.filter((evt) => evt.category !== 'debug' && evt.category !== 'lifecycle');
+  const stepEvents = sorted.filter(
+    (evt) => evt.category !== 'debug' && evt.category !== 'lifecycle' && evt.name !== 'run.summary',
+  );
+  const runSummaryEvent = (() => {
+    for (let i = sorted.length - 1; i >= 0; i -= 1) {
+      if (sorted[i]!.name === 'run.summary') return sorted[i]!;
+    }
+    return null;
+  })();
+  const runLifecycleEvent = (() => {
+    for (let i = sorted.length - 1; i >= 0; i -= 1) {
+      if (sorted[i]!.name === 'run.lifecycle') return sorted[i]!;
+    }
+    return null;
+  })();
+  const mapFinalStatus = (input: unknown): TraceSummary['status'] | null => {
+    if (input === 'success') return 'success';
+    if (input === 'error') return 'error';
+    if (input === 'cancelled') return 'cancelled';
+    return null;
+  };
+  const runSummaryStatus = mapFinalStatus(runSummaryEvent?.details?.final_status);
+  const lifecyclePhase = runLifecycleEvent?.details?.run_phase;
+  const lifecycleStatus = (() => {
+    if (
+      lifecyclePhase === 'completed'
+      || lifecyclePhase === 'failed'
+      || lifecyclePhase === 'cancelled'
+      || lifecyclePhase === 'running'
+      || lifecyclePhase === 'dispatching'
+      || lifecyclePhase === 'queued'
+      || lifecyclePhase === 'stalled'
+      || lifecyclePhase === 'recovered'
+      || lifecyclePhase === 'streaming'
+    ) {
+      if (lifecyclePhase === 'completed') return 'success';
+      if (lifecyclePhase === 'failed') return 'error';
+      if (lifecyclePhase === 'cancelled') return 'cancelled';
+      return 'running';
+    }
+    return null;
+  })();
   const terminalCandidateByEvent = (evt: TaskTraceEvent): Exclude<TraceSummary['status'], 'running' | 'idle'> | null => {
     if (evt.status === 'success' || evt.status === 'error' || evt.status === 'cancelled') {
       return evt.status;
@@ -223,21 +264,25 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
     return -1;
   })();
   const terminalStatus = terminalIndex >= 0 ? terminalCandidateByEvent(sorted[terminalIndex]!) : null;
-  const resolvedStatus = (
+  const inferredStatus = (
     runningIndex > terminalIndex
       ? 'running'
       : terminalStatus ?? (runningIndex >= 0 ? 'running' : 'idle')
   );
+  const resolvedStatus = runSummaryStatus ?? lifecycleStatus ?? inferredStatus;
   const startedAt = sorted[0]?.at ? Date.parse(sorted[0].at) : NaN;
   const endedAtEvent = terminalIndex >= 0 ? sorted[terminalIndex] : sorted[sorted.length - 1];
   const endedAtCandidate = endedAtEvent?.at ? Date.parse(endedAtEvent.at) : NaN;
-  const durationMs = Number.isFinite(startedAt) && Number.isFinite(endedAtCandidate)
-    ? Math.max(0, endedAtCandidate - startedAt)
-    : undefined;
+  const summaryDuration = runSummaryEvent?.details?.duration_ms;
+  const durationMs = typeof summaryDuration === 'number' && Number.isFinite(summaryDuration)
+    ? Math.max(0, Math.trunc(summaryDuration))
+    : Number.isFinite(startedAt) && Number.isFinite(endedAtCandidate)
+      ? Math.max(0, endedAtCandidate - startedAt)
+      : undefined;
   return {
     status: resolvedStatus,
     stepCount: Math.max(1, stepEvents.length || sorted.length),
-    currentStep: sorted[sorted.length - 1]?.summary,
+    currentStep: runLifecycleEvent?.summary ?? sorted[sorted.length - 1]?.summary,
     ...(typeof durationMs === 'number' ? { durationMs } : {}),
   };
 }
@@ -273,7 +318,7 @@ function aggregateTraceSteps(traceEvents: TaskTraceEvent[]): TraceStep[] {
   const activeByName = new Map<string, number>();
 
   for (const evt of sorted) {
-    if (evt.category === 'debug') continue;
+    if (evt.category === 'debug' || evt.name === 'run.lifecycle' || evt.name === 'run.summary') continue;
     const stepKey = evt.name;
     const existingIndex = activeByName.get(stepKey);
     const shouldStartNewStep = existingIndex == null

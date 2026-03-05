@@ -20,6 +20,7 @@
 	runtime-proxy-stream-bench runtime-proxy-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
+	mvp-freeze-check \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
 	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
@@ -73,6 +74,7 @@ help:
 	@echo "  make smoke-governance # governance release smoke (strict page gate + effects)"
 	@echo "  make smoke-all      # run mainline + governance release smokes"
 	@echo "  make verify-release # strict release gate (L0 + L2 + L3)"
+	@echo "  make mvp-freeze-check # freeze-oriented MVP check bundle (contracts + core smoke + demo readiness)"
 	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
 	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock MVP matrix)"
 	@echo "  make gate-release  # L0+L2+L3 (release gate: mock MVP + real-backend smoke)"
@@ -208,6 +210,9 @@ quick-help:
 	@echo "  make verify-release"
 	@echo "    Run gate-release (L0 + mock MVP matrix + real smoke)."
 	@echo ""
+	@echo "  make mvp-freeze-check"
+	@echo "    Run verify-contracts + release-core-smoke + notebook-agent-demo-check."
+	@echo ""
 	@echo "  make gate-pr"
 	@echo "    L0 + L1 gate. Recommended pull request baseline."
 	@echo ""
@@ -304,6 +309,12 @@ verify-contracts:
 verify-release:
 	@set -e; \
 	$(MAKE) gate-release
+
+mvp-freeze-check:
+	@set -e; \
+	$(MAKE) verify-contracts; \
+	$(MAKE) release-core-smoke; \
+	$(MAKE) notebook-agent-demo-check
 
 # ---------------------------------------------------------------------------
 # Lane / Gate Model (Best-practice baseline)

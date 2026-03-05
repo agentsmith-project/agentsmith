@@ -18,7 +18,7 @@ Use a lane-based model to avoid mixing MSW baseline assertions with real-backend
 
 - **Mock lane** (`NEXT_PUBLIC_USE_MSW=true`):
   - `make lane-mock-smoke` (L1)
-  - `make lane-mock-full` (L2 = smoke + chromium + visual)
+  - `make lane-mock-full` (L2 = smoke + chromium; visual is optional and not part of default release gate)
 - **Real lane** (manual/controlled env):
   - `make lane-real-smoke` (L3)
   - Playwright integration tests are explicitly tagged `@lane-real` and run via `playwright.config.integration.ts`.
@@ -61,6 +61,10 @@ Operational guide:
 - [Release Governance Control Plane](./release-governance-control-plane.md)
 
 ## Running Release Verification
+
+For freeze-stage execution order, see:
+
+- [MVP Freeze Checklist](../release/mvp-freeze-checklist.md)
 
 ### MVP Core Baseline
 

@@ -42,11 +42,13 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 ## Release / Validation
 
 - [Release Verification](./user-guides/release-verification.md) — 当前发布验证、lane/gate、report、runner 与排障入口
+- [MVP Freeze Checklist](./release/mvp-freeze-checklist.md) — 预发布冻结阶段一键检查、手工验收与回滚基线
 - [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
 - [Third-Party Accounts & Feishu OAuth](./user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth 配置、回调模式与手动验收
 - [internal-release-checklist](./release/internal-release-checklist.md) — 内部发布检查清单
 - [internal-release-capability-matrix](./release/internal-release-capability-matrix.md) — 当前内部发布能力边界（主线 + 治理）
 - [internal-release-note-2026-02-28-closure](./release/internal-release-note-2026-02-28-closure.md) — 当前 release 基线与最终收口记录
+- [mvp-legacy-leftovers-audit-2026-03-05](./release/mvp-legacy-leftovers-audit-2026-03-05.md) — MVP 收缩后遗留边缘能力审计清单
 
 ## Current Baselines
 

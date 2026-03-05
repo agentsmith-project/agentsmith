@@ -43,8 +43,6 @@ interface PendingStream {
   push: (event: AgentStreamEvent) => void;
   close: () => void;
   fail: (error: Error) => void;
-  timer: NodeJS.Timeout | null;
-  timeoutMs: number | null;
 }
 
 interface AgentSocketState {
@@ -267,37 +265,6 @@ function parseArtifactPayload(input: unknown): AgentRuntimeArtifactPayload | nul
   };
 }
 
-function getAgentRuntimeRequestTimeoutMs(): number | null {
-  const raw = process.env.AGENT_RUNTIME_REQUEST_TIMEOUT_MS?.trim();
-  const parsed = raw ? Number(raw) : NaN;
-  if (Number.isFinite(parsed)) {
-    if (parsed <= 0) return null;
-    return Math.max(1000, Math.floor(parsed));
-  }
-  return 60_000;
-}
-
-function armPendingTimeout(
-  pending: PendingStream,
-  requestId: string,
-  socket: AgentSocketState,
-  agentId: string,
-): void {
-  if (pending.timer) {
-    clearTimeout(pending.timer);
-    pending.timer = null;
-  }
-  if (pending.timeoutMs == null) {
-    return;
-  }
-  pending.timer = setTimeout(() => {
-    socket.pendingByRequestId.delete(requestId);
-    debugRuntime(`request_timeout agent_id=${agentId} request_id=${requestId}`);
-    pending.push({ type: 'error', error_code: 'AGENT_TIMEOUT', error_message: 'agent_response_timeout' });
-    pending.close();
-  }, pending.timeoutMs);
-}
-
 function isPlainObject(input: unknown): input is Record<string, unknown> {
   return typeof input === 'object' && input !== null && !Array.isArray(input);
 }
@@ -416,10 +383,6 @@ export class AgentRuntimeService {
       const existing = this.socketsByAgentId.get(agentId);
       if (existing) {
         for (const pending of existing.pendingByRequestId.values()) {
-          if (pending.timer) {
-            clearTimeout(pending.timer);
-            pending.timer = null;
-          }
           pending.push({
             type: 'error',
             error_code: 'AGENT_DISCONNECTED',
@@ -467,7 +430,6 @@ export class AgentRuntimeService {
     model: string;
     messages: Array<Record<string, unknown>>;
     runtimeContext?: Record<string, unknown>;
-    timeoutMs?: number;
   }): Promise<{ requestId: string; stream: AsyncIterable<AgentStreamEvent>; cancel: () => void }> {
     const socket = this.socketsByAgentId.get(input.agentId);
     if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
@@ -479,18 +441,11 @@ export class AgentRuntimeService {
 
     const requestId = randomUUID();
     const queue = createAsyncQueue<AgentStreamEvent>();
-    const resolvedTimeoutMs = input.timeoutMs ?? getAgentRuntimeRequestTimeoutMs();
-    const timeoutMs = resolvedTimeoutMs == null
-      ? null
-      : Math.max(1000, Math.floor(resolvedTimeoutMs));
     const pending: PendingStream = {
       push: queue.push,
       close: queue.close,
       fail: queue.fail,
-      timeoutMs,
-      timer: null,
     };
-    armPendingTimeout(pending, requestId, socket, input.agentId);
     socket.pendingByRequestId.set(requestId, pending);
 
     socket.ws.send(
@@ -514,10 +469,6 @@ export class AgentRuntimeService {
       cancel: () => {
         const state = socket.pendingByRequestId.get(requestId);
         if (!state) return;
-        if (state.timer) {
-          clearTimeout(state.timer);
-          state.timer = null;
-        }
         socket.pendingByRequestId.delete(requestId);
         state.push({ type: 'done', finish_reason: 'cancelled' });
         state.close();
@@ -540,10 +491,6 @@ export class AgentRuntimeService {
     const socket = this.socketsByAgentId.get(agentId);
     if (!socket) return;
     for (const pending of socket.pendingByRequestId.values()) {
-      if (pending.timer) {
-        clearTimeout(pending.timer);
-        pending.timer = null;
-      }
       pending.push({
         type: 'error',
         error_code: 'AGENT_DISCONNECTED',
@@ -614,10 +561,6 @@ export class AgentRuntimeService {
 
     if (payload.type === 'agent.response.delta') {
       if (typeof payload.payload?.delta !== 'string') {
-        if (pending.timer) {
-          clearTimeout(pending.timer);
-          pending.timer = null;
-        }
         socket.pendingByRequestId.delete(requestId);
         pending.push({
           type: 'error',
@@ -631,17 +574,12 @@ export class AgentRuntimeService {
         type: 'delta',
         delta: payload.payload.delta,
       });
-      armPendingTimeout(pending, requestId, socket, agentId);
       return;
     }
 
     if (payload.type === 'agent.response.event') {
       const eventPayload = parseTraceEventPayload(payload.payload);
       if (!eventPayload) {
-        if (pending.timer) {
-          clearTimeout(pending.timer);
-          pending.timer = null;
-        }
         socket.pendingByRequestId.delete(requestId);
         pending.push({
           type: 'error',
@@ -655,15 +593,10 @@ export class AgentRuntimeService {
         type: 'event',
         event: eventPayload,
       });
-      armPendingTimeout(pending, requestId, socket, agentId);
       return;
     }
 
     if (payload.type === 'agent.response.done') {
-      if (pending.timer) {
-        clearTimeout(pending.timer);
-        pending.timer = null;
-      }
       socket.pendingByRequestId.delete(requestId);
       pending.push({
         type: 'done',
@@ -679,10 +612,6 @@ export class AgentRuntimeService {
     if (payload.type === 'agent.response.artifact') {
       const artifactPayload = parseArtifactPayload(payload.payload);
       if (!artifactPayload) {
-        if (pending.timer) {
-          clearTimeout(pending.timer);
-          pending.timer = null;
-        }
         socket.pendingByRequestId.delete(requestId);
         pending.push({
           type: 'error',
@@ -696,15 +625,10 @@ export class AgentRuntimeService {
         type: 'artifact',
         artifact: artifactPayload,
       });
-      armPendingTimeout(pending, requestId, socket, agentId);
       return;
     }
 
     if (payload.type === 'agent.response.error') {
-      if (pending.timer) {
-        clearTimeout(pending.timer);
-        pending.timer = null;
-      }
       socket.pendingByRequestId.delete(requestId);
       pending.push({
         type: 'error',
@@ -717,10 +641,6 @@ export class AgentRuntimeService {
       return;
     }
 
-    if (pending.timer) {
-      clearTimeout(pending.timer);
-      pending.timer = null;
-    }
     socket.pendingByRequestId.delete(requestId);
     pending.push({
       type: 'error',

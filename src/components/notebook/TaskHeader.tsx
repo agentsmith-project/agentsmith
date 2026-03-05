@@ -30,6 +30,7 @@ export interface TaskHeaderProps {
   workspaceId: string;
   projectId: string;
   agentPresence?: 'online' | 'offline' | 'managed' | null;
+  agentRunActivity?: { active: boolean; elapsedSeconds: number } | null;
   canDeleteTask?: boolean;
   onCreateNew?: () => void;
   onEdit?: () => void;
@@ -42,6 +43,7 @@ export function TaskHeader({
   workspaceId,
   projectId,
   agentPresence = null,
+  agentRunActivity = null,
   canDeleteTask = true,
   onCreateNew,
   onEdit,
@@ -99,6 +101,13 @@ export function TaskHeader({
           ? 'destructive'
           : 'outline'
   );
+  const formatElapsed = (seconds: number): string => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0s';
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remain = seconds % 60;
+    return remain === 0 ? `${minutes}m` : `${minutes}m ${remain}s`;
+  };
 
   return (
     <div
@@ -134,6 +143,11 @@ export function TaskHeader({
             <Badge variant={agentPresenceVariant} className="text-xs">
               {agentPresenceLabel}
             </Badge>
+            {agentRunActivity?.active ? (
+              <Badge variant="secondary" className="text-xs" data-testid="notebook__task-header-agent-busy">
+                {t('agent_busy', { duration: formatElapsed(agentRunActivity.elapsedSeconds) })}
+              </Badge>
+            ) : null}
           </div>
         </div>
       </div>

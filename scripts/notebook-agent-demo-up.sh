@@ -298,7 +298,6 @@ start_api_if_needed() {
       DEBUG_AGENT_RUNTIME='${DEBUG_AGENT_RUNTIME:-1}' \
       DEBUG_ENDPOINT_PROXY='${DEBUG_ENDPOINT_PROXY:-0}' \
       DEBUG_NOTEBOOK_RUNTIME='${DEBUG_NOTEBOOK_RUNTIME:-0}' \
-      AGENT_RUNTIME_REQUEST_TIMEOUT_MS='${AGENT_RUNTIME_REQUEST_TIMEOUT_MS:-0}' \
       npm run api:node:dev
   "
   post_start_validate_or_reuse_external "${API_PID_FILE}" "${PORT_API}" "API" "${API_LOG}"

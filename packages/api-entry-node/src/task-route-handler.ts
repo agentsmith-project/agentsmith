@@ -133,6 +133,7 @@ const TASKS_BY_PROJECT = new Map<string, TaskRecord[]>();
 const MESSAGES_BY_TASK = new Map<string, TaskMessageRecord[]>();
 const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
 const ACTIVE_RUNS_BY_TASK = new Set<string>();
+const ACTIVE_RUN_CANCEL_BY_TASK = new Map<string, { runId: string; requestId: string; cancel: () => void }>();
 const NOTEBOOK_TRACE_STORE_LIMITS = getNotebookTraceStoreLimits();
 const TASKS_COLLECTION = 'notebook_tasks';
 const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
@@ -658,6 +659,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     const [removedTask] = tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
+    ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);
     clearNotebookTaskEventState(route.taskId);
     MESSAGES_BY_TASK.delete(route.taskId);
     ARTIFACTS_BY_TASK.delete(route.taskId);
@@ -902,8 +904,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         mapTaskMessagesForRuntime,
         updateTaskActivity,
         emitTaskEvent: emitNotebookTaskEvent,
+        onDispatched: ({ taskId, runId, requestId, cancel }) => {
+          ACTIVE_RUN_CANCEL_BY_TASK.set(taskId, { runId, requestId, cancel });
+        },
         onFinalize: (taskId) => {
           ACTIVE_RUNS_BY_TASK.delete(taskId);
+          ACTIVE_RUN_CANCEL_BY_TASK.delete(taskId);
         },
         debugLog: debugNotebookRuntime,
         taskCollections: {
@@ -929,6 +935,46 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
     emitNotebookTaskEvent(route.taskId, { type: 'task_update', data: task });
     json(res, 200, message);
+    return true;
+  }
+
+  if (route.kind === 'taskCancelRun' && method === 'POST') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    const active = ACTIVE_RUN_CANCEL_BY_TASK.get(route.taskId);
+    if (!active) {
+      json(res, 409, { error_code: 'TASK_RUN_NOT_ACTIVE', message: 'task_run_not_active' });
+      return true;
+    }
+    active.cancel();
+    debugNotebookRuntime('task_run_cancel_requested', {
+      task_id: route.taskId,
+      run_id: active.runId,
+      request_id: active.requestId,
+      actor_user_id: user.id,
+    });
+    void writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'notebook.task.run.cancel.requested',
+      resourceType: 'notebook_task',
+      resourceId: route.taskId,
+      metadata: {
+        run_id: active.runId,
+        request_id: active.requestId,
+      },
+    });
+    json(res, 202, {
+      status: 'cancelling',
+      task_id: route.taskId,
+      run_id: active.runId,
+      request_id: active.requestId,
+    });
     return true;
   }
 

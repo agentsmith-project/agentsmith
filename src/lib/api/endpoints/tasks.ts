@@ -170,6 +170,20 @@ export class TaskAPI {
   }
 
   /**
+   * Cancel the currently running agent turn in this task.
+   */
+  async cancelRun(
+    workspaceId: string,
+    projectId: string,
+    taskId: string,
+  ): Promise<{ status: 'cancelling'; task_id: string; run_id: string; request_id: string }> {
+    return this.client.post<{ status: 'cancelling'; task_id: string; run_id: string; request_id: string }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/cancel`,
+      {},
+    );
+  }
+
+  /**
    * List artifacts in a task
    */
   async listArtifacts(

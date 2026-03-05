@@ -129,7 +129,7 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 
 ### 5.3 API debug env vars (recommended for troubleshooting)
-- `DEBUG_AGENT_RUNTIME=1` (runtime websocket accept/timeout logs)
+- `DEBUG_AGENT_RUNTIME=1` (runtime websocket accept/reject logs)
 - `DEBUG_ENDPOINT_PROXY=1` (proxy request summaries + SSE translation counters)
 - `DEBUG_NOTEBOOK_RUNTIME=1` (task/run/request_id level dispatch + terminal events)
 
@@ -147,7 +147,6 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
   - `MBOS_AGENT_BUILTIN_SKILLS_DIR`, `MBOS_AGENT_BUILTIN_SKILLS`, `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED`
 - API (`@mbos/api-entry-node`)
   - `DEBUG_AGENT_RUNTIME`, `DEBUG_ENDPOINT_PROXY`, `DEBUG_NOTEBOOK_RUNTIME`
-  - `AGENT_RUNTIME_REQUEST_TIMEOUT_MS`
   - `NOTEBOOK_TRACE_MAX_EVENTS`, `NOTEBOOK_TRACE_DETAILS_MAX_BYTES`, `NOTEBOOK_SSE_HISTORY_MAX_EVENTS`
 - Web / frontend (`next dev`)
   - `NEXT_PUBLIC_API_BASE`
@@ -198,7 +197,6 @@ Governance surfaces such as `Members` and `Resource Policy` are now part of the 
 PORT=20000 \
 KEYCLOAK_BASE_URL=http://localhost:18080 \
 KEYCLOAK_REALM=mbos \
-AGENT_RUNTIME_REQUEST_TIMEOUT_MS=180000 \
 DEBUG_AGENT_RUNTIME=1 \
 DEBUG_ENDPOINT_PROXY=1 \
 DEBUG_NOTEBOOK_RUNTIME=1 \
@@ -230,7 +228,6 @@ env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u AL
 PORT=20000 \
 KEYCLOAK_BASE_URL=http://localhost:18080 \
 KEYCLOAK_REALM=mbos \
-AGENT_RUNTIME_REQUEST_TIMEOUT_MS=180000 \
 DEBUG_AGENT_RUNTIME=1 \
 DEBUG_ENDPOINT_PROXY=1 \
 DEBUG_NOTEBOOK_RUNTIME=1 \
@@ -413,7 +410,6 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
 - `TASK_AGENT_ENDPOINT_NOT_CONFIGURED`: missing notebook endpoint binding.
 - `AGENT_OFFLINE`: no active runtime websocket for selected agent.
 - `AGENT_PROTOCOL_ERROR`: invalid runtime response frame shape.
-- `AGENT_TIMEOUT`: runner or runtime timeout while waiting for codex/agent stream.
 - `runtime.terminal` (trace event name): synthesized backend terminal trace used when runtime fails before any trace frame is emitted.
 
 ## 7.1 Terminal Fallback Semantics
@@ -431,11 +427,11 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
 - `notebook-runtime` logs (`DEBUG_NOTEBOOK_RUNTIME=1`)
   - carries `task_id`, `run_id`, `request_id`, `agent_id`, `endpoint_id`
 - `agent-codex-runner` debug logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
-  - carries same `request_id`, codex argv, timeout/hard-kill, exit code
+  - carries same `request_id`, codex argv, cancellation signal, exit code
 - `endpoint-proxy` logs (`DEBUG_ENDPOINT_PROXY=1`)
   - request summary, upstream response mode, SSE translation counters/terminal reason
 - `agent-runtime` logs (`DEBUG_AGENT_RUNTIME=1`)
-  - websocket accept/reject, request timeout signals
+  - websocket accept/reject, request dispatch/cancel signals
 
 ## 7.3 Frontend Notebook SSE Debug Panel (Development Only)
 - In `next dev` (`NODE_ENV=development`), the notebook task page shows `SSE Debug (latest 5)` above the conversation panel.

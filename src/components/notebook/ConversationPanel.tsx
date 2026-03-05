@@ -31,6 +31,7 @@ export interface ConversationPanelProps {
   runActivity?: {
     active: boolean;
     elapsedSeconds: number;
+    cancelling?: boolean;
     lastSummary?: string | null;
     lastKind?: 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';
     recentActions?: Array<{
@@ -42,6 +43,7 @@ export interface ConversationPanelProps {
     }>;
   };
   onRunActionClick?: (action: { traceName?: string; summary: string }) => void;
+  onCancelActiveRun?: () => void;
   focusTraceMessageId?: string | null;
   focusTraceName?: string | null;
   focusTraceToken?: number;
@@ -78,6 +80,7 @@ export function ConversationPanel({
   onPendingRemove,
   runActivity,
   onRunActionClick,
+  onCancelActiveRun,
   focusTraceMessageId,
   focusTraceName,
   focusTraceToken,
@@ -216,9 +219,22 @@ export function ConversationPanel({
       </div>
       {runActivity?.active ? (
         <div className="border-b border-blue-500/30 bg-blue-500/10 px-4 py-2" data-testid="notebook__run-active">
-          <div className="text-xs font-medium text-blue-300 flex items-center gap-2">
+          <div className="text-xs font-medium text-blue-300 flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2">
             <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-300 animate-pulse" aria-hidden />
             {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
+            </span>
+            {onCancelActiveRun ? (
+              <button
+                type="button"
+                className="rounded border border-blue-300/40 px-2 py-0.5 text-[11px] text-blue-100 hover:bg-blue-400/10 disabled:opacity-60"
+                onClick={onCancelActiveRun}
+                disabled={disabled || !!runActivity.cancelling}
+                data-testid="notebook__run-active-cancel"
+              >
+                {runActivity.cancelling ? t('run_cancel_submitting') : t('run_cancel')}
+              </button>
+            ) : null}
           </div>
           {runActivity.lastSummary ? (
             <div className="mt-1 flex items-start gap-2 text-xs text-blue-200/90">

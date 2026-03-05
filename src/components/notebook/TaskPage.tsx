@@ -29,7 +29,7 @@ import { TaskAPI, FilesAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
 import type { Artifact, TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import { useRouter, useParams } from 'next/navigation';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { mapTraceHasMoreByMessageId, pruneTaskTraceMeta, upsertTaskTraceMeta, type TaskTraceMetaByMessageId } from '@/lib/utils/task-trace-meta';
 import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
@@ -119,6 +119,16 @@ export function TaskPage({
   const sendMessage = useSendMessage();
   const addFiles = useAddFiles();
   const updateTask = useUpdateTask();
+  const cancelActiveRun = useMutation({
+    mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
+    onSuccess: () => {
+      setLastRunActionSummary(tConversation('run_cancel_requested'));
+      toast.info(tConversation('run_cancel_requested'));
+    },
+    onError: (err) => {
+      handleError(err, { logContext: 'TaskPage.cancelActiveRun', showToast: true });
+    },
+  });
 
   // Query keys for this task — used by both useQuery hooks and SSE cache writes
   const messagesKey = queryKeys.tasks.messages(workspaceId, projectId, taskId);
@@ -623,6 +633,12 @@ export function TaskPage({
     setPendingMessages((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
+  const handleCancelActiveRun = React.useCallback(() => {
+    if (!(isAgentTurnRunning || sendMessage.isPending)) return;
+    if (cancelActiveRun.isPending) return;
+    void cancelActiveRun.mutateAsync();
+  }, [cancelActiveRun, isAgentTurnRunning, sendMessage.isPending]);
+
   React.useEffect(() => {
     const isAgentUnavailable = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
     const taskArchived = task?.status === 'archived';
@@ -890,6 +906,7 @@ export function TaskPage({
 
   const isDisabled = task.status === 'archived';
   const isExternalAgentOffline = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
+  const agentIsBusy = sendMessage.isPending || isAgentTurnRunning;
   const runElapsedSeconds = runStartedAt
     ? Math.max(0, Math.floor((runClockNow - runStartedAt) / 1000))
     : 0;
@@ -983,6 +1000,7 @@ export function TaskPage({
         workspaceId={workspaceId}
         projectId={projectId}
         agentPresence={taskAgent?.presence ?? null}
+        agentRunActivity={{ active: agentIsBusy, elapsedSeconds: runElapsedSeconds }}
         canDeleteTask={canDeleteTask}
         onCreateNew={canCreateTask ? handleCreateNew : undefined}
         onEdit={canUpdateTask ? () => setEditDialogOpen(true) : undefined}
@@ -1016,43 +1034,45 @@ export function TaskPage({
           <ConversationPanel
             messages={messages || []}
             streamingMessageId={streamingMessageId}
-          streamingContent={streamingContent}
-          connectionStatus={connectionStatus}
-          connectionErrorCode={realtimeFailureCode}
-          connectionErrorMessage={realtimeFailureMessage}
-          traceEventsByMessageId={traceEventsByMessageId}
-          traceHasMoreByMessageId={mapTraceHasMoreByMessageId(traceMetaByMessageId)}
-          traceLoadingByMessageId={traceLoadingByMessageId}
-          traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
-          traceErrorByMessageId={traceErrorByMessageId}
-          diagnosticsLinks={notebookDiagnosticsLinks}
-          onTraceExpand={fetchTracesForMessage}
-          onTraceLoadMore={loadMoreTracesForMessage}
-          onSendMessage={handleSendMessage}
-          agentRunning={sendMessage.isPending || isAgentTurnRunning}
-          pendingQueue={pendingMessages}
-          onPendingUpdate={handlePendingUpdate}
-          onPendingRemove={handlePendingRemove}
-          runActivity={{
-            active: sendMessage.isPending || isAgentTurnRunning,
-            elapsedSeconds: runElapsedSeconds,
-            lastSummary: latestRunAction.summary,
-            lastKind: latestRunAction.kind,
-            recentActions: recentRunActions,
-          }}
-          onRunActionClick={(action) => {
-            if (!action.traceName || !activeTraceMessageId) return;
-            setShowExecutionDetails(true);
-            setTraceFocusMessageId(activeTraceMessageId);
-            setTraceFocusName(action.traceName);
-            setTraceFocusToken((prev) => prev + 1);
-          }}
-          focusTraceMessageId={traceFocusMessageId}
-          focusTraceName={traceFocusName}
-          focusTraceToken={traceFocusToken}
-          showExecutionDetails={showExecutionDetails}
-          onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
-          sandboxStarting={showSandboxStarting}
+            streamingContent={streamingContent}
+            connectionStatus={connectionStatus}
+            connectionErrorCode={realtimeFailureCode}
+            connectionErrorMessage={realtimeFailureMessage}
+            traceEventsByMessageId={traceEventsByMessageId}
+            traceHasMoreByMessageId={mapTraceHasMoreByMessageId(traceMetaByMessageId)}
+            traceLoadingByMessageId={traceLoadingByMessageId}
+            traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+            traceErrorByMessageId={traceErrorByMessageId}
+            diagnosticsLinks={notebookDiagnosticsLinks}
+            onTraceExpand={fetchTracesForMessage}
+            onTraceLoadMore={loadMoreTracesForMessage}
+            onSendMessage={handleSendMessage}
+            agentRunning={agentIsBusy}
+            pendingQueue={pendingMessages}
+            onPendingUpdate={handlePendingUpdate}
+            onPendingRemove={handlePendingRemove}
+            runActivity={{
+              active: agentIsBusy,
+              elapsedSeconds: runElapsedSeconds,
+              cancelling: cancelActiveRun.isPending,
+              lastSummary: latestRunAction.summary,
+              lastKind: latestRunAction.kind,
+              recentActions: recentRunActions,
+            }}
+            onCancelActiveRun={handleCancelActiveRun}
+            onRunActionClick={(action) => {
+              if (!action.traceName || !activeTraceMessageId) return;
+              setShowExecutionDetails(true);
+              setTraceFocusMessageId(activeTraceMessageId);
+              setTraceFocusName(action.traceName);
+              setTraceFocusToken((prev) => prev + 1);
+            }}
+            focusTraceMessageId={traceFocusMessageId}
+            focusTraceName={traceFocusName}
+            focusTraceToken={traceFocusToken}
+            showExecutionDetails={showExecutionDetails}
+            onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
+            sandboxStarting={showSandboxStarting}
             disabled={isConversationInputDisabled}
             sending={sendMessage.isPending}
           />

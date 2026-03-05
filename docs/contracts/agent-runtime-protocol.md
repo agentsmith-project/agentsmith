@@ -120,7 +120,6 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
 
 - One active connection per `agent_id` (new connection replaces old one).
 - No offline queue (fail-fast if agent is offline).
-- Server default timeout per request: 60s.
 - Attachments are passed as data URLs in multimodal messages.
 - Strict protocol validation:
   - `agent.response.delta.payload.delta` must be `string`; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
@@ -134,7 +133,6 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
 When chat session is bound to `external_agent_id`, server returns explicit API error codes for stream bootstrap failures:
 
 - `AGENT_OFFLINE`: no active runtime WS connection for the selected agent
-- `AGENT_TIMEOUT`: runtime request timeout
 - `AGENT_PROTOCOL_ERROR`: invalid runtime frame format/content
 - `AGENT_UPSTREAM_ERROR`: agent reported upstream error
 

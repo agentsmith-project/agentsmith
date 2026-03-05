@@ -40,6 +40,7 @@ export type ProjectsRoute =
     inputId: string;
   }
   | { kind: 'taskMessages'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskCancelRun'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskTraces'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskArtifacts'; workspaceId: string; projectId: string; taskId: string }
   | {
@@ -857,6 +858,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(taskMessagesMatched[1]),
       projectId: decodeURIComponent(taskMessagesMatched[2]),
       taskId: decodeURIComponent(taskMessagesMatched[3]),
+    };
+  }
+
+  const taskCancelRunMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/cancel\/?$/,
+  );
+  if (taskCancelRunMatched) {
+    return {
+      kind: 'taskCancelRun',
+      workspaceId: decodeURIComponent(taskCancelRunMatched[1]),
+      projectId: decodeURIComponent(taskCancelRunMatched[2]),
+      taskId: decodeURIComponent(taskCancelRunMatched[3]),
     };
   }
 

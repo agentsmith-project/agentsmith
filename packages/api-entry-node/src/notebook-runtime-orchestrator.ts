@@ -76,6 +76,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
   mapTaskMessagesForRuntime: (taskId: string, assistantMessageId: string) => Array<Record<string, unknown>>;
   updateTaskActivity: (task: NotebookTaskRecord) => void;
   emitTaskEvent: (taskId: string, payload: RuntimeEventPayload) => void;
+  onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => void;
   onFinalize: (taskId: string) => void;
   debugLog: (message: string, extra?: Record<string, unknown>) => void;
   taskCollections: {
@@ -101,6 +102,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
     mapTaskMessagesForRuntime,
     updateTaskActivity,
     emitTaskEvent,
+    onDispatched,
     onFinalize,
     debugLog,
     taskCollections,
@@ -234,6 +236,12 @@ export async function runNotebookTaskWithExternalAgent(input: {
       },
     });
     runtimeRequestId = dispatched.requestId;
+    onDispatched?.({
+      taskId: task.id,
+      runId,
+      requestId: dispatched.requestId,
+      cancel: dispatched.cancel,
+    });
     debugLog('dispatch_streaming_request', {
       task_id: task.id,
       run_id: runId,

@@ -168,7 +168,6 @@ describe('AgentRuntimeService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      timeoutMs: 2000,
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -178,61 +177,6 @@ describe('AgentRuntimeService', () => {
       type: 'error',
       error_code: 'AGENT_PROTOCOL_ERROR',
       error_message: 'agent_response_delta_invalid',
-    });
-  });
-
-  it('emits timeout error when agent does not answer', async () => {
-    const { runtime, agent } = await setupRuntime();
-    const dispatched = await runtime.dispatchStreamingRequest({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      sessionId: 'sess_2',
-      agentId: agent.id,
-      model: 'external-test',
-      messages: [{ role: 'user', content: 'hello' }],
-      timeoutMs: 150,
-    });
-
-    const iterator = dispatched.stream[Symbol.asyncIterator]();
-    const next = await iterator.next();
-    expect(next.done).toBe(false);
-    expect(next.value).toEqual({
-      type: 'error',
-      error_code: 'AGENT_TIMEOUT',
-      error_message: 'agent_response_timeout',
-    });
-  });
-
-  it('does not timeout when timeout is disabled (timeoutMs=0)', async () => {
-    const { runtime, agent, ws } = await setupRuntime();
-    ws.on('message', (raw) => {
-      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string };
-      if (msg.type !== 'server.request.start' || !msg.request_id) return;
-      setTimeout(() => {
-        ws.send(JSON.stringify({
-          type: 'agent.response.done',
-          request_id: msg.request_id,
-          payload: { finish_reason: 'stop', usage_tokens: 1 },
-        }));
-      }, 250);
-    });
-
-    const dispatched = await runtime.dispatchStreamingRequest({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      sessionId: 'sess_2b',
-      agentId: agent.id,
-      model: 'external-test',
-      messages: [{ role: 'user', content: 'hello' }],
-      timeoutMs: 0,
-    });
-
-    const iterator = dispatched.stream[Symbol.asyncIterator]();
-    const next = await iterator.next();
-    expect(next.done).toBe(false);
-    expect(next.value).toMatchObject({
-      type: 'done',
-      finish_reason: 'stop',
     });
   });
 
@@ -255,7 +199,6 @@ describe('AgentRuntimeService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      timeoutMs: 2000,
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -301,7 +244,6 @@ describe('AgentRuntimeService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      timeoutMs: 2000,
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();
@@ -358,7 +300,6 @@ describe('AgentRuntimeService', () => {
       agentId: agent.id,
       model: 'external-test',
       messages: [{ role: 'user', content: 'hello' }],
-      timeoutMs: 2000,
     });
 
     const iterator = dispatched.stream[Symbol.asyncIterator]();

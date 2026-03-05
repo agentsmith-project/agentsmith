@@ -648,6 +648,17 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches notebook task cancel route', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/cancel'),
+    ).toEqual({
+      kind: 'taskCancelRun',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+    });
+  });
+
   it('returns null for unknown route', () => {
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/unknown')).toBeNull();
   });

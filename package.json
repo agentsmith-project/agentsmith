@@ -61,7 +61,7 @@
     "openapi:generate": "tsx scripts/openapi/generate-types.ts",
     "openapi:check-generated": "tsx scripts/openapi/check-generated.ts",
     "openapi:changelog": "tsx scripts/openapi/generate-changelog.ts",
-    "release:report": "tsx scripts/release/verify-release-report.ts",
+    "release:report": "node --import tsx scripts/release/verify-release-report.ts",
     "models:sync-catalog": "tsx scripts/models/sync-catalog.ts",
     "agent:test-runner": "tsx packages/api-entry-node/examples/external-agent-test-runner.ts",
     "agent:codex-runner": "npm run dev -w @mbos/agent-codex-runner",

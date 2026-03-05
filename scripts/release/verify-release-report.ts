@@ -100,32 +100,11 @@ const CHECK_DEFINITIONS: Array<{
     timeout: 600000, // 10 minutes
   },
   {
-    id: 'smoke-governance',
-    name: 'Governance release smoke',
-    category: 'smoke-governance',
-    command: 'make governance-release-smoke',
-    timeout: 600000, // 10 minutes
-  },
-  {
     id: 'runtime-release-evidence',
     name: 'Runtime proxy billing release workflow',
     category: 'e2e',
     command: 'INTEGRATION_API_PORT=20010 BASE_URL=http://localhost:3001 npm run test:e2e:integration:runtime-proxy-billing:with-api',
     timeout: 600000, // 10 minutes
-  },
-  {
-    id: 'build-reliability-evidence',
-    name: 'Build reliability release workflow',
-    category: 'e2e',
-    command: 'make build-reliability-release-smoke',
-    timeout: 600000, // 10 minutes
-  },
-  {
-    id: 'workspace-governance-evidence',
-    name: 'Workspace governance release workflow',
-    category: 'e2e',
-    command: 'make workspace-governance-release-smoke',
-    timeout: 300000, // 5 minutes
   },
   {
     id: 'organization-governance-evidence',

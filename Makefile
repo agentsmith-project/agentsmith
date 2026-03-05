@@ -695,7 +695,7 @@ agent-codex-runner:
 
 notebook-agent-refresh-token:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	REFRESH_TOKEN_READ_APP_SESSION=1 \
+	REFRESH_TOKEN_READ_APP_SESSION=0 \
 	node ./scripts/notebook-agent-refresh-token.js
 
 notebook-agent-init-resources:

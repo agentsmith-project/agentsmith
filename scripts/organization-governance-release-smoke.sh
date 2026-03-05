@@ -21,14 +21,19 @@ trap cleanup EXIT
 
 wait_for_web() {
   local attempts="${1:-60}"
+  local quiet="${2:-0}"
   local code=""
   for _ in $(seq 1 "${attempts}"); do
-    code="$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/en-US/login" || true)"
+    code="$(node -e "fetch(process.argv[1]).then((res)=>process.stdout.write(String(res.status))).catch(()=>process.stdout.write('000'))" "${BASE_URL}/en-US/login" 2>/dev/null || true)"
     if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
       return 0
     fi
     sleep 1
   done
+
+  if [[ "${quiet}" == "1" ]]; then
+    return 1
+  fi
 
   echo "Web did not become ready at ${BASE_URL} (last status: ${code:-n/a})." >&2
   if [[ -f "${ORG_GOVERNANCE_WEB_LOG}" ]]; then
@@ -39,7 +44,7 @@ wait_for_web() {
 }
 
 ensure_web() {
-  if wait_for_web 5; then
+  if wait_for_web 5 1; then
     info "using existing frontend at ${BASE_URL}"
     return 0
   fi

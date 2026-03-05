@@ -161,13 +161,20 @@ async function startOpenAIStreamingUpstreamWith(args: {
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
-  await page.goto(`/${locale}/login`);
-  await page.evaluate(() => {
-    localStorage.clear();
-    sessionStorage.clear();
-  });
+  const clearLocalState = async () => {
+    await page.goto(`/${locale}/login`);
+    await page.evaluate(async () => {
+      localStorage.clear();
+      sessionStorage.clear();
+      if ('serviceWorker' in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((reg) => reg.unregister()));
+      }
+    });
+  };
+  await clearLocalState();
 
-  for (let cycle = 0; cycle < 2; cycle += 1) {
+  for (let cycle = 0; cycle < 3; cycle += 1) {
     if (!new RegExp(`/${locale}/login`).test(page.url())) {
       await page.goto(`/${locale}/login`);
     }
@@ -183,10 +190,38 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
     });
     await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
     await page.locator('input#password, input[name="password"]').first().fill(password);
-    await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
-      page.locator('#kc-login, button[type="submit"]').first().click(),
-    ]);
+    await page.locator('#kc-login, button[type="submit"]').first().click();
+
+    let reachedWorkspace = false;
+    let callbackError = false;
+    for (let tick = 0; tick < 120; tick += 1) {
+      const currentUrl = page.url();
+      if (new RegExp(`/${locale}/login/workspace`).test(currentUrl)) {
+        reachedWorkspace = true;
+        break;
+      }
+      if (new RegExp(`/${locale}/login/callback`).test(currentUrl)) {
+        const callbackErrorNode = page.getByTestId('login-callback__error');
+        if (await callbackErrorNode.isVisible({ timeout: 300 }).catch(() => false)) {
+          callbackError = true;
+          break;
+        }
+      }
+      await page.waitForTimeout(500);
+    }
+
+    if (callbackError && cycle < 2) {
+      const backToLogin = page.getByRole('button', { name: /back to login|返回登录页/i });
+      if (await backToLogin.isVisible({ timeout: 1_000 }).catch(() => false)) {
+        await backToLogin.click();
+      }
+      await clearLocalState();
+      continue;
+    }
+
+    if (!reachedWorkspace) {
+      throw new Error('Keycloak login did not reach workspace selector');
+    }
 
     const reloginBtn = page.getByTestId('workspace-select__relogin-btn');
     if (await reloginBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {

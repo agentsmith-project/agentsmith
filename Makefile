@@ -320,7 +320,7 @@ lane-mock-smoke:
 
 lane-mock-chromium:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	PW_WORKERS=6 ./scripts/run-mock-lane-playwright.sh --project=chromium
+	PW_WORKERS=4 ./scripts/run-mock-lane-playwright.sh --project=chromium
 
 lane-mock-visual:
 	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

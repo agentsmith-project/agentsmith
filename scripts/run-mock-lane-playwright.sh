@@ -13,6 +13,7 @@ PID_FILE="/tmp/agentsmith_mock_lane_web.pid"
 LOG_FILE="/tmp/agentsmith_mock_lane_web.log"
 STARTED_BY_SCRIPT=0
 LAST_PLAYWRIGHT_LOG=""
+MAX_ATTEMPTS="${MOCK_LANE_MAX_ATTEMPTS:-3}"
 
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
@@ -30,6 +31,18 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+
+is_server_alive() {
+  if [[ ! -f "${PID_FILE}" ]]; then
+    return 1
+  fi
+  local pid
+  pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
+  if [[ -z "${pid}" ]]; then
+    return 1
+  fi
+  kill -0 "${pid}" >/dev/null 2>&1
+}
 
 is_port_listening() {
   if command -v lsof >/dev/null 2>&1 && lsof -iTCP:"${PORT_WEB}" -sTCP:LISTEN -Pn >/dev/null 2>&1; then
@@ -180,16 +193,24 @@ is_transient_playwright_failure() {
 }
 start_mock_server
 
-if run_playwright_once "$@"; then
-  exit 0
-fi
+attempt=1
+while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
+  if run_playwright_once "$@"; then
+    exit 0
+  fi
 
-if is_transient_playwright_failure; then
-  info "detected transient web/runtime failure; restarting mock lane and retrying once"
-  kill_port_listeners
-  start_mock_server
-  run_playwright_once "$@"
-  exit $?
-fi
+  if [[ "${attempt}" -ge "${MAX_ATTEMPTS}" ]]; then
+    break
+  fi
+
+  if is_transient_playwright_failure || ! is_server_alive; then
+    info "detected transient web/runtime failure; restarting mock lane and retrying (${attempt}/${MAX_ATTEMPTS})"
+    kill_port_listeners
+    start_mock_server
+    attempt=$((attempt + 1))
+    continue
+  fi
+  break
+done
 
 exit 1

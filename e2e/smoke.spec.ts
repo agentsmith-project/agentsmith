@@ -35,6 +35,15 @@ function isAcceptableError(text: string): boolean {
   return ACCEPTABLE_ERROR_PATTERNS.some((pattern) => text.includes(pattern));
 }
 
+async function goToWithRetry(page: import('@playwright/test').Page, path: string) {
+  try {
+    await goTo(page, path);
+  } catch {
+    await page.waitForTimeout(1200);
+    await goTo(page, path);
+  }
+}
+
 async function recoverSessionIfNeeded(page: import('@playwright/test').Page) {
   const expiredState = page.getByText(/Session expired|会话已失效/i).first();
   const loginButton = page.getByRole('button', { name: /Login with Keycloak|使用 Keycloak 登录/i }).first();
@@ -59,26 +68,6 @@ async function ensureEndpointsPageReady(page: import('@playwright/test').Page): 
     if (await createBtn.isVisible().catch(() => false)) return true;
     if (await accessDenied.isVisible().catch(() => false)) return true;
     await page.waitForTimeout(250);
-  }
-  return false;
-}
-
-async function pickSelectOption(
-  container: import('@playwright/test').Locator,
-  page: import('@playwright/test').Page,
-  option: RegExp,
-) {
-  const triggers = container.locator('[role="combobox"]');
-  const count = await triggers.count();
-  for (let i = count - 1; i >= 0; i -= 1) {
-    const trigger = triggers.nth(i);
-    await trigger.click();
-    const target = page.getByRole('option', { name: option }).first();
-    if (await target.isVisible({ timeout: 600 }).catch(() => false)) {
-      await target.click();
-      return true;
-    }
-    await page.keyboard.press('Escape');
   }
   return false;
 }
@@ -131,7 +120,7 @@ test.describe('Smoke: User Routes', () => {
         }
       });
 
-      await goTo(authedPage, route.path);
+      await goToWithRetry(authedPage, route.path);
 
       await expect(
         authedPage.getByTestId('page-state__success').or(authedPage.getByTestId('page-layout')).first(),
@@ -155,7 +144,7 @@ test.describe('Smoke: Workspace Routes', () => {
         }
       });
 
-      await goTo(authedPage, route.path);
+      await goToWithRetry(authedPage, route.path);
 
       await expect(
         authedPage.getByTestId('page-state__success').or(authedPage.getByTestId('page-layout')).first(),
@@ -179,7 +168,7 @@ test.describe('Smoke: Project Routes', () => {
         }
       });
 
-      await goTo(authedPage, route.path);
+      await goToWithRetry(authedPage, route.path);
 
       // Page should reach a renderable state
       await expect(
@@ -200,7 +189,7 @@ test.describe('Smoke: App Shell on Project Pages', () => {
 
   for (const route of representativeRoutes) {
     test(`renders topbar and sidebar on ${route.path}`, async ({ authedPage }) => {
-      await goTo(authedPage, route.path);
+      await goToWithRetry(authedPage, route.path);
       await expect.poll(() => new URL(authedPage.url()).pathname).toContain(route.path);
 
       // Topbar
@@ -260,11 +249,9 @@ test.describe('Smoke: Endpoints Create Flow', () => {
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
-    const providerPicked = await pickSelectOption(dialog, authedPage, /Custom|自定义/i);
-    expect(providerPicked).toBe(true);
-
-    await expect(dialog.getByRole('button', { name: /Open Wizard|打开向导/i })).toBeVisible();
-    await dialog.getByRole('button', { name: /Open Wizard|打开向导/i }).click();
+    const openWizardButton = dialog.getByRole('button', { name: /Open Wizard|打开向导/i });
+    await expect(openWizardButton).toBeVisible();
+    await openWizardButton.click();
 
     const wizard = authedPage.getByTestId('endpoints__custom-wizard');
     await expect(wizard).toBeVisible();

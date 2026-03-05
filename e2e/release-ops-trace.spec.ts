@@ -35,7 +35,7 @@ test.describe('Release Ops Trace Drilldown', () => {
 
   test('governance trace links drill down to usage and audit with trace context', async ({ authedPage }) => {
     // Updated for WP-05: Check for either old or new testid pattern during transition
-    const releaseOpsPage = authedPage.getByTestId('release-ops__dashboard').or(authedPage.getByTestId('release-ops__page'));
+    let releaseOpsPage = authedPage.getByTestId('release-ops__dashboard').or(authedPage.getByTestId('release-ops__page'));
     await expect(releaseOpsPage).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('release-ops__governance-evidence-bridge')).toBeVisible({ timeout: 10000 });
 
@@ -56,7 +56,7 @@ test.describe('Release Ops Trace Drilldown', () => {
 
     await goTo(authedPage, RELEASE_OPS_TRACE_ENTRY_PATH);
     // Updated for WP-05: Support both old and new testid patterns
-    const releaseOpsPage = authedPage.getByTestId('release-ops__dashboard').or(authedPage.getByTestId('release-ops__page'));
+    releaseOpsPage = authedPage.getByTestId('release-ops__dashboard').or(authedPage.getByTestId('release-ops__page'));
     await expect(releaseOpsPage).toBeVisible({ timeout: 10000 });
 
     const refreshedTraceLinks = authedPage.locator('[data-testid^="release-ops__governance-trace-open--"], [data-testid^="runtime-console__control__trace-open--"]');

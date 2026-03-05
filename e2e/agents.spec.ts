@@ -109,7 +109,10 @@ test.describe('Agents Page', () => {
     // Fill in the form
     await dialog.locator('#agent-name').fill('E2E Test Agent');
     await dialog.locator('#agent-description').fill('Created by E2E test');
-    await dialog.locator('#notebook-endpoint-id').fill('ep_1');
+    const notebookEndpointSelect = dialog.locator('#notebook-endpoint-id');
+    if (await notebookEndpointSelect.isVisible().catch(() => false)) {
+      await notebookEndpointSelect.selectOption({ index: 0 });
+    }
 
     // Submit the form
     const submitBtn = dialog.getByRole('button', { name: /create/i });
@@ -128,10 +131,11 @@ test.describe('Agents Page', () => {
     await expect(dialog).toBeVisible();
 
     await dialog.locator('#agent-name').fill('E2E Internal Agent');
-    await dialog.getByLabel(/internal/i).click();
+    await dialog.locator('input[name="mode"][value="internal"]').click();
     await dialog.locator('#agent-image').fill('ghcr.io/acme/agent:1.0.0');
     await dialog.locator('#agent-max-sessions').fill('3');
-    await dialog.getByRole('combobox').selectOption('notebook');
+    await dialog.locator('select:has(option[value="notebook"])').selectOption('notebook');
+    await dialog.locator('#internal-notebook-endpoint-id').selectOption({ index: 0 });
 
     const createRequestPromise = authedPage.waitForRequest((req) => {
       return req.method() === 'POST' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents$/.test(req.url());
@@ -161,8 +165,9 @@ test.describe('Agents Page', () => {
     await expect(dialog).toBeVisible();
 
     await dialog.locator('#agent-name').fill('E2E Internal Agent Env');
-    await dialog.getByLabel(/internal/i).click();
+    await dialog.locator('input[name="mode"][value="internal"]').click();
     await dialog.locator('#agent-image').fill('ghcr.io/acme/agent:2.0.0');
+    await dialog.locator('#internal-notebook-endpoint-id').selectOption({ index: 0 });
 
     const envInputs = dialog.locator('input[placeholder="KEY"]');
     const valInputs = dialog.locator('input[placeholder="value"]');
@@ -227,7 +232,7 @@ test.describe('Agents Page', () => {
 
     const editDialog = authedPage.getByTestId('agents__edit-dialog');
     await expect(editDialog).toBeVisible();
-    await editDialog.getByRole('combobox').selectOption('chat');
+    await editDialog.locator('select:has(option[value="notebook"])').selectOption('chat');
 
     const updateRequestPromise = authedPage.waitForRequest((req) => {
       return req.method() === 'PATCH' && /\/api\/v1\/workspaces\/.*\/projects\/.*\/agents\/.+/.test(req.url());

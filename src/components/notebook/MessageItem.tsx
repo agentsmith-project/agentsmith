@@ -233,8 +233,6 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
       || lifecyclePhase === 'running'
       || lifecyclePhase === 'dispatching'
       || lifecyclePhase === 'queued'
-      || lifecyclePhase === 'stalled'
-      || lifecyclePhase === 'recovered'
       || lifecyclePhase === 'streaming'
     ) {
       if (lifecyclePhase === 'completed') return 'success';

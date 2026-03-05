@@ -34,16 +34,10 @@ Each user message maps to one run (`run_id`) with lifecycle:
 
 `queued -> dispatching -> running -> streaming -> completed|failed|cancelled`
 
-Supplemental transient states:
-
-- `stalled`: no progress events within timeout window (default 8s)
-- `recovered`: recovered after transport gap/reconnect
-
 Rules:
 
 1. `completed|failed|cancelled` are terminal.
-2. `stalled` can return to `running|streaming`.
-3. UI must show exactly one current state per run.
+2. UI must show exactly one current state per run.
 
 ## 5. Runtime Event Contract (unified envelope)
 
@@ -60,7 +54,7 @@ Introduce normalized task events consumed by FE:
 Required fields:
 
 - `run_id`, `message_id`, `at`
-- `phase`: queued|dispatching|running|streaming|completed|failed|cancelled|stalled|recovered
+- `phase`: queued|dispatching|running|streaming|completed|failed|cancelled
 - `status`: running|success|error|cancelled
 - `summary` (short text)
 
@@ -149,7 +143,7 @@ Refactor notebook message presentation into:
 
 ## 8.2 Visual priorities
 
-1. Primary status pill (queued/running/stalled/completed/failed).
+1. Primary status pill (queued/running/completed/failed).
 2. Per-run summary card at end.
 3. Expandable timeline with steps.
 4. Optional raw panel.
@@ -177,12 +171,9 @@ When current run is non-terminal:
 3. User can edit/remove/reorder pending items.
 4. Queue auto-drains when active run reaches terminal state.
 
-## 10. Failure/Stall UX
+## 10. Failure UX
 
-1. On `stalled`, show warning status with inline actions:
-   - continue waiting
-   - cancel current run
-   - view diagnostics
+1. If runner process is still alive, UI keeps `running` status and displays elapsed time + latest action summary.
 2. On `failed`, show concise reason + retry guidance.
 3. Remove oversized intrusive banners; keep inline and toast-level feedback.
 
@@ -212,7 +203,7 @@ When current run is non-terminal:
 
 1. SSE ordering under reconnect/gap-fill.
 2. synthetic terminal event on dispatch failure.
-3. stalled->recovered transition.
+3. long-running turn keeps `running` semantics until terminal event.
 
 ## 13.3 E2E smoke
 

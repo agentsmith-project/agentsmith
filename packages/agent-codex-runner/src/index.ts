@@ -162,7 +162,7 @@ function computeRunDurationMs(requestId: string): number | null {
 
 function sendRunLifecycleEvent(
   requestId: string,
-  phase: 'queued' | 'dispatching' | 'running' | 'streaming' | 'completed' | 'failed' | 'cancelled' | 'stalled' | 'recovered',
+  phase: 'queued' | 'dispatching' | 'running' | 'streaming' | 'completed' | 'failed' | 'cancelled',
   status: 'running' | 'success' | 'error' | 'cancelled',
   summary: string,
   details?: Record<string, unknown>,

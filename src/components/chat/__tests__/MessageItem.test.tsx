@@ -315,7 +315,7 @@ describe('MessageItem', () => {
         <MessageItem
           {...defaultProps}
           message={mockAssistantMessage}
-          streamingOverride='Stalled...'
+          streamingOverride='Working...'
           streamingMeta={{ startedAt: Date.now(), lastTokenAt: pastTime }}
         />,
       );

@@ -79,8 +79,9 @@ export function TaskPage({
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
   const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
-  const [isRunStalled, setIsRunStalled] = React.useState(false);
-  const [lastRunActivityAt, setLastRunActivityAt] = React.useState<number | null>(null);
+  const [runStartedAt, setRunStartedAt] = React.useState<number | null>(null);
+  const [lastRunActionSummary, setLastRunActionSummary] = React.useState<string | null>(null);
+  const [runClockNow, setRunClockNow] = React.useState<number>(Date.now());
   const [showExecutionDetails, setShowExecutionDetails] = React.useState(false);
   const [pendingMessages, setPendingMessages] = React.useState<PendingMessage[]>([]);
   const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
@@ -132,8 +133,9 @@ export function TaskPage({
     setStreamingMessageId(null);
     setStreamingContent('');
     setIsAgentTurnRunning(false);
-    setIsRunStalled(false);
-    setLastRunActivityAt(null);
+    setRunStartedAt(null);
+    setRunClockNow(Date.now());
+    setLastRunActionSummary(null);
   }, []);
   const lastTraceEventIdRef = React.useRef<string | null>(null);
   const syntheticTraceSeqRef = React.useRef(1_000_000);
@@ -227,16 +229,12 @@ export function TaskPage({
   }, [showExecutionDetails]);
 
   React.useEffect(() => {
-    if (!isAgentTurnRunning || !lastRunActivityAt) {
-      setIsRunStalled(false);
-      return;
-    }
+    if (!(sendMessage.isPending || isAgentTurnRunning)) return;
     const timer = setInterval(() => {
-      const stalled = Date.now() - lastRunActivityAt >= 8000;
-      setIsRunStalled(stalled);
+      setRunClockNow(Date.now());
     }, 1000);
     return () => clearInterval(timer);
-  }, [isAgentTurnRunning, lastRunActivityAt]);
+  }, [isAgentTurnRunning, sendMessage.isPending]);
 
   const fetchTracesForMessage = React.useCallback(async (messageId: string) => {
     if (!messageId) return;
@@ -365,8 +363,6 @@ export function TaskPage({
   const showSseDebugPanel = isDev && process.env.NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL === '1';
   const { connectionStatus, connectionErrorCode, connectionErrorMessage } = useTaskSSE(workspaceId, projectId, taskId, {
     onMessage: (message: TaskMessage) => {
-      setLastRunActivityAt(Date.now());
-      setIsRunStalled(false);
       // Update streaming content for the active streaming message
       if (streamingMessageId === message.id) {
         setStreamingContent(message.content);
@@ -384,8 +380,6 @@ export function TaskPage({
       );
     },
     onArtifact: (artifact: Artifact) => {
-      setLastRunActivityAt(Date.now());
-      setIsRunStalled(false);
       queryClient.setQueryData(
         artifactsKey,
         (old: Artifact[] | undefined) => {
@@ -398,8 +392,6 @@ export function TaskPage({
       );
     },
     onTaskUpdate: (updatedTask) => {
-      setLastRunActivityAt(Date.now());
-      setIsRunStalled(false);
       if (isAgentTurnRunning && streamingMessageId) {
         const hasTraceForCurrentTurn = (traceEventsByMessageId[streamingMessageId] ?? []).length > 0;
         if (!hasTraceForCurrentTurn) {
@@ -416,8 +408,7 @@ export function TaskPage({
       queryClient.setQueryData(taskDetailKey, updatedTask);
     },
     onTraceEvent: (traceEvent) => {
-      setLastRunActivityAt(Date.now());
-      setIsRunStalled(false);
+      setLastRunActionSummary(traceEvent.summary || traceEvent.name);
       lastTraceEventIdRef.current = traceEvent.id;
       setTraceEventsByMessageId((prev) => {
         const existing = prev[traceEvent.message_id] ?? [];
@@ -535,8 +526,9 @@ export function TaskPage({
       setStreamingMessageId(null);
       setStreamingContent('');
       setIsAgentTurnRunning(false);
-      setIsRunStalled(false);
-      setLastRunActivityAt(null);
+      setRunStartedAt(null);
+      setRunClockNow(Date.now());
+      setLastRunActionSummary(null);
       setTaskUpdateCountForCurrentTurn(0);
 
       // Send message and get response
@@ -556,14 +548,16 @@ export function TaskPage({
         setStreamingMessageId(response.id);
         setStreamingContent('');
         setIsAgentTurnRunning(true);
-        setIsRunStalled(false);
-        setLastRunActivityAt(Date.now());
+        setRunStartedAt(Date.now());
+        setRunClockNow(Date.now());
+        setLastRunActionSummary(tConversation('run_active_default_action'));
         setTaskUpdateCountForCurrentTurn(0);
       }
     } catch (err) {
       setIsAgentTurnRunning(false);
-      setIsRunStalled(false);
-      setLastRunActivityAt(null);
+      setRunStartedAt(null);
+      setRunClockNow(Date.now());
+      setLastRunActionSummary(null);
       setTaskUpdateCountForCurrentTurn(0);
       if (err instanceof ApiError) {
         const errorCode = err.errorCode?.toUpperCase();
@@ -893,6 +887,9 @@ export function TaskPage({
 
   const isDisabled = task.status === 'archived';
   const isExternalAgentOffline = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
+  const runElapsedSeconds = runStartedAt
+    ? Math.max(0, Math.floor((runClockNow - runStartedAt) / 1000))
+    : 0;
   const activeTraceEvents = streamingMessageId ? (traceEventsByMessageId[streamingMessageId] ?? []) : [];
   const showSandboxStarting = isAgentTurnRunning
     && activeTraceEvents.some((item) => item.name === 'sandbox_starting')
@@ -957,14 +954,10 @@ export function TaskPage({
           pendingQueue={pendingMessages}
           onPendingUpdate={handlePendingUpdate}
           onPendingRemove={handlePendingRemove}
-          runHealth={
-            (sendMessage.isPending || isAgentTurnRunning)
-              ? (isRunStalled ? 'stalled' : 'running')
-              : 'idle'
-          }
-          onContinueWaiting={() => {
-            setLastRunActivityAt(Date.now());
-            setIsRunStalled(false);
+          runActivity={{
+            active: sendMessage.isPending || isAgentTurnRunning,
+            elapsedSeconds: runElapsedSeconds,
+            lastSummary: lastRunActionSummary,
           }}
           showExecutionDetails={showExecutionDetails}
           onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}

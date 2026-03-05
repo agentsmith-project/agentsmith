@@ -28,8 +28,11 @@ export interface ConversationPanelProps {
   pendingQueue?: Array<{ id: string; content: string }>;
   onPendingUpdate?: (id: string, content: string) => void;
   onPendingRemove?: (id: string) => void;
-  runHealth?: 'idle' | 'running' | 'stalled';
-  onContinueWaiting?: () => void;
+  runActivity?: {
+    active: boolean;
+    elapsedSeconds: number;
+    lastSummary?: string | null;
+  };
   showExecutionDetails?: boolean;
   onToggleExecutionDetails?: () => void;
   disabled?: boolean;
@@ -61,8 +64,7 @@ export function ConversationPanel({
   pendingQueue = [],
   onPendingUpdate,
   onPendingRemove,
-  runHealth = 'idle',
-  onContinueWaiting,
+  runActivity,
   showExecutionDetails = false,
   onToggleExecutionDetails,
   disabled = false,
@@ -72,6 +74,13 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const [inputValue, setInputValue] = React.useState('');
+  const formatElapsed = (seconds: number): string => {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0s';
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    const remain = seconds % 60;
+    return remain === 0 ? `${minutes}m` : `${minutes}m ${remain}s`;
+  };
   const connectionFailureKind = connectionStatus
     ? classifyNotebookRealtimeFailure(connectionStatus, connectionErrorCode)
     : null;
@@ -189,20 +198,16 @@ export function ConversationPanel({
             : t('execution_visibility_show')}
         </button>
       </div>
-      {runHealth === 'stalled' ? (
-        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2" data-testid="notebook__run-stalled">
-          <div className="text-xs font-medium text-amber-300">{t('run_stalled_title')}</div>
-          <div className="mt-0.5 text-xs text-amber-200/90">{t('run_stalled_description')}</div>
-          <div className="mt-2">
-            <button
-              type="button"
-              className="text-xs text-primary hover:underline"
-              onClick={onContinueWaiting}
-              data-testid="notebook__run-stalled-continue"
-            >
-              {t('run_stalled_continue')}
-            </button>
+      {runActivity?.active ? (
+        <div className="border-b border-blue-500/30 bg-blue-500/10 px-4 py-2" data-testid="notebook__run-active">
+          <div className="text-xs font-medium text-blue-300">
+            {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
           </div>
+          {runActivity.lastSummary ? (
+            <div className="mt-0.5 text-xs text-blue-200/90">
+              {t('run_active_last_action', { summary: runActivity.lastSummary })}
+            </div>
+          ) : null}
         </div>
       ) : null}
       <div className="flex-1 min-h-0">

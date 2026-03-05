@@ -19,6 +19,7 @@ This file tracks legacy surfaces that still exist after scope contraction to MVP
 
 1. Docs/gate text alignment first (done in this freeze cycle).
 2. Remove or archive non-MVP e2e specs from default mock chromium lane (runtime-console, legacy governance extras) in a dedicated cleanup PR.
+   - 2026-03-05 batch-1: `runtime-console.spec.ts` removed from default `chromium` mock lane whitelist.
 3. Purge obsolete i18n keys and message blocks for quota-template/source-library governance once page contracts are finalized.
 4. Narrow backend/frontend type unions from `endpoint|source_library|agent` to true MVP set where contracts already changed.
 

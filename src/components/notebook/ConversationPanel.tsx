@@ -28,6 +28,8 @@ export interface ConversationPanelProps {
   pendingQueue?: Array<{ id: string; content: string }>;
   onPendingUpdate?: (id: string, content: string) => void;
   onPendingRemove?: (id: string) => void;
+  runHealth?: 'idle' | 'running' | 'stalled';
+  onContinueWaiting?: () => void;
   showExecutionDetails?: boolean;
   onToggleExecutionDetails?: () => void;
   disabled?: boolean;
@@ -59,6 +61,8 @@ export function ConversationPanel({
   pendingQueue = [],
   onPendingUpdate,
   onPendingRemove,
+  runHealth = 'idle',
+  onContinueWaiting,
   showExecutionDetails = false,
   onToggleExecutionDetails,
   disabled = false,
@@ -185,6 +189,22 @@ export function ConversationPanel({
             : t('execution_visibility_show')}
         </button>
       </div>
+      {runHealth === 'stalled' ? (
+        <div className="border-b border-amber-500/30 bg-amber-500/10 px-4 py-2" data-testid="notebook__run-stalled">
+          <div className="text-xs font-medium text-amber-300">{t('run_stalled_title')}</div>
+          <div className="mt-0.5 text-xs text-amber-200/90">{t('run_stalled_description')}</div>
+          <div className="mt-2">
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={onContinueWaiting}
+              data-testid="notebook__run-stalled-continue"
+            >
+              {t('run_stalled_continue')}
+            </button>
+          </div>
+        </div>
+      ) : null}
       <div className="flex-1 min-h-0">
         <MessageList
           messages={messages}

@@ -79,6 +79,8 @@ export function TaskPage({
   const [streamingMessageId, setStreamingMessageId] = React.useState<string | null>(null);
   const [streamingContent, setStreamingContent] = React.useState<string>('');
   const [isAgentTurnRunning, setIsAgentTurnRunning] = React.useState(false);
+  const [isRunStalled, setIsRunStalled] = React.useState(false);
+  const [lastRunActivityAt, setLastRunActivityAt] = React.useState<number | null>(null);
   const [showExecutionDetails, setShowExecutionDetails] = React.useState(false);
   const [pendingMessages, setPendingMessages] = React.useState<PendingMessage[]>([]);
   const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] = React.useState(0);
@@ -130,6 +132,8 @@ export function TaskPage({
     setStreamingMessageId(null);
     setStreamingContent('');
     setIsAgentTurnRunning(false);
+    setIsRunStalled(false);
+    setLastRunActivityAt(null);
   }, []);
   const lastTraceEventIdRef = React.useRef<string | null>(null);
   const syntheticTraceSeqRef = React.useRef(1_000_000);
@@ -221,6 +225,18 @@ export function TaskPage({
     if (!storage || typeof storage.setItem !== 'function') return;
     storage.setItem('notebook.showExecutionDetails', showExecutionDetails ? '1' : '0');
   }, [showExecutionDetails]);
+
+  React.useEffect(() => {
+    if (!isAgentTurnRunning || !lastRunActivityAt) {
+      setIsRunStalled(false);
+      return;
+    }
+    const timer = setInterval(() => {
+      const stalled = Date.now() - lastRunActivityAt >= 8000;
+      setIsRunStalled(stalled);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [isAgentTurnRunning, lastRunActivityAt]);
 
   const fetchTracesForMessage = React.useCallback(async (messageId: string) => {
     if (!messageId) return;
@@ -349,6 +365,8 @@ export function TaskPage({
   const showSseDebugPanel = isDev && process.env.NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL === '1';
   const { connectionStatus, connectionErrorCode, connectionErrorMessage } = useTaskSSE(workspaceId, projectId, taskId, {
     onMessage: (message: TaskMessage) => {
+      setLastRunActivityAt(Date.now());
+      setIsRunStalled(false);
       // Update streaming content for the active streaming message
       if (streamingMessageId === message.id) {
         setStreamingContent(message.content);
@@ -366,6 +384,8 @@ export function TaskPage({
       );
     },
     onArtifact: (artifact: Artifact) => {
+      setLastRunActivityAt(Date.now());
+      setIsRunStalled(false);
       queryClient.setQueryData(
         artifactsKey,
         (old: Artifact[] | undefined) => {
@@ -378,6 +398,8 @@ export function TaskPage({
       );
     },
     onTaskUpdate: (updatedTask) => {
+      setLastRunActivityAt(Date.now());
+      setIsRunStalled(false);
       if (isAgentTurnRunning && streamingMessageId) {
         const hasTraceForCurrentTurn = (traceEventsByMessageId[streamingMessageId] ?? []).length > 0;
         if (!hasTraceForCurrentTurn) {
@@ -394,6 +416,8 @@ export function TaskPage({
       queryClient.setQueryData(taskDetailKey, updatedTask);
     },
     onTraceEvent: (traceEvent) => {
+      setLastRunActivityAt(Date.now());
+      setIsRunStalled(false);
       lastTraceEventIdRef.current = traceEvent.id;
       setTraceEventsByMessageId((prev) => {
         const existing = prev[traceEvent.message_id] ?? [];
@@ -511,6 +535,8 @@ export function TaskPage({
       setStreamingMessageId(null);
       setStreamingContent('');
       setIsAgentTurnRunning(false);
+      setIsRunStalled(false);
+      setLastRunActivityAt(null);
       setTaskUpdateCountForCurrentTurn(0);
 
       // Send message and get response
@@ -530,10 +556,14 @@ export function TaskPage({
         setStreamingMessageId(response.id);
         setStreamingContent('');
         setIsAgentTurnRunning(true);
+        setIsRunStalled(false);
+        setLastRunActivityAt(Date.now());
         setTaskUpdateCountForCurrentTurn(0);
       }
     } catch (err) {
       setIsAgentTurnRunning(false);
+      setIsRunStalled(false);
+      setLastRunActivityAt(null);
       setTaskUpdateCountForCurrentTurn(0);
       if (err instanceof ApiError) {
         const errorCode = err.errorCode?.toUpperCase();
@@ -927,6 +957,15 @@ export function TaskPage({
           pendingQueue={pendingMessages}
           onPendingUpdate={handlePendingUpdate}
           onPendingRemove={handlePendingRemove}
+          runHealth={
+            (sendMessage.isPending || isAgentTurnRunning)
+              ? (isRunStalled ? 'stalled' : 'running')
+              : 'idle'
+          }
+          onContinueWaiting={() => {
+            setLastRunActivityAt(Date.now());
+            setIsRunStalled(false);
+          }}
           showExecutionDetails={showExecutionDetails}
           onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
           sandboxStarting={showSandboxStarting}

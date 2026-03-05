@@ -38,7 +38,8 @@ Gate levels:
 - `make gate-l3`: L0 + real-lane smoke
 - `make gate-pr`: recommended PR gate (L1)
 - `make gate-premerge`: recommended pre-merge gate (L2)
-- `make gate-release`: recommended release gate (L0 + L2 + L3)
+- `make gate-release`: recommended MVP release gate (L0 + L2 + L3 mainline)
+- `make smoke-governance`: optional extended governance smoke (manual lane)
 
 ## Release Ops Linkage
 
@@ -182,7 +183,7 @@ make notebook-agent-refresh-token
 
 Release verification now depends on delivery evidence, not only schedule definitions. If a required schedule is active but has failing or unacknowledged required deliveries, release evidence will surface it in `summary.usage_report_evidence`.
 
-Build reliability also contributes dedicated evidence. `make build-reliability-release-smoke` validates:
+Build reliability can be run as optional extended evidence lane. `make build-reliability-release-smoke` validates:
 
 1. chat recovery integration
 2. notebook external runtime integration
@@ -190,7 +191,7 @@ Build reliability also contributes dedicated evidence. `make build-reliability-r
 
 When this smoke succeeds, it writes `build-reliability-release-evidence.json`, and `release:report` attaches it as `summary.build_reliability_evidence`.
 
-Workspace governance now contributes dedicated evidence as well. `make workspace-governance-release-smoke` validates:
+Workspace governance can be run as optional extended evidence lane. `make workspace-governance-release-smoke` validates:
 
 1. workspace governance overview
 2. workspace member administration surface
@@ -199,7 +200,7 @@ Workspace governance now contributes dedicated evidence as well. `make workspace
 
 When this smoke succeeds, it writes `workspace-governance-release-evidence.json`, and `release:report` attaches it as `summary.workspace_governance_evidence`.
 
-Organization governance now contributes dedicated evidence as well. `make organization-governance-release-smoke` validates:
+Organization governance remains an optional extended evidence lane. `make organization-governance-release-smoke` validates:
 
 1. organization governance overview summary
 2. cross-workspace matrix and actions queue

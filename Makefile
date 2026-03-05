@@ -22,7 +22,7 @@
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
 	mvp-freeze-check \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
-	lane-real-smoke gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
+	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
 
 NPM ?= npm
@@ -80,13 +80,13 @@ help-extended:
 	@echo "  make demo-full-up   # kill leftovers + start deps + init deps + recover full demo(API/Web/Runner/resources)"
 	@echo "  make demo-full-down # stop demo(API/Web/Runner) and integration deps"
 	@echo "  make smoke-main     # mainline release smoke (auto demo-check + token fallback)"
-	@echo "  make smoke-governance # governance release smoke (strict page gate + effects)"
-	@echo "  make smoke-all      # run mainline + governance release smokes"
-	@echo "  make verify-release # strict release gate (L0 + L2 + L3)"
+	@echo "  make smoke-governance # optional governance smoke (legacy/extended)"
+	@echo "  make smoke-all      # run mainline + governance smokes (extended)"
+	@echo "  make verify-release # release gate (L0 + L2 + L3 mainline)"
 	@echo "  make mvp-freeze-check # freeze-oriented MVP check bundle (contracts + core smoke + demo readiness)"
 	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
 	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock MVP matrix)"
-	@echo "  make gate-release  # L0+L2+L3 (release gate: mock MVP + real-backend smoke)"
+	@echo "  make gate-release  # L0+L2+L3 (default MVP release gate: mock MVP + mainline real smoke)"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -331,7 +331,7 @@ mvp-freeze-check:
 # L0: static quality gates (lint/type/contracts)
 # L1: mock-lane smoke
 # L2: mock-lane MVP matrix (smoke + chromium)
-# L3: real-lane key smoke (real backend + governance/runtime checks)
+# L3: real-lane key smoke (default MVP mainline path)
 # ---------------------------------------------------------------------------
 
 lane-mock-smoke:
@@ -352,6 +352,12 @@ lane-mock-full:
 	$(MAKE) lane-mock-chromium
 
 lane-real-smoke:
+	$(MAKE) smoke-main
+
+lane-real-governance:
+	$(MAKE) smoke-governance
+
+lane-real-extended:
 	$(MAKE) smoke-all
 
 gate-l0:

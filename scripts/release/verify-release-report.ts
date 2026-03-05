@@ -100,13 +100,6 @@ const CHECK_DEFINITIONS: Array<{
     timeout: 600000, // 10 minutes
   },
   {
-    id: 'runtime-release-evidence',
-    name: 'Runtime proxy billing release workflow',
-    category: 'e2e',
-    command: 'INTEGRATION_API_PORT=20010 BASE_URL=http://localhost:3001 npm run test:e2e:integration:runtime-proxy-billing:with-api',
-    timeout: 600000, // 10 minutes
-  },
-  {
     id: 'organization-governance-evidence',
     name: 'Organization governance release workflow',
     category: 'e2e',

@@ -84,6 +84,7 @@ This validates the required behavior for MVP deployment without sandbox:
 make gate-pr
 make gate-premerge
 make gate-release
+make smoke-governance   # optional extended/legacy smoke, not part of default release gate
 make release-core-smoke
 make mvp-freeze-check
 ```

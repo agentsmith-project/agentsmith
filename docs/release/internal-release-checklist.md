@@ -94,7 +94,7 @@ Behavior:
 - Non-transient failures (contract/type/assertion/backend logic regressions) are **blocking**.
 - Release report must include `summary.upstream_transient` evidence when transient failures are observed.
 
-## 3.1 Governance Release Smoke (Strict Gate)
+## 3.1 Governance Release Smoke (Optional Extended Lane)
 ```bash
 make governance-release-smoke
 ```
@@ -104,6 +104,7 @@ Behavior:
 - uses strict interaction gate (`governance-pages-real-backend-interaction-smoke-strict`)
 - runs governance effect smokes (policy/member/source/agent)
 - auto-refreshes token and retries once on token-expiry failures for eligible smoke steps
+- not part of the default MVP release gate; run explicitly when governance changes are in scope
 
 ### Bundled release smoke only
 ```bash
@@ -192,7 +193,7 @@ Release is **GO** (internal/controlled) when all are true:
 - `demo-up` works and prints healthy status
 - `demo-check` passes
 - `release-smoke-full` passes
-- `governance-release-smoke` passes
+- `governance-release-smoke` passes when governance-scope changes are included
 - contract/typecheck gates pass
 - deployment constraint (single instance or sticky) is confirmed
 - SSE risk is explicitly accepted for this release

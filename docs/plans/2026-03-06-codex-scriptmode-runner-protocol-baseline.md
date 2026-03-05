@@ -104,10 +104,9 @@ Backend stores/replays these as task trace events and synthesizes `runtime.termi
 
 ## 8) Decisions for Next Step
 
-Before implementing stalled-state UX and richer run timeline behavior, we standardize on:
+Before implementing richer run timeline behavior, we standardize on:
 
 1. Frontend run status derives from `run.lifecycle/run.summary` first, legacy trace inference as fallback.
 2. Runner remains `responses` wire only.
 3. WS contract remains strict fail-fast for malformed runtime events.
 4. Optional verbose execution details remain user-controlled (default hidden).
-

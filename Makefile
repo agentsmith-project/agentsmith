@@ -20,7 +20,7 @@
 	runtime-proxy-stream-bench runtime-proxy-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
-	mvp-freeze-check \
+	mvp-freeze-check preprod-acceptance-check \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
 	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
@@ -222,6 +222,9 @@ quick-help:
 	@echo "  make mvp-freeze-check"
 	@echo "    Run verify-contracts + release-core-smoke + notebook-agent-demo-check."
 	@echo ""
+	@echo "  make preprod-acceptance-check"
+	@echo "    Run minimal preprod readiness checks (openapi/web-login/cancel-route)."
+	@echo ""
 	@echo "  make gate-pr"
 	@echo "    L0 + L1 gate. Recommended pull request baseline."
 	@echo ""
@@ -324,6 +327,9 @@ mvp-freeze-check:
 	$(MAKE) verify-contracts; \
 	$(MAKE) release-core-smoke; \
 	$(MAKE) notebook-agent-demo-check
+
+preprod-acceptance-check:
+	./scripts/preprod-acceptance-check.sh
 
 # ---------------------------------------------------------------------------
 # Lane / Gate Model (Best-practice baseline)

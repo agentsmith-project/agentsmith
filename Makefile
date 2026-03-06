@@ -21,6 +21,7 @@
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
 	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
 	mvp-freeze-check preprod-acceptance-check \
+	preprod-ensure-pgvector preprod-capture-baseline \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
 	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
@@ -225,6 +226,12 @@ quick-help:
 	@echo "  make preprod-acceptance-check"
 	@echo "    Run minimal preprod readiness checks (openapi/web-login/cancel-route)."
 	@echo ""
+	@echo "  make preprod-ensure-pgvector"
+	@echo "    Ensure pgvector extension is installed/enabled on preprod Postgres container."
+	@echo ""
+	@echo "  make preprod-capture-baseline"
+	@echo "    Capture current preprod rollback baseline and generate rollback script on server."
+	@echo ""
 	@echo "  make gate-pr"
 	@echo "    L0 + L1 gate. Recommended pull request baseline."
 	@echo ""
@@ -330,6 +337,12 @@ mvp-freeze-check:
 
 preprod-acceptance-check:
 	./scripts/preprod-acceptance-check.sh
+
+preprod-ensure-pgvector:
+	./scripts/preprod-ensure-pgvector.sh
+
+preprod-capture-baseline:
+	./scripts/preprod-capture-baseline.sh
 
 # ---------------------------------------------------------------------------
 # Lane / Gate Model (Best-practice baseline)

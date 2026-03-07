@@ -27,6 +27,7 @@ export interface MessageItemProps {
 
 type TraceSummary = {
   status: 'running' | 'success' | 'error' | 'cancelled' | 'idle';
+  cancelledOutcome?: 'stopped' | 'ended';
   stepCount: number;
   currentStep?: string;
   durationMs?: number;
@@ -224,12 +225,23 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
     return null;
   };
   const runSummaryStatus = mapFinalStatus(runSummaryEvent?.details?.final_status);
+  const hasFinalizedMarker = !!runSummaryEvent || sorted.some((evt) => (
+    evt.name === 'run.user_cancel' || evt.name === 'runtime.terminal'
+  ));
   const hasCancelledLifecycle = sorted.some((evt) => (
     evt.name === 'run.lifecycle'
     && (evt.details?.run_phase === 'cancelled' || evt.status === 'cancelled')
   ));
   const hasCancelledTrace = sorted.some((evt) => evt.status === 'cancelled');
-  const cancellationOverride = hasCancelledLifecycle || hasCancelledTrace;
+  const cancellationOverride = (hasCancelledLifecycle || hasCancelledTrace) && hasFinalizedMarker;
+  const lastCancelledIndex = (() => {
+    for (let i = sorted.length - 1; i >= 0; i -= 1) {
+      if (sorted[i]!.status === 'cancelled') return i;
+    }
+    return -1;
+  })();
+  const hasSuccessAfterCancelled = lastCancelledIndex >= 0
+    && sorted.slice(lastCancelledIndex + 1).some((evt) => evt.status === 'success');
   const lifecyclePhase = runLifecycleEvent?.details?.run_phase;
   const lifecycleStatus = (() => {
     if (
@@ -275,9 +287,12 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
       ? 'running'
       : terminalStatus ?? (runningIndex >= 0 ? 'running' : 'idle')
   );
-  const resolvedStatus = cancellationOverride
+  const preliminaryStatus = cancellationOverride
     ? 'cancelled'
     : runSummaryStatus ?? lifecycleStatus ?? inferredStatus;
+  const resolvedStatus: TraceSummary['status'] = preliminaryStatus === 'cancelled' && !hasFinalizedMarker
+    ? 'running'
+    : preliminaryStatus;
   const startedAt = sorted[0]?.at ? Date.parse(sorted[0].at) : NaN;
   const endedAtEvent = terminalIndex >= 0 ? sorted[terminalIndex] : sorted[sorted.length - 1];
   const endedAtCandidate = endedAtEvent?.at ? Date.parse(endedAtEvent.at) : NaN;
@@ -289,13 +304,15 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
       : undefined;
   return {
     status: resolvedStatus,
+    ...(resolvedStatus === 'cancelled' ? { cancelledOutcome: hasSuccessAfterCancelled ? 'ended' : 'stopped' } : {}),
     stepCount: Math.max(1, stepEvents.length || sorted.length),
     currentStep: runLifecycleEvent?.summary ?? sorted[sorted.length - 1]?.summary,
     ...(typeof durationMs === 'number' ? { durationMs } : {}),
   };
 }
 
-function formatTraceStatusKey(status: TraceSummary['status']): string {
+function formatTraceStatusKey(summary: Pick<TraceSummary, 'status' | 'cancelledOutcome'>): string {
+  const { status } = summary;
   switch (status) {
     case 'running':
       return 'trace_status_running';
@@ -308,6 +325,13 @@ function formatTraceStatusKey(status: TraceSummary['status']): string {
     default:
       return 'trace_status_idle';
   }
+}
+
+function formatCancelledReasonKey(summary: Pick<TraceSummary, 'status' | 'cancelledOutcome'>): string | null {
+  if (summary.status !== 'cancelled') return null;
+  return summary.cancelledOutcome === 'ended'
+    ? 'trace_cancel_reason_user_ended'
+    : 'trace_cancel_reason_user_stopped';
 }
 
 function computeDurationMs(startedAt?: string, endedAt?: string): number | undefined {
@@ -462,9 +486,13 @@ export function MessageItem({
       : visibleRunStatus === 'cancelled'
         ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
         : 'text-blue-300 border-blue-500/30 bg-blue-500/10';
-  const getTraceStatusText = (status: TraceSummary['status']) => (
-    tNotebookConversation(formatTraceStatusKey(status))
-  );
+  const visibleRunCancelledReasonKey = visibleRunStatus === 'cancelled'
+    ? formatCancelledReasonKey(traceSummary)
+    : null;
+  const traceSummaryCancelledReasonKey = traceSummary.status === 'cancelled'
+    ? formatCancelledReasonKey(traceSummary)
+    : null;
+  const getTraceStatusText = (status: TraceSummary['status']) => tNotebookConversation(formatTraceStatusKey({ status }));
   const formatTraceEventTitle = (evt: TaskTraceEvent): string => {
     if (evt.name === 'codex.command') {
       const command = typeof evt.details?.command === 'string' ? evt.details.command : '';
@@ -587,7 +615,10 @@ export function MessageItem({
               )}
               data-testid="notebook__message-run-status"
             >
-              {tNotebookConversation(formatTraceStatusKey(visibleRunStatus))}
+              {tNotebookConversation(formatTraceStatusKey({
+                status: visibleRunStatus,
+                ...(visibleRunStatus === 'cancelled' ? { cancelledOutcome: traceSummary.cancelledOutcome } : {}),
+              }))}
             </span>
           ) : null}
           {canShowTraceToggle && (
@@ -606,7 +637,7 @@ export function MessageItem({
               ) : (
                 <>
                   <span className={traceStatusClass}>
-                    {tNotebookConversation(formatTraceStatusKey(traceSummary.status))}
+                    {tNotebookConversation(formatTraceStatusKey(traceSummary))}
                   </span>
                   {' · '}
                   {tNotebookConversation('trace_step_count', { count: traceSummary.stepCount })}
@@ -634,6 +665,11 @@ export function MessageItem({
             <Copy className="w-4 h-4" />
           </Button>
         </div>
+        {!isUser && visibleRunCancelledReasonKey ? (
+          <div className="mt-1 text-[11px] text-amber-200/90" data-testid="notebook__message-run-reason">
+            {tNotebookConversation(visibleRunCancelledReasonKey)}
+          </div>
+        ) : null}
         {canShowTraceToggle && traceExpanded && (
           <div className="mt-3 rounded-md border border-subtle bg-background/40 p-3" data-testid="notebook__message-trace-panel">
             {traceErrorTitle ? (
@@ -657,6 +693,11 @@ export function MessageItem({
               </div>
             ) : (
               <div className="space-y-3">
+                {traceSummaryCancelledReasonKey ? (
+                  <div className="text-xs text-amber-200/90" data-testid="notebook__message-trace-cancel-reason">
+                    {tNotebookConversation(traceSummaryCancelledReasonKey)}
+                  </div>
+                ) : null}
                 <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary" data-testid="notebook__message-trace-stats">
                   <span>{tNotebookConversation('trace_stats_events', { count: filteredExecutionTraceEvents.length })}</span>
                   {traceSummary.durationMs != null ? (

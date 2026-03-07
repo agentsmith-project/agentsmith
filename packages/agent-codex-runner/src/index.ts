@@ -15,9 +15,10 @@ import {
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
-import { resolveTaskCwd, shouldResumeNotebookSession } from './workspace-runtime.js';
+import { resolveTaskCwd } from './workspace-runtime.js';
 import { applyRuntimeContextFiles, type RuntimeContextFileItem } from './runtime-context-files.js';
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
+import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 
 type ServerStartPayload = {
   model?: string;
@@ -71,6 +72,11 @@ const key = process.env.MBOS_AGENT_KEY;
 const codexBin = process.env.CODEX_BIN ?? 'codex';
 const runnerDebug = process.env.MBOS_AGENT_RUNNER_DEBUG === '1';
 const codexYolo = process.env.MBOS_AGENT_CODEX_YOLO === '1';
+const cancelKillDelayMs = (() => {
+  const raw = Number.parseInt(process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS ?? '', 10);
+  if (Number.isFinite(raw) && raw >= 1_000) return raw;
+  return 8_000;
+})();
 
 if (!wsUrl || !key) {
   process.stderr.write(
@@ -85,9 +91,9 @@ const ws = new WebSocket(wsUrl, {
 
 type RunningProcess = ChildProcessByStdio<null, Readable, Readable>;
 const runningByRequestId = new Map<string, RunningProcess>();
+const cancelRequestedByRequestId = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const runStartedAtByRequestId = new Map<string, number>();
-const codexSessionReadyByCwd = new Set<string>();
 const reportedArtifactsByCwd = new Map<string, Set<string>>();
 let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
@@ -550,12 +556,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const wireApi = 'responses';
 
   const model = runtimeContext.model ?? payload.model ?? 'gpt-5-codex';
-  const resumeDecision = shouldResumeNotebookSession({
-    isNotebookMode,
-    cwd,
-    hasSessionInMemory: codexSessionReadyByCwd.has(cwd),
-  });
-  const resumeLast = resumeDecision.resumeLast;
   const codexConfigDir = join(cwd, '.codex');
   await mkdir(codexConfigDir, { recursive: true });
   await writeFile(
@@ -584,9 +584,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
     builtin_skills_mounted: builtinSkillsResult.mounted,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
-    resume_last: resumeLast,
     cwd_source: cwdResult.source,
-    resume_source: resumeDecision.source,
   });
 
   const codexArgs = buildCodexExecArgs({
@@ -596,7 +594,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     endpointProxyBase,
     wireApi,
     userBearerToken: runtimeContext.user_bearer_token,
-    resumeLast,
+    notebookMode: isNotebookMode,
     yolo: codexYolo,
   });
 
@@ -630,6 +628,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     }),
   });
   runningByRequestId.set(requestId, child);
+  cancelRequestedByRequestId.delete(requestId);
   sendRunLifecycleEvent(requestId, 'dispatching', 'running', 'Dispatching agent run', {
     model,
     wire_api: wireApi,
@@ -689,6 +688,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
 
   child.on('error', (error) => {
     runningByRequestId.delete(requestId);
+    cancelRequestedByRequestId.delete(requestId);
     sendTraceEvent(requestId, {
       category: 'error',
       phase: 'end',
@@ -728,7 +728,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       const stats = filterStatsByRequestId.get(requestId);
       if (stats) debugLog('filter stats', { request_id: requestId, ...stats });
     }
+    const cancelRequested = cancelRequestedByRequestId.has(requestId);
     runningByRequestId.delete(requestId);
+    cancelRequestedByRequestId.delete(requestId);
     void (async () => {
       if (isNotebookMode && workspaceBeforeSnapshot) {
         try {
@@ -774,10 +776,57 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         });
         sendFrame('agent.response.artifact', requestId, artifact as unknown as Record<string, unknown>);
       }
-      if (code === 0) {
-        if (isNotebookMode) {
-          codexSessionReadyByCwd.add(cwd);
-        }
+      const terminalOutcome = resolveCodexTerminalOutcome({
+        cancelRequested,
+        code,
+        signal,
+      });
+      if (cancelRequested) {
+        const gracefulCancelExit = code === 0 && !signal;
+        sendTraceEvent(requestId, {
+          category: 'warning',
+          phase: 'end',
+          status: terminalOutcome.codexTraceStatus,
+          name: 'codex.exec',
+          summary: signal
+            ? `Codex terminated (${signal})`
+            : 'Codex run cancelled after request',
+          details: {
+            cancel_requested: true,
+            graceful_exit: gracefulCancelExit,
+            ...(signal ? { signal } : {}),
+            ...(code !== null ? { exit_code: code } : {}),
+          },
+        });
+        sendRunLifecycleEvent(
+          requestId,
+          'cancelled',
+          'cancelled',
+          signal ? `Run cancelled (${signal})` : 'Run cancelled by request',
+          {
+            cancel_requested: true,
+            graceful_exit: gracefulCancelExit,
+            ...(signal ? { signal } : {}),
+            ...(code !== null ? { exit_code: code } : {}),
+          },
+        );
+        sendRunSummaryEvent(requestId, 'cancelled', {
+          cancel_requested: true,
+          graceful_exit: gracefulCancelExit,
+          ...(signal ? { signal } : {}),
+          ...(code !== null ? { exit_code: code } : {}),
+          artifacts_count: artifacts.length,
+        });
+        sendFrame('agent.response.error', requestId, {
+          error_code: terminalOutcome.errorCode ?? 'AGENT_CANCELLED',
+          error_message: terminalOutcome.errorMessage ?? 'codex_cancelled_by_request',
+        });
+        traceSeqByRequestId.delete(requestId);
+        runStartedAtByRequestId.delete(requestId);
+        filterStatsByRequestId.delete(requestId);
+        return;
+      }
+      if (terminalOutcome.finalStatus === 'success') {
         sendRunLifecycleEvent(requestId, 'completed', 'success', 'Run completed');
         sendRunSummaryEvent(requestId, 'success', {
           artifacts_count: artifacts.length,
@@ -802,7 +851,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       sendTraceEvent(requestId, {
         category: signal ? 'warning' : 'error',
         phase: 'end',
-        status: signal ? 'cancelled' : 'error',
+        status: terminalOutcome.codexTraceStatus,
         name: 'codex.exec',
         summary: signal ? `Codex terminated (${signal})` : `Codex exited with code ${String(code ?? 'unknown')}`,
         details: {
@@ -810,25 +859,21 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           ...(code !== null ? { exit_code: code } : {}),
         },
       });
-      sendFrame('agent.response.error', requestId, {
-        error_code: signal ? 'AGENT_CANCELLED' : 'AGENT_UPSTREAM_ERROR',
-        error_message: signal ? `codex_terminated_${signal}` : `codex_exit_code_${String(code ?? 'unknown')}`,
-      });
       sendRunLifecycleEvent(
         requestId,
-        signal ? 'cancelled' : 'failed',
-        signal ? 'cancelled' : 'error',
+        terminalOutcome.finalStatus === 'cancelled' ? 'cancelled' : 'failed',
+        terminalOutcome.finalStatus === 'cancelled' ? 'cancelled' : 'error',
         signal ? `Run cancelled (${signal})` : `Run failed with exit code ${String(code ?? 'unknown')}`,
       );
-      sendRunSummaryEvent(requestId, signal ? 'cancelled' : 'error', {
+      sendRunSummaryEvent(requestId, terminalOutcome.finalStatus === 'cancelled' ? 'cancelled' : 'error', {
         ...(signal ? { signal } : {}),
         ...(code !== null ? { exit_code: code } : {}),
         artifacts_count: artifacts.length,
       });
-      if (isNotebookMode && !resumeLast && code !== null && code > 0) {
-        // Keep first-run failures from incorrectly enabling resume for subsequent turns.
-        codexSessionReadyByCwd.delete(cwd);
-      }
+      sendFrame('agent.response.error', requestId, {
+        error_code: terminalOutcome.errorCode ?? 'AGENT_UPSTREAM_ERROR',
+        error_message: terminalOutcome.errorMessage ?? `codex_exit_code_${String(code ?? 'unknown')}`,
+      });
       traceSeqByRequestId.delete(requestId);
       runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
@@ -907,20 +952,24 @@ ws.on('message', (raw) => {
     debugLog('received cancel', { request_id: message.request_id });
     const child = runningByRequestId.get(message.request_id);
     if (child && child.exitCode === null) {
+      if (cancelRequestedByRequestId.has(message.request_id)) return;
+      cancelRequestedByRequestId.add(message.request_id);
       sendTraceEvent(message.request_id, {
         category: 'warning',
-        phase: 'end',
-        status: 'cancelled',
-        name: 'codex.exec',
-        summary: 'Execution cancelled by server',
+        phase: 'update',
+        status: 'running',
+        name: 'run.cancel',
+        summary: `Cancellation requested by server (grace ${Math.round(cancelKillDelayMs / 1000)}s)`,
       });
-      sendRunLifecycleEvent(message.request_id, 'cancelled', 'cancelled', 'Run cancelled by server');
+      sendRunLifecycleEvent(message.request_id, 'running', 'running', 'Cancellation requested', {
+        cancel_requested: true,
+      });
       child.kill('SIGTERM');
       setTimeout(() => {
         if (child.exitCode === null) {
           child.kill('SIGKILL');
         }
-      }, 3000);
+      }, cancelKillDelayMs);
     }
     return;
   }
@@ -969,6 +1018,7 @@ ws.on('close', () => {
     }
   }
   runningByRequestId.clear();
+  cancelRequestedByRequestId.clear();
   connectedResourceProxyBase = '';
   traceSeqByRequestId.clear();
   runStartedAtByRequestId.clear();

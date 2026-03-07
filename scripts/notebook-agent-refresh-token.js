@@ -22,8 +22,10 @@ async function main() {
   const realm = process.env.KEYCLOAK_REALM || 'mbos';
   const clientId = process.env.KEYCLOAK_CLIENT_ID || 'agentsmith';
   const locale = process.env.LOCALE || 'zh-CN';
-  const username = process.env.USERNAME || 'dev-admin';
-  const password = process.env.PASSWORD || 'dev-admin-123';
+  // Avoid reading OS-level USERNAME/PASSWORD variables implicitly.
+  // Use dedicated env names for integration credentials.
+  const username = process.env.MBOS_DEV_USERNAME || process.env.INTEGRATION_DEV_ADMIN_USERNAME || 'dev-admin';
+  const password = process.env.MBOS_DEV_PASSWORD || process.env.INTEGRATION_DEV_ADMIN_PASSWORD || 'dev-admin-123';
   const outFile = process.env.TOKEN_OUT_FILE || '/tmp/agentsmith_user_token.txt';
   const shouldReadAppSession = process.env.REFRESH_TOKEN_READ_APP_SESSION === '1';
 
@@ -34,6 +36,7 @@ async function main() {
     body.set('client_id', clientId);
     body.set('username', username);
     body.set('password', password);
+    body.set('scope', 'openid profile email');
 
     const response = await fetch(tokenUrl, {
       method: 'POST',

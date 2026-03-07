@@ -78,6 +78,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
   emitTaskEvent: (taskId: string, payload: RuntimeEventPayload) => void;
   onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => void;
   onFinalize: (taskId: string) => void;
+  isCancellationRequested?: () => boolean;
   debugLog: (message: string, extra?: Record<string, unknown>) => void;
   taskCollections: {
     tasks: string;
@@ -104,6 +105,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
     emitTaskEvent,
     onDispatched,
     onFinalize,
+    isCancellationRequested,
     debugLog,
     taskCollections,
     createTaskArtifact,
@@ -120,6 +122,7 @@ export async function runNotebookTaskWithExternalAgent(input: {
   let usageTokensTotal: number | undefined;
   let runtimeRequestId: string | undefined;
   let keepaliveTimer: NodeJS.Timeout | undefined;
+  let sawCancelledTerminalTrace = false;
 
   try {
     const agent = await deps.agentResourceService.getAgent(task.workspace_id, task.project_id, agentId);
@@ -265,6 +268,9 @@ export async function runNotebookTaskWithExternalAgent(input: {
 
     for await (const event of dispatched.stream) {
       if (event.type === 'event' && event.event) {
+        if (event.event.status === 'cancelled') {
+          sawCancelledTerminalTrace = true;
+        }
         const traceEvent = buildTaskTraceEvent({
           taskId: task.id,
           messageId: assistantMessage.id,
@@ -318,6 +324,9 @@ export async function runNotebookTaskWithExternalAgent(input: {
         reachedTerminal = true;
         terminalResult = 'error';
         terminalErrorCode = event.error_code ?? 'AGENT_UPSTREAM_ERROR';
+        if (terminalErrorCode === 'AGENT_CANCELLED') {
+          sawCancelledTerminalTrace = true;
+        }
         recordNotebookTaskRunFailed();
         debugLog('runtime_event_error', {
           task_id: task.id,
@@ -430,6 +439,40 @@ export async function runNotebookTaskWithExternalAgent(input: {
         task_id: task.id,
         run_id: runId,
         trace_id: fallbackTrace.id,
+        terminal_result: terminalResult,
+        error_code: terminalErrorCode ?? null,
+      });
+    }
+    const cancellationRequested = isCancellationRequested?.() === true;
+    if (cancellationRequested && !sawCancelledTerminalTrace) {
+      const userCancelledTrace = buildTaskTraceEvent({
+        taskId: task.id,
+        messageId: assistantMessage.id,
+        runId,
+        payload: {
+          sequence: Math.max(1, maxTraceSequence + 1),
+          at: new Date().toISOString(),
+          category: 'warning',
+          phase: 'end',
+          status: 'cancelled',
+          name: 'run.user_cancel',
+          summary: 'Run interrupted by user request',
+          details: {
+            synthesized: true,
+            reason: 'user_cancel_requested',
+            terminal_result: terminalResult,
+            error_code: terminalErrorCode ?? null,
+          },
+        },
+      });
+      await storeTaskTraceEvent(deps, task.id, userCancelledTrace);
+      traceEventCount += 1;
+      maxTraceSequence = Math.max(maxTraceSequence, userCancelledTrace.seq);
+      emitTaskEvent(taskId, { type: 'trace_event', data: userCancelledTrace });
+      debugLog('runtime_user_cancel_trace_emitted', {
+        task_id: task.id,
+        run_id: runId,
+        trace_id: userCancelledTrace.id,
         terminal_result: terminalResult,
         error_code: terminalErrorCode ?? null,
       });

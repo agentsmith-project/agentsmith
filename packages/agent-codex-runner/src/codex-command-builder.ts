@@ -37,7 +37,7 @@ export function buildCodexExecArgs(args: {
   endpointProxyBase: string;
   wireApi: 'responses' | 'chat';
   userBearerToken?: string;
-  resumeLast?: boolean;
+  notebookMode?: boolean;
   yolo?: boolean;
 }): string[] {
   const cliArgs = [
@@ -74,10 +74,9 @@ export function buildCodexExecArgs(args: {
       `model_providers.proxy.experimental_bearer_token=${JSON.stringify(args.userBearerToken)}`,
     );
   }
-  if (args.resumeLast) {
+  if (args.notebookMode) {
     cliArgs.splice(1, 0, 'resume', '--last');
   }
   cliArgs.push(args.prompt);
   return cliArgs;
 }
-

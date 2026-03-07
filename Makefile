@@ -41,6 +41,8 @@ KEYCLOAK_BASE_URL ?= http://localhost:18080
 KEYCLOAK_REALM ?= mbos
 KEYCLOAK_URL ?= http://localhost:18080/realms
 KEYCLOAK_CLIENT_ID ?= agentsmith
+INTEGRATION_DEV_ADMIN_USERNAME ?= dev-admin
+INTEGRATION_DEV_ADMIN_PASSWORD ?= dev-admin-123
 AGENT_WS_URL ?=
 AGENT_KEY ?=
 AGENT_MODE ?= echo
@@ -720,6 +722,12 @@ agent-codex-runner:
 
 notebook-agent-refresh-token:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	MBOS_DEV_USERNAME="$(INTEGRATION_DEV_ADMIN_USERNAME)" \
+	MBOS_DEV_PASSWORD="$(INTEGRATION_DEV_ADMIN_PASSWORD)" \
+	KEYCLOAK_CLIENT_ID="$(KEYCLOAK_CLIENT_ID)" \
+	KEYCLOAK_REALM="$(KEYCLOAK_REALM)" \
+	KEYCLOAK_BASE_URL="$(KEYCLOAK_BASE_URL)" \
+	REFRESH_TOKEN_FORCE_PASSWORD_GRANT=1 \
 	REFRESH_TOKEN_READ_APP_SESSION=0 \
 	node ./scripts/notebook-agent-refresh-token.js
 

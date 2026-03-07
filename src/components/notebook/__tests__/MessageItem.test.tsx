@@ -529,6 +529,166 @@ describe('MessageItem', () => {
       expect(toggle).toHaveTextContent(/4s/);
     });
 
+    it('shows interrupted-stopped when cancelled has no later success event', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_cancel_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'lifecycle',
+              phase: 'end',
+              status: 'cancelled',
+              name: 'run.lifecycle',
+              summary: 'Run cancelled by server',
+              details: { run_phase: 'cancelled' },
+            },
+            {
+              id: 'trace_summary_cancelled',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'cancelled',
+              name: 'run.summary',
+              summary: 'Run cancelled',
+              details: { final_status: 'cancelled', duration_ms: 1000 },
+            },
+          ]}
+        />
+      );
+
+      const statusBadge = screen.getByTestId('notebook__message-run-status');
+      expect(statusBadge).toHaveTextContent(/trace_status_cancelled/);
+      expect(screen.getByTestId('notebook__message-run-reason')).toHaveTextContent(
+        /trace_cancel_reason_user_stopped/,
+      );
+    });
+
+    it('shows interrupted-ended when success arrives after cancelled trace', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_cancel_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'lifecycle',
+              phase: 'end',
+              status: 'cancelled',
+              name: 'run.lifecycle',
+              summary: 'Run cancelled by server',
+              details: { run_phase: 'cancelled' },
+            },
+            {
+              id: 'trace_success_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'success',
+              name: 'run.summary',
+              summary: 'Run success',
+              details: { final_status: 'success', duration_ms: 1000 },
+            },
+          ]}
+        />
+      );
+
+      const statusBadge = screen.getByTestId('notebook__message-run-status');
+      expect(statusBadge).toHaveTextContent(/trace_status_cancelled/);
+      expect(screen.getByTestId('notebook__message-run-reason')).toHaveTextContent(
+        /trace_cancel_reason_user_ended/,
+      );
+    });
+
+    it('shows cancel reason inside trace panel when expanded', async () => {
+      const user = userEvent.setup();
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_cancel_1',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'lifecycle',
+              phase: 'end',
+              status: 'cancelled',
+              name: 'run.lifecycle',
+              summary: 'Run cancelled by server',
+              details: { run_phase: 'cancelled' },
+            },
+            {
+              id: 'trace_success_2',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 2,
+              at: '2024-01-01T14:31:01Z',
+              category: 'progress',
+              phase: 'end',
+              status: 'success',
+              name: 'run.summary',
+              summary: 'Run success',
+              details: { final_status: 'success', duration_ms: 1000 },
+            },
+          ]}
+        />
+      );
+
+      await user.click(screen.getByTestId('notebook__message-trace-toggle'));
+      expect(screen.getByTestId('notebook__message-trace-cancel-reason')).toHaveTextContent(
+        /trace_cancel_reason_user_ended/,
+      );
+    });
+
+    it('keeps running status before run summary arrives for cancelled lifecycle', () => {
+      render(
+        <MessageItem
+          message={mockAgentMessage}
+          traceEvents={[
+            {
+              id: 'trace_cancel_only',
+              task_id: 'task-1',
+              message_id: 'msg-2',
+              run_id: 'run-1',
+              seq: 1,
+              at: '2024-01-01T14:31:00Z',
+              category: 'lifecycle',
+              phase: 'end',
+              status: 'cancelled',
+              name: 'run.lifecycle',
+              summary: 'Run cancelled by server',
+              details: { run_phase: 'cancelled' },
+            },
+          ]}
+        />
+      );
+
+      const statusBadge = screen.getByTestId('notebook__message-run-status');
+      expect(statusBadge).toHaveTextContent(/trace_status_running/);
+      expect(statusBadge).not.toHaveTextContent(/trace_status_cancelled/);
+    });
+
     it('hides trace toggle when execution details visibility is disabled', () => {
       render(
         <MessageItem

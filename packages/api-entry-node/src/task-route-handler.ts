@@ -134,6 +134,7 @@ const MESSAGES_BY_TASK = new Map<string, TaskMessageRecord[]>();
 const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
 const ACTIVE_RUNS_BY_TASK = new Set<string>();
 const ACTIVE_RUN_CANCEL_BY_TASK = new Map<string, { runId: string; requestId: string; cancel: () => void }>();
+const ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK = new Map<string, { runId: string; requestedAt: string }>();
 const NOTEBOOK_TRACE_STORE_LIMITS = getNotebookTraceStoreLimits();
 const TASKS_COLLECTION = 'notebook_tasks';
 const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
@@ -669,6 +670,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const [removedTask] = tasks.splice(index, 1);
     ACTIVE_RUNS_BY_TASK.delete(route.taskId);
     ACTIVE_RUN_CANCEL_BY_TASK.delete(route.taskId);
+    ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(route.taskId);
     clearNotebookTaskEventState(route.taskId);
     MESSAGES_BY_TASK.delete(route.taskId);
     ARTIFACTS_BY_TASK.delete(route.taskId);
@@ -931,11 +933,24 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
             });
         },
         onDispatched: ({ taskId, runId, requestId, cancel }) => {
-          ACTIVE_RUN_CANCEL_BY_TASK.set(taskId, { runId, requestId, cancel });
+          ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(taskId);
+          ACTIVE_RUN_CANCEL_BY_TASK.set(taskId, {
+            runId,
+            requestId,
+            cancel: () => {
+              ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.set(taskId, { runId, requestedAt: nowIso() });
+              cancel();
+            },
+          });
         },
         onFinalize: (taskId) => {
           ACTIVE_RUNS_BY_TASK.delete(taskId);
           ACTIVE_RUN_CANCEL_BY_TASK.delete(taskId);
+          ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.delete(taskId);
+        },
+        isCancellationRequested: () => {
+          const marker = ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.get(route.taskId);
+          return !!marker;
         },
         debugLog: debugNotebookRuntime,
         taskCollections: {

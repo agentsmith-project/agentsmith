@@ -489,6 +489,8 @@ export async function runNotebookTaskWithExternalAgent(input: {
       agent_chars: assistantMessage.content.length,
       reached_terminal: reachedTerminal,
     });
+    // Finalize active run before emitting task_update so run_state is authoritative (idle) on the final update.
+    onFinalize(taskId);
     emitTaskEvent(taskId, { type: 'message', data: assistantMessage });
     emitTaskEvent(taskId, { type: 'task_update', data: task });
     try {
@@ -502,6 +504,5 @@ export async function runNotebookTaskWithExternalAgent(input: {
         error: error instanceof Error ? error.message : 'persist_failed',
       });
     }
-    onFinalize(taskId);
   }
 }

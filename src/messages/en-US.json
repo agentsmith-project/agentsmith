@@ -675,7 +675,7 @@
       "trace_status_running": "Running",
       "trace_status_success": "Completed",
       "trace_status_error": "Needs retry",
-      "trace_status_cancelled": "Cancelled",
+      "trace_status_cancelled": "Interrupted",
       "trace_step_count": "{count, plural, one {# step} other {# steps}}",
       "trace_details_loading": "Loading execution details...",
       "trace_no_details": "No execution details yet",

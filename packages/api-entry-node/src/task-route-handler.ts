@@ -444,6 +444,38 @@ async function loadTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<Tas
   return sorted;
 }
 
+async function buildTaskRealtimeView(
+  deps: NodeApiDeps,
+  workspaceId: string,
+  projectId: string,
+  task: TaskRecord,
+): Promise<TaskListItem> {
+  await Promise.all([
+    loadTaskMessages(deps, task.id),
+    loadTaskArtifacts(deps, task.id),
+  ]);
+  const messages = getTaskMessages(task.id);
+  const artifacts = getTaskArtifacts(task.id);
+  const userTurnCount = messages.filter((item) => item.role === 'user').length;
+  const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
+  const agentPresence: TaskListItem['agent_presence'] = (
+    !agent ? 'unknown'
+    : agent.mode === 'internal' ? 'managed'
+    : (agent.presence === 'online' ? 'online' : 'offline')
+  );
+  return {
+    ...task,
+    agent_presence: agentPresence,
+    run_state: ACTIVE_RUNS_BY_TASK.has(task.id) ? 'running' : 'idle',
+    stats: {
+      user_turn_count: userTurnCount,
+      message_count: messages.length,
+      artifact_count: artifacts.length,
+      attached_input_count: task.attached_inputs.length,
+    },
+  };
+}
+
 function findTask(workspaceId: string, projectId: string, taskId: string): TaskRecord | undefined {
   return getTasks(workspaceId, projectId).find((item) => item.id === taskId);
 }
@@ -524,32 +556,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
     const start = (page - 1) * pageSize;
     const items = all.slice(start, start + pageSize);
-    const enrichedItems: TaskListItem[] = await Promise.all(items.map(async (task) => {
-      await Promise.all([
-        loadTaskMessages(deps, task.id),
-        loadTaskArtifacts(deps, task.id),
-      ]);
-      const messages = getTaskMessages(task.id);
-      const artifacts = getTaskArtifacts(task.id);
-      const userTurnCount = messages.filter((item) => item.role === 'user').length;
-      const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, task.agent_id);
-      const agentPresence: TaskListItem['agent_presence'] = (
-        !agent ? 'unknown'
-        : agent.mode === 'internal' ? 'managed'
-        : (agent.presence === 'online' ? 'online' : 'offline')
-      );
-      return {
-        ...task,
-        agent_presence: agentPresence,
-        run_state: ACTIVE_RUNS_BY_TASK.has(task.id) ? 'running' : 'idle',
-        stats: {
-          user_turn_count: userTurnCount,
-          message_count: messages.length,
-          artifact_count: artifacts.length,
-          attached_input_count: task.attached_inputs.length,
-        },
-      };
-    }));
+    const enrichedItems: TaskListItem[] = await Promise.all(
+      items.map((task) => buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task)),
+    );
     json(res, 200, {
       items: enrichedItems,
       total: all.length,
@@ -618,7 +627,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
     }
-    json(res, 200, task);
+    json(res, 200, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
     return true;
   }
 
@@ -903,7 +912,24 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         buildProxyUsername: (u) => sanitizePathPart(u.email || u.name || u.id),
         mapTaskMessagesForRuntime,
         updateTaskActivity,
-        emitTaskEvent: emitNotebookTaskEvent,
+        emitTaskEvent: (taskId, payload) => {
+          if (payload.type !== 'task_update') {
+            emitNotebookTaskEvent(taskId, payload);
+            return;
+          }
+          const current = findTask(route.workspaceId, route.projectId, taskId);
+          if (!current) {
+            emitNotebookTaskEvent(taskId, payload);
+            return;
+          }
+          void buildTaskRealtimeView(deps, route.workspaceId, route.projectId, current)
+            .then((enriched) => {
+              emitNotebookTaskEvent(taskId, { type: 'task_update', data: enriched });
+            })
+            .catch(() => {
+              emitNotebookTaskEvent(taskId, payload);
+            });
+        },
         onDispatched: ({ taskId, runId, requestId, cancel }) => {
           ACTIVE_RUN_CANCEL_BY_TASK.set(taskId, { runId, requestId, cancel });
         },
@@ -927,13 +953,19 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
       emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
       emitNotebookTaskEvent(route.taskId, { type: 'message', data: assistantMessage });
-      emitNotebookTaskEvent(route.taskId, { type: 'task_update', data: task });
+      emitNotebookTaskEvent(route.taskId, {
+        type: 'task_update',
+        data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task),
+      });
       json(res, 200, assistantMessage);
       return true;
     }
 
     emitNotebookTaskEvent(route.taskId, { type: 'message', data: message });
-    emitNotebookTaskEvent(route.taskId, { type: 'task_update', data: task });
+    emitNotebookTaskEvent(route.taskId, {
+      type: 'task_update',
+      data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task),
+    });
     json(res, 200, message);
     return true;
   }
@@ -1062,7 +1094,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (lastEventId) {
       replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId);
     } else {
-      writeNotebookTaskSseEvent(res, { type: 'task_update', data: findTask(route.workspaceId, route.projectId, route.taskId) });
+      const currentTask = findTask(route.workspaceId, route.projectId, route.taskId);
+      if (currentTask) {
+        writeNotebookTaskSseEvent(res, {
+          type: 'task_update',
+          data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, currentTask),
+        });
+      }
       for (const traceEvent of await loadTaskTraceEvents(deps, route.taskId)) {
         writeNotebookTaskSseEvent(res, { type: 'trace_event', data: traceEvent });
       }

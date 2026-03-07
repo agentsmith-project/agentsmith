@@ -43,6 +43,8 @@ interface PendingStream {
   push: (event: AgentStreamEvent) => void;
   close: () => void;
   fail: (error: Error) => void;
+  cancellationRequested?: boolean;
+  cancelTimeout?: NodeJS.Timeout;
 }
 
 interface AgentSocketState {
@@ -469,9 +471,8 @@ export class AgentRuntimeService {
       cancel: () => {
         const state = socket.pendingByRequestId.get(requestId);
         if (!state) return;
-        socket.pendingByRequestId.delete(requestId);
-        state.push({ type: 'done', finish_reason: 'cancelled' });
-        state.close();
+        if (state.cancellationRequested) return;
+        state.cancellationRequested = true;
         if (socket.ws.readyState === socket.ws.OPEN) {
           socket.ws.send(
             JSON.stringify({
@@ -483,6 +484,19 @@ export class AgentRuntimeService {
             }),
           );
         }
+        // Wait for terminal frame from runner after cancellation request.
+        // If runner is unresponsive, force-close this stream so task route can finalize.
+        state.cancelTimeout = setTimeout(() => {
+          const current = socket.pendingByRequestId.get(requestId);
+          if (!current) return;
+          socket.pendingByRequestId.delete(requestId);
+          current.push({
+            type: 'error',
+            error_code: 'AGENT_CANCEL_TIMEOUT',
+            error_message: 'agent_cancel_timeout',
+          });
+          current.close();
+        }, 12_000);
       },
     };
   }
@@ -491,6 +505,9 @@ export class AgentRuntimeService {
     const socket = this.socketsByAgentId.get(agentId);
     if (!socket) return;
     for (const pending of socket.pendingByRequestId.values()) {
+      if (pending.cancelTimeout) {
+        clearTimeout(pending.cancelTimeout);
+      }
       pending.push({
         type: 'error',
         error_code: 'AGENT_DISCONNECTED',
@@ -562,6 +579,9 @@ export class AgentRuntimeService {
     if (payload.type === 'agent.response.delta') {
       if (typeof payload.payload?.delta !== 'string') {
         socket.pendingByRequestId.delete(requestId);
+        if (pending.cancelTimeout) {
+          clearTimeout(pending.cancelTimeout);
+        }
         pending.push({
           type: 'error',
           error_code: 'AGENT_PROTOCOL_ERROR',
@@ -581,6 +601,9 @@ export class AgentRuntimeService {
       const eventPayload = parseTraceEventPayload(payload.payload);
       if (!eventPayload) {
         socket.pendingByRequestId.delete(requestId);
+        if (pending.cancelTimeout) {
+          clearTimeout(pending.cancelTimeout);
+        }
         pending.push({
           type: 'error',
           error_code: 'AGENT_PROTOCOL_ERROR',
@@ -598,6 +621,9 @@ export class AgentRuntimeService {
 
     if (payload.type === 'agent.response.done') {
       socket.pendingByRequestId.delete(requestId);
+      if (pending.cancelTimeout) {
+        clearTimeout(pending.cancelTimeout);
+      }
       pending.push({
         type: 'done',
         finish_reason:
@@ -613,6 +639,9 @@ export class AgentRuntimeService {
       const artifactPayload = parseArtifactPayload(payload.payload);
       if (!artifactPayload) {
         socket.pendingByRequestId.delete(requestId);
+        if (pending.cancelTimeout) {
+          clearTimeout(pending.cancelTimeout);
+        }
         pending.push({
           type: 'error',
           error_code: 'AGENT_PROTOCOL_ERROR',
@@ -630,6 +659,9 @@ export class AgentRuntimeService {
 
     if (payload.type === 'agent.response.error') {
       socket.pendingByRequestId.delete(requestId);
+      if (pending.cancelTimeout) {
+        clearTimeout(pending.cancelTimeout);
+      }
       pending.push({
         type: 'error',
         error_code:
@@ -642,6 +674,9 @@ export class AgentRuntimeService {
     }
 
     socket.pendingByRequestId.delete(requestId);
+    if (pending.cancelTimeout) {
+      clearTimeout(pending.cancelTimeout);
+    }
     pending.push({
       type: 'error',
       error_code: 'AGENT_PROTOCOL_ERROR',

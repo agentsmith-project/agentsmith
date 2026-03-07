@@ -677,7 +677,7 @@
       "trace_status_running": "执行中",
       "trace_status_success": "已完成",
       "trace_status_error": "需重试",
-      "trace_status_cancelled": "已取消",
+      "trace_status_cancelled": "用户中断",
       "trace_step_count": "{count, plural, one {# 步} other {# 步}}",
       "trace_details_loading": "正在加载执行详情...",
       "trace_no_details": "暂无执行详情",

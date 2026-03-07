@@ -625,11 +625,29 @@ export function TaskPage({
     setPendingMessages((prev) => prev.filter((item) => item.id !== id));
   }, []);
 
+  const backendRunActive = task?.run_state === 'running';
+
   const handleCancelActiveRun = React.useCallback(() => {
-    if (!(isAgentTurnRunning || sendMessage.isPending)) return;
+    if (!(isAgentTurnRunning || sendMessage.isPending || backendRunActive)) return;
     if (cancelActiveRun.isPending) return;
     void cancelActiveRun.mutateAsync();
-  }, [cancelActiveRun, isAgentTurnRunning, sendMessage.isPending]);
+  }, [backendRunActive, cancelActiveRun, isAgentTurnRunning, sendMessage.isPending]);
+
+  // Keep local streaming state consistent with backend authoritative run_state.
+  React.useEffect(() => {
+    if (task?.run_state !== 'idle') return;
+    if (sendMessage.isPending || cancelActiveRun.isPending) return;
+    if (!isAgentTurnRunning && !streamingMessageId && !streamingContent) return;
+    resetCurrentRunUiState();
+  }, [
+    cancelActiveRun.isPending,
+    isAgentTurnRunning,
+    resetCurrentRunUiState,
+    sendMessage.isPending,
+    streamingContent,
+    streamingMessageId,
+    task?.run_state,
+  ]);
 
   React.useEffect(() => {
     const isAgentUnavailable = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
@@ -898,9 +916,16 @@ export function TaskPage({
 
   const isDisabled = task.status === 'archived';
   const isExternalAgentOffline = taskAgent?.mode === 'external' && taskAgent.presence !== 'online';
-  const agentIsBusy = sendMessage.isPending || isAgentTurnRunning;
-  const runElapsedSeconds = runStartedAt
-    ? Math.max(0, Math.floor((runClockNow - runStartedAt) / 1000))
+  const agentIsBusy = sendMessage.isPending || isAgentTurnRunning || backendRunActive;
+  const fallbackRunStartedAt = backendRunActive
+    ? (() => {
+        const parsed = Date.parse(task.last_activity_at);
+        return Number.isFinite(parsed) ? parsed : Date.now();
+      })()
+    : null;
+  const effectiveRunStartedAt = runStartedAt ?? fallbackRunStartedAt;
+  const runElapsedSeconds = effectiveRunStartedAt
+    ? Math.max(0, Math.floor((runClockNow - effectiveRunStartedAt) / 1000))
     : 0;
   const activeTraceEvents = streamingMessageId ? (traceEventsByMessageId[streamingMessageId] ?? []) : [];
   type RunActionKind = 'command' | 'tool' | 'output' | 'artifact' | 'lifecycle' | 'error' | 'system';

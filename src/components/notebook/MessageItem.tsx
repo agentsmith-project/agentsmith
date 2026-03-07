@@ -224,6 +224,12 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
     return null;
   };
   const runSummaryStatus = mapFinalStatus(runSummaryEvent?.details?.final_status);
+  const hasCancelledLifecycle = sorted.some((evt) => (
+    evt.name === 'run.lifecycle'
+    && (evt.details?.run_phase === 'cancelled' || evt.status === 'cancelled')
+  ));
+  const hasCancelledTrace = sorted.some((evt) => evt.status === 'cancelled');
+  const cancellationOverride = hasCancelledLifecycle || hasCancelledTrace;
   const lifecyclePhase = runLifecycleEvent?.details?.run_phase;
   const lifecycleStatus = (() => {
     if (
@@ -269,7 +275,9 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
       ? 'running'
       : terminalStatus ?? (runningIndex >= 0 ? 'running' : 'idle')
   );
-  const resolvedStatus = runSummaryStatus ?? lifecycleStatus ?? inferredStatus;
+  const resolvedStatus = cancellationOverride
+    ? 'cancelled'
+    : runSummaryStatus ?? lifecycleStatus ?? inferredStatus;
   const startedAt = sorted[0]?.at ? Date.parse(sorted[0].at) : NaN;
   const endedAtEvent = terminalIndex >= 0 ? sorted[terminalIndex] : sorted[sorted.length - 1];
   const endedAtCandidate = endedAtEvent?.at ? Date.parse(endedAtEvent.at) : NaN;

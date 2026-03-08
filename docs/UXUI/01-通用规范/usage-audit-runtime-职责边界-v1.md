@@ -13,7 +13,9 @@
 允许：
 
 1. 今日请求/错误/Token 及时间趋势展示
-2. endpoint 限制剩余量展示
+2. 按 endpoint 分组展示限制数据（每个 endpoint 独立卡片）
+3. 每个 endpoint 卡片内固定展示 `rate limit` / `spending limit` 两组
+4. 每组按时间窗口展示（如 `minute` / `5h` / `day`，无窗口细分时回退 `current`）
 3. 刷新、7/30 天切换
 
 不允许：
@@ -21,6 +23,7 @@
 1. 管理员审计处置动作
 2. 运行时深度诊断面板
 3. 高级/详细模式切换
+4. 以单一聚合进度条替代 endpoint 维度信息（导致用户无法判断具体受限 endpoint）
 
 ### 2.2 Audit（管理员）
 

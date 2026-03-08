@@ -1,6 +1,6 @@
 # Frontend-Backend Gating Matrix (Page/Operation Level)
 
-Last updated: 2026-03-04
+Last updated: 2026-03-08
 Owner: Frontend
 Audience: Backend auth team, QA, FE
 
@@ -54,3 +54,6 @@ Backend enforces `401/403`; frontend applies route/component gates.
 4. `usage` module is user-self scope only; backend must always enforce `end_user_id = current_user_id`.
 5. Do not introduce new project permission points without updating this matrix and permission constants.
 6. `usage` should remain a low-cognitive personal usage view only; admin audit/troubleshooting actions belong to `audit` page.
+7. `GET /limits/summary` should support endpoint-level limit projection for Usage UI:
+   - preferred: return per-endpoint rows with `limit_kind` (`rate_limit`/`spending_limit`) + `window_key` (`minute`/`5h`/`day`/`current`) + `limit_used` + `limit_total|limit_limit`.
+   - fallback compatibility: if only aggregated row exists, FE renders it as `current` window and infers kind conservatively.

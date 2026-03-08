@@ -9,6 +9,7 @@ Owner: Frontend
 2. `audit` remains admin-wide investigation and governance entry.
 3. `runtime` remains technical observability/diagnostics (not user usage home).
 4. Resource governance terminology uses only `rate limit` and `spending limit`.
+5. `usage` limit area remains endpoint-grouped (`rate limit` + `spending limit` + time windows), not a single aggregated progress card.
 
 ## 2. Contract Gate (must pass)
 
@@ -72,7 +73,8 @@ If visual fails because baseline is missing or intentionally changed:
    npm run test:e2e:lane:mock:visual:update
    ```
 2. Review `audit` and `usage` full-page outputs for low-cognitive readability and role separation.
-3. Commit updated snapshots with explicit note:
+3. Verify `usage` endpoint cards show both `rate limit` and `spending limit` groups (window rows when backend provides them).
+4. Commit updated snapshots with explicit note:
    - `visual baseline update: usage/audit/notebook`.
 
 ## 6. Release Notes (required)

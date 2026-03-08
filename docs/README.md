@@ -6,6 +6,8 @@
 
 - [项目宪法](./项目宪法.md)
 - [Contracts Index](./contracts/README.md)
+- [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
+- `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)
 - [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 

@@ -180,4 +180,14 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
   });
+
+  it('keeps lite view for non-admin users even with advanced query param', () => {
+    canManage = false;
+    searchParamsState.value = 'view=advanced';
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
+  });
 });

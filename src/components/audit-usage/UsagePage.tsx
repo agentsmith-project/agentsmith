@@ -160,8 +160,7 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const canExportUsage = useHasPermission('project:manage');
-  const explicitUsageView = searchParams.get('view');
-  const isLiteMode = !canExportUsage && explicitUsageView !== 'advanced';
+  const isLiteMode = !canExportUsage;
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
@@ -596,12 +595,6 @@ export function UsagePage({
           kpi={kpiData}
           records={liteData?.items ?? []}
           loading={liteLoading || kpiLoading}
-          onOpenAdvanced={() => {
-            const next = new URLSearchParams(searchParamsKey);
-            next.set('view', 'advanced');
-            const query = next.toString();
-            router.push(query ? `${pathname}?${query}` : pathname);
-          }}
         />
       </PageLayout>
     );

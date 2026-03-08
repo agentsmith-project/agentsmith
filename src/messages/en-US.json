@@ -148,7 +148,7 @@
     }
   },
   "nav": {
-    "overview": "AI Ops Home",
+    "overview": "Project Hub",
     "runtime": "Runtime",
     "chat": "Chat",
     "notebook": "Notebook",
@@ -666,6 +666,7 @@
       "sandbox_starting_title": "Preparing managed runtime",
       "sandbox_starting_description": "Starting internal agent sandbox. First response may take up to a minute.",
       "open_runtime_observability": "Open Runtime",
+      "open_usage": "Open Usage",
       "open_release_ops": "Open Release Ops",
       "open_agent_diagnostics": "Open Agent Diagnostics",
       "sse_debug_title": "SSE Debug (latest 5)",
@@ -2603,8 +2604,8 @@
     }
   },
   "overview": {
-    "title": "AI Ops Home",
-    "subtitle": "Runtime health, cost posture, release readiness, and incident ownership for this project.",
+    "title": "Project Hub",
+    "subtitle": "Integrated entry for project operations, usage, and governance.",
     "time_ranges": {
       "last_24h": "Last 24 hours",
       "last_7d": "Last 7 days"

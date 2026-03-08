@@ -409,7 +409,7 @@ describe('ConversationPanel', () => {
           connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
           diagnosticsLinks={{
             runtime: '/runtime-observability?result=error',
-            releaseOps: '/release-ops?result=error',
+            usage: '/usage?result=error',
             agent: '/agents?agent=agent_123',
           }}
         />
@@ -419,9 +419,9 @@ describe('ConversationPanel', () => {
         'href',
         '/runtime-observability?result=error',
       );
-      expect(screen.getByTestId('notebook__sse-status-open-release-ops')).toHaveAttribute(
+      expect(screen.getByTestId('notebook__sse-status-open-usage')).toHaveAttribute(
         'href',
-        '/release-ops?result=error',
+        '/usage?result=error',
       );
       expect(screen.getByTestId('notebook__sse-status-open-agent')).toHaveAttribute(
         'href',

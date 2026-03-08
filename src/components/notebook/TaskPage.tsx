@@ -138,7 +138,7 @@ export function TaskPage({
   // WP-03: Updated to new runtime-console route with appropriate tabs
   const notebookDiagnosticsLinks = React.useMemo(() => ({
     runtime: `${basePath}/runtime-console?tab=monitoring${diagnosticsQuery}`,
-    releaseOps: `${basePath}/runtime-console?tab=control${diagnosticsQuery}`,
+    usage: `${basePath}/usage${diagnosticsQuery}`,
     agent: buildAgentDiagnosticsLink(basePath, task?.agent_id ?? null),
   }), [basePath, diagnosticsQuery, task?.agent_id]);
 

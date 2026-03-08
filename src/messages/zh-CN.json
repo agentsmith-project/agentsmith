@@ -150,7 +150,7 @@
     }
   },
   "nav": {
-    "overview": "AI Ops Home",
+    "overview": "项目入口",
     "runtime": "运行时",
     "chat": "聊天",
     "notebook": "Notebook",
@@ -668,6 +668,7 @@
       "sandbox_starting_title": "正在准备托管运行环境",
       "sandbox_starting_description": "内部 Agent 沙箱正在启动，首次响应可能需要几十秒。",
       "open_runtime_observability": "打开 Runtime",
+      "open_usage": "打开用量",
       "open_release_ops": "打开 Release Ops",
       "open_agent_diagnostics": "打开 Agent 诊断",
       "sse_debug_title": "SSE 调试（最近 5 条）",
@@ -2605,8 +2606,8 @@
     }
   },
   "overview": {
-    "title": "AI Ops Home",
-    "subtitle": "集中查看项目的运行健康、成本态势、发布状态与 incident 责任归属。",
+    "title": "项目入口",
+    "subtitle": "项目功能入口与使用、治理的统一导航。",
     "time_ranges": {
       "last_24h": "最近 24 小时",
       "last_7d": "最近 7 天"

@@ -53,7 +53,7 @@ export interface ConversationPanelProps {
   sending?: boolean;
   diagnosticsLinks?: {
     runtime: string;
-    releaseOps: string;
+    usage: string;
     agent?: string | null;
   };
   sandboxStarting?: boolean;
@@ -178,11 +178,11 @@ export function ConversationPanel({
                 {t('open_runtime_observability')}
               </Link>
               <Link
-                href={diagnosticsLinks.releaseOps}
+                href={diagnosticsLinks.usage}
                 className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                data-testid="notebook__sse-status-open-release-ops"
+                data-testid="notebook__sse-status-open-usage"
               >
-                {t('open_release_ops')}
+                {t('open_usage')}
               </Link>
               {diagnosticsLinks.agent ? (
                 <Link

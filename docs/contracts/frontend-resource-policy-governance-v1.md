@@ -11,8 +11,7 @@ Define the MVP model for resource access and consumption governance across manag
 ## Scope
 
 1. Resource policy management scope includes:
-- `endpoint`
-- `agent`
+- `endpoint` (LLM endpoint only, MVP scope)
 2. Only users with `project:manage` can create/update/delete resource policy.
 3. Runtime use-path checks remain resource-driven and policy-driven.
 
@@ -54,7 +53,7 @@ Conflict rule:
 - spending: `endpoint.spending_usd_per_minute`, `endpoint.spending_usd_per_5_hours`, `endpoint.spending_usd_per_day`
 
 2. `agent`
-- runtime rate/spending enforcement: none in MVP
+- out of scope in MVP (no policy management and no runtime enforcement)
 
 ## Runtime Enforcement Flow
 

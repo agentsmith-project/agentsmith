@@ -39,7 +39,6 @@ describe('GovernanceDrilldownBanner', () => {
       expect.stringContaining('gov_from=organization_overview'),
     );
     expect(screen.getByTestId('governance-drilldown__open-audit')).toBeInTheDocument();
-    expect(screen.getByTestId('governance-drilldown__open-release-ops')).toBeInTheDocument();
     expect(screen.getByTestId('governance-drilldown__open-members')).toHaveAttribute(
       'href',
       expect.stringContaining('member_id=wm_1'),

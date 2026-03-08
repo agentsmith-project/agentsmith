@@ -70,7 +70,6 @@ export default function RuntimeObservabilityPage({ params }: RuntimeObservabilit
   const basePath = `/${locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}`;
   const runtimeControlPlaneHref = `${basePath}/settings?tab=runtime`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(initialFilters, { panel: 'usage' })}`;
-  const releaseOpsHref = `${basePath}/release-ops${buildSharedOpsFilterQuery(initialFilters)}`;
 
   return (
     <PageState state="success">
@@ -90,17 +89,10 @@ export default function RuntimeObservabilityPage({ params }: RuntimeObservabilit
                 </Link>
                 <Link
                   href={usageHref}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
                   data-testid="runtime-observability__open-usage"
                 >
                   {commonT('open_usage')}
-                </Link>
-                <Link
-                  href={releaseOpsHref}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="runtime-observability__open-release-ops"
-                >
-                  {commonT('open_release_ops')}
                 </Link>
               </div>
             )}

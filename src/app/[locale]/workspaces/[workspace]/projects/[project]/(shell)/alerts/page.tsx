@@ -199,7 +199,6 @@ export default function AlertsPage({ params }: AlertsPageProps) {
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const runtimeHref = `${basePath}/runtime-observability${buildSharedOpsFilterQuery(timeRange)}`;
-  const releaseOpsHref = `${basePath}/release-ops${buildSharedOpsFilterQuery(timeRange)}`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
 
   return (
@@ -212,15 +211,8 @@ export default function AlertsPage({ params }: AlertsPageProps) {
             actions={(
               <div className="flex flex-wrap items-center gap-2">
                 <Link
-                  href={releaseOpsHref}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="alerts__open-release-ops"
-                >
-                  {tCommon('open_release_ops')}
-                </Link>
-                <Link
                   href={runtimeHref}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
                   data-testid="alerts__open-runtime"
                 >
                   {tCommon('open_runtime')}

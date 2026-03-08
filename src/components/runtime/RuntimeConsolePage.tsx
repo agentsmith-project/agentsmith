@@ -1,7 +1,7 @@
 /**
  * Runtime Console Page
  *
- * Unified operations console combining runtime observability, alerts, control, and reports.
+ * Unified operations console combining runtime observability, alerts, and control.
  * Part of the navigation restructure WP-02.
  *
  * **Permission Model**:
@@ -10,7 +10,6 @@
  * - Monitoring: project:endpoint:use
  * - Alerts: project:endpoint:use
  * - Control: project:manage
- * - Reports: project:endpoint:use
  */
 
 'use client';
@@ -23,11 +22,10 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { RuntimeObservabilityConsole } from '@/components/runtime/RuntimeObservabilityConsole';
 import { AlertCenterPage } from '@/components/alerts/AlertCenterPage';
-import { ReleaseOpsDashboard } from '@/components/runtime/ReleaseOpsDashboard';
 import { RuntimeControlPlanePanel } from '@/components/settings/RuntimeControlPlanePanel';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 
-export type RuntimeConsoleTab = 'overview' | 'monitoring' | 'alerts' | 'control' | 'reports';
+export type RuntimeConsoleTab = 'overview' | 'monitoring' | 'alerts' | 'control';
 
 /** Tab configuration with required permissions */
 interface TabConfig {
@@ -43,7 +41,6 @@ const TAB_CONFIGS: readonly TabConfig[] = [
   { value: 'monitoring', labelKey: 'tabs.monitoring', permission: 'project:endpoint:use', testId: 'tabs-trigger-monitoring' },
   { value: 'alerts', labelKey: 'tabs.alerts', permission: 'project:endpoint:use', testId: 'tabs-trigger-alerts' },
   { value: 'control', labelKey: 'tabs.control', permission: 'project:manage', testId: 'tabs-trigger-control' },
-  { value: 'reports', labelKey: 'tabs.reports', permission: 'project:endpoint:use', testId: 'tabs-trigger-reports' },
 ] as const;
 
 export interface RuntimeConsolePageProps {
@@ -66,7 +63,6 @@ export function RuntimeConsolePage({
   const canViewMonitoring = useHasPermission('project:endpoint:use');
   const canViewAlerts = useHasPermission('project:endpoint:use');
   const canViewControl = useHasPermission('project:manage');
-  const canViewReports = useHasPermission('project:endpoint:use');
 
   // Map of tab permissions
   const tabPermissions: Record<RuntimeConsoleTab, boolean> = React.useMemo(() => ({
@@ -74,8 +70,7 @@ export function RuntimeConsolePage({
     monitoring: canViewMonitoring,
     alerts: canViewAlerts,
     control: canViewControl,
-    reports: canViewReports,
-  }), [canViewOverview, canViewMonitoring, canViewAlerts, canViewControl, canViewReports]);
+  }), [canViewOverview, canViewMonitoring, canViewAlerts, canViewControl]);
 
   // Filter tabs to only those user has permission for
   const accessibleTabs = React.useMemo(() => {
@@ -91,7 +86,7 @@ export function RuntimeConsolePage({
   const [activeTab, setActiveTab] = React.useState<RuntimeConsoleTab>(() => {
     const tabParam = searchParams.get('tab');
     if (tabParam === 'overview' || tabParam === 'monitoring' || tabParam === 'alerts' ||
-        tabParam === 'control' || tabParam === 'reports') {
+        tabParam === 'control') {
       const tab = tabParam as RuntimeConsoleTab;
       // Only allow if user has permission
       if (tabPermissions[tab]) {
@@ -126,8 +121,7 @@ export function RuntimeConsolePage({
     let needsUrlCorrection = false;
 
     if (tabParam === 'overview' || tabParam === 'monitoring' ||
-        tabParam === 'alerts' || tabParam === 'control' ||
-        tabParam === 'reports') {
+        tabParam === 'alerts' || tabParam === 'control') {
       const requestedTab = tabParam as RuntimeConsoleTab;
       // If requested tab is accessible, use it; otherwise fall back to first accessible
       if (tabPermissions[requestedTab]) {
@@ -245,12 +239,6 @@ export function RuntimeConsolePage({
           </TabsContent>
         )}
 
-        {/* Reports Tab - requires project:endpoint:use */}
-        {canViewReports && (
-          <TabsContent value="reports" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-            <ReleaseOpsDashboard />
-          </TabsContent>
-        )}
       </Tabs>
     </PageLayout>
   );

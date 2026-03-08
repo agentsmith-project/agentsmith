@@ -10,13 +10,13 @@ Central index for AgentSmith documentation. Product scope and principles are in 
 | [Product Engineering Governance Methodology](./design/agentsmith-product-engineering-governance-methodology-v1.md) | 产品设计、工程交付与治理方法论基线 |
 | [Project Maturity & Productization Review v1](./design/project-maturity-productization-review-v1.md) | 当前项目成熟度、产品化进度与下一阶段主要缺口评估 |
 | [Next Mainline Priority Review v2](./design/next-mainline-priority-review-v2.md) | 当前基线收口后的下一主线优先级评估 |
-| [Next Mainline Priority Review v3](./design/next-mainline-priority-review-v3.md) | 当前最新下一主线优先级评审（组织级治理总控） |
+| [Next Mainline Priority Review v3](./design/next-mainline-priority-review-v3.md) | 历史主线优先级评审（组织级治理总控，已归档） |
 | [Build Execution Reliability & Trace Fidelity Closure Review v1](./design/build-execution-reliability-trace-fidelity-closure-review-v1.md) | Build 执行可靠性与轨迹保真主线第一阶段收口结论 |
 | [Enterprise Administration & Workspace Governance Priority Review v1](./design/enterprise-administration-workspace-governance-priority-review-v1.md) | 当前基线下企业管理与工作区治理主线的优先级评估 |
 | [Enterprise Administration & Workspace Governance Closure Review v1](./design/enterprise-administration-workspace-governance-closure-review-v1.md) | 企业管理与工作区治理主线第一阶段收口结论 |
 | [Governance Explainability Closure Review v1](./design/governance-explainability-closure-review-v1.md) | 治理解释性与有效访问控制台第一阶段收口结论与基线定义 |
-| [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 当前 UX 基线的设计原则与任务化信息架构 |
-| [AI Ops Home UX Closure Review v1](./design/ai-ops-home-ux-closure-review-v1.md) | 当前 UX 主线的收口结论、残余低优先级债与基线定义 |
+| [AI Ops Home UX Strategy v1](./design/ai-ops-home-ux-strategy-v1.md) | 历史 UX 方案（已由 Project Hub 方向替代） |
+| [AI Ops Home UX Closure Review v1](./design/ai-ops-home-ux-closure-review-v1.md) | 历史 UX 收口记录（已归档） |
 
 ## Contracts (`./contracts/`)
 
@@ -42,9 +42,9 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 ## Release / Validation
 
 - [User Guides Index](./user-guides/README.md) — 用户手册总入口（MVP-first）
-- [Release Verification](./user-guides/release-verification.md) — 当前发布验证、lane/gate、report、runner 与排障入口
+- [Release Verification](./user-guides/release-verification.md) — 历史发布验证文档（非当前主线）
 - [MVP Freeze Checklist](./release/mvp-freeze-checklist.md) — 预发布冻结阶段一键检查、手工验收与回滚基线
-- [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
+- [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 历史治理控制面文档（非当前主线）
 - [Third-Party Accounts & Feishu OAuth](./user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth 配置、回调模式与手动验收
 - [internal-release-checklist](./release/internal-release-checklist.md) — 内部发布检查清单
 - [internal-release-capability-matrix](./release/internal-release-capability-matrix.md) — 当前内部发布能力边界（主线 + 治理）
@@ -53,8 +53,8 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 
 ## Current Baselines
 
-- [llm-runtime-final-implementation-plan-v2](./plans/llm-runtime-final-implementation-plan-v2.md) — Runtime / Usage / Release Governance 产品与工程基线
-- [ai-ops-home-ux-closure-review-v1](./design/ai-ops-home-ux-closure-review-v1.md) — 当前 UX 主线收口与基线定义
+- [llm-runtime-final-implementation-plan-v2](./plans/llm-runtime-final-implementation-plan-v2.md) — Runtime / Usage 历史实现基线（含已归档 release 语义）
+- [ai-ops-home-ux-closure-review-v1](./design/ai-ops-home-ux-closure-review-v1.md) — 历史 UX 收口记录
 - [governance-explainability-closure-review-v1](./design/governance-explainability-closure-review-v1.md) — 当前治理解释性主线收口与基线定义
 - [internal-release-note-2026-02-28-closure](./release/internal-release-note-2026-02-28-closure.md) — 当前 release closure 基线
 - [governance-explainability-effective-access-console-plan-v1](./plans/governance-explainability-effective-access-console-plan-v1.md) — 当前 explainability 与 effective access 已完成实施计划
@@ -63,10 +63,10 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 - [enterprise-administration-workspace-governance-plan-v1](./plans/enterprise-administration-workspace-governance-plan-v1.md) — 当前推荐的企业管理与工作区治理主线实施计划
 - [enterprise-administration-workspace-governance-closure-review-v1](./design/enterprise-administration-workspace-governance-closure-review-v1.md) — 企业管理与工作区治理主线收口与验收基线
 
-## Next Mainline (Current Recommendation)
+## Next Mainline (Archived Recommendation)
 
-- [next-mainline-priority-review-v3](./design/next-mainline-priority-review-v3.md) — 当前推荐主线：组织治理汇总与企业运维总控台
-- [organization-governance-rollup-enterprise-ops-console-plan-v1](./plans/organization-governance-rollup-enterprise-ops-console-plan-v1.md) — 下一主线执行计划（WP-01 ~ WP-05）
+- [next-mainline-priority-review-v3](./design/next-mainline-priority-review-v3.md) — 已归档主线：组织治理汇总与企业运维总控台
+- [organization-governance-rollup-enterprise-ops-console-plan-v1](./plans/organization-governance-rollup-enterprise-ops-console-plan-v1.md) — 已归档执行计划（WP-01 ~ WP-05）
 
 ## Other
 

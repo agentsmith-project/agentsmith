@@ -44,10 +44,6 @@ vi.mock('@/components/alerts/AlertCenterPage', () => ({
   ),
 }));
 
-vi.mock('@/components/runtime/ReleaseOpsDashboard', () => ({
-  ReleaseOpsDashboard: () => <div data-testid="release-ops-dashboard">Release Ops Dashboard</div>,
-}));
-
 vi.mock('@/components/settings/RuntimeControlPlanePanel', () => ({
   RuntimeControlPlanePanel: () => <div data-testid="runtime-control-plane-panel">Runtime Control Plane Panel</div>,
 }));
@@ -108,7 +104,7 @@ describe('RuntimeConsolePage', () => {
     render(<RuntimeConsolePage workspaceId="ws_1" projectId="proj_1" />);
 
     const tabsList = screen.getByTestId('tabs-list');
-    ['overview', 'monitoring', 'alerts', 'control', 'reports'].forEach((tab) => {
+    ['overview', 'monitoring', 'alerts', 'control'].forEach((tab) => {
       expect(within(tabsList).getByTestId(`tabs-trigger-${tab}`)).toBeInTheDocument();
     });
   });
@@ -123,7 +119,6 @@ describe('RuntimeConsolePage', () => {
     expect(() => within(tabsList).getByTestId('tabs-trigger-overview')).toThrow();
     expect(() => within(tabsList).getByTestId('tabs-trigger-monitoring')).toThrow();
     expect(() => within(tabsList).getByTestId('tabs-trigger-alerts')).toThrow();
-    expect(() => within(tabsList).getByTestId('tabs-trigger-reports')).toThrow();
     expect(within(tabsList).getByTestId('tabs-trigger-control')).toBeInTheDocument();
   });
 

@@ -127,16 +127,18 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
         </div>
       ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
-        <Link
-          href={`/${locale}/workspaces/overview`}
-          className={cn(
-            'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
-            'hover:bg-hover',
-          )}
-          data-testid="governance-drilldown__back-org-overview"
-        >
-          {t('governance_drilldown_back_org')}
-        </Link>
+        {workspaceId && projectId ? (
+          <Link
+            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/overview`}
+            className={cn(
+              'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
+              'hover:bg-hover',
+            )}
+            data-testid="governance-drilldown__back-org-overview"
+          >
+            {t('governance_drilldown_back_org')}
+          </Link>
+        ) : null}
         {workspaceId && projectId ? (
           <Link
             href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy${drilldownQuery}`}
@@ -159,18 +161,6 @@ export function GovernanceDrilldownBanner({ context, locale }: GovernanceDrilldo
             data-testid="governance-drilldown__open-audit"
           >
             {t('governance_drilldown_open_audit')}
-          </Link>
-        ) : null}
-        {workspaceId && projectId ? (
-          <Link
-            href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${drilldownQuery}`}
-            className={cn(
-              'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
-              'hover:bg-hover',
-            )}
-            data-testid="governance-drilldown__open-release-ops"
-          >
-            {t('governance_drilldown_open_release_ops')}
           </Link>
         ) : null}
         {workspaceId && projectId && context.gov_member_id ? (

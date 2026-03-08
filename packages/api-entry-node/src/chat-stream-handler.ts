@@ -25,7 +25,8 @@ import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
 import {
-  checkAndConsumeProjectResourceRateLimitsForUser,
+  checkProjectEndpointRateLimitsForUser,
+  checkProjectEndpointSpendingLimitsForUser,
 } from './project-resource-policy-enforcer.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
@@ -262,6 +263,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   const endpoint = endpointId
     ? await deps.endpointResourceService.getEndpoint(route.workspaceId, route.projectId, endpointId)
     : null;
+  const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
   if (!useExternalAgent) {
     if (!endpoint || endpoint.status !== 'active' || !endpoint.credential_ref) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'chat_endpoint_unavailable' });
@@ -283,10 +285,10 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       });
       return true;
     }
-    const endpointRateCheck = checkAndConsumeProjectResourceRateLimitsForUser({
+    const endpointRateCheck = await checkProjectEndpointRateLimitsForUser({
+      docStore: deps.docStore,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      resourceType: 'endpoint',
       resourceId: endpoint.id,
       userId: user.id,
       policy: endpointPolicyCheck.policy,
@@ -300,15 +302,18 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         result: 'error',
         resourceType: 'endpoint',
         resourceId: endpoint.id,
+        requestId,
         errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
         errorMessage: 'resource_policy_rate_limited',
         metadata: {
           governance_kind: 'resource_policy',
           enforcement_kind: 'rate_limit',
-          effective_limit_per_minute: endpointRateCheck.effective_limit_per_minute,
+          effective_limit: endpointRateCheck.effective_limit,
+          current_requests: endpointRateCheck.current_requests,
+          window_seconds: endpointRateCheck.window_seconds,
           retry_after_seconds: endpointRateCheck.retry_after_seconds,
           scope: endpointRateCheck.scope,
-          rate_key: 'endpoint.requests_per_minute',
+          rate_key: endpointRateCheck.rate_key,
           source: 'chat_stream_preflight',
           session_id: route.sessionId,
         },
@@ -319,6 +324,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         resourceType: 'endpoint',
         resourceId: endpoint.id,
         endUserId: user.id,
+        requestId,
         requests: 1,
         result: 'error',
         errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
@@ -326,10 +332,12 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           stage: 'preflight',
           governance_kind: 'resource_policy',
           enforcement_kind: 'rate_limit',
-          effective_limit_per_minute: endpointRateCheck.effective_limit_per_minute,
+          effective_limit: endpointRateCheck.effective_limit,
+          current_requests: endpointRateCheck.current_requests,
+          window_seconds: endpointRateCheck.window_seconds,
           retry_after_seconds: endpointRateCheck.retry_after_seconds,
           scope: endpointRateCheck.scope,
-          rate_key: 'endpoint.requests_per_minute',
+          rate_key: endpointRateCheck.rate_key,
           source: 'chat_stream_preflight',
           session_id: route.sessionId,
         },
@@ -341,6 +349,84 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         resource_type: 'endpoint',
         resource_id: endpoint.id,
         retry_after_seconds: endpointRateCheck.retry_after_seconds,
+      });
+      return true;
+    }
+    const estimatedCostPerTokenUsd = (() => {
+      const profile = endpoint.runtime_profile;
+      if (!profile) return undefined;
+      const inputPrice = typeof profile.price_input_per_1m === 'number' ? profile.price_input_per_1m : undefined;
+      const outputPrice = typeof profile.price_output_per_1m === 'number' ? profile.price_output_per_1m : undefined;
+      const effectivePricePer1M = Math.max(inputPrice ?? 0, outputPrice ?? 0);
+      if (!Number.isFinite(effectivePricePer1M) || effectivePricePer1M <= 0) return undefined;
+      return effectivePricePer1M / 1_000_000;
+    })();
+    const endpointSpendingCheck = await checkProjectEndpointSpendingLimitsForUser({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      resourceId: endpoint.id,
+      userId: user.id,
+      policy: endpointPolicyCheck.policy,
+      estimatedCostPerTokenUsd,
+    });
+    if (!endpointSpendingCheck.allowed) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.spending_limited',
+        result: 'error',
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        requestId,
+        errorCode: 'RESOURCE_POLICY_SPENDING_LIMITED',
+        errorMessage: 'resource_policy_spending_limited',
+        metadata: {
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'spending_limit',
+          spending_key: endpointSpendingCheck.spending_key,
+          effective_limit_usd: endpointSpendingCheck.effective_limit_usd,
+          current_spending_usd: endpointSpendingCheck.current_spending_usd,
+          window_seconds: endpointSpendingCheck.window_seconds,
+          retry_after_seconds: endpointSpendingCheck.retry_after_seconds,
+          scope: endpointSpendingCheck.scope,
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        endUserId: user.id,
+        requestId,
+        requests: 1,
+        result: 'error',
+        errorCode: 'RESOURCE_POLICY_SPENDING_LIMITED',
+        metadata: {
+          stage: 'preflight',
+          governance_kind: 'resource_policy',
+          enforcement_kind: 'spending_limit',
+          spending_key: endpointSpendingCheck.spending_key,
+          effective_limit_usd: endpointSpendingCheck.effective_limit_usd,
+          current_spending_usd: endpointSpendingCheck.current_spending_usd,
+          window_seconds: endpointSpendingCheck.window_seconds,
+          retry_after_seconds: endpointSpendingCheck.retry_after_seconds,
+          scope: endpointSpendingCheck.scope,
+          source: 'chat_stream_preflight',
+          session_id: route.sessionId,
+        },
+      });
+      res.setHeader('Retry-After', String(endpointSpendingCheck.retry_after_seconds));
+      json(res, 429, {
+        error_code: 'RESOURCE_POLICY_SPENDING_LIMITED',
+        message: 'resource_policy_spending_limited',
+        resource_type: 'endpoint',
+        resource_id: endpoint.id,
+        spending_key: endpointSpendingCheck.spending_key,
+        retry_after_seconds: endpointSpendingCheck.retry_after_seconds,
       });
       return true;
     }
@@ -598,7 +684,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   const streamId = `stream_${Date.now()}_${Math.random().toString(16).slice(2)}`;
   const streamStartedAt = new Date().toISOString();
   const streamStartedAtMs = Date.now();
-  const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
   await writeProjectAuditEvent(deps, {
     workspaceId: route.workspaceId,
     projectId: route.projectId,
@@ -1413,6 +1498,24 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         errorCode,
         metadata: { stream_id: streamId, endpoint_id: endpoint.id },
       });
+      await writeProjectUsageFact(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        resourceType: 'endpoint',
+        resourceId: endpoint.id,
+        endUserId: user.id,
+        requestId,
+        requests: 1,
+        durationMs: Date.now() - streamStartedAtMs,
+        tokensTotal: usageTokens ?? undefined,
+        result: 'error',
+        errorCode,
+        metadata: {
+          stream_id: streamId,
+          source: 'chat_stream',
+          session_id: route.sessionId,
+        },
+      });
       if (useExternalAgent && session.external_agent_id) {
         await writeProjectUsageFact(deps, {
           workspaceId: route.workspaceId,
@@ -1531,6 +1634,37 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       endpoint_id: endpoint?.id ?? null,
       message_status: messageStatus,
       stop_reason: stopReason ?? null,
+    },
+  });
+  await writeProjectUsageFact(deps, {
+    workspaceId: route.workspaceId,
+    projectId: route.projectId,
+    resourceType: 'endpoint',
+    resourceId: endpoint.id,
+    endUserId: user.id,
+    requestId,
+    requests: 1,
+    durationMs,
+    tokensTotal: usageTokens ?? undefined,
+    result: messageStatus === 'stopped' ? 'error' : 'ok',
+    ...(messageStatus === 'stopped' ? { errorCode: 'CHAT_STREAM_STOPPED' } : {}),
+    metadata: {
+      ...(typeof usageTokens === 'number' && usageTokens > 0 && endpoint?.runtime_profile
+        ? {
+          cost_usd: Number(
+            (
+              usageTokens
+              * (Math.max(endpoint.runtime_profile.price_input_per_1m, endpoint.runtime_profile.price_output_per_1m) / 1_000_000)
+            ).toFixed(6),
+          ),
+        }
+        : {}),
+      stream_id: streamId,
+      source: 'chat_stream',
+      session_id: route.sessionId,
+      message_status: messageStatus,
+      stop_reason: stopReason ?? null,
+      model: endpoint?.openai_model ?? session.model,
     },
   });
   if (useExternalAgent && session.external_agent_id) {

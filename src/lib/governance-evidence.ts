@@ -238,6 +238,9 @@ export function buildEvidenceHref(
     return `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit${queryString ? `?${queryString}` : ''}`;
   }
 
-  // Fallback to organization overview if no project context
-  return `/${locale}/workspaces/overview${queryString ? `?${queryString}` : ''}`;
+  // Fallback to workspace project list if no project context
+  if (workspaceId) {
+    return `/${locale}/workspaces/${workspaceId}/projects${queryString ? `?${queryString}` : ''}`;
+  }
+  return `/${locale}/workspaces${queryString ? `?${queryString}` : ''}`;
 }

@@ -17,6 +17,7 @@ export type AuditEventRecord = {
   error_code?: string;
   error_message?: string;
   request_id: string;
+  decision_id?: string;
   metadata_json: Record<string, unknown>;
 };
 
@@ -38,6 +39,7 @@ export type UsageFactRecord = {
   tokens_total?: number;
   result: 'ok' | 'error';
   error_code?: string;
+  decision_id?: string;
   metadata_json?: Record<string, unknown>;
 };
 
@@ -127,6 +129,7 @@ export type UsageFactListItem = {
   tokens_total?: number;
   result: 'ok' | 'error';
   error_code?: string;
+  decision_id?: string;
   runtime?: {
     provider?: string;
     resolved_model?: string;
@@ -533,6 +536,11 @@ function nonEmptyString(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() ? value : undefined;
 }
 
+function extractDecisionIdFromMetadata(metadata: unknown): string | undefined {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  return nonEmptyString((metadata as Record<string, unknown>).decision_id);
+}
+
 function estimateFactCost(fact: UsageFactRecord): number {
   const raw = fact.metadata_json?.cost_usd ?? fact.metadata_json?.estimated_cost ?? 0;
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
@@ -593,6 +601,7 @@ export async function recordAuditEvent(
     error_code: nonEmptyString(input.error_code),
     error_message: nonEmptyString(input.error_message),
     request_id: input.request_id,
+    decision_id: extractDecisionIdFromMetadata(input.metadata_json),
     metadata_json: input.metadata_json ?? {},
   };
   await docStore.upsert(AUDIT_EVENTS_COLLECTION, record.id, record);
@@ -621,6 +630,7 @@ export async function recordUsageFact(
     tokens_total: Number.isFinite(input.tokens_total) ? input.tokens_total : undefined,
     result: input.result,
     error_code: nonEmptyString(input.error_code),
+    decision_id: extractDecisionIdFromMetadata(input.metadata_json),
     metadata_json: input.metadata_json && typeof input.metadata_json === 'object' ? input.metadata_json : undefined,
   };
   await docStore.upsert(USAGE_FACTS_COLLECTION, record.id, record);
@@ -647,7 +657,10 @@ export async function listAuditEvents(
     if (query.resourceId && row.resource_id !== query.resourceId) return false;
     if (query.result && row.result !== query.result) return false;
     return true;
-  });
+  }).map((row) => ({
+    ...row,
+    decision_id: row.decision_id ?? extractDecisionIdFromMetadata(row.metadata_json),
+  }));
   filtered.sort((a, b) => {
     const diff = parseIsoMillis(a.timestamp) - parseIsoMillis(b.timestamp);
     return query.sortOrder === 'asc' ? diff : -diff;
@@ -683,7 +696,10 @@ export async function listUsageFacts(
     if (query.result && row.result !== query.result) return false;
     if (query.errorClass && getFactErrorClass(row) !== query.errorClass) return false;
     return true;
-  });
+  }).map((row) => ({
+    ...row,
+    decision_id: row.decision_id ?? extractDecisionIdFromMetadata(row.metadata_json),
+  }));
 }
 
 function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
@@ -709,6 +725,7 @@ function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
     tokens_total: fact.tokens_total,
     result: fact.result,
     error_code: fact.error_code,
+    decision_id: fact.decision_id ?? extractDecisionIdFromMetadata(metadata),
     runtime: {
       provider: nonEmptyString(metadata?.provider),
       resolved_model: nonEmptyString(metadata?.resolved_model),

@@ -7,8 +7,10 @@ import {
   getRuntimeObservability,
   getUsageReportEvidence,
   getUsageOperationsSummary,
+  listAuditEvents,
   listUsageFactRecords,
   listUsageReportSchedules,
+  recordAuditEvent,
   recordUsageFact,
   retryUsageReportDelivery,
   runDueUsageReportSchedules,
@@ -140,6 +142,74 @@ describe('audit-usage-store runtime observability', () => {
     expect(rows.items[0]?.runtime?.pricing_version).toBe('runtime-pricing-v1');
     expect(rows.items[0]?.runtime?.estimated_cost).toBe(0.0068);
     expect(rows.items[0]?.runtime?.attempts).toHaveLength(2);
+  });
+
+  it('surfaces decision_id in audit and usage list responses', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    const decisionId = 'gdec_123';
+    const now = new Date().toISOString();
+
+    await recordAuditEvent(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      actor_type: 'user',
+      actor_id: 'user_1',
+      action: 'resource_policy.rate_limited',
+      result: 'error',
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      request_id: 'req_audit',
+      metadata_json: { decision_id: decisionId, scope: 'policy' },
+      resource_type: 'endpoint',
+      resource_id: 'ep_1',
+    });
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'ep_1',
+      requests: 1,
+      result: 'error',
+      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
+      request_id: 'req_usage',
+      metadata_json: { decision_id: decisionId, scope: 'policy' },
+    });
+
+    const start = new Date(Date.now() - 60_000).toISOString();
+    const end = new Date(Date.now() + 60_000).toISOString();
+    const auditRows = await listAuditEvents(store, {
+      workspaceId,
+      projectId,
+      startTime: start,
+      endTime: end,
+      action: 'resource_policy.rate_limited',
+      actorType: null,
+      actorId: null,
+      endUserId: null,
+      resourceType: 'endpoint',
+      resourceId: 'ep_1',
+      result: 'error',
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 20,
+    });
+    const usageRows = await listUsageFactRecords(store, {
+      workspaceId,
+      projectId,
+      startTime: start,
+      endTime: end,
+      resourceType: 'endpoint',
+      resourceId: 'ep_1',
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(auditRows.items[0]?.decision_id).toBe(decisionId);
+    expect(usageRows.items[0]?.decision_id).toBe(decisionId);
   });
 
   it('filters usage facts by runtime provider, model, and error class', async () => {

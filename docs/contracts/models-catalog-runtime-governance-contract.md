@@ -130,9 +130,9 @@ Each catalog job must emit:
 - diff summary (added/removed/changed models and pricing changes)
 - operator identity and timestamps
 
-Governance gate requirement:
+Contract requirement:
 
-- Production governance evidence report must include latest successful catalog sync evidence or explicit waiver.
+- Catalog-related release artifacts must include latest successful catalog sync evidence or explicit waiver.
 
 ## Testing Gate Contract
 

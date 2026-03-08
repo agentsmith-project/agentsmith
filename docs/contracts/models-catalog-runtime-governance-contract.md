@@ -109,7 +109,7 @@ Custom endpoint rules:
 - `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/jobs`
 - `POST /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/sync`
 
-Contract alignment gates:
+Contract alignment checks:
 
 - `docs/contracts/specs/openapi.json` must include all five paths.
 - `docs/contracts/specs/openapi-route-kind-map.json` must map all five route kinds.
@@ -132,11 +132,11 @@ Each catalog job must emit:
 
 Contract requirement:
 
-- Catalog-related release artifacts must include latest successful catalog sync evidence or explicit waiver.
+- Catalog-related evidence artifacts must include latest successful catalog sync evidence or explicit waiver.
 
-## Testing Gate Contract
+## Testing Contract
 
-Minimum required gates:
+Minimum required checks:
 
 - Type/contract: schema validation + API contract checks
 - Unit: normalizer, capability inference, pricing mapping, empty/partial field handling

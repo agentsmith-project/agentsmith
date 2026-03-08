@@ -29,7 +29,7 @@
 
 ## 4. 合同与接口规范（实施依据）
 
-1. `docs/contracts/*.md`（现行模块合同）
+1. `docs/contracts/README.md` 中列出的现行合同
 2. `docs/contracts/specs/openapi.yaml`
 3. `docs/contracts/specs/asyncapi.yaml`
 

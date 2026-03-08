@@ -12,6 +12,11 @@ Provide a single operational path to validate MVP core readiness on real backend
 - Chat stream error surfacing and recovery
 - Endpoint rate/spending policy effect
 
+Note:
+
+- Some command names still contain `release-*` for backward compatibility.
+- In current MVP, they are used only for smoke artifact generation and validation, not for DevOps release orchestration.
+
 ## Prerequisites
 
 - Docker deps available (`postgres/redis/mongo/minio/keycloak`)

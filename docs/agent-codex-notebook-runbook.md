@@ -1,10 +1,10 @@
 # AgentSmith Notebook External Agent (Codex) Runbook
 
-## Scope of current internal release
+## Scope of current MVP
 
-This runbook covers the supported internal release path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
+This runbook covers the supported MVP path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
 
-Governance surfaces such as `Members` and `Resource Policy` are now part of the current internal real-backend baseline. They already support effective access explain, matched policy explain, downstream membership lifecycle effects, and the enforced governance paths documented in the release capability matrix. For demos, use the release capability matrix as the source of truth for exact enforcement scope rather than treating these pages as `partial`.
+Governance surfaces such as `Members` and `Resource Policy` are part of current real-backend coverage. They support effective access explain, matched policy explain, and membership lifecycle effects within the current MVP scope.
 
 `Audit` and `Usage` are now backed by real `api-entry-node` routes with persisted governance data (first-stage coverage) and are available in real-backend mode for internal workflows.
 
@@ -327,7 +327,7 @@ make notebook-agent-demo-restart-runner
   - current script behavior:
     - reuses an existing valid token if present
     - otherwise fails fast with a clear error and remediation steps (free `3001`, add Keycloak redirect URI, or provide a valid token)
-- Release-quality smoke bundle (recommended before demos and internal release validation):
+- Recommended smoke bundle (before demos and internal validation):
 ```bash
 make notebook-agent-release-smoke
 ```

@@ -14,6 +14,7 @@
 | [Audit & Usage Reports](./audit-usage-reports.md) | Audit and usage query workflows. |
 | [Cost & Limits Dashboard](./cost-limits-dashboard.md) | Usage/cost and rate/spending dashboard operations. |
 | [Alert Center](./alert-center.md) | Alert rules and notification operations. |
+| [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |
 | [Third-Party Accounts & Feishu OAuth](./third-party-accounts-feishu.md) | User third-party account binding and Feishu OAuth callback flow. |
 
 Quick links:

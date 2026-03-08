@@ -1,6 +1,6 @@
 # AgentSmith Notebook External Agent (Codex) Runbook
 
-术语边界：本文出现的 `release` / `gate` 命令名是仓库内工程脚本命名（smoke、验收、诊断），不表示 AgentSmith 平台提供 DevOps 发布编排功能。
+术语边界：本文出现的 `release` / `engineering gate` 命令名是仓库内工程脚本命名（smoke、验收、诊断）；`permission gate` 仅表示产品权限门禁语义，不表示 AgentSmith 平台提供 DevOps 发布编排功能。
 
 ## Scope of current MVP
 
@@ -386,7 +386,7 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
   - Create chat session with `external_agent_id=<internal_agent_id>`, send a stream request.
   - Expected fail-fast when env missing: `422 AGENT_SANDBOX_NOT_CONFIGURED`.
   - Expected normal path when env exists: first request may cold-start pod, then stream starts.
-  - Close/delete notebook task: pod release should be triggered by API.
+  - Close/delete notebook task: pod cleanup/reclaim should be triggered by API.
 - Contract notes:
   - Runner static proxy source is only `server.hello.resource_proxy.base_url`.
   - Per-request auth token remains in `runtime_context.user_bearer_token` (no proxy-base fallback).

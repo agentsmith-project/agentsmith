@@ -2,7 +2,7 @@
 
 仅保留当前有效的用户操作指南。
 
-术语边界：若出现 `release` / `gate` 命令命名，默认是工程验收与排障脚本，不代表产品 DevOps 能力。
+术语边界：若出现 `release` / `engineering gate` 命令命名，默认是工程验收与排障脚本；`permission gate` 仅表示产品权限门禁语义，不代表产品 DevOps 能力。
 
 基线入口：
 

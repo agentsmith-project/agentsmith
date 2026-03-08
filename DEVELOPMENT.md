@@ -161,7 +161,7 @@ Current scope:
 
 CI runs the same command and fails the pipeline on missing coverage.
 
-Before release: ensure `npm run contracts:check`, `npm run contracts:check-openapi`, and `npm run openapi:check-generated` all pass on main.
+Before merge/engineering acceptance: ensure `npm run contracts:check`, `npm run contracts:check-openapi`, and `npm run openapi:check-generated` all pass on main.
 
 ## API 合约与文档入口
 
@@ -273,11 +273,11 @@ The current internal baseline no longer treats `Members` and `Resource Policy` a
 - `Resource Policy` supports real allow-list / rate / quota effects on the currently supported resource paths
 - project route authorization is driven by the shared backend authz engine and explainable `/authorize` decisions
 
-The important constraint is no longer "partial page support", but **scoped enforcement coverage**. For the exact supported effects and boundaries, use the release capability matrix as the source of truth.
+The important constraint is no longer "partial page support", but **scoped enforcement coverage**. For exact supported effects and current boundaries, use the current baseline and MVP smoke runbook as sources of truth.
 
 See also:
-- `docs/release/internal-release-capability-matrix.md`
-- `docs/release/internal-release-checklist.md`
+- `docs/CURRENT_BASELINE.md`
+- `docs/user-guides/mvp-core-smoke-runbook.md`
 
 ### Scope (What this workline covered)
 
@@ -429,7 +429,7 @@ Added tooling and Make targets for:
 ### Next-Stage Plan (High Value, Non-UI-Fine-Tuning)
 
 #### A. Production Baselines / SLO Calibration
-- Run and archive standard memory + Mongo baseline sets per release candidate.
+- Run and archive standard memory + Mongo baseline sets per engineering verification round.
 - Use:
   - `notebook-agent-benchmark-baseline`
   - `notebook-agent-benchmark-compare`
@@ -503,8 +503,9 @@ When business logic changes are large, run this manual flow once before freeze:
 7. Validate audit/usage filters and table rendering.
 8. Validate settings save and delete-project confirmation flow.
 
-For step-by-step details and freeze-ready gate, see:
-- `docs/verification-summary.md`
+For step-by-step details and engineering verification workflow, see:
+- `docs/CURRENT_BASELINE.md`
+- `docs/user-guides/mvp-core-smoke-runbook.md`
 
 ## Permission Gate Hook Rule (Important)
 

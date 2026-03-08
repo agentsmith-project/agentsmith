@@ -14,7 +14,8 @@
 
 术语边界（必须一致）：
 
-- 文档中的 `release` / `gate` 仅表示 AgentSmith 本项目研发治理与验收流程命名。
+- 文档中的 `release` / `engineering gate` 仅表示 AgentSmith 本项目研发治理与验收流程命名。
+- `permission gate` 表示产品内路由/交互权限门禁，不等于工程流程门禁。
 - 不代表 AgentSmith 产品对外提供 DevOps 发布编排、发布门禁平台能力。
 
 ## 2. 必读文档（必须）

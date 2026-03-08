@@ -32,6 +32,9 @@ export function AuditFilters({
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
   const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [investigationExpanded, setInvestigationExpanded] = React.useState(() =>
+    Boolean(filters.request_id || filters.decision_id || filters.trace_ref || filters.trace_incident_id || filters.trace_escalation_id || filters.trace_run_id),
+  );
   // Use a ref to always read the latest filters in debounced callbacks
   const filtersRef = React.useRef(filters);
   filtersRef.current = filters;
@@ -74,6 +77,12 @@ export function AuditFilters({
       }
     };
   }, []);
+
+  React.useEffect(() => {
+    if (filters.request_id || filters.decision_id || filters.trace_ref || filters.trace_incident_id || filters.trace_escalation_id || filters.trace_run_id) {
+      setInvestigationExpanded(true);
+    }
+  }, [filters.decision_id, filters.request_id, filters.trace_escalation_id, filters.trace_incident_id, filters.trace_ref, filters.trace_run_id]);
 
   const hasActiveFilters = React.useMemo(() => {
     return !!(
@@ -220,35 +229,84 @@ export function AuditFilters({
             </Select>
           </div>
 
-          <div>
-            <label htmlFor="audit-filter-request-id" className="text-xs text-tertiary mb-1 block">{t('filters.request_id')}</label>
-            <Input
-              id="audit-filter-request-id"
-              placeholder={commonT('filter_by_request_id')}
-              value={filters.request_id || ''}
-              onChange={(e) => handleTextFilterChange('request_id', e.target.value || undefined)}
-            />
-          </div>
+        </div>
 
-          <div>
-            <label htmlFor="audit-filter-decision-id" className="text-xs text-tertiary mb-1 block">{t('filters.decision_id')}</label>
-            <Input
-              id="audit-filter-decision-id"
-              placeholder={commonT('filter_by_decision_id')}
-              value={filters.decision_id || ''}
-              onChange={(e) => handleTextFilterChange('decision_id', e.target.value || undefined)}
-            />
+        <div className="border border-border rounded-md p-3 space-y-3" data-testid="audit-filters__investigation">
+          <div className="flex items-center justify-between gap-3">
+            <h4 className="text-xs font-semibold text-foreground">{t('filters.investigation_group')}</h4>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setInvestigationExpanded((value) => !value)}
+              data-testid="audit-filters__toggle-investigation"
+            >
+              {investigationExpanded ? commonT('collapse') : commonT('expand')}
+            </Button>
           </div>
+          {investigationExpanded ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="audit-filter-request-id" className="text-xs text-tertiary mb-1 block">{t('filters.request_id')}</label>
+                <Input
+                  id="audit-filter-request-id"
+                  placeholder={commonT('filter_by_request_id')}
+                  value={filters.request_id || ''}
+                  onChange={(e) => handleTextFilterChange('request_id', e.target.value || undefined)}
+                />
+              </div>
 
-          <div>
-            <label htmlFor="audit-filter-trace-ref" className="text-xs text-tertiary mb-1 block">{t('filters.trace_ref')}</label>
-            <Input
-              id="audit-filter-trace-ref"
-              placeholder={commonT('filter_by_trace_ref')}
-              value={filters.trace_ref || ''}
-              onChange={(e) => handleTextFilterChange('trace_ref', e.target.value || undefined)}
-            />
-          </div>
+              <div>
+                <label htmlFor="audit-filter-decision-id" className="text-xs text-tertiary mb-1 block">{t('filters.decision_id')}</label>
+                <Input
+                  id="audit-filter-decision-id"
+                  placeholder={commonT('filter_by_decision_id')}
+                  value={filters.decision_id || ''}
+                  onChange={(e) => handleTextFilterChange('decision_id', e.target.value || undefined)}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-trace-ref" className="text-xs text-tertiary mb-1 block">{t('filters.trace_ref')}</label>
+                <Input
+                  id="audit-filter-trace-ref"
+                  placeholder={commonT('filter_by_trace_ref')}
+                  value={filters.trace_ref || ''}
+                  onChange={(e) => handleTextFilterChange('trace_ref', e.target.value || undefined)}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-trace-incident-id" className="text-xs text-tertiary mb-1 block">{t('filters.trace_incident_id')}</label>
+                <Input
+                  id="audit-filter-trace-incident-id"
+                  placeholder={commonT('filter_by_trace_incident_id')}
+                  value={filters.trace_incident_id || ''}
+                  onChange={(e) => handleTextFilterChange('trace_incident_id', e.target.value || undefined)}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-trace-escalation-id" className="text-xs text-tertiary mb-1 block">{t('filters.trace_escalation_id')}</label>
+                <Input
+                  id="audit-filter-trace-escalation-id"
+                  placeholder={commonT('filter_by_trace_escalation_id')}
+                  value={filters.trace_escalation_id || ''}
+                  onChange={(e) => handleTextFilterChange('trace_escalation_id', e.target.value || undefined)}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-trace-run-id" className="text-xs text-tertiary mb-1 block">{t('filters.trace_run_id')}</label>
+                <Input
+                  id="audit-filter-trace-run-id"
+                  placeholder={commonT('filter_by_trace_run_id')}
+                  value={filters.trace_run_id || ''}
+                  onChange={(e) => handleTextFilterChange('trace_run_id', e.target.value || undefined)}
+                />
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
     </div>

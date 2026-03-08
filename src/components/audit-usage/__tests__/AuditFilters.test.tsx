@@ -1,0 +1,78 @@
+import { act, fireEvent, render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+import { AuditFilters } from '../AuditFilters';
+import type { AuditListParams } from '@/lib/api/types';
+
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string) => key,
+}));
+
+vi.mock('../TimeRangePicker', () => ({
+  TimeRangePicker: () => <div data-testid="time-range-picker" />,
+}));
+
+function buildFilters(overrides: Partial<AuditListParams> = {}): AuditListParams {
+  return {
+    start_time: '2026-03-07T00:00:00.000Z',
+    end_time: '2026-03-08T00:00:00.000Z',
+    page: 1,
+    page_size: 25,
+    sort_by: 'timestamp',
+    sort_order: 'desc',
+    ...overrides,
+  };
+}
+
+describe('AuditFilters', () => {
+  it('keeps investigation filters collapsed by default', () => {
+    render(
+      <AuditFilters
+        filters={buildFilters()}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(screen.getByTestId('audit-filters__investigation')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'expand' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('filters.request_id')).not.toBeInTheDocument();
+  });
+
+  it('auto-expands investigation filters when trace fields are active', () => {
+    render(
+      <AuditFilters
+        filters={buildFilters({ trace_ref: 'trace_1' })}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'collapse' })).toBeInTheDocument();
+    expect(screen.getByLabelText('filters.trace_ref')).toBeInTheDocument();
+    expect(screen.getByLabelText('filters.trace_incident_id')).toBeInTheDocument();
+  });
+
+  it('applies trace run filter via debounced change', () => {
+    vi.useFakeTimers();
+    const handleChange = vi.fn();
+
+    render(
+      <AuditFilters
+        filters={buildFilters({ request_id: 'req_1' })}
+        onChange={handleChange}
+        onClear={vi.fn()}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'collapse' })).toBeInTheDocument();
+    const input = screen.getByLabelText('filters.trace_run_id');
+    fireEvent.change(input, { target: { value: 'run_1' } });
+
+    expect(handleChange).not.toHaveBeenCalled();
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({ trace_run_id: 'run_1' }));
+    vi.useRealTimers();
+  });
+});

@@ -1,16 +1,18 @@
 /**
- * Epic C1: Cost & Quota Dashboard Type Definitions
+ * Epic C1: Cost & Limit Dashboard Type Definitions
  *
- * This file contains all TypeScript interfaces for the Cost & Quota Dashboard feature.
+ * This file contains all TypeScript interfaces for the Cost & Limit Dashboard feature.
  * These types align with the OpenAPI spec and backend API contracts.
+ * Note: Quota* type names are preserved for API compatibility.
  */
 
 // ============================================================================
-// Quota Types
+// Limit Types (legacy Quota* names kept for compatibility)
 // ============================================================================
 
 /**
- * Quota summary for a specific resource
+ * Limit summary for a specific resource.
+ * Legacy naming: QuotaSummary.
  */
 export interface QuotaSummary {
   resource_type: 'endpoint' | 'source_library' | 'agent';
@@ -24,7 +26,8 @@ export interface QuotaSummary {
 }
 
 /**
- * Aggregate quota summary across all resource types
+ * Aggregate limit summary across all resource types.
+ * Legacy naming: QuotaOverview.
  */
 export interface QuotaOverview {
   endpoints?: QuotaSummary[];
@@ -119,7 +122,8 @@ export interface CostChartData {
 // ============================================================================
 
 /**
- * Request parameters for quota summary API
+ * Request parameters for limit summary API.
+ * Legacy naming: QuotaSummaryRequest.
  */
 export interface QuotaSummaryRequest {
   workspace_id: string;

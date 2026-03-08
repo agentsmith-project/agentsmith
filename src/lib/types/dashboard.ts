@@ -1,7 +1,7 @@
 /**
  * Dashboard Type Definitions
  *
- * Type definitions for Epic C1: Cost & Quota Dashboard
+ * Type definitions for Epic C1: Cost & Limit Dashboard
  *
  * @module lib/types/dashboard
  */
@@ -11,7 +11,7 @@
 // ============================================================
 
 /**
- * Cost and quota dashboard data
+ * Cost and limit dashboard data
  */
 export interface CostDashboardData {
   time_range: {
@@ -99,11 +99,12 @@ export interface DashboardSummary {
 }
 
 // ============================================================
-// Quota Data Types
+// Limit Data Types (legacy Quota* names kept for compatibility)
 // ============================================================
 
 /**
- * Quota usage data for a project
+ * Limit usage data for a project.
+ * Legacy naming: QuotaUsageData.
  */
 export interface QuotaUsageData {
   project_id: string;
@@ -112,10 +113,10 @@ export interface QuotaUsageData {
     end: string;
   };
 
-  // Overall quota status
+  // Overall limit status
   overall: QuotaOverallStatus;
 
-  // Per-resource quotas
+  // Per-resource limits
   by_resource: ResourceQuotaUsage[];
 
   // Historical trend
@@ -123,7 +124,8 @@ export interface QuotaUsageData {
 }
 
 /**
- * Overall quota status
+ * Overall limit status.
+ * Legacy naming: QuotaOverallStatus.
  */
 export interface QuotaOverallStatus {
   requests_today: number;
@@ -141,7 +143,8 @@ export interface QuotaOverallStatus {
 }
 
 /**
- * Per-resource quota usage
+ * Per-resource limit usage.
+ * Legacy naming: ResourceQuotaUsage.
  */
 export interface ResourceQuotaUsage {
   resource_id: string;
@@ -158,7 +161,8 @@ export interface ResourceQuotaUsage {
 }
 
 /**
- * Quota trend over time
+ * Limit trend over time.
+ * Legacy naming: QuotaTrendPoint.
  */
 export interface QuotaTrendPoint {
   date: string; // YYYY-MM-DD
@@ -199,7 +203,8 @@ export interface CostDashboardRequest {
 }
 
 /**
- * Request params for quota usage API
+ * Request params for limit usage API.
+ * Legacy naming: QuotaUsageRequest.
  */
 export interface QuotaUsageRequest {
   start_time?: string;

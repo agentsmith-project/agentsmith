@@ -8,7 +8,8 @@
  * import type { ChartConfig, LineChartConfig } from '@/lib/types/epic-c';
  */
 
-// Cost & Quota Dashboard (Epic C1)
+// Cost & Limit Dashboard (Epic C1)
+// Note: Quota* type names are kept for backward compatibility with API contracts.
 export type {
   QuotaSummary,
   QuotaOverview,

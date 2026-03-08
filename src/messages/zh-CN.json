@@ -1142,7 +1142,7 @@
   },
   "audit": {
     "title": "审计",
-    "subtitle": "审计事件与合规日志",
+    "subtitle": "管理员治理证据与处置追踪",
     "open_members": "打开成员",
     "open_resource_policy": "打开资源策略",
     "open_usage": "打开用量",
@@ -1206,7 +1206,7 @@
   "usage": {
     "title": "用量",
     "dashboard": "成本与限额看板",
-    "subtitle": "用量统计与资源消耗",
+    "subtitle": "我的用量与问题定位",
     "kpi": {
       "requests_today": "今日请求数",
       "errors_today": "今日错误数",
@@ -1258,8 +1258,8 @@
     "scope_my_usage": "我的用量",
     "scope_project_usage": "项目用量",
     "view_mode": {
-      "aggregate": "聚合视图",
-      "facts": "请求事实"
+      "aggregate": "用量概览",
+      "facts": "请求明细"
     },
     "facts_table": {
       "timestamp": "时间戳",
@@ -1272,7 +1272,7 @@
       "estimated_cost": "预估成本"
     },
     "facts_summary": {
-      "total": "命中事实数",
+      "total": "匹配请求数",
       "errors": "错误数",
       "resources": "资源数"
     },

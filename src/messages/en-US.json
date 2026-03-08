@@ -1140,7 +1140,7 @@
   },
   "audit": {
     "title": "Audit",
-    "subtitle": "Audit events and compliance logs",
+    "subtitle": "Admin governance evidence and disposition trail",
     "open_members": "Open Members",
     "open_resource_policy": "Open Resource Policy",
     "open_usage": "Open Usage",
@@ -1204,7 +1204,7 @@
   "usage": {
     "title": "Usage",
     "dashboard": "Cost & Limits Dashboard",
-    "subtitle": "Usage statistics and resource consumption",
+    "subtitle": "My usage and issue triage",
     "kpi": {
       "requests_today": "Requests Today",
       "errors_today": "Errors Today",
@@ -1256,8 +1256,8 @@
     "scope_my_usage": "My Usage",
     "scope_project_usage": "Project Usage",
     "view_mode": {
-      "aggregate": "Aggregate",
-      "facts": "Request Facts"
+      "aggregate": "Usage Overview",
+      "facts": "Request Details"
     },
     "facts_table": {
       "timestamp": "Timestamp",
@@ -1270,7 +1270,7 @@
       "estimated_cost": "Estimated Cost"
     },
     "facts_summary": {
-      "total": "Matched Facts",
+      "total": "Matched Requests",
       "errors": "Errors",
       "resources": "Resources"
     },

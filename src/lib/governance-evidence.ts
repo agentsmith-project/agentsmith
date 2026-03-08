@@ -1,6 +1,8 @@
 import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 
-export type GovernanceEvidenceFocus = 'quota' | 'deny' | 'cost' | 'exposure' | 'membership' | 'other';
+export type GovernanceEvidenceFocus = 'limit' | 'deny' | 'cost' | 'exposure' | 'membership' | 'other';
+export type LegacyGovernanceEvidenceFocus = 'quota';
+export type GovernanceEvidenceFocusInput = GovernanceEvidenceFocus | LegacyGovernanceEvidenceFocus;
 
 export type EvidenceTargetPage = 'audit' | 'usage' | 'members' | 'settings' | 'runtime-console';
 
@@ -11,6 +13,10 @@ export interface EvidenceFilterContext extends GovernanceDrilldownContext {
     workspace_ids?: string[];
     project_ids?: string[];
   };
+}
+
+export function normalizeGovernanceEvidenceFocus(focus: GovernanceEvidenceFocusInput): GovernanceEvidenceFocus {
+  return focus === 'quota' ? 'limit' : focus;
 }
 
 /**
@@ -28,7 +34,7 @@ export function classifyGovernanceEvidenceFocus(reason: string | undefined): Gov
 
   const matches = (patterns: string[]) => patterns.some((pattern) => normalized.includes(pattern));
 
-  // Quota-related patterns
+  // Limit-related patterns
   if (matches([
     'quota',
     'limit',
@@ -43,7 +49,7 @@ export function classifyGovernanceEvidenceFocus(reason: string | undefined): Gov
     'throttle',
     'throttled',
   ])) {
-    return 'quota';
+    return 'limit';
   }
 
   // Cost/billing-related patterns
@@ -130,10 +136,11 @@ export function getGovernanceEvidenceCount(context: GovernanceDrilldownContext):
  * Determines the most appropriate target page for viewing evidence
  * based on the evidence focus type.
  */
-export function getEvidenceTargetPage(focus: GovernanceEvidenceFocus): EvidenceTargetPage {
+export function getEvidenceTargetPage(focusInput: GovernanceEvidenceFocusInput): EvidenceTargetPage {
+  const focus = normalizeGovernanceEvidenceFocus(focusInput);
   switch (focus) {
-    case 'quota':
-      return 'audit';  // Quota violations are typically in audit logs
+    case 'limit':
+      return 'audit';  // Limit violations are typically in audit logs
     case 'cost':
       return 'usage';  // Cost issues are best viewed in usage page
     case 'deny':
@@ -154,8 +161,9 @@ export function getEvidenceTargetPage(focus: GovernanceEvidenceFocus): EvidenceT
  */
 export function buildEvidenceFilterContext(
   context: GovernanceDrilldownContext,
-  focus: GovernanceEvidenceFocus,
+  focusInput: GovernanceEvidenceFocusInput,
 ): EvidenceFilterContext {
+  const focus = normalizeGovernanceEvidenceFocus(focusInput);
   const filterContext: EvidenceFilterContext = {
     ...context,
     gov_focus: focus,
@@ -185,11 +193,11 @@ export function buildEvidenceFilterContext(
  */
 export function buildEvidenceHref(
   context: GovernanceDrilldownContext,
-  focus: GovernanceEvidenceFocus,
+  focusInput: GovernanceEvidenceFocusInput,
   locale: string,
 ): string {
-  const filterContext = buildEvidenceFilterContext(context, focus);
-  const targetPage = getEvidenceTargetPage(focus);
+  const filterContext = buildEvidenceFilterContext(context, focusInput);
+  const targetPage = getEvidenceTargetPage(focusInput);
 
   const workspaceId = context.gov_workspace_id;
   const projectId = context.gov_project_id;

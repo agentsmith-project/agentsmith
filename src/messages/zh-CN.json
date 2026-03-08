@@ -68,7 +68,7 @@
     "governance_drilldown_description": "来源：{from} · 目标类型：{kind} · 原因：{reason}",
     "governance_drilldown_reason_none": "无",
     "governance_drilldown_focus": "证据焦点：{focus} · 信号数：{count}",
-    "governance_drilldown_focus_quota": "限额约束",
+    "governance_drilldown_focus_limit": "限额约束",
     "governance_drilldown_focus_deny": "访问拒绝",
     "governance_drilldown_focus_cost": "成本与用量",
     "governance_drilldown_focus_exposure": "公开暴露",

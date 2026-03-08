@@ -3,7 +3,7 @@ import { classifyGovernanceEvidenceFocus, getGovernanceEvidenceCount } from '@/l
 
 describe('governance-evidence', () => {
   it('classifies focus from reason keywords', () => {
-    expect(classifyGovernanceEvidenceFocus('missing_source_library_quota')).toBe('quota');
+    expect(classifyGovernanceEvidenceFocus('missing_source_library_quota')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('token_usage_budget_alert')).toBe('cost');
     expect(classifyGovernanceEvidenceFocus('permission_denied')).toBe('deny');
     expect(classifyGovernanceEvidenceFocus('public_visibility')).toBe('exposure');

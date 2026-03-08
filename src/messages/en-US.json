@@ -68,7 +68,7 @@
     "governance_drilldown_description": "Source: {from} · Target kind: {kind} · Reason: {reason}",
     "governance_drilldown_reason_none": "n/a",
     "governance_drilldown_focus": "Evidence focus: {focus} · signals: {count}",
-    "governance_drilldown_focus_quota": "limit controls",
+    "governance_drilldown_focus_limit": "limit controls",
     "governance_drilldown_focus_deny": "access denials",
     "governance_drilldown_focus_cost": "cost and usage",
     "governance_drilldown_focus_exposure": "public exposure",

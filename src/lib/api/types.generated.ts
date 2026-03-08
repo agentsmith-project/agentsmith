@@ -3191,6 +3191,12 @@ export interface components {
             openai_model: string;
             provider: string;
         };
+        /** @description Endpoint-level grouped limits for Usage view */
+        EndpointLimitSummary: {
+            endpoint_id: string;
+            endpoint_name: string;
+            limits: components["schemas"]["LimitRuleSnapshot"][];
+        };
         FileLibrary: {
             id: string;
             name: string;
@@ -3214,50 +3220,37 @@ export interface components {
             limit_reset_at: string;
             policy_id: string;
         };
-        /** @description Aggregate limit summary across all resource types */
+        /** @description Endpoint-scoped limit summary for Usage page */
         LimitOverview: {
-            agents?: components["schemas"]["LimitSummary"][];
-            endpoints?: components["schemas"]["LimitSummary"][];
-            source_libraries?: components["schemas"]["LimitSummary"][];
-            /** @description Total limit across all resource types (preferred field) */
-            total_limit?: number;
-            /** @description Total limit across all resource types (compatibility field) */
-            total_limit_limit?: number;
-            /** @description Total limit used across all resource types */
-            total_limit_used?: number;
+            endpoints?: components["schemas"]["EndpointLimitSummary"][];
+            project_summary?: components["schemas"]["ProjectLimitSummary"];
         };
-        /** @description Limit summary for a specific resource */
-        LimitSummary: {
-            /** @description Underlying policy key, e.g. endpoint.requests_per_minute */
-            limit_key?: string;
-            /**
-             * @description Limit category for Usage matrix rendering
-             * @enum {string}
-             */
-            limit_kind?: "rate_limit" | "spending_limit";
-            limit_limit: number;
+        /** @description Single windowed rate/spending rule snapshot */
+        LimitRuleSnapshot: {
+            /** @enum {string} */
+            kind: "rate_limit" | "spending_limit";
+            max: number;
+            /** @enum {string} */
+            metric: "requests" | "usd";
+            policy_key: string;
+            remaining: number;
             /** Format: date-time */
-            limit_reset_at: string;
-            /** @description Preferred alias of limit_limit for frontend readability */
-            limit_total?: number;
+            reset_at: string;
+            usage_pct: number;
+            used: number;
             /** @enum {string} */
-            limit_unit: "tokens" | "requests" | "bytes" | "files";
-            limit_used: number;
-            percentage_used: number;
-            resource_id: string;
-            resource_name: string;
-            /** @enum {string} */
-            resource_type: "endpoint" | "source_library" | "agent";
-            /**
-             * @description Window projection key for Usage matrix rendering
-             * @enum {string}
-             */
-            window_key?: "minute" | "5h" | "day" | "current";
+            window: "minute" | "5h" | "day" | "current";
         };
         Project: {
             id: string;
             name: string;
             workspace_id: string;
+        };
+        ProjectLimitSummary: {
+            project_max: number;
+            project_remaining: number;
+            project_usage_pct: number;
+            project_used: number;
         };
         ResourceCostBreakdown: {
             /** @description Estimated cost in USD */

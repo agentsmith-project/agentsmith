@@ -25,34 +25,37 @@ Define the contract between backend `GET /limits/summary` and frontend `Usage` p
 
 ## Response Contract
 
-### Preferred shape (target)
+### Final shape (single source of truth)
 
-`endpoints[]` should provide one row per endpoint + limit dimension:
+Top-level fields:
 
-1. `resource_id: string`
-2. `resource_name: string`
-3. `resource_type: "endpoint"`
-4. `limit_used: number`
-5. `limit_total` (or `limit_limit` for compatibility): number
-6. `limit_unit: "requests" | "tokens" | "bytes" | "files"`
-7. `percentage_used: number`
-8. `limit_reset_at: string (date-time)`
-9. `limit_kind: "rate_limit" | "spending_limit"` (recommended)
-10. `window_key: "minute" | "5h" | "day" | "current"` (recommended)
-11. `limit_key: string` (recommended, e.g. `endpoint.requests_per_minute`)
+1. `endpoints: EndpointLimitSummary[]`
+2. `project_summary: ProjectLimitSummary`
 
-Top-level aggregate fields:
+`EndpointLimitSummary`:
 
-1. `total_limit_used: number`
-2. `total_limit` (or `total_limit_limit` for compatibility): number
+1. `endpoint_id: string`
+2. `endpoint_name: string`
+3. `limits: LimitRuleSnapshot[]`
 
-### Compatibility fallback (current tolerated)
+`LimitRuleSnapshot`:
 
-If backend returns only aggregated endpoint rows without `limit_kind/window_key/limit_key`, FE must:
+1. `kind: "rate_limit" | "spending_limit"`
+2. `window: "minute" | "5h" | "day" | "current"`
+3. `metric: "requests" | "usd"`
+4. `policy_key: string`
+5. `used: number`
+6. `max: number`
+7. `remaining: number`
+8. `usage_pct: number`
+9. `reset_at: string (date-time)`
 
-1. render per-endpoint cards anyway;
-2. map row to `window_key = current`;
-3. infer `limit_kind` conservatively from available fields (prefer explicit backend fields once available).
+`ProjectLimitSummary`:
+
+1. `project_used: number`
+2. `project_max: number`
+3. `project_remaining: number`
+4. `project_usage_pct: number`
 
 ## FE Rendering Contract
 
@@ -70,4 +73,3 @@ Usage limits area must render:
 1. No new `quota` terminology.
 2. No workspace-level governance summary.
 3. No release/devops orchestration semantics.
-

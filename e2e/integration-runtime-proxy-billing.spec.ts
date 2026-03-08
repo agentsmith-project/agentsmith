@@ -585,32 +585,36 @@ test.describe('@lane-real integration runtime proxy billing', () => {
       expect(limitsRes.ok()).toBeTruthy();
       const limitsPayload = (await limitsRes.json()) as {
         endpoints?: Array<{
-          resource_id?: string;
-          limit_used?: number;
-          limit_total?: number;
-          limit_limit?: number;
-          limit_kind?: string;
-          window_key?: string;
+          endpoint_id?: string;
+          limits?: Array<{
+            kind?: string;
+            window?: string;
+            used?: number;
+            max?: number;
+          }>;
         }>;
-        total_limit?: number;
-        total_limit_limit?: number;
+        project_summary?: {
+          project_used?: number;
+          project_max?: number;
+          project_remaining?: number;
+          project_usage_pct?: number;
+        };
       };
       expect(Array.isArray(limitsPayload.endpoints)).toBe(true);
       const endpointRows = limitsPayload.endpoints ?? [];
       expect(endpointRows.length).toBeGreaterThan(0);
-      expect(endpointRows.every((item) => typeof item.resource_id === 'string' && item.resource_id.length > 0)).toBe(true);
-      expect(endpointRows.every((item) => typeof item.limit_used === 'number')).toBe(true);
-      expect(endpointRows.every((item) => typeof item.limit_total === 'number' || typeof item.limit_limit === 'number')).toBe(true);
-      expect(typeof limitsPayload.total_limit === 'number' || typeof limitsPayload.total_limit_limit === 'number').toBe(true);
-
-      // Backward-compatible assertion: if backend already emits matrix semantics, enforce them.
-      const hasMatrixSemantics = endpointRows.some((item) => typeof item.limit_kind === 'string' || typeof item.window_key === 'string');
-      if (hasMatrixSemantics) {
-        expect(endpointRows.some((item) => item.limit_kind === 'rate_limit')).toBe(true);
-        expect(endpointRows.some((item) => item.limit_kind === 'spending_limit')).toBe(true);
-        expect(endpointRows.some((item) => item.window_key === 'minute')).toBe(true);
-        expect(endpointRows.some((item) => item.window_key === 'day')).toBe(true);
-      }
+      expect(endpointRows.every((item) => typeof item.endpoint_id === 'string' && item.endpoint_id.length > 0)).toBe(true);
+      expect(endpointRows.some((item) => (item.limits ?? []).some((rule) => rule.kind === 'rate_limit'))).toBe(true);
+      expect(endpointRows.some((item) => (item.limits ?? []).some((rule) => rule.kind === 'spending_limit'))).toBe(true);
+      expect(endpointRows.some((item) => (item.limits ?? []).some((rule) => rule.window === 'minute'))).toBe(true);
+      expect(endpointRows.some((item) => (item.limits ?? []).some((rule) => rule.window === 'day'))).toBe(true);
+      expect(typeof limitsPayload.project_summary?.project_max).toBe('number');
+      expect(typeof limitsPayload.project_summary?.project_used).toBe('number');
+      expect(
+        endpointRows.every((item) =>
+          (item.limits ?? []).every((rule) => typeof rule.used === 'number' && typeof rule.max === 'number')
+        ),
+      ).toBe(true);
 
       const createScheduleRes = await page.request.post(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/usage/report-schedules`,

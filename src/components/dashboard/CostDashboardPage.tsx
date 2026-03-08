@@ -233,16 +233,16 @@ export function CostDashboardPage({
   );
 
   const totalLimitUsagePercentage = React.useMemo(() => {
-    const totalLimit = limitsOverview?.total_limit;
-    const totalUsed = limitsOverview?.total_limit_used;
+    const totalLimit = limitsOverview?.project_summary?.project_max;
+    const totalUsed = limitsOverview?.project_summary?.project_used;
     if (!totalLimit || !totalUsed) return undefined;
     return Math.min(
       100,
       (totalUsed / Math.max(1, totalLimit)) * 100,
     );
   }, [
-    limitsOverview?.total_limit,
-    limitsOverview?.total_limit_used,
+    limitsOverview?.project_summary?.project_max,
+    limitsOverview?.project_summary?.project_used,
   ]);
 
   const handleRefresh = React.useCallback(() => {

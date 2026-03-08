@@ -21,18 +21,18 @@ Target endpoint:
 
 Required payload support:
 
-1. endpoint rows expose `limit_total` or `limit_limit`.
-2. aggregate exposes `total_limit` or `total_limit_limit`.
+1. endpoint rows expose `endpoints[].limits[]` with `used/max/remaining/usage_pct`.
+2. aggregate exposes `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
 3. preferred fields exposed for matrix rendering:
-   - `limit_kind: rate_limit | spending_limit`
-   - `window_key: minute | 5h | day | current`
-   - `limit_key` (policy key traceability)
+   - `kind: rate_limit | spending_limit`
+   - `window: minute | 5h | day | current`
+   - `policy_key` (policy traceability)
 
 ## Step 2: Backend Logic Alignment
 
 1. Build endpoint rows by effective policy windows and current usage counters.
-2. Emit one row per endpoint + limit dimension (not only one aggregated row per endpoint).
-3. Keep compatibility fields for old FE consumers during transition.
+2. Emit grouped rows under each endpoint (`limits[]`), one item per limit dimension.
+3. No compatibility fields; use final schema only.
 
 ## Step 3: OpenAPI & Generated Types
 
@@ -45,7 +45,7 @@ npm run openapi:check-generated
 
 Expected:
 
-1. `LimitOverview` / `LimitSummary` schema reflects fields above.
+1. `LimitOverview` / `EndpointLimitSummary` / `LimitRuleSnapshot` / `ProjectLimitSummary` reflect fields above.
 2. No breaking change without allowlist update.
 
 ## Step 4: Mock & Fixture Alignment
@@ -53,7 +53,7 @@ Expected:
 1. Update MSW or fixture payload to include:
    - at least one endpoint with `rate_limit` rows (`minute`, `day`)
    - at least one endpoint with `spending_limit` row (`day`)
-2. Keep one compatibility fixture without `limit_kind/window_key` to verify FE fallback.
+2. Do not keep legacy fixture shapes.
 
 ## Step 5: Frontend Rendering Verification
 
@@ -62,7 +62,6 @@ Verify Usage page behavior:
 1. endpoint-grouped cards render correctly.
 2. each endpoint shows `rate limit` and `spending limit` sections.
 3. window rows render in order: `minute` -> `5h` -> `day` -> `current`.
-4. fallback payload renders `current` row without crashing.
 
 ## Step 6: Test & Release Gates
 

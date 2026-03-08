@@ -11030,120 +11030,16 @@
       },
       "LimitOverview": {
         "type": "object",
-        "description": "Aggregate limit summary across all resource types",
+        "description": "Endpoint-scoped limit summary for Usage page",
         "properties": {
           "endpoints": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/LimitSummary"
+              "": "#/components/schemas/EndpointLimitSummary"
             }
           },
-          "source_libraries": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LimitSummary"
-            }
-          },
-          "agents": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/LimitSummary"
-            }
-          },
-          "total_limit_used": {
-            "type": "number",
-            "description": "Total limit used across all resource types"
-          },
-          "total_limit": {
-            "type": "number",
-            "description": "Total limit across all resource types (preferred field)"
-          },
-          "total_limit_limit": {
-            "type": "number",
-            "description": "Total limit across all resource types (compatibility field)"
-          }
-        }
-      },
-      "LimitSummary": {
-        "type": "object",
-        "description": "Limit summary for a specific resource",
-        "required": [
-          "resource_type",
-          "resource_id",
-          "resource_name",
-          "limit_used",
-          "limit_limit",
-          "limit_reset_at",
-          "percentage_used",
-          "limit_unit"
-        ],
-        "properties": {
-          "resource_type": {
-            "type": "string",
-            "enum": [
-              "endpoint",
-              "source_library",
-              "agent"
-            ]
-          },
-          "resource_id": {
-            "type": "string"
-          },
-          "resource_name": {
-            "type": "string"
-          },
-          "limit_used": {
-            "type": "number",
-            "minimum": 0
-          },
-          "limit_limit": {
-            "type": "number",
-            "minimum": 0
-          },
-          "limit_total": {
-            "type": "number",
-            "minimum": 0,
-            "description": "Preferred alias of limit_limit for frontend readability"
-          },
-          "limit_reset_at": {
-            "type": "string",
-            "format": "date-time"
-          },
-          "percentage_used": {
-            "type": "number",
-            "minimum": 0,
-            "maximum": 100
-          },
-          "limit_unit": {
-            "type": "string",
-            "enum": [
-              "tokens",
-              "requests",
-              "bytes",
-              "files"
-            ]
-          },
-          "limit_kind": {
-            "type": "string",
-            "enum": [
-              "rate_limit",
-              "spending_limit"
-            ],
-            "description": "Limit category for Usage matrix rendering"
-          },
-          "window_key": {
-            "type": "string",
-            "enum": [
-              "minute",
-              "5h",
-              "day",
-              "current"
-            ],
-            "description": "Window projection key for Usage matrix rendering"
-          },
-          "limit_key": {
-            "type": "string",
-            "description": "Underlying policy key, e.g. endpoint.requests_per_minute"
+          "project_summary": {
+            "": "#/components/schemas/ProjectLimitSummary"
           }
         }
       },
@@ -14207,6 +14103,121 @@
           },
           "has_more": {
             "type": "boolean"
+          }
+        }
+      },
+      "EndpointLimitSummary": {
+        "type": "object",
+        "description": "Endpoint-level grouped limits for Usage view",
+        "required": [
+          "endpoint_id",
+          "endpoint_name",
+          "limits"
+        ],
+        "properties": {
+          "endpoint_id": {
+            "type": "string"
+          },
+          "endpoint_name": {
+            "type": "string"
+          },
+          "limits": {
+            "type": "array",
+            "items": {
+              "": "#/components/schemas/LimitRuleSnapshot"
+            }
+          }
+        }
+      },
+      "LimitRuleSnapshot": {
+        "type": "object",
+        "description": "Single windowed rate/spending rule snapshot",
+        "required": [
+          "kind",
+          "window",
+          "metric",
+          "policy_key",
+          "used",
+          "max",
+          "remaining",
+          "usage_pct",
+          "reset_at"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "rate_limit",
+              "spending_limit"
+            ]
+          },
+          "window": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "5h",
+              "day",
+              "current"
+            ]
+          },
+          "metric": {
+            "type": "string",
+            "enum": [
+              "requests",
+              "usd"
+            ]
+          },
+          "policy_key": {
+            "type": "string"
+          },
+          "used": {
+            "type": "number",
+            "minimum": 0
+          },
+          "max": {
+            "type": "number",
+            "minimum": 0
+          },
+          "remaining": {
+            "type": "number",
+            "minimum": 0
+          },
+          "usage_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "reset_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ProjectLimitSummary": {
+        "type": "object",
+        "required": [
+          "project_used",
+          "project_max",
+          "project_remaining",
+          "project_usage_pct"
+        ],
+        "properties": {
+          "project_used": {
+            "type": "number",
+            "minimum": 0
+          },
+          "project_max": {
+            "type": "number",
+            "minimum": 0
+          },
+          "project_remaining": {
+            "type": "number",
+            "minimum": 0
+          },
+          "project_usage_pct": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100
           }
         }
       }

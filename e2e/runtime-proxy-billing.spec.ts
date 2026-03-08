@@ -152,19 +152,29 @@ test.describe('runtime proxy billing (mock lane)', () => {
     expect(runtimeObs.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
     expect(result.limitsSummary.status).toBe(200);
     const limitsSummaryBody = result.limitsSummary.body as {
-      endpoints?: Array<{ limit_kind?: string; window_key?: string; limit_total?: number; limit_limit?: number }>;
-      total_limit?: number;
-      total_limit_limit?: number;
+      endpoints?: Array<{
+        endpoint_id?: string;
+        limits?: Array<{ kind?: string; window?: string; used?: number; max?: number }>;
+      }>;
+      project_summary?: {
+        project_used?: number;
+        project_max?: number;
+        project_remaining?: number;
+        project_usage_pct?: number;
+      };
     };
     expect(Array.isArray(limitsSummaryBody.endpoints)).toBe(true);
     expect((limitsSummaryBody.endpoints ?? []).length).toBeGreaterThan(0);
-    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limit_kind === 'rate_limit')).toBe(true);
-    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limit_kind === 'spending_limit')).toBe(true);
-    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.window_key === 'minute')).toBe(true);
-    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.window_key === 'day')).toBe(true);
-    expect(typeof limitsSummaryBody.total_limit === 'number' || typeof limitsSummaryBody.total_limit_limit === 'number').toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limits?.some((rule) => rule.kind === 'rate_limit'))).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limits?.some((rule) => rule.kind === 'spending_limit'))).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limits?.some((rule) => rule.window === 'minute'))).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limits?.some((rule) => rule.window === 'day'))).toBe(true);
+    expect(typeof limitsSummaryBody.project_summary?.project_max).toBe('number');
+    expect(typeof limitsSummaryBody.project_summary?.project_used).toBe('number');
     expect(
-      (limitsSummaryBody.endpoints ?? []).every((item) => typeof item.limit_total === 'number' || typeof item.limit_limit === 'number'),
+      (limitsSummaryBody.endpoints ?? []).every((item) =>
+        (item.limits ?? []).every((rule) => typeof rule.used === 'number' && typeof rule.max === 'number')
+      ),
     ).toBe(true);
   });
 

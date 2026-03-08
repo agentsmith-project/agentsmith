@@ -55,5 +55,5 @@ Backend enforces `401/403`; frontend applies route/component gates.
 5. Do not introduce new project permission points without updating this matrix and permission constants.
 6. `usage` should remain a low-cognitive personal usage view only; admin audit/troubleshooting actions belong to `audit` page.
 7. `GET /limits/summary` should support endpoint-level limit projection for Usage UI:
-   - preferred: return per-endpoint rows with `limit_kind` (`rate_limit`/`spending_limit`) + `window_key` (`minute`/`5h`/`day`/`current`) + `limit_used` + `limit_total|limit_limit`.
-   - fallback compatibility: if only aggregated row exists, FE renders it as `current` window and infers kind conservatively.
+   - return `endpoints[].limits[]` with canonical fields: `kind/window/metric/policy_key/used/max/remaining/usage_pct/reset_at`.
+   - return `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.

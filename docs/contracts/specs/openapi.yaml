@@ -6548,80 +6548,92 @@ components:
     # ============================================================
     LimitOverview:
       type: object
-      description: Aggregate limit summary across all resource types
+      description: Endpoint-scoped limit summary for Usage page
       properties:
         endpoints:
           type: array
           items:
-            $ref: '#/components/schemas/LimitSummary'
-        source_libraries:
-          type: array
-          items:
-            $ref: '#/components/schemas/LimitSummary'
-        agents:
-          type: array
-          items:
-            $ref: '#/components/schemas/LimitSummary'
-        total_limit_used:
-          type: number
-          description: Total limit used across all resource types
-        total_limit:
-          type: number
-          description: Total limit across all resource types (preferred field)
-        total_limit_limit:
-          type: number
-          description: Total limit across all resource types (compatibility field)
-    LimitSummary:
+            $ref: '#/components/schemas/EndpointLimitSummary'
+        project_summary:
+          $ref: '#/components/schemas/ProjectLimitSummary'
+    EndpointLimitSummary:
       type: object
-      description: Limit summary for a specific resource
+      description: Endpoint-level grouped limits for Usage view
       required:
-        - resource_type
-        - resource_id
-        - resource_name
-        - limit_used
-        - limit_limit
-        - limit_reset_at
-        - percentage_used
-        - limit_unit
+        - endpoint_id
+        - endpoint_name
+        - limits
       properties:
-        resource_type:
+        endpoint_id:
           type: string
-          enum: [endpoint, source_library, agent]
-        resource_id:
+        endpoint_name:
           type: string
-        resource_name:
+        limits:
+          type: array
+          items:
+            $ref: '#/components/schemas/LimitRuleSnapshot'
+    LimitRuleSnapshot:
+      type: object
+      description: Single windowed rate/spending rule snapshot
+      required:
+        - kind
+        - window
+        - metric
+        - policy_key
+        - used
+        - max
+        - remaining
+        - usage_pct
+        - reset_at
+      properties:
+        kind:
           type: string
-        limit_used:
+          enum: [rate_limit, spending_limit]
+        window:
+          type: string
+          enum: [minute, 5h, day, current]
+        metric:
+          type: string
+          enum: [requests, usd]
+        policy_key:
+          type: string
+        used:
           type: number
           minimum: 0
-        limit_limit:
+        max:
           type: number
           minimum: 0
-        limit_total:
+        remaining:
           type: number
           minimum: 0
-          description: Preferred alias of limit_limit for frontend readability
-        limit_reset_at:
-          type: string
-          format: date-time
-        percentage_used:
+        usage_pct:
           type: number
           minimum: 0
           maximum: 100
-        limit_unit:
+        reset_at:
           type: string
-          enum: [tokens, requests, bytes, files]
-        limit_kind:
-          type: string
-          enum: [rate_limit, spending_limit]
-          description: Limit category for Usage matrix rendering
-        window_key:
-          type: string
-          enum: [minute, 5h, day, current]
-          description: Window projection key for Usage matrix rendering
-        limit_key:
-          type: string
-          description: Underlying policy key, e.g. endpoint.requests_per_minute
+          format: date-time
+    ProjectLimitSummary:
+      type: object
+      required:
+        - project_used
+        - project_max
+        - project_remaining
+        - project_usage_pct
+      properties:
+        project_used:
+          type: number
+          minimum: 0
+        project_max:
+          type: number
+          minimum: 0
+        project_remaining:
+          type: number
+          minimum: 0
+        project_usage_pct:
+          type: number
+          minimum: 0
+          maximum: 100
     UsageTimeseriesRequest:
       type: object
       description: Request parameters for usage time series data

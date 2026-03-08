@@ -211,23 +211,29 @@ describe('UsageAPI exportReport', () => {
     const getMock = vi.fn().mockResolvedValue({
       endpoints: [
         {
-          resource_id: 'ep_1',
-          resource_name: 'Endpoint 1',
-          resource_type: 'endpoint',
-          limit_used: 40,
-          limit_total: 100,
-          limit_limit: 100,
-          limit_unit: 'requests',
-          limit_kind: 'rate_limit',
-          window_key: 'minute',
-          limit_key: 'endpoint.requests_per_minute',
-          limit_reset_at: '2026-03-08T00:00:00.000Z',
-          percentage_used: 40,
+          endpoint_id: 'ep_1',
+          endpoint_name: 'Endpoint 1',
+          limits: [
+            {
+              kind: 'rate_limit',
+              window: 'minute',
+              metric: 'requests',
+              policy_key: 'endpoint.requests_per_minute',
+              used: 40,
+              max: 100,
+              remaining: 60,
+              usage_pct: 40,
+              reset_at: '2026-03-08T00:00:00.000Z',
+            },
+          ],
         },
       ],
-      total_limit_used: 40,
-      total_limit: 100,
-      total_limit_limit: 100,
+      project_summary: {
+        project_used: 40,
+        project_max: 100,
+        project_remaining: 60,
+        project_usage_pct: 40,
+      },
     });
 
     const api = new UsageAPI({
@@ -237,16 +243,17 @@ describe('UsageAPI exportReport', () => {
 
     const result = await api.getLimitsSummary('ws_1', 'proj_1');
     const firstEndpoint = result.endpoints?.[0];
+    const firstRule = firstEndpoint?.limits?.[0];
 
-    expect(firstEndpoint?.limit_used).toBe(40);
-    expect(firstEndpoint?.limit_total).toBe(100);
-    expect(firstEndpoint?.limit_limit).toBe(100);
-    expect(firstEndpoint?.limit_kind).toBe('rate_limit');
-    expect(firstEndpoint?.window_key).toBe('minute');
-    expect(firstEndpoint?.limit_key).toBe('endpoint.requests_per_minute');
-    expect(result.total_limit_used).toBe(40);
-    expect(result.total_limit).toBe(100);
-    expect(result.total_limit_limit).toBe(100);
+    expect(firstEndpoint?.endpoint_id).toBe('ep_1');
+    expect(firstRule?.used).toBe(40);
+    expect(firstRule?.max).toBe(100);
+    expect(firstRule?.remaining).toBe(60);
+    expect(firstRule?.kind).toBe('rate_limit');
+    expect(firstRule?.window).toBe('minute');
+    expect(firstRule?.policy_key).toBe('endpoint.requests_per_minute');
+    expect(result.project_summary?.project_used).toBe(40);
+    expect(result.project_summary?.project_max).toBe(100);
   });
 });
 

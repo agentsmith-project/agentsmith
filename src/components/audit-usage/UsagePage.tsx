@@ -82,39 +82,31 @@ export function UsagePage({
     enabled: canReadUsage,
   });
 
-  const readNumber = React.useCallback((value: unknown): number | undefined => {
-    if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-    return value;
-  }, []);
-
-  const readString = React.useCallback((value: unknown): string | undefined => {
-    if (typeof value !== 'string' || value.length === 0) return undefined;
-    return value;
-  }, []);
-
-  const readField = React.useCallback((source: unknown, key: string): unknown => {
-    if (!source || typeof source !== 'object') return undefined;
-    return (source as { [field: string]: unknown })[key];
-  }, []);
-
   const limitsOverview = React.useMemo(
     () => ({
       endpoints: (limitsSummary?.endpoints ?? []).map((item) => ({
-        resourceId: item.resource_id,
-        resourceName: item.resource_name,
-        limitUsed: readNumber(readField(item, 'limit_used')) ?? 0,
-        limitTotal: readNumber(readField(item, 'limit_total')) ?? readNumber(readField(item, 'limit_limit')) ?? 0,
-        percentageUsed: item.percentage_used,
-        resetAt: readString(readField(item, 'limit_reset_at')) ?? '',
-        limitUnit: readField(item, 'limit_unit') as 'tokens' | 'requests' | 'bytes' | 'files' | undefined,
-        limitKey: readString(readField(item, 'limit_key')),
-        limitKind: readField(item, 'limit_kind') as 'rate_limit' | 'spending_limit' | undefined,
-        windowKey: readField(item, 'window_key') as 'minute' | '5h' | 'day' | 'current' | undefined,
+        endpointId: item.endpoint_id,
+        endpointName: item.endpoint_name,
+        limits: (item.limits ?? []).map((rule) => ({
+          kind: rule.kind,
+          window: rule.window,
+          metric: rule.metric,
+          policyKey: rule.policy_key,
+          used: rule.used,
+          max: rule.max,
+          remaining: rule.remaining,
+          usagePct: rule.usage_pct,
+          resetAt: rule.reset_at,
+        })),
       })),
-      totalLimitUsed: readNumber(readField(limitsSummary, 'total_limit_used')),
-      totalLimit: readNumber(readField(limitsSummary, 'total_limit')) ?? readNumber(readField(limitsSummary, 'total_limit_limit')),
+      projectSummary: limitsSummary?.project_summary ? {
+        projectUsed: limitsSummary.project_summary.project_used,
+        projectMax: limitsSummary.project_summary.project_max,
+        projectRemaining: limitsSummary.project_summary.project_remaining,
+        projectUsagePct: limitsSummary.project_summary.project_usage_pct,
+      } : undefined,
     }),
-    [limitsSummary, readField, readNumber, readString],
+    [limitsSummary],
   );
 
   const handleRefresh = React.useCallback(() => {

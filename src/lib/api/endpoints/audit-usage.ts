@@ -48,28 +48,32 @@ export interface UsageTimeseriesResponse {
   total_cost?: number;
 }
 
-export interface LimitsSummaryItem {
-  resource_id: string;
-  resource_name: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
-  limit_used: number;
-  limit_total: number;
-  limit_limit?: number;
-  limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
-  limit_reset_at: string;
-  percentage_used: number;
-  limit_key?: string;
-  limit_kind?: 'rate_limit' | 'spending_limit';
-  window_key?: 'minute' | '5h' | 'day' | 'current';
+export interface LimitRuleSnapshot {
+  kind: 'rate_limit' | 'spending_limit';
+  window: 'minute' | '5h' | 'day' | 'current';
+  metric: 'requests' | 'usd';
+  policy_key: string;
+  used: number;
+  max: number;
+  remaining: number;
+  usage_pct: number;
+  reset_at: string;
+}
+
+export interface EndpointLimitSummary {
+  endpoint_id: string;
+  endpoint_name: string;
+  limits: LimitRuleSnapshot[];
 }
 
 export interface LimitsOverview {
-  endpoints?: LimitsSummaryItem[];
-  source_libraries?: LimitsSummaryItem[];
-  agents?: LimitsSummaryItem[];
-  total_limit?: number;
-  total_limit_limit?: number;
-  total_limit_used?: number;
+  endpoints?: EndpointLimitSummary[];
+  project_summary?: {
+    project_used: number;
+    project_max: number;
+    project_remaining: number;
+    project_usage_pct: number;
+  };
 }
 
 export interface RuntimeObservabilityResponse {
@@ -486,67 +490,89 @@ export class UsageAPI {
     return typeof value === 'string' && value.length > 0 ? value : undefined;
   }
 
-  private static normalizeLimitsSummaryItem(item: unknown): LimitsSummaryItem | null {
+  private static normalizeLimitRule(item: unknown): LimitRuleSnapshot | null {
     if (!item || typeof item !== 'object') return null;
     const record = item as Record<string, unknown>;
-    const resourceId = UsageAPI.asString(record.resource_id);
-    const resourceName = UsageAPI.asString(record.resource_name) ?? resourceId ?? 'unknown';
-    const resourceType = record.resource_type;
-    if (!resourceId || (resourceType !== 'endpoint' && resourceType !== 'source_library' && resourceType !== 'agent')) {
+    const kind = record.kind;
+    const window = record.window;
+    const metric = record.metric;
+    const policyKey = UsageAPI.asString(record.policy_key);
+    const used = UsageAPI.asNumber(record.used) ?? 0;
+    const max = UsageAPI.asNumber(record.max) ?? 0;
+    const resetAt = UsageAPI.asString(record.reset_at) ?? '';
+
+    if ((kind !== 'rate_limit' && kind !== 'spending_limit')
+      || (window !== 'minute' && window !== '5h' && window !== 'day' && window !== 'current')
+      || (metric !== 'requests' && metric !== 'usd')
+      || !policyKey) {
       return null;
     }
-
-    const limitUsed = UsageAPI.asNumber(record.limit_used) ?? 0;
-    const limitTotal = UsageAPI.asNumber(record.limit_total) ?? UsageAPI.asNumber(record.limit_limit) ?? 0;
-    const limitResetAt = UsageAPI.asString(record.limit_reset_at) ?? '';
-    const limitUnit = record.limit_unit as LimitsSummaryItem['limit_unit'] | undefined;
-    const unit = limitUnit === 'tokens' || limitUnit === 'requests' || limitUnit === 'bytes' || limitUnit === 'files'
-      ? limitUnit
-      : 'requests';
-    const percentageUsed = UsageAPI.asNumber(record.percentage_used)
-      ?? (limitTotal > 0 ? Math.min(100, (limitUsed / limitTotal) * 100) : 0);
+    const remaining = UsageAPI.asNumber(record.remaining)
+      ?? Math.max(0, max - used);
+    const usagePct = UsageAPI.asNumber(record.usage_pct)
+      ?? (max > 0 ? Math.min(100, (used / max) * 100) : 0);
 
     return {
-      resource_id: resourceId,
-      resource_name: resourceName,
-      resource_type: resourceType,
-      limit_used: limitUsed,
-      limit_total: limitTotal,
-      limit_limit: UsageAPI.asNumber(record.limit_limit),
-      limit_unit: unit,
-      limit_reset_at: limitResetAt,
-      percentage_used: percentageUsed,
-      limit_key: UsageAPI.asString(record.limit_key),
-      limit_kind: record.limit_kind === 'rate_limit' || record.limit_kind === 'spending_limit' ? record.limit_kind : undefined,
-      window_key:
-        record.window_key === 'minute'
-        || record.window_key === '5h'
-        || record.window_key === 'day'
-        || record.window_key === 'current'
-          ? record.window_key
-          : undefined,
+      kind,
+      window,
+      metric,
+      policy_key: policyKey,
+      used,
+      max,
+      remaining,
+      usage_pct: usagePct,
+      reset_at: resetAt,
     };
   }
 
   private static normalizeLimitsOverview(payload: unknown): LimitsOverview {
     const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-    const normalizeList = (key: 'endpoints' | 'source_libraries' | 'agents') =>
-      Array.isArray(record[key])
-        ? record[key]
-          .map((item) => UsageAPI.normalizeLimitsSummaryItem(item))
-          .filter((item): item is LimitsSummaryItem => item !== null)
-        : undefined;
+    const endpoints = Array.isArray(record.endpoints)
+      ? record.endpoints
+        .map((item) => {
+          if (!item || typeof item !== 'object') return null;
+          const endpoint = item as Record<string, unknown>;
+          const endpointId = UsageAPI.asString(endpoint.endpoint_id);
+          const endpointName = UsageAPI.asString(endpoint.endpoint_name) ?? endpointId ?? 'unknown';
+          if (!endpointId) return null;
+          const limits = Array.isArray(endpoint.limits)
+            ? endpoint.limits
+              .map((rule) => UsageAPI.normalizeLimitRule(rule))
+              .filter((rule): rule is LimitRuleSnapshot => rule !== null)
+            : [];
+          return {
+            endpoint_id: endpointId,
+            endpoint_name: endpointName,
+            limits,
+          };
+        })
+        .filter((item): item is EndpointLimitSummary => item !== null)
+      : undefined;
 
-    const totalLimitUsed = UsageAPI.asNumber(record.total_limit_used);
-    const totalLimit = UsageAPI.asNumber(record.total_limit) ?? UsageAPI.asNumber(record.total_limit_limit);
+    const projectSummaryRecord = record.project_summary && typeof record.project_summary === 'object'
+      ? record.project_summary as Record<string, unknown>
+      : null;
+    const projectUsed = UsageAPI.asNumber(projectSummaryRecord?.project_used);
+    const projectMax = UsageAPI.asNumber(projectSummaryRecord?.project_max);
+    const projectRemaining = UsageAPI.asNumber(projectSummaryRecord?.project_remaining);
+    const projectUsagePct = UsageAPI.asNumber(projectSummaryRecord?.project_usage_pct);
+    const projectSummary = (
+      projectUsed !== undefined
+      && projectMax !== undefined
+      && projectRemaining !== undefined
+      && projectUsagePct !== undefined
+    )
+      ? {
+        project_used: projectUsed,
+        project_max: projectMax,
+        project_remaining: projectRemaining,
+        project_usage_pct: projectUsagePct,
+      }
+      : undefined;
 
     return {
-      endpoints: normalizeList('endpoints'),
-      source_libraries: normalizeList('source_libraries'),
-      agents: normalizeList('agents'),
-      total_limit_used: totalLimitUsed,
-      total_limit: totalLimit,
-      total_limit_limit: UsageAPI.asNumber(record.total_limit_limit),
+      endpoints,
+      project_summary: projectSummary,
     };
   }
 

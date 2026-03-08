@@ -6,7 +6,7 @@ Scope boundary (current MVP): this guide describes project-level endpoint policy
 
 The Cost & Limits Dashboard provides real-time visibility into your resource consumption, costs, and limit utilization. It helps you:
 
-- Track API usage and costs across endpoints and agents
+- Track API usage and costs across endpoints
 - Monitor rate/spending limits and usage thresholds
 - Identify cost trends and optimize resource allocation
 - Set up alerts for limit thresholds
@@ -37,15 +37,13 @@ Visual representation of your spending over time:
 - **Line graph**: Shows cost trend over the selected period
 - **Hover**: View exact cost for any time point
 
-### 3. Limit Usage Cards
+### 3. Endpoint Limit Cards
 
-Individual cards showing limit status for each resource type:
+Usage limit area is endpoint-grouped. Each endpoint card includes:
 
-- **Endpoint Limits**: API endpoint request and spending limits
-- **Source Library Limits**: Storage/library limits
-- **Agent Limits**: Agent execution/rate limits
-- **Progress Bar**: Visual indicator of limit utilization
-- **Reset Date**: When the window resets
+- **Rate Limit** group: request windows (`minute`, `5h`, `day`)
+- **Spending Limit** group: spending windows (`day` or configured window)
+- **Window Rows**: each row shows `used / max`, progress, and reset time
 
 ### 4. Top Resources Table
 
@@ -72,11 +70,12 @@ Adjust the time range to analyze different periods:
 
 ### Viewing Limit Status
 
-Each limit card displays:
+Each endpoint window row displays:
 
-- **Current Usage**: Number of requests used
-- **Limit**: Maximum allowed requests
-- **Percentage**: Visual progress bar
+- **Current Usage**: `used`
+- **Maximum**: `max`
+- **Remaining**: `remaining`
+- **Percentage**: `usage_pct`
 - **Status Color**:
   - 🟢 Green: Under 80% of limit
   - 🟡 Yellow: 80-95% of limit
@@ -97,7 +96,7 @@ When you approach configured limits:
 
 The dashboard categorizes costs by:
 
-- **Resource Type**: Endpoints, agents, source libraries
+- **Resource Type**: Endpoints
 - **Operation**: Read, write, compute operations
 - **Time Period**: Daily, weekly, monthly aggregation
 

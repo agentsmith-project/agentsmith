@@ -2112,113 +2112,61 @@ export const usageHandlers = [
     const resetAt = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1).toISOString();
     const endpoints = resources
       .filter((item) => item.resource_type === 'endpoint')
-      .flatMap((item) => {
+      .map((item) => {
         const requestsPerMinuteLimit = 1200;
         const requestsPer5HoursLimit = 18000;
         const requestsPerDayLimit = 20000;
-        const spendingPerDayLimit = 8000;
+        const spendingPerDayLimitUsd = 500;
 
         const requestsPerMinuteUsed = Math.max(1, Math.round(item.requests / 60));
         const requestsPer5HoursUsed = Math.max(1, Math.round(item.requests * 0.75));
         const requestsPerDayUsed = item.requests;
-        const spendingPerDayUsed = Math.max(1, Math.round(item.requests * 0.35));
+        const spendingPerDayUsedUsd = Math.max(1, Number((item.requests * 0.08).toFixed(2)));
 
-        return [
-          {
-            resource_id: item.resource_id,
-            resource_name: item.resource_name,
-            resource_type: item.resource_type,
-            limit_kind: 'rate_limit',
-            window_key: 'minute',
-            limit_key: 'endpoint.requests_per_minute',
-            limit_used: requestsPerMinuteUsed,
-            limit_total: requestsPerMinuteLimit,
-            limit_limit: requestsPerMinuteLimit,
-            limit_unit: 'requests',
-            limit_reset_at: resetAt,
-            percentage_used: Number(((requestsPerMinuteUsed / requestsPerMinuteLimit) * 100).toFixed(2)),
-          },
-          {
-            resource_id: item.resource_id,
-            resource_name: item.resource_name,
-            resource_type: item.resource_type,
-            limit_kind: 'rate_limit',
-            window_key: '5h',
-            limit_key: 'endpoint.requests_per_5_hours',
-            limit_used: requestsPer5HoursUsed,
-            limit_total: requestsPer5HoursLimit,
-            limit_limit: requestsPer5HoursLimit,
-            limit_unit: 'requests',
-            limit_reset_at: resetAt,
-            percentage_used: Number(((requestsPer5HoursUsed / requestsPer5HoursLimit) * 100).toFixed(2)),
-          },
-          {
-            resource_id: item.resource_id,
-            resource_name: item.resource_name,
-            resource_type: item.resource_type,
-            limit_kind: 'rate_limit',
-            window_key: 'day',
-            limit_key: 'endpoint.requests_per_day',
-            limit_used: requestsPerDayUsed,
-            limit_total: requestsPerDayLimit,
-            limit_limit: requestsPerDayLimit,
-            limit_unit: 'requests',
-            limit_reset_at: resetAt,
-            percentage_used: Number(((requestsPerDayUsed / requestsPerDayLimit) * 100).toFixed(2)),
-          },
-          {
-            resource_id: item.resource_id,
-            resource_name: item.resource_name,
-            resource_type: item.resource_type,
-            limit_kind: 'spending_limit',
-            window_key: 'day',
-            limit_key: 'endpoint.spending_usd_per_day',
-            limit_used: spendingPerDayUsed,
-            limit_total: spendingPerDayLimit,
-            limit_limit: spendingPerDayLimit,
-            limit_unit: 'tokens',
-            limit_reset_at: resetAt,
-            percentage_used: Number(((spendingPerDayUsed / spendingPerDayLimit) * 100).toFixed(2)),
-          },
-        ];
+        const makeRule = (
+          kind: 'rate_limit' | 'spending_limit',
+          window: 'minute' | '5h' | 'day' | 'current',
+          metric: 'requests' | 'usd',
+          policyKey: string,
+          used: number,
+          max: number,
+        ) => ({
+          kind,
+          window,
+          metric,
+          policy_key: policyKey,
+          used,
+          max,
+          remaining: Math.max(0, max - used),
+          usage_pct: Number((max > 0 ? Math.min(100, (used / max) * 100) : 0).toFixed(2)),
+          reset_at: resetAt,
+        });
+
+        return {
+          endpoint_id: item.resource_id,
+          endpoint_name: item.resource_name,
+          limits: [
+            makeRule('rate_limit', 'minute', 'requests', 'endpoint.requests_per_minute', requestsPerMinuteUsed, requestsPerMinuteLimit),
+            makeRule('rate_limit', '5h', 'requests', 'endpoint.requests_per_5_hours', requestsPer5HoursUsed, requestsPer5HoursLimit),
+            makeRule('rate_limit', 'day', 'requests', 'endpoint.requests_per_day', requestsPerDayUsed, requestsPerDayLimit),
+            makeRule('spending_limit', 'day', 'usd', 'endpoint.spending_usd_per_day', spendingPerDayUsedUsd, spendingPerDayLimitUsd),
+          ],
+        };
       });
-    const agents = resources
-      .filter((item) => item.resource_type === 'agent')
-      .map((item) => ({
-        resource_id: item.resource_id,
-        resource_name: item.resource_name,
-        resource_type: item.resource_type,
-        limit_used: item.requests,
-        limit_limit: 12000,
-        limit_unit: 'requests',
-        limit_reset_at: resetAt,
-        percentage_used: Number(((item.requests / 12000) * 100).toFixed(2)),
-      }));
-    const sourceLibraries = resources
-      .filter((item) => item.resource_type === 'source_library')
-      .map((item) => ({
-        resource_id: item.resource_id,
-        resource_name: item.resource_name,
-        resource_type: item.resource_type,
-        limit_used: item.requests,
-        limit_limit: 10000,
-        limit_unit: 'requests',
-        limit_reset_at: resetAt,
-        percentage_used: Number(((item.requests / 10000) * 100).toFixed(2)),
-      }));
-
-    const totalLimitUsed =
-      [...endpoints, ...agents, ...sourceLibraries].reduce((sum, item) => sum + item.limit_used, 0);
-    const totalLimit =
-      [...endpoints, ...agents, ...sourceLibraries].reduce((sum, item) => sum + item.limit_limit, 0);
+    const allRules = endpoints.flatMap((endpoint) => endpoint.limits);
+    const projectUsed = allRules.reduce((sum, item) => sum + item.used, 0);
+    const projectMax = allRules.reduce((sum, item) => sum + item.max, 0);
+    const projectRemaining = Math.max(0, projectMax - projectUsed);
+    const projectUsagePct = Number((projectMax > 0 ? Math.min(100, (projectUsed / projectMax) * 100) : 0).toFixed(2));
 
     return HttpResponse.json({
       endpoints,
-      agents,
-      source_libraries: sourceLibraries,
-      total_limit_used: totalLimitUsed,
-      total_limit: totalLimit,
-      total_limit_limit: totalLimit,
+      project_summary: {
+        project_used: projectUsed,
+        project_max: projectMax,
+        project_remaining: projectRemaining,
+        project_usage_pct: projectUsagePct,
+      },
     });
   }),
 ];

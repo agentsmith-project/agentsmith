@@ -127,7 +127,7 @@ The Usage page displays:
 
 - **Request Volume**: Total API calls over time
 - **Cost Trend**: Spending patterns
-- **Limit Utilization**: Resource limit usage
+- **Limit Utilization**: Endpoint matrix (`rate limit` + `spending limit` by window)
 - **Error Rates**: Failed request percentage
 
 ### Usage Time Series
@@ -138,16 +138,14 @@ View metrics over time:
 2. Chart updates to show:
    - **Request Count**: Line graph of API calls
    - **Cost**: Bar chart of spending
-   - **Limits**: Progress bars for each resource type
+   - **Limits**: Endpoint-grouped window rows (`used/max/remaining/usage_pct`)
 
 ### Resource Breakdown
 
 See usage by resource type:
 
-- **Endpoints**: Per-endpoint request counts
-- **Agents**: Per-agent execution counts
-- **Source Libraries**: Storage and access patterns
-- **Total**: Project-wide aggregate
+- **Endpoints**: Per-endpoint request/cost and limit windows
+- **Total**: Project summary aggregate
 
 ## Exporting Data
 

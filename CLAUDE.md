@@ -4,7 +4,7 @@ Guidance for Claude Code when working with AgentSmith ( MBOS enterprise control 
 
 ## Project Overview
 
-AgentSmith = MBOS 企业级控制面前端。**三层职责**: AI 智能体使用与管理、 AI 资源治理, 运行与发布治理。
+AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使用与管理、项目级 AI 资源治理与审计。
 
 **Stack**: Next.js 15 + TypeScript 5.9 + TailwindCSS + Radix UI + Zustand + React Query + next-intl
 
@@ -16,7 +16,7 @@ AgentSmith = MBOS 企业级控制面前端。**三层职责**: AI 智能体使�
 
 **定位**: 企业级控制面，非 ToC 产品，非低代码平台。 **后端为唯一权威**。
 
-**范围**: 认证/身份, 工作区, 项目, Chat, Notebook, Files, Agents, Endpoints, 资源策略, 成员, 凭据, 审计与用量, 运行与发布治理, 设置.
+**范围**: 认证/身份, 工作区, 项目, Chat, Notebook, Files, Agents, Endpoints, 资源策略, 成员, 凭据, 审计与用量, Runtime Console, 设置.
 
 **非范围**: 文件级策略, Chat/Notebook 独立配额, 角色名鉴权, 性能压测, E2E 覆盖后端鉴权.
 
@@ -32,7 +32,7 @@ AgentSmith = MBOS 企业级控制面前端。**三层职责**: AI 智能体使�
 
 **工程原则**: Contract First, 分层收敛复杂度, 拒绝补丁式修复, 证据作为一等产物.
 
-**测试原则**: 分层验证 (type/contract → unit → integration → e2e → visual → real-lane → release report), mock/real lane 分离, 验收必须有 formal gate.
+**测试原则**: 分层验证 (type/contract → unit → integration → e2e → visual → real-lane smoke), mock/real lane 分离, 验收必须有工程检查门禁（engineering gate）.
 
 **治理原则**: 治理是控制面, 统一策略引擎, 例外必须被治理, Incident 是治理主键, Ownership/SLA 是闭环.
 
@@ -68,7 +68,8 @@ make bootstrap / api-dev / web / e2e / deps-down
 - `docs/项目宪法.md` - 产品定位、范围边界、设计原则
 - `docs/design/agentsmith-product-engineering-governance-methodology-v1.md` - 治理方法论
 - `DEVELOPMENT.md` / `DESIGN_SYSTEM.md` - 开发与设计系统
-- `docs/contracts/` / `docs/plans/` / `docs/release/` - 合约、计划、发布
+- `docs/contracts/` - 合约与接口规范
+- `docs/user-guides/` - 用户操作与排障入口
 - `docs/UXUI/` - UX/UI 规范
 
 ## 测试

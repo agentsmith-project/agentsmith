@@ -4,13 +4,13 @@ AgentSmith is the enterprise control plane for the Microservices-Based Agent Sys
 
 - operate AI agents through project-scoped Chat and Notebook workflows
 - manage AI resources such as files, endpoints, credentials, and agents
-- govern runtime behavior, usage, cost, and release readiness
+- govern runtime behavior, usage, and cost with project-scoped policy evidence
 
 Core product positioning:
 
 - enterprise AI agent usage and management platform
 - AI resource governance platform
-- AI runtime and release governance surface
+- AI runtime operations and project governance surface
 
 ## Tech Stack
 
@@ -88,7 +88,8 @@ make smoke-governance   # optional extended/legacy smoke, not part of default re
 make release-core-smoke
 make mvp-freeze-check
 ```
-`release-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives a release report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
+Note: `release`/`gate` command names above are repository engineering workflow terms, not product DevOps capabilities.
+`release-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives an engineering verification report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
 `mvp-freeze-check` is the freeze-oriented bundle: contracts + core smoke + demo readiness check.
 
 ### Dependency Recovery (only when environment is broken)
@@ -158,11 +159,10 @@ src/
 
 ## Documentation
 
+- [Current Baseline (Whitelist)](./docs/CURRENT_BASELINE.md) — 当前唯一白名单入口
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
-- [Release Governance Control Plane](./docs/user-guides/release-governance-control-plane.md) — 运行与发布治理控制面的操作基线
 - [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
-- [MVP Freeze Checklist](./docs/release/mvp-freeze-checklist.md) — 预发布冻结执行清单（命令+手工验收+回滚基线）
 - [Third-Party Accounts & Feishu OAuth](./docs/user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth、回调模式与手动验收说明
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
 - [Design System](./DESIGN_SYSTEM.md)

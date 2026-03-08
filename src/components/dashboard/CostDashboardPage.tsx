@@ -232,7 +232,7 @@ export function CostDashboardPage({
     [kpiData, timeseriesData?.total_cost],
   );
 
-  const totalQuotaPercentage = React.useMemo(() => {
+  const totalLimitUsagePercentage = React.useMemo(() => {
     if (!limitsOverview?.total_quota_limit || !limitsOverview.total_quota_used) return undefined;
     return Math.min(
       100,
@@ -272,12 +272,12 @@ export function CostDashboardPage({
 
       <DashboardKPICards kpi={dashboardKpi} loading={kpiLoading} />
 
-      {totalQuotaPercentage !== undefined && (
+      {totalLimitUsagePercentage !== undefined && (
         <div
           className="rounded-xl border border-border bg-surface p-3 text-sm text-tertiary"
-          data-testid="dashboard-quota-overview"
+          data-testid="dashboard-limit-overview"
         >
-          Quota used: {totalQuotaPercentage.toFixed(1)}%
+          Limit usage: {totalLimitUsagePercentage.toFixed(1)}%
         </div>
       )}
 

@@ -43,8 +43,8 @@ const mockRules: AlertRule[] = [
     id: 'rule_2',
     project_id: 'proj_1',
     workspace_id: 'ws_1',
-    name: 'Quota Warning',
-    description: 'Warn when quota exceeds 80%',
+    name: 'Limit Warning',
+    description: 'Warn when limit usage exceeds 80%',
     enabled: false,
     trigger: {
       metric: 'quota_percent',
@@ -76,7 +76,7 @@ describe('AlertRulesList', () => {
     );
 
     expect(screen.getByText('High Requests Alert')).toBeInTheDocument();
-    expect(screen.getByText('Quota Warning')).toBeInTheDocument();
+    expect(screen.getByText('Limit Warning')).toBeInTheDocument();
   });
 
   it('renders empty state when no rules', () => {

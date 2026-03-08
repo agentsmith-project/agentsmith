@@ -64,11 +64,11 @@ describe('TopResourcesList', () => {
     expect(screen.getByTestId('dashboard-top-resources__loading')).toBeInTheDocument();
   });
 
-  it('displays quota progress bar', () => {
+  it('displays limit progress bar', () => {
     render(<TopResourcesList resources={mockResources} onResourceClick={vi.fn()} />);
 
     // Should have progress bars for each resource
-    const progressBars = screen.getAllByTestId(/quota-progress/i);
+    const progressBars = screen.getAllByTestId(/limit-progress/i);
     expect(progressBars.length).toBe(2);
   });
 });

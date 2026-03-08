@@ -36,7 +36,7 @@ import type { AlertMetric, AlertOperator, AlertWindow } from '@/lib/types/alerts
 const METRIC_OPTIONS: { value: AlertMetric; label: string }[] = [
   { value: 'requests_per_day', label: 'Requests Per Day' },
   { value: 'requests_per_hour', label: 'Requests Per Hour' },
-  { value: 'quota_percent', label: 'Quota Percentage' },
+  { value: 'quota_percent', label: 'Limit Usage Percentage' },
   { value: 'error_rate', label: 'Error Rate' },
   { value: 'token_usage', label: 'Token Usage' },
   { value: 'response_time_p95', label: 'Response Time (P95)' },

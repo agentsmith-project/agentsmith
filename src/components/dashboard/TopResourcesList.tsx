@@ -47,7 +47,7 @@ function ResourceTypeBadge({ type }: { type: string }) {
   );
 }
 
-function QuotaProgressBar({ used, limit }: { used: number; limit: number }) {
+function LimitProgressBar({ used, limit }: { used: number; limit: number }) {
   const percentage = Math.min((used / limit) * 100, 100);
   const colorClass = percentage >= 80 ? 'bg-error' : percentage >= 50 ? 'bg-warning' : 'bg-success';
 
@@ -57,7 +57,7 @@ function QuotaProgressBar({ used, limit }: { used: number; limit: number }) {
         <div
           className={cn('h-full rounded-full transition-all', colorClass)}
           style={{ width: `${percentage}%` }}
-          data-testid={`quota-progress-${used}`}
+          data-testid={`limit-progress-${used}`}
         />
       </div>
     </div>
@@ -114,8 +114,8 @@ export function TopResourcesList({ resources, onResourceClick, loading }: TopRes
                 <span>Cost: ${resource.cost_usd.toFixed(2)}</span>
               </div>
             )}
-            {/* Quota progress bar would use actual quota data */}
-            <QuotaProgressBar used={resource.requests} limit={20000} />
+            {/* Limit progress bar should use actual limit data */}
+            <LimitProgressBar used={resource.requests} limit={20000} />
           </div>
         ))}
       </div>

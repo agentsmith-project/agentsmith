@@ -21,8 +21,8 @@ const mockAlerts: Alert[] = [
     project_id: 'proj_1',
     type: 'quota.exceeded',
     severity: 'critical',
-    title: 'Quota Exceeded',
-    message: 'Daily quota has been exceeded',
+    title: 'Limit Exceeded',
+    message: 'Daily limit has been exceeded',
     resource_type: 'endpoint',
     resource_id: 'ep_1',
     resource_name: 'GPT-4',
@@ -72,7 +72,7 @@ describe('AlertNotificationsPanel', () => {
     );
 
     // Should show unread and read alerts, not dismissed
-    expect(screen.getByText('Quota Exceeded')).toBeInTheDocument();
+    expect(screen.getByText('Limit Exceeded')).toBeInTheDocument();
     expect(screen.getByText('Rate Limit Warning')).toBeInTheDocument();
   });
 
@@ -87,7 +87,7 @@ describe('AlertNotificationsPanel', () => {
     );
 
     // Should only show unread and read alerts, not dismissed
-    expect(screen.getByText('Quota Exceeded')).toBeInTheDocument();
+    expect(screen.getByText('Limit Exceeded')).toBeInTheDocument();
     expect(screen.getByText('Rate Limit Warning')).toBeInTheDocument();
     expect(screen.queryByText('Budget Exceeded')).not.toBeInTheDocument();
   });

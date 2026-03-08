@@ -27,7 +27,7 @@ function QuotaItem({
   const isWarning = percentage > 80;
 
   return (
-    <Card className={cn('flex-1', className)} role="region" aria-label={`${label} quota`}>
+    <Card className={cn('flex-1', className)} role="region" aria-label={`${label} limit`}>
       <CardContent className="p-4">
         <div className="flex items-center justify-between mb-2">
           <span className="text-xs font-medium text-tertiary uppercase tracking-wide">
@@ -53,7 +53,7 @@ function QuotaItem({
             !isExceeded && isWarning && 'bg-warning/20 [&>div]:bg-warning',
             !isExceeded && !isWarning && 'bg-primary/20 [&>div]:bg-primary',
           )}
-          aria-label={`${label} usage: ${percentage.toFixed(1)}%`}
+          aria-label={`${label} limit usage: ${percentage.toFixed(1)}%`}
           aria-valuenow={percentage}
           aria-valuemin={0}
           aria-valuemax={100}

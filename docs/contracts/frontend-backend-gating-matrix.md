@@ -53,3 +53,4 @@ Backend enforces `401/403`; frontend applies route/component gates.
 3. Frontend treats `403` as non-retryable for identical payloads.
 4. `usage` module is user-self scope only; backend must always enforce `end_user_id = current_user_id`.
 5. Do not introduce new project permission points without updating this matrix and permission constants.
+6. `usage` should remain a low-cognitive personal usage view only; admin audit/troubleshooting actions belong to `audit` page.

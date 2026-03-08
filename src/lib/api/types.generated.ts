@@ -1369,78 +1369,6 @@ export interface paths {
         patch: operations["update_projectPermissionTemplate"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_projectLimitTemplates"];
-        put?: never;
-        post: operations["create_projectLimitTemplate"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_projectLimitTemplateItem"];
-        put?: never;
-        post?: never;
-        delete: operations["delete_projectLimitTemplate"];
-        options?: never;
-        head?: never;
-        patch: operations["update_projectLimitTemplate"];
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}/apply": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post: operations["apply_projectLimitTemplate"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limits/check": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /**
-         * Verify limit before operation
-         * @description Checks if a subject has sufficient limit remaining to perform an operation.
-         *     Returns limit status including remaining amount, limit, and reset time.
-         */
-        post: operations["checkLimit"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/resources/{resourceType}/{resourceId}/policy": {
         parameters: {
             query?: never;
@@ -2206,6 +2134,78 @@ export interface paths {
         get: operations["get_sourcesLimit"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_projectLimitTemplates"];
+        put?: never;
+        post: operations["create_projectLimitTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_projectLimitTemplateItem"];
+        put?: never;
+        post?: never;
+        delete: operations["delete_projectLimitTemplate"];
+        options?: never;
+        head?: never;
+        patch: operations["update_projectLimitTemplate"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["apply_projectLimitTemplate"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limits/check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Verify limit before operation
+         * @description Checks if a subject has sufficient limit remaining to perform an operation.
+         *     Returns limit status including remaining amount, limit, and reset time.
+         */
+        post: operations["checkLimit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2987,15 +2987,15 @@ export interface components {
                 error_code?: string;
                 error_message?: string;
                 id?: string;
+                limit_limit?: number;
+                limit_remaining?: number;
+                /** Format: date-time */
+                limit_reset_at?: string;
                 metadata_json?: {
                     [key: string]: unknown;
                 };
                 policy_id?: string;
                 project_id?: string;
-                limit_limit?: number;
-                limit_remaining?: number;
-                /** Format: date-time */
-                limit_reset_at?: string;
                 request_id?: string;
                 resource_id?: string;
                 resource_type?: string;
@@ -3195,11 +3195,6 @@ export interface components {
             id: string;
             name: string;
         };
-        Project: {
-            id: string;
-            name: string;
-            workspace_id: string;
-        };
         LimitCheckRequest: {
             /** @description Estimated tokens/bytes for the operation */
             estimated_cost?: number;
@@ -3213,11 +3208,11 @@ export interface components {
         };
         LimitCheckResponse: {
             allowed: boolean;
-            policy_id: string;
             limit_limit: number;
             limit_remaining: number;
             /** Format: date-time */
             limit_reset_at: string;
+            policy_id: string;
         };
         /** @description Aggregate limit summary across all resource types */
         LimitOverview: {
@@ -3231,17 +3226,22 @@ export interface components {
         };
         /** @description Limit summary for a specific resource */
         LimitSummary: {
-            percentage_used: number;
             limit_limit: number;
             /** Format: date-time */
             limit_reset_at: string;
             /** @enum {string} */
             limit_unit: "tokens" | "requests" | "bytes" | "files";
             limit_used: number;
+            percentage_used: number;
             resource_id: string;
             resource_name: string;
             /** @enum {string} */
             resource_type: "endpoint" | "source_library" | "agent";
+        };
+        Project: {
+            id: string;
+            name: string;
+            workspace_id: string;
         };
         ResourceCostBreakdown: {
             /** @description Estimated cost in USD */
@@ -4162,21 +4162,6 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Resource not found */
-        NotFound: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                /**
-                 * @example {
-                 *       "error_code": "RESOURCE_NOT_FOUND",
-                 *       "message": "The requested resource does not exist"
-                 *     }
-                 */
-                "application/json": components["schemas"]["ApiError"];
-            };
-        };
         /** @description Limit Exceeded - Resource limit exceeded */
         LimitExceeded: {
             headers: {
@@ -4187,6 +4172,21 @@ export interface components {
                  * @example {
                  *       "error_code": "SPENDING_LIMIT_EXCEEDED",
                  *       "message": "Resource limit exceeded"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ApiError"];
+            };
+        };
+        /** @description Resource not found */
+        NotFound: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "error_code": "RESOURCE_NOT_FOUND",
+                 *       "message": "The requested resource does not exist"
                  *     }
                  */
                 "application/json": components["schemas"]["ApiError"];
@@ -7012,232 +7012,6 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    get_projectLimitTemplates: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    create_projectLimitTemplate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    description?: string;
-                    name: string;
-                    overrides_json: {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    get_projectLimitTemplateItem: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                templateId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    delete_projectLimitTemplate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                templateId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description No Content */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    update_projectLimitTemplate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                templateId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    description?: string;
-                    name?: string;
-                    overrides_json?: {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    apply_projectLimitTemplate: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: string;
-                templateId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    member_ids: string[];
-                };
-            };
-        };
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        applied_count: number;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    checkLimit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["LimitCheckRequest"];
-            };
-        };
-        responses: {
-            /** @description Limit check result */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["LimitCheckResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ApiError"];
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
     get_projectResourcePolicy: {
         parameters: {
             query?: never;
@@ -9057,6 +8831,232 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    get_projectLimitTemplates: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    create_projectLimitTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    description?: string;
+                    name: string;
+                    overrides_json: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    get_projectLimitTemplateItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                templateId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    delete_projectLimitTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                templateId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    update_projectLimitTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                templateId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    description?: string;
+                    name?: string;
+                    overrides_json?: {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    apply_projectLimitTemplate: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                templateId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    member_ids: string[];
+                };
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        applied_count: number;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    checkLimit: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LimitCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Limit check result */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LimitCheckResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
                 };
             };
             401: components["responses"]["Unauthorized"];

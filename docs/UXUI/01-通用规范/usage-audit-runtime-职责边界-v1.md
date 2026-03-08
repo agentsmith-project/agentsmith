@@ -68,7 +68,7 @@
 1. `Usage` 统一称“用量视图”，不再使用 `lite/advanced` 术语。
 2. `Audit` 统一称“审计与治理”。
 3. `Runtime` 统一称“运行时可观测/诊断”。
-4. 资源约束统一使用 `rate limit` / `spending limit`；禁止新增 `limit` 新命名（历史字段仅做兼容解析，不对外扩散）。
+4. 资源约束统一使用 `rate limit` / `spending limit`；禁止新增 `quota` 新命名（历史字段仅做兼容解析，不对外扩散）。
 
 ## 5. 变更准入检查（必须全通过）
 

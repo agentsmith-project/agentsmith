@@ -78,4 +78,4 @@ Owner: Frontend + Backend
 1. 代码中不再存在 `limit_total/total_limit/limit_limit/total_limit_limit` 作为 limits summary 字段。
 2. Usage 页面按 endpoint -> rate/spending -> window 渲染正常。
 3. 合同、OpenAPI、mock、测试、用户文档表述一致。
-4. 通过：`contracts:check-openapi`、`openapi:check-generated`、`lint`、`tsc`、相关单测。
+4. 通过：`contracts:check-limit-naming`、`contracts:check-openapi`、`openapi:check-generated`、`lint`、`tsc`、相关单测。

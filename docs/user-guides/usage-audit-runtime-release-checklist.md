@@ -16,6 +16,7 @@ Owner: Frontend
 Run:
 
 ```bash
+npm run contracts:check-limit-naming
 npm run contracts:check
 npm run contracts:check-openapi
 npm run openapi:check-generated
@@ -24,8 +25,9 @@ npm run openapi:check-generated
 Expected:
 
 1. No permission gate regressions.
-2. OpenAPI coverage/breaking checks pass.
-3. Generated API types are in sync.
+2. No legacy limits naming reintroduced in `src + packages` core source.
+3. OpenAPI coverage/breaking checks pass.
+4. Generated API types are in sync.
 
 ## 3. Quality Gate (must pass)
 

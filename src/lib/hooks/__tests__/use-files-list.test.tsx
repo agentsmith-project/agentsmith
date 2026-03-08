@@ -525,8 +525,8 @@ describe('useFilesList', () => {
     });
   });
 
-  describe('quota status', () => {
-    it('should calculate quota status correctly', () => {
+  describe('limit status', () => {
+    it('should calculate limit status correctly', () => {
       const { result } = renderHook(
         () => useFilesList({ workspaceId, projectId }),
         {

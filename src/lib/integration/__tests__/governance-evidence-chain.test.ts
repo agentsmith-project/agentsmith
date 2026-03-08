@@ -73,11 +73,11 @@ describe('M3 Integration: Governance Evidence Chain', () => {
   });
 
   // Integration Test 3: Resource policy decision creates usage evidence
-  it('should create usage evidence when quota limit is hit', async () => {
+  it('should create usage evidence when limit is hit', async () => {
     const context: PolicyEvaluationContext = {
       resource_type: 'source_library',
       resource_id: 'lib-1',
-      subject_id: 'user-2', // Has quota exceeded in simulation
+      subject_id: 'user-2', // Has limit-exceeded outcome in simulation
       subject_type: 'user',
       action: 'upload',
       workspace_id: 'ws-1',

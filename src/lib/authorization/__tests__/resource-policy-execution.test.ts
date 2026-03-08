@@ -8,7 +8,7 @@
  *
  * Acceptance Criteria:
  * 1. Rule hit and priority can be proven by use cases
- * 2. deny/rate/quota all have audit and usage evidence
+ * 2. deny/rate/limit all have audit and usage evidence
  * 3. After rollback policy, behavior restored with audit record
  *
  * RED PHASE: Write failing tests first
@@ -46,7 +46,7 @@ describe('Resource Policy Execution', () => {
   });
 
   // Test Case 2: Consistent behavior across resource types (source_library)
-  it('should evaluate source_library policy with quota limits consistently', async () => {
+  it('should evaluate source_library policy with limit rules consistently', async () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'source_library',
       resource_id: 'lib-1',
@@ -104,8 +104,8 @@ describe('Resource Policy Execution', () => {
     }
   });
 
-  // Test Case 6: Usage evidence for rate/quota decisions
-  it('should create usage evidence for rate/quota decisions', async () => {
+  // Test Case 6: Usage evidence for rate/limit decisions
+  it('should create usage evidence for rate/limit decisions', async () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'endpoint',
       resource_id: 'ep-1',

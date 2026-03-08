@@ -107,7 +107,7 @@ describe('use-governance-explainability', () => {
     });
   });
 
-  it('runs quota checks through mutation', async () => {
+  it('runs limit checks through mutation', async () => {
     const client = {
       get: vi.fn(),
       post: vi.fn().mockResolvedValue({

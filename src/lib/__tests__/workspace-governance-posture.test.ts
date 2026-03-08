@@ -70,7 +70,7 @@ describe('buildWorkspaceGovernancePosture', () => {
     expect(posture.projects[0]?.riskCodes).toContain('public_open_access');
   });
 
-  it('marks missing source library quotas as warning', () => {
+  it('marks missing source library limits as warning', () => {
     const posture = buildWorkspaceGovernancePosture({
       members,
       projects: [makeProject({ governance_json: {}, limits_json: {} })],

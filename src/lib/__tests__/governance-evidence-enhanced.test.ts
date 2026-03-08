@@ -14,7 +14,7 @@ import {
 import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 
 describe('classifyGovernanceEvidenceFocus', () => {
-  it('classifies quota-related reasons', () => {
+  it('classifies limit-related reasons', () => {
     expect(classifyGovernanceEvidenceFocus('missing_source_library_quota')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('rate_limit_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('max_total_files_reached')).toBe('limit');

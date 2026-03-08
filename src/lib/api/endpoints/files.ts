@@ -361,7 +361,8 @@ export class FilesAPI {
   }
 
   /**
-   * Get quota summary for the project
+   * Get limit summary for the project.
+   * Legacy API naming uses `quota`.
    */
   async getQuota(
     workspaceId: string,

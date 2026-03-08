@@ -12,7 +12,7 @@ export type { ProjectNavigationProps, NavItem } from './ProjectNavigation';
 export { ActivityTimeline } from './ActivityTimeline';
 export type { ActivityTimelineProps, ActivityItem } from './ActivityTimeline';
 
-// Cost & Quota Dashboard components (Epic C1)
+// Cost & Limit Dashboard components (Epic C1)
 export { CostDashboardPage } from './CostDashboardPage';
 export type { CostDashboardPageProps } from './CostDashboardPage';
 

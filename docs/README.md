@@ -19,6 +19,7 @@
 - `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)
 - [Usage Limits Summary Backend Alignment Checklist](./user-guides/usage-limits-summary-backend-alignment-checklist.md)
+- [Usage Limits Naming Refactor Task](./user-guides/usage-limits-naming-refactor-task.md)
 - [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 
 ## 运行与协作

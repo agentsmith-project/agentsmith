@@ -37,6 +37,7 @@ npx tsc --noEmit
 npm test -- --run \
   src/lib/constants/__tests__/usage-i18n-boundary.test.ts \
   src/lib/constants/__tests__/limit-terminology-boundary.test.ts \
+  src/lib/api/__tests__/usage-limits-naming-boundary.test.ts \
   src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/resource-policy/__tests__/page.test.tsx \
   src/lib/api/__tests__/governance-explainability-api.test.ts \
   src/lib/hooks/__tests__/use-governance-explainability.test.tsx \
@@ -83,4 +84,5 @@ Include:
 
 1. Naming migration summary (`quota` -> `rate limit` / `spending limit`).
 2. Usage/Audit/Runtime boundary confirmation.
-3. Any known non-blocking risks (if visual baseline intentionally deferred).
+3. Limits naming confirmation: usage summary payload stays on canonical naming (`endpoints[].limits[]` + `project_summary`).
+4. Any known non-blocking risks (if visual baseline intentionally deferred).

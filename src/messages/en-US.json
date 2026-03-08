@@ -1279,9 +1279,13 @@
         "requests_today": "Requests Today",
         "errors_today": "Errors Today",
         "tokens_today": "Tokens Today",
-        "period_requests": "Requests (30 days)"
+        "period_requests": "Requests ({days} days)"
       },
-      "trend_title": "Usage Trend (30 days)",
+      "trend_title": "Usage Trend ({days} days)",
+      "period": {
+        "7d": "7D",
+        "30d": "30D"
+      },
       "open_advanced": "Open Detailed View",
       "no_data": "No usage trend data available."
     },

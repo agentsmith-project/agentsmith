@@ -10,6 +10,8 @@ export interface UsageLiteViewProps {
   kpi?: UsageKPI | null;
   records: UsageRecord[];
   loading?: boolean;
+  periodDays: 7 | 30;
+  onPeriodChange?: (days: 7 | 30) => void;
   onOpenAdvanced?: () => void;
 }
 
@@ -24,6 +26,8 @@ export function UsageLiteView({
   kpi,
   records,
   loading = false,
+  periodDays,
+  onPeriodChange,
   onOpenAdvanced,
 }: UsageLiteViewProps) {
   const t = useTranslations('usage');
@@ -73,12 +77,32 @@ export function UsageLiteView({
 
       <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage-lite__trend">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">{t('lite.trend_title')}</p>
-          {onOpenAdvanced ? (
-            <Button variant="outline" size="sm" onClick={onOpenAdvanced} data-testid="usage-lite__open-advanced">
-              {t('lite.open_advanced')}
+          <p className="text-sm font-semibold text-foreground">{t('lite.trend_title', { days: periodDays })}</p>
+          <div className="flex items-center gap-2">
+            <Button
+              variant={periodDays === 7 ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onPeriodChange?.(7)}
+              data-testid="usage-lite__period-7"
+              data-active={periodDays === 7}
+            >
+              {t('lite.period.7d')}
             </Button>
-          ) : null}
+            <Button
+              variant={periodDays === 30 ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => onPeriodChange?.(30)}
+              data-testid="usage-lite__period-30"
+              data-active={periodDays === 30}
+            >
+              {t('lite.period.30d')}
+            </Button>
+            {onOpenAdvanced ? (
+              <Button variant="outline" size="sm" onClick={onOpenAdvanced} data-testid="usage-lite__open-advanced">
+                {t('lite.open_advanced')}
+              </Button>
+            ) : null}
+          </div>
         </div>
         {records.length === 0 ? (
           <p className="text-sm text-tertiary">{t('lite.no_data')}</p>

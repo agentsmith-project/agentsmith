@@ -177,6 +177,7 @@ describe('UsagePage', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.getByTestId('usage-lite__period-30')).toHaveAttribute('data-active', 'true');
     expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
   });
@@ -189,5 +190,15 @@ describe('UsagePage', () => {
     expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
+  });
+
+  it('switches lite period between 30d and 7d', async () => {
+    canManage = false;
+    const user = userEvent.setup();
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    await user.click(screen.getByTestId('usage-lite__period-7'));
+    expect(screen.getByTestId('usage-lite__period-7')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('usage-lite__period-30')).toHaveAttribute('data-active', 'false');
   });
 });

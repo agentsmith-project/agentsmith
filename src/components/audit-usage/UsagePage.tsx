@@ -166,6 +166,7 @@ export function UsagePage({
 
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
   const searchParamsKey = searchParams.toString();
+  const [litePeriodDays, setLitePeriodDays] = React.useState<7 | 30>(30);
   const [selectedUsageRecord, setSelectedUsageRecord] = React.useState<UsageRecord | null>(null);
   const [selectedFactId, setSelectedFactId] = React.useState<string | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
@@ -300,12 +301,12 @@ export function UsagePage({
   });
   const liteRange = React.useMemo(() => {
     const end = new Date();
-    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const start = new Date(end.getTime() - litePeriodDays * 24 * 60 * 60 * 1000);
     return {
       start_time: start.toISOString(),
       end_time: end.toISOString(),
     };
-  }, []);
+  }, [litePeriodDays]);
   const liteUsageParams = React.useMemo<UsageListParams>(
     () => ({
       start_time: liteRange.start_time,
@@ -595,6 +596,8 @@ export function UsagePage({
           kpi={kpiData}
           records={liteData?.items ?? []}
           loading={liteLoading || kpiLoading}
+          periodDays={litePeriodDays}
+          onPeriodChange={setLitePeriodDays}
         />
       </PageLayout>
     );

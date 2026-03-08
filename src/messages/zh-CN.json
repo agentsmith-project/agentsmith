@@ -1281,9 +1281,13 @@
         "requests_today": "今日请求数",
         "errors_today": "今日错误数",
         "tokens_today": "今日 Token 数",
-        "period_requests": "近 30 天请求数"
+        "period_requests": "近 {days} 天请求数"
       },
-      "trend_title": "近 30 天用量趋势",
+      "trend_title": "近 {days} 天用量趋势",
+      "period": {
+        "7d": "7天",
+        "30d": "30天"
+      },
       "open_advanced": "查看详细模式",
       "no_data": "暂无用量趋势数据。"
     },

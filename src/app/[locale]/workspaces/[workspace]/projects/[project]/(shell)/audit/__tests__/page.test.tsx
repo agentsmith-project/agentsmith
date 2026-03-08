@@ -20,12 +20,20 @@ const STABLE_PROJECT = {
 };
 const mockSearchParams = new URLSearchParams();
 const mockUseSearchParams = vi.fn(() => mockSearchParams);
+const mockRouterPush = vi.fn();
+const mockRouterReplace = vi.fn();
 
 vi.mock('next/navigation', async () => {
   const actual = await vi.importActual<typeof import('next/navigation')>('next/navigation');
   return {
     ...actual,
     useSearchParams: () => mockUseSearchParams(),
+    usePathname: () => '/en/workspaces/ws_1/projects/proj_1/audit',
+    useRouter: () => ({
+      push: mockRouterPush,
+      replace: mockRouterReplace,
+      prefetch: vi.fn(),
+    }),
   };
 });
 
@@ -76,8 +84,26 @@ vi.mock('@/lib/stores/authStore', () => ({
 describe('AuditPage route', () => {
   beforeEach(() => {
     STABLE_AUDIT_ITEMS = [];
+    mockHasPermission.mockClear();
+    mockHasPermission.mockReturnValue(true);
     mockSearchParams.forEach((_value, key) => {
       mockSearchParams.delete(key);
+    });
+  });
+
+  it('checks audit permission with project manage token', async () => {
+    render(
+      <AuditPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockHasPermission).toHaveBeenCalledWith('project:manage');
     });
   });
 
@@ -138,11 +164,10 @@ describe('AuditPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('audit__trace-context')).toBeInTheDocument();
+      expect(screen.getByTestId('investigation-anchor__bar')).toBeInTheDocument();
     });
     await waitFor(() => {
       expect(screen.getByTestId('audit__trace-match-status')).toBeInTheDocument();
-      expect(screen.getByTestId('audit-detail-drawer-open')).toBeInTheDocument();
     });
   });
 

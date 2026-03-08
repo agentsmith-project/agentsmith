@@ -130,63 +130,38 @@ describe('UsagePage', () => {
     canManage = true;
   });
 
-  it('renders simplified my-usage view and opens detail drawer', async () => {
-    const user = userEvent.setup();
+  it('renders simplified my-usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
+    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__open-runtime-observability')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__open-release-ops')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
-
-    await user.click(screen.getByTestId('usage__table__row'));
-
-    expect(screen.getByText('detail.title')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__detail-fact-usgf_1')).toBeInTheDocument();
   });
 
-  it('exports usage report', async () => {
-    const user = userEvent.setup();
-    const createObjectURLMock = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:usage');
-    const revokeObjectURLMock = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined);
-    exportReportMock.mockResolvedValue({
-      blob: new Blob(['ok'], { type: 'text/csv' }),
-      filename: 'usage.csv',
-    });
-
+  it('does not expose export action in lite usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    await user.click(screen.getByTestId('usage__export-trigger'));
-    await user.click(screen.getByTestId('usage__export-option-csv'));
-
-    expect(exportReportMock).toHaveBeenCalledWith(
-      'ws_1',
-      'proj_1',
-      expect.objectContaining({ end_user_id: 'user_001', format: 'csv' }),
-    );
-
-    createObjectURLMock.mockRestore();
-    revokeObjectURLMock.mockRestore();
+    expect(screen.queryByTestId('usage__export-trigger')).not.toBeInTheDocument();
+    expect(exportReportMock).not.toHaveBeenCalled();
   });
 
-  it('switches to request facts view', async () => {
-    const user = userEvent.setup();
+  it('does not expose advanced view toggles in lite usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    await user.click(screen.getByTestId('usage__view-facts'));
-
-    expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
-    expect(screen.getByTestId('usage-facts__summary-total')).toHaveTextContent('1');
-    expect(screen.getByTestId('usage-facts__summary-errors')).toHaveTextContent('0');
-    expect(screen.getByTestId('usage-facts__summary-resources')).toHaveTextContent('1');
+    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__view-facts')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
   });
 
-  it('defaults to request facts view when investigation anchors exist', () => {
+  it('keeps lite view even when investigation query params exist', () => {
     searchParamsState.value = 'request_id=req_1';
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
+    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__table')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
   });
 
   it('shows lite usage view for non-admin users by default', () => {
@@ -202,6 +177,16 @@ describe('UsagePage', () => {
 
   it('keeps lite view for non-admin users even with advanced query param', () => {
     canManage = false;
+    searchParamsState.value = 'view=advanced';
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
+  });
+
+  it('keeps lite usage view for admin users', () => {
+    canManage = true;
     searchParamsState.value = 'view=advanced';
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 

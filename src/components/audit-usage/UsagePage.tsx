@@ -139,6 +139,11 @@ function deriveUsageViewMode(searchParams: URLSearchParams): 'aggregate' | 'fact
   return hasInvestigationAnchors ? 'facts' : 'aggregate';
 }
 
+function resolveUsageExperienceMode(): 'lite' {
+  // Product decision: usage is always the low-cognitive "my usage" view.
+  return 'lite';
+}
+
 export function UsagePage({
   workspaceId,
   projectId,
@@ -160,7 +165,7 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const canExportUsage = useHasPermission('project:manage');
-  const isLiteMode = !canExportUsage;
+  const isLiteMode = resolveUsageExperienceMode() === 'lite';
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 

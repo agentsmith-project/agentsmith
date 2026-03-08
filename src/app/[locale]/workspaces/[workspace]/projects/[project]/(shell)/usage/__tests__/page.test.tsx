@@ -1,5 +1,5 @@
 import { render, screen, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi } from 'vitest';
+import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import UsagePage from '../page';
 
@@ -21,7 +21,33 @@ vi.mock('@/lib/stores/authStore', () => ({
     selector({ user: { id: 'user_001' } }),
 }));
 
+vi.mock('@/lib/hooks/use-projects-queries', () => ({
+  useProject: () => ({ isLoading: false }),
+}));
+
 describe('UsagePage route', () => {
+  beforeEach(() => {
+    mockHasPermission.mockClear();
+    mockHasPermission.mockReturnValue(true);
+    mockUsagePageComponent.mockClear();
+  });
+
+  it('checks usage permission with endpoint-use token', async () => {
+    render(
+      <UsagePage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(mockHasPermission).toHaveBeenCalledWith('project:endpoint:use');
+    });
+  });
+
   it('shows permission error when usage token is missing', async () => {
     mockHasPermission.mockReturnValue(false);
     render(

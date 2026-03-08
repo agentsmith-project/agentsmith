@@ -46,7 +46,7 @@ export interface GovernanceAuthorizationResponse {
   matched_policy?: GovernanceMatchedPolicy;
 }
 
-export interface GovernanceQuotaCheckRequest {
+export interface GovernanceLimitCheckRequest {
   subject_id: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_id: string;
@@ -54,15 +54,18 @@ export interface GovernanceQuotaCheckRequest {
   estimated_cost?: number;
 }
 
-export interface GovernanceQuotaCheckResponse {
+export interface GovernanceLimitCheckResponse {
   allowed: boolean;
-  quota_remaining: number;
-  quota_limit: number;
-  quota_reset_at: string;
+  limit_remaining: number;
+  limit_total: number;
+  limit_reset_at: string;
   policy_id: string;
 }
 
-export interface GovernanceQuotaExceededDetails {
+export type GovernanceQuotaCheckRequest = GovernanceLimitCheckRequest;
+export type GovernanceQuotaCheckResponse = GovernanceLimitCheckResponse;
+
+export interface GovernanceLimitExceededDetails {
   error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED' | 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED';
   message: string;
   resource_type?: 'endpoint' | 'source_library' | 'agent';
@@ -84,7 +87,9 @@ export interface GovernanceQuotaExceededDetails {
   current_file_size_bytes?: number;
 }
 
-export interface GovernanceEvidenceDetails extends GovernanceQuotaExceededDetails {
+export type GovernanceQuotaExceededDetails = GovernanceLimitExceededDetails;
+
+export interface GovernanceEvidenceDetails extends GovernanceLimitExceededDetails {
   governance_kind?: 'resource_policy' | 'member_quota';
   enforcement_kind?: 'allow_list' | 'spending_limit' | 'rate_limit' | 'quota_limit';
   route_kind?: string;
@@ -176,7 +181,7 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
   return normalized;
 }
 
-export function getGovernanceQuotaExceededDetails(error: unknown): GovernanceQuotaExceededDetails | null {
+export function getGovernanceLimitExceededDetails(error: unknown): GovernanceLimitExceededDetails | null {
   if (!(error instanceof APIError)) return null;
   if (
     error.errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED'
@@ -184,6 +189,8 @@ export function getGovernanceQuotaExceededDetails(error: unknown): GovernanceQuo
   ) return null;
   return getGovernanceEvidenceDetails(error.details);
 }
+
+export const getGovernanceQuotaExceededDetails = getGovernanceLimitExceededDetails;
 
 export function getGovernanceRouteForbiddenDetails(error: unknown): GovernanceRouteForbiddenDetails | null {
   if (!(error instanceof APIError)) return null;
@@ -206,15 +213,36 @@ export class GovernanceExplainabilityAPI {
     );
   }
 
+  async checkLimits(
+    workspaceId: string,
+    projectId: string,
+    payload: GovernanceLimitCheckRequest,
+  ): Promise<GovernanceLimitCheckResponse> {
+    return this.client.post(
+      `/workspaces/${workspaceId}/projects/${projectId}/quota/check`,
+      payload,
+    ).then((response) => {
+      const payloadRecord = response as Partial<GovernanceLimitCheckResponse> & {
+        quota_remaining?: number;
+        quota_limit?: number;
+        quota_reset_at?: string;
+      };
+      return {
+        allowed: Boolean(payloadRecord.allowed),
+        limit_remaining: payloadRecord.limit_remaining ?? payloadRecord.quota_remaining ?? 0,
+        limit_total: payloadRecord.limit_total ?? payloadRecord.quota_limit ?? 0,
+        limit_reset_at: payloadRecord.limit_reset_at ?? payloadRecord.quota_reset_at ?? '',
+        policy_id: payloadRecord.policy_id ?? '',
+      };
+    });
+  }
+
   async checkQuota(
     workspaceId: string,
     projectId: string,
     payload: GovernanceQuotaCheckRequest,
   ): Promise<GovernanceQuotaCheckResponse> {
-    return this.client.post(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota/check`,
-      payload,
-    );
+    return this.checkLimits(workspaceId, projectId, payload);
   }
 
   async getEffectiveAccessSnapshot(

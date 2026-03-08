@@ -5,7 +5,7 @@ import { getApiClient } from '@/lib/api';
 import {
   useAuthorizationCheck,
   useEffectiveAccessSnapshot,
-  useQuotaCheck,
+  useLimitCheck,
 } from '@/lib/hooks/use-governance-explainability';
 
 vi.mock('@/lib/api', async () => {
@@ -128,7 +128,7 @@ describe('use-governance-explainability', () => {
     vi.mocked(getApiClient).mockReturnValue(client);
 
     const { result } = renderHook(
-      () => useQuotaCheck('ws_1', 'proj_1'),
+      () => useLimitCheck('ws_1', 'proj_1'),
       { wrapper: createWrapper() },
     );
 
@@ -148,5 +148,7 @@ describe('use-governance-explainability', () => {
       operation: 'invoke',
       estimated_cost: 42,
     });
+    expect(result.current.data?.limit_remaining).toBe(5);
+    expect(result.current.data?.limit_total).toBe(10);
   });
 });

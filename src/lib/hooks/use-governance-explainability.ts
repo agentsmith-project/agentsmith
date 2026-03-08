@@ -5,8 +5,8 @@ import type {
   GovernanceAuthorizationRequest,
   GovernanceAuthorizationResponse,
   GovernanceEffectiveAccessSnapshot,
-  GovernanceQuotaCheckRequest,
-  GovernanceQuotaCheckResponse,
+  GovernanceLimitCheckRequest,
+  GovernanceLimitCheckResponse,
 } from '@/lib/api/endpoints/governance-explainability';
 
 const getGovernanceExplainabilityAPI = () => new GovernanceExplainabilityAPI(getApiClient());
@@ -30,8 +30,10 @@ export function useAuthorizationCheck(workspaceId: string, projectId: string) {
   });
 }
 
-export function useQuotaCheck(workspaceId: string, projectId: string) {
-  return useMutation<GovernanceQuotaCheckResponse, Error, GovernanceQuotaCheckRequest>({
-    mutationFn: (payload) => getGovernanceExplainabilityAPI().checkQuota(workspaceId, projectId, payload),
+export function useLimitCheck(workspaceId: string, projectId: string) {
+  return useMutation<GovernanceLimitCheckResponse, Error, GovernanceLimitCheckRequest>({
+    mutationFn: (payload) => getGovernanceExplainabilityAPI().checkLimits(workspaceId, projectId, payload),
   });
 }
+
+export const useQuotaCheck = useLimitCheck;

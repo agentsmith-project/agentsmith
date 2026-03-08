@@ -76,6 +76,10 @@ MVP execution guard:
 2. `resourceType` in MVP:
 - `endpoint`
 
+3. Historical route naming note:
+- `POST /workspaces/{ws}/projects/{project}/quota/check` is retained for backward compatibility.
+- Frontend/runtime semantics interpret this as limit check (`rate limit` / `spending limit`), not a separate quota domain.
+
 ## Audit Requirements
 
 Every policy mutation should record:

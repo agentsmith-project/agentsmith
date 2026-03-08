@@ -4,7 +4,7 @@ import { APIError } from '@/lib/api/errors';
 import {
   GovernanceExplainabilityAPI,
   getGovernanceEvidenceDetails,
-  getGovernanceQuotaExceededDetails,
+  getGovernanceLimitExceededDetails,
   getGovernanceRouteForbiddenDetails,
 } from '@/lib/api/endpoints/governance-explainability';
 
@@ -54,7 +54,7 @@ describe('GovernanceExplainabilityAPI', () => {
     const mock = createClient();
     const api = new GovernanceExplainabilityAPI(toApiClient(mock));
 
-    await api.checkQuota('ws_1', 'proj_1', {
+    await api.checkLimits('ws_1', 'proj_1', {
       subject_id: 'user_1',
       resource_type: 'source_library',
       resource_id: 'lib_1',
@@ -110,7 +110,7 @@ describe('GovernanceExplainabilityAPI', () => {
       },
     );
 
-    expect(getGovernanceQuotaExceededDetails(error)?.limit_key).toBe('source_library.max_file_size_bytes');
+    expect(getGovernanceLimitExceededDetails(error)?.limit_key).toBe('source_library.max_file_size_bytes');
   });
 
   it('normalizes legacy quota payload fields to limit semantics', () => {

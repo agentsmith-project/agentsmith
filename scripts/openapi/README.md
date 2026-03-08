@@ -4,6 +4,8 @@ This folder contains generation utilities driven by `docs/contracts/specs/openap
 
 ## Commands
 
+- `npm run openapi:sync-json`
+  - Generates `docs/contracts/specs/openapi.json` from `docs/contracts/specs/openapi.yaml`.
 - `npm run openapi:generate`
   - Generates `src/lib/api/types.generated.ts` using `openapi-typescript`.
 - `npm run openapi:check-generated`

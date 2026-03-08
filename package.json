@@ -62,6 +62,7 @@
     "contracts:check-openapi": "npm run contracts:check-openapi-core && npm run contracts:check-openapi-route-kinds && npm run contracts:check-openapi-breaking",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build",
+    "openapi:sync-json": "tsx scripts/openapi/generate-json.ts",
     "openapi:generate": "tsx scripts/openapi/generate-types.ts",
     "openapi:check-generated": "tsx scripts/openapi/check-generated.ts",
     "openapi:changelog": "tsx scripts/openapi/generate-changelog.ts",

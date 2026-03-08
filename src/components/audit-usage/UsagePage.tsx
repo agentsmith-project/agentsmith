@@ -375,7 +375,17 @@ export function UsagePage({
       page: 1,
       page_size: 25,
     }));
-  }, []);
+    const next = new URLSearchParams(searchParamsKey);
+    next.delete('request_id');
+    next.delete('decision_id');
+    next.delete('trace_ref');
+    next.delete('trace_incident_id');
+    next.delete('trace_escalation_id');
+    next.delete('trace_run_id');
+    next.delete('trace_source');
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [pathname, router, searchParamsKey]);
 
   const handleFiltersChange = React.useCallback(
     (newFilters: UsageListParams) => {

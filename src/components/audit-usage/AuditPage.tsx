@@ -386,6 +386,16 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
       page: 1,
       page_size: 25,
     }));
+    const next = new URLSearchParams(searchParamsKey);
+    next.delete('request_id');
+    next.delete('decision_id');
+    next.delete('trace_ref');
+    next.delete('trace_incident_id');
+    next.delete('trace_escalation_id');
+    next.delete('trace_run_id');
+    next.delete('trace_source');
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
     setTraceMatchStatus(null);
     lastAutoOpenedTraceRef.current = null;
   };

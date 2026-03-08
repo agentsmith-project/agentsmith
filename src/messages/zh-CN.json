@@ -97,6 +97,7 @@
     "investigation_clear": "清除锚点",
     "investigation_request_id": "请求",
     "investigation_decision_id": "决策",
+    "investigation_trace_source": "来源",
     "investigation_trace_ref": "追踪引用",
     "investigation_trace_incident_id": "事故",
     "investigation_trace_escalation_id": "升级",

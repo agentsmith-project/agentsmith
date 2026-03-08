@@ -38,6 +38,7 @@ export function InvestigationAnchorBar({
   const toastT = useTranslations('common.toast');
   const items = React.useMemo<AnchorItem[]>(() => {
     const next: AnchorItem[] = [];
+    if (traceSource) next.push({ key: 'trace_source', label: commonT('investigation_trace_source'), value: traceSource });
     if (requestId) next.push({ key: 'request_id', label: commonT('investigation_request_id'), value: requestId });
     if (decisionId) next.push({ key: 'decision_id', label: commonT('investigation_decision_id'), value: decisionId });
     if (traceRef) next.push({ key: 'trace_ref', label: commonT('investigation_trace_ref'), value: traceRef });
@@ -45,7 +46,7 @@ export function InvestigationAnchorBar({
     if (traceEscalationId) next.push({ key: 'trace_escalation_id', label: commonT('investigation_trace_escalation_id'), value: traceEscalationId });
     if (traceRunId) next.push({ key: 'trace_run_id', label: commonT('investigation_trace_run_id'), value: traceRunId });
     return next;
-  }, [commonT, decisionId, requestId, traceEscalationId, traceIncidentId, traceRef, traceRunId]);
+  }, [commonT, decisionId, requestId, traceEscalationId, traceIncidentId, traceRef, traceRunId, traceSource]);
 
   if (items.length === 0) return null;
 
@@ -59,11 +60,6 @@ export function InvestigationAnchorBar({
           </Button>
         ) : null}
       </div>
-      {traceSource ? (
-        <p className="mt-1 text-xs text-tertiary">
-          {commonT('trace_context_summary', { source: traceSource, ref: traceRef ?? '--' })}
-        </p>
-      ) : null}
       <div className="mt-2 flex flex-wrap gap-2">
         {items.map((item) => (
           <Badge key={item.key} variant="outline" className="flex items-center gap-2">

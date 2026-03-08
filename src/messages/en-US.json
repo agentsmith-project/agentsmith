@@ -97,6 +97,7 @@
     "investigation_clear": "Clear anchors",
     "investigation_request_id": "Request",
     "investigation_decision_id": "Decision",
+    "investigation_trace_source": "Source",
     "investigation_trace_ref": "Trace Ref",
     "investigation_trace_incident_id": "Incident",
     "investigation_trace_escalation_id": "Escalation",

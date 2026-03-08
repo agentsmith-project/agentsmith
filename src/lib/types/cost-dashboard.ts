@@ -13,26 +13,34 @@
 /**
  * Limit summary for a specific resource.
  */
-export interface LimitSummary {
-  resource_type: 'endpoint' | 'source_library' | 'agent';
-  resource_id: string;
-  resource_name: string;
-  limit_used: number;
-  limit_total: number;
-  limit_reset_at: string; // ISO 8601
-  percentage_used: number;
-  limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
+export interface LimitRuleSnapshot {
+  kind: 'rate_limit' | 'spending_limit';
+  window: 'minute' | '5h' | 'day' | 'current';
+  metric: 'requests' | 'usd';
+  policy_key: string;
+  used: number;
+  max: number;
+  remaining: number;
+  usage_pct: number;
+  reset_at: string; // ISO 8601
 }
 
-/**
- * Aggregate limit summary across all resource types.
- */
+export interface EndpointLimitSummary {
+  endpoint_id: string;
+  endpoint_name: string;
+  limits: LimitRuleSnapshot[];
+}
+
+export interface ProjectLimitSummary {
+  project_used: number;
+  project_max: number;
+  project_remaining: number;
+  project_usage_pct: number;
+}
+
 export interface LimitOverview {
-  endpoints?: LimitSummary[];
-  source_libraries?: LimitSummary[];
-  agents?: LimitSummary[];
-  total_limit_used: number;
-  total_limit: number;
+  endpoints?: EndpointLimitSummary[];
+  project_summary: ProjectLimitSummary;
 }
 
 // ============================================================================

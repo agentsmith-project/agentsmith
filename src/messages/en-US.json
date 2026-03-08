@@ -1224,7 +1224,7 @@
         "period_requests": "Requests ({days} days)"
       },
       "limits_title": "Remaining Limit",
-      "total_limit": "Total Limit",
+      "project_max": "Project Max",
       "limit_reset": "Resets on backend policy window",
       "limits_empty": "No endpoint limit data available.",
       "rate_limit_title": "Rate Limit",

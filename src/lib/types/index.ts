@@ -4,13 +4,15 @@
  * Centralized exports for all Epic C (Operations) type definitions.
  * Import from this file for convenience:
  *
- * import { LimitSummary, Alert, AlertPreferences } from '@/lib/types/epic-c';
+ * import { EndpointLimitSummary, Alert, AlertPreferences } from '@/lib/types/epic-c';
  * import type { ChartConfig, LineChartConfig } from '@/lib/types/epic-c';
  */
 
 // Cost & Limit Dashboard (Epic C1)
 export type {
-  LimitSummary,
+  LimitRuleSnapshot,
+  EndpointLimitSummary,
+  ProjectLimitSummary,
   LimitOverview,
   LimitSummaryRequest,
   TimeRange,

@@ -14,8 +14,12 @@ const EXPECTED_USAGE_TOP_LEVEL_KEYS = [
 
 const EXPECTED_USAGE_VIEW_KEYS = [
   'cards',
+  'rate_limit_title',
+  'spending_limit_title',
+  'limit_group_empty',
+  'window',
   'limits_title',
-  'total_limit',
+  'project_max',
   'limit_reset',
   'limits_empty',
   'trend_title',

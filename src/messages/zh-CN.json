@@ -1226,7 +1226,7 @@
         "period_requests": "近 {days} 天请求数"
       },
       "limits_title": "剩余限制",
-      "total_limit": "总限制",
+      "project_max": "项目上限",
       "limit_reset": "按后端策略窗口重置",
       "limits_empty": "暂无 endpoint 限制数据。",
       "rate_limit_title": "速率限制",

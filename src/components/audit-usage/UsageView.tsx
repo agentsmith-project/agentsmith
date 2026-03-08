@@ -134,7 +134,7 @@ export function UsageView({
         {typeof limitsOverview?.projectSummary?.projectMax === 'number' && limitsOverview.projectSummary.projectMax > 0 ? (
           <div className="mt-3 rounded-md border border-subtle bg-bg-base/20 p-3">
             <div className="flex items-center justify-between text-xs text-tertiary">
-              <span>{t('view.total_limit')}</span>
+              <span>{t('view.project_max')}</span>
               <span>
                 {formatNumber(limitsOverview.projectSummary.projectRemaining)}
                 {' / '}

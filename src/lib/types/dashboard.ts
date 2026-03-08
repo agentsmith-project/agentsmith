@@ -99,14 +99,13 @@ export interface DashboardSummary {
 }
 
 // ============================================================
-// Limit Data Types (legacy Quota* names kept for compatibility)
+// Limit Data Types (primary naming)
 // ============================================================
 
 /**
  * Limit usage data for a project.
- * Legacy naming: QuotaUsageData.
  */
-export interface QuotaUsageData {
+export interface LimitUsageData {
   project_id: string;
   time_range: {
     start: string;
@@ -114,20 +113,19 @@ export interface QuotaUsageData {
   };
 
   // Overall limit status
-  overall: QuotaOverallStatus;
+  overall: LimitOverallStatus;
 
   // Per-resource limits
-  by_resource: ResourceQuotaUsage[];
+  by_resource: ResourceLimitUsage[];
 
   // Historical trend
-  trend: QuotaTrendPoint[];
+  trend: LimitTrendPoint[];
 }
 
 /**
  * Overall limit status.
- * Legacy naming: QuotaOverallStatus.
  */
-export interface QuotaOverallStatus {
+export interface LimitOverallStatus {
   requests_today: number;
   requests_limit: number;
   requests_remaining: number;
@@ -144,9 +142,8 @@ export interface QuotaOverallStatus {
 
 /**
  * Per-resource limit usage.
- * Legacy naming: ResourceQuotaUsage.
  */
-export interface ResourceQuotaUsage {
+export interface ResourceLimitUsage {
   resource_id: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_name: string;
@@ -162,9 +159,8 @@ export interface ResourceQuotaUsage {
 
 /**
  * Limit trend over time.
- * Legacy naming: QuotaTrendPoint.
  */
-export interface QuotaTrendPoint {
+export interface LimitTrendPoint {
   date: string; // YYYY-MM-DD
   requests_percent: number; // 0-100
   tokens_percent?: number; // 0-100
@@ -204,9 +200,15 @@ export interface CostDashboardRequest {
 
 /**
  * Request params for limit usage API.
- * Legacy naming: QuotaUsageRequest.
  */
-export interface QuotaUsageRequest {
+export interface LimitUsageRequest {
   start_time?: string;
   end_time?: string;
 }
+
+// Legacy aliases retained for compatibility with older imports.
+export type QuotaUsageData = LimitUsageData;
+export type QuotaOverallStatus = LimitOverallStatus;
+export type ResourceQuotaUsage = ResourceLimitUsage;
+export type QuotaTrendPoint = LimitTrendPoint;
+export type QuotaUsageRequest = LimitUsageRequest;

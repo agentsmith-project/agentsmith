@@ -53,6 +53,7 @@ const keycloakAdminUser = process.env.KEYCLOAK_ADMIN ?? 'admin';
 const keycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
 const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
+const integrationWebPortsRaw = process.env.INTEGRATION_WEB_PORTS ?? '3001,3011,3021';
 const keycloakAccessTokenLifespanSec = Number(process.env.KEYCLOAK_ACCESS_TOKEN_LIFESPAN_SEC ?? '28800');
 const keycloakSsoIdleSec = Number(process.env.KEYCLOAK_SSO_IDLE_TIMEOUT_SEC ?? '43200');
 const keycloakSsoMaxSec = Number(process.env.KEYCLOAK_SSO_MAX_LIFESPAN_SEC ?? '604800');
@@ -257,11 +258,16 @@ async function ensureClientRedirects(token: string): Promise<void> {
   }
 
   const config = (await getRes.json()) as KeycloakClientConfig;
+  const extraWebPorts = integrationWebPortsRaw
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
   const requiredBases = [
     `http://localhost:${integrationWebPort}`,
     `http://127.0.0.1:${integrationWebPort}`,
     'http://localhost:3000',
     'http://localhost:3001',
+    ...extraWebPorts.flatMap((port) => [`http://localhost:${port}`, `http://127.0.0.1:${port}`]),
   ];
 
   const nextRedirects = new Set<string>(Array.isArray(config.redirectUris) ? config.redirectUris : []);

@@ -679,18 +679,21 @@ e2e-int-core-local-api:
 
 e2e-int-core-auto:
 	@set -e; \
+	API_PORT_1=$(PORT_API); WEB_PORT_1=$(PORT_WEB); \
+	API_PORT_2=$$(( $(PORT_API) + 10 )); WEB_PORT_2=$$(( $(PORT_WEB) + 10 )); \
+	API_PORT_3=$$(( $(PORT_API) + 20 )); WEB_PORT_3=$$(( $(PORT_WEB) + 20 )); \
 	echo "[make] auto smoke: integration-minimal"; \
-	INTEGRATION_API_PORT=$(PORT_API) INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	INTEGRATION_API_PORT=$$API_PORT_1 INTEGRATION_WEB_PORT=$$WEB_PORT_1 \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) KEYCLOAK_REALM=$(KEYCLOAK_REALM) KEYCLOAK_URL=$(KEYCLOAK_URL) KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-minimal.spec.ts; \
 	echo "[make] auto smoke: integration-chat-protocols"; \
 	INTEGRATION_BOOTSTRAP_DEPS=false INTEGRATION_INIT_DEPS=false \
-	INTEGRATION_API_PORT=$(PORT_API) INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	INTEGRATION_API_PORT=$$API_PORT_2 INTEGRATION_WEB_PORT=$$WEB_PORT_2 \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) KEYCLOAK_REALM=$(KEYCLOAK_REALM) KEYCLOAK_URL=$(KEYCLOAK_URL) KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat-protocols.spec.ts; \
 	echo "[make] auto smoke: integration-chat stream-error recovery"; \
 	INTEGRATION_BOOTSTRAP_DEPS=false INTEGRATION_INIT_DEPS=false \
-	INTEGRATION_API_PORT=$(PORT_API) INTEGRATION_WEB_PORT=$(PORT_WEB) \
+	INTEGRATION_API_PORT=$$API_PORT_3 INTEGRATION_WEB_PORT=$$WEB_PORT_3 \
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) KEYCLOAK_REALM=$(KEYCLOAK_REALM) KEYCLOAK_URL=$(KEYCLOAK_URL) KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts \
 	--grep "chat surfaces upstream 429 message and can recover|chat surfaces upstream 401 message and can recover|chat surfaces upstream 403 message and can recover"

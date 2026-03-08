@@ -2,6 +2,10 @@
 
 当前仅保留可执行、可维护、与现行产品结构一致的文档。
 
+先读：
+
+- [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
+
 ## 核心
 
 - [项目宪法](./项目宪法.md)

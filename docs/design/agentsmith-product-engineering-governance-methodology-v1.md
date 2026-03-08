@@ -273,7 +273,7 @@
 1. `release report`
 2. `release policy`
 3. `gate runner`
-4. `Release Ops`
+4. `Runtime Console + Usage/Audit evidence chain`
 
 ---
 
@@ -769,8 +769,8 @@
 
 相关基线文档：
 
-1. `docs/plans/llm-runtime-final-implementation-plan-v2.md`
-2. `docs/user-guides/release-verification.md`
-3. `docs/user-guides/release-governance-control-plane.md`
-4. `docs/release/internal-release-note-2026-02-28-closure.md`
+1. `docs/CURRENT_BASELINE.md`
+2. `docs/contracts/README.md`
+3. `docs/user-guides/README.md`
+4. `docs/troubleshooting-guide-v1.md`
 5. `docs/项目宪法.md`

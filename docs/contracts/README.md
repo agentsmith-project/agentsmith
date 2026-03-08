@@ -2,6 +2,10 @@
 
 当前仅保留现行合同与规范，不保留历史快照说明。
 
+基线入口：
+
+- [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
+
 ## 核心合同
 
 1. `auth-permission-model.md`

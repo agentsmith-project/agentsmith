@@ -133,9 +133,10 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ## 9. 相关入口
 
 1. [Documentation Index](./README.md)
-2. [Development Guide](../DEVELOPMENT.md)
-3. [User Guides Index](./user-guides/README.md)
-4. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+2. [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)
+3. [Development Guide](../DEVELOPMENT.md)
+4. [User Guides Index](./user-guides/README.md)
+5. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
 
 ## Token Issues
 

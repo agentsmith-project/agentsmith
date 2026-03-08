@@ -2,6 +2,10 @@
 
 仅保留当前有效的用户操作指南。
 
+基线入口：
+
+- [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)
+
 | Guide | Description |
 |-------|-------------|
 | [MVP Core Smoke Runbook](./mvp-core-smoke-runbook.md) | Real-backend MVP core regression path (chat/notebook/endpoint policy). |

@@ -2,6 +2,8 @@
 
 当前仅保留可执行、可维护、与现行产品结构一致的文档。
 
+术语边界：文档中的 `release` / `gate` 相关命令名若出现，默认是本项目工程校验与验收流程命名，不代表 AgentSmith 产品提供 DevOps 发布管理能力。
+
 先读：
 
 - [Current Baseline (Whitelist)](./CURRENT_BASELINE.md)

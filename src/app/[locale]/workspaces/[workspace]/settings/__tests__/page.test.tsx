@@ -133,9 +133,9 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__project-posture--proj_1')).toBeInTheDocument();
     expect(screen.getByText('workspace_projects_risk_public_open_access')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/settings');
-    expect(screen.getByTestId('ws-settings__project-open-release-ops--proj_1')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__project-open-runtime-console--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/release-ops?'),
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/runtime-console?tab=control'),
     );
   });
 
@@ -162,9 +162,9 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit?'),
     );
-    expect(screen.getByTestId('ws-settings__attention-open-release-ops--project--proj_1')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__attention-open-runtime-console--project--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/release-ops?'),
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/runtime-console?tab=control'),
     );
     expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
       'href',
@@ -185,9 +185,9 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       expect.stringContaining('gov_reason=blocked_projects'),
     );
-    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-release-ops')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-runtime-console')).toHaveAttribute(
       'href',
-      expect.stringContaining('gov_reason=blocked_projects_release_readiness'),
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/runtime-console?tab=control'),
     );
   });
 

@@ -229,13 +229,13 @@ export default function WorkspaceSettingsPage() {
                         {t('workspace_explainability_open_audit')}
                       </Link>
                       <Link
-                        href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/release-ops${buildWorkspaceEvidenceQuery({
+                        href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/runtime-console?tab=control${buildWorkspaceEvidenceQuery({
                           kind: 'project',
                           projectId: explainabilitySummary.primaryBlockedProjectId,
                           reason: 'blocked_projects_release_readiness',
-                        })}`}
+                        }).replace('?', '&')}`}
                         className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-7 px-2')}
-                        data-testid="ws-settings__explain-open-blocked-project-release-ops"
+                        data-testid="ws-settings__explain-open-blocked-project-runtime-console"
                       >
                         {t('workspace_explainability_open_release_ops')}
                       </Link>
@@ -351,9 +351,9 @@ export default function WorkspaceSettingsPage() {
                             ) : null}
                             {item.projectId ? (
                               <Link
-                                href={`${workspaceBasePath}/projects/${item.projectId}/release-ops${attentionQuery}`}
+                                href={`${workspaceBasePath}/projects/${item.projectId}/runtime-console?tab=control${attentionQuery.replace('?', '&')}`}
                                 className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                                data-testid={`ws-settings__attention-open-release-ops--${item.id.replace(':', '--')}`}
+                                data-testid={`ws-settings__attention-open-runtime-console--${item.id.replace(':', '--')}`}
                               >
                                 {t('workspace_attention_open_release_ops')}
                               </Link>
@@ -467,13 +467,13 @@ export default function WorkspaceSettingsPage() {
                           {t('workspace_projects_open_resource_policy')}
                         </Link>
                         <Link
-                          href={`${workspaceBasePath}/projects/${project.projectId}/release-ops${buildWorkspaceEvidenceQuery({
+                          href={`${workspaceBasePath}/projects/${project.projectId}/runtime-console?tab=control${buildWorkspaceEvidenceQuery({
                             kind: 'project',
                             projectId: project.projectId,
                             reason: 'workspace_project_release_readiness',
-                          })}`}
+                          }).replace('?', '&')}`}
                           className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                          data-testid={`ws-settings__project-open-release-ops--${project.projectId}`}
+                          data-testid={`ws-settings__project-open-runtime-console--${project.projectId}`}
                         >
                           {t('workspace_projects_open_release_ops')}
                         </Link>

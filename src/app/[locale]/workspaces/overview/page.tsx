@@ -324,7 +324,7 @@ export default function WorkspacesOverviewPage() {
                         </Link>
                         {workspace.topRiskProjectId ? (
                           <Link
-                            href={`/${locale}/workspaces/${workspace.workspaceId}/projects/${workspace.topRiskProjectId}/release-ops${buildGovernanceDrilldownQuery({
+                            href={`/${locale}/workspaces/${workspace.workspaceId}/projects/${workspace.topRiskProjectId}/runtime-console?tab=control${buildGovernanceDrilldownQuery({
                               gov_from: 'organization_overview',
                               gov_kind: 'workspace',
                               gov_workspace_id: workspace.workspaceId,
@@ -334,12 +334,12 @@ export default function WorkspacesOverviewPage() {
                               gov_workspace_blocked_items: workspace.blockedItems,
                               gov_workspace_warning_items: workspace.warningItems,
                               gov_workspace_risky_projects: workspace.riskyProjects,
-                            })}`}
+                            }).replace('?', '&')}`}
                             className={cn(
                               'inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs font-medium text-foreground transition-colors',
                               'hover:bg-hover',
                             )}
-                            data-testid={`workspace-overview__open-release-readiness--${workspace.workspaceId}`}
+                            data-testid={`workspace-overview__open-runtime-console--${workspace.workspaceId}`}
                           >
                             {t('org_overview_open_release_ops')}
                           </Link>
@@ -511,12 +511,12 @@ export default function WorkspacesOverviewPage() {
                                   {t('org_overview_open_audit')}
                                 </Link>
                                 <Link
-                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/release-ops${drilldownQuery}`}
+                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/runtime-console?tab=control${drilldownQuery.replace('?', '&')}`}
                                   className={cn(
                                     'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                     'hover:bg-hover',
                                   )}
-                                  data-testid={`workspace-overview__attention-open-release-ops--${testIdSegment}`}
+                                  data-testid={`workspace-overview__attention-open-runtime-console--${testIdSegment}`}
                                 >
                                   {t('org_overview_open_release_ops')}
                                 </Link>
@@ -645,12 +645,12 @@ export default function WorkspacesOverviewPage() {
                             </Link>
                             {action.projectId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/release-ops${actionDrilldownQuery}`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/runtime-console?tab=control${actionDrilldownQuery.replace('?', '&')}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
                                 )}
-                                data-testid={`workspace-overview__actions-queue-open-release-ops--${actionIdForTest}`}
+                                data-testid={`workspace-overview__actions-queue-open-runtime-console--${actionIdForTest}`}
                               >
                                 {t('org_overview_open_release_ops')}
                               </Link>

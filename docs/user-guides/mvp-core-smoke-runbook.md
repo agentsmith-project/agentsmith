@@ -34,7 +34,7 @@ make governance-policy-requests-rate-effect-smoke
 make release-report REPORT_ARCHIVE=1
 ```
 
-## One-command Release Baseline
+## One-command Core Baseline
 
 ```bash
 make release-core-smoke
@@ -56,7 +56,7 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 
 ## Evidence Outputs
 
-- Release report:
+- Governance evidence report (command name kept for compatibility):
   - `artifacts/release-reports/` latest markdown/json outputs
 - Integration logs:
   - `/tmp/agentsmith-api-node-integration.log`

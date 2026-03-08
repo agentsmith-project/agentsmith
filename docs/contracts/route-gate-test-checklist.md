@@ -1,4 +1,6 @@
-# Route Gate and Test Contract (Shell Routes)
+# Route Permission Gate and Test Contract (Shell Routes)
+
+Terminology note: `gate` in this document always means `permission gate` (route/action access control), not engineering release/check gates.
 
 Applies to:
 - `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/**/page.tsx`

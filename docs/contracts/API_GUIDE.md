@@ -17,7 +17,8 @@ This guide does not define independent endpoint semantics.
 ## Scope Boundary
 
 - AgentSmith MVP focuses on AI frontend usage, agent runtime management, and project-scoped resource policy/limits.
-- Any `release` / `gate` naming in repo scripts is engineering workflow terminology, not product DevOps capability.
+- `release` naming in repo scripts is engineering workflow terminology, not product DevOps capability.
+- `permission gate` in frontend contracts means route/action permission checks and is part of product behavior.
 
 ## How To Use API Contracts
 

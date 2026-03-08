@@ -6,7 +6,7 @@ Audience: Frontend, Backend Auth, QA
 
 ## Purpose
 
-Define the single-source token contract used by frontend route gates and interaction controls for MVP.
+Define the single-source token contract used by frontend route permission gates and interaction controls for MVP.
 
 This document is token-only:
 - runtime authorization depends on permission tokens only
@@ -21,7 +21,7 @@ Related docs:
 ## Core Principles
 
 1. Keycloak handles identity and workspace membership.
-2. Frontend route/action gates are token-only.
+2. Frontend route/action permission gates are token-only.
 3. Backend authorization is final.
 4. Resource usage control is policy-driven, not role-name-driven.
 
@@ -37,12 +37,12 @@ Related docs:
 - `project:agent:public`
 - `project:manage`
 
-Legacy aliases currently accepted by frontend gates:
+Legacy aliases currently accepted by frontend permission gates:
 - `project:endpoint:invoke` -> `project:endpoint:use`
 - `project:agent:create` -> `project:agent:manage`
 - `project:agent:publish` -> `project:agent:public`
 
-## Route-Level Gate Contract
+## Route-Level Permission Gate Contract
 
 - Projects list: `workspace:read`
 - Project overview: `project:endpoint:use`
@@ -58,7 +58,7 @@ Legacy aliases currently accepted by frontend gates:
 - Audit: `project:endpoint:use`
 - Usage: `project:endpoint:use`
 
-## Action-Level Gate Contract
+## Action-Level Permission Gate Contract
 
 - Endpoint create/update/delete: `project:manage`
 - Credential create/rotate/delete: `project:manage`
@@ -97,6 +97,6 @@ Legacy aliases currently accepted by frontend gates:
 
 ## Freeze Checklist
 
-- No route gate depends on role names.
+- No route permission gate depends on role names.
 - Canonical token set contains only active tokens in this contract.
 - `npm run contracts:check` passes.

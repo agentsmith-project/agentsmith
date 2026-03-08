@@ -19,12 +19,12 @@ Clarify the boundary between authentication data and authorization enforcement t
   - `project:agent:manage`
   - `project:agent:public`
 
-Legacy aliases accepted by frontend gate compatibility layer:
+Legacy aliases accepted by frontend permission-gate compatibility layer:
 - `project:endpoint:invoke` -> `project:endpoint:use`
 - `project:agent:create` -> `project:agent:manage`
 - `project:agent:publish` -> `project:agent:public`
 
-3. `Frontend gate`
+3. `Frontend permission gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).
 - Optimization for usability; not security authority.
 
@@ -34,7 +34,7 @@ Legacy aliases accepted by frontend gate compatibility layer:
 
 ## Decision Rule
 
-- If frontend gate says "allow" but backend says "deny", backend result is authoritative.
+- If frontend permission gate says "allow" but backend says "deny", backend result is authoritative.
 - Frontend must treat `403` as final and non-retryable for same request payload.
 
 ## Frontend Navigation Sections

@@ -5,6 +5,7 @@ import { UsagePage } from '../UsagePage';
 
 const invalidateQueries = vi.fn();
 const exportReportMock = vi.fn();
+const routerReplaceMock = vi.fn();
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
@@ -13,6 +14,8 @@ vi.mock('next-intl', () => ({
 
 vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
+  usePathname: () => '/en-US/workspaces/ws_1/projects/proj_1/usage',
+  useRouter: () => ({ replace: routerReplaceMock }),
 }));
 
 vi.mock('@tanstack/react-query', async () => {

@@ -1,6 +1,6 @@
 'use client';
 import * as React from 'react';
-import { useSearchParams } from 'next/navigation';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Download, RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
@@ -131,6 +131,8 @@ export function UsagePage({
 }: UsagePageProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const traceSource = searchParams.get('trace_source') ?? undefined;
   const traceRef = searchParams.get('trace_ref') ?? undefined;
@@ -204,6 +206,45 @@ export function UsagePage({
       ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
     }));
   }, [effectiveEndUserId, searchParamsKey]);
+
+  React.useEffect(() => {
+    const next = new URLSearchParams(searchParamsKey);
+    const entries: Array<[keyof Pick<UsageListParams, 'request_id' | 'decision_id' | 'trace_ref' | 'trace_incident_id' | 'trace_escalation_id' | 'trace_run_id'>, string | undefined]> = [
+      ['request_id', filters.request_id],
+      ['decision_id', filters.decision_id],
+      ['trace_ref', filters.trace_ref],
+      ['trace_incident_id', filters.trace_incident_id],
+      ['trace_escalation_id', filters.trace_escalation_id],
+      ['trace_run_id', filters.trace_run_id],
+    ];
+    let changed = false;
+    for (const [key, value] of entries) {
+      const current = searchParams.get(key);
+      if (value) {
+        if (current !== value) {
+          next.set(key, value);
+          changed = true;
+        }
+      } else if (current) {
+        next.delete(key);
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    const query = next.toString();
+    router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+  }, [
+    filters.decision_id,
+    filters.request_id,
+    filters.trace_escalation_id,
+    filters.trace_incident_id,
+    filters.trace_ref,
+    filters.trace_run_id,
+    pathname,
+    router,
+    searchParams,
+    searchParamsKey,
+  ]);
 
   const { data: kpiData, isLoading: kpiLoading } = useUsageKPI(
     workspaceId,

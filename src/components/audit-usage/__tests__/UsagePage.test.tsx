@@ -56,15 +56,15 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
         {
           resource_id: 'ep_1',
           resource_name: 'Endpoint 1',
-          quota_used: 40,
-          quota_limit: 100,
-          quota_unit: 'requests',
-          quota_reset_at: '2026-03-08T00:00:00.000Z',
+          limit_used: 40,
+          limit_total: 100,
+          limit_unit: 'requests',
+          limit_reset_at: '2026-03-08T00:00:00.000Z',
           percentage_used: 40,
         },
       ],
-      total_quota_used: 40,
-      total_quota_limit: 100,
+      total_limit_used: 40,
+      total_limit: 100,
     },
   }),
 }));
@@ -89,6 +89,7 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage__open-runtime-observability')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__open-release-ops')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
+    expect(screen.getByText('60 / 100')).toBeInTheDocument();
   });
 
   it('does not expose export action in usage view', () => {

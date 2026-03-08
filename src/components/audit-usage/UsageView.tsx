@@ -51,6 +51,14 @@ export function UsageView({
     () => Math.max(1, ...records.map((item) => item.requests ?? 0)),
     [records],
   );
+  const totalLimitRemaining = React.useMemo(() => {
+    if (typeof limitsOverview?.totalLimit !== 'number') return 0;
+    return Math.max(0, limitsOverview.totalLimit - (limitsOverview.totalLimitUsed ?? 0));
+  }, [limitsOverview?.totalLimit, limitsOverview?.totalLimitUsed]);
+  const totalLimitRemainingPercent = React.useMemo(() => {
+    if (typeof limitsOverview?.totalLimit !== 'number' || limitsOverview.totalLimit <= 0) return 0;
+    return Math.round((totalLimitRemaining / limitsOverview.totalLimit) * 100);
+  }, [limitsOverview?.totalLimit, totalLimitRemaining]);
 
   if (loading) {
     return (
@@ -73,8 +81,8 @@ export function UsageView({
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(kpi?.requests_today ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-tertiary">{t('view.cards.errors_today')}</p>
-          <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(kpi?.errors_today ?? 0)}</p>
+          <p className="text-xs text-tertiary">{t('view.cards.remaining_limit')}</p>
+          <p className="mt-2 text-2xl font-semibold text-foreground">{totalLimitRemainingPercent}%</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
           <p className="text-xs text-tertiary">{t('view.cards.tokens_today')}</p>
@@ -106,6 +114,7 @@ export function UsageView({
                 }}
               />
             </div>
+            <p className="mt-2 text-[11px] text-tertiary">{t('view.limit_reset')}</p>
           </div>
         ) : null}
         {Array.isArray(limitsOverview?.endpoints) && limitsOverview.endpoints.length > 0 ? (
@@ -119,6 +128,7 @@ export function UsageView({
                 <div className="mt-2 h-2 rounded bg-surface-high">
                   <div className="h-2 rounded bg-accent" style={{ width: `${Math.min(100, Math.max(0, item.percentageUsed))}%` }} />
                 </div>
+                {item.resetAt ? <p className="mt-2 text-[11px] text-tertiary">{t('view.limit_reset')}</p> : null}
               </div>
             ))}
           </div>
@@ -160,7 +170,7 @@ export function UsageView({
               const height = Math.max(8, Math.round((requests / maxRequests) * 180));
               return (
                 <div key={item.id} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                  <div className="w-full rounded-sm bg-error/90" style={{ height }} title={`${item.time_bucket}: ${requests}`} />
+                  <div className="w-full rounded-sm bg-accent/90" style={{ height }} title={`${item.time_bucket}: ${requests}`} />
                   <span className="text-[10px] text-tertiary">{getBucketLabel(item.time_bucket)}</span>
                 </div>
               );

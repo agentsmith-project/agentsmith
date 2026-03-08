@@ -16,6 +16,7 @@ const EXPECTED_USAGE_VIEW_KEYS = [
   'cards',
   'limits_title',
   'total_limit',
+  'limit_reset',
   'limits_empty',
   'trend_title',
   'no_data',
@@ -24,7 +25,7 @@ const EXPECTED_USAGE_VIEW_KEYS = [
 
 const EXPECTED_USAGE_VIEW_CARD_KEYS = [
   'requests_today',
-  'errors_today',
+  'remaining_limit',
   'tokens_today',
   'period_requests',
 ];

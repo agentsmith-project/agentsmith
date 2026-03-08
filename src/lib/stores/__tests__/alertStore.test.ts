@@ -84,8 +84,8 @@ describe('alertStore', () => {
         project_id: 'proj_1',
         type: 'quota.exceeded',
         severity: 'error',
-        title: 'Quota Exceeded',
-        message: 'You have exceeded your token quota',
+        title: 'Limit Exceeded',
+        message: 'You have exceeded your token limit',
         resource_type: 'endpoint',
         resource_id: 'ep_1',
         resource_name: 'gpt-4',
@@ -165,7 +165,7 @@ describe('alertStore', () => {
     it('should filter alerts not in enabled alert types', () => {
       const { result } = renderHook(() => useAlertStore());
 
-      // Remove quota.exceeded from enabled types
+      // Remove quota.exceeded from enabled types (limit semantic)
       act(() => {
         result.current.updatePreferences({
           alert_types: ['rate_limit.exceeded', 'policy.allow_list.denied'],
@@ -178,7 +178,7 @@ describe('alertStore', () => {
           project_id: 'proj_1',
           type: 'quota.exceeded', // Not in enabled types
           severity: 'error',
-          title: 'Quota Alert',
+          title: 'Limit Alert',
           message: 'Should be filtered',
           metadata: {},
         });
@@ -196,13 +196,13 @@ describe('alertStore', () => {
           project_id: 'proj_1',
           type: 'quota.exceeded',
           severity: 'error',
-          title: 'Critical quota alert',
-          message: 'Over quota',
+          title: 'Critical limit alert',
+          message: 'Over limit',
           metadata: {},
         });
       });
 
-      expect(toastMock.error).toHaveBeenCalledWith('Critical quota alert');
+      expect(toastMock.error).toHaveBeenCalledWith('Critical limit alert');
     });
 
     it('does not show toast for warning alerts', () => {
@@ -215,7 +215,7 @@ describe('alertStore', () => {
           type: 'quota.warning',
           severity: 'warning',
           title: 'Warning',
-          message: 'Approaching quota',
+          message: 'Approaching limit',
           metadata: {},
         });
       });
@@ -623,7 +623,7 @@ describe('alertStore', () => {
     it('should respect alert_types when adding alerts', () => {
       const { result } = renderHook(() => useAlertStore());
 
-      // Only enable quota.exceeded
+      // Only enable quota.exceeded (limit-exceeded semantic)
       act(() => {
         result.current.updatePreferences({
           alert_types: ['quota.exceeded'],
@@ -645,14 +645,14 @@ describe('alertStore', () => {
 
       expect(result.current.alerts).toHaveLength(0);
 
-      // Add quota.exceeded alert (in enabled types)
+      // Add quota.exceeded alert (in enabled types, limit semantic)
       act(() => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
           type: 'quota.exceeded',
           severity: 'error',
-          title: 'Quota Alert',
+          title: 'Limit Alert',
           message: 'Should pass',
           metadata: {},
         });

@@ -23,7 +23,7 @@ tags:
   - name: SSE
     description: Server-Sent Events ticket exchange
   - name: Governance
-    description: Quota checks and audit export
+    description: Limit checks and audit export
   - name: LLM Runtime
     description: Provider/model routing, unified proxy, and pricing control plane
 paths:
@@ -674,11 +674,11 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates:
     get:
       tags:
         - Members
-      operationId: get_projectQuotaTemplates
+      operationId: get_projectLimitTemplates
       parameters:
         - name: workspaceId
           in: path
@@ -707,7 +707,7 @@ paths:
     post:
       tags:
         - Members
-      operationId: create_projectQuotaTemplate
+      operationId: create_projectLimitTemplate
       parameters:
         - name: workspaceId
           in: path
@@ -1279,11 +1279,11 @@ paths:
             schema:
               type: object
               additionalProperties: true
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/limits:
     get:
       tags:
         - Sources
-      operationId: get_sourcesQuota
+      operationId: get_sourcesLimit
       responses:
         "200":
           description: OK
@@ -3358,11 +3358,11 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}:
     get:
       tags:
         - Members
-      operationId: get_projectQuotaTemplateItem
+      operationId: get_projectLimitTemplateItem
       parameters:
         - name: workspaceId
           in: path
@@ -3394,7 +3394,7 @@ paths:
     patch:
       tags:
         - Members
-      operationId: update_projectQuotaTemplate
+      operationId: update_projectLimitTemplate
       parameters:
         - name: workspaceId
           in: path
@@ -3440,7 +3440,7 @@ paths:
     delete:
       tags:
         - Members
-      operationId: delete_projectQuotaTemplate
+      operationId: delete_projectLimitTemplate
       parameters:
         - name: workspaceId
           in: path
@@ -3464,11 +3464,11 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}/apply:
     post:
       tags:
         - Members
-      operationId: apply_projectQuotaTemplate
+      operationId: apply_projectLimitTemplate
       parameters:
         - name: workspaceId
           in: path
@@ -3606,11 +3606,11 @@ paths:
           description: No Content
         "401": *a1
         "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/spending-limit-overrides:
     get:
       tags:
         - Members
-      operationId: get_projectMemberQuotaOverrides
+      operationId: get_projectMemberLimitOverrides
       parameters:
         - name: workspaceId
           in: path
@@ -3645,7 +3645,7 @@ paths:
     patch:
       tags:
         - Members
-      operationId: update_projectMemberQuotaOverrides
+      operationId: update_projectMemberLimitOverrides
       parameters:
         - name: workspaceId
           in: path
@@ -3689,11 +3689,11 @@ paths:
                     additionalProperties: true
         "401": *a1
         "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides/history:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/spending-limit-overrides/history:
     get:
       tags:
         - Members
-      operationId: list_projectMemberQuotaOverrideHistory
+      operationId: list_projectMemberLimitOverrideHistory
       parameters:
         - name: workspaceId
           in: path
@@ -4017,31 +4017,31 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limits/check:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
     post:
       tags:
         - Governance
-      operationId: checkQuota
-      summary: Verify quota before operation
+      operationId: checkLimit
+      summary: Verify limit before operation
       description: |
-        Checks if a subject has sufficient quota remaining to perform an operation.
-        Returns quota status including remaining amount, limit, and reset time.
+        Checks if a subject has sufficient limit remaining to perform an operation.
+        Returns limit status including remaining amount, limit, and reset time.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/QuotaCheckRequest"
+              $ref: "#/components/schemas/LimitCheckRequest"
       responses:
         "200":
-          description: Quota check result
+          description: Limit check result
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/QuotaCheckResponse"
+                $ref: "#/components/schemas/LimitCheckResponse"
         "401": *a1
         "403": *a2
         "400":
@@ -4160,17 +4160,17 @@ paths:
       tags:
         - Governance
       operationId: getLimitsSummary
-      summary: Get quota summary for all resources
+      summary: Get limit summary for all resources
       description: |
-        Returns quota usage summary across all resource types (endpoints, source libraries, agents).
+        Returns limit usage summary across all resource types (endpoints, source libraries, agents).
         Includes current usage, limits, percentage used, and reset times.
       responses:
         "200":
-          description: Quota summary
+          description: Limit summary
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/QuotaOverview"
+                $ref: "#/components/schemas/LimitOverview"
         "401": *a1
         "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries:
@@ -4183,7 +4183,7 @@ paths:
       operationId: getUsageTimeseries
       summary: Get usage/cost time series data
       description: |
-        Returns time-series usage data for cost and quota tracking.
+        Returns time-series usage data for cost and limit tracking.
         Supports filtering by metric type, time range, and granularity.
       parameters:
         - name: metric
@@ -5786,15 +5786,15 @@ components:
           example:
             error_code: "RATE_LIMIT_EXCEEDED"
             message: "Rate limit exceeded. Please retry after a few seconds"
-    QuotaExceeded:
-      description: Quota Exceeded - Resource quota exceeded
+    LimitExceeded:
+      description: Limit Exceeded - Resource limit exceeded
       content:
         application/json:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "QUOTA_EXCEEDED"
-            message: "Resource quota exceeded"
+            error_code: "SPENDING_LIMIT_EXCEEDED"
+            message: "Resource limit exceeded"
     InternalError:
       description: Internal Server Error - Unexpected server error
       content:
@@ -6155,7 +6155,7 @@ components:
             - RESOURCE_ALREADY_EXISTS
             - VALIDATION_ERROR
             - RATE_LIMIT_EXCEEDED
-            - QUOTA_EXCEEDED
+            - SPENDING_LIMIT_EXCEEDED
             - INTERNAL_ERROR
         message:
           type: string
@@ -6337,7 +6337,7 @@ components:
                   enum: [user, group]
                 id:
                   type: string
-    QuotaCheckRequest:
+    LimitCheckRequest:
       type: object
       required:
         - subject_id
@@ -6360,24 +6360,24 @@ components:
           type: number
           description: Estimated tokens/bytes for the operation
           minimum: 0
-    QuotaCheckResponse:
+    LimitCheckResponse:
       type: object
       required:
         - allowed
-        - quota_remaining
-        - quota_limit
-        - quota_reset_at
+        - limit_remaining
+        - limit_limit
+        - limit_reset_at
         - policy_id
       properties:
         allowed:
           type: boolean
-        quota_remaining:
+        limit_remaining:
           type: number
           minimum: 0
-        quota_limit:
+        limit_limit:
           type: number
           minimum: 0
-        quota_reset_at:
+        limit_reset_at:
           type: string
           format: date-time
         policy_id:
@@ -6490,7 +6490,7 @@ components:
                     type: string
                   policy_id:
                     type: string
-              # Usage-specific fields (for quota.* actions)
+              # Usage-specific fields (for limit.* actions)
               usage_metrics:
                 type: object
                 properties:
@@ -6499,11 +6499,11 @@ components:
                   unit:
                     type: string
                     enum: [tokens, bytes, requests, seconds]
-              quota_remaining:
+              limit_remaining:
                 type: number
-              quota_limit:
+              limit_limit:
                 type: number
-              quota_reset_at:
+              limit_reset_at:
                 type: string
                 format: date-time
               policy_id:
@@ -6544,42 +6544,42 @@ components:
           description: Single-use enforcement
           enum: [1]
     # ============================================================
-    # Epic C1: Cost & Quota Dashboard Schemas
+    # Epic C1: Cost & Limit Dashboard Schemas
     # ============================================================
-    QuotaOverview:
+    LimitOverview:
       type: object
-      description: Aggregate quota summary across all resource types
+      description: Aggregate limit summary across all resource types
       properties:
         endpoints:
           type: array
           items:
-            $ref: '#/components/schemas/QuotaSummary'
+            $ref: '#/components/schemas/LimitSummary'
         source_libraries:
           type: array
           items:
-            $ref: '#/components/schemas/QuotaSummary'
+            $ref: '#/components/schemas/LimitSummary'
         agents:
           type: array
           items:
-            $ref: '#/components/schemas/QuotaSummary'
-        total_quota_used:
+            $ref: '#/components/schemas/LimitSummary'
+        total_limit_used:
           type: number
-          description: Total quota used across all resource types
-        total_quota_limit:
+          description: Total limit used across all resource types
+        total_limit_limit:
           type: number
-          description: Total quota limit across all resource types
-    QuotaSummary:
+          description: Total limit limit across all resource types
+    LimitSummary:
       type: object
-      description: Quota summary for a specific resource
+      description: Limit summary for a specific resource
       required:
         - resource_type
         - resource_id
         - resource_name
-        - quota_used
-        - quota_limit
-        - quota_reset_at
+        - limit_used
+        - limit_limit
+        - limit_reset_at
         - percentage_used
-        - quota_unit
+        - limit_unit
       properties:
         resource_type:
           type: string
@@ -6588,20 +6588,20 @@ components:
           type: string
         resource_name:
           type: string
-        quota_used:
+        limit_used:
           type: number
           minimum: 0
-        quota_limit:
+        limit_limit:
           type: number
           minimum: 0
-        quota_reset_at:
+        limit_reset_at:
           type: string
           format: date-time
         percentage_used:
           type: number
           minimum: 0
           maximum: 100
-        quota_unit:
+        limit_unit:
           type: string
           enum: [tokens, requests, bytes, files]
     UsageTimeseriesRequest:
@@ -7737,7 +7737,7 @@ components:
       enum:
         - requests_per_day
         - requests_per_hour
-        - quota_percent
+        - limit_percent
         - error_rate
         - token_usage
         - response_time_p95

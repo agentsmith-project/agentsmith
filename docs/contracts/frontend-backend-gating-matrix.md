@@ -40,7 +40,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | endpoints | create/update/delete endpoint | `project:manage` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
 | resource policy | view/update endpoint/agent policy | `project:manage` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
 | credentials | view/manage credentials | `project:manage` | `GET/POST/DELETE /credentials*` | page-level permission denied |
-| members | view/manage members/templates/groups | `project:manage` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/quota-templates*` | page-level permission denied or mutating controls disabled |
+| members | view/manage members/templates/groups | `project:manage` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/spending-limit-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view/update/delete project | `project:manage` | `GET/PATCH/DELETE /projects/{id}` | page-level permission denied or save/delete disabled |
 | audit | view audit data | `project:manage` | `GET /audit` | component-level permission denied |
 | usage | view own usage data (read-only) | `project:endpoint:use` | `GET /usage`, `GET /usage/kpi`, `GET /usage/facts` | component-level permission denied |

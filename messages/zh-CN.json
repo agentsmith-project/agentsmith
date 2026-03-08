@@ -110,7 +110,7 @@
       "queued": "排队中",
       "error": "错误：{message}"
     },
-    "quota": {
+    "limit": {
       "storage": "存储",
       "docdb": "文档数据库",
       "vectordb": "向量数据库",
@@ -155,7 +155,7 @@
     "error": {
       "upload_failed": "上传失败",
       "process_failed": "处理失败",
-      "quota_exceeded": "配额超限，无法启动 AIReady。",
+      "limit_exceeded": "配额超限，无法启动 AIReady。",
       "delete_failed": "删除失败"
     },
     "filter_status_all": "全部",
@@ -525,8 +525,8 @@
     "permission_denied_hint": "您没有权限访问此资源。",
     "rate_limited_title": "请求过于频繁",
     "rate_limited_hint": "请求过于频繁，请稍后再试。",
-    "quota_exceeded_title": "配额已用尽",
-    "quota_exceeded_hint": "您已超出配额限制。",
+    "limit_exceeded_title": "配额已用尽",
+    "limit_exceeded_hint": "您已超出配额限制。",
     "model_not_found_title": "模型不存在",
     "model_not_found_hint": "请求的模型不可用。",
     "endpoint_disabled_title": "端点已禁用",
@@ -590,7 +590,7 @@
       "confirm_save": "确认并保存",
       "loading": "加载权限中..."
     },
-    "quota": {
+    "limit": {
       "title": "配额覆盖",
       "description": "默认配额继承自项目策略。在下方为此用户覆盖特定配额。",
       "use_default": "使用默认值",
@@ -620,11 +620,11 @@
       "title": "变更历史",
       "view_history": "查看变更历史",
       "permissions_updated": "权限已更新",
-      "quota_updated": "配额覆盖",
+      "limit_updated": "配额覆盖",
       "acl_updated": "资源 ACL 已更新"
     },
     "actions": {
-      "edit_permissions_quota": "编辑权限和配额",
+      "edit_permissions_limit": "编辑权限和配额",
       "view_history": "查看变更历史",
       "remove_member": "移除成员"
     },

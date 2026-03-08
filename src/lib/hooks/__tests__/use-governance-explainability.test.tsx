@@ -112,9 +112,9 @@ describe('use-governance-explainability', () => {
       get: vi.fn(),
       post: vi.fn().mockResolvedValue({
         allowed: true,
-        quota_remaining: 5,
-        quota_limit: 10,
-        quota_reset_at: '2026-03-02T00:00:00.000Z',
+        limit_remaining: 5,
+        limit_total: 10,
+        limit_reset_at: '2026-03-02T00:00:00.000Z',
         policy_id: 'rp_1',
       }),
       put: vi.fn(),
@@ -141,7 +141,7 @@ describe('use-governance-explainability', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(client.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/quota/check', {
+    expect(client.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/spending-limits/check', {
       subject_id: 'user_1',
       resource_type: 'endpoint',
       resource_id: 'ep_1',

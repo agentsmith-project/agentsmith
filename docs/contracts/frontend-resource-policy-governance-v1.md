@@ -77,8 +77,8 @@ MVP execution guard:
 - `endpoint`
 
 3. Historical route naming note:
-- `POST /workspaces/{ws}/projects/{project}/quota/check` is retained for backward compatibility.
-- Frontend/runtime semantics interpret this as limit check (`rate limit` / `spending limit`), not a separate quota domain.
+- `POST /workspaces/{ws}/projects/{project}/spending-limits/check` is retained for backward compatibility.
+- Frontend/runtime semantics interpret this as limit check (`rate limit` / `spending limit`), not a separate limit domain.
 
 ## Audit Requirements
 

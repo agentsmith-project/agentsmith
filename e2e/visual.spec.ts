@@ -326,7 +326,7 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByRole('menuitem', { name: /edit permissions/i }).click();
     const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
     await expect(drawer).toBeVisible({ timeout: 5000 });
-    await drawer.getByRole('tab', { name: /quota/i }).click();
+    await drawer.getByRole('tab', { name: /limit/i }).click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('drawer-member-limits.png');
   });

@@ -270,7 +270,7 @@ The current internal baseline no longer treats `Members` and `Resource Policy` a
 
 - `Audit` and `Usage` are fully backed by persisted `api-entry-node` routes
 - `Members` supports real lifecycle effects (`suspend / restore / revoke`) and downstream cleanup
-- `Resource Policy` supports real allow-list / rate / quota effects on the currently supported resource paths
+- `Resource Policy` supports real allow-list / rate / limit effects on the currently supported resource paths
 - project route authorization is driven by the shared backend authz engine and explainable `/authorize` decisions
 
 The important constraint is no longer "partial page support", but **scoped enforcement coverage**. For exact supported effects and current boundaries, use the current baseline and MVP smoke runbook as sources of truth.
@@ -747,8 +747,8 @@ Current known boundary:
 - Feature availability for `audit`, `usage`, `members`, and `resource_policy` in real backend mode is now governed by **supported enforcement scope**, not placeholder-vs-real status.
 - Governance backend baseline now includes:
   - unified backend authz decisions and `/authorize` explain payloads
-  - endpoint allow-list / rate / quota effects
-  - source-library allow-list / rate / upload quota effects
+  - endpoint allow-list / rate / limit effects
+  - source-library allow-list / rate / upload limit effects
   - notebook/chat agent access and agent request-rate effects
-  - member permission, quota, suspend / restore / revoke downstream effects
+  - member permission, limit, suspend / restore / revoke downstream effects
   - opaque SSE ticket issuance with legacy JWT query fallback disabled

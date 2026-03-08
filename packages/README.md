@@ -12,7 +12,7 @@ Current status:
 - Node API entry serves `GET/POST /api/v1/workspaces/:ws/projects` and `GET/PATCH/DELETE /api/v1/workspaces/:ws/projects/:id`.
 - Node API entry serves:
   `GET/POST /api/v1/workspaces/:ws/projects/:prj/sources`,
-  `GET /api/v1/workspaces/:ws/projects/:prj/sources/quota`,
+  `GET /api/v1/workspaces/:ws/projects/:prj/sources/limits`,
   `GET/DELETE /api/v1/workspaces/:ws/projects/:prj/sources/:sourceId`,
   `GET /api/v1/workspaces/:ws/projects/:prj/sources/:sourceId/download`.
 - Node API entry serves library-scoped AIReady job endpoints:

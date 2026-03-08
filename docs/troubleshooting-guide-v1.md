@@ -89,7 +89,7 @@ make governance-pages-real-backend-interaction-smoke-strict
 1. 先看 `Runtime Console` + `Usage` + `Audit` 的治理证据链：
    - runtime control/monitoring 状态
    - usage/cost/rate-spending 指标
-   - audit 的 deny/quota/policy 命中证据
+   - audit 的 deny/limit/policy 命中证据
 2. 再跑工程诊断报告：
 ```bash
 npm run release:report -- --name local-debug

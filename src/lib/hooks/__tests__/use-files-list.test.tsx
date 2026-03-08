@@ -80,7 +80,7 @@ vi.mock('@/lib/api', () => ({
         access_mode: 'allow_all_members',
         allowed_subjects: [],
         rate_limits: { rules: [] },
-        quota_limits: { rules: [] },
+        spending_limits: { rules: [] },
       }),
     };
   }),

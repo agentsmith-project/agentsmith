@@ -5,7 +5,7 @@ import {
   checkAndConsumeProjectResourceRateLimitsForUser,
   checkProjectEndpointRateLimitsForUser,
   checkProjectEndpointSpendingLimitsForUser,
-  checkProjectSourceLibraryQuotaLimits,
+  checkProjectSourceLibraryLimitLimits,
 } from './project-resource-policy-enforcer.js';
 import { getProjectGroupsState } from './project-groups-store.js';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
@@ -203,10 +203,10 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
-  it('enforces source library file count and file size quotas', () => {
+  it('enforces source library file count and file size limits', () => {
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'source_library',
-      resource_id: 'lib_quota',
+      resource_id: 'lib_limit',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
       spending_limits: {
@@ -217,7 +217,7 @@ describe('project-resource-policy-enforcer', () => {
       },
     };
 
-    const oversized = checkProjectSourceLibraryQuotaLimits({
+    const oversized = checkProjectSourceLibraryLimitLimits({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',
@@ -227,13 +227,13 @@ describe('project-resource-policy-enforcer', () => {
     });
     expect(oversized).toMatchObject({
       allowed: false,
-      quota_key: 'source_library.max_file_size_bytes',
+      limit_key: 'source_library.max_file_size_bytes',
       effective_max_file_size_bytes: 4,
       current_file_size_bytes: 5,
       usage_unit: 'bytes',
     });
 
-    const tooMany = checkProjectSourceLibraryQuotaLimits({
+    const tooMany = checkProjectSourceLibraryLimitLimits({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',
@@ -243,7 +243,7 @@ describe('project-resource-policy-enforcer', () => {
     });
     expect(tooMany).toMatchObject({
       allowed: false,
-      quota_key: 'source_library.max_total_files',
+      limit_key: 'source_library.max_total_files',
       effective_max_total_files: 1,
       current_total_files: 1,
       usage_unit: 'files',

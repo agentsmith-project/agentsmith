@@ -19,15 +19,15 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - persisted usage facts aggregated by `day|hour`
   - first-stage coverage: notebook task runs, chat runs, endpoint proxy requests
 - `Members`
-  - real backend coverage for reads/writes, effective access explain, membership lifecycle cleanup, and permission/quota visibility
+  - real backend coverage for reads/writes, effective access explain, membership lifecycle cleanup, and permission/limit visibility
   - backend route authz reflects unified backend authorization decisions
-  - member quota overrides/templates provide enforced runtime quota effects within the documented scope
+  - member limit overrides/templates provide enforced runtime limit effects within the documented scope
 - `Resource Policy`
   - real backend coverage for reads/writes, matched policy explain, and enforced governance paths in the current internal baseline
   - current enforcement scope covers allow-all / allow-list checks for `endpoint` and notebook/chat `agent` paths
   - allow-list matching supports user and group subjects
   - endpoint `requests_per_minute` rate limiting is enforced
-  - endpoint `daily_token_limit` quota enforcement is enforced
+  - endpoint `daily_token_limit` limit enforcement is enforced
   - `source_library.max_total_files` and `source_library.max_file_size_bytes` are enforced on create/upload flows
 
 ## 1. Scope

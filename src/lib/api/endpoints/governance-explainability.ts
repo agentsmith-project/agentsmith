@@ -51,7 +51,7 @@ export interface GovernanceLimitCheckResponse {
 }
 
 export interface GovernanceLimitExceededDetails {
-  error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED' | 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED';
+  error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED';
   message: string;
   resource_type?: 'endpoint' | 'source_library' | 'agent';
   resource_id?: string;
@@ -68,8 +68,8 @@ export interface GovernanceLimitExceededDetails {
 }
 
 export interface GovernanceEvidenceDetails extends GovernanceLimitExceededDetails {
-  governance_kind?: 'resource_policy' | 'member_quota';
-  enforcement_kind?: 'allow_list' | 'spending_limit' | 'rate_limit' | 'quota_limit';
+  governance_kind?: 'resource_policy' | 'member_spending_limit';
+  enforcement_kind?: 'allow_list' | 'spending_limit' | 'rate_limit';
   route_kind?: string;
   reason?: string;
   missing_permissions?: string[];
@@ -115,13 +115,12 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
   if (!isRecord(value)) return null;
   const errorCode = typeof value.error_code === 'string' ? value.error_code : undefined;
   const governanceKind =
-    value.governance_kind === 'resource_policy' || value.governance_kind === 'member_quota'
+    value.governance_kind === 'resource_policy' || value.governance_kind === 'member_spending_limit'
       ? value.governance_kind
       : undefined;
   const enforcementKind =
     value.enforcement_kind === 'allow_list'
     || value.enforcement_kind === 'spending_limit'
-    || value.enforcement_kind === 'quota_limit'
     || value.enforcement_kind === 'rate_limit'
       ? value.enforcement_kind
       : undefined;
@@ -133,9 +132,7 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
   if (
     !governanceKind
     && !enforcementKind
-    && errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED'
     && errorCode !== 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED'
-    && errorCode !== 'MEMBER_QUOTA_EXCEEDED'
     && errorCode !== 'RESOURCE_POLICY_DENIED'
     && !hasForbiddenAuthz
   ) {
@@ -145,24 +142,14 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
   const normalized = {
     ...value,
     error_code: errorCode,
-    enforcement_kind: enforcementKind === 'quota_limit' ? 'spending_limit' : enforcementKind,
+    enforcement_kind: enforcementKind,
   } as GovernanceEvidenceDetails;
-
-  if (typeof normalized.limit_key !== 'string' && typeof value.quota_key === 'string') {
-    normalized.limit_key = value.quota_key;
-  }
-  if (normalized.reason === 'quota_exceeded') {
-    normalized.reason = 'spending_limit_exceeded';
-  }
   return normalized;
 }
 
 export function getGovernanceLimitExceededDetails(error: unknown): GovernanceLimitExceededDetails | null {
   if (!(error instanceof APIError)) return null;
-  if (
-    error.errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED'
-    && error.errorCode !== 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED'
-  ) return null;
+  if (error.errorCode !== 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED') return null;
   return getGovernanceEvidenceDetails(error.details);
 }
 
@@ -189,17 +176,13 @@ export class GovernanceExplainabilityAPI {
     projectId: string,
     payload: GovernanceLimitCheckRequest,
   ): Promise<GovernanceLimitCheckResponse> {
-    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/quota/check`, payload).then((response) => {
-      const raw = response as Partial<GovernanceLimitCheckResponse> & {
-        quota_remaining?: number;
-        quota_limit?: number;
-        quota_reset_at?: string;
-      };
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/spending-limits/check`, payload).then((response) => {
+      const raw = response as Partial<GovernanceLimitCheckResponse>;
       return {
         allowed: Boolean(raw.allowed),
-        limit_remaining: raw.limit_remaining ?? raw.quota_remaining ?? 0,
-        limit_total: raw.limit_total ?? raw.quota_limit ?? 0,
-        limit_reset_at: raw.limit_reset_at ?? raw.quota_reset_at ?? '',
+        limit_remaining: raw.limit_remaining ?? 0,
+        limit_total: raw.limit_total ?? 0,
+        limit_reset_at: raw.limit_reset_at ?? '',
         policy_id: raw.policy_id ?? '',
       };
     });

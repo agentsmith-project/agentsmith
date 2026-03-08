@@ -110,13 +110,13 @@
       "queued": "Queued",
       "error": "Error: {message}"
     },
-    "quota": {
+    "limit": {
       "storage": "Storage",
       "docdb": "DocDB",
       "vectordb": "VectorDB",
       "used": "Used",
       "limit": "Limit",
-      "exceeded": "Quota Exceeded"
+      "exceeded": "Limit Exceeded"
     },
     "batch": {
       "selected": "{count} selected",
@@ -155,7 +155,7 @@
     "error": {
       "upload_failed": "Upload failed",
       "process_failed": "Processing failed",
-      "quota_exceeded": "Quota exceeded. Cannot start AIReady.",
+      "limit_exceeded": "Limit exceeded. Cannot start AIReady.",
       "delete_failed": "Delete failed"
     },
     "filter_status_all": "All",
@@ -525,8 +525,8 @@
     "permission_denied_hint": "You don't have permission to access this resource.",
     "rate_limited_title": "Rate Limited",
     "rate_limited_hint": "Too many requests. Please try again later.",
-    "quota_exceeded_title": "Quota Exceeded",
-    "quota_exceeded_hint": "You have exceeded your quota.",
+    "limit_exceeded_title": "Limit Exceeded",
+    "limit_exceeded_hint": "You have exceeded your limit.",
     "model_not_found_title": "Model Not Found",
     "model_not_found_hint": "The requested model is not available.",
     "endpoint_disabled_title": "Endpoint Disabled",
@@ -537,7 +537,7 @@
   "members": {
     "title": "Members",
     "invite_member": "Invite Member",
-    "description": "Manage project members, permissions, and quotas",
+    "description": "Manage project members, permissions, and limits",
     "no_permission_to_view": "You don't have permission to view members",
     "table": {
       "user": "User",
@@ -590,14 +590,14 @@
       "confirm_save": "Confirm & Save",
       "loading": "Loading permissions..."
     },
-    "quota": {
-      "title": "Quota Overrides",
-      "description": "Default quotas are inherited from project policy. Override specific quotas for this user below.",
+    "limit": {
+      "title": "Limit Overrides",
+      "description": "Default limits are inherited from project policy. Override specific limits for this user below.",
       "use_default": "Use Default",
       "override": "Override",
       "reset_all": "Reset All",
-      "update_success": "Quota overrides updated successfully",
-      "coming_soon": "Quota editor coming soon..."
+      "update_success": "Limit overrides updated successfully",
+      "coming_soon": "Limit editor coming soon..."
     },
     "acl": {
       "title": "Resource ACL",
@@ -618,11 +618,11 @@
       "title": "Change History",
       "view_history": "View Change History",
       "permissions_updated": "Permissions updated",
-      "quota_updated": "Quota override",
+      "limit_updated": "Limit override",
       "acl_updated": "Resource ACL updated"
     },
     "actions": {
-      "edit_permissions_quota": "Edit Permissions & Quota",
+      "edit_permissions_limit": "Edit Permissions & Limit",
       "view_history": "View Change History",
       "remove_member": "Remove Member"
     },

@@ -2116,10 +2116,10 @@ export const usageHandlers = [
         resource_id: item.resource_id,
         resource_name: item.resource_name,
         resource_type: item.resource_type,
-        quota_used: item.requests,
-        quota_limit: 20000,
-        quota_unit: 'requests',
-        quota_reset_at: resetAt,
+        limit_used: item.requests,
+        limit_limit: 20000,
+        limit_unit: 'requests',
+        limit_reset_at: resetAt,
         percentage_used: Number(((item.requests / 20000) * 100).toFixed(2)),
       }));
     const agents = resources
@@ -2128,10 +2128,10 @@ export const usageHandlers = [
         resource_id: item.resource_id,
         resource_name: item.resource_name,
         resource_type: item.resource_type,
-        quota_used: item.requests,
-        quota_limit: 12000,
-        quota_unit: 'requests',
-        quota_reset_at: resetAt,
+        limit_used: item.requests,
+        limit_limit: 12000,
+        limit_unit: 'requests',
+        limit_reset_at: resetAt,
         percentage_used: Number(((item.requests / 12000) * 100).toFixed(2)),
       }));
     const sourceLibraries = resources
@@ -2140,15 +2140,15 @@ export const usageHandlers = [
         resource_id: item.resource_id,
         resource_name: item.resource_name,
         resource_type: item.resource_type,
-        quota_used: item.requests,
-        quota_limit: 10000,
-        quota_unit: 'requests',
-        quota_reset_at: resetAt,
+        limit_used: item.requests,
+        limit_limit: 10000,
+        limit_unit: 'requests',
+        limit_reset_at: resetAt,
         percentage_used: Number(((item.requests / 10000) * 100).toFixed(2)),
       }));
 
     const totalLimitUsed =
-      [...endpoints, ...agents, ...sourceLibraries].reduce((sum, item) => sum + item.quota_used, 0);
+      [...endpoints, ...agents, ...sourceLibraries].reduce((sum, item) => sum + item.limit_used, 0);
     const totalLimit =
       endpoints.length * 20000 + agents.length * 12000 + sourceLibraries.length * 10000;
 
@@ -2156,8 +2156,8 @@ export const usageHandlers = [
       endpoints,
       agents,
       source_libraries: sourceLibraries,
-      total_quota_used: totalLimitUsed,
-      total_quota_limit: totalLimit,
+      total_limit_used: totalLimitUsed,
+      total_limit_limit: totalLimit,
     });
   }),
 ];

@@ -62,7 +62,7 @@ describe('GovernanceExplainabilityAPI', () => {
       estimated_cost: 4096,
     });
 
-    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/quota/check', {
+    expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/spending-limits/check', {
       subject_id: 'user_1',
       resource_type: 'source_library',
       resource_id: 'lib_1',
@@ -113,13 +113,13 @@ describe('GovernanceExplainabilityAPI', () => {
     expect(getGovernanceLimitExceededDetails(error)?.limit_key).toBe('source_library.max_file_size_bytes');
   });
 
-  it('normalizes legacy quota payload fields to limit semantics', () => {
+  it('keeps spending-limit payload fields normalized to limit semantics', () => {
     const details = getGovernanceEvidenceDetails({
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
       governance_kind: 'resource_policy',
-      enforcement_kind: 'quota_limit',
-      quota_key: 'endpoint.daily_token_limit',
-      reason: 'quota_exceeded',
+      enforcement_kind: 'spending_limit',
+      limit_key: 'endpoint.daily_token_limit',
+      reason: 'spending_limit_exceeded',
     });
 
     expect(details?.enforcement_kind).toBe('spending_limit');

@@ -14,17 +14,17 @@ type RateLimitDecision =
   | { allowed: true; effective_limit_per_minute?: number; scope?: 'policy' | 'subject' }
   | { allowed: false; reason: 'rate_limited'; retry_after_seconds: number; effective_limit_per_minute: number; scope: 'policy' | 'subject' };
 
-type QuotaRuleKey =
+type LimitRuleKey =
   | 'endpoint.spending_usd_per_minute'
   | 'endpoint.spending_usd_per_5_hours'
   | 'endpoint.spending_usd_per_day'
   | 'source_library.max_total_files'
   | 'source_library.max_file_size_bytes';
 
-type QuotaLimitDecision =
+type LimitLimitDecision =
   | {
     allowed: true;
-    quota_key?: QuotaRuleKey;
+    limit_key?: LimitRuleKey;
     effective_limit?: number;
     current_usage?: number;
     usage_unit?: 'tokens' | 'requests';
@@ -36,8 +36,8 @@ type QuotaLimitDecision =
   }
   | {
     allowed: false;
-    reason: 'quota_exceeded';
-    quota_key: QuotaRuleKey;
+    reason: 'limit_exceeded';
+    limit_key: LimitRuleKey;
     effective_limit: number;
     current_usage: number;
     usage_unit: 'tokens' | 'requests';
@@ -107,7 +107,7 @@ function mergeRateRules(base: PolicyRule[], overrides: PolicyRule[]): PolicyRule
   return Array.from(map.values());
 }
 
-function mergeQuotaRules(base: PolicyRule[], overrides: PolicyRule[]): PolicyRule[] {
+function mergeLimitRules(base: PolicyRule[], overrides: PolicyRule[]): PolicyRule[] {
   const map = new Map<string, PolicyRule>();
   for (const rule of base) map.set(rule.key, rule);
   for (const rule of overrides) map.set(rule.key, rule);
@@ -120,7 +120,7 @@ function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null 
   return null;
 }
 
-function getQuotaRuleKeys(resourceType: ResourceType): QuotaRuleKey[] {
+function getLimitRuleKeys(resourceType: ResourceType): LimitRuleKey[] {
   if (resourceType === 'endpoint') return [];
   return [];
 }
@@ -159,7 +159,7 @@ function getEffectiveRequestsPerMinuteRule(args: {
   return { value: rpmRule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
-function getMatchingSubjectQuotaRules(args: {
+function getMatchingSubjectLimitRules(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
@@ -172,27 +172,27 @@ function getMatchingSubjectQuotaRules(args: {
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
     .flatMap((s) => readPolicyRules(s.spending_limits));
-  const merged = mergeQuotaRules(userRules, groupRules);
+  const merged = mergeLimitRules(userRules, groupRules);
   return { rules: merged, matched: merged.length > 0 };
 }
 
-function getEffectiveQuotaRule(args: {
+function getEffectiveLimitRule(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
   resourceType: ResourceType;
   policy: ProjectResourcePolicyRecord;
-}): { key?: QuotaRuleKey; value?: number; scope?: 'policy' | 'subject' } {
-  const quotaRuleKeys = getQuotaRuleKeys(args.resourceType);
-  if (quotaRuleKeys.length === 0) return {};
+}): { key?: LimitRuleKey; value?: number; scope?: 'policy' | 'subject' } {
+  const limitRuleKeys = getLimitRuleKeys(args.resourceType);
+  if (limitRuleKeys.length === 0) return {};
   const baseRules = readPolicyRules(args.policy.spending_limits);
-  const subject = getMatchingSubjectQuotaRules(args);
-  const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
-  const quotaRule = quotaRuleKeys
+  const subject = getMatchingSubjectLimitRules(args);
+  const effective = subject.matched ? mergeLimitRules(baseRules, subject.rules) : baseRules;
+  const limitRule = limitRuleKeys
     .map((key) => ({ key, rule: effective.find((r) => r.key === key) }))
-    .find((item): item is { key: QuotaRuleKey; rule: PolicyRule } => !!item.rule);
-  if (!quotaRule) return {};
-  return { key: quotaRule.key, value: quotaRule.rule.value, scope: subject.matched ? 'subject' : 'policy' };
+    .find((item): item is { key: LimitRuleKey; rule: PolicyRule } => !!item.rule);
+  if (!limitRule) return {};
+  return { key: limitRule.key, value: limitRule.rule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
 export function checkAndConsumeProjectResourceRateLimitsForUser(args: {
@@ -253,7 +253,7 @@ function endOfUtcDayIso(nowMs: number): string {
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 23, 59, 59, 999)).toISOString();
 }
 
-export async function checkProjectResourceQuotaLimitsForUser(args: {
+export async function checkProjectResourceLimitLimitsForUser(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
@@ -262,11 +262,11 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
   userId: string;
   policy: ProjectResourcePolicyRecord | null;
   nowMs?: number;
-}): Promise<QuotaLimitDecision> {
+}): Promise<LimitLimitDecision> {
   if (!args.policy) {
     return { allowed: true };
   }
-  const effective = getEffectiveQuotaRule({
+  const effective = getEffectiveLimitRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -295,8 +295,8 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
     const retryAfterSeconds = Math.max(1, Math.ceil((nextUtcMidnightMs - nowMs) / 1000));
     return {
       allowed: false,
-      reason: 'quota_exceeded',
-      quota_key: effective.key,
+      reason: 'limit_exceeded',
+      limit_key: effective.key,
       effective_limit: effective.value,
       current_usage: currentUsage,
       usage_unit: 'tokens',
@@ -308,7 +308,7 @@ export async function checkProjectResourceQuotaLimitsForUser(args: {
   }
   return {
     allowed: true,
-    quota_key: effective.key,
+    limit_key: effective.key,
     effective_limit: effective.value,
     current_usage: currentUsage,
     usage_unit: 'tokens',
@@ -454,7 +454,7 @@ function resolveEndpointSpendingRules(args: {
     .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
     .filter(isEndpointSpendingRule);
   const subjectMatched = userRules.length > 0 || groupRules.length > 0;
-  const effective = subjectMatched ? mergeQuotaRules(baseRules, mergeQuotaRules(userRules, groupRules)) : baseRules;
+  const effective = subjectMatched ? mergeLimitRules(baseRules, mergeLimitRules(userRules, groupRules)) : baseRules;
   return effective
     .filter(isEndpointSpendingRule)
     .map((rule) => ({
@@ -631,7 +631,7 @@ export async function checkProjectEndpointSpendingLimitsForUser(args: {
   return { allowed: true, limits: details };
 }
 
-type SourceLibraryQuotaDecision =
+type SourceLibraryLimitDecision =
   | {
     allowed: true;
     effective_max_total_files?: number;
@@ -642,8 +642,8 @@ type SourceLibraryQuotaDecision =
   }
   | {
     allowed: false;
-    reason: 'quota_exceeded';
-    quota_key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
+    reason: 'limit_exceeded';
+    limit_key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
     effective_limit: number;
     current_usage: number;
     usage_unit: 'files' | 'bytes';
@@ -655,7 +655,7 @@ type SourceLibraryQuotaDecision =
     scope: 'policy' | 'subject';
   };
 
-function getEffectiveSourceLibraryQuotaRule(args: {
+function getEffectiveSourceLibraryLimitRule(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
@@ -663,26 +663,26 @@ function getEffectiveSourceLibraryQuotaRule(args: {
   key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
 }): { value?: number; scope?: 'policy' | 'subject' } {
   const baseRules = readPolicyRules(args.policy.spending_limits);
-  const subject = getMatchingSubjectQuotaRules(args);
-  const effective = subject.matched ? mergeQuotaRules(baseRules, subject.rules) : baseRules;
+  const subject = getMatchingSubjectLimitRules(args);
+  const effective = subject.matched ? mergeLimitRules(baseRules, subject.rules) : baseRules;
   const rule = effective.find((item) => item.key === args.key);
   if (!rule) return {};
   return { value: rule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
-export function checkProjectSourceLibraryQuotaLimits(args: {
+export function checkProjectSourceLibraryLimitLimits(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
   policy: ProjectResourcePolicyRecord | null;
   currentFileCount: number;
   nextFileSizeBytes: number;
-}): SourceLibraryQuotaDecision {
+}): SourceLibraryLimitDecision {
   if (!args.policy) {
     return { allowed: true };
   }
 
-  const maxTotalFiles = getEffectiveSourceLibraryQuotaRule({
+  const maxTotalFiles = getEffectiveSourceLibraryLimitRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -692,8 +692,8 @@ export function checkProjectSourceLibraryQuotaLimits(args: {
   if (maxTotalFiles.value && args.currentFileCount + 1 > maxTotalFiles.value) {
     return {
       allowed: false,
-      reason: 'quota_exceeded',
-      quota_key: 'source_library.max_total_files',
+      reason: 'limit_exceeded',
+      limit_key: 'source_library.max_total_files',
       effective_limit: maxTotalFiles.value,
       current_usage: args.currentFileCount + 1,
       usage_unit: 'files',
@@ -704,7 +704,7 @@ export function checkProjectSourceLibraryQuotaLimits(args: {
     };
   }
 
-  const maxFileSize = getEffectiveSourceLibraryQuotaRule({
+  const maxFileSize = getEffectiveSourceLibraryLimitRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -714,8 +714,8 @@ export function checkProjectSourceLibraryQuotaLimits(args: {
   if (maxFileSize.value && args.nextFileSizeBytes > maxFileSize.value) {
     return {
       allowed: false,
-      reason: 'quota_exceeded',
-      quota_key: 'source_library.max_file_size_bytes',
+      reason: 'limit_exceeded',
+      limit_key: 'source_library.max_file_size_bytes',
       effective_limit: maxFileSize.value,
       current_usage: args.nextFileSizeBytes,
       usage_unit: 'bytes',

@@ -87,7 +87,7 @@ test.describe('Members Page', () => {
   test('member detail drawer opens with tabs', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
 
-    // Open the row action dropdown on a non-owner member and click "Edit Permissions & Quota"
+    // Open the row action dropdown on a non-owner member and click "Edit Permissions & Limit"
     const rows = authedPage.getByTestId('members__table__row');
     await expect(rows.first()).toBeVisible();
     // Click the action menu on the second row (Bob Smith – admin, not owner)
@@ -96,13 +96,13 @@ test.describe('Members Page', () => {
     ).last();
     await actionBtn.click();
 
-    // Click "Edit Permissions & Quota" from the dropdown
+    // Click "Edit Permissions & Limit" from the dropdown
     const editPermsItem = authedPage.getByRole('menuitem', { name: /edit permissions/i });
     await editPermsItem.click();
 
     // Detail editor may render as embedded side panel on wide viewport.
     await expect(authedPage.getByRole('tab', { name: /permissions/i }).last()).toBeVisible({ timeout: 5000 });
-    await expect(authedPage.getByRole('tab', { name: /quota/i }).last()).toBeVisible();
+    await expect(authedPage.getByRole('tab', { name: /limit/i }).last()).toBeVisible();
   });
 
   test('permission template defaults to member existing permissions', async ({ authedPage }) => {
@@ -111,7 +111,7 @@ test.describe('Members Page', () => {
     const rows = authedPage.getByTestId('members__table__row');
     await expect(rows.nth(1)).toBeVisible();
 
-    // Open "Edit Permissions & Quota" for Bob Smith (admin in mock fixture)
+    // Open "Edit Permissions & Limit" for Bob Smith (admin in mock fixture)
     const actionBtn = rows.nth(1).getByRole('button', { name: /more/i }).or(
       rows.nth(1).locator('button:has(svg)')
     ).last();

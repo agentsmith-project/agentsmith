@@ -12,7 +12,7 @@ import {
   DeleteProjectUseCase,
   DownloadSourceUseCase,
   GetSourceUseCase,
-  GetSourcesQuotaUseCase,
+  GetSourcesLimitUseCase,
   GetProjectUseCase,
   RunQueuedAIReadyJobUseCase,
   GetAIReadyJobUseCase,
@@ -671,17 +671,17 @@ describe('Project use cases', () => {
     });
     expect(found.id).toBe(created.id);
 
-    const quota = await new GetSourcesQuotaUseCase(sourceRepo).execute({
+    const limit = await new GetSourcesLimitUseCase(sourceRepo).execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
     });
-    expect(quota.storage.used).toBe(7);
-    const quotaLibA = await new GetSourcesQuotaUseCase(sourceRepo).execute({
+    expect(limit.storage.used).toBe(7);
+    const limitLibA = await new GetSourcesLimitUseCase(sourceRepo).execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       libraryId: 'lib_a',
     });
-    expect(quotaLibA.storage.used).toBe(5);
+    expect(limitLibA.storage.used).toBe(5);
 
     const downloaded = await new DownloadSourceUseCase(
       sourceRepo,

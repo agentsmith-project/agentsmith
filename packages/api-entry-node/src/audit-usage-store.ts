@@ -188,10 +188,10 @@ export type LimitsSummaryItem = {
   resource_id: string;
   resource_name: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
-  quota_used: number;
-  quota_limit: number;
-  quota_unit: 'tokens' | 'requests' | 'bytes' | 'files';
-  quota_reset_at: string;
+  limit_used: number;
+  limit_limit: number;
+  limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
+  limit_reset_at: string;
   percentage_used: number;
 };
 
@@ -199,8 +199,8 @@ export type LimitsOverview = {
   endpoints?: LimitsSummaryItem[];
   source_libraries?: LimitsSummaryItem[];
   agents?: LimitsSummaryItem[];
-  total_quota_limit?: number;
-  total_quota_used?: number;
+  total_limit_limit?: number;
+  total_limit_used?: number;
 };
 
 export type RuntimeObservabilityResponse = {
@@ -1055,10 +1055,10 @@ export async function getLimitsSummary(
       resource_id: item.resourceId,
       resource_name: item.resourceId,
       resource_type: item.resourceType,
-      quota_used: item.requests,
-      quota_limit: limit,
-      quota_unit: 'requests',
-      quota_reset_at: resetAt,
+      limit_used: item.requests,
+      limit_limit: limit,
+      limit_unit: 'requests',
+      limit_reset_at: resetAt,
       percentage_used: Number(((item.requests / Math.max(1, limit)) * 100).toFixed(2)),
     };
     if (item.resourceType === 'endpoint') endpoints.push(row);
@@ -1066,7 +1066,7 @@ export async function getLimitsSummary(
     if (item.resourceType === 'agent') agents.push(row);
   }
 
-  const totalLimitsUsed = [...endpoints, ...sourceLibraries, ...agents].reduce((sum, item) => sum + item.quota_used, 0);
+  const totalLimitsUsed = [...endpoints, ...sourceLibraries, ...agents].reduce((sum, item) => sum + item.limit_used, 0);
   const totalLimitsCapacity = endpoints.length * limitByResourceType.endpoint
     + sourceLibraries.length * limitByResourceType.source_library
     + agents.length * limitByResourceType.agent;
@@ -1075,8 +1075,8 @@ export async function getLimitsSummary(
     endpoints,
     source_libraries: sourceLibraries,
     agents,
-    total_quota_used: totalLimitsUsed || undefined,
-    total_quota_limit: totalLimitsCapacity || undefined,
+    total_limit_used: totalLimitsUsed || undefined,
+    total_limit_limit: totalLimitsCapacity || undefined,
   };
 }
 

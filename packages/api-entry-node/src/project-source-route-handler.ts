@@ -28,7 +28,7 @@ import {
 } from './project-resource-policy-store.js';
 import {
   checkAndConsumeProjectResourceRateLimitsForUser,
-  checkProjectSourceLibraryQuotaLimits,
+  checkProjectSourceLibraryLimitLimits,
 } from './project-resource-policy-enforcer.js';
 import {
   getProjectGroupsState,
@@ -86,7 +86,7 @@ const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 
   source_library: ['source_library.requests_per_minute'],
   agent: [],
 };
-const RESOURCE_POLICY_ALLOWED_QUOTA_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
+const RESOURCE_POLICY_ALLOWED_LIMIT_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
   endpoint: [
     'endpoint.spending_usd_per_minute',
     'endpoint.spending_usd_per_5_hours',
@@ -144,7 +144,7 @@ function validatePolicyRuleKeys(args: {
   }
   const allowed = args.kind === 'rate_limits'
     ? RESOURCE_POLICY_ALLOWED_RATE_KEYS[args.resourceType]
-    : RESOURCE_POLICY_ALLOWED_QUOTA_KEYS[args.resourceType];
+    : RESOURCE_POLICY_ALLOWED_LIMIT_KEYS[args.resourceType];
   for (const rule of rules) {
     if (!rule || typeof rule !== 'object' || Array.isArray(rule)) {
       return { ok: false, message: `${args.kind}_rule_invalid` };
@@ -537,7 +537,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     return enforceSourceLibraryRateLimit(params);
   };
 
-  const enforceSourceLibraryQuota = async (params: {
+  const enforceSourceLibraryLimit = async (params: {
     workspaceId: string;
     projectId: string;
     libraryId: string;
@@ -551,7 +551,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       'source_library',
       params.libraryId,
     );
-    const quotaCheck = checkProjectSourceLibraryQuotaLimits({
+    const limitCheck = checkProjectSourceLibraryLimitLimits({
       workspaceId: params.workspaceId,
       projectId: params.projectId,
       userId: user.id,
@@ -559,31 +559,31 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       currentFileCount: params.currentFileCount,
       nextFileSizeBytes: params.nextFileSizeBytes,
     });
-    if (quotaCheck.allowed) return true;
+    if (limitCheck.allowed) return true;
     await writeProjectAuditEvent(deps, {
       workspaceId: params.workspaceId,
       projectId: params.projectId,
       actor: { type: 'user', id: user.id },
-      action: 'resource_policy.quota_exceeded',
+      action: 'resource_policy.limit_exceeded',
       result: 'error',
       requestId,
       resourceType: 'source_library',
       resourceId: params.libraryId,
-      errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-      errorMessage: 'resource_policy_quota_exceeded',
+      errorCode: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
+      errorMessage: 'resource_policy_spending_limit_exceeded',
       metadata: {
         governance_kind: 'resource_policy',
-        enforcement_kind: 'quota_limit',
+        enforcement_kind: 'limit_limit',
         route_kind: params.routeKind,
-        quota_key: quotaCheck.quota_key,
-        effective_limit: quotaCheck.effective_limit,
-        current_usage: quotaCheck.current_usage,
-        usage_unit: quotaCheck.usage_unit,
-        scope: quotaCheck.scope,
-        effective_max_total_files: quotaCheck.effective_max_total_files,
-        current_total_files: quotaCheck.current_total_files,
-        effective_max_file_size_bytes: quotaCheck.effective_max_file_size_bytes,
-        current_file_size_bytes: quotaCheck.current_file_size_bytes,
+        limit_key: limitCheck.limit_key,
+        effective_limit: limitCheck.effective_limit,
+        current_usage: limitCheck.current_usage,
+        usage_unit: limitCheck.usage_unit,
+        scope: limitCheck.scope,
+        effective_max_total_files: limitCheck.effective_max_total_files,
+        current_total_files: limitCheck.current_total_files,
+        effective_max_file_size_bytes: limitCheck.effective_max_file_size_bytes,
+        current_file_size_bytes: limitCheck.current_file_size_bytes,
       },
     });
     await writeProjectUsageFact(deps, {
@@ -595,27 +595,27 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       requestId,
       requests: 1,
       result: 'error',
-      errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      errorCode: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
       metadata: {
         stage: 'preflight',
         governance_kind: 'resource_policy',
-        enforcement_kind: 'quota_limit',
+        enforcement_kind: 'limit_limit',
         route_kind: params.routeKind,
-        quota_key: quotaCheck.quota_key,
-        effective_limit: quotaCheck.effective_limit,
-        current_usage: quotaCheck.current_usage,
-        usage_unit: quotaCheck.usage_unit,
-        scope: quotaCheck.scope,
+        limit_key: limitCheck.limit_key,
+        effective_limit: limitCheck.effective_limit,
+        current_usage: limitCheck.current_usage,
+        usage_unit: limitCheck.usage_unit,
+        scope: limitCheck.scope,
       },
     });
-    res.setHeader('Retry-After', String(quotaCheck.retry_after_seconds));
+    res.setHeader('Retry-After', String(limitCheck.retry_after_seconds));
     json(res, 429, {
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-      message: 'resource_policy_quota_exceeded',
+      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
+      message: 'resource_policy_spending_limit_exceeded',
       resource_type: 'source_library',
       resource_id: params.libraryId,
-      quota_key: quotaCheck.quota_key,
-      retry_after_seconds: quotaCheck.retry_after_seconds,
+      limit_key: limitCheck.limit_key,
+      retry_after_seconds: limitCheck.retry_after_seconds,
     });
     return false;
   };
@@ -1566,7 +1566,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       projectId: route.projectId,
       libraryId: input.library_id,
     });
-    if (!(await enforceSourceLibraryQuota({
+    if (!(await enforceSourceLibraryLimit({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       libraryId: input.library_id,
@@ -1751,7 +1751,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'multipart_form_data_required' });
       return true;
     }
-    if (!(await enforceSourceLibraryQuota({
+    if (!(await enforceSourceLibraryLimit({
       workspaceId,
       projectId,
       libraryId,
@@ -1761,7 +1761,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     }))) {
       return true;
     }
-    const uploadQuotaSnapshot = checkProjectSourceLibraryQuotaLimits({
+    const uploadLimitSnapshot = checkProjectSourceLibraryLimitLimits({
       workspaceId,
       projectId,
       userId: user.id,
@@ -1792,34 +1792,34 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
             overwrite: input.overwrite,
           }),
         {
-          maxFileSizeBytes: uploadQuotaSnapshot.effective_max_file_size_bytes,
+          maxFileSizeBytes: uploadLimitSnapshot.effective_max_file_size_bytes,
         },
       );
     } catch (error) {
       if (error instanceof Error && error.message === 'source_library_max_file_size_exceeded') {
-        const effectiveLimit = uploadQuotaSnapshot.effective_max_file_size_bytes ?? 0;
+        const effectiveLimit = uploadLimitSnapshot.effective_max_file_size_bytes ?? 0;
         await writeProjectAuditEvent(deps, {
           workspaceId,
           projectId,
           actor: { type: 'user', id: user.id },
-          action: 'resource_policy.quota_exceeded',
+          action: 'resource_policy.limit_exceeded',
           result: 'error',
           requestId,
           resourceType: 'source_library',
           resourceId: libraryId,
-          errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-          errorMessage: 'resource_policy_quota_exceeded',
+          errorCode: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
+          errorMessage: 'resource_policy_spending_limit_exceeded',
           metadata: {
             governance_kind: 'resource_policy',
-            enforcement_kind: 'quota_limit',
+            enforcement_kind: 'limit_limit',
             route_kind: route.kind,
-            quota_key: 'source_library.max_file_size_bytes',
+            limit_key: 'source_library.max_file_size_bytes',
             effective_limit: effectiveLimit,
             current_usage: effectiveLimit + 1,
             usage_unit: 'bytes',
             effective_max_file_size_bytes: effectiveLimit,
             current_file_size_bytes: effectiveLimit + 1,
-            scope: uploadQuotaSnapshot.scope,
+            scope: uploadLimitSnapshot.scope,
           },
         });
         await writeProjectUsageFact(deps, {
@@ -1831,26 +1831,26 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
           requestId,
           requests: 1,
           result: 'error',
-          errorCode: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+          errorCode: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
           metadata: {
             stage: 'preflight',
             governance_kind: 'resource_policy',
-            enforcement_kind: 'quota_limit',
+            enforcement_kind: 'limit_limit',
             route_kind: route.kind,
-            quota_key: 'source_library.max_file_size_bytes',
+            limit_key: 'source_library.max_file_size_bytes',
             effective_limit: effectiveLimit,
             current_usage: effectiveLimit + 1,
             usage_unit: 'bytes',
-            scope: uploadQuotaSnapshot.scope,
+            scope: uploadLimitSnapshot.scope,
           },
         });
         res.setHeader('Retry-After', '86400');
         json(res, 429, {
-          error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-          message: 'resource_policy_quota_exceeded',
+          error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
+          message: 'resource_policy_spending_limit_exceeded',
           resource_type: 'source_library',
           resource_id: libraryId,
-          quota_key: 'source_library.max_file_size_bytes',
+          limit_key: 'source_library.max_file_size_bytes',
           retry_after_seconds: 86_400,
         });
         return true;

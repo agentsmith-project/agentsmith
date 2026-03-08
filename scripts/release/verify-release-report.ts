@@ -738,7 +738,7 @@ const MOCK_ERROR_MESSAGES: Record<FailureType, string[]> = {
     'permission denied by policy: subject not in allow list',
   ],
   spending_limit: [
-    'quota exceeded: daily limit exhausted',
+    'limit exceeded: daily limit exhausted',
   ],
   rate_limit: [
     '429 Too Many Requests: retry later',

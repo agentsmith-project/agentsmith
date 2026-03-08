@@ -9,7 +9,7 @@ import type { Project, ProjectMembership } from '@/lib/api/types';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
 const defaultGovernance = {
-  quotas: {
+  limits: {
     endpoint: {
       daily_token_limit: 200000,
     },

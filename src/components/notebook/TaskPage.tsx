@@ -579,7 +579,7 @@ export function TaskPage({
           err.statusCode === 429
           || errorCode === 'RATE_LIMIT_EXCEEDED'
           || errorCode === 'RESOURCE_POLICY_RATE_LIMITED'
-          || errorCode === 'RESOURCE_POLICY_QUOTA_EXCEEDED'
+          || errorCode === 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED'
         ) {
           toast.error(
             `${tConversation('send_rate_limited_title')}: ${tConversation('send_rate_limited_description')}`,

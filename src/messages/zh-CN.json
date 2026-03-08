@@ -1482,7 +1482,7 @@
     "release_ops_overrides_reject": "驳回",
     "release_ops_governance_evidence_title": "治理证据桥接",
     "release_ops_governance_evidence_subtitle": "将组织治理上下文映射到实时发布证据与升级压力，先判断再处置。",
-    "release_ops_governance_focus_quota": "限额焦点",
+    "release_ops_governance_focus_limit": "限额焦点",
     "release_ops_governance_focus_deny": "拒绝焦点",
     "release_ops_governance_focus_cost": "成本焦点",
     "release_ops_governance_focus_exposure": "暴露焦点",
@@ -2206,7 +2206,7 @@
       "copied_to_clipboard": "已将权限复制到剪贴板",
       "no_template_to_reset": "没有模板可重置"
     },
-    "quota": {
+    "limit": {
       "title": "限额覆盖",
       "description": "默认限额继承自项目策略。在下方为此用户覆盖特定限额。",
       "use_default": "使用默认值",
@@ -2236,7 +2236,7 @@
       "cancel": "取消",
       "save_changes": "保存更改"
     },
-    "quota_history": {
+    "limit_history": {
       "title": "限额覆盖历史",
       "view_history": "查看限额历史",
       "loading": "加载中...",
@@ -2263,11 +2263,11 @@
       "title": "变更历史",
       "view_history": "查看变更历史",
       "permissions_updated": "权限已更新",
-      "quota_updated": "限额覆盖",
+      "limit_updated": "限额覆盖",
       "acl_updated": "资源策略已更新"
     },
     "actions": {
-      "edit_permissions_quota": "编辑权限和限额",
+      "edit_permissions_limit": "编辑权限和限额",
       "view_history": "查看变更历史",
       "remove_member": "移除成员"
     },
@@ -2374,23 +2374,23 @@
       "name_required": "名称为必填项",
       "cancel": "取消",
       "creating": "创建中...",
-      "quota_create_success": "限额模板创建成功",
-      "quota_update_success": "限额模板更新成功",
-      "quota_delete_success": "限额模板已删除",
-      "quota_apply_success": "限额模板已应用到成员",
-      "quota_apply_batch_success": "限额模板已应用到 {count} 位成员",
-      "quota_apply_partial_success": "限额模板已部分应用，部分成员更新失败。",
-      "quota_title": "限额模板",
-      "quota_description": "管理可复用的限额预设（如标准、高用量、受限），覆盖 endpoint、文件库与 agent 限额。",
-      "quota_empty_title": "暂无限额模板",
-      "quota_empty_description": "创建限额模板以定义 endpoint token、文件库文件数/大小、agent 并发的预设覆盖。",
+      "limit_create_success": "限额模板创建成功",
+      "limit_update_success": "限额模板更新成功",
+      "limit_delete_success": "限额模板已删除",
+      "limit_apply_success": "限额模板已应用到成员",
+      "limit_apply_batch_success": "限额模板已应用到 {count} 位成员",
+      "limit_apply_partial_success": "限额模板已部分应用，部分成员更新失败。",
+      "limit_title": "限额模板",
+      "limit_description": "管理可复用的限额预设（如标准、高用量、受限），覆盖 endpoint、文件库与 agent 限额。",
+      "limit_empty_title": "暂无限额模板",
+      "limit_empty_description": "创建限额模板以定义 endpoint token、文件库文件数/大小、agent 并发的预设覆盖。",
       "save_changes": "保存更改",
       "delete": "删除",
       "delete_confirm_title": "删除模板",
       "delete_confirm_message": "确定要删除限额模板「{name}」吗？已应用此模板的成员不会受影响。",
       "select_template": "选择模板",
       "batch_apply_permission_hint": "将权限模板应用到 {count} 位已选成员。",
-      "batch_apply_quota_hint": "将限额模板应用到 {count} 位已选成员。",
+      "batch_apply_limit_hint": "将限额模板应用到 {count} 位已选成员。",
       "apply_failed_members_title": "以下成员更新失败：",
       "apply_failed_members_count": "{count} 位成员更新失败。",
       "retry_failed_members": "重试失败成员",
@@ -2436,9 +2436,9 @@
       "membership_status_label": "成员状态",
       "role_label": "生效角色",
       "permissions_label": "生效权限",
-      "quota_label": "限额覆盖",
+      "limit_label": "限额覆盖",
       "no_permissions": "当前没有生效权限",
-      "no_quota_overrides": "当前没有限额覆盖",
+      "no_limit_overrides": "当前没有限额覆盖",
       "authorize_title": "运行授权检查",
       "authorize_description": "验证该成员是否能对指定治理资源执行某个动作。",
       "resource_type": "资源类型",
@@ -2967,7 +2967,7 @@
       "queued": "排队中",
       "error": "错误：{message}"
     },
-    "quota": {
+    "limit": {
       "storage": "存储",
       "docdb": "文档数据库",
       "vectordb": "向量数据库",

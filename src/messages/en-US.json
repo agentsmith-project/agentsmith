@@ -1480,7 +1480,7 @@
     "release_ops_overrides_reject": "Reject",
     "release_ops_governance_evidence_title": "Governance Evidence Bridge",
     "release_ops_governance_evidence_subtitle": "Map organization governance context to live release evidence and escalation pressure before intervention.",
-    "release_ops_governance_focus_quota": "Limit focus",
+    "release_ops_governance_focus_limit": "Limit focus",
     "release_ops_governance_focus_deny": "Deny focus",
     "release_ops_governance_focus_cost": "Cost focus",
     "release_ops_governance_focus_exposure": "Exposure focus",
@@ -2204,7 +2204,7 @@
       "copied_to_clipboard": "Permissions copied to clipboard",
       "no_template_to_reset": "No template to reset to"
     },
-    "quota": {
+    "limit": {
       "title": "Limit Overrides",
       "description": "Default limits are inherited from project policy. Override specific limits for this user below.",
       "use_default": "Use Default",
@@ -2234,7 +2234,7 @@
       "cancel": "Cancel",
       "save_changes": "Save Changes"
     },
-    "quota_history": {
+    "limit_history": {
       "title": "Limit Override History",
       "view_history": "View Limit History",
       "loading": "Loading...",
@@ -2261,11 +2261,11 @@
       "title": "Change History",
       "view_history": "View Change History",
       "permissions_updated": "Permissions updated",
-      "quota_updated": "Limit override",
+      "limit_updated": "Limit override",
       "acl_updated": "Resource policy updated"
     },
     "actions": {
-      "edit_permissions_quota": "Edit Permissions & Limit",
+      "edit_permissions_limit": "Edit Permissions & Limit",
       "view_history": "View Change History",
       "remove_member": "Remove Member"
     },
@@ -2372,23 +2372,23 @@
       "name_required": "Name is required",
       "cancel": "Cancel",
       "creating": "Creating...",
-      "quota_create_success": "Limit template created successfully",
-      "quota_update_success": "Limit template updated successfully",
-      "quota_delete_success": "Limit template deleted successfully",
-      "quota_apply_success": "Limit template applied to member",
-      "quota_apply_batch_success": "Limit template applied to {count} members",
-      "quota_apply_partial_success": "Limit template applied partially. Some members could not be updated.",
-      "quota_title": "Limit Templates",
-      "quota_description": "Manage reusable limit presets (e.g. Standard, High Usage, Restricted) for endpoint, source library, and agent limits.",
-      "quota_empty_title": "No limit templates yet",
-      "quota_empty_description": "Create a limit template to define preset overrides for endpoint token limits, source library file limits, and agent concurrency.",
+      "limit_create_success": "Limit template created successfully",
+      "limit_update_success": "Limit template updated successfully",
+      "limit_delete_success": "Limit template deleted successfully",
+      "limit_apply_success": "Limit template applied to member",
+      "limit_apply_batch_success": "Limit template applied to {count} members",
+      "limit_apply_partial_success": "Limit template applied partially. Some members could not be updated.",
+      "limit_title": "Limit Templates",
+      "limit_description": "Manage reusable limit presets (e.g. Standard, High Usage, Restricted) for endpoint, source library, and agent limits.",
+      "limit_empty_title": "No limit templates yet",
+      "limit_empty_description": "Create a limit template to define preset overrides for endpoint token limits, source library file limits, and agent concurrency.",
       "save_changes": "Save Changes",
       "delete": "Delete",
       "delete_confirm_title": "Delete Template",
       "delete_confirm_message": "Delete limit template \"{name}\"? This will not affect members who already have this template applied.",
       "select_template": "Select template",
       "batch_apply_permission_hint": "Apply a permission template to {count} selected member(s).",
-      "batch_apply_quota_hint": "Apply a limit template to {count} selected member(s).",
+      "batch_apply_limit_hint": "Apply a limit template to {count} selected member(s).",
       "apply_failed_members_title": "Some members failed to update:",
       "apply_failed_members_count": "{count} member(s) failed to update.",
       "retry_failed_members": "Retry Failed",
@@ -2434,9 +2434,9 @@
       "membership_status_label": "Membership status",
       "role_label": "Resolved role",
       "permissions_label": "Effective permissions",
-      "quota_label": "Limit overrides",
+      "limit_label": "Limit overrides",
       "no_permissions": "No effective permissions",
-      "no_quota_overrides": "No limit overrides",
+      "no_limit_overrides": "No limit overrides",
       "authorize_title": "Run authorization check",
       "authorize_description": "Verify whether this member can perform an action on a specific governed resource.",
       "resource_type": "Resource type",
@@ -2965,7 +2965,7 @@
       "queued": "Queued",
       "error": "Error: {message}"
     },
-    "quota": {
+    "limit": {
       "storage": "Storage",
       "docdb": "DocDB",
       "vectordb": "VectorDB",

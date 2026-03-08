@@ -53,7 +53,7 @@
     },
     {
       "name": "Governance",
-      "description": "Quota checks and audit export"
+      "description": "Limit checks and audit export"
     },
     {
       "name": "LLM Runtime",
@@ -1168,12 +1168,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates": {
       "get": {
         "tags": [
           "Members"
         ],
-        "operationId": "get_projectQuotaTemplates",
+        "operationId": "get_projectLimitTemplates",
         "parameters": [
           {
             "name": "workspaceId",
@@ -1219,7 +1219,7 @@
         "tags": [
           "Members"
         ],
-        "operationId": "create_projectQuotaTemplate",
+        "operationId": "create_projectLimitTemplate",
         "parameters": [
           {
             "name": "workspaceId",
@@ -2137,12 +2137,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/limits": {
       "get": {
         "tags": [
           "Sources"
         ],
-        "operationId": "get_sourcesQuota",
+        "operationId": "get_sourcesLimit",
         "responses": {
           "200": {
             "description": "OK",
@@ -5376,12 +5376,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}": {
       "get": {
         "tags": [
           "Members"
         ],
-        "operationId": "get_projectQuotaTemplateItem",
+        "operationId": "get_projectLimitTemplateItem",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5432,7 +5432,7 @@
         "tags": [
           "Members"
         ],
-        "operationId": "update_projectQuotaTemplate",
+        "operationId": "update_projectLimitTemplate",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5505,7 +5505,7 @@
         "tags": [
           "Members"
         ],
-        "operationId": "delete_projectQuotaTemplate",
+        "operationId": "delete_projectLimitTemplate",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5545,12 +5545,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}/apply": {
       "post": {
         "tags": [
           "Members"
         ],
-        "operationId": "apply_projectQuotaTemplate",
+        "operationId": "apply_projectLimitTemplate",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5774,12 +5774,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/spending-limit-overrides": {
       "get": {
         "tags": [
           "Members"
         ],
-        "operationId": "get_projectMemberQuotaOverrides",
+        "operationId": "get_projectMemberLimitOverrides",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5838,7 +5838,7 @@
         "tags": [
           "Members"
         ],
-        "operationId": "update_projectMemberQuotaOverrides",
+        "operationId": "update_projectMemberLimitOverrides",
         "parameters": [
           {
             "name": "workspaceId",
@@ -5913,12 +5913,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides/history": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/spending-limit-overrides/history": {
       "get": {
         "tags": [
           "Members"
         ],
-        "operationId": "list_projectMemberQuotaOverrideHistory",
+        "operationId": "list_projectMemberLimitOverrideHistory",
         "parameters": [
           {
             "name": "workspaceId",
@@ -6249,7 +6249,7 @@
                           },
                           "additionalProperties": true
                         },
-                        "quota_limits": {
+                        "spending_limits": {
                           "type": "object",
                           "properties": {
                             "rules": {
@@ -6321,7 +6321,7 @@
                     },
                     "additionalProperties": true
                   },
-                  "quota_limits": {
+                  "spending_limits": {
                     "type": "object",
                     "properties": {
                       "rules": {
@@ -6429,7 +6429,7 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limits/check": {
       "parameters": [
         {
           "$ref": "#/components/parameters/workspaceId"
@@ -6442,26 +6442,26 @@
         "tags": [
           "Governance"
         ],
-        "operationId": "checkQuota",
-        "summary": "Verify quota before operation",
-        "description": "Checks if a subject has sufficient quota remaining to perform an operation.\nReturns quota status including remaining amount, limit, and reset time.\n",
+        "operationId": "checkLimit",
+        "summary": "Verify limit before operation",
+        "description": "Checks if a subject has sufficient limit remaining to perform an operation.\nReturns limit status including remaining amount, limit, and reset time.\n",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/QuotaCheckRequest"
+                "$ref": "#/components/schemas/LimitCheckRequest"
               }
             }
           }
         },
         "responses": {
           "200": {
-            "description": "Quota check result",
+            "description": "Limit check result",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuotaCheckResponse"
+                  "$ref": "#/components/schemas/LimitCheckResponse"
                 }
               }
             }
@@ -6669,15 +6669,15 @@
           "Governance"
         ],
         "operationId": "getLimitsSummary",
-        "summary": "Get quota summary for all resources",
-        "description": "Returns quota usage summary across all resource types (endpoints, source libraries, agents).\nIncludes current usage, limits, percentage used, and reset times.\n",
+        "summary": "Get limit summary for all resources",
+        "description": "Returns limit usage summary across all resource types (endpoints, source libraries, agents).\nIncludes current usage, limits, percentage used, and reset times.\n",
         "responses": {
           "200": {
-            "description": "Quota summary",
+            "description": "Limit summary",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/QuotaOverview"
+                  "$ref": "#/components/schemas/LimitOverview"
                 }
               }
             }
@@ -6706,7 +6706,7 @@
         ],
         "operationId": "getUsageTimeseries",
         "summary": "Get usage/cost time series data",
-        "description": "Returns time-series usage data for cost and quota tracking.\nSupports filtering by metric type, time range, and granularity.\n",
+        "description": "Returns time-series usage data for cost and limit tracking.\nSupports filtering by metric type, time range, and granularity.\n",
         "parameters": [
           {
             "name": "metric",
@@ -9881,16 +9881,16 @@
           }
         }
       },
-      "QuotaExceeded": {
-        "description": "Quota Exceeded - Resource quota exceeded",
+      "LimitExceeded": {
+        "description": "Limit Exceeded - Resource limit exceeded",
         "content": {
           "application/json": {
             "schema": {
               "$ref": "#/components/schemas/ApiError"
             },
             "example": {
-              "error_code": "QUOTA_EXCEEDED",
-              "message": "Resource quota exceeded"
+              "error_code": "SPENDING_LIMIT_EXCEEDED",
+              "message": "Resource limit exceeded"
             }
           }
         }
@@ -10431,7 +10431,7 @@
               "RESOURCE_ALREADY_EXISTS",
               "VALIDATION_ERROR",
               "RATE_LIMIT_EXCEEDED",
-              "QUOTA_EXCEEDED",
+              "SPENDING_LIMIT_EXCEEDED",
               "INTERNAL_ERROR"
             ]
           },
@@ -10702,7 +10702,7 @@
           }
         }
       },
-      "QuotaCheckRequest": {
+      "LimitCheckRequest": {
         "type": "object",
         "required": [
           "subject_id",
@@ -10741,28 +10741,28 @@
           }
         }
       },
-      "QuotaCheckResponse": {
+      "LimitCheckResponse": {
         "type": "object",
         "required": [
           "allowed",
-          "quota_remaining",
-          "quota_limit",
-          "quota_reset_at",
+          "limit_remaining",
+          "limit_limit",
+          "limit_reset_at",
           "policy_id"
         ],
         "properties": {
           "allowed": {
             "type": "boolean"
           },
-          "quota_remaining": {
+          "limit_remaining": {
             "type": "number",
             "minimum": 0
           },
-          "quota_limit": {
+          "limit_limit": {
             "type": "number",
             "minimum": 0
           },
-          "quota_reset_at": {
+          "limit_reset_at": {
             "type": "string",
             "format": "date-time"
           },
@@ -10956,13 +10956,13 @@
                     }
                   }
                 },
-                "quota_remaining": {
+                "limit_remaining": {
                   "type": "number"
                 },
-                "quota_limit": {
+                "limit_limit": {
                   "type": "number"
                 },
-                "quota_reset_at": {
+                "limit_reset_at": {
                   "type": "string",
                   "format": "date-time"
                 },
@@ -11028,50 +11028,50 @@
           }
         }
       },
-      "QuotaOverview": {
+      "LimitOverview": {
         "type": "object",
-        "description": "Aggregate quota summary across all resource types",
+        "description": "Aggregate limit summary across all resource types",
         "properties": {
           "endpoints": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/QuotaSummary"
+              "$ref": "#/components/schemas/LimitSummary"
             }
           },
           "source_libraries": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/QuotaSummary"
+              "$ref": "#/components/schemas/LimitSummary"
             }
           },
           "agents": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/QuotaSummary"
+              "$ref": "#/components/schemas/LimitSummary"
             }
           },
-          "total_quota_used": {
+          "total_limit_used": {
             "type": "number",
-            "description": "Total quota used across all resource types"
+            "description": "Total limit used across all resource types"
           },
-          "total_quota_limit": {
+          "total_limit_limit": {
             "type": "number",
-            "description": "Total quota limit across all resource types"
+            "description": "Total limit limit across all resource types"
           }
         }
       },
-      "QuotaSummary": {
+      "LimitSummary": {
         "type": "object",
-        "description": "Quota summary for a specific resource",
+        "description": "Limit summary for a specific resource",
         "required": [
           "resource_type",
           "resource_id",
           "resource_name",
-          "quota_used",
-          "quota_limit",
-          "quota_reset_at",
+          "limit_used",
+          "limit_limit",
+          "limit_reset_at",
           "percentage_used",
-          "quota_unit"
+          "limit_unit"
         ],
         "properties": {
           "resource_type": {
@@ -11088,15 +11088,15 @@
           "resource_name": {
             "type": "string"
           },
-          "quota_used": {
+          "limit_used": {
             "type": "number",
             "minimum": 0
           },
-          "quota_limit": {
+          "limit_limit": {
             "type": "number",
             "minimum": 0
           },
-          "quota_reset_at": {
+          "limit_reset_at": {
             "type": "string",
             "format": "date-time"
           },
@@ -11105,7 +11105,7 @@
             "minimum": 0,
             "maximum": 100
           },
-          "quota_unit": {
+          "limit_unit": {
             "type": "string",
             "enum": [
               "tokens",
@@ -12608,7 +12608,7 @@
         "enum": [
           "requests_per_day",
           "requests_per_hour",
-          "quota_percent",
+          "limit_percent",
           "error_rate",
           "token_usage",
           "response_time_p95"

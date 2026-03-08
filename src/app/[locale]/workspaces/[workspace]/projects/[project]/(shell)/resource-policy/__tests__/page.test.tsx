@@ -27,8 +27,8 @@ const mockGetResourcePolicy = vi.fn().mockResolvedValue({
   resource_id: 'ep_1',
   access_mode: 'allow_all_members',
   allowed_subjects: [],
-  quota_limits: {
-    rules: [{ key: 'endpoint.daily_token_limit', value: 100000, window: 'day' }],
+  rate_limits: {
+    rules: [{ key: 'endpoint.requests_per_day', value: 100000, window: 'day' }],
   },
 });
 
@@ -81,7 +81,7 @@ const STABLE_RESOURCE_POLICY = {
   resource_id: 'ep_1',
   access_mode: 'allow_all_members',
   allowed_subjects: [],
-  quota_limits: { rules: [{ key: 'endpoint.daily_token_limit', value: 100000, window: 'day' }] },
+  rate_limits: { rules: [{ key: 'endpoint.requests_per_day', value: 100000, window: 'day' }] },
 };
 vi.mock('@/lib/hooks/use-members', () => ({
   useMembers: vi.fn(() => ({
@@ -162,18 +162,18 @@ describe('ResourcePolicyPage', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('resource-policy__endpoint-daily-token-limit')).toBeInTheDocument();
+      expect(screen.getByTestId('resource-policy__endpoint-requests-per-day')).toBeInTheDocument();
     });
 
-    const input = screen.getByTestId('resource-policy__endpoint-daily-token-limit');
+    const input = screen.getByTestId('resource-policy__endpoint-requests-per-day');
     await user.clear(input);
     await user.type(input, '250000');
     await user.click(screen.getByTestId('resource-policy__save'));
 
     expect(mockMutateAsync).toHaveBeenCalledWith(
       expect.objectContaining({
-        quota_limits: {
-          rules: [{ key: 'endpoint.daily_token_limit', value: 250000, window: 'day' }],
+        rate_limits: {
+          rules: [{ key: 'endpoint.requests_per_day', value: 250000, window: 'day' }],
         },
       }),
     );

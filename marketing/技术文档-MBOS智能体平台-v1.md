@@ -58,10 +58,10 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 | **Developer** | 可开发、签发 agent key、写 UserData | 28 |
 | **User** | 只读 + 基础使用，受限配额 | 15 |
 
-### 2.3 资源控制（Quota / Limits / Governance）
+### 2.3 资源控制（Limit / Limits / Governance）
 
 **Governance（治理规则）**
-- 每成员配额（quotas）
+- 每成员配额（limits）
 - 限流（rate_limits）
 - 护栏（guardrails）
 - 能力开关
@@ -70,9 +70,9 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 - Project 级资源上限
 - 可 JSON 配置，支持动态调整
 
-**Quota 覆盖**
+**Limit 覆盖**
 - 项目策略提供默认配额
-- 成员级 **Quota Override** 可为单用户定制
+- 成员级 **Limit Override** 可为单用户定制
 - 支持完整审计追溯
 
 ### 2.4 多维限流

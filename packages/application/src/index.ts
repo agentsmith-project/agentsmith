@@ -538,16 +538,16 @@ export class DownloadSourceUseCase {
   }
 }
 
-export interface SourcesQuotaSummary {
+export interface SourcesLimitSummary {
   storage: { used: number; limit: number };
   docdb: { used: number; limit: number };
   vectordb: { used: number; limit: number };
 }
 
-export class GetSourcesQuotaUseCase {
+export class GetSourcesLimitUseCase {
   constructor(private readonly sourceRepo: SourceRepoPort) {}
 
-  async execute(command: ListSourcesCommand): Promise<SourcesQuotaSummary> {
+  async execute(command: ListSourcesCommand): Promise<SourcesLimitSummary> {
     const sources = await this.sourceRepo.listByProject(
       command.workspaceId,
       command.projectId,

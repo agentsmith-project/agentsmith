@@ -1192,8 +1192,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Get quota summary for all resources
-         * @description Returns quota usage summary across all resource types (endpoints, source libraries, agents).
+         * Get limit summary for all resources
+         * @description Returns limit usage summary across all resource types (endpoints, source libraries, agents).
          *     Includes current usage, limits, percentage used, and reset times.
          */
         get: operations["getLimitsSummary"];
@@ -1289,30 +1289,30 @@ export interface paths {
         patch: operations["update_projectMemberPermissions"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/spending-limit-overrides": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_projectMemberQuotaOverrides"];
+        get: operations["get_projectMemberLimitOverrides"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
-        patch: operations["update_projectMemberQuotaOverrides"];
+        patch: operations["update_projectMemberLimitOverrides"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/quota-overrides/history": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}/spending-limit-overrides/history": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["list_projectMemberQuotaOverrideHistory"];
+        get: operations["list_projectMemberLimitOverrideHistory"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1369,39 +1369,39 @@ export interface paths {
         patch: operations["update_projectPermissionTemplate"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_projectQuotaTemplates"];
+        get: operations["get_projectLimitTemplates"];
         put?: never;
-        post: operations["create_projectQuotaTemplate"];
+        post: operations["create_projectLimitTemplate"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_projectQuotaTemplateItem"];
+        get: operations["get_projectLimitTemplateItem"];
         put?: never;
         post?: never;
-        delete: operations["delete_projectQuotaTemplate"];
+        delete: operations["delete_projectLimitTemplate"];
         options?: never;
         head?: never;
-        patch: operations["update_projectQuotaTemplate"];
+        patch: operations["update_projectLimitTemplate"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota-templates/{templateId}/apply": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates/{templateId}/apply": {
         parameters: {
             query?: never;
             header?: never;
@@ -1410,14 +1410,14 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        post: operations["apply_projectQuotaTemplate"];
+        post: operations["apply_projectLimitTemplate"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/quota/check": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limits/check": {
         parameters: {
             query?: never;
             header?: never;
@@ -1430,11 +1430,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Verify quota before operation
-         * @description Checks if a subject has sufficient quota remaining to perform an operation.
-         *     Returns quota status including remaining amount, limit, and reset time.
+         * Verify limit before operation
+         * @description Checks if a subject has sufficient limit remaining to perform an operation.
+         *     Returns limit status including remaining amount, limit, and reset time.
          */
-        post: operations["checkQuota"];
+        post: operations["checkLimit"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2196,14 +2196,14 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/quota": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/limits": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        get: operations["get_sourcesQuota"];
+        get: operations["get_sourcesLimit"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2771,7 +2771,7 @@ export interface paths {
         };
         /**
          * Get usage/cost time series data
-         * @description Returns time-series usage data for cost and quota tracking.
+         * @description Returns time-series usage data for cost and limit tracking.
          *     Supports filtering by metric type, time range, and granularity.
          */
         get: operations["getUsageTimeseries"];
@@ -2835,7 +2835,7 @@ export interface components {
          * @description Supported alert metrics
          * @enum {string}
          */
-        AlertMetric: "requests_per_day" | "requests_per_hour" | "quota_percent" | "error_rate" | "token_usage" | "response_time_p95";
+        AlertMetric: "requests_per_day" | "requests_per_hour" | "limit_percent" | "error_rate" | "token_usage" | "response_time_p95";
         /** @description Alert notification (triggered alert instance) */
         AlertNotification: {
             actual_value: number;
@@ -2949,7 +2949,7 @@ export interface components {
              * @description Machine-readable error code
              * @enum {string}
              */
-            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "QUOTA_EXCEEDED" | "INTERNAL_ERROR";
+            error_code: "UNAUTHORIZED" | "PERMISSION_DENIED" | "RESOURCE_NOT_FOUND" | "RESOURCE_ALREADY_EXISTS" | "VALIDATION_ERROR" | "RATE_LIMIT_EXCEEDED" | "SPENDING_LIMIT_EXCEEDED" | "INTERNAL_ERROR";
             /** @description Human-readable error message */
             message: string;
             /** @description Unique identifier for the request (for debugging) */
@@ -2992,10 +2992,10 @@ export interface components {
                 };
                 policy_id?: string;
                 project_id?: string;
-                quota_limit?: number;
-                quota_remaining?: number;
+                limit_limit?: number;
+                limit_remaining?: number;
                 /** Format: date-time */
-                quota_reset_at?: string;
+                limit_reset_at?: string;
                 request_id?: string;
                 resource_id?: string;
                 resource_type?: string;
@@ -3200,7 +3200,7 @@ export interface components {
             name: string;
             workspace_id: string;
         };
-        QuotaCheckRequest: {
+        LimitCheckRequest: {
             /** @description Estimated tokens/bytes for the operation */
             estimated_cost?: number;
             /** @enum {string} */
@@ -3211,33 +3211,33 @@ export interface components {
             /** @description User ID, group ID, or agent ID */
             subject_id: string;
         };
-        QuotaCheckResponse: {
+        LimitCheckResponse: {
             allowed: boolean;
             policy_id: string;
-            quota_limit: number;
-            quota_remaining: number;
+            limit_limit: number;
+            limit_remaining: number;
             /** Format: date-time */
-            quota_reset_at: string;
+            limit_reset_at: string;
         };
-        /** @description Aggregate quota summary across all resource types */
-        QuotaOverview: {
-            agents?: components["schemas"]["QuotaSummary"][];
-            endpoints?: components["schemas"]["QuotaSummary"][];
-            source_libraries?: components["schemas"]["QuotaSummary"][];
-            /** @description Total quota limit across all resource types */
-            total_quota_limit?: number;
-            /** @description Total quota used across all resource types */
-            total_quota_used?: number;
+        /** @description Aggregate limit summary across all resource types */
+        LimitOverview: {
+            agents?: components["schemas"]["LimitSummary"][];
+            endpoints?: components["schemas"]["LimitSummary"][];
+            source_libraries?: components["schemas"]["LimitSummary"][];
+            /** @description Total limit limit across all resource types */
+            total_limit_limit?: number;
+            /** @description Total limit used across all resource types */
+            total_limit_used?: number;
         };
-        /** @description Quota summary for a specific resource */
-        QuotaSummary: {
+        /** @description Limit summary for a specific resource */
+        LimitSummary: {
             percentage_used: number;
-            quota_limit: number;
+            limit_limit: number;
             /** Format: date-time */
-            quota_reset_at: string;
+            limit_reset_at: string;
             /** @enum {string} */
-            quota_unit: "tokens" | "requests" | "bytes" | "files";
-            quota_used: number;
+            limit_unit: "tokens" | "requests" | "bytes" | "files";
+            limit_used: number;
             resource_id: string;
             resource_name: string;
             /** @enum {string} */
@@ -4177,16 +4177,16 @@ export interface components {
                 "application/json": components["schemas"]["ApiError"];
             };
         };
-        /** @description Quota Exceeded - Resource quota exceeded */
-        QuotaExceeded: {
+        /** @description Limit Exceeded - Resource limit exceeded */
+        LimitExceeded: {
             headers: {
                 [name: string]: unknown;
             };
             content: {
                 /**
                  * @example {
-                 *       "error_code": "QUOTA_EXCEEDED",
-                 *       "message": "Resource quota exceeded"
+                 *       "error_code": "SPENDING_LIMIT_EXCEEDED",
+                 *       "message": "Resource limit exceeded"
                  *     }
                  */
                 "application/json": components["schemas"]["ApiError"];
@@ -6541,13 +6541,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Quota summary */
+            /** @description Limit summary */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QuotaOverview"];
+                    "application/json": components["schemas"]["LimitOverview"];
                 };
             };
             401: components["responses"]["Unauthorized"];
@@ -6756,7 +6756,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    get_projectMemberQuotaOverrides: {
+    get_projectMemberLimitOverrides: {
         parameters: {
             query?: never;
             header?: never;
@@ -6786,7 +6786,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    update_projectMemberQuotaOverrides: {
+    update_projectMemberLimitOverrides: {
         parameters: {
             query?: never;
             header?: never;
@@ -6824,7 +6824,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    list_projectMemberQuotaOverrideHistory: {
+    list_projectMemberLimitOverrideHistory: {
         parameters: {
             query?: {
                 page?: number;
@@ -7012,7 +7012,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    get_projectQuotaTemplates: {
+    get_projectLimitTemplates: {
         parameters: {
             query?: never;
             header?: never;
@@ -7039,7 +7039,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    create_projectQuotaTemplate: {
+    create_projectLimitTemplate: {
         parameters: {
             query?: never;
             header?: never;
@@ -7076,7 +7076,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    get_projectQuotaTemplateItem: {
+    get_projectLimitTemplateItem: {
         parameters: {
             query?: never;
             header?: never;
@@ -7104,7 +7104,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    delete_projectQuotaTemplate: {
+    delete_projectLimitTemplate: {
         parameters: {
             query?: never;
             header?: never;
@@ -7128,7 +7128,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    update_projectQuotaTemplate: {
+    update_projectLimitTemplate: {
         parameters: {
             query?: never;
             header?: never;
@@ -7166,7 +7166,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    apply_projectQuotaTemplate: {
+    apply_projectLimitTemplate: {
         parameters: {
             query?: never;
             header?: never;
@@ -7200,7 +7200,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    checkQuota: {
+    checkLimit: {
         parameters: {
             query?: never;
             header?: never;
@@ -7212,17 +7212,17 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["QuotaCheckRequest"];
+                "application/json": components["schemas"]["LimitCheckRequest"];
             };
         };
         responses: {
-            /** @description Quota check result */
+            /** @description Limit check result */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["QuotaCheckResponse"];
+                    "application/json": components["schemas"]["LimitCheckResponse"];
                 };
             };
             /** @description Bad Request */
@@ -9039,7 +9039,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    get_sourcesQuota: {
+    get_sourcesLimit: {
         parameters: {
             query?: never;
             header?: never;

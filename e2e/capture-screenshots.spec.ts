@@ -74,7 +74,7 @@ async function navigateForCapture(page: import('@playwright/test').Page, url: st
   await page.waitForTimeout(500);
 }
 
-/** Expand SettingsTokenReference (click to show all quota/limits tokens) */
+/** Expand SettingsTokenReference (click to show all limit/limits tokens) */
 async function expandTokenReference(page: import('@playwright/test').Page) {
   const btn = page.getByRole('button', { name: /支持的 token|Supported tokens/i });
   if (await btn.isVisible()) {

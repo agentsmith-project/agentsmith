@@ -2770,7 +2770,7 @@ describe('api-entry-node projects routes', () => {
     ).toBe(true);
   });
 
-  it('enforces source_library quota limits on source create and records governance evidence', async () => {
+  it('enforces source_library limit limits on source create and records governance evidence', async () => {
     const { baseUrl } = startServer();
 
     const createLibraryRes = await apiFetch(
@@ -2779,7 +2779,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Quota Policy Library', visibility: 'shared' }),
+        body: JSON.stringify({ name: 'Limit Policy Library', visibility: 'shared' }),
       },
     );
     expect(createLibraryRes.status).toBe(201);
@@ -2821,10 +2821,10 @@ describe('api-entry-node projects routes', () => {
     );
     expect(oversizedRes.status).toBe(429);
     expect(await oversizedRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
       resource_type: 'source_library',
       resource_id: library.id,
-      quota_key: 'source_library.max_file_size_bytes',
+      limit_key: 'source_library.max_file_size_bytes',
     });
 
     const allowedRes = await apiFetch(
@@ -2859,17 +2859,17 @@ describe('api-entry-node projects routes', () => {
     );
     expect(tooManyRes.status).toBe(429);
     expect(await tooManyRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
       resource_type: 'source_library',
       resource_id: library.id,
-      quota_key: 'source_library.max_total_files',
+      limit_key: 'source_library.max_total_files',
     });
 
     const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
     const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
     const auditRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.quota_exceeded&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.limit_exceeded&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
     );
     expect(auditRes.status).toBe(200);
     const auditBody = (await auditRes.json()) as {
@@ -2878,10 +2878,10 @@ describe('api-entry-node projects routes', () => {
     expect(
       auditBody.items.filter(
         (item) =>
-          item.action === 'resource_policy.quota_exceeded'
+          item.action === 'resource_policy.limit_exceeded'
           && item.resource_type === 'source_library'
           && item.resource_id === library.id
-          && item.error_code === 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+          && item.error_code === 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
       ),
     ).toHaveLength(2);
   });
@@ -2895,7 +2895,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Upload Quota Library', visibility: 'shared' }),
+        body: JSON.stringify({ name: 'Upload Limit Library', visibility: 'shared' }),
       },
     );
     expect(createLibraryRes.status).toBe(201);
@@ -2939,10 +2939,10 @@ describe('api-entry-node projects routes', () => {
     );
     expect(uploadRes.status).toBe(429);
     expect(await uploadRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
       resource_type: 'source_library',
       resource_id: library.id,
-      quota_key: 'source_library.max_file_size_bytes',
+      limit_key: 'source_library.max_file_size_bytes',
     });
   });
 
@@ -3202,7 +3202,7 @@ describe('api-entry-node projects routes', () => {
       requests: 3,
       result: 'ok',
     });
-    const requestsQuotaPolicyRes = await apiFetch(
+    const requestsLimitPolicyRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
       {
@@ -3221,9 +3221,9 @@ describe('api-entry-node projects routes', () => {
         }),
       },
     );
-    expect(requestsQuotaPolicyRes.status).toBe(204);
+    expect(requestsLimitPolicyRes.status).toBe(204);
 
-    const requestQuotaLimitedProxy = await apiFetch(
+    const requestLimitLimitedProxy = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
       {
@@ -3231,27 +3231,27 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           model: 'ignored',
-          messages: [{ role: 'user', content: 'blocked by endpoint requests/day quota' }],
+          messages: [{ role: 'user', content: 'blocked by endpoint requests/day limit' }],
         }),
       },
     );
-    expect(requestQuotaLimitedProxy.status).toBe(429);
-    expect(await requestQuotaLimitedProxy.json()).toMatchObject({
+    expect(requestLimitLimitedProxy.status).toBe(429);
+    expect(await requestLimitLimitedProxy.json()).toMatchObject({
       error_code: 'RESOURCE_POLICY_RATE_LIMITED',
       resource_type: 'endpoint',
       resource_id: endpoint.id,
     });
 
-    const requestQuotaAuditRes = await apiFetch(
+    const requestLimitAuditRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(auditStart)}&end_time=${encodeURIComponent(auditEnd)}&action=resource_policy.rate_limited&resource_type=endpoint&resource_id=${endpoint.id}&page=1&page_size=20`,
     );
-    expect(requestQuotaAuditRes.status).toBe(200);
-    const requestQuotaAuditBody = (await requestQuotaAuditRes.json()) as {
+    expect(requestLimitAuditRes.status).toBe(200);
+    const requestLimitAuditBody = (await requestLimitAuditRes.json()) as {
       items: Array<{ action: string; resource_type?: string; resource_id?: string; metadata_json?: Record<string, unknown> }>;
     };
     expect(
-      requestQuotaAuditBody.items.some(
+      requestLimitAuditBody.items.some(
         (item) =>
           item.action === 'resource_policy.rate_limited'
           && item.resource_type === 'endpoint'
@@ -3324,7 +3324,7 @@ describe('api-entry-node projects routes', () => {
       ),
     ).toBe(true);
 
-    const clearRequestsQuotaPolicyRes = await apiFetch(
+    const clearRequestsLimitPolicyRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
       {
@@ -3338,7 +3338,7 @@ describe('api-entry-node projects routes', () => {
         }),
       },
     );
-    expect(clearRequestsQuotaPolicyRes.status).toBe(204);
+    expect(clearRequestsLimitPolicyRes.status).toBe(204);
 
     const postResetProxy = await apiFetch(
       baseUrl,

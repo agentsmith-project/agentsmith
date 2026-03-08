@@ -859,7 +859,7 @@ export interface MemberPermissions {
   };
 }
 
-export interface QuotaOverride {
+export interface LimitOverride {
   endpoint?: {
     daily_token_limit?: number;
   };
@@ -898,10 +898,6 @@ export interface PolicyRateLimit {
   [key: string]: unknown;
 }
 
-export interface PolicyQuotaLimit {
-  rules: PolicyRule[];
-  [key: string]: unknown;
-}
 export interface PolicySpendingLimit {
   rules: PolicyRule[];
   [key: string]: unknown;
@@ -992,18 +988,18 @@ export interface ChangeHistoryEntry {
   };
 }
 
-export interface QuotaOverrideHistoryItem {
+export interface LimitOverrideHistoryItem {
   id: string;
   created_at: string;
   created_by_user_id: string;
-  overrides_json: QuotaOverride;
+  overrides_json: LimitOverride;
 }
 
-export interface QuotaTemplate {
+export interface LimitTemplate {
   id: string;
   name: string;
   description?: string;
-  overrides_json: QuotaOverride;
+  overrides_json: LimitOverride;
 }
 import type { ChatAttachmentInputRef } from '@/lib/types/input-ref';
 

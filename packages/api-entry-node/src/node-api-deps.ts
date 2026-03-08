@@ -19,7 +19,7 @@ import type {
   GetProjectUseCase,
   GetSourceObjectMetaUseCase,
   GetSourceUseCase,
-  GetSourcesQuotaUseCase,
+  GetSourcesLimitUseCase,
   ListProjectsUseCase,
   ListSourceLibraryObjectsUseCase,
   ListSourceLibrariesUseCase,
@@ -71,7 +71,7 @@ export interface NodeApiDeps {
   getSourceObjectMetaUseCase: GetSourceObjectMetaUseCase;
   getSourceUseCase: GetSourceUseCase;
   getAIReadyJobUseCase: GetAIReadyJobUseCase;
-  getSourcesQuotaUseCase: GetSourcesQuotaUseCase;
+  getSourcesLimitUseCase: GetSourcesLimitUseCase;
   startSourceAIReadyUseCase: StartSourceAIReadyUseCase;
   cancelSourceAIReadyUseCase: CancelSourceAIReadyUseCase;
   retrySourceAIReadyUseCase: RetrySourceAIReadyUseCase;

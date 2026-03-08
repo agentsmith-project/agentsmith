@@ -275,15 +275,15 @@ describe('Audit Field Standardization', () => {
       const metadata = {
         previous_role: 'user',
         new_role: 'developer',
-        previous_quota: 1000,
-        new_quota: 5000,
+        previous_limit: 1000,
+        new_limit: 5000,
       };
 
       const diff = parseAuditDiff('member.update', metadata);
 
       expect(diff).toEqual({
-        before: { previous_role: 'user', previous_quota: 1000 },
-        after: { new_role: 'developer', new_quota: 5000 },
+        before: { previous_role: 'user', previous_limit: 1000 },
+        after: { new_role: 'developer', new_limit: 5000 },
       });
     });
 

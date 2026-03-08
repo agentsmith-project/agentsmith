@@ -362,7 +362,7 @@ export class FilesAPI {
 
   /**
    * Get limit summary for the project.
-   * Legacy API naming uses `quota`.
+   * Uses existing backend path for compatibility.
    */
   async getLimits(
     workspaceId: string,
@@ -375,7 +375,7 @@ export class FilesAPI {
     }
     const query = searchParams.toString();
     return this.client.get<LimitSummary>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/quota${query ? `?${query}` : ''}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/sources/limits${query ? `?${query}` : ''}`,
     );
   }
 

@@ -21,6 +21,7 @@
     "test:e2e:lane:mock:smoke": "playwright test --project=smoke",
     "test:e2e:lane:mock:chromium": "playwright test --project=chromium",
     "test:e2e:lane:mock:visual": "playwright test --project=visual",
+    "test:e2e:lane:mock:visual:update": "playwright test --project=visual --update-snapshots",
     "test:e2e:lane:mock:full": "playwright test --project=smoke --project=chromium",
     "test:e2e:lane:mock:full:with-visual": "playwright test --project=smoke --project=chromium --project=visual",
     "test:e2e:runtime-proxy-billing": "playwright test e2e/runtime-proxy-billing.spec.ts --project=chromium --workers=1",

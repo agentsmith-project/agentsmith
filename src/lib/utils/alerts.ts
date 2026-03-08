@@ -27,9 +27,9 @@ export function generateAlertId(): string {
 }
 
 /**
- * Create a quota exceeded alert
+ * Create a limit exceeded alert
  */
-export function createQuotaAlert(params: {
+export function createLimitAlert(params: {
   workspace_id: string;
   project_id: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
@@ -49,8 +49,8 @@ export function createQuotaAlert(params: {
     type: percentage >= 100 ? 'quota.exceeded' : 'quota.warning',
     severity,
     title: percentage >= 100
-      ? `Quota exceeded for ${params.resource_name}`
-      : `Quota usage at ${percentage.toFixed(0)}%`,
+      ? `Limit exceeded for ${params.resource_name}`
+      : `Limit usage at ${percentage.toFixed(0)}%`,
     message: `${params.resource_name} has used ${params.quota_used}/${params.quota_limit} ${params.quota_unit}`,
     resource_type: params.resource_type,
     resource_id: params.resource_id,
@@ -416,9 +416,9 @@ export function getSeverityIcon(severity: AlertSeverity): string {
 // ============================================================================
 
 /**
- * Check if quota threshold is exceeded
+ * Check if limit threshold is exceeded
  */
-export function checkQuotaThreshold(
+export function checkLimitThreshold(
   used: number,
   limit: number,
   trigger: QuotaAlertTrigger
@@ -433,6 +433,10 @@ export function checkQuotaThreshold(
   }
   return { shouldAlert: false, severity: 'info' };
 }
+
+// Backward compatible aliases for legacy imports
+export const createQuotaAlert = createLimitAlert;
+export const checkQuotaThreshold = checkLimitThreshold;
 
 /**
  * Check if cost budget is exceeded

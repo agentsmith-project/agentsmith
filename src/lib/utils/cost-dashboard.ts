@@ -1,7 +1,7 @@
 /**
  * Epic C1: Cost Dashboard Utilities
  *
- * Helper functions for the Cost & Quota Dashboard feature.
+ * Helper functions for the Cost & Limit Dashboard feature.
  */
 
 import type {
@@ -12,11 +12,11 @@ import type {
 } from '../types/cost-dashboard';
 
 // ============================================================================
-// Quota Utilities
+// Limit Utilities
 // ============================================================================
 
 /**
- * Calculate percentage used for a quota summary
+ * Calculate percentage used for a limit summary
  */
 export function calculatePercentageUsed(used: number, limit: number): number {
   if (limit === 0) return 0;
@@ -24,10 +24,10 @@ export function calculatePercentageUsed(used: number, limit: number): number {
 }
 
 /**
- * Get quota status color based on percentage used
+ * Get limit status color based on percentage used
  * @returns Design system color token name
  */
-export function getQuotaStatusColor(percentageUsed: number): string {
+export function getLimitStatusColor(percentageUsed: number): string {
   if (percentageUsed >= 100) return 'var(--error)';
   if (percentageUsed >= 80) return 'var(--warning)';
   if (percentageUsed >= 50) return 'var(--accent)';
@@ -35,11 +35,11 @@ export function getQuotaStatusColor(percentageUsed: number): string {
 }
 
 /**
- * Get quota status level for styling
+ * Get limit status level for styling
  */
-export type QuotaStatusLevel = 'healthy' | 'warning' | 'critical' | 'exceeded';
+export type LimitStatusLevel = 'healthy' | 'warning' | 'critical' | 'exceeded';
 
-export function getQuotaStatusLevel(percentageUsed: number): QuotaStatusLevel {
+export function getLimitStatusLevel(percentageUsed: number): LimitStatusLevel {
   if (percentageUsed >= 100) return 'exceeded';
   if (percentageUsed >= 80) return 'critical';
   if (percentageUsed >= 50) return 'warning';
@@ -47,9 +47,9 @@ export function getQuotaStatusLevel(percentageUsed: number): QuotaStatusLevel {
 }
 
 /**
- * Format quota value with appropriate unit
+ * Format limit value with appropriate unit
  */
-export function formatQuotaValue(value: number, unit: string): string {
+export function formatLimitValue(value: number, unit: string): string {
   switch (unit) {
     case 'tokens':
       return formatNumber(value);
@@ -65,7 +65,7 @@ export function formatQuotaValue(value: number, unit: string): string {
 }
 
 /**
- * Calculate remaining time until quota reset
+ * Calculate remaining time until limit reset
  */
 export function getTimeUntilReset(resetAt: string): {
   value: number;
@@ -96,6 +96,12 @@ export function getTimeUntilReset(resetAt: string): {
   }
   return { value: seconds, unit: 'seconds' as const, formatted: `in ${seconds}s` };
 }
+
+// Backward compatible aliases for legacy imports
+export const getQuotaStatusColor = getLimitStatusColor;
+export const getQuotaStatusLevel = getLimitStatusLevel;
+export const formatQuotaValue = formatLimitValue;
+export type QuotaStatusLevel = LimitStatusLevel;
 
 // ============================================================================
 // Cost/Usage Time Series Utilities

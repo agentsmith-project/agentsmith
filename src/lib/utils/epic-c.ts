@@ -9,8 +9,12 @@
 
 // Cost Dashboard Utilities (Epic C1)
 export {
-  // Quota utilities
+  // Limit utilities
   calculatePercentageUsed,
+  getLimitStatusColor,
+  getLimitStatusLevel,
+  formatLimitValue,
+  // Legacy aliases
   getQuotaStatusColor,
   getQuotaStatusLevel,
   formatQuotaValue,
@@ -49,6 +53,8 @@ export {
 export {
   // Alert creation
   generateAlertId,
+  createLimitAlert,
+  // Legacy alias
   createQuotaAlert,
   createRateLimitAlert,
   createPolicyDeniedAlert,
@@ -73,6 +79,8 @@ export {
   getSeverityIcon,
 
   // Trigger checks
+  checkLimitThreshold,
+  // Legacy alias
   checkQuotaThreshold,
   checkCostBudget,
 

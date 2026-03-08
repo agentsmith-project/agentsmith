@@ -5,6 +5,8 @@
 
 这份文档只保留当前仍然有效的排障入口，不再重复历史阶段性流程、过时环境值或已被新版 user guide 取代的说明。
 
+术语边界：文中的 `governance-release-smoke`、`release:report` 等命令名沿用历史脚本命名，仅用于本项目工程验收与排障，不代表平台对外发布管理能力。
+
 ## 1. 先判断是哪一类问题
 
 1. 本地环境没有起来  
@@ -88,7 +90,7 @@ make governance-pages-real-backend-interaction-smoke-strict
    - runtime control/monitoring 状态
    - usage/cost/rate-spending 指标
    - audit 的 deny/quota/policy 命中证据
-2. 再跑：
+2. 再跑工程诊断报告：
 ```bash
 npm run release:report -- --name local-debug
 ```

@@ -1,5 +1,7 @@
 # AgentSmith Notebook External Agent (Codex) Runbook
 
+术语边界：本文出现的 `release` / `gate` 命令名是仓库内工程脚本命名（smoke、验收、诊断），不表示 AgentSmith 平台提供 DevOps 发布编排功能。
+
 ## Scope of current MVP
 
 This runbook covers the supported MVP path focused on `Files + Notebook + External Agent + Trace + Artifacts`.
@@ -342,7 +344,7 @@ make notebook-agent-release-smoke
 ```bash
 RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
 ```
-- One-command release readiness check (refreshes token if needed, runs `demo-check`, then runs release smoke bundle):
+- One-command smoke readiness check (refreshes token if needed, runs `demo-check`, then runs smoke bundle):
 ```bash
 make notebook-agent-release-smoke-full
 ```
@@ -844,8 +846,8 @@ make notebook-agent-benchmark-archive
     - nested per-case `result.json` / `stdout.log` / `metrics.json` (if present)
     - `metadata.json` (archive metadata and key env params)
 - Recommendation:
-  - archive at least one `memory` and one `mongo` baseline set per release candidate
-  - keep the compare output (`benchmark-compare` / `traces-query-sweep-compare`) next to the archived dirs in release notes or CI artifacts
+  - archive at least one `memory` and one `mongo` baseline set per engineering verification round
+  - keep the compare output (`benchmark-compare` / `traces-query-sweep-compare`) next to the archived dirs in verification notes or CI artifacts
 
 ## 8. Known Risks (Recorded)
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.

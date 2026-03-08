@@ -12,6 +12,11 @@
 3. Chat / Notebook / API 共用同一套 rate / spending / audit / usage 约束
 4. 不做发布管理平台，不做组织级总控治理主线
 
+术语边界（必须一致）：
+
+- 文档中的 `release` / `gate` 仅表示 AgentSmith 本项目研发治理与验收流程命名。
+- 不代表 AgentSmith 产品对外提供 DevOps 发布编排、发布门禁平台能力。
+
 ## 2. 必读文档（必须）
 
 1. [项目宪法](./项目宪法.md)

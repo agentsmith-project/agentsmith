@@ -47,7 +47,7 @@ const mockRules: AlertRule[] = [
     description: 'Warn when limit usage exceeds 80%',
     enabled: false,
     trigger: {
-      metric: 'quota_percent',
+      metric: 'spending_limit_percent',
       operator: 'gte',
       threshold: 80,
     },

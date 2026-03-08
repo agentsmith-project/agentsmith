@@ -69,8 +69,8 @@ export function useLimitSummary(workspaceId: string, projectId: string, libraryI
   const filesAPI = new FilesAPI(getApiClient());
 
   return useQuery({
-    queryKey: queryKeys.quota.detail(workspaceId, projectId, libraryId),
-    queryFn: () => filesAPI.getQuota(workspaceId, projectId, libraryId),
+    queryKey: queryKeys.limits.detail(workspaceId, projectId, libraryId),
+    queryFn: () => filesAPI.getLimits(workspaceId, projectId, libraryId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 30000, // 30 seconds
   });
@@ -106,7 +106,7 @@ export function useUploadFile() {
         queryKey: queryKeys.files.list(variables.workspaceId, variables.projectId),
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.quota._def,
+        queryKey: queryKeys.limits._def,
       });
       toast.success(t('upload_success'));
     },
@@ -260,7 +260,7 @@ export function useDeleteFile() {
         queryKey: queryKeys.files.list(variables.workspaceId, variables.projectId),
       });
       await queryClient.invalidateQueries({
-        queryKey: queryKeys.quota._def,
+        queryKey: queryKeys.limits._def,
       });
       toast.success(t('delete_success'));
     },
@@ -317,7 +317,7 @@ export function useAIReadyActions() {
         queryKey: queryKeys.files.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.quota._def,
+        queryKey: queryKeys.limits._def,
       });
       toast.success(t('ai_ready_cancelled'));
     },
@@ -374,7 +374,7 @@ export function useBatchAIReadyActions() {
         queryKey: queryKeys.files.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.quota._def,
+        queryKey: queryKeys.limits._def,
       });
 
       // Show detailed results if available
@@ -418,7 +418,7 @@ export function useBatchAIReadyActions() {
         queryKey: queryKeys.files.list(variables.workspaceId, variables.projectId),
       });
       queryClient.invalidateQueries({
-        queryKey: queryKeys.quota._def,
+        queryKey: queryKeys.limits._def,
       });
 
       // Show detailed results if available

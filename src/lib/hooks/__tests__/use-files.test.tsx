@@ -42,7 +42,7 @@ vi.mock('@/lib/api/endpoints/files', () => {
   class MockFilesAPI {
     list = mockList;
     get = mockGet;
-    getQuota = mockGetLimitSummary;
+    getLimits = mockGetLimitSummary;
     upload = mockUpload;
     delete = mockDelete;
     startAIReady = mockStartAIReady;
@@ -79,7 +79,7 @@ vi.mock('@/lib/api', () => ({
         filename: 'test.pdf',
         file_size: 1024,
       }),
-      getQuota: vi.fn().mockResolvedValue({
+      getLimits: vi.fn().mockResolvedValue({
         storage: { used: 1024, limit: 10240 },
         docdb: { used: 512, limit: 5120 },
         vectordb: { used: 256, limit: 2560 },
@@ -129,9 +129,9 @@ vi.mock('@/lib/query-keys', () => ({
       list: vi.fn((ws: string, proj: string, params?) => ['files', ws, proj, params]),
       detail: vi.fn((ws: string, proj: string, id: string) => ['file', ws, proj, id]),
     },
-    quota: {
-      _def: ['quota'],
-      detail: vi.fn((ws: string, proj: string) => ['quota', ws, proj]),
+    limits: {
+      _def: ['limits'],
+      detail: vi.fn((ws: string, proj: string) => ['limits', ws, proj]),
     },
     fileLibraries: {
       list: vi.fn((ws: string, proj: string) => ['file-libraries', ws, proj]),

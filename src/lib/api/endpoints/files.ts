@@ -13,7 +13,7 @@ import type {
   FileItemWithAIReady,
   FileLibrary,
   AIReadyJob,
-  QuotaSummary,
+  LimitSummary,
   FilesListParams,
   FilesListResponse,
   FileObjectsListParams,
@@ -364,17 +364,17 @@ export class FilesAPI {
    * Get limit summary for the project.
    * Legacy API naming uses `quota`.
    */
-  async getQuota(
+  async getLimits(
     workspaceId: string,
     projectId: string,
     libraryId?: string,
-  ): Promise<QuotaSummary> {
+  ): Promise<LimitSummary> {
     const searchParams = new URLSearchParams();
     if (libraryId) {
       searchParams.set('library_id', libraryId);
     }
     const query = searchParams.toString();
-    return this.client.get<QuotaSummary>(
+    return this.client.get<LimitSummary>(
       `/workspaces/${workspaceId}/projects/${projectId}/sources/quota${query ? `?${query}` : ''}`,
     );
   }

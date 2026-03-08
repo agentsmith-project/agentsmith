@@ -4,14 +4,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 import { formatBytes } from '@/lib/utils/formatters';
-import type { QuotaSummary } from '@/lib/api/types';
+import type { LimitSummary } from '@/lib/api/types';
 
-export interface QuotaSummaryCardProps {
-  quota: QuotaSummary;
+export interface LimitSummaryCardProps {
+  limits: LimitSummary;
   className?: string;
 }
 
-function QuotaItem({
+function LimitItem({
   label,
   used,
   limit,
@@ -63,23 +63,23 @@ function QuotaItem({
   );
 }
 
-export function QuotaSummaryCard({ quota, className }: QuotaSummaryCardProps) {
+export function LimitSummaryCard({ limits, className }: LimitSummaryCardProps) {
   return (
     <div className={cn('flex gap-4', className)}>
-      <QuotaItem
+      <LimitItem
         label="Storage"
-        used={quota.storage.used}
-        limit={quota.storage.limit}
+        used={limits.storage.used}
+        limit={limits.storage.limit}
       />
-      <QuotaItem
+      <LimitItem
         label="DocDB"
-        used={quota.docdb.used}
-        limit={quota.docdb.limit}
+        used={limits.docdb.used}
+        limit={limits.docdb.limit}
       />
-      <QuotaItem
+      <LimitItem
         label="VectorDB"
-        used={quota.vectordb.used}
-        limit={quota.vectordb.limit}
+        used={limits.vectordb.used}
+        limit={limits.vectordb.limit}
       />
     </div>
   );

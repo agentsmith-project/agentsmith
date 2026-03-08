@@ -3,11 +3,11 @@
  *
  * This file contains all TypeScript interfaces for the Cost & Limit Dashboard feature.
  * These types align with the OpenAPI spec and backend API contracts.
- * Note: Limit* is the primary terminology. Quota* aliases are kept for compatibility.
+ * Note: Limit* is the primary terminology.
  */
 
 // ============================================================================
-// Limit Types (legacy Quota* names kept for compatibility)
+// Limit Types
 // ============================================================================
 
 /**
@@ -127,11 +127,6 @@ export interface LimitSummaryRequest {
   project_id: string;
   resource_type?: 'endpoint' | 'source_library' | 'agent';
 }
-
-// Legacy aliases for compatibility with existing imports.
-export type QuotaSummary = LimitSummary;
-export type QuotaOverview = LimitOverview;
-export type QuotaSummaryRequest = LimitSummaryRequest;
 
 /**
  * Request parameters for cost time series API

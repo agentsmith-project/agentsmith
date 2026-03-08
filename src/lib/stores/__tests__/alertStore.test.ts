@@ -66,7 +66,7 @@ describe('alertStore', () => {
         in_app_enabled: true,
         severity_threshold: 'warning',
         alert_types: [
-          'quota.exceeded',
+          'spending_limit.exceeded',
           'rate_limit.exceeded',
           'policy.allow_list.denied',
           'endpoint.error',
@@ -82,7 +82,7 @@ describe('alertStore', () => {
       const alertData: Omit<Alert, 'id' | 'created_at' | 'status'> = {
         workspace_id: 'ws_1',
         project_id: 'proj_1',
-        type: 'quota.exceeded',
+        type: 'spending_limit.exceeded',
         severity: 'error',
         title: 'Limit Exceeded',
         message: 'You have exceeded your token limit',
@@ -90,8 +90,8 @@ describe('alertStore', () => {
         resource_id: 'ep_1',
         resource_name: 'gpt-4',
         metadata: {
-          quota_used: 100000,
-          quota_limit: 100000,
+          limit_used: 100000,
+          limit_total: 100000,
         },
       };
 
@@ -113,7 +113,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Alert 1',
           message: 'Message 1',
@@ -150,7 +150,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'warning', // Below threshold
           title: 'Warning Alert',
           message: 'Should be filtered',
@@ -165,7 +165,7 @@ describe('alertStore', () => {
     it('should filter alerts not in enabled alert types', () => {
       const { result } = renderHook(() => useAlertStore());
 
-      // Remove quota.exceeded from enabled types (limit semantic)
+      // Remove spending_limit.exceeded from enabled types (limit semantic)
       act(() => {
         result.current.updatePreferences({
           alert_types: ['rate_limit.exceeded', 'policy.allow_list.denied'],
@@ -176,7 +176,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded', // Not in enabled types
+          type: 'spending_limit.exceeded', // Not in enabled types
           severity: 'error',
           title: 'Limit Alert',
           message: 'Should be filtered',
@@ -194,7 +194,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Critical limit alert',
           message: 'Over limit',
@@ -212,7 +212,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.warning',
+          type: 'spending_limit.warning',
           severity: 'warning',
           title: 'Warning',
           message: 'Approaching limit',
@@ -233,7 +233,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Test Alert',
           message: 'Test message',
@@ -262,7 +262,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Alert 1',
           message: 'Message 1',
@@ -303,7 +303,7 @@ describe('alertStore', () => {
           result.current.addAlert({
             workspace_id: 'ws_1',
             project_id: 'proj_1',
-            type: 'quota.exceeded',
+            type: 'spending_limit.exceeded',
             severity: 'error',
             title: `Alert ${i}`,
             message: `Message ${i}`,
@@ -336,7 +336,7 @@ describe('alertStore', () => {
           result.current.addAlert({
             workspace_id: 'ws_1',
             project_id: 'proj_1',
-            type: 'quota.exceeded',
+            type: 'spending_limit.exceeded',
             severity: 'error',
             title: `Alert ${i}`,
             message: `Message ${i}`,
@@ -364,7 +364,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Alert 1',
           message: 'Message 1',
@@ -395,7 +395,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Alert 1',
           message: 'Message 1',
@@ -427,7 +427,7 @@ describe('alertStore', () => {
           result.current.addAlert({
             workspace_id: 'ws_1',
             project_id: 'proj_1',
-            type: 'quota.exceeded',
+            type: 'spending_limit.exceeded',
             severity: 'error',
             title: `Alert ${i}`,
             message: `Message ${i}`,
@@ -459,7 +459,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Alert 1',
           message: 'Message 1',
@@ -499,7 +499,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Alert 1',
           message: 'Message 1',
@@ -594,7 +594,7 @@ describe('alertStore', () => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Error Alert',
           message: 'Should be filtered',
@@ -623,10 +623,10 @@ describe('alertStore', () => {
     it('should respect alert_types when adding alerts', () => {
       const { result } = renderHook(() => useAlertStore());
 
-      // Only enable quota.exceeded (limit-exceeded semantic)
+      // Only enable spending_limit.exceeded (limit-exceeded semantic)
       act(() => {
         result.current.updatePreferences({
-          alert_types: ['quota.exceeded'],
+          alert_types: ['spending_limit.exceeded'],
         });
       });
 
@@ -645,12 +645,12 @@ describe('alertStore', () => {
 
       expect(result.current.alerts).toHaveLength(0);
 
-      // Add quota.exceeded alert (in enabled types, limit semantic)
+      // Add spending_limit.exceeded alert (in enabled types, limit semantic)
       act(() => {
         result.current.addAlert({
           workspace_id: 'ws_1',
           project_id: 'proj_1',
-          type: 'quota.exceeded',
+          type: 'spending_limit.exceeded',
           severity: 'error',
           title: 'Limit Alert',
           message: 'Should pass',

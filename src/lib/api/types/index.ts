@@ -737,7 +737,7 @@ export interface FileItemWithAIReady extends FileItem {
   ai_ready_usage?: AIReadyUsage;
 }
 
-export interface QuotaSummary {
+export interface LimitSummary {
   storage: {
     used: number; // bytes
     limit: number; // bytes

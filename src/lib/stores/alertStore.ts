@@ -24,8 +24,8 @@ const defaultPreferences: AlertPreferences = {
   in_app_enabled: true,
   severity_threshold: 'warning',
   alert_types: [
-    'quota.exceeded',
-    'quota.warning',
+    'spending_limit.exceeded',
+    'spending_limit.warning',
     'rate_limit.exceeded',
     'policy.allow_list.denied',
     'endpoint.error',

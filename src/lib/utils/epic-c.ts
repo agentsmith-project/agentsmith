@@ -14,10 +14,6 @@ export {
   getLimitStatusColor,
   getLimitStatusLevel,
   formatLimitValue,
-  // Legacy aliases
-  getQuotaStatusColor,
-  getQuotaStatusLevel,
-  formatQuotaValue,
   getTimeUntilReset,
 
   // Time series utilities
@@ -54,8 +50,6 @@ export {
   // Alert creation
   generateAlertId,
   createLimitAlert,
-  // Legacy alias
-  createQuotaAlert,
   createRateLimitAlert,
   createPolicyDeniedAlert,
   createEndpointErrorAlert,
@@ -80,8 +74,6 @@ export {
 
   // Trigger checks
   checkLimitThreshold,
-  // Legacy alias
-  checkQuotaThreshold,
   checkCostBudget,
 
   // Alert grouping

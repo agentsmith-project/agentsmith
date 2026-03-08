@@ -44,8 +44,8 @@ function toInAppAlert(
     webhook_sent: false,
   };
   const mappedType =
-    notification.metric === 'quota_percent'
-      ? 'quota.warning'
+    notification.metric === 'spending_limit_percent'
+      ? 'spending_limit.warning'
       : notification.metric === 'error_rate'
         ? 'endpoint.error'
         : notification.metric === 'requests_per_day' || notification.metric === 'requests_per_hour'

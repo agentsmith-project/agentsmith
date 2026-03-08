@@ -84,7 +84,7 @@ export interface WebhookConfig {
 export type AlertMetric =
   | 'requests_per_day' // Total requests in 24h
   | 'requests_per_hour' // Requests in last hour
-  | 'quota_percent' // Limit usage percentage (legacy metric key)
+  | 'spending_limit_percent' // Limit usage percentage (legacy metric key)
   | 'error_rate' // Error rate (errors/total * 100)
   | 'token_usage' // Token usage in window
   | 'response_time_p95'; // P95 response time
@@ -184,10 +184,10 @@ export interface InAppAlert {
  * In-app alert types
  */
 export type InAppAlertType =
-  // Limit alerts (legacy quota.* event names)
-  | 'quota.exceeded'
-  | 'quota.warning'
-  | 'quota.reset'
+  // Limit alerts (spending limit event names)
+  | 'spending_limit.exceeded'
+  | 'spending_limit.warning'
+  | 'spending_limit.reset'
   // Rate limit alerts
   | 'rate_limit.exceeded'
   | 'rate_limit.warning'
@@ -385,9 +385,9 @@ export interface AlertStore extends AlertStoreState, AlertStoreActions {}
 
 /**
  * Limit alert trigger configuration.
- * Legacy naming: QuotaAlertTrigger.
+ * Legacy naming: SpendingLimitAlertTrigger.
  */
-export interface QuotaAlertTrigger {
+export interface SpendingLimitAlertTrigger {
   warning_threshold: number; // Percentage (e.g., 80)
   critical_threshold: number; // Percentage (e.g., 100)
   check_interval_ms: number;

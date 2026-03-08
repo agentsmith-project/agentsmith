@@ -13,9 +13,6 @@ export type {
   LimitSummary,
   LimitOverview,
   LimitSummaryRequest,
-  // Legacy aliases retained for compatibility only.
-  QuotaSummary,
-  QuotaOverview,
   TimeRange,
   TimeGranularity,
   TimeRangePreset,
@@ -23,8 +20,6 @@ export type {
   CostTimeSeriesDataPoint,
   ResourceCostBreakdown,
   CostChartData,
-  // Legacy alias retained for compatibility only.
-  QuotaSummaryRequest,
   CostTimeSeriesRequest,
   DashboardFilters,
   DashboardViewMode,
@@ -76,7 +71,7 @@ export type {
   AlertPreferences,
 
   // Trigger configurations
-  QuotaAlertTrigger,
+  SpendingLimitAlertTrigger,
   CostAlertTrigger,
   RateLimitAlertTrigger,
 

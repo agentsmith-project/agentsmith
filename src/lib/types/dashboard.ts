@@ -205,10 +205,3 @@ export interface LimitUsageRequest {
   start_time?: string;
   end_time?: string;
 }
-
-// Legacy aliases retained for compatibility with older imports.
-export type QuotaUsageData = LimitUsageData;
-export type QuotaOverallStatus = LimitOverallStatus;
-export type ResourceQuotaUsage = ResourceLimitUsage;
-export type QuotaTrendPoint = LimitTrendPoint;
-export type QuotaUsageRequest = LimitUsageRequest;

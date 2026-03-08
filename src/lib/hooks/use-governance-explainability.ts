@@ -35,9 +35,3 @@ export function useLimitCheck(workspaceId: string, projectId: string) {
     mutationFn: (payload) => getGovernanceExplainabilityAPI().checkLimits(workspaceId, projectId, payload),
   });
 }
-
-/**
- * @deprecated Use `useLimitCheck`.
- * Legacy alias retained for compatibility with older callers.
- */
-export const useQuotaCheck = useLimitCheck;

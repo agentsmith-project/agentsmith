@@ -237,10 +237,10 @@ export const queryKeys = {
       ['chat', 'attachments', workspaceId, projectId, sessionId] as const,
   },
 
-  /** Limit summary (legacy `quota` query key) */
-  quota: {
-    _def: ['quota'] as const,
+  /** Limit summary */
+  limits: {
+    _def: ['limits'] as const,
     detail: (workspaceId: string, projectId: string, libraryId?: string) =>
-      ['quota', workspaceId, projectId, libraryId ?? 'all'] as const,
+      ['limits', workspaceId, projectId, libraryId ?? 'all'] as const,
   },
 } as const;

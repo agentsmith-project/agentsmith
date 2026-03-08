@@ -11,7 +11,7 @@ import type {
   AlertFilters,
   AlertSortBy,
   AlertSortOrder,
-  QuotaAlertTrigger,
+  SpendingLimitAlertTrigger,
   CostAlertTrigger,
 } from '../types/alerts';
 
@@ -35,31 +35,31 @@ export function createLimitAlert(params: {
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_id: string;
   resource_name: string;
-  quota_used: number;
-  quota_limit: number;
-  quota_unit: string;
-  quota_reset_at: string;
+  limit_used: number;
+  limit_total: number;
+  limit_unit: string;
+  limit_reset_at: string;
 }): Omit<Alert, 'id' | 'created_at' | 'status'> {
-  const percentage = (params.quota_used / params.quota_limit) * 100;
+  const percentage = (params.limit_used / params.limit_total) * 100;
   const severity: AlertSeverity = percentage >= 100 ? 'critical' : percentage >= 80 ? 'error' : 'warning';
 
   return {
     workspace_id: params.workspace_id,
     project_id: params.project_id,
-    type: percentage >= 100 ? 'quota.exceeded' : 'quota.warning',
+    type: percentage >= 100 ? 'spending_limit.exceeded' : 'spending_limit.warning',
     severity,
     title: percentage >= 100
       ? `Limit exceeded for ${params.resource_name}`
       : `Limit usage at ${percentage.toFixed(0)}%`,
-    message: `${params.resource_name} has used ${params.quota_used}/${params.quota_limit} ${params.quota_unit}`,
+    message: `${params.resource_name} has used ${params.limit_used}/${params.limit_total} ${params.limit_unit}`,
     resource_type: params.resource_type,
     resource_id: params.resource_id,
     resource_name: params.resource_name,
     metadata: {
-      quota_used: params.quota_used,
-      quota_limit: params.quota_limit,
-      quota_reset_at: params.quota_reset_at,
-      quota_unit: params.quota_unit,
+      limit_used: params.limit_used,
+      limit_total: params.limit_total,
+      limit_reset_at: params.limit_reset_at,
+      limit_unit: params.limit_unit,
       percentage,
     },
     actions: [
@@ -421,7 +421,7 @@ export function getSeverityIcon(severity: AlertSeverity): string {
 export function checkLimitThreshold(
   used: number,
   limit: number,
-  trigger: QuotaAlertTrigger
+  trigger: SpendingLimitAlertTrigger
 ): { shouldAlert: boolean; severity: AlertSeverity } {
   const percentage = (used / limit) * 100;
 
@@ -435,8 +435,8 @@ export function checkLimitThreshold(
 }
 
 // Backward compatible aliases for legacy imports
-export const createQuotaAlert = createLimitAlert;
-export const checkQuotaThreshold = checkLimitThreshold;
+export const createSpendingLimitAlert = createLimitAlert;
+export const checkSpendingLimitThreshold = checkLimitThreshold;
 
 /**
  * Check if cost budget is exceeded

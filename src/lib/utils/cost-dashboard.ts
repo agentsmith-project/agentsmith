@@ -97,12 +97,6 @@ export function getTimeUntilReset(resetAt: string): {
   return { value: seconds, unit: 'seconds' as const, formatted: `in ${seconds}s` };
 }
 
-// Backward compatible aliases for legacy imports
-export const getQuotaStatusColor = getLimitStatusColor;
-export const getQuotaStatusLevel = getLimitStatusLevel;
-export const formatQuotaValue = formatLimitValue;
-export type QuotaStatusLevel = LimitStatusLevel;
-
 // ============================================================================
 // Cost/Usage Time Series Utilities
 // ============================================================================

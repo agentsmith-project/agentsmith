@@ -1564,7 +1564,7 @@
     "workspace_projects_risk_public_open_access": "公开项目且开放加入",
     "workspace_projects_risk_public_visibility": "公开可见",
     "workspace_projects_risk_open_join_policy": "开放加入策略",
-    "workspace_projects_risk_missing_source_library_quota": "缺少文件库限额",
+    "workspace_projects_risk_missing_source_library_limit": "缺少文件库限额",
     "workspace_projects_risk_archived_project": "已归档项目",
     "workspace_members_eyebrow": "管理",
     "workspace_members_subtitle": "维护每个成员的工作区治理分组。",

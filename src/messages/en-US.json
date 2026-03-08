@@ -1562,7 +1562,7 @@
     "workspace_projects_risk_public_open_access": "Public project with open join",
     "workspace_projects_risk_public_visibility": "Public visibility",
     "workspace_projects_risk_open_join_policy": "Open join policy",
-    "workspace_projects_risk_missing_source_library_quota": "Missing source library limits",
+    "workspace_projects_risk_missing_source_library_limit": "Missing source library limits",
     "workspace_projects_risk_archived_project": "Archived project",
     "workspace_members_eyebrow": "Manage",
     "workspace_members_subtitle": "Maintain workspace governance groups for each member.",

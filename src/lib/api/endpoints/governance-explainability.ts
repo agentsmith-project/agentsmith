@@ -8,19 +8,10 @@ export type GovernanceResourceType = 'project' | 'endpoint' | 'source_library' |
 export type GovernanceMembershipStatus = 'active' | 'pending' | 'suspended' | 'none';
 
 export interface GovernanceAuthorizationRequest {
-  subject: {
-    type: GovernanceSubjectType;
-    id: string;
-  };
-  resource: {
-    type: GovernanceResourceType;
-    id: string;
-  };
+  subject: { type: GovernanceSubjectType; id: string };
+  resource: { type: GovernanceResourceType; id: string };
   action: string;
-  context?: {
-    end_user_id?: string;
-    metadata?: Record<string, unknown>;
-  };
+  context?: { end_user_id?: string; metadata?: Record<string, unknown> };
 }
 
 export interface GovernanceAuthorizationDecision {
@@ -34,10 +25,7 @@ export interface GovernanceMatchedPolicy {
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_id: string;
   access_mode: 'allow_all_members' | 'allow_list';
-  matched_subject?: {
-    type: 'user' | 'group';
-    id: string;
-  };
+  matched_subject?: { type: 'user' | 'group'; id: string };
 }
 
 export interface GovernanceAuthorizationResponse {
@@ -62,28 +50,12 @@ export interface GovernanceLimitCheckResponse {
   policy_id: string;
 }
 
-/**
- * @deprecated Use `GovernanceLimitCheckRequest`.
- * Legacy alias retained for compatibility with older imports.
- */
-export type GovernanceQuotaCheckRequest = GovernanceLimitCheckRequest;
-/**
- * @deprecated Use `GovernanceLimitCheckResponse`.
- * Legacy alias retained for compatibility with older imports.
- */
-export type GovernanceQuotaCheckResponse = GovernanceLimitCheckResponse;
-
 export interface GovernanceLimitExceededDetails {
   error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED' | 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED';
   message: string;
   resource_type?: 'endpoint' | 'source_library' | 'agent';
   resource_id?: string;
   limit_key?: string;
-  /**
-   * @deprecated legacy field from older backend payloads.
-   * Prefer `limit_key`.
-   */
-  quota_key?: string;
   retry_after_seconds?: number;
   effective_limit?: number;
   current_usage?: number;
@@ -94,12 +66,6 @@ export interface GovernanceLimitExceededDetails {
   effective_max_file_size_bytes?: number;
   current_file_size_bytes?: number;
 }
-
-/**
- * @deprecated Use `GovernanceLimitExceededDetails`.
- * Legacy alias retained for compatibility with older imports.
- */
-export type GovernanceQuotaExceededDetails = GovernanceLimitExceededDetails;
 
 export interface GovernanceEvidenceDetails extends GovernanceLimitExceededDetails {
   governance_kind?: 'resource_policy' | 'member_quota';
@@ -182,14 +148,12 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
     enforcement_kind: enforcementKind === 'quota_limit' ? 'spending_limit' : enforcementKind,
   } as GovernanceEvidenceDetails;
 
-  if (typeof normalized.limit_key !== 'string' && typeof normalized.quota_key === 'string') {
-    normalized.limit_key = normalized.quota_key;
+  if (typeof normalized.limit_key !== 'string' && typeof value.quota_key === 'string') {
+    normalized.limit_key = value.quota_key;
   }
-
   if (normalized.reason === 'quota_exceeded') {
     normalized.reason = 'spending_limit_exceeded';
   }
-
   return normalized;
 }
 
@@ -201,12 +165,6 @@ export function getGovernanceLimitExceededDetails(error: unknown): GovernanceLim
   ) return null;
   return getGovernanceEvidenceDetails(error.details);
 }
-
-/**
- * @deprecated Use `getGovernanceLimitExceededDetails`.
- * Legacy alias retained for compatibility with older imports.
- */
-export const getGovernanceQuotaExceededDetails = getGovernanceLimitExceededDetails;
 
 export function getGovernanceRouteForbiddenDetails(error: unknown): GovernanceRouteForbiddenDetails | null {
   if (!(error instanceof APIError)) return null;
@@ -223,10 +181,7 @@ export class GovernanceExplainabilityAPI {
     projectId: string,
     payload: GovernanceAuthorizationRequest,
   ): Promise<GovernanceAuthorizationResponse> {
-    return this.client.post(
-      `/workspaces/${workspaceId}/projects/${projectId}/authorize`,
-      payload,
-    );
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/authorize`, payload);
   }
 
   async checkLimits(
@@ -234,35 +189,20 @@ export class GovernanceExplainabilityAPI {
     projectId: string,
     payload: GovernanceLimitCheckRequest,
   ): Promise<GovernanceLimitCheckResponse> {
-    return this.client.post(
-      `/workspaces/${workspaceId}/projects/${projectId}/quota/check`,
-      payload,
-    ).then((response) => {
-      const payloadRecord = response as Partial<GovernanceLimitCheckResponse> & {
+    return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/quota/check`, payload).then((response) => {
+      const raw = response as Partial<GovernanceLimitCheckResponse> & {
         quota_remaining?: number;
         quota_limit?: number;
         quota_reset_at?: string;
       };
       return {
-        allowed: Boolean(payloadRecord.allowed),
-        limit_remaining: payloadRecord.limit_remaining ?? payloadRecord.quota_remaining ?? 0,
-        limit_total: payloadRecord.limit_total ?? payloadRecord.quota_limit ?? 0,
-        limit_reset_at: payloadRecord.limit_reset_at ?? payloadRecord.quota_reset_at ?? '',
-        policy_id: payloadRecord.policy_id ?? '',
+        allowed: Boolean(raw.allowed),
+        limit_remaining: raw.limit_remaining ?? raw.quota_remaining ?? 0,
+        limit_total: raw.limit_total ?? raw.quota_limit ?? 0,
+        limit_reset_at: raw.limit_reset_at ?? raw.quota_reset_at ?? '',
+        policy_id: raw.policy_id ?? '',
       };
     });
-  }
-
-  /**
-   * @deprecated Use `checkLimits`.
-   * Legacy method retained for compatibility with older callers.
-   */
-  async checkQuota(
-    workspaceId: string,
-    projectId: string,
-    payload: GovernanceQuotaCheckRequest,
-  ): Promise<GovernanceQuotaCheckResponse> {
-    return this.checkLimits(workspaceId, projectId, payload);
   }
 
   async getEffectiveAccessSnapshot(
@@ -271,12 +211,8 @@ export class GovernanceExplainabilityAPI {
     memberId: string,
   ): Promise<GovernanceEffectiveAccessSnapshot> {
     const [membership, permissions] = await Promise.all([
-      this.client.get<Membership>(
-        `/workspaces/${workspaceId}/projects/${projectId}/memberships/${memberId}`,
-      ),
-      this.client.get<MemberPermissions>(
-        `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/permissions`,
-      ),
+      this.client.get<Membership>(`/workspaces/${workspaceId}/projects/${projectId}/memberships/${memberId}`),
+      this.client.get<MemberPermissions>(`/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/permissions`),
     ]);
 
     return {

@@ -85,7 +85,7 @@ const _mockAlerts: Alert[] = [
     id: 'alert_1',
     workspace_id: 'ws_1',
     project_id: 'proj_1',
-    type: 'quota.exceeded',
+    type: 'spending_limit.exceeded',
     severity: 'critical',
     title: 'Limit Exceeded',
     message: 'Daily limit has been exceeded',

@@ -15,12 +15,12 @@ import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-cont
 
 describe('classifyGovernanceEvidenceFocus', () => {
   it('classifies limit-related reasons', () => {
-    expect(classifyGovernanceEvidenceFocus('missing_source_library_quota')).toBe('limit');
+    expect(classifyGovernanceEvidenceFocus('missing_source_library_limit')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('rate_limit_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('spending_limit_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('max_total_files_reached')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('max_file_size_exceeded')).toBe('limit');
-    expect(classifyGovernanceEvidenceFocus('daily_quota_limit')).toBe('limit');
+    expect(classifyGovernanceEvidenceFocus('daily_limit')).toBe('limit');
   });
 
   it('classifies cost-related reasons', () => {
@@ -56,13 +56,13 @@ describe('classifyGovernanceEvidenceFocus', () => {
   });
 
   it('is case-insensitive', () => {
-    expect(classifyGovernanceEvidenceFocus('QUOTA_EXCEEDED')).toBe('limit');
+    expect(classifyGovernanceEvidenceFocus('SPENDING_LIMIT_EXCEEDED')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('Permission_Denied')).toBe('deny');
     expect(classifyGovernanceEvidenceFocus('Public_Visibility')).toBe('exposure');
   });
 
   it('handles whitespace', () => {
-    expect(classifyGovernanceEvidenceFocus('  quota_exceeded  ')).toBe('limit');
+    expect(classifyGovernanceEvidenceFocus('  spending_limit_exceeded  ')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('  ')).toBe('other');
   });
 });
@@ -117,10 +117,6 @@ describe('getEvidenceTargetPage', () => {
     expect(getEvidenceTargetPage('limit')).toBe('audit');
   });
 
-  it('maps legacy quota focus to audit page', () => {
-    expect(getEvidenceTargetPage('quota')).toBe('audit');
-  });
-
   it('returns usage page for cost focus', () => {
     expect(getEvidenceTargetPage('cost')).toBe('usage');
   });
@@ -148,18 +144,13 @@ describe('buildEvidenceFilterContext', () => {
     gov_kind: 'project',
     gov_workspace_id: 'ws_1',
     gov_project_id: 'proj_1',
-    gov_reason: 'quota_exceeded',
+    gov_reason: 'spending_limit_exceeded',
   };
 
   it('builds filter context for limit focus', () => {
     const result = buildEvidenceFilterContext(baseContext, 'limit');
     expect(result.gov_focus).toBe('limit');
     expect(result.gov_entity_filter?.project_ids).toContain('proj_1');
-  });
-
-  it('normalizes legacy quota focus to limit in query context', () => {
-    const result = buildEvidenceFilterContext(baseContext, 'quota');
-    expect(result.gov_focus).toBe('limit');
   });
 
   it('builds filter context for cost focus', () => {

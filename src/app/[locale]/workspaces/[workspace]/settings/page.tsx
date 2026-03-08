@@ -267,7 +267,7 @@ export default function WorkspaceSettingsPage() {
                       href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryLimitGapProjectId}/resource-policy${buildWorkspaceEvidenceQuery({
                         kind: 'project',
                         projectId: explainabilitySummary.primaryLimitGapProjectId,
-                        reason: 'missing_source_library_quota',
+                        reason: 'missing_source_library_limit',
                       })}`}
                       className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
                       data-testid="ws-settings__explain-open-limit-policy"

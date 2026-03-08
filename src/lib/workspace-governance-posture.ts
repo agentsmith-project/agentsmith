@@ -6,7 +6,7 @@ export type WorkspaceProjectRiskCode =
   | 'public_open_access'
   | 'public_visibility'
   | 'open_join_policy'
-  | 'missing_source_library_quota'
+  | 'missing_source_library_limit'
   | 'archived_project';
 
 export interface WorkspaceProjectGovernancePosture {
@@ -120,7 +120,7 @@ export function resolveWorkspaceGovernanceGroup(member: Pick<WorkspaceMember, 'g
 
 function getSourceLibraryLimit(project: Project, key: 'max_total_files' | 'max_file_size_bytes'): number | undefined {
   const governance = asRecord(project.governance_json);
-  const governanceLimits = asRecord(governance?.quotas);
+  const governanceLimits = asRecord(governance?.limits ?? governance?.quotas);
   const governanceSourceLibrary = asRecord(governanceLimits?.source_library);
   const limits = asRecord(project.limits_json);
   const limitsSourceLibrary = asRecord(limits?.source_library);
@@ -163,7 +163,7 @@ export function buildWorkspaceGovernancePosture(args: {
           }
         }
         if (sourceLibraryMaxTotalFiles === undefined || sourceLibraryMaxFileSizeBytes === undefined) {
-          riskCodes.push('missing_source_library_quota');
+          riskCodes.push('missing_source_library_limit');
         }
       }
 
@@ -374,7 +374,7 @@ export function buildWorkspaceGovernanceExplainabilitySummary(args: {
   const warningProjects = args.projects.filter((project) => project.readiness === 'warning');
   const blockedMembers = args.members.filter((member) => member.readiness === 'blocked');
   const warningMembers = args.members.filter((member) => member.readiness === 'warning');
-  const limitGapProjects = args.projects.filter((project) => project.riskCodes.includes('missing_source_library_quota'));
+  const limitGapProjects = args.projects.filter((project) => project.riskCodes.includes('missing_source_library_limit'));
   const exposedProjects = args.projects.filter((project) =>
     project.riskCodes.includes('public_open_access')
     || project.riskCodes.includes('public_visibility')

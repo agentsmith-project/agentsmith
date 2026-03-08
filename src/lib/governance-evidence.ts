@@ -1,8 +1,7 @@
 import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 
 export type GovernanceEvidenceFocus = 'limit' | 'deny' | 'cost' | 'exposure' | 'membership' | 'other';
-export type LegacyGovernanceEvidenceFocus = 'quota';
-export type GovernanceEvidenceFocusInput = GovernanceEvidenceFocus | LegacyGovernanceEvidenceFocus;
+export type GovernanceEvidenceFocusInput = GovernanceEvidenceFocus;
 
 export type EvidenceTargetPage = 'audit' | 'usage' | 'members' | 'settings' | 'runtime-console';
 
@@ -16,7 +15,7 @@ export interface EvidenceFilterContext extends GovernanceDrilldownContext {
 }
 
 export function normalizeGovernanceEvidenceFocus(focus: GovernanceEvidenceFocusInput): GovernanceEvidenceFocus {
-  return focus === 'quota' ? 'limit' : focus;
+  return focus;
 }
 
 /**
@@ -36,15 +35,12 @@ export function classifyGovernanceEvidenceFocus(reason: string | undefined): Gov
 
   // Limit-related patterns
   if (matches([
-    'quota',
     'limit',
     'rate_limit',
     'rate limit',
     'max_total_files',
     'max_file_size',
-    'missing_source_library_quota',
-    'daily_quota',
-    'quota_exceeded',
+    'missing_source_library_limit',
     'spending_limit',
     'spending_limit_exceeded',
     'limit_reached',

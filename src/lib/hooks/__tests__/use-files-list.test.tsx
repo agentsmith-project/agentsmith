@@ -99,8 +99,8 @@ vi.mock('@/lib/query-keys', () => ({
     files: {
       list: vi.fn(() => ['files']),
     },
-    quota: {
-      detail: vi.fn(() => ['quota']),
+    limits: {
+      detail: vi.fn(() => ['limits']),
     },
     fileLibraries: {
       list: vi.fn(() => ['file-libraries']),

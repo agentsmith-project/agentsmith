@@ -21,7 +21,7 @@ const ALERT_STREAM_PATH = '/api/v1/alerts/stream';
  *
  * Server sends alerts in this format over SSE:
  * event: alert
- * data: { "id": "...", "type": "quota.warning", ... }
+ * data: { "id": "...", "type": "spending_limit.warning", ... }
  */
 interface SSEAlertMessage {
   id: string;

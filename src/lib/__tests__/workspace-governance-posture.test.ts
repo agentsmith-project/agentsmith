@@ -78,7 +78,7 @@ describe('buildWorkspaceGovernancePosture', () => {
 
     expect(posture.readiness).toBe('warning');
     expect(posture.projects[0]?.readiness).toBe('warning');
-    expect(posture.projects[0]?.riskCodes).toContain('missing_source_library_quota');
+    expect(posture.projects[0]?.riskCodes).toContain('missing_source_library_limit');
   });
 
   it('treats archived projects as informational and keeps ready posture when active projects are healthy', () => {

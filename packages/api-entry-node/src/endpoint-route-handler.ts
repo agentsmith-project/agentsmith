@@ -2,12 +2,8 @@ import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
-import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
-import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
-import {
-  checkProjectEndpointRateLimitsForUser,
-  checkProjectEndpointSpendingLimitsForUser,
-} from './project-resource-policy-enforcer.js';
+import { writeProjectUsageFact } from './audit-usage-recorders.js';
+import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import {
   isCapabilitySupportedByProtocol,
   resolveEndpointTaskRoute,
@@ -82,134 +78,6 @@ interface EndpointHandlerArgs {
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
-  type GovernancePreflightFailureSpec = {
-    action: string;
-    errorCode: string;
-    message: string;
-    statusCode: 403 | 429;
-    metadata: Record<string, unknown>;
-    endUserId?: string;
-    retryAfterSeconds?: number;
-    spendingKey?: string;
-  };
-  const governanceMetadata = (
-    kind: 'access_denied' | 'policy_spending' | 'policy_rate',
-    extra: Record<string, unknown> = {},
-  ): Record<string, unknown> => {
-    switch (kind) {
-      case 'access_denied':
-        return { governance_kind: 'resource_policy', enforcement_kind: 'allow_list', ...extra };
-      case 'policy_spending':
-        return { governance_kind: 'resource_policy', enforcement_kind: 'spending_limit', ...extra };
-      case 'policy_rate':
-        return { governance_kind: 'resource_policy', enforcement_kind: 'rate_limit', ...extra };
-    }
-  };
-  const policyAccessDeniedFailure = (reason: string): GovernancePreflightFailureSpec => ({
-    action: 'resource_policy.access_denied',
-    errorCode: 'RESOURCE_POLICY_DENIED',
-    message: 'resource_policy_denied',
-    statusCode: 403,
-    metadata: governanceMetadata('access_denied', { reason }),
-  });
-  const policyRateFailure = (params: {
-    retryAfterSeconds: number;
-    rateKey: string;
-    effectiveLimit: number;
-    currentRequests: number;
-    windowSeconds: number;
-    scope?: string;
-  }): GovernancePreflightFailureSpec => ({
-    action: 'resource_policy.rate_limited',
-    errorCode: 'RESOURCE_POLICY_RATE_LIMITED',
-    message: 'resource_policy_rate_limited',
-    statusCode: 429,
-    retryAfterSeconds: params.retryAfterSeconds,
-    endUserId: user.id,
-    metadata: governanceMetadata('policy_rate', {
-      rate_key: params.rateKey,
-      effective_limit: params.effectiveLimit,
-      current_requests: params.currentRequests,
-      window_seconds: params.windowSeconds,
-      scope: params.scope,
-    }),
-  });
-  const policySpendingFailure = (params: {
-    retryAfterSeconds: number;
-    spendingKey: string;
-    effectiveLimitUsd: number;
-    currentSpendingUsd: number;
-    windowSeconds: number;
-    scope?: string;
-  }): GovernancePreflightFailureSpec => ({
-    action: 'resource_policy.spending_limited',
-    errorCode: 'RESOURCE_POLICY_SPENDING_LIMITED',
-    message: 'resource_policy_spending_limited',
-    statusCode: 429,
-    retryAfterSeconds: params.retryAfterSeconds,
-    spendingKey: params.spendingKey,
-    metadata: governanceMetadata('policy_spending', {
-      spending_key: params.spendingKey,
-      effective_limit_usd: params.effectiveLimitUsd,
-      current_spending_usd: params.currentSpendingUsd,
-      window_seconds: params.windowSeconds,
-      scope: params.scope,
-    }),
-  });
-  const writeGovernancePreflightFailure = async (params: {
-    workspaceId: string;
-    projectId: string;
-    endpointId: string;
-    requestId: string | null;
-    action: string;
-    errorCode: string;
-    message: string;
-    statusCode: 403 | 429;
-    metadata?: Record<string, unknown>;
-    endUserId?: string;
-    retryAfterSeconds?: number;
-    spendingKey?: string;
-  }): Promise<void> => {
-    await writeProjectAuditEvent(deps, {
-      workspaceId: params.workspaceId,
-      projectId: params.projectId,
-      actor: { type: 'user', id: user.id },
-      action: params.action,
-      result: 'error',
-      requestId: params.requestId,
-      resourceType: 'endpoint',
-      resourceId: params.endpointId,
-      errorCode: params.errorCode,
-      errorMessage: params.message,
-      metadata: params.metadata ?? {},
-    });
-    await writeProjectUsageFact(deps, {
-      workspaceId: params.workspaceId,
-      projectId: params.projectId,
-      resourceType: 'endpoint',
-      resourceId: params.endpointId,
-      endUserId: params.endUserId,
-      requestId: params.requestId,
-      requests: 1,
-      result: 'error',
-      errorCode: params.errorCode,
-      metadata: {
-        stage: 'preflight',
-        ...(params.metadata ?? {}),
-      },
-    });
-    if (params.retryAfterSeconds) {
-      res.setHeader('Retry-After', String(params.retryAfterSeconds));
-    }
-    json(res, params.statusCode, {
-      error_code: params.errorCode,
-      message: params.message,
-      resource_type: 'endpoint',
-      resource_id: params.endpointId,
-      ...(params.retryAfterSeconds ? { retry_after_seconds: params.retryAfterSeconds } : {}),
-      ...(params.spendingKey ? { spending_key: params.spendingKey } : {}),
-    });
-  };
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
     if (proxyPath.startsWith('rerank')) return 'rerank';
     if (proxyPath.startsWith('images/generations')) return 'image_generation';
@@ -281,24 +149,21 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
-    const policyCheck = isProjectResourceAccessAllowedForUser({
+    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
+    const governancePreflight = await enforceEndpointGovernancePreflight({
+      deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      resourceType: 'endpoint',
-      resourceId: endpoint.id,
+      endpoint,
       userId: user.id,
+      requestId,
+      source: 'endpoint_proxy_preflight',
     });
-    if (!policyCheck.allowed) {
-      const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-      const failure = policyAccessDeniedFailure(policyCheck.reason ?? 'not_allowed');
-      await writeGovernancePreflightFailure({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        endpointId: endpoint.id,
-        requestId,
-        endUserId: user.id,
-        ...failure,
-      });
+    if (!governancePreflight.allowed) {
+      if (governancePreflight.retryAfterSeconds) {
+        res.setHeader('Retry-After', String(governancePreflight.retryAfterSeconds));
+      }
+      json(res, governancePreflight.statusCode, governancePreflight.responseBody);
       return true;
     }
     if (endpoint.status !== 'active') {
@@ -362,70 +227,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       return true;
     }
 
-    const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
-    const rateCheck = await checkProjectEndpointRateLimitsForUser({
-      docStore: deps.docStore,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      resourceId: endpoint.id,
-      userId: user.id,
-      policy: policyCheck.policy,
-    });
-    if (!rateCheck.allowed) {
-      const failure = policyRateFailure({
-        retryAfterSeconds: rateCheck.retry_after_seconds,
-        rateKey: rateCheck.rate_key,
-        effectiveLimit: rateCheck.effective_limit,
-        currentRequests: rateCheck.current_requests,
-        windowSeconds: rateCheck.window_seconds,
-        scope: rateCheck.scope,
-      });
-      await writeGovernancePreflightFailure({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        endpointId: endpoint.id,
-        requestId,
-        ...failure,
-      });
-      return true;
-    }
-    const estimatedCostPerTokenUsd = (() => {
-      const profile = endpoint.runtime_profile;
-      if (!profile) return undefined;
-      const inputPrice = typeof profile.price_input_per_1m === 'number' ? profile.price_input_per_1m : undefined;
-      const outputPrice = typeof profile.price_output_per_1m === 'number' ? profile.price_output_per_1m : undefined;
-      const effectivePricePer1M = Math.max(inputPrice ?? 0, outputPrice ?? 0);
-      if (!Number.isFinite(effectivePricePer1M) || effectivePricePer1M <= 0) return undefined;
-      return effectivePricePer1M / 1_000_000;
-    })();
-    const spendingCheck = await checkProjectEndpointSpendingLimitsForUser({
-      docStore: deps.docStore,
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      resourceId: endpoint.id,
-      userId: user.id,
-      policy: policyCheck.policy,
-      estimatedCostPerTokenUsd,
-    });
-    if (!spendingCheck.allowed) {
-      const failure = policySpendingFailure({
-        retryAfterSeconds: spendingCheck.retry_after_seconds,
-        spendingKey: spendingCheck.spending_key,
-        effectiveLimitUsd: spendingCheck.effective_limit_usd,
-        currentSpendingUsd: spendingCheck.current_spending_usd,
-        windowSeconds: spendingCheck.window_seconds,
-        scope: spendingCheck.scope,
-      });
-      await writeGovernancePreflightFailure({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        endpointId: endpoint.id,
-        requestId,
-        endUserId: user.id,
-        ...failure,
-      });
-      return true;
-    }
+    const estimatedCostPerTokenUsd = governancePreflight.estimatedCostPerTokenUsd;
 
     const startedAtMs = Date.now();
     try {

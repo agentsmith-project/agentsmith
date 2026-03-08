@@ -2147,17 +2147,17 @@ export const usageHandlers = [
         percentage_used: Number(((item.requests / 10000) * 100).toFixed(2)),
       }));
 
-    const totalQuotaUsed =
+    const totalLimitUsed =
       [...endpoints, ...agents, ...sourceLibraries].reduce((sum, item) => sum + item.quota_used, 0);
-    const totalQuotaLimit =
+    const totalLimit =
       endpoints.length * 20000 + agents.length * 12000 + sourceLibraries.length * 10000;
 
     return HttpResponse.json({
       endpoints,
       agents,
       source_libraries: sourceLibraries,
-      total_quota_used: totalQuotaUsed,
-      total_quota_limit: totalQuotaLimit,
+      total_quota_used: totalLimitUsed,
+      total_quota_limit: totalLimit,
     });
   }),
 ];

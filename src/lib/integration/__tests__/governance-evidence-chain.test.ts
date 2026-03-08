@@ -72,21 +72,21 @@ describe('M3 Integration: Governance Evidence Chain', () => {
     expect(result.granted).toBe(true);
   });
 
-  // Integration Test 3: Resource policy decision creates usage evidence
-  it('should create usage evidence when limit is hit', async () => {
+  // Integration Test 3: Endpoint spending-limit decision creates usage evidence
+  it('should create usage evidence when spending limit is hit', async () => {
     const context: PolicyEvaluationContext = {
-      resource_type: 'source_library',
-      resource_id: 'lib-1',
-      subject_id: 'user-2', // Has limit-exceeded outcome in simulation
+      resource_type: 'endpoint',
+      resource_id: 'ep-1',
+      subject_id: 'user-2', // Has spending-limit exceeded outcome in simulation
       subject_type: 'user',
-      action: 'upload',
+      action: 'use',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
     };
 
     const result = await evaluateResourcePolicy(context);
 
-    if (result.decision === 'quota_exceeded') {
+    if (result.decision === 'spending_limit_exceeded') {
       expect(result.usage_record_id).toBeDefined();
       expect(result.usage_record_id).toMatch(/^usage_/);
       expect(result.audit_id).toBeDefined();

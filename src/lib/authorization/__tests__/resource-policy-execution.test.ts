@@ -1,10 +1,10 @@
 /**
  * TDD Test Suite: Resource Policy Execution Completion
  *
- * Epic A2: Resource Policy Execution Completion
- * Requirements:
- * - endpoint/source_library policy behavior consistent
+ * MVP Requirements:
+ * - endpoint-only resource policy execution
  * - Policy priority stable: subject > resource > project-default
+ * - Constraint decisions: deny / rate_limited / spending_limit_exceeded
  *
  * Acceptance Criteria:
  * 1. Rule hit and priority can be proven by use cases
@@ -26,7 +26,7 @@ describe('Resource Policy Execution', () => {
     vi.clearAllMocks();
   });
 
-  // Test Case 1: Consistent behavior across resource types (endpoint)
+  // Test Case 1: Endpoint evaluation returns supported decision kinds
   it('should evaluate endpoint policy with rate limits consistently', async () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'endpoint',
@@ -41,12 +41,12 @@ describe('Resource Policy Execution', () => {
     const result: PolicyEvaluationResult = await evaluateResourcePolicy(evaluationContext);
 
     expect(result.decision).toBeDefined();
-    expect(['allow', 'deny', 'rate_limited', 'quota_exceeded']).toContain(result.decision);
+    expect(['allow', 'deny', 'rate_limited', 'spending_limit_exceeded']).toContain(result.decision);
     expect(result.matched_rules).toBeDefined();
   });
 
-  // Test Case 2: Consistent behavior across resource types (source_library)
-  it('should evaluate source_library policy with limit rules consistently', async () => {
+  // Test Case 2: Non-endpoint resources are denied in MVP boundary
+  it('should deny non-endpoint resources in MVP boundary', async () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'source_library',
       resource_id: 'lib-1',
@@ -59,8 +59,9 @@ describe('Resource Policy Execution', () => {
 
     const result: PolicyEvaluationResult = await evaluateResourcePolicy(evaluationContext);
 
-    expect(result.decision).toBeDefined();
-    expect(result.matched_rules).toBeDefined();
+    expect(result.decision).toBe('deny');
+    expect(result.deny_reason).toBe('unsupported_resource_type_in_mvp');
+    expect(result.audit_id).toMatch(/^audit_/);
   });
 
   // Test Case 3: Policy priority - subject > resource > project-default
@@ -88,7 +89,7 @@ describe('Resource Policy Execution', () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'endpoint',
       resource_id: 'ep-2',
-      subject_id: 'user-4', // Denied user
+      subject_id: 'user-4',
       subject_type: 'user',
       action: 'use',
       workspace_id: 'ws-1',
@@ -104,12 +105,12 @@ describe('Resource Policy Execution', () => {
     }
   });
 
-  // Test Case 6: Usage evidence for rate/limit decisions
-  it('should create usage evidence for rate/limit decisions', async () => {
+  // Test Case 6: Usage evidence for rate/spending decisions
+  it('should create usage evidence for rate/spending limit decisions', async () => {
     const evaluationContext: PolicyEvaluationContext = {
       resource_type: 'endpoint',
       resource_id: 'ep-1',
-      subject_id: 'user-1',
+      subject_id: 'user-2',
       subject_type: 'user',
       action: 'use',
       workspace_id: 'ws-1',
@@ -118,10 +119,26 @@ describe('Resource Policy Execution', () => {
 
     const result: PolicyEvaluationResult = await evaluateResourcePolicy(evaluationContext);
 
-    if (result.decision === 'rate_limited' || result.decision === 'quota_exceeded') {
+    if (result.decision === 'rate_limited' || result.decision === 'spending_limit_exceeded') {
       expect(result.usage_record_id).toBeDefined();
       expect(result.usage_record_id).toMatch(/^usage_/);
     }
+  });
+
+  it('should produce rate-limited decision with usage and audit evidence', async () => {
+    const result = await evaluateResourcePolicy({
+      resource_type: 'endpoint',
+      resource_id: 'ep-1',
+      subject_id: 'user-3',
+      subject_type: 'user',
+      action: 'use',
+      workspace_id: 'ws-1',
+      project_id: 'proj-1',
+    });
+
+    expect(result.decision).toBe('rate_limited');
+    expect(result.usage_record_id).toMatch(/^usage_/);
+    expect(result.audit_id).toMatch(/^audit_/);
   });
 
   // Test Case 7: Rollback restores previous behavior with audit record
@@ -179,7 +196,7 @@ describe('Resource Policy Execution', () => {
 /**
  * Test Types
  */
-export type PolicyDecision = 'allow' | 'deny' | 'rate_limited' | 'quota_exceeded';
+export type PolicyDecision = 'allow' | 'deny' | 'rate_limited' | 'spending_limit_exceeded';
 
 export interface MatchedRule {
   rule_key: string;

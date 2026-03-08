@@ -62,7 +62,10 @@ Conflict rule:
 3. Check access allow.
 4. Check rate limits.
 5. Check spending limits.
-6. Return deterministic deny/limit errors when blocked.
+6. Return deterministic deny/limit errors when blocked (`deny`, `rate_limited`, `spending_limit_exceeded`).
+
+MVP execution guard:
+- resource policy execution must deny non-`endpoint` resource types to prevent scope drift.
 
 ## API Contract Direction
 

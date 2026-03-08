@@ -88,7 +88,7 @@ make smoke-governance   # optional extended/legacy smoke, not part of default re
 make release-core-smoke
 make mvp-freeze-check
 ```
-Note: `release`/`gate` command names above are repository engineering workflow terms, not product DevOps capabilities.
+Note: `release`/`engineering gate` command names above are repository engineering workflow terms, not product DevOps capabilities.
 `release-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives an engineering verification report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
 `mvp-freeze-check` is the freeze-oriented bundle: contracts + core smoke + demo readiness check.
 

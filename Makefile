@@ -324,6 +324,7 @@ organization-governance-release-smoke:
 
 verify-contracts:
 	$(NPM) run ws:typecheck
+	$(NPM) run contracts:check-doc-governance
 	$(NPM) run openapi:check-generated
 	$(NPM) run contracts:check-openapi
 
@@ -385,6 +386,7 @@ gate-l0:
 	@set -e; \
 	$(NPM) run lint; \
 	./scripts/ws-typecheck-safe.sh; \
+	$(NPM) run contracts:check-doc-governance; \
 	$(NPM) run openapi:check-generated; \
 	$(NPM) run contracts:check-openapi
 

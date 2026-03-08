@@ -260,17 +260,17 @@ export default function WorkspaceSettingsPage() {
                   ) : null}
                 </div>
                 <div className="rounded-lg border border-subtle bg-bg-base/20 p-3">
-                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_quota_gap_projects')}</div>
-                  <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.quotaGapProjects}</div>
-                  {explainabilitySummary.primaryQuotaGapProjectId ? (
+                  <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_explainability_limit_gap_projects')}</div>
+                  <div className="mt-1 text-lg font-semibold text-foreground">{explainabilitySummary.limitGapProjects}</div>
+                  {explainabilitySummary.primaryLimitGapProjectId ? (
                     <Link
-                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryQuotaGapProjectId}/resource-policy${buildWorkspaceEvidenceQuery({
+                      href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryLimitGapProjectId}/resource-policy${buildWorkspaceEvidenceQuery({
                         kind: 'project',
-                        projectId: explainabilitySummary.primaryQuotaGapProjectId,
+                        projectId: explainabilitySummary.primaryLimitGapProjectId,
                         reason: 'missing_source_library_quota',
                       })}`}
                       className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'mt-2 h-7 px-2')}
-                      data-testid="ws-settings__explain-open-quota-policy"
+                      data-testid="ws-settings__explain-open-limit-policy"
                     >
                       {t('workspace_explainability_open_policy')}
                     </Link>
@@ -429,17 +429,17 @@ export default function WorkspaceSettingsPage() {
 
                       <div className="mt-3 grid gap-3 md:grid-cols-2">
                         <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
-                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_quota_total_files')}</div>
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_limit_total_files')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">
-                            {project.sourceLibraryMaxTotalFiles?.toLocaleString() ?? t('workspace_projects_quota_missing')}
+                            {project.sourceLibraryMaxTotalFiles?.toLocaleString() ?? t('workspace_projects_limit_missing')}
                           </div>
                         </div>
                         <div className="rounded-lg border border-subtle bg-bg-base/10 p-3">
-                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_quota_max_file_size')}</div>
+                          <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_projects_limit_max_file_size')}</div>
                           <div className="mt-1 text-sm font-medium text-foreground">
                             {project.sourceLibraryMaxFileSizeBytes !== undefined
                               ? formatBytes(project.sourceLibraryMaxFileSizeBytes)
-                              : t('workspace_projects_quota_missing')}
+                              : t('workspace_projects_limit_missing')}
                           </div>
                         </div>
                       </div>

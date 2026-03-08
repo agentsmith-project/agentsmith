@@ -76,10 +76,10 @@ export interface WorkspaceGovernanceExplainabilitySummary {
   warningProjects: number;
   blockedMembers: number;
   warningMembers: number;
-  quotaGapProjects: number;
+  limitGapProjects: number;
   exposedProjects: number;
   primaryBlockedProjectId?: string;
-  primaryQuotaGapProjectId?: string;
+  primaryLimitGapProjectId?: string;
   primaryBlockedMemberProjectId?: string;
 }
 
@@ -118,10 +118,10 @@ export function resolveWorkspaceGovernanceGroup(member: Pick<WorkspaceMember, 'g
   return permissions.has('workspace:governance:update') ? 'wheel' : 'user';
 }
 
-function getSourceLibraryQuota(project: Project, key: 'max_total_files' | 'max_file_size_bytes'): number | undefined {
+function getSourceLibraryLimit(project: Project, key: 'max_total_files' | 'max_file_size_bytes'): number | undefined {
   const governance = asRecord(project.governance_json);
-  const governanceQuotas = asRecord(governance?.quotas);
-  const governanceSourceLibrary = asRecord(governanceQuotas?.source_library);
+  const governanceLimits = asRecord(governance?.quotas);
+  const governanceSourceLibrary = asRecord(governanceLimits?.source_library);
   const limits = asRecord(project.limits_json);
   const limitsSourceLibrary = asRecord(limits?.source_library);
 
@@ -146,8 +146,8 @@ export function buildWorkspaceGovernancePosture(args: {
     .map<WorkspaceProjectGovernancePosture>((project) => {
       const riskCodes: WorkspaceProjectRiskCode[] = [];
       const joinPolicy = project.join_policy ?? 'approval_required';
-      const sourceLibraryMaxTotalFiles = getSourceLibraryQuota(project, 'max_total_files');
-      const sourceLibraryMaxFileSizeBytes = getSourceLibraryQuota(project, 'max_file_size_bytes');
+      const sourceLibraryMaxTotalFiles = getSourceLibraryLimit(project, 'max_total_files');
+      const sourceLibraryMaxFileSizeBytes = getSourceLibraryLimit(project, 'max_file_size_bytes');
 
       if (project.status !== 'active') {
         riskCodes.push('archived_project');
@@ -374,7 +374,7 @@ export function buildWorkspaceGovernanceExplainabilitySummary(args: {
   const warningProjects = args.projects.filter((project) => project.readiness === 'warning');
   const blockedMembers = args.members.filter((member) => member.readiness === 'blocked');
   const warningMembers = args.members.filter((member) => member.readiness === 'warning');
-  const quotaGapProjects = args.projects.filter((project) => project.riskCodes.includes('missing_source_library_quota'));
+  const limitGapProjects = args.projects.filter((project) => project.riskCodes.includes('missing_source_library_quota'));
   const exposedProjects = args.projects.filter((project) =>
     project.riskCodes.includes('public_open_access')
     || project.riskCodes.includes('public_visibility')
@@ -386,10 +386,10 @@ export function buildWorkspaceGovernanceExplainabilitySummary(args: {
     warningProjects: warningProjects.length,
     blockedMembers: blockedMembers.length,
     warningMembers: warningMembers.length,
-    quotaGapProjects: quotaGapProjects.length,
+    limitGapProjects: limitGapProjects.length,
     exposedProjects: exposedProjects.length,
     primaryBlockedProjectId: blockedProjects[0]?.projectId,
-    primaryQuotaGapProjectId: quotaGapProjects[0]?.projectId,
+    primaryLimitGapProjectId: limitGapProjects[0]?.projectId,
     primaryBlockedMemberProjectId: blockedMembers[0]?.primaryProjectId,
   };
 }

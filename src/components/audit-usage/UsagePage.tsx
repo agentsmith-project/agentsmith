@@ -370,6 +370,17 @@ export function UsagePage({
     () => (usageFactsListQuery.data?.items ?? []).filter((item) => matchesUsageInvestigation(item, apiFilters)),
     [usageFactsListQuery.data?.items, apiFilters],
   );
+  const factsSummary = React.useMemo(() => {
+    const facts = filteredUsageFactsList;
+    const total = facts.length;
+    const errors = facts.filter((item) => item.result === 'error').length;
+    const resources = new Set(
+      facts
+        .map((item) => item.resource_id ?? item.resource_type)
+        .filter((value): value is string => typeof value === 'string' && value.length > 0),
+    ).size;
+    return { total, errors, resources };
+  }, [filteredUsageFactsList]);
 
   React.useEffect(() => {
     if (!hasInvestigationFilters || viewMode !== 'aggregate') return;
@@ -617,6 +628,28 @@ export function UsagePage({
 
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="rounded-xl border border-border bg-surface p-3">
+            {viewMode === 'facts' ? (
+              <div className="mb-3 grid gap-2 md:grid-cols-3" data-testid="usage-facts__summary">
+                <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('facts_summary.total')}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground" data-testid="usage-facts__summary-total">
+                    {factsSummary.total}
+                  </p>
+                </div>
+                <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('facts_summary.errors')}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground" data-testid="usage-facts__summary-errors">
+                    {factsSummary.errors}
+                  </p>
+                </div>
+                <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2">
+                  <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('facts_summary.resources')}</p>
+                  <p className="mt-1 text-sm font-semibold text-foreground" data-testid="usage-facts__summary-resources">
+                    {factsSummary.resources}
+                  </p>
+                </div>
+              </div>
+            ) : null}
             {viewMode === 'facts' ? (
               <UsageFactsTable
                 data={filteredUsageFactsList}

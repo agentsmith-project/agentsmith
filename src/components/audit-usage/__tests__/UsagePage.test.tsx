@@ -156,6 +156,9 @@ describe('UsagePage', () => {
     await user.click(screen.getByTestId('usage__view-facts'));
 
     expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
+    expect(screen.getByTestId('usage-facts__summary-total')).toHaveTextContent('1');
+    expect(screen.getByTestId('usage-facts__summary-errors')).toHaveTextContent('0');
+    expect(screen.getByTestId('usage-facts__summary-resources')).toHaveTextContent('1');
   });
 
   it('defaults to request facts view when investigation anchors exist', () => {

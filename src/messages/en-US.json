@@ -1269,6 +1269,11 @@
       "tokens": "Tokens",
       "estimated_cost": "Estimated Cost"
     },
+    "facts_summary": {
+      "total": "Matched Facts",
+      "errors": "Errors",
+      "resources": "Resources"
+    },
     "detail": {
       "title": "Request Runtime Detail",
       "subtitle": "Inspect request-level runtime behavior, pricing evidence, and fallback attempts.",

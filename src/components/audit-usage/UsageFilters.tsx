@@ -90,10 +90,13 @@ export function UsageFilters({
       || filters.end_user_id
       || filters.provider
       || filters.model
+      || filters.request_id
+      || filters.decision_id
+      || filters.trace_ref
       || filters.result
       || filters.error_class
     );
-  }, [filters.resource_type, filters.resource_id, filters.end_user_id, filters.provider, filters.model, filters.result, filters.error_class, hasNonDefaultTimeRange]);
+  }, [filters.resource_type, filters.resource_id, filters.end_user_id, filters.provider, filters.model, filters.request_id, filters.decision_id, filters.trace_ref, filters.result, filters.error_class, hasNonDefaultTimeRange]);
 
   return (
     <div className={cn('bg-surface border border-border rounded-xl p-4 space-y-4', className)}>
@@ -178,6 +181,36 @@ export function UsageFilters({
             placeholder={t('filters.model_placeholder')}
             value={filters.model || ''}
             onChange={(e) => handleTextFilterChange('model', e.target.value || undefined)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.request_id')}</label>
+          <Input
+            className="h-10"
+            placeholder={commonT('filter_by_request_id')}
+            value={filters.request_id || ''}
+            onChange={(e) => handleTextFilterChange('request_id', e.target.value || undefined)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.decision_id')}</label>
+          <Input
+            className="h-10"
+            placeholder={commonT('filter_by_decision_id')}
+            value={filters.decision_id || ''}
+            onChange={(e) => handleTextFilterChange('decision_id', e.target.value || undefined)}
+          />
+        </div>
+
+        <div>
+          <label className="text-xs text-tertiary mb-1 block">{t('filters.trace_ref')}</label>
+          <Input
+            className="h-10"
+            placeholder={commonT('filter_by_trace_ref')}
+            value={filters.trace_ref || ''}
+            onChange={(e) => handleTextFilterChange('trace_ref', e.target.value || undefined)}
           />
         </div>
 

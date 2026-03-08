@@ -222,6 +222,42 @@ export function AuditTable({
         },
         size: 200,
       }),
+      columnHelper.accessor('decision_id', {
+        header: t('table.decision_id'),
+        cell: (info) => {
+          const decisionId = info.getValue();
+          if (!decisionId) return <span className="text-tertiary">—</span>;
+          const displayId = truncateId(decisionId, 12);
+          return (
+            <div className="flex items-center gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-sm text-foreground cursor-help font-mono">
+                      {displayId}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="font-mono">{decisionId}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => {
+                  navigator.clipboard.writeText(decisionId);
+                  toast.success(toastT('copied'));
+                }}
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          );
+        },
+        size: 200,
+      }),
       columnHelper.accessor('error_code', {
         header: t('table.error_code'),
         cell: (info) => {

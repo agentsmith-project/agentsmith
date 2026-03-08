@@ -21,6 +21,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
+import { InvestigationAnchorBar } from './InvestigationAnchorBar';
 
 export interface AuditPageProps {
   workspaceId: string;
@@ -332,6 +333,21 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
       ...(defaultEndUserId && { end_user_id: defaultEndUserId }),
     });
   };
+  const handleClearInvestigation = () => {
+    setFilters((prev) => ({
+      ...prev,
+      request_id: undefined,
+      decision_id: undefined,
+      trace_ref: undefined,
+      trace_incident_id: undefined,
+      trace_escalation_id: undefined,
+      trace_run_id: undefined,
+      page: 1,
+      page_size: 25,
+    }));
+    setTraceMatchStatus(null);
+    lastAutoOpenedTraceRef.current = null;
+  };
 
   const currentPage = data?.page ?? filters.page ?? 1;
   const pageSize = data?.page_size ?? filters.page_size ?? 25;
@@ -440,29 +456,25 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
       {drilldownContext ? (
         <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
       ) : null}
-      {traceRef ? (
-        <div className="mb-3 rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="audit__trace-context">
-          <p className="text-xs font-medium text-foreground">{commonT('trace_context_title')}</p>
-              <p className="mt-1 text-xs text-tertiary">
-                {commonT('trace_context_summary', {
-                  source: traceSource ?? 'unknown',
-                  ref: traceRef,
-                })}
-              </p>
-          <p className="mt-1 text-xs text-tertiary">
-            {traceIncidentId ? `incident=${traceIncidentId}` : null}
-            {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
-            {traceRunId ? ` · run=${traceRunId}` : null}
+      <div className="mb-3">
+        <InvestigationAnchorBar
+          traceSource={traceSource}
+          requestId={filters.request_id}
+          decisionId={filters.decision_id}
+          traceRef={filters.trace_ref}
+          traceIncidentId={filters.trace_incident_id}
+          traceEscalationId={filters.trace_escalation_id}
+          traceRunId={filters.trace_run_id}
+          onClear={handleClearInvestigation}
+        />
+        {traceMatchStatus ? (
+          <p className="mt-1 text-xs text-tertiary" data-testid="audit__trace-match-status">
+            {traceMatchStatus === 'matched'
+              ? commonT('trace_context_match_found')
+              : commonT('trace_context_match_missing')}
           </p>
-          {traceMatchStatus ? (
-            <p className="mt-1 text-xs text-tertiary" data-testid="audit__trace-match-status">
-              {traceMatchStatus === 'matched'
-                ? commonT('trace_context_match_found')
-                : commonT('trace_context_match_missing')}
-            </p>
-          ) : null}
-        </div>
-      ) : null}
+        ) : null}
+      </div>
       <div data-testid="audit__filters">
         <AuditFilters
           filters={filters}

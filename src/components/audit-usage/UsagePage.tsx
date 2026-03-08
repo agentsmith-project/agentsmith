@@ -21,6 +21,7 @@ import type { UsageRecord } from '@/lib/api/types';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { getApiClient, UsageAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
+import { InvestigationAnchorBar } from './InvestigationAnchorBar';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -321,6 +322,19 @@ export function UsagePage({
       ...(effectiveEndUserId && { end_user_id: effectiveEndUserId }),
     });
   }, [effectiveEndUserId]);
+  const handleClearInvestigation = React.useCallback(() => {
+    setFilters((prev) => ({
+      ...prev,
+      request_id: undefined,
+      decision_id: undefined,
+      trace_ref: undefined,
+      trace_incident_id: undefined,
+      trace_escalation_id: undefined,
+      trace_run_id: undefined,
+      page: 1,
+      page_size: 25,
+    }));
+  }, []);
 
   const handleFiltersChange = React.useCallback(
     (newFilters: UsageListParams) => {
@@ -429,22 +443,16 @@ export function UsagePage({
       )}
     >
       <div className="w-full space-y-3 min-h-0 flex-1 flex flex-col">
-        {traceRef ? (
-          <div className="rounded-md border border-subtle bg-bg-base/20 p-3" data-testid="usage__trace-context">
-            <p className="text-xs font-medium text-foreground">{commonT('trace_context_title')}</p>
-            <p className="mt-1 text-xs text-tertiary">
-              {commonT('trace_context_summary', {
-                source: traceSource ?? 'unknown',
-                ref: traceRef,
-              })}
-            </p>
-            <p className="mt-1 text-xs text-tertiary">
-              {traceIncidentId ? `incident=${traceIncidentId}` : null}
-              {traceEscalationId ? ` · escalation=${traceEscalationId}` : null}
-              {traceRunId ? ` · run=${traceRunId}` : null}
-            </p>
-          </div>
-        ) : null}
+        <InvestigationAnchorBar
+          traceSource={traceSource}
+          requestId={apiFilters.request_id}
+          decisionId={apiFilters.decision_id}
+          traceRef={apiFilters.trace_ref}
+          traceIncidentId={apiFilters.trace_incident_id}
+          traceEscalationId={apiFilters.trace_escalation_id}
+          traceRunId={apiFilters.trace_run_id}
+          onClear={handleClearInvestigation}
+        />
 
         <UsageKPICards kpi={kpiData} loading={kpiLoading} />
 

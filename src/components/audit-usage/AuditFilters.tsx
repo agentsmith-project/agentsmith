@@ -83,6 +83,9 @@ export function AuditFilters({
       filters.end_user_id ||
       filters.resource_type ||
       filters.resource_id ||
+      filters.request_id ||
+      filters.decision_id ||
+      filters.trace_ref ||
       filters.result
     );
   }, [filters]);
@@ -215,6 +218,36 @@ export function AuditFilters({
                 <SelectItem value="error">{commonT('error')}</SelectItem>
               </SelectContent>
             </Select>
+          </div>
+
+          <div>
+            <label htmlFor="audit-filter-request-id" className="text-xs text-tertiary mb-1 block">{t('filters.request_id')}</label>
+            <Input
+              id="audit-filter-request-id"
+              placeholder={commonT('filter_by_request_id')}
+              value={filters.request_id || ''}
+              onChange={(e) => handleTextFilterChange('request_id', e.target.value || undefined)}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="audit-filter-decision-id" className="text-xs text-tertiary mb-1 block">{t('filters.decision_id')}</label>
+            <Input
+              id="audit-filter-decision-id"
+              placeholder={commonT('filter_by_decision_id')}
+              value={filters.decision_id || ''}
+              onChange={(e) => handleTextFilterChange('decision_id', e.target.value || undefined)}
+            />
+          </div>
+
+          <div>
+            <label htmlFor="audit-filter-trace-ref" className="text-xs text-tertiary mb-1 block">{t('filters.trace_ref')}</label>
+            <Input
+              id="audit-filter-trace-ref"
+              placeholder={commonT('filter_by_trace_ref')}
+              value={filters.trace_ref || ''}
+              onChange={(e) => handleTextFilterChange('trace_ref', e.target.value || undefined)}
+            />
           </div>
         </div>
       </div>

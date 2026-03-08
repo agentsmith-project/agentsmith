@@ -88,8 +88,8 @@ help-extended:
 	@echo "  make verify-release # release gate (L0 + L2 + L3 mainline)"
 	@echo "  make mvp-freeze-check # freeze-oriented MVP check bundle (contracts + core smoke + demo readiness)"
 	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
-	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock MVP matrix)"
-	@echo "  make gate-release  # L0+L2+L3 (default MVP release gate: mock MVP + mainline real smoke)"
+	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock functional matrix)"
+	@echo "  make gate-release  # L0+L2+L3 (default MVP release gate: mock functional matrix + mainline real smoke)"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -221,7 +221,10 @@ quick-help:
 	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
 	@echo ""
 	@echo "  make verify-release"
-	@echo "    Run gate-release (L0 + mock MVP matrix + real smoke)."
+	@echo "    Run gate-release (L0 + mock functional matrix + real smoke)."
+	@echo ""
+	@echo "  make lane-mock-visual"
+	@echo "    Run visual lane only (manual baseline workflow, non-blocking)."
 	@echo ""
 	@echo "  make mvp-freeze-check"
 	@echo "    Run verify-contracts + release-core-smoke + notebook-agent-demo-check."
@@ -272,6 +275,10 @@ help-glossary:
 	@echo ""
 	@echo "  smoke test"
 	@echo "    A fast end-to-end sanity check to prove the main path still works."
+	@echo ""
+	@echo "  default e2e gate"
+	@echo "    Functional lane only: smoke + chromium."
+	@echo "    Visual is a separate manual baseline workflow."
 	@echo ""
 	@echo "  strict vs tolerant smoke"
 	@echo "    strict: fail on product error states (release gate)."
@@ -353,7 +360,7 @@ preprod-capture-baseline:
 #
 # L0: static quality gates (lint/type/contracts)
 # L1: mock-lane smoke
-# L2: mock-lane MVP matrix (smoke + chromium)
+# L2: mock-lane functional matrix (smoke + chromium)
 # L3: real-lane key smoke (default MVP mainline path)
 # ---------------------------------------------------------------------------
 

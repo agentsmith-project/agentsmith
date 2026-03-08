@@ -1,5 +1,8 @@
 # Release Verification User Guide
 
+更新时间：2026-03-07  
+状态：`archived-reference`
+
 ## Overview
 
 The Release Verification tool automates testing and validation for releases, providing:
@@ -9,7 +12,7 @@ The Release Verification tool automates testing and validation for releases, pro
 - **Failure Classification**: Categorizes failures by type (token/network/backend/assertion/timeout/rate_limit/etc.)
 - **Transient Acceptance Signal**: Marks recoverable upstream instability in `summary.upstream_transient`
 - **Runtime Release Evidence**: Captures runtime guardrails and `pricing_version` coverage from the real-lane runtime proxy/billing workflow
-- **Release Governance Control**: feeds `Release Ops` with gate runs, escalations, incident linkage, and policy enforcement state
+- **Runtime Governance Context**: feeds runtime governance evidence with incident linkage and policy context for Runtime Console / Usage / Audit surfaces
 - **Troubleshooting Guidance**: Actionable recommendations for fixing issues
 
 ## Quality Lanes and Gates
@@ -41,15 +44,15 @@ Gate levels:
 - `make gate-release`: recommended MVP release gate (L0 + L2 + L3 mainline)
 - `make smoke-governance`: optional extended governance smoke (manual lane)
 
-## Release Ops Linkage
+## Runtime Console Linkage
 
-`release:report` no longer only writes report artifacts. It also feeds the release-governance control plane with:
+`release:report` no longer only writes report artifacts. It also feeds governance evidence artifacts used by Runtime Console / Usage / Audit surfaces:
 
 1. `artifacts/release-reports/*.json`
 2. `artifacts/release-runs/*.json`
 3. `artifacts/release-escalations/*.json`
 
-These artifacts are correlated by `incident_id` so `Release Ops` can show:
+These artifacts are correlated by `incident_id` so Runtime Console and governance pages can show:
 
 1. policy enforcement
 2. gate run history
@@ -59,7 +62,7 @@ These artifacts are correlated by `incident_id` so `Release Ops` can show:
 
 Operational guide:
 
-- [Release Governance Control Plane](./release-governance-control-plane.md)
+- [Release Governance Control Plane (Archived)](./release-governance-control-plane.md)
 
 ## Running Release Verification
 
@@ -200,11 +203,11 @@ Workspace governance can be run as optional extended evidence lane. `make worksp
 
 When this smoke succeeds, it writes `workspace-governance-release-evidence.json`, and `release:report` attaches it as `summary.workspace_governance_evidence`.
 
-Organization governance remains an optional extended evidence lane. `make organization-governance-release-smoke` validates:
+Organization governance evidence is an archived optional lane. `make organization-governance-release-smoke` validates:
 
 1. organization governance overview summary
 2. cross-workspace matrix and actions queue
-3. release-ops governance drilldown chain
+3. runtime-console governance drilldown chain
 
 When this smoke succeeds, it writes `organization-governance-release-evidence.json`, and `release:report` attaches it as `summary.organization_governance_evidence`.
 

@@ -64,7 +64,7 @@ GLM_API_KEY=<your-key> make notebook-agent-demo-restart-runner
 
 ## 4. 治理链路排障
 
-如果问题落在 `Members / Resource Policy / Audit / Usage / Release Ops`：
+如果问题落在 `Members / Resource Policy / Audit / Usage / Runtime Console`：
 
 1. 先跑正式 smoke，不先猜  
 ```bash
@@ -80,17 +80,16 @@ make governance-pages-real-backend-interaction-smoke-strict
 3. 如果怀疑是治理 effect 没真正生效  
 直接看：
 - [internal-release-capability-matrix.md](./release/internal-release-capability-matrix.md)
-- [release-governance-control-plane.md](./user-guides/release-governance-control-plane.md)
+- [release-governance-control-plane.md](./user-guides/release-governance-control-plane.md)（归档迁移说明）
 
-## 5. Runtime / Usage / Release 排障
+## 5. Runtime / Usage / Governance 排障
 
-如果问题落在 runtime、usage、release gate：
+如果问题落在 runtime、usage、治理链路：
 
-1. 先看 `Release Ops` 页面里的：
-   - policy enforcement
-   - gate runs
-   - escalations
-   - incident trace
+1. 先看 `Runtime Console` + `Usage` + `Audit` 的治理证据链：
+   - runtime control/monitoring 状态
+   - usage/cost/rate-spending 指标
+   - audit 的 deny/quota/policy 命中证据
 2. 再跑：
 ```bash
 npm run release:report -- --name local-debug
@@ -110,7 +109,7 @@ npm run release:report -- --name local-debug
 2. route authz 语义错误
 3. policy 配了但后端不生效
 4. token / SSE ticket 链路设计错误
-5. 审计、用量、release evidence 不一致
+5. 审计、用量、治理证据不一致
 
 ## 7. 当前有效的环境基线
 
@@ -138,7 +137,7 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 1. [Documentation Index](./README.md)
 2. [Development Guide](../DEVELOPMENT.md)
 3. [Release Verification](./user-guides/release-verification.md)
-4. [Release Governance Control Plane](./user-guides/release-governance-control-plane.md)
+4. [Release Governance Control Plane (Archived)](./user-guides/release-governance-control-plane.md)
 5. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
 
 ## Token Issues
@@ -151,8 +150,8 @@ Token 排障遵循上文 `2` 和 `3` 节：先确认服务在线，再执行 `ma
 
 ## Backend Issues
 
-后端行为异常统一按治理链路排障：先跑 `make governance-release-smoke`，再按 `Members / Resource Policy / Audit / Usage / Release Ops` 定位。
+后端行为异常统一按治理链路排障：先跑 `make governance-release-smoke`，再按 `Members / Resource Policy / Audit / Usage / Runtime Console` 定位。
 
 ## Timeout Issues
 
-超时问题优先检查 provider 短时波动、runner 健康、以及重试后是否恢复；无法恢复时按结构性故障处理并升级到 release evidence。
+超时问题优先检查 provider 短时波动、runner 健康、以及重试后是否恢复；无法恢复时按结构性故障处理并升级到治理证据。

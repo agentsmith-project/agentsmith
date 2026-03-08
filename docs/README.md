@@ -2,6 +2,8 @@
 
 Central index for AgentSmith documentation. Product scope and principles are in the constitution and contracts; implementation details are in DEVELOPMENT.md and AGENTS.md.
 
+> Archive notice (2026-03-07): references to `AI Ops Home`, `Release Ops`, and organization-level release governance in historical design/plan docs are retained for traceability only. Current MVP direction is Project Hub + project-scoped LLM endpoint governance.
+
 ## Top-level
 
 | Doc | Description |
@@ -42,9 +44,9 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 ## Release / Validation
 
 - [User Guides Index](./user-guides/README.md) — 用户手册总入口（MVP-first）
-- [Release Verification](./user-guides/release-verification.md) — 历史发布验证文档（非当前主线）
+- [Release Verification](./user-guides/release-verification.md) — 历史发布验证文档（已归档，非当前主线）
 - [MVP Freeze Checklist](./release/mvp-freeze-checklist.md) — 预发布冻结阶段一键检查、手工验收与回滚基线
-- [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 历史治理控制面文档（非当前主线）
+- [Release Governance Control Plane](./user-guides/release-governance-control-plane.md) — 已归档迁移说明（Release Ops 模块已下线）
 - [Third-Party Accounts & Feishu OAuth](./user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth 配置、回调模式与手动验收
 - [internal-release-checklist](./release/internal-release-checklist.md) — 内部发布检查清单
 - [internal-release-capability-matrix](./release/internal-release-capability-matrix.md) — 当前内部发布能力边界（主线 + 治理）
@@ -56,7 +58,7 @@ Normative API, permission, and module boundaries. See [contracts/README.md](./co
 - [llm-runtime-final-implementation-plan-v2](./plans/llm-runtime-final-implementation-plan-v2.md) — Runtime / Usage 历史实现基线（含已归档 release 语义）
 - [ai-ops-home-ux-closure-review-v1](./design/ai-ops-home-ux-closure-review-v1.md) — 历史 UX 收口记录
 - [governance-explainability-closure-review-v1](./design/governance-explainability-closure-review-v1.md) — 当前治理解释性主线收口与基线定义
-- [internal-release-note-2026-02-28-closure](./release/internal-release-note-2026-02-28-closure.md) — 当前 release closure 基线
+- [internal-release-note-2026-02-28-closure](./release/internal-release-note-2026-02-28-closure.md) — 历史 release closure 记录（归档）
 - [governance-explainability-effective-access-console-plan-v1](./plans/governance-explainability-effective-access-console-plan-v1.md) — 当前 explainability 与 effective access 已完成实施计划
 - [build-execution-reliability-trace-fidelity-plan-v1](./plans/build-execution-reliability-trace-fidelity-plan-v1.md) — 已完成的 build 执行可靠性与轨迹保真实施计划
 - [build-execution-reliability-trace-fidelity-closure-review-v1](./design/build-execution-reliability-trace-fidelity-closure-review-v1.md) — 当前 build reliability 主线收口与验收基线

@@ -1,225 +1,33 @@
-# Release Governance Control Plane
+# Release Governance Control Plane (Archived)
 
-## Purpose
+更新时间：2026-03-07  
+状态：`archived`
 
-`Release Ops` is the operational control plane for release governance. It is the single place to:
+该文档描述的 `Release Ops` 模块已下线，不再作为当前产品主线。
 
-1. inspect release policy and gate enforcement
-2. review release report artifacts and gate run history
-3. manage policy overrides and approvals
-4. handle escalations, ownership, SLA, and incident history
-5. trigger manual gate runs and failed-check reruns
+## Migration
 
-## What "Release" Means in AgentSmith
-
-In this project, "release" does **not** only mean shipping frontend code.
-It means the current runtime and governance state is safe to receive production traffic.
-
-Concretely, release includes three layers:
-
-1. Runtime route release  
-   Publish runtime targets (alias/combo) from draft to published, with rollout policy (`full`/`canary`).
-2. Gate execution and evidence  
-   Run release gates and produce auditable artifacts (report/run/evidence).
-3. Governance decision and enforcement  
-   Evaluate policy readiness (`ready`/`warning`/`blocked`/`pending_override`/`releasable_with_override`) and handle override/escalation/incident.
-
-Practical interpretation:
-
-1. "Can we release?" = "Can this runtime configuration and its governance evidence be promoted and enforced safely?"
-2. A green page alone is not release acceptance; artifacts + policy enforcement are the acceptance baseline.
-
-## Main Surfaces
-
-Project route:
+旧入口：
 
 ```text
 /[locale]/workspaces/[workspace]/projects/[project]/release-ops
 ```
 
-Core sections:
+当前入口：
 
-1. `Release Policy`
-2. `Release Reports`
-3. `Gate Runs`
-4. `Escalations`
-5. `Incident Summary`
-6. `Incident Trace`
-
-## Operating Model
-
-### 1. Start from policy enforcement
-
-Use `Gate Enforcement` as the first decision signal:
-
-1. `ready`
-2. `warning`
-3. `blocked`
-4. `pending_override`
-5. `releasable_with_override`
-
-Interpretation:
-
-1. `ready`: no unresolved blocker remains
-2. `warning`: release is not blocked, but debt is present
-3. `blocked`: unresolved blocker exists
-4. `pending_override`: only overridable blockers remain and approval is still pending
-5. `releasable_with_override`: blockers were explicitly approved as exceptions
-
-### 2. Use report artifacts for acceptance baseline
-
-Release artifacts remain the auditable acceptance source.
-
-Check:
-
-1. report status
-2. runtime evidence
-3. usage evidence
-4. execution failures
-5. latest policy enforcement
-
-Do not treat a green page alone as acceptance. The artifact is still the acceptance record.
-
-### 3. Use gate runs for execution history
-
-Gate runs answer:
-
-1. who triggered the run
-2. what checks were requested
-3. whether the run was full or failed-only rerun
-4. which step failed first
-5. which artifact was produced
-
-Use rerun for:
-
-1. transient upstream failures
-2. targeted failed-check revalidation
-
-Do not use rerun to hide structural failures. Fix the underlying issue first.
-
-### 4. Use overrides as explicit exceptions
-
-Overrides are scoped to:
-
-1. workspace
-2. project
-3. report
-4. incident
-5. issue
-
-Rules:
-
-1. override reason is mandatory
-2. reason category is mandatory
-3. expiry is mandatory
-4. requester cannot approve their own override
-5. expired override no longer changes enforcement
-
-### 5. Use escalations as incident workflow
-
-Escalations are not just notifications. They carry:
-
-1. severity
-2. ownership
-3. SLA state
-4. resolution category
-5. incident history
-
-Expected handling path:
-
-1. acknowledge
-2. assign owner
-3. set due time
-4. resolve or reopen with reason/category
-
-## Incident Workflow
-
-Each release incident is correlated by `incident_id`.
-
-Objects linked into one incident:
-
-1. release report artifact
-2. release gate run
-3. escalation
-4. override records
-5. handoff history
-
-Use `Incident Summary` for the current state:
-
-1. open vs resolved escalations
-2. pending vs approved overrides
-3. latest run status
-4. owner
-5. SLA / resolution category
-
-Use `Incident Trace` for chronology:
-
-1. gate runs
-2. escalations
-3. acknowledgements
-4. assignment / reassignment events
-5. override decisions
-6. resolution / reopen events
-
-## Recommended Triage Order
-
-1. Check `Gate Enforcement`
-2. Open the latest failed report
-3. Confirm whether blocker is execution, runtime, usage, or governance
-4. Inspect the linked incident
-5. Assign an owner and due time if escalation is open
-6. Decide whether the issue needs a fix or an approved exception
-7. Re-run failed checks only after the root cause is addressed
-
-## Manual Operations
-
-### Trigger full gate
-
-Use the `Gate Runner` panel or:
-
-```bash
-npm run release:report -- --name <name>
+```text
+/[locale]/workspaces/[workspace]/projects/[project]/runtime-console?tab=control
 ```
 
-### Trigger failed-only rerun
+治理与排障请使用以下页面组合：
 
-Use the `Gate Runner` panel on an existing failed run.
+1. Runtime Console（控制与运行视角）
+2. Usage（用量、成本、限流/限额效果）
+3. Audit（策略命中、拒绝、审计证据）
+4. Resource Policy（项目级策略配置）
 
-### Refresh release artifact baseline
+## Notes
 
-```bash
-npm run release:report -- --name <name>
-```
-
-### Review runtime and usage context
-
-Use deep links from report detail:
-
-1. `Runtime Observability`
-2. `Usage`
-
-## Release Acceptance Rules
-
-Treat as blocking:
-
-1. unresolved non-overridable blocker
-2. critical escalation without owner
-3. critical escalation overdue
-4. runtime guardrail blocked
-5. usage evidence blocked
-
-Treat as warning:
-
-1. open non-critical escalations
-2. due-soon escalations
-3. approved exception still active
-4. warning-only policy issues
-
-## Runbook Discipline
-
-This page is the operational baseline. When release governance behavior changes, update:
-
-1. this runbook
-2. `docs/user-guides/release-verification.md`
-3. `docs/plans/llm-runtime-final-implementation-plan-v2.md`
-4. `docs/release/internal-release-note-2026-02-28-closure.md`
+1. 旧的 release run / escalation / override 专属操作说明已归档，不作为当前 MVP 交付要求。
+2. 当前 MVP 治理范围为项目级、LLM endpoint 统一约束链路（Chat/Notebook/API 同一套约束）。
+3. 若历史脚本仍提及 release 术语，请以 Runtime Console + Usage/Audit 的证据链替代。

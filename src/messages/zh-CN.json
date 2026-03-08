@@ -1152,6 +1152,7 @@
       "resource": "资源",
       "result": "结果",
       "request_id": "请求 ID",
+      "decision_id": "决策 ID",
       "error_code": "错误码",
       "header": {
         "error_code": "错误码"
@@ -1263,6 +1264,7 @@
       "open_member_access": "打开成员访问",
       "open_resource_policy": "打开资源策略",
       "tokens": "Token",
+      "decision_id": "决策 ID",
       "pricing_version": "定价版本",
       "estimated_cost": "预估成本",
       "timeline_title": "降级时间线",

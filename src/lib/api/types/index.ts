@@ -456,6 +456,7 @@ export interface AuditEvent {
   error_code?: string;
   error_message?: string;
   request_id: string;
+  decision_id?: string;
   trace_ref?: string;
   trace_incident_id?: string;
   trace_escalation_id?: string;
@@ -498,6 +499,7 @@ export interface UsageFactRecord {
   resource_id?: string;
   end_user_id?: string;
   request_id?: string;
+  decision_id?: string;
   requests: number;
   duration_ms?: number;
   bytes_in?: number;

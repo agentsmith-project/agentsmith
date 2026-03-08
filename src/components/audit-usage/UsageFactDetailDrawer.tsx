@@ -197,6 +197,12 @@ export function UsageFactDetailDrawer({
                         <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.estimated_cost')}</div>
                         <div className="mt-2 text-sm text-foreground">{formatUsd(fact.runtime?.estimated_cost)}</div>
                       </div>
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.decision_id')}</div>
+                        <div className="mt-2 font-mono text-sm text-foreground" data-testid={`usage__detail-decision-id-${fact.id}`}>
+                          {fact.decision_id ?? '--'}
+                        </div>
+                      </div>
                     </div>
 
                     <div className="border-t border-subtle px-5 py-4">

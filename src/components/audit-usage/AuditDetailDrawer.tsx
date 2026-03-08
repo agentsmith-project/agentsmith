@@ -153,6 +153,12 @@ export function AuditDetailDrawer({
                 </Button>
               </div>
             </div>
+            {event.decision_id ? (
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-tertiary">{t('table.decision_id')}</span>
+                <span className="text-sm text-foreground font-mono">{event.decision_id}</span>
+              </div>
+            ) : null}
           </div>
 
           {/* Error Info Card */}

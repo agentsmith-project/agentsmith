@@ -380,6 +380,7 @@ export class AuditAPI {
     const record = AuditAPI.asRecord(item) ?? {};
     const metadata = AuditAPI.asRecord(record.metadata_json) ?? AuditAPI.asRecord(record.metadata) ?? {};
     const traceRefs = AuditAPI.extractTraceRefs(record, metadata);
+    const decisionId = AuditAPI.asString(record.decision_id) ?? AuditAPI.asString(metadata.decision_id);
     const id = AuditAPI.asString(record.id)
       ?? AuditAPI.asString(record.request_id)
       ?? `${workspaceId}-${projectId}-${AuditAPI.asString(record.timestamp) ?? 'audit'}`;
@@ -401,6 +402,7 @@ export class AuditAPI {
       error_code: AuditAPI.asString(record.error_code),
       error_message: AuditAPI.asString(record.error_message),
       request_id: requestId,
+      decision_id: decisionId,
       trace_ref: traceRefs.trace_ref,
       trace_incident_id: traceRefs.trace_incident_id,
       trace_escalation_id: traceRefs.trace_escalation_id,

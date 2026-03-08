@@ -1150,6 +1150,7 @@
       "resource": "Resource",
       "result": "Result",
       "request_id": "Request ID",
+      "decision_id": "Decision ID",
       "error_code": "Error Code",
       "header": {
         "error_code": "Error Code"
@@ -1261,6 +1262,7 @@
       "open_member_access": "Open Member Access",
       "open_resource_policy": "Open Resource Policy",
       "tokens": "Tokens",
+      "decision_id": "Decision ID",
       "pricing_version": "Pricing Version",
       "estimated_cost": "Estimated Cost",
       "timeline_title": "Fallback Timeline",

@@ -33,6 +33,7 @@ describe('AuditDetailDrawer', () => {
           error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
           error_message: 'resource_policy_quota_exceeded',
           request_id: 'req_1',
+          decision_id: 'gdec_1',
           metadata_json: {
             governance_kind: 'resource_policy',
             enforcement_kind: 'quota_limit',
@@ -53,6 +54,7 @@ describe('AuditDetailDrawer', () => {
     expect(governance).toHaveTextContent('1048576');
     expect(governance).toHaveTextContent('1048577');
     expect(governance).toHaveTextContent('quota_exceeded');
+    expect(screen.getByText('gdec_1')).toBeInTheDocument();
     expect(screen.getByTestId('audit__detail-open-resource-policy')).toHaveAttribute(
       'href',
       expect.stringContaining('/resource-policy?resource_type=source_library'),
@@ -79,6 +81,7 @@ describe('AuditDetailDrawer', () => {
           error_code: 'FORBIDDEN',
           error_message: 'forbidden',
           request_id: 'req_2',
+          decision_id: 'gdec_2',
           metadata_json: {
             missing_permissions: ['project:manage'],
             authz_decision: {
@@ -92,6 +95,7 @@ describe('AuditDetailDrawer', () => {
     const governance = screen.getByTestId('audit__detail-governance');
     expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
+    expect(screen.getByText('gdec_2')).toBeInTheDocument();
     expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();
   });
 });

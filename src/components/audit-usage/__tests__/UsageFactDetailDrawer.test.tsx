@@ -23,6 +23,7 @@ describe('UsageFactDetailDrawer', () => {
             resource_type: 'source_library',
             resource_id: 'lib_1',
             request_id: 'req_quota_1',
+            decision_id: 'gdec_quota_1',
             requests: 1,
             result: 'error',
             error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
@@ -51,6 +52,7 @@ describe('UsageFactDetailDrawer', () => {
     expect(governance).toHaveTextContent('200');
     expect(governance).toHaveTextContent('201');
     expect(governance).toHaveTextContent('quota_exceeded');
+    expect(screen.getByTestId('usage__detail-decision-id-fact_quota_1')).toHaveTextContent('gdec_quota_1');
     expect(screen.getByTestId('usage__detail-open-resource-policy-fact_quota_1')).toHaveAttribute(
       'href',
       expect.stringContaining('/resource-policy?resource_type=source_library'),
@@ -72,6 +74,7 @@ describe('UsageFactDetailDrawer', () => {
             resource_type: 'project',
             resource_id: 'proj_1',
             request_id: 'req_forbidden_1',
+            decision_id: 'gdec_forbidden_1',
             requests: 1,
             result: 'error',
             error_code: 'FORBIDDEN',
@@ -89,6 +92,7 @@ describe('UsageFactDetailDrawer', () => {
     const governance = screen.getByTestId('usage__detail-governance-fact_forbidden_1');
     expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
+    expect(screen.getByTestId('usage__detail-decision-id-fact_forbidden_1')).toHaveTextContent('gdec_forbidden_1');
     expect(screen.queryByTestId('usage__detail-open-resource-policy-fact_forbidden_1')).not.toBeInTheDocument();
   });
 });

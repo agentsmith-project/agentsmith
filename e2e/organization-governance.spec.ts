@@ -37,11 +37,13 @@ test.describe('Organization Governance Overview', () => {
       });
       return;
     }
-    const releaseOpsLink = authedPage.locator('a[href*="/release-ops"][href*="gov_from=organization_overview"]').first();
-    await expect(releaseOpsLink).toBeVisible({ timeout: 10000 });
-    await expect(releaseOpsLink).toHaveAttribute('href', /\/release-ops\?/);
-    await expect(releaseOpsLink).toHaveAttribute('href', /gov_from=organization_overview/);
-    const href = await releaseOpsLink.getAttribute('href');
+    const runtimeConsoleLink = authedPage.locator(
+      'a[href*="/runtime-console"][href*="tab=control"][href*="gov_from=organization_overview"]',
+    ).first();
+    await expect(runtimeConsoleLink).toBeVisible({ timeout: 10000 });
+    await expect(runtimeConsoleLink).toHaveAttribute('href', /\/runtime-console\?/);
+    await expect(runtimeConsoleLink).toHaveAttribute('href', /gov_from=organization_overview/);
+    const href = await runtimeConsoleLink.getAttribute('href');
     expect(href).toBeTruthy();
     await goTo(authedPage, href ?? '/en-US/workspaces/overview');
     await expect(authedPage).toHaveURL(/\/runtime-console\?/);
@@ -50,7 +52,7 @@ test.describe('Organization Governance Overview', () => {
     await expect(authedPage.getByTestId('tabs-trigger-control')).toBeVisible({ timeout: 10000 });
   });
 
-  test('matrix row provides release readiness shortcut with governance context', async ({ authedPage }) => {
+  test('matrix row provides runtime-console readiness shortcut with governance context', async ({ authedPage }) => {
     if (await isOverviewErrorState(authedPage)) {
       await expect(authedPage.getByTestId('workspace-overview__retry')).toBeVisible();
       test.info().annotations.push({
@@ -59,9 +61,10 @@ test.describe('Organization Governance Overview', () => {
       });
       return;
     }
-    const readinessLink = authedPage.locator('[data-testid^="workspace-overview__open-release-readiness--"]').first();
+    const readinessLink = authedPage.locator('[data-testid^="workspace-overview__open-runtime-console--"]').first();
     await expect(readinessLink).toBeVisible({ timeout: 10000 });
-    await expect(readinessLink).toHaveAttribute('href', /\/release-ops\?/);
+    await expect(readinessLink).toHaveAttribute('href', /\/runtime-console\?/);
+    await expect(readinessLink).toHaveAttribute('href', /tab=control/);
     await expect(readinessLink).toHaveAttribute('href', /gov_from=organization_overview/);
     await expect(readinessLink).toHaveAttribute('href', /gov_reason=workspace_release_readiness/);
   });

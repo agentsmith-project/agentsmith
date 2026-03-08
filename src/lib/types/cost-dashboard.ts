@@ -3,7 +3,7 @@
  *
  * This file contains all TypeScript interfaces for the Cost & Limit Dashboard feature.
  * These types align with the OpenAPI spec and backend API contracts.
- * Note: Quota* type names are preserved for API compatibility.
+ * Note: Limit* is the primary terminology. Quota* aliases are kept for compatibility.
  */
 
 // ============================================================================
@@ -12,29 +12,27 @@
 
 /**
  * Limit summary for a specific resource.
- * Legacy naming: QuotaSummary.
  */
-export interface QuotaSummary {
+export interface LimitSummary {
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_id: string;
   resource_name: string;
-  quota_used: number;
-  quota_limit: number;
-  quota_reset_at: string; // ISO 8601
+  limit_used: number;
+  limit_total: number;
+  limit_reset_at: string; // ISO 8601
   percentage_used: number;
-  quota_unit: 'tokens' | 'requests' | 'bytes' | 'files';
+  limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
 }
 
 /**
  * Aggregate limit summary across all resource types.
- * Legacy naming: QuotaOverview.
  */
-export interface QuotaOverview {
-  endpoints?: QuotaSummary[];
-  source_libraries?: QuotaSummary[];
-  agents?: QuotaSummary[];
-  total_quota_used: number;
-  total_quota_limit: number;
+export interface LimitOverview {
+  endpoints?: LimitSummary[];
+  source_libraries?: LimitSummary[];
+  agents?: LimitSummary[];
+  total_limit_used: number;
+  total_limit: number;
 }
 
 // ============================================================================
@@ -123,13 +121,17 @@ export interface CostChartData {
 
 /**
  * Request parameters for limit summary API.
- * Legacy naming: QuotaSummaryRequest.
  */
-export interface QuotaSummaryRequest {
+export interface LimitSummaryRequest {
   workspace_id: string;
   project_id: string;
   resource_type?: 'endpoint' | 'source_library' | 'agent';
 }
+
+// Legacy aliases for compatibility with existing imports.
+export type QuotaSummary = LimitSummary;
+export type QuotaOverview = LimitOverview;
+export type QuotaSummaryRequest = LimitSummaryRequest;
 
 /**
  * Request parameters for cost time series API

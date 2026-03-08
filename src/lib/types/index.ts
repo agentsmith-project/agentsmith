@@ -4,13 +4,15 @@
  * Centralized exports for all Epic C (Operations) type definitions.
  * Import from this file for convenience:
  *
- * import { QuotaSummary, Alert, AlertPreferences } from '@/lib/types/epic-c';
+ * import { LimitSummary, Alert, AlertPreferences } from '@/lib/types/epic-c';
  * import type { ChartConfig, LineChartConfig } from '@/lib/types/epic-c';
  */
 
 // Cost & Limit Dashboard (Epic C1)
-// Note: Quota* type names are kept for backward compatibility with API contracts.
 export type {
+  LimitSummary,
+  LimitOverview,
+  LimitSummaryRequest,
   QuotaSummary,
   QuotaOverview,
   TimeRange,

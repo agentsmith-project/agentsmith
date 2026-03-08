@@ -3219,16 +3219,27 @@ export interface components {
             agents?: components["schemas"]["LimitSummary"][];
             endpoints?: components["schemas"]["LimitSummary"][];
             source_libraries?: components["schemas"]["LimitSummary"][];
-            /** @description Total limit limit across all resource types */
+            /** @description Total limit across all resource types (preferred field) */
+            total_limit?: number;
+            /** @description Total limit across all resource types (compatibility field) */
             total_limit_limit?: number;
             /** @description Total limit used across all resource types */
             total_limit_used?: number;
         };
         /** @description Limit summary for a specific resource */
         LimitSummary: {
+            /** @description Underlying policy key, e.g. endpoint.requests_per_minute */
+            limit_key?: string;
+            /**
+             * @description Limit category for Usage matrix rendering
+             * @enum {string}
+             */
+            limit_kind?: "rate_limit" | "spending_limit";
             limit_limit: number;
             /** Format: date-time */
             limit_reset_at: string;
+            /** @description Preferred alias of limit_limit for frontend readability */
+            limit_total?: number;
             /** @enum {string} */
             limit_unit: "tokens" | "requests" | "bytes" | "files";
             limit_used: number;
@@ -3237,6 +3248,11 @@ export interface components {
             resource_name: string;
             /** @enum {string} */
             resource_type: "endpoint" | "source_library" | "agent";
+            /**
+             * @description Window projection key for Usage matrix rendering
+             * @enum {string}
+             */
+            window_key?: "minute" | "5h" | "day" | "current";
         };
         Project: {
             id: string;

@@ -11054,9 +11054,13 @@
             "type": "number",
             "description": "Total limit used across all resource types"
           },
+          "total_limit": {
+            "type": "number",
+            "description": "Total limit across all resource types (preferred field)"
+          },
           "total_limit_limit": {
             "type": "number",
-            "description": "Total limit limit across all resource types"
+            "description": "Total limit across all resource types (compatibility field)"
           }
         }
       },
@@ -11096,6 +11100,11 @@
             "type": "number",
             "minimum": 0
           },
+          "limit_total": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Preferred alias of limit_limit for frontend readability"
+          },
           "limit_reset_at": {
             "type": "string",
             "format": "date-time"
@@ -11113,6 +11122,28 @@
               "bytes",
               "files"
             ]
+          },
+          "limit_kind": {
+            "type": "string",
+            "enum": [
+              "rate_limit",
+              "spending_limit"
+            ],
+            "description": "Limit category for Usage matrix rendering"
+          },
+          "window_key": {
+            "type": "string",
+            "enum": [
+              "minute",
+              "5h",
+              "day",
+              "current"
+            ],
+            "description": "Window projection key for Usage matrix rendering"
+          },
+          "limit_key": {
+            "type": "string",
+            "description": "Underlying policy key, e.g. endpoint.requests_per_minute"
           }
         }
       },

@@ -63,9 +63,9 @@ export function useFile(
 }
 
 /**
- * Hook to query quota summary
+ * Hook to query limit summary
  */
-export function useQuota(workspaceId: string, projectId: string, libraryId?: string) {
+export function useLimitSummary(workspaceId: string, projectId: string, libraryId?: string) {
   const filesAPI = new FilesAPI(getApiClient());
 
   return useQuery({

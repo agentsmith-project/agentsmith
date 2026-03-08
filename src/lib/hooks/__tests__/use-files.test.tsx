@@ -143,7 +143,7 @@ vi.mock('@/lib/query-keys', () => ({
 import {
   useFiles,
   useFile,
-  useQuota,
+  useLimitSummary,
   useUploadFile,
   useDeleteFile,
   useFileLibraries,
@@ -254,9 +254,9 @@ describe('useFile', () => {
   });
 });
 
-describe('useQuota', () => {
-  it('should fetch quota summary successfully', async () => {
-    const { result } = renderHook(() => useQuota(workspaceId, projectId), {
+describe('useLimitSummary', () => {
+  it('should fetch limit summary successfully', async () => {
+    const { result } = renderHook(() => useLimitSummary(workspaceId, projectId), {
       wrapper: createTestWrapper(),
     });
 
@@ -270,7 +270,7 @@ describe('useQuota', () => {
   });
 
   it('should be disabled when workspaceId is empty', () => {
-    const { result } = renderHook(() => useQuota('', projectId), {
+    const { result } = renderHook(() => useLimitSummary('', projectId), {
       wrapper: createTestWrapper(),
     });
 
@@ -278,7 +278,7 @@ describe('useQuota', () => {
   });
 
   it('should have 30 second stale time', () => {
-    const { result } = renderHook(() => useQuota(workspaceId, projectId), {
+    const { result } = renderHook(() => useLimitSummary(workspaceId, projectId), {
       wrapper: createTestWrapper(),
     });
 

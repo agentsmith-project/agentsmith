@@ -2,7 +2,7 @@
  * Files List Hook
  *
  * Business logic for files page:
- * - Fetch sources and quota data
+ * - Fetch sources and limit summary data
  * - Manage local state (selection, filters, pagination, dialogs)
  * - Handle file actions (upload, delete, download, AI ready batch operations)
  */
@@ -12,7 +12,7 @@ import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import {
   useFiles,
-  useQuota,
+  useLimitSummary,
   useUploadFile,
   useDeleteFile,
   useBatchAIReadyActions,
@@ -87,7 +87,7 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
   } = useFilesQueryState();
 
   // Data fetching
-  const { data: quotaData, isLoading: quotaLoading } = useQuota(
+  const { data: limitSummaryData, isLoading: limitSummaryLoading } = useLimitSummary(
     workspaceId,
     projectId,
     selectedLibraryId === 'all' ? undefined : selectedLibraryId,
@@ -225,18 +225,18 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
     }
   }, [deleteMutation, filesToDelete, projectId, setDeleteDialogOpen, setFilesToDelete, setSelectedFileIds, t, workspaceId]);
 
-  // Check quota before batch operations
-  const quotaStatus = useMemo(() => {
-    if (!quotaData) return { canStart: true, exceededTypes: [] };
+  // Check limits before batch operations
+  const limitStatus = useMemo(() => {
+    if (!limitSummaryData) return { canStart: true, exceededTypes: [] };
 
     const exceededTypes: string[] = [];
-    if (quotaData.storage.used >= quotaData.storage.limit) {
+    if (limitSummaryData.storage.used >= limitSummaryData.storage.limit) {
       exceededTypes.push('Storage');
     }
-    if (quotaData.docdb.used >= quotaData.docdb.limit) {
+    if (limitSummaryData.docdb.used >= limitSummaryData.docdb.limit) {
       exceededTypes.push('DocDB');
     }
-    if (quotaData.vectordb.used >= quotaData.vectordb.limit) {
+    if (limitSummaryData.vectordb.used >= limitSummaryData.vectordb.limit) {
       exceededTypes.push('VectorDB');
     }
 
@@ -244,14 +244,14 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
       canStart: exceededTypes.length === 0,
       exceededTypes,
     };
-  }, [quotaData]);
+  }, [limitSummaryData]);
 
   const handleBatchStartAIReady = useCallback(() => {
-    if (selectedFileIds.length > 0 && quotaStatus.canStart) {
+    if (selectedFileIds.length > 0 && limitStatus.canStart) {
       batchActions.batchStart.mutate({ workspaceId, projectId, fileIds: selectedFileIds });
       setSelectedFileIds([]);
     }
-  }, [selectedFileIds, quotaStatus.canStart, batchActions.batchStart, workspaceId, projectId, setSelectedFileIds]);
+  }, [selectedFileIds, limitStatus.canStart, batchActions.batchStart, workspaceId, projectId, setSelectedFileIds]);
 
   const handleBatchCancelAIReady = useCallback(() => {
     if (selectedFileIds.length > 0) {
@@ -372,8 +372,8 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
 
   return {
     // Data
-    quotaData,
-    quotaLoading,
+    limitSummaryData,
+    limitSummaryLoading,
     items,
     total,
     filesLoading,
@@ -428,8 +428,8 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
     batchStartPending: batchActions.batchStart.isPending,
     batchCancelPending: batchActions.batchCancel.isPending,
 
-    // Quota status
-    quotaStatus,
+    // Limit status
+    limitStatus,
     libraries,
     libraryPolicyStatusById,
     libraryPolicyLoadingById,

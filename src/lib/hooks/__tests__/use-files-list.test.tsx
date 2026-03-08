@@ -12,7 +12,7 @@ vi.mock('../use-files', () => ({
     data: { items: [], total: 0 },
     isLoading: false,
   })),
-  useQuota: vi.fn(() => ({
+  useLimitSummary: vi.fn(() => ({
     data: {
       storage: { used: 1024, limit: 10240 },
       docdb: { used: 512, limit: 5120 },
@@ -157,7 +157,7 @@ describe('useFilesList', () => {
     expect(result.current.deleteDialogOpen).toBe(false);
   });
 
-  it('should provide quota data', () => {
+  it('should provide limit summary data', () => {
     const { result } = renderHook(
       () => useFilesList({ workspaceId, projectId }),
       {
@@ -165,8 +165,8 @@ describe('useFilesList', () => {
       }
     );
 
-    expect(result.current.quotaData).toBeDefined();
-    expect(result.current.quotaData?.storage.used).toBe(1024);
+    expect(result.current.limitSummaryData).toBeDefined();
+    expect(result.current.limitSummaryData?.storage.used).toBe(1024);
   });
 
   it('should provide items array', () => {
@@ -534,8 +534,8 @@ describe('useFilesList', () => {
         }
       );
 
-      expect(result.current.quotaStatus.canStart).toBe(true);
-      expect(result.current.quotaStatus.exceededTypes).toEqual([]);
+      expect(result.current.limitStatus.canStart).toBe(true);
+      expect(result.current.limitStatus.exceededTypes).toEqual([]);
     });
   });
 

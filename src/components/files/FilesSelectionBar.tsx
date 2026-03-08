@@ -16,7 +16,7 @@ import type { FileItemWithAIReady } from '@/lib/api/types';
 export interface FilesSelectionBarProps {
   selectedIds: string[];
   files: FileItemWithAIReady[];
-  quotaExceeded: boolean;
+  limitExceeded: boolean;
   canSourceDelete: boolean;
   canSourceDownload: boolean;
   canControlAIReady: boolean;
@@ -34,7 +34,7 @@ export interface FilesSelectionBarProps {
 export function FilesSelectionBar({
   selectedIds,
   files,
-  quotaExceeded,
+  limitExceeded,
   canSourceDelete,
   canSourceDownload,
   canControlAIReady,
@@ -101,7 +101,7 @@ export function FilesSelectionBar({
                     variant="outline"
                     size="sm"
                     onClick={onStartAIReady}
-                    disabled={quotaExceeded || batchStartPending}
+                    disabled={limitExceeded || batchStartPending}
                     className="gap-1.5"
                   >
                     {batchStartPending ? (
@@ -115,7 +115,7 @@ export function FilesSelectionBar({
                   </Button>
                 </span>
               </TooltipTrigger>
-              {quotaExceeded && (
+              {limitExceeded && (
                 <TooltipContent>
                   <p>{t('quota_exceeded_hint')}</p>
                 </TooltipContent>

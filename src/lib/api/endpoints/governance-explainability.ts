@@ -63,10 +63,15 @@ export interface GovernanceQuotaCheckResponse {
 }
 
 export interface GovernanceQuotaExceededDetails {
-  error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED';
+  error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED' | 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED';
   message: string;
   resource_type?: 'endpoint' | 'source_library' | 'agent';
   resource_id?: string;
+  limit_key?: string;
+  /**
+   * @deprecated legacy field from older backend payloads.
+   * Prefer `limit_key`.
+   */
   quota_key?: string;
   retry_after_seconds?: number;
   effective_limit?: number;
@@ -81,7 +86,7 @@ export interface GovernanceQuotaExceededDetails {
 
 export interface GovernanceEvidenceDetails extends GovernanceQuotaExceededDetails {
   governance_kind?: 'resource_policy' | 'member_quota';
-  enforcement_kind?: 'allow_list' | 'quota_limit' | 'rate_limit';
+  enforcement_kind?: 'allow_list' | 'spending_limit' | 'rate_limit' | 'quota_limit';
   route_kind?: string;
   reason?: string;
   missing_permissions?: string[];
@@ -132,6 +137,7 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
       : undefined;
   const enforcementKind =
     value.enforcement_kind === 'allow_list'
+    || value.enforcement_kind === 'spending_limit'
     || value.enforcement_kind === 'quota_limit'
     || value.enforcement_kind === 'rate_limit'
       ? value.enforcement_kind
@@ -145,6 +151,7 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
     !governanceKind
     && !enforcementKind
     && errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED'
+    && errorCode !== 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED'
     && errorCode !== 'MEMBER_QUOTA_EXCEEDED'
     && errorCode !== 'RESOURCE_POLICY_DENIED'
     && !hasForbiddenAuthz
@@ -152,14 +159,30 @@ export function getGovernanceEvidenceDetails(value: unknown): GovernanceEvidence
     return null;
   }
 
-  return value as unknown as GovernanceEvidenceDetails;
+  const normalized = {
+    ...value,
+    error_code: errorCode,
+    enforcement_kind: enforcementKind === 'quota_limit' ? 'spending_limit' : enforcementKind,
+  } as GovernanceEvidenceDetails;
+
+  if (typeof normalized.limit_key !== 'string' && typeof normalized.quota_key === 'string') {
+    normalized.limit_key = normalized.quota_key;
+  }
+
+  if (normalized.reason === 'quota_exceeded') {
+    normalized.reason = 'spending_limit_exceeded';
+  }
+
+  return normalized;
 }
 
 export function getGovernanceQuotaExceededDetails(error: unknown): GovernanceQuotaExceededDetails | null {
   if (!(error instanceof APIError)) return null;
-  if (error.errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED') return null;
-  if (!isRecord(error.details)) return null;
-  return error.details as unknown as GovernanceQuotaExceededDetails;
+  if (
+    error.errorCode !== 'RESOURCE_POLICY_QUOTA_EXCEEDED'
+    && error.errorCode !== 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED'
+  ) return null;
+  return getGovernanceEvidenceDetails(error.details);
 }
 
 export function getGovernanceRouteForbiddenDetails(error: unknown): GovernanceRouteForbiddenDetails | null {

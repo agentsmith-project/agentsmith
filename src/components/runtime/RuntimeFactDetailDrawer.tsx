@@ -303,8 +303,8 @@ export function RuntimeFactDetailDrawer({
                             <div className="mt-2 text-sm text-foreground">{formatGovernanceValue(governance.enforcement_kind)}</div>
                           </div>
                           <div>
-                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.quota_key')}</div>
-                            <div className="mt-2 font-mono text-sm text-foreground">{formatGovernanceValue(governance.quota_key)}</div>
+                            <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.limit_key')}</div>
+                            <div className="mt-2 font-mono text-sm text-foreground">{formatGovernanceValue(governance.limit_key)}</div>
                           </div>
                           <div>
                             <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.scope')}</div>

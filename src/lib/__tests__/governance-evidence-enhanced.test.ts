@@ -17,6 +17,7 @@ describe('classifyGovernanceEvidenceFocus', () => {
   it('classifies limit-related reasons', () => {
     expect(classifyGovernanceEvidenceFocus('missing_source_library_quota')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('rate_limit_exceeded')).toBe('limit');
+    expect(classifyGovernanceEvidenceFocus('spending_limit_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('max_total_files_reached')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('max_file_size_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('daily_quota_limit')).toBe('limit');

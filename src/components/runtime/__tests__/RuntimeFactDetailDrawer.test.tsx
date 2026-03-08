@@ -16,54 +16,54 @@ describe('RuntimeFactDetailDrawer', () => {
         basePath="/en-US/workspaces/ws_1/projects/proj_1"
         facts={[
           {
-            id: 'fact_quota_1',
+            id: 'fact_limit_1',
             timestamp: '2026-03-01T00:00:00.000Z',
             workspace_id: 'ws_1',
             project_id: 'proj_1',
             resource_type: 'source_library',
             resource_id: 'lib_1',
-            request_id: 'req_quota_1',
-            decision_id: 'gdec_quota_1',
+            request_id: 'req_limit_1',
+            decision_id: 'gdec_limit_1',
             requests: 1,
             result: 'error',
-            error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+            error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
             runtime: {
               provider: 'secondaryok',
               resolved_model: 'model-b',
             },
             metadata_json: {
               governance_kind: 'resource_policy',
-              enforcement_kind: 'quota_limit',
-              quota_key: 'source_library.max_total_files',
+              enforcement_kind: 'spending_limit',
+              limit_key: 'source_library.max_total_files',
               effective_limit: 200,
               current_usage: 201,
               usage_unit: 'files',
               scope: 'resource',
-              reason: 'quota_exceeded',
+              reason: 'spending_limit_exceeded',
             },
           },
         ]}
       />
     );
 
-    const governance = screen.getByTestId('runtime__detail-governance-fact_quota_1');
+    const governance = screen.getByTestId('runtime__detail-governance-fact_limit_1');
     expect(governance).toHaveTextContent('detail.governance_title');
     expect(governance).toHaveTextContent('source_library.max_total_files');
     expect(governance).toHaveTextContent('200');
     expect(governance).toHaveTextContent('201');
-    expect(governance).toHaveTextContent('quota_exceeded');
-    expect(screen.getByTestId('runtime__detail-decision-id-fact_quota_1')).toHaveTextContent('gdec_quota_1');
-    expect(screen.getByTestId('runtime__detail-open-resource-policy-fact_quota_1')).toHaveAttribute(
+    expect(governance).toHaveTextContent('spending_limit_exceeded');
+    expect(screen.getByTestId('runtime__detail-decision-id-fact_limit_1')).toHaveTextContent('gdec_limit_1');
+    expect(screen.getByTestId('runtime__detail-open-resource-policy-fact_limit_1')).toHaveAttribute(
       'href',
       expect.stringContaining('/resource-policy?resource_type=source_library'),
     );
-    expect(screen.getByTestId('runtime__detail-open-audit-fact_quota_1')).toHaveAttribute(
+    expect(screen.getByTestId('runtime__detail-open-audit-fact_limit_1')).toHaveAttribute(
       'href',
       expect.stringContaining('/audit?'),
     );
-    expect(screen.getByTestId('runtime__detail-open-audit-fact_quota_1')).toHaveAttribute(
+    expect(screen.getByTestId('runtime__detail-open-audit-fact_limit_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('decision_id=gdec_quota_1'),
+      expect.stringContaining('decision_id=gdec_limit_1'),
     );
   });
 

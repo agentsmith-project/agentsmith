@@ -45,6 +45,8 @@ export function classifyGovernanceEvidenceFocus(reason: string | undefined): Gov
     'missing_source_library_quota',
     'daily_quota',
     'quota_exceeded',
+    'spending_limit',
+    'spending_limit_exceeded',
     'limit_reached',
     'throttle',
     'throttled',

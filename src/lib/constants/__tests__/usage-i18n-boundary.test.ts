@@ -51,7 +51,7 @@ const EXPECTED_USAGE_DETAIL_KEYS = [
   'governance_title',
   'governance_kind',
   'enforcement_kind',
-  'quota_key',
+  'limit_key',
   'scope',
   'effective_limit',
   'current_usage',

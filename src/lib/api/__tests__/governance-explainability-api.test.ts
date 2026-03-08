@@ -3,6 +3,7 @@ import type { ApiClient } from '@/lib/api/client';
 import { APIError } from '@/lib/api/errors';
 import {
   GovernanceExplainabilityAPI,
+  getGovernanceEvidenceDetails,
   getGovernanceQuotaExceededDetails,
   getGovernanceRouteForbiddenDetails,
 } from '@/lib/api/endpoints/governance-explainability';
@@ -96,20 +97,34 @@ describe('GovernanceExplainabilityAPI', () => {
 
   it('extracts governance limit error details from APIError', () => {
     const error = new APIError(
-      'RESOURCE_POLICY_QUOTA_EXCEEDED',
-      'resource_policy_quota_exceeded',
+      'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
+      'resource_policy_spending_limit_exceeded',
       undefined,
       429,
       {
-        error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
-        message: 'resource_policy_quota_exceeded',
+        error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
+        message: 'resource_policy_spending_limit_exceeded',
         resource_type: 'source_library',
         resource_id: 'lib_1',
-        quota_key: 'source_library.max_file_size_bytes',
+        limit_key: 'source_library.max_file_size_bytes',
       },
     );
 
-    expect(getGovernanceQuotaExceededDetails(error)?.quota_key).toBe('source_library.max_file_size_bytes');
+    expect(getGovernanceQuotaExceededDetails(error)?.limit_key).toBe('source_library.max_file_size_bytes');
+  });
+
+  it('normalizes legacy quota payload fields to limit semantics', () => {
+    const details = getGovernanceEvidenceDetails({
+      error_code: 'RESOURCE_POLICY_QUOTA_EXCEEDED',
+      governance_kind: 'resource_policy',
+      enforcement_kind: 'quota_limit',
+      quota_key: 'endpoint.daily_token_limit',
+      reason: 'quota_exceeded',
+    });
+
+    expect(details?.enforcement_kind).toBe('spending_limit');
+    expect(details?.limit_key).toBe('endpoint.daily_token_limit');
+    expect(details?.reason).toBe('spending_limit_exceeded');
   });
 
   it('extracts governance forbidden details from APIError', () => {

@@ -254,8 +254,8 @@ export function AuditDetailDrawer({
                   <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.enforcement_kind)}</p>
                 </div>
                 <div>
-                  <span className="text-sm text-tertiary">{t('detail.quota_key')}:</span>
-                  <p className="mt-1 text-sm font-mono text-foreground">{formatGovernanceValue(governance.quota_key)}</p>
+                  <span className="text-sm text-tertiary">{t('detail.limit_key')}:</span>
+                  <p className="mt-1 text-sm font-mono text-foreground">{formatGovernanceValue(governance.limit_key)}</p>
                 </div>
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.scope')}:</span>

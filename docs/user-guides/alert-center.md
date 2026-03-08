@@ -1,5 +1,7 @@
 # Alert Center User Guide
 
+Scope boundary (current MVP): alerts are project-scoped operational signals for governance evidence and endpoint policy hot spots. This is not a release orchestration or DevOps pipeline feature.
+
 ## Overview
 
 The Alert Center helps you stay informed about important events in your project by:

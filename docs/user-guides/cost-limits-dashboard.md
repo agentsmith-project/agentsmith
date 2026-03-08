@@ -1,5 +1,7 @@
 # Cost & Limits Dashboard User Guide
 
+Scope boundary (current MVP): this guide describes project-level endpoint policy and usage visibility. It does not define workspace/global governance or DevOps platform capabilities.
+
 ## Overview
 
 The Cost & Limits Dashboard provides real-time visibility into your resource consumption, costs, and limit utilization. It helps you:

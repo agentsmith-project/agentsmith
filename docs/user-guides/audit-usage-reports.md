@@ -1,5 +1,7 @@
 # Audit & Usage Reports User Guide
 
+Scope boundary (current MVP): this guide is constrained to project-scoped governance surfaces and endpoint-centric LLM usage evidence. Do not interpret it as organization-wide governance or DevOps release-management capability.
+
 ## Overview
 
 The Audit & Usage Reports provide comprehensive visibility into:

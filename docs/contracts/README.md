@@ -20,6 +20,11 @@
 5. `route-gate-test-checklist.md`
 6. `product-terminology.md`
 
+## 参考与专题合同
+
+- `API_GUIDE.md`（API 导航入口；具体接口以 OpenAPI/AsyncAPI 为准）
+- `models-catalog-runtime-governance-contract.md`（模型目录能力启用时适用）
+
 ## 模块合同
 
 - `chat-frontend-module-map.md`

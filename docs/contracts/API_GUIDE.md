@@ -1,366 +1,48 @@
-# MBOS API Developer Guide
+# API Guide
 
-**Last Updated:** 2026-03-04
-**API Version:** 1.0.0
-**Base URL:** `/api/v1`
+Last updated: 2026-03-08  
+Status: `current-baseline`
 
-## Overview
+## Purpose
 
-The MBOS (Microservices-Based Agent System) API provides REST endpoints for managing workspaces, projects, agents, endpoints, sources, and more. This guide is for frontend developers and API consumers.
+This document is a navigation entry for API consumers.
 
-## Table of Contents
+Authoritative API truth must come from machine-readable contracts:
 
-- [Authentication](#authentication)
-- [Common Patterns](#common-patterns)
-- [API Endpoints](#api-endpoints)
-- [Error Codes](#error-codes)
-- [Rate Limiting](#rate-limiting)
-- [SSE Events](#sse-events)
+1. `docs/contracts/specs/openapi.yaml` / `openapi.json`
+2. `docs/contracts/specs/asyncapi.yaml` / `asyncapi.json`
 
-## Authentication
+This guide does not define independent endpoint semantics.
 
-All API requests require authentication via Bearer token:
+## Scope Boundary
 
-```bash
-curl -H "Authorization: Bearer <token>" https://api.example.com/api/v1/workspaces
-```
+- AgentSmith MVP focuses on AI frontend usage, agent runtime management, and project-scoped resource policy/limits.
+- Any `release` / `gate` naming in repo scripts is engineering workflow terminology, not product DevOps capability.
 
-### Token Sources
+## How To Use API Contracts
 
-1. **Keycloak** (production): JWT tokens from `/realms/mbos/protocol/openid-connect`
-2. **MSW** (development): Mock tokens for testing
-
-### Authorization
-
-Token must include permissions for the requested resource. See [auth-permission-model.md](../contracts/auth-permission-model.md) for details.
-
-## Common Patterns
-
-### Path Parameters
-
-- `workspaceId`: Workspace UUID (e.g., `ws_abc123`)
-- `projectId`: Project UUID (e.g., `proj_def456`)
-- `endpointId`: Endpoint UUID
-
-### Response Format
-
-All responses use JSON:
-
-```json
-{
-  "data": { ... },
-  "error": null
-}
-```
-
-### Pagination
-
-List endpoints support pagination:
+1. Read auth and permission rules in `auth-permission-model.md`.
+2. Use OpenAPI for REST route/path/params/error schema.
+3. Use AsyncAPI and runtime protocol contracts for stream/websocket semantics.
+4. Run contract checks before merge:
 
 ```bash
-GET /api/v1/workspaces/{workspaceId}/projects?page=1&page_size=25
-```
-
-Response:
-```json
-{
-  "items": [...],
-  "total": 100,
-  "page": 1,
-  "page_size": 25,
-  "has_more": true
-}
-```
-
-## API Endpoints
-
-### System
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/v1/openapi.json` | Get OpenAPI spec |
-| GET | `/api/v1/asyncapi.json` | Get AsyncAPI spec |
-
-### Workspaces
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces` | List workspaces | `workspace:read` |
-| POST | `/api/v1/workspaces` | Create workspace | `workspace:project:create` |
-
-### Projects
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects` | List projects | `workspace:read` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects` | Create project | `workspace:project:create` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Get project | `project:endpoint:use` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Update project | `project:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}` | Delete project | `project:manage` |
-
-### Authorization (Epic A1)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/authorize` | Unified authorization check | `project:manage` |
-
-### SSE (Epic B1)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| POST | `/api/v1/sse-ticket` | Exchange JWT for SSE ticket | (authenticated) |
-
-### Governance (Epic B2)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:manage` |
-| PATCH | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/resources/endpoint/{endpointId}/policy` | Update endpoint rate/spending policy | `project:manage` |
-
-### Chat
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat` | Send chat message | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/{threadId}` | Get chat thread | `project:endpoint:use` |
-
-### Agents
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | List agents | `project:agent:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents` | Create agent | `project:agent:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Get agent | `project:agent:manage` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Update agent | `project:agent:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}` | Delete agent | `project:agent:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/run` | Run agent task | `project:agent:manage` |
-
-### Endpoints
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | List endpoints | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints` | Create endpoint | `project:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Get endpoint | `project:endpoint:use` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Update endpoint | `project:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints/{endpointId}` | Delete endpoint | `project:manage` |
-
-### Sources (Files)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | List sources | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources` | Create source | `project:manage` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Get source | `project:endpoint:use` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Update source | `project:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}` | Delete source | `project:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/upload` | Upload file | `project:manage` |
-
-### Credentials
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials` | List credentials | `project:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials` | Create credential | `project:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}` | Delete credential | `project:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/credentials/{credentialId}/rotate` | Rotate credential | `project:manage` |
-
-### Members
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members` | List members | `project:manage` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites` | Create invite | `project:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites/{inviteId}` | Delete invite | `project:manage` |
-| PUT | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}` | Update member | `project:manage` |
-| DELETE | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/members/{userId}` | Remove member | `project:manage` |
-
-### Audit Logs
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit` | Get audit logs | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export` | Export audit logs | `project:manage` |
-
-### Usage
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage` | Get usage stats | `project:endpoint:use` |
-
-### Notebook (AI Studio)
-
-| Method | Endpoint | Description | Permission |
-|--------|----------|-------------|-------------|
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks` | List tasks | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks` | Create task | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}` | Get task | `project:endpoint:use` |
-| POST | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}/execute` | Execute task | `project:endpoint:use` |
-| GET | `/api/v1/workspaces/{workspaceId}/projects/{projectId}/notebook/tasks/{taskId}/trace` | Get execution trace | `project:endpoint:use` |
-
-## Error Codes
-
-### HTTP Status Codes
-
-| Code | Description | Example |
-|------|-------------|---------|
-| 200 | Success | Request completed successfully |
-| 201 | Created | Resource created successfully |
-| 204 | No Content | Request succeeded with no response body |
-| 400 | Bad Request | Invalid request parameters |
-| 401 | Unauthorized | Missing or invalid authentication token |
-| 403 | Forbidden | Valid token but insufficient permissions |
-| 404 | Not Found | Resource does not exist |
-| 409 | Conflict | Resource already exists or state conflict |
-| 422 | Unprocessable Entity | Validation error |
-| 429 | Too Many Requests | Rate limit exceeded |
-| 500 | Internal Server Error | Server error |
-
-### Error Response Format
-
-```json
-{
-  "error": {
-    "code": "PERMISSION_DENIED",
-    "message": "You do not have permission to perform this action",
-    "details": {
-      "required_permission": "project:manage",
-      "resource": "proj_123"
-    }
-  }
-}
-```
-
-### Common Error Codes
-
-| Code | Description |
-|------|-------------|
-| `UNAUTHORIZED` | Missing or invalid token |
-| `PERMISSION_DENIED` | Insufficient permissions |
-| `RESOURCE_NOT_FOUND` | Resource does not exist |
-| `RESOURCE_ALREADY_EXISTS` | Conflict with existing resource |
-| `VALIDATION_ERROR` | Invalid request parameters |
-| `RATE_LIMIT_EXCEEDED` | Too many requests |
-| `RESOURCE_POLICY_SPENDING_LIMITED` | Endpoint spending limit exceeded |
-| `INTERNAL_ERROR` | Unexpected server error |
-
-### Chat Multimodal Validation Notes
-
-- `422 VALIDATION_ERROR` + `chat_endpoint_not_multimodal`: endpoint binding does not support image/file parts.
-- `422 VALIDATION_ERROR` + `external_agent_not_multimodal`: external agent binding does not support image/file parts.
-- `422 VALIDATION_ERROR` + `chat_attachment_image_data_url_unavailable`: image attachment cannot be converted into required `data:image/*;base64,...` payload for upstream request.
-
-## Rate Limiting
-
-API requests are rate-limited per project. Limits are configured per endpoint type:
-
-- **Chat endpoints**: 60 requests/minute
-- **Agent execution**: 30 requests/minute
-- **Read operations**: 120 requests/minute
-
-Rate limit headers are included in responses:
-
-```
-X-RateLimit-Limit: 60
-X-RateLimit-Remaining: 45
-X-RateLimit-Reset: 1677648000
-```
-
-## SSE Events
-
-Server-Sent Events (SSE) are used for real-time updates:
-
-1. **Exchange JWT for SSE ticket**: `POST /api/v1/sse-ticket`
-2. **Connect to SSE endpoint**: `GET /api/v1/sse?ticket=<ticket>`
-
-### SSE Event Types
-
-| Event | Description |
-|-------|-------------|
-| `agent.progress` | Agent execution progress |
-| `agent.message` | Agent message chunk |
-| `agent.artifact` | Agent artifact created |
-| `agent.error` | Agent execution error |
-| `agent.done` | Agent execution complete |
-
-See [asyncapi.yaml](specs/asyncapi.yaml) for SSE protocol details.
-
-## Schema Reference
-
-### Common Schemas
-
-#### Workspace
-```typescript
-interface Workspace {
-  id: string;
-  name: string;
-  created_at: string;
-  updated_at: string;
-}
-```
-
-#### Project
-```typescript
-interface Project {
-  id: string;
-  workspace_id: string;
-  name: string;
-  description?: string;
-  created_at: string;
-  updated_at: string;
-}
-```
-
-#### Endpoint
-```typescript
-interface Endpoint {
-  id: string;
-  project_id: string;
-  name: string;
-  endpoint_type: 'chat' | 'completion';
-  model: string;
-  settings: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-```
-
-#### Agent
-```typescript
-interface Agent {
-  id: string;
-  project_id: string;
-  name: string;
-  description?: string;
-  system_prompt?: string;
-  tools: string[];
-  settings: Record<string, unknown>;
-  created_at: string;
-  updated_at: string;
-}
-```
-
-## Related Documentation
-
-- [OpenAPI Spec](specs/openapi.yaml) - Full API specification
-- [AsyncAPI Spec](specs/asyncapi.yaml) - SSE event specification
-- [Auth Permission Model](auth-permission-model.md) - Permission system
-- [Product Terminology](product-terminology.md) - Domain terms
-
-## Validation
-
-Run these commands before committing API changes:
-
-```bash
-# Check OpenAPI spec validity
+npm run contracts:check
 npm run contracts:check-openapi
-
-# Check for breaking changes
-npm run contracts:check-openapi-breaking
-
-# Generate TypeScript types from spec
-npm run openapi:generate
-
-# Check generated types are in sync
 npm run openapi:check-generated
 ```
+
+## Key Contract Index
+
+- Auth & Permission: `auth-permission-model.md`
+- Frontend Token Interaction: `frontend-token-interaction-contract.md`
+- Resource Governance: `frontend-resource-policy-governance-v1.md`
+- Endpoint Capabilities: `endpoints-capability-contract.md`
+- Endpoint Proxy Bridge: `endpoint-proxy-protocol-bridge-contract.md`
+- Notebook/Chat/Files/Projects module maps: see `docs/contracts/README.md`
+
+## Notes for Consumers
+
+- Backend is the only authority for authorization and policy enforcement.
+- Frontend permission gates are UX and routing guards, not security substitutes.
+- For audit/usage and policy verification, prefer evidence from real-backend smoke outputs.

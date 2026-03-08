@@ -2,6 +2,8 @@
 
 仅保留当前有效的用户操作指南。
 
+术语边界：若出现 `release` / `gate` 命令命名，默认是工程验收与排障脚本，不代表产品 DevOps 能力。
+
 基线入口：
 
 - [Current Baseline (Whitelist)](../CURRENT_BASELINE.md)

@@ -6,7 +6,7 @@ import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { UsageFactDetailDrawer } from '@/components/audit-usage/UsageFactDetailDrawer';
+import { RuntimeFactDetailDrawer } from '@/components/runtime/RuntimeFactDetailDrawer';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { TimeRangePicker, type TimeRange } from '@/components/audit-usage/TimeRangePicker';
@@ -548,7 +548,7 @@ export function RuntimeObservabilityConsole({
         </section>
       </div>
       </div>
-      <UsageFactDetailDrawer
+      <RuntimeFactDetailDrawer
         open={!!drillDown}
         onOpenChange={(open) => {
           if (!open) setDrillDown(null);

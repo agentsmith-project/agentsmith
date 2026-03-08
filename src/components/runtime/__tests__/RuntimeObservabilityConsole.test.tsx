@@ -177,7 +177,7 @@ describe('RuntimeObservabilityConsole', () => {
       }),
       expect.objectContaining({ enabled: true }),
     );
-    expect(screen.getByTestId('usage__detail-summary__requests')).toHaveTextContent('1');
-    expect(screen.getByTestId('usage__detail-fact-fact_1')).toHaveTextContent('secondaryok');
+    expect(screen.getByTestId('runtime__detail-summary__requests')).toHaveTextContent('1');
+    expect(screen.getByTestId('runtime__detail-fact-fact_1')).toHaveTextContent('secondaryok');
   });
 });

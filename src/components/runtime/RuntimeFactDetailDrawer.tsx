@@ -11,7 +11,7 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { JSONViewer } from './JSONViewer';
+import { JSONViewer } from '@/components/audit-usage/JSONViewer';
 import type { UsageFactRecord } from '@/lib/api/types';
 import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
@@ -27,7 +27,7 @@ type AttemptTrace = {
   durationMs?: number;
 };
 
-export interface UsageFactDetailDrawerProps {
+export interface RuntimeFactDetailDrawerProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   facts: UsageFactRecord[];
@@ -78,14 +78,14 @@ function getEvidenceWindow(timestamp: string): { start_time: string; end_time: s
   };
 }
 
-export function UsageFactDetailDrawer({
+export function RuntimeFactDetailDrawer({
   open,
   onOpenChange,
   facts,
   loading = false,
   aggregateLabel,
   basePath,
-}: UsageFactDetailDrawerProps) {
+}: RuntimeFactDetailDrawerProps) {
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
 
@@ -114,15 +114,15 @@ export function UsageFactDetailDrawer({
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
           <div className="grid gap-3 md:grid-cols-3">
-            <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage__detail-summary__requests">
+            <div className="rounded-xl border border-border bg-surface p-4" data-testid="runtime__detail-summary__requests">
               <div className="text-xs uppercase tracking-[0.14em] text-tertiary">{t('detail.requests')}</div>
               <div className="mt-2 text-2xl font-semibold text-foreground">{facts.length}</div>
             </div>
-            <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage__detail-summary__recovered">
+            <div className="rounded-xl border border-border bg-surface p-4" data-testid="runtime__detail-summary__recovered">
               <div className="text-xs uppercase tracking-[0.14em] text-tertiary">{t('detail.recovered')}</div>
               <div className="mt-2 text-2xl font-semibold text-foreground">{recoveredCount}</div>
             </div>
-            <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage__detail-summary__cost">
+            <div className="rounded-xl border border-border bg-surface p-4" data-testid="runtime__detail-summary__cost">
               <div className="text-xs uppercase tracking-[0.14em] text-tertiary">{t('detail.cost')}</div>
               <div className="mt-2 text-2xl font-semibold text-foreground">{formatUsd(totalCost)}</div>
             </div>
@@ -139,7 +139,7 @@ export function UsageFactDetailDrawer({
               {commonT('loading')}
             </div>
           ) : facts.length === 0 ? (
-            <div className="mt-6 rounded-xl border border-border border-dashed bg-surface p-6 text-sm text-tertiary" data-testid="usage__detail-empty">
+            <div className="mt-6 rounded-xl border border-border border-dashed bg-surface p-6 text-sm text-tertiary" data-testid="runtime__detail-empty">
               {t('detail.empty')}
             </div>
           ) : (
@@ -192,7 +192,7 @@ export function UsageFactDetailDrawer({
                   <section
                     key={fact.id}
                     className="rounded-2xl border border-border bg-surface shadow-sm"
-                    data-testid={`usage__detail-fact-${fact.id}`}
+                    data-testid={`runtime__detail-fact-${fact.id}`}
                   >
                     <div className="border-b border-subtle px-5 py-4">
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -233,7 +233,7 @@ export function UsageFactDetailDrawer({
                       </div>
                       <div>
                         <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.decision_id')}</div>
-                        <div className="mt-2 font-mono text-sm text-foreground" data-testid={`usage__detail-decision-id-${fact.id}`}>
+                        <div className="mt-2 font-mono text-sm text-foreground" data-testid={`runtime__detail-decision-id-${fact.id}`}>
                           {fact.decision_id ?? '--'}
                         </div>
                       </div>
@@ -251,7 +251,7 @@ export function UsageFactDetailDrawer({
 
                     <div className="border-t border-subtle px-5 py-4">
                       <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('detail.pricing_version')}</div>
-                      <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`usage__detail-pricing-version-${fact.id}`}>
+                      <div className="mt-2 flex flex-wrap items-center gap-2" data-testid={`runtime__detail-pricing-version-${fact.id}`}>
                         <code className="rounded bg-surface-high px-2 py-1 text-xs text-foreground">
                           {fact.runtime?.pricing_version ?? '--'}
                         </code>
@@ -260,7 +260,7 @@ export function UsageFactDetailDrawer({
                     </div>
 
                     {governance ? (
-                      <div className="border-t border-subtle px-5 py-4" data-testid={`usage__detail-governance-${fact.id}`}>
+                      <div className="border-t border-subtle px-5 py-4" data-testid={`runtime__detail-governance-${fact.id}`}>
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.governance_title')}</div>
                           <div className="flex flex-wrap items-center gap-2">
@@ -268,7 +268,7 @@ export function UsageFactDetailDrawer({
                               <Link
                                 href={membersHref}
                                 className="text-xs text-primary underline-offset-2 hover:underline"
-                                data-testid={`usage__detail-open-member-${fact.id}`}
+                                data-testid={`runtime__detail-open-member-${fact.id}`}
                               >
                                 {t('detail.open_member_access')}
                               </Link>
@@ -277,7 +277,7 @@ export function UsageFactDetailDrawer({
                               <Link
                                 href={resourcePolicyHref}
                                 className="text-xs text-primary underline-offset-2 hover:underline"
-                                data-testid={`usage__detail-open-resource-policy-${fact.id}`}
+                                data-testid={`runtime__detail-open-resource-policy-${fact.id}`}
                               >
                                 {t('detail.open_resource_policy')}
                               </Link>
@@ -286,7 +286,7 @@ export function UsageFactDetailDrawer({
                               <Link
                                 href={auditHref}
                                 className="text-xs text-primary underline-offset-2 hover:underline"
-                                data-testid={`usage__detail-open-audit-${fact.id}`}
+                                data-testid={`runtime__detail-open-audit-${fact.id}`}
                               >
                                 {t('detail.open_audit')}
                               </Link>
@@ -357,7 +357,7 @@ export function UsageFactDetailDrawer({
                     <div className="border-t border-subtle px-5 py-4">
                       <div className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('detail.timeline_title')}</div>
                       {attempts.length > 0 ? (
-                        <div className="mt-3 space-y-3" data-testid={`usage__detail-timeline-${fact.id}`}>
+                        <div className="mt-3 space-y-3" data-testid={`runtime__detail-timeline-${fact.id}`}>
                           {attempts.map((attempt, index) => (
                             <div key={`${fact.id}-${index}`} className="rounded-xl border border-border/70 bg-surface-high/60 p-3">
                               <div className="flex flex-wrap items-start justify-between gap-3">

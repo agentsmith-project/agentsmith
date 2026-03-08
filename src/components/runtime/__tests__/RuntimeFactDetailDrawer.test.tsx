@@ -1,16 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { UsageFactDetailDrawer } from '../UsageFactDetailDrawer';
+import { RuntimeFactDetailDrawer } from '../RuntimeFactDetailDrawer';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
     params ? `${key}:${JSON.stringify(params)}` : key,
 }));
 
-describe('UsageFactDetailDrawer', () => {
+describe('RuntimeFactDetailDrawer', () => {
   it('renders governance limit evidence details from fact metadata', () => {
     render(
-      <UsageFactDetailDrawer
+      <RuntimeFactDetailDrawer
         open
         onOpenChange={() => {}}
         basePath="/en-US/workspaces/ws_1/projects/proj_1"
@@ -46,22 +46,22 @@ describe('UsageFactDetailDrawer', () => {
       />
     );
 
-    const governance = screen.getByTestId('usage__detail-governance-fact_quota_1');
+    const governance = screen.getByTestId('runtime__detail-governance-fact_quota_1');
     expect(governance).toHaveTextContent('detail.governance_title');
     expect(governance).toHaveTextContent('source_library.max_total_files');
     expect(governance).toHaveTextContent('200');
     expect(governance).toHaveTextContent('201');
     expect(governance).toHaveTextContent('quota_exceeded');
-    expect(screen.getByTestId('usage__detail-decision-id-fact_quota_1')).toHaveTextContent('gdec_quota_1');
-    expect(screen.getByTestId('usage__detail-open-resource-policy-fact_quota_1')).toHaveAttribute(
+    expect(screen.getByTestId('runtime__detail-decision-id-fact_quota_1')).toHaveTextContent('gdec_quota_1');
+    expect(screen.getByTestId('runtime__detail-open-resource-policy-fact_quota_1')).toHaveAttribute(
       'href',
       expect.stringContaining('/resource-policy?resource_type=source_library'),
     );
-    expect(screen.getByTestId('usage__detail-open-audit-fact_quota_1')).toHaveAttribute(
+    expect(screen.getByTestId('runtime__detail-open-audit-fact_quota_1')).toHaveAttribute(
       'href',
       expect.stringContaining('/audit?'),
     );
-    expect(screen.getByTestId('usage__detail-open-audit-fact_quota_1')).toHaveAttribute(
+    expect(screen.getByTestId('runtime__detail-open-audit-fact_quota_1')).toHaveAttribute(
       'href',
       expect.stringContaining('decision_id=gdec_quota_1'),
     );
@@ -69,7 +69,7 @@ describe('UsageFactDetailDrawer', () => {
 
   it('renders forbidden membership and missing permission evidence', () => {
     render(
-      <UsageFactDetailDrawer
+      <RuntimeFactDetailDrawer
         open
         onOpenChange={() => {}}
         basePath="/en-US/workspaces/ws_1/projects/proj_1"
@@ -97,10 +97,10 @@ describe('UsageFactDetailDrawer', () => {
       />
     );
 
-    const governance = screen.getByTestId('usage__detail-governance-fact_forbidden_1');
+    const governance = screen.getByTestId('runtime__detail-governance-fact_forbidden_1');
     expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
-    expect(screen.getByTestId('usage__detail-decision-id-fact_forbidden_1')).toHaveTextContent('gdec_forbidden_1');
-    expect(screen.queryByTestId('usage__detail-open-resource-policy-fact_forbidden_1')).not.toBeInTheDocument();
+    expect(screen.getByTestId('runtime__detail-decision-id-fact_forbidden_1')).toHaveTextContent('gdec_forbidden_1');
+    expect(screen.queryByTestId('runtime__detail-open-resource-policy-fact_forbidden_1')).not.toBeInTheDocument();
   });
 });

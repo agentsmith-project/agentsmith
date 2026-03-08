@@ -59,6 +59,14 @@ describe('AuditDetailDrawer', () => {
       'href',
       expect.stringContaining('/resource-policy?resource_type=source_library'),
     );
+    expect(screen.getByTestId('audit__detail-open-usage')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/usage?'),
+    );
+    expect(screen.getByTestId('audit__detail-open-usage')).toHaveAttribute(
+      'href',
+      expect.stringContaining('decision_id=gdec_1'),
+    );
   });
 
   it('renders forbidden explainability details from audit metadata', () => {

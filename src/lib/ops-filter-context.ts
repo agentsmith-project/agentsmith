@@ -6,6 +6,12 @@ export type SharedOpsFilterContext = {
   end_time: string;
   provider?: string;
   model?: string;
+  request_id?: string;
+  decision_id?: string;
+  trace_ref?: string;
+  trace_incident_id?: string;
+  trace_escalation_id?: string;
+  trace_run_id?: string;
   result?: SharedOpsResultFilter;
   error_class?: SharedOpsErrorClassFilter;
 };
@@ -22,11 +28,23 @@ export function parseSharedOpsFilterContext(searchParams: SearchParamReader): Pa
   const endTime = searchParams.get('end_time');
   const provider = searchParams.get('provider');
   const model = searchParams.get('model');
+  const requestId = searchParams.get('request_id');
+  const decisionId = searchParams.get('decision_id');
+  const traceRef = searchParams.get('trace_ref');
+  const traceIncidentId = searchParams.get('trace_incident_id');
+  const traceEscalationId = searchParams.get('trace_escalation_id');
+  const traceRunId = searchParams.get('trace_run_id');
 
   if (startTime) parsed.start_time = startTime;
   if (endTime) parsed.end_time = endTime;
   if (provider) parsed.provider = provider;
   if (model) parsed.model = model;
+  if (requestId) parsed.request_id = requestId;
+  if (decisionId) parsed.decision_id = decisionId;
+  if (traceRef) parsed.trace_ref = traceRef;
+  if (traceIncidentId) parsed.trace_incident_id = traceIncidentId;
+  if (traceEscalationId) parsed.trace_escalation_id = traceEscalationId;
+  if (traceRunId) parsed.trace_run_id = traceRunId;
   if (resultValue === 'ok' || resultValue === 'error') parsed.result = resultValue;
   if (
     errorClassValue === 'provider_retryable'
@@ -50,6 +68,12 @@ export function buildSharedOpsFilterQuery(
     end_time: filters.end_time,
     provider: filters.provider,
     model: filters.model,
+    request_id: filters.request_id,
+    decision_id: filters.decision_id,
+    trace_ref: filters.trace_ref,
+    trace_incident_id: filters.trace_incident_id,
+    trace_escalation_id: filters.trace_escalation_id,
+    trace_run_id: filters.trace_run_id,
     result: filters.result,
     error_class: filters.error_class,
     ...extras,

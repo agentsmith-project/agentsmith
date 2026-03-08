@@ -57,6 +57,14 @@ describe('UsageFactDetailDrawer', () => {
       'href',
       expect.stringContaining('/resource-policy?resource_type=source_library'),
     );
+    expect(screen.getByTestId('usage__detail-open-audit-fact_quota_1')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/audit?'),
+    );
+    expect(screen.getByTestId('usage__detail-open-audit-fact_quota_1')).toHaveAttribute(
+      'href',
+      expect.stringContaining('decision_id=gdec_quota_1'),
+    );
   });
 
   it('renders forbidden membership and missing permission evidence', () => {

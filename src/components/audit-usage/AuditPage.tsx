@@ -68,6 +68,53 @@ function metadataContainsString(value: unknown, expected: string): boolean {
   return false;
 }
 
+function matchesAuditInvestigationFilters(event: AuditEvent, filters: AuditListParams): boolean {
+  const metadata = event.metadata_json ?? {};
+  const decisionId = typeof metadata.decision_id === 'string' ? metadata.decision_id : undefined;
+  const traceCandidates = [
+    event.trace_ref,
+    event.trace_incident_id,
+    event.trace_escalation_id,
+    event.trace_run_id,
+    typeof metadata.trace_ref === 'string' ? metadata.trace_ref : undefined,
+    typeof metadata.trace_incident_id === 'string' ? metadata.trace_incident_id : undefined,
+    typeof metadata.trace_escalation_id === 'string' ? metadata.trace_escalation_id : undefined,
+    typeof metadata.trace_run_id === 'string' ? metadata.trace_run_id : undefined,
+  ].filter((value): value is string => !!value && value.trim().length > 0);
+
+  if (filters.request_id && event.request_id !== filters.request_id) {
+    return false;
+  }
+  if (filters.decision_id && event.decision_id !== filters.decision_id && decisionId !== filters.decision_id) {
+    return false;
+  }
+  if (filters.trace_ref && !traceCandidates.includes(filters.trace_ref) && !metadataContainsString(metadata, filters.trace_ref)) {
+    return false;
+  }
+  if (
+    filters.trace_incident_id
+    && event.trace_incident_id !== filters.trace_incident_id
+    && !metadataContainsString(metadata, filters.trace_incident_id)
+  ) {
+    return false;
+  }
+  if (
+    filters.trace_escalation_id
+    && event.trace_escalation_id !== filters.trace_escalation_id
+    && !metadataContainsString(metadata, filters.trace_escalation_id)
+  ) {
+    return false;
+  }
+  if (
+    filters.trace_run_id
+    && event.trace_run_id !== filters.trace_run_id
+    && !metadataContainsString(metadata, filters.trace_run_id)
+  ) {
+    return false;
+  }
+  return true;
+}
+
 function findTraceMatchedAuditEvent(
   events: AuditEvent[],
   trace: {
@@ -121,6 +168,20 @@ function buildAuditFiltersFromSearchParams(
   const result = resultRaw === 'ok' || resultRaw === 'error' ? resultRaw : undefined;
   const sortBy = sortByRaw === 'timestamp' ? sortByRaw : 'timestamp';
   const sortOrder = sortOrderRaw === 'asc' || sortOrderRaw === 'desc' ? sortOrderRaw : 'desc';
+  const requestId = searchParams.get('request_id') ?? undefined;
+  const decisionId = searchParams.get('decision_id') ?? undefined;
+  const traceRef = searchParams.get('trace_ref') ?? undefined;
+  const traceIncidentId = searchParams.get('trace_incident_id') ?? undefined;
+  const traceEscalationId = searchParams.get('trace_escalation_id') ?? undefined;
+  const traceRunId = searchParams.get('trace_run_id') ?? undefined;
+  const investigationMode = !!(
+    requestId
+    || decisionId
+    || traceRef
+    || traceIncidentId
+    || traceEscalationId
+    || traceRunId
+  );
   return {
     start_time: asValidIsoTimestamp(searchParams.get('start_time')) ?? defaults.start_time,
     end_time: asValidIsoTimestamp(searchParams.get('end_time')) ?? defaults.end_time,
@@ -130,9 +191,15 @@ function buildAuditFiltersFromSearchParams(
     end_user_id: searchParams.get('end_user_id') ?? defaultEndUserId,
     resource_type: searchParams.get('resource_type') ?? undefined,
     resource_id: searchParams.get('resource_id') ?? undefined,
+    request_id: requestId,
+    decision_id: decisionId,
+    trace_ref: traceRef,
+    trace_incident_id: traceIncidentId,
+    trace_escalation_id: traceEscalationId,
+    trace_run_id: traceRunId,
     result,
     page: asPositiveInt(searchParams.get('page')) ?? 1,
-    page_size: asPositiveInt(searchParams.get('page_size')) ?? 25,
+    page_size: asPositiveInt(searchParams.get('page_size')) ?? (investigationMode ? 200 : 25),
     sort_by: sortBy,
     sort_order: sortOrder,
   };
@@ -164,20 +231,24 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const { data, isLoading, error } = useAuditEvents(workspaceId, projectId, filters, {
     enabled: canReadAudit,
   });
+  const auditItems = React.useMemo(() => {
+    const items = data?.items ?? [];
+    return items.filter((event) => matchesAuditInvestigationFilters(event, filters));
+  }, [data?.items, filters]);
 
   React.useEffect(() => {
     setFilters(buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId));
   }, [defaultEndUserId, searchParams, searchParamsKey]);
 
   React.useEffect(() => {
-    if (!traceRef || !data?.items || data.items.length === 0) {
+    if (!traceRef || auditItems.length === 0) {
       setTraceMatchStatus(traceRef ? 'unmatched' : null);
       return;
     }
     if (lastAutoOpenedTraceRef.current === traceRef) {
       return;
     }
-    const matched = findTraceMatchedAuditEvent(data.items, {
+    const matched = findTraceMatchedAuditEvent(auditItems, {
       ref: traceRef,
       incidentId: traceIncidentId,
       escalationId: traceEscalationId,
@@ -191,7 +262,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
       return;
     }
     setTraceMatchStatus('unmatched');
-  }, [data?.items, traceEscalationId, traceIncidentId, traceRef, traceRunId]);
+  }, [auditItems, traceEscalationId, traceIncidentId, traceRef, traceRunId]);
 
   if (!canReadAudit) {
     return (
@@ -264,10 +335,18 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
 
   const currentPage = data?.page ?? filters.page ?? 1;
   const pageSize = data?.page_size ?? filters.page_size ?? 25;
-  const totalItems = data?.total ?? 0;
+  const totalItems = auditItems.length;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const hasInvestigationFilter = !!(
+    filters.request_id
+    || filters.decision_id
+    || filters.trace_ref
+    || filters.trace_incident_id
+    || filters.trace_escalation_id
+    || filters.trace_run_id
+  );
   const canGoPrev = currentPage > 1;
-  const canGoNext = !!data?.has_more || currentPage < totalPages;
+  const canGoNext = !hasInvestigationFilter && (!!data?.has_more || currentPage < totalPages);
 
   if (error) {
     return (
@@ -395,7 +474,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
 
       <div className="flex-1 min-h-0 overflow-y-auto">
         <AuditTable
-          data={data?.items || []}
+          data={auditItems}
           loading={isLoading}
           onViewDetails={handleViewDetails}
           onClearFilters={handleClearFilters}

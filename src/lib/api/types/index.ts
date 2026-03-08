@@ -531,6 +531,12 @@ export interface AuditListParams extends PaginationParams {
   end_user_id?: string;
   resource_type?: string;
   resource_id?: string;
+  request_id?: string;
+  decision_id?: string;
+  trace_ref?: string;
+  trace_incident_id?: string;
+  trace_escalation_id?: string;
+  trace_run_id?: string;
   result?: 'ok' | 'error';
   sort_by?: 'timestamp';
   sort_order?: 'asc' | 'desc';
@@ -544,6 +550,12 @@ export interface UsageListParams extends PaginationParams {
   end_user_id?: string;
   provider?: string;
   model?: string;
+  request_id?: string;
+  decision_id?: string;
+  trace_ref?: string;
+  trace_incident_id?: string;
+  trace_escalation_id?: string;
+  trace_run_id?: string;
   result?: 'ok' | 'error';
   error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   group_by?: 'day' | 'hour' | 'minute';

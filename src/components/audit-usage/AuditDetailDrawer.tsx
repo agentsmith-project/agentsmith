@@ -40,6 +40,21 @@ function getDefaultGovernanceAction(resourceType?: string): string {
   return 'invoke';
 }
 
+function getEvidenceWindow(timestamp: string): { start_time: string; end_time: string } {
+  const center = new Date(timestamp);
+  if (Number.isNaN(center.getTime())) {
+    const now = new Date();
+    return {
+      start_time: new Date(now.getTime() - 30 * 60 * 1000).toISOString(),
+      end_time: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+    };
+  }
+  return {
+    start_time: new Date(center.getTime() - 30 * 60 * 1000).toISOString(),
+    end_time: new Date(center.getTime() + 30 * 60 * 1000).toISOString(),
+  };
+}
+
 export function AuditDetailDrawer({
   open,
   onOpenChange,
@@ -71,6 +86,21 @@ export function AuditDetailDrawer({
       explain_subject_type: event.end_user_id ? 'user' : undefined,
       explain_subject_id: event.end_user_id,
       explain_action: getDefaultGovernanceAction(event.resource_type),
+    })}`
+    : null;
+  const evidenceWindow = getEvidenceWindow(event.timestamp);
+  const usageHref = basePath
+    ? `${basePath}/usage${buildSharedOpsFilterQuery(evidenceWindow, {
+      resource_type: event.resource_type,
+      resource_id: event.resource_id,
+      end_user_id: event.end_user_id,
+      result: event.result,
+      request_id: event.request_id,
+      decision_id: event.decision_id,
+      trace_ref: event.trace_ref,
+      trace_incident_id: event.trace_incident_id,
+      trace_escalation_id: event.trace_escalation_id,
+      trace_run_id: event.trace_run_id,
     })}`
     : null;
 
@@ -201,6 +231,15 @@ export function AuditDetailDrawer({
                       data-testid="audit__detail-open-resource-policy"
                     >
                       {t('detail.open_resource_policy')}
+                    </Link>
+                  ) : null}
+                  {usageHref ? (
+                    <Link
+                      href={usageHref}
+                      className="text-xs text-primary underline-offset-2 hover:underline"
+                      data-testid="audit__detail-open-usage"
+                    >
+                      {t('detail.open_usage')}
                     </Link>
                   ) : null}
                 </div>

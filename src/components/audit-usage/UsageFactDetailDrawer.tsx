@@ -63,6 +63,21 @@ function getDefaultGovernanceAction(resourceType?: string): string {
   return 'invoke';
 }
 
+function getEvidenceWindow(timestamp: string): { start_time: string; end_time: string } {
+  const center = new Date(timestamp);
+  if (Number.isNaN(center.getTime())) {
+    const now = new Date();
+    return {
+      start_time: new Date(now.getTime() - 30 * 60 * 1000).toISOString(),
+      end_time: new Date(now.getTime() + 30 * 60 * 1000).toISOString(),
+    };
+  }
+  return {
+    start_time: new Date(center.getTime() - 30 * 60 * 1000).toISOString(),
+    end_time: new Date(center.getTime() + 30 * 60 * 1000).toISOString(),
+  };
+}
+
 export function UsageFactDetailDrawer({
   open,
   onOpenChange,
@@ -152,6 +167,25 @@ export function UsageFactDetailDrawer({
                     explain_subject_type: fact.end_user_id ? 'user' : undefined,
                     explain_subject_id: fact.end_user_id,
                     explain_action: getDefaultGovernanceAction(fact.resource_type),
+                  })}`
+                  : null;
+                const metadata = fact.metadata_json ?? {};
+                const traceRef = typeof metadata.trace_ref === 'string' ? metadata.trace_ref : undefined;
+                const traceIncidentId = typeof metadata.trace_incident_id === 'string' ? metadata.trace_incident_id : undefined;
+                const traceEscalationId = typeof metadata.trace_escalation_id === 'string' ? metadata.trace_escalation_id : undefined;
+                const traceRunId = typeof metadata.trace_run_id === 'string' ? metadata.trace_run_id : undefined;
+                const auditHref = basePath
+                  ? `${basePath}/audit${buildSharedOpsFilterQuery(getEvidenceWindow(fact.timestamp), {
+                    resource_type: fact.resource_type,
+                    resource_id: fact.resource_id,
+                    end_user_id: fact.end_user_id,
+                    result: fact.result,
+                    request_id: fact.request_id,
+                    decision_id: fact.decision_id,
+                    trace_ref: traceRef,
+                    trace_incident_id: traceIncidentId,
+                    trace_escalation_id: traceEscalationId,
+                    trace_run_id: traceRunId,
                   })}`
                   : null;
                 return (
@@ -246,6 +280,15 @@ export function UsageFactDetailDrawer({
                                 data-testid={`usage__detail-open-resource-policy-${fact.id}`}
                               >
                                 {t('detail.open_resource_policy')}
+                              </Link>
+                            ) : null}
+                            {auditHref ? (
+                              <Link
+                                href={auditHref}
+                                className="text-xs text-primary underline-offset-2 hover:underline"
+                                data-testid={`usage__detail-open-audit-${fact.id}`}
+                              >
+                                {t('detail.open_audit')}
                               </Link>
                             ) : null}
                           </div>

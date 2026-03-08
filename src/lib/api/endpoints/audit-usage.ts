@@ -436,6 +436,12 @@ export class AuditAPI {
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.resource_type) searchParams.set('resource_type', params.resource_type);
     if (params.resource_id) searchParams.set('resource_id', params.resource_id);
+    if (params.request_id) searchParams.set('request_id', params.request_id);
+    if (params.decision_id) searchParams.set('decision_id', params.decision_id);
+    if (params.trace_ref) searchParams.set('trace_ref', params.trace_ref);
+    if (params.trace_incident_id) searchParams.set('trace_incident_id', params.trace_incident_id);
+    if (params.trace_escalation_id) searchParams.set('trace_escalation_id', params.trace_escalation_id);
+    if (params.trace_run_id) searchParams.set('trace_run_id', params.trace_run_id);
     if (params.result) searchParams.set('result', params.result);
 
     // Sorting
@@ -512,6 +518,12 @@ export class UsageAPI {
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.provider) searchParams.set('provider', params.provider);
     if (params.model) searchParams.set('model', params.model);
+    if (params.request_id) searchParams.set('request_id', params.request_id);
+    if (params.decision_id) searchParams.set('decision_id', params.decision_id);
+    if (params.trace_ref) searchParams.set('trace_ref', params.trace_ref);
+    if (params.trace_incident_id) searchParams.set('trace_incident_id', params.trace_incident_id);
+    if (params.trace_escalation_id) searchParams.set('trace_escalation_id', params.trace_escalation_id);
+    if (params.trace_run_id) searchParams.set('trace_run_id', params.trace_run_id);
     if (params.result) searchParams.set('result', params.result);
     if (params.error_class) searchParams.set('error_class', params.error_class);
     if (params.group_by) searchParams.set('group_by', params.group_by);
@@ -549,6 +561,12 @@ export class UsageAPI {
     if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.provider) searchParams.set('provider', params.provider);
     if (params.model) searchParams.set('model', params.model);
+    if (params.request_id) searchParams.set('request_id', params.request_id);
+    if (params.decision_id) searchParams.set('decision_id', params.decision_id);
+    if (params.trace_ref) searchParams.set('trace_ref', params.trace_ref);
+    if (params.trace_incident_id) searchParams.set('trace_incident_id', params.trace_incident_id);
+    if (params.trace_escalation_id) searchParams.set('trace_escalation_id', params.trace_escalation_id);
+    if (params.trace_run_id) searchParams.set('trace_run_id', params.trace_run_id);
     if (params.result) searchParams.set('result', params.result);
     if (params.error_class) searchParams.set('error_class', params.error_class);
     if (params.sort_order) searchParams.set('sort_order', params.sort_order);

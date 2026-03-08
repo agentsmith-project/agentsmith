@@ -151,6 +151,21 @@ test.describe('runtime proxy billing (mock lane)', () => {
     expect(runtimeObs.error_class_counts?.provider_non_retryable ?? 0).toBeGreaterThanOrEqual(0);
     expect(runtimeObs.error_class_counts?.system_error ?? 0).toBeGreaterThanOrEqual(0);
     expect(result.limitsSummary.status).toBe(200);
+    const limitsSummaryBody = result.limitsSummary.body as {
+      endpoints?: Array<{ limit_kind?: string; window_key?: string; limit_total?: number; limit_limit?: number }>;
+      total_limit?: number;
+      total_limit_limit?: number;
+    };
+    expect(Array.isArray(limitsSummaryBody.endpoints)).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).length).toBeGreaterThan(0);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limit_kind === 'rate_limit')).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.limit_kind === 'spending_limit')).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.window_key === 'minute')).toBe(true);
+    expect((limitsSummaryBody.endpoints ?? []).some((item) => item.window_key === 'day')).toBe(true);
+    expect(typeof limitsSummaryBody.total_limit === 'number' || typeof limitsSummaryBody.total_limit_limit === 'number').toBe(true);
+    expect(
+      (limitsSummaryBody.endpoints ?? []).every((item) => typeof item.limit_total === 'number' || typeof item.limit_limit === 'number'),
+    ).toBe(true);
   });
 
   test('supports runtime release workflow from planning to usage detail', async ({ authedPage }) => {

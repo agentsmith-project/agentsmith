@@ -216,13 +216,18 @@ describe('UsageAPI exportReport', () => {
           resource_type: 'endpoint',
           limit_used: 40,
           limit_total: 100,
+          limit_limit: 100,
           limit_unit: 'requests',
+          limit_kind: 'rate_limit',
+          window_key: 'minute',
+          limit_key: 'endpoint.requests_per_minute',
           limit_reset_at: '2026-03-08T00:00:00.000Z',
           percentage_used: 40,
         },
       ],
       total_limit_used: 40,
       total_limit: 100,
+      total_limit_limit: 100,
     });
 
     const api = new UsageAPI({
@@ -235,8 +240,13 @@ describe('UsageAPI exportReport', () => {
 
     expect(firstEndpoint?.limit_used).toBe(40);
     expect(firstEndpoint?.limit_total).toBe(100);
+    expect(firstEndpoint?.limit_limit).toBe(100);
+    expect(firstEndpoint?.limit_kind).toBe('rate_limit');
+    expect(firstEndpoint?.window_key).toBe('minute');
+    expect(firstEndpoint?.limit_key).toBe('endpoint.requests_per_minute');
     expect(result.total_limit_used).toBe(40);
     expect(result.total_limit).toBe(100);
+    expect(result.total_limit_limit).toBe(100);
   });
 });
 

@@ -1288,9 +1288,9 @@
         "7d": "7天",
         "30d": "30天"
       },
-      "limits_title": "剩余额度",
-      "total_quota": "总额度",
-      "limits_empty": "暂无 endpoint 额度数据。",
+      "limits_title": "剩余限制",
+      "total_limit": "总限制",
+      "limits_empty": "暂无 endpoint 限制数据。",
       "open_advanced": "查看详细模式",
       "no_data": "暂无用量趋势数据。"
     },

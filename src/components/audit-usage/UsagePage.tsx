@@ -326,6 +326,21 @@ export function UsagePage({
   const { data: liteLimitsSummary } = useLimitsSummary(workspaceId, projectId, {
     enabled: canReadUsage && isLiteMode,
   });
+  const liteLimitsOverview = React.useMemo(
+    () => ({
+      endpoints: (liteLimitsSummary?.endpoints ?? []).map((item) => ({
+        resourceId: item.resource_id,
+        resourceName: item.resource_name,
+        limitUsed: item.quota_used,
+        limitTotal: item.quota_limit,
+        percentageUsed: item.percentage_used,
+        resetAt: item.quota_reset_at,
+      })),
+      totalLimitUsed: liteLimitsSummary?.total_quota_used,
+      totalLimit: liteLimitsSummary?.total_quota_limit,
+    }),
+    [liteLimitsSummary],
+  );
 
   const usageDetailRange = React.useMemo(
     () =>
@@ -601,7 +616,7 @@ export function UsagePage({
           loading={liteLoading || kpiLoading}
           periodDays={litePeriodDays}
           onPeriodChange={setLitePeriodDays}
-          limitsSummary={liteLimitsSummary}
+          limitsOverview={liteLimitsOverview}
         />
       </PageLayout>
     );

@@ -13,17 +13,17 @@ export interface UsageLiteViewProps {
   periodDays: 7 | 30;
   onPeriodChange?: (days: 7 | 30) => void;
   onOpenAdvanced?: () => void;
-  limitsSummary?: {
+  limitsOverview?: {
     endpoints?: Array<{
-      resource_id: string;
-      resource_name: string;
-      quota_used: number;
-      quota_limit: number;
-      percentage_used: number;
-      quota_reset_at: string;
+      resourceId: string;
+      resourceName: string;
+      limitUsed: number;
+      limitTotal: number;
+      percentageUsed: number;
+      resetAt: string;
     }>;
-    total_quota_used?: number;
-    total_quota_limit?: number;
+    totalLimitUsed?: number;
+    totalLimit?: number;
   } | null;
 }
 
@@ -41,7 +41,7 @@ export function UsageLiteView({
   periodDays,
   onPeriodChange,
   onOpenAdvanced,
-  limitsSummary,
+  limitsOverview,
 }: UsageLiteViewProps) {
   const t = useTranslations('usage');
 
@@ -90,36 +90,36 @@ export function UsageLiteView({
 
       <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage-lite__limits">
         <p className="text-sm font-semibold text-foreground">{t('lite.limits_title')}</p>
-        {typeof limitsSummary?.total_quota_limit === 'number' && limitsSummary.total_quota_limit > 0 ? (
+        {typeof limitsOverview?.totalLimit === 'number' && limitsOverview.totalLimit > 0 ? (
           <div className="mt-3 rounded-md border border-subtle bg-bg-base/20 p-3">
             <div className="flex items-center justify-between text-xs text-tertiary">
-              <span>{t('lite.total_quota')}</span>
+              <span>{t('lite.total_limit')}</span>
               <span>
-                {formatNumber(limitsSummary.total_quota_limit - (limitsSummary.total_quota_used ?? 0))}
+                {formatNumber(limitsOverview.totalLimit - (limitsOverview.totalLimitUsed ?? 0))}
                 {' / '}
-                {formatNumber(limitsSummary.total_quota_limit)}
+                {formatNumber(limitsOverview.totalLimit)}
               </span>
             </div>
             <div className="mt-2 h-2 rounded bg-surface-high">
               <div
                 className="h-2 rounded bg-accent"
                 style={{
-                  width: `${Math.min(100, Math.max(0, ((limitsSummary.total_quota_used ?? 0) / limitsSummary.total_quota_limit) * 100))}%`,
+                  width: `${Math.min(100, Math.max(0, ((limitsOverview.totalLimitUsed ?? 0) / limitsOverview.totalLimit) * 100))}%`,
                 }}
               />
             </div>
           </div>
         ) : null}
-        {Array.isArray(limitsSummary?.endpoints) && limitsSummary.endpoints.length > 0 ? (
+        {Array.isArray(limitsOverview?.endpoints) && limitsOverview.endpoints.length > 0 ? (
           <div className="mt-3 space-y-2">
-            {limitsSummary.endpoints.slice(0, 3).map((item) => (
-              <div key={item.resource_id} className="rounded-md border border-subtle bg-bg-base/20 p-3">
+            {limitsOverview.endpoints.slice(0, 3).map((item) => (
+              <div key={item.resourceId} className="rounded-md border border-subtle bg-bg-base/20 p-3">
                 <div className="flex items-center justify-between text-xs text-tertiary">
-                  <span className="truncate pr-2">{item.resource_name || item.resource_id}</span>
-                  <span>{Math.max(0, 100 - Math.round(item.percentage_used))}%</span>
+                  <span className="truncate pr-2">{item.resourceName || item.resourceId}</span>
+                  <span>{Math.max(0, 100 - Math.round(item.percentageUsed))}%</span>
                 </div>
                 <div className="mt-2 h-2 rounded bg-surface-high">
-                  <div className="h-2 rounded bg-accent" style={{ width: `${Math.min(100, Math.max(0, item.percentage_used))}%` }} />
+                  <div className="h-2 rounded bg-accent" style={{ width: `${Math.min(100, Math.max(0, item.percentageUsed))}%` }} />
                 </div>
               </div>
             ))}

@@ -7,6 +7,7 @@ import {
   getSortedRowModel,
   createColumnHelper,
   type SortingState,
+  type VisibilityState,
 } from '@tanstack/react-table';
 import { DataTable } from '@/components/ui/data-table';
 import {
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MoreHorizontal, Copy, Eye } from 'lucide-react';
+import { MoreHorizontal, Copy, Eye, Columns3 } from 'lucide-react';
 import { EmptyState } from './EmptyState';
 import { FilesTableSkeleton } from '@/components/files/FilesTableSkeleton';
 import {
@@ -30,6 +31,29 @@ import { toast } from '@/components/ui/toast';
 import type { AuditEvent } from '@/lib/api/types';
 
 const columnHelper = createColumnHelper<AuditEvent>();
+const AUDIT_COLUMN_VISIBILITY_KEY = 'agentsmith.audit.table.anchor_columns.v1';
+
+function loadAuditColumnVisibility(): VisibilityState {
+  if (typeof window === 'undefined') return {};
+  try {
+    const raw = window.localStorage.getItem(AUDIT_COLUMN_VISIBILITY_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object') return {};
+    return parsed as VisibilityState;
+  } catch {
+    return {};
+  }
+}
+
+function persistAuditColumnVisibility(state: VisibilityState) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(AUDIT_COLUMN_VISIBILITY_KEY, JSON.stringify(state));
+  } catch {
+    // Ignore persistence errors, table remains functional.
+  }
+}
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -68,6 +92,15 @@ export function AuditTable({
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'timestamp', desc: true },
   ]);
+  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
+
+  React.useEffect(() => {
+    setColumnVisibility(loadAuditColumnVisibility());
+  }, []);
+
+  React.useEffect(() => {
+    persistAuditColumnVisibility(columnVisibility);
+  }, [columnVisibility]);
 
   const columns = React.useMemo(
     () => [
@@ -258,6 +291,42 @@ export function AuditTable({
         },
         size: 200,
       }),
+      columnHelper.accessor('trace_ref', {
+        header: t('table.trace_ref'),
+        cell: (info) => {
+          const traceRef = info.getValue();
+          if (!traceRef) return <span className="text-tertiary">—</span>;
+          const displayId = truncateId(traceRef, 12);
+          return (
+            <div className="flex items-center gap-2">
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-sm text-foreground cursor-help font-mono">
+                      {displayId}
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="font-mono">{traceRef}</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                onClick={() => {
+                  navigator.clipboard.writeText(traceRef);
+                  toast.success(toastT('copied'));
+                }}
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </div>
+          );
+        },
+        size: 200,
+      }),
       columnHelper.accessor('error_code', {
         header: t('table.error_code'),
         cell: (info) => {
@@ -311,8 +380,10 @@ export function AuditTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
+    onColumnVisibilityChange: setColumnVisibility,
     state: {
       sorting,
+      columnVisibility,
     },
   });
 
@@ -330,5 +401,43 @@ export function AuditTable({
     );
   }
 
-  return <DataTable table={table} testId="audit__table" />;
+  const anchorColumns = [
+    { id: 'request_id', label: t('table.request_id') },
+    { id: 'decision_id', label: t('table.decision_id') },
+    { id: 'trace_ref', label: t('table.trace_ref') },
+  ];
+
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-end">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" data-testid="audit__column-settings">
+              <Columns3 className="mr-2 h-4 w-4" />
+              {t('table.column_settings')}
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            {anchorColumns.map((column) => {
+              const visible = table.getColumn(column.id)?.getIsVisible() ?? true;
+              return (
+                <DropdownMenuItem
+                  key={column.id}
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    table.getColumn(column.id)?.toggleVisibility(!visible);
+                  }}
+                  data-testid={`audit__column-toggle-${column.id}`}
+                >
+                  <span className="inline-block w-4 text-xs">{visible ? '✓' : ''}</span>
+                  <span>{column.label}</span>
+                </DropdownMenuItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+      <DataTable table={table} testId="audit__table" />
+    </div>
+  );
 }

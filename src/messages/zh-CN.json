@@ -1168,7 +1168,9 @@
       "result": "结果",
       "request_id": "请求 ID",
       "decision_id": "决策 ID",
+      "trace_ref": "追踪引用",
       "error_code": "错误码",
+      "column_settings": "列设置",
       "header": {
         "error_code": "错误码"
       }

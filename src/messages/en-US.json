@@ -1166,7 +1166,9 @@
       "result": "Result",
       "request_id": "Request ID",
       "decision_id": "Decision ID",
+      "trace_ref": "Trace Ref",
       "error_code": "Error Code",
+      "column_settings": "Columns",
       "header": {
         "error_code": "Error Code"
       }

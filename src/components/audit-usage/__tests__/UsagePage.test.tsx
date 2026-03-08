@@ -1,11 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 
 const invalidateQueries = vi.fn();
 const exportReportMock = vi.fn();
 const routerReplaceMock = vi.fn();
+const searchParamsState = {
+  value: '',
+};
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
@@ -13,7 +16,7 @@ vi.mock('next-intl', () => ({
 }));
 
 vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => new URLSearchParams(searchParamsState.value),
   usePathname: () => '/en-US/workspaces/ws_1/projects/proj_1/usage',
   useRouter: () => ({ replace: routerReplaceMock }),
 }));
@@ -103,6 +106,10 @@ vi.mock('@/components/ui/toast', () => ({
 }));
 
 describe('UsagePage', () => {
+  beforeEach(() => {
+    searchParamsState.value = '';
+  });
+
   it('renders simplified my-usage view and opens detail drawer', async () => {
     const user = userEvent.setup();
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
@@ -149,5 +156,13 @@ describe('UsagePage', () => {
     await user.click(screen.getByTestId('usage__view-facts'));
 
     expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
+  });
+
+  it('defaults to request facts view when investigation anchors exist', () => {
+    searchParamsState.value = 'request_id=req_1';
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__table')).not.toBeInTheDocument();
   });
 });

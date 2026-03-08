@@ -123,6 +123,21 @@ function buildUsageFiltersFromSearchParams(searchParams: URLSearchParams): Parti
   };
 }
 
+function deriveUsageViewMode(searchParams: URLSearchParams): 'aggregate' | 'facts' {
+  const explicit = searchParams.get('usage_view');
+  if (explicit === 'facts') return 'facts';
+  if (explicit === 'aggregate') return 'aggregate';
+  const hasInvestigationAnchors = !!(
+    searchParams.get('request_id')
+    || searchParams.get('decision_id')
+    || searchParams.get('trace_ref')
+    || searchParams.get('trace_incident_id')
+    || searchParams.get('trace_escalation_id')
+    || searchParams.get('trace_run_id')
+  );
+  return hasInvestigationAnchors ? 'facts' : 'aggregate';
+}
+
 export function UsagePage({
   workspaceId,
   projectId,
@@ -153,8 +168,8 @@ export function UsagePage({
   const [selectedFactId, setSelectedFactId] = React.useState<string | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'json' | null>(null);
-  const [viewMode, setViewMode] = React.useState<'aggregate' | 'facts'>(
-    () => (searchParams.get('usage_view') === 'facts' ? 'facts' : 'aggregate'),
+  const [viewMode, setViewMode] = React.useState<'aggregate' | 'facts'>(() =>
+    deriveUsageViewMode(new URLSearchParams(searchParamsKey)),
   );
   const [filters, setFilters] = React.useState<UsageListParams>(() => {
     const searchFilters = buildUsageFiltersFromSearchParams(new URLSearchParams(searchParamsKey));
@@ -215,7 +230,7 @@ export function UsagePage({
 
   React.useEffect(() => {
     const parsed = new URLSearchParams(searchParamsKey);
-    const mode = parsed.get('usage_view') === 'facts' ? 'facts' : 'aggregate';
+    const mode = deriveUsageViewMode(parsed);
     setViewMode((prev) => (prev === mode ? prev : mode));
   }, [searchParamsKey]);
 

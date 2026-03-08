@@ -54,9 +54,13 @@ export interface LimitsSummaryItem {
   resource_type: 'endpoint' | 'source_library' | 'agent';
   limit_used: number;
   limit_total: number;
+  limit_limit?: number;
   limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
   limit_reset_at: string;
   percentage_used: number;
+  limit_key?: string;
+  limit_kind?: 'rate_limit' | 'spending_limit';
+  window_key?: 'minute' | '5h' | 'day' | 'current';
 }
 
 export interface LimitsOverview {
@@ -64,6 +68,7 @@ export interface LimitsOverview {
   source_libraries?: LimitsSummaryItem[];
   agents?: LimitsSummaryItem[];
   total_limit?: number;
+  total_limit_limit?: number;
   total_limit_used?: number;
 }
 
@@ -492,7 +497,7 @@ export class UsageAPI {
     }
 
     const limitUsed = UsageAPI.asNumber(record.limit_used) ?? 0;
-    const limitTotal = UsageAPI.asNumber(record.limit_total) ?? 0;
+    const limitTotal = UsageAPI.asNumber(record.limit_total) ?? UsageAPI.asNumber(record.limit_limit) ?? 0;
     const limitResetAt = UsageAPI.asString(record.limit_reset_at) ?? '';
     const limitUnit = record.limit_unit as LimitsSummaryItem['limit_unit'] | undefined;
     const unit = limitUnit === 'tokens' || limitUnit === 'requests' || limitUnit === 'bytes' || limitUnit === 'files'
@@ -507,9 +512,19 @@ export class UsageAPI {
       resource_type: resourceType,
       limit_used: limitUsed,
       limit_total: limitTotal,
+      limit_limit: UsageAPI.asNumber(record.limit_limit),
       limit_unit: unit,
       limit_reset_at: limitResetAt,
       percentage_used: percentageUsed,
+      limit_key: UsageAPI.asString(record.limit_key),
+      limit_kind: record.limit_kind === 'rate_limit' || record.limit_kind === 'spending_limit' ? record.limit_kind : undefined,
+      window_key:
+        record.window_key === 'minute'
+        || record.window_key === '5h'
+        || record.window_key === 'day'
+        || record.window_key === 'current'
+          ? record.window_key
+          : undefined,
     };
   }
 
@@ -523,7 +538,7 @@ export class UsageAPI {
         : undefined;
 
     const totalLimitUsed = UsageAPI.asNumber(record.total_limit_used);
-    const totalLimit = UsageAPI.asNumber(record.total_limit);
+    const totalLimit = UsageAPI.asNumber(record.total_limit) ?? UsageAPI.asNumber(record.total_limit_limit);
 
     return {
       endpoints: normalizeList('endpoints'),
@@ -531,6 +546,7 @@ export class UsageAPI {
       agents: normalizeList('agents'),
       total_limit_used: totalLimitUsed,
       total_limit: totalLimit,
+      total_limit_limit: UsageAPI.asNumber(record.total_limit_limit),
     };
   }
 

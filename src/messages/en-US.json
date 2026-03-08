@@ -1227,6 +1227,15 @@
       "total_limit": "Total Limit",
       "limit_reset": "Resets on backend policy window",
       "limits_empty": "No endpoint limit data available.",
+      "rate_limit_title": "Rate Limit",
+      "spending_limit_title": "Spending Limit",
+      "limit_group_empty": "No data in current response.",
+      "window": {
+        "minute": "Per Minute",
+        "5h": "Per 5 Hours",
+        "day": "Per Day",
+        "current": "Current"
+      },
       "trend_title": "Usage Trend ({days} days)",
       "no_data": "No usage trend data available.",
       "period": {

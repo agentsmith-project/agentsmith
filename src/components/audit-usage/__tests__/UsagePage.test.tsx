@@ -59,8 +59,23 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
           limit_used: 40,
           limit_total: 100,
           limit_unit: 'requests',
+          limit_kind: 'rate_limit',
+          window_key: 'minute',
+          limit_key: 'endpoint.requests_per_minute',
           limit_reset_at: '2026-03-08T00:00:00.000Z',
           percentage_used: 40,
+        },
+        {
+          resource_id: 'ep_1',
+          resource_name: 'Endpoint 1',
+          limit_used: 12,
+          limit_total: 50,
+          limit_unit: 'tokens',
+          limit_kind: 'spending_limit',
+          window_key: 'day',
+          limit_key: 'endpoint.spending_usd_per_day',
+          limit_reset_at: '2026-03-08T00:00:00.000Z',
+          percentage_used: 24,
         },
       ],
       total_limit_used: 40,
@@ -90,6 +105,9 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage__open-release-ops')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
     expect(screen.getByText('60 / 100')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__endpoint-limits')).toBeInTheDocument();
+    expect(screen.getByText('view.rate_limit_title')).toBeInTheDocument();
+    expect(screen.getByText('view.spending_limit_title')).toBeInTheDocument();
   });
 
   it('does not expose export action in usage view', () => {

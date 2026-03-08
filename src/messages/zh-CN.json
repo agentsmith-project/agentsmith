@@ -1229,6 +1229,15 @@
       "total_limit": "总限制",
       "limit_reset": "按后端策略窗口重置",
       "limits_empty": "暂无 endpoint 限制数据。",
+      "rate_limit_title": "速率限制",
+      "spending_limit_title": "支出限制",
+      "limit_group_empty": "当前返回暂无该类数据。",
+      "window": {
+        "minute": "每分钟",
+        "5h": "每5小时",
+        "day": "每天",
+        "current": "当前"
+      },
       "trend_title": "近 {days} 天用量趋势",
       "no_data": "暂无用量趋势数据。",
       "period": {

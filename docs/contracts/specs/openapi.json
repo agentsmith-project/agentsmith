@@ -10745,24 +10745,29 @@
         "type": "object",
         "required": [
           "allowed",
-          "limit_remaining",
-          "limit_limit",
-          "limit_reset_at",
+          "used",
+          "remaining",
+          "max",
+          "reset_at",
           "policy_id"
         ],
         "properties": {
           "allowed": {
             "type": "boolean"
           },
-          "limit_remaining": {
+          "used": {
             "type": "number",
             "minimum": 0
           },
-          "limit_limit": {
+          "remaining": {
             "type": "number",
             "minimum": 0
           },
-          "limit_reset_at": {
+          "max": {
+            "type": "number",
+            "minimum": 0
+          },
+          "reset_at": {
             "type": "string",
             "format": "date-time"
           },
@@ -10956,13 +10961,16 @@
                     }
                   }
                 },
-                "limit_remaining": {
+                "used": {
                   "type": "number"
                 },
-                "limit_limit": {
+                "remaining": {
                   "type": "number"
                 },
-                "limit_reset_at": {
+                "max": {
+                  "type": "number"
+                },
+                "reset_at": {
                   "type": "string",
                   "format": "date-time"
                 },

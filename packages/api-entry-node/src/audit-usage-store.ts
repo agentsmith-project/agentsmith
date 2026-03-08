@@ -184,23 +184,32 @@ export type UsageTimeseriesResponse = {
   total_cost?: number;
 };
 
-export type LimitsSummaryItem = {
-  resource_id: string;
-  resource_name: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
-  limit_used: number;
-  limit_limit: number;
-  limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
-  limit_reset_at: string;
-  percentage_used: number;
+export type LimitRuleSnapshot = {
+  kind: 'rate_limit' | 'spending_limit';
+  window: 'minute' | '5h' | 'day' | 'current';
+  metric: 'requests' | 'usd';
+  policy_key: string;
+  used: number;
+  max: number;
+  remaining: number;
+  usage_pct: number;
+  reset_at: string;
+};
+
+export type EndpointLimitSummary = {
+  endpoint_id: string;
+  endpoint_name: string;
+  limits: LimitRuleSnapshot[];
 };
 
 export type LimitsOverview = {
-  endpoints?: LimitsSummaryItem[];
-  source_libraries?: LimitsSummaryItem[];
-  agents?: LimitsSummaryItem[];
-  total_limit_limit?: number;
-  total_limit_used?: number;
+  endpoints?: EndpointLimitSummary[];
+  project_summary?: {
+    project_used: number;
+    project_max: number;
+    project_remaining: number;
+    project_usage_pct: number;
+  };
 };
 
 export type RuntimeObservabilityResponse = {
@@ -1013,70 +1022,199 @@ export async function getLimitsSummary(
   query: { workspaceId: string; projectId: string },
 ): Promise<LimitsOverview> {
   const now = new Date();
+  const nowMs = now.getTime();
+  const nowIso = now.toISOString();
   const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())).toISOString();
-  const tomorrowStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  const minuteStart = new Date(nowMs - 60_000).toISOString();
+  const fiveHoursStart = new Date(nowMs - (5 * 60 * 60 * 1000)).toISOString();
+  const minuteStartMs = parseIsoMillis(minuteStart);
+  const fiveHoursStartMs = parseIsoMillis(fiveHoursStart);
+  const todayStartMs = parseIsoMillis(todayStart);
+  const queryStart = todayStart < fiveHoursStart ? todayStart : fiveHoursStart;
+  const dayResetAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
+  const minuteResetAt = new Date(Math.floor(nowMs / 60_000) * 60_000 + 60_000).toISOString();
+  const fiveHoursResetAt = new Date(Math.floor(nowMs / (5 * 60 * 60 * 1000)) * (5 * 60 * 60 * 1000) + (5 * 60 * 60 * 1000)).toISOString();
+  const currentResetAt = nowIso;
 
   const facts = await listUsageFacts(docStore, {
     workspaceId: query.workspaceId,
     projectId: query.projectId,
-    startTime: todayStart,
-    endTime: tomorrowStart,
+    startTime: queryStart,
+    endTime: nowIso,
   });
 
-  const byResource = new Map<string, { resourceType: 'endpoint' | 'source_library' | 'agent'; resourceId: string; requests: number }>();
+  const byEndpoint = new Map<string, {
+    endpointId: string;
+    requestsMinute: number;
+    requests5h: number;
+    requestsDay: number;
+    usdMinute: number;
+    usd5h: number;
+    usdDay: number;
+    usdCurrent: number;
+  }>();
   for (const fact of facts) {
-    if (fact.resource_type !== 'endpoint' && fact.resource_type !== 'source_library' && fact.resource_type !== 'agent') {
+    if (fact.resource_type !== 'endpoint') {
       continue;
     }
-    const key = `${fact.resource_type}:${fact.resource_id ?? 'unknown'}`;
-    const existing = byResource.get(key) ?? {
-      resourceType: fact.resource_type,
-      resourceId: fact.resource_id ?? 'unknown',
-      requests: 0,
+    const endpointId = fact.resource_id ?? 'unknown';
+    const existing = byEndpoint.get(endpointId) ?? {
+      endpointId,
+      requestsMinute: 0,
+      requests5h: 0,
+      requestsDay: 0,
+      usdMinute: 0,
+      usd5h: 0,
+      usdDay: 0,
+      usdCurrent: 0,
     };
-    existing.requests += fact.requests ?? 1;
-    byResource.set(key, existing);
+    const timestampMs = parseIsoMillis(fact.timestamp);
+    const requests = fact.requests ?? 1;
+    const usd = estimateFactCost(fact);
+    if (Number.isFinite(timestampMs) && timestampMs >= minuteStartMs) {
+      existing.requestsMinute += requests;
+      existing.usdMinute += usd;
+    }
+    if (Number.isFinite(timestampMs) && timestampMs >= fiveHoursStartMs) {
+      existing.requests5h += requests;
+      existing.usd5h += usd;
+    }
+    if (Number.isFinite(timestampMs) && timestampMs >= todayStartMs) {
+      existing.requestsDay += requests;
+      existing.usdDay += usd;
+    }
+    existing.usdCurrent += usd;
+    byEndpoint.set(endpointId, existing);
   }
 
-  const limitByResourceType: Record<'endpoint' | 'source_library' | 'agent', number> = {
-    endpoint: 20000,
-    source_library: 10000,
-    agent: 12000,
+  const rateLimitMax = {
+    minute: 120,
+    fiveHours: 6_000,
+    day: 20_000,
   };
-  const resetAt = tomorrowStart;
+  const spendingLimitMax = {
+    minute: 5,
+    fiveHours: 100,
+    day: 400,
+    current: 1_000,
+  };
 
-  const endpoints: LimitsSummaryItem[] = [];
-  const sourceLibraries: LimitsSummaryItem[] = [];
-  const agents: LimitsSummaryItem[] = [];
-
-  for (const item of byResource.values()) {
-    const limit = limitByResourceType[item.resourceType];
-    const row: LimitsSummaryItem = {
-      resource_id: item.resourceId,
-      resource_name: item.resourceId,
-      resource_type: item.resourceType,
-      limit_used: item.requests,
-      limit_limit: limit,
-      limit_unit: 'requests',
-      limit_reset_at: resetAt,
-      percentage_used: Number(((item.requests / Math.max(1, limit)) * 100).toFixed(2)),
+  const toRule = (args: {
+    kind: LimitRuleSnapshot['kind'];
+    window: LimitRuleSnapshot['window'];
+    metric: LimitRuleSnapshot['metric'];
+    policyKey: string;
+    used: number;
+    max: number;
+    resetAt: string;
+  }): LimitRuleSnapshot => {
+    const max = Math.max(0, args.max);
+    const used = Math.max(0, Number(args.used.toFixed(8)));
+    const remaining = Number(Math.max(0, max - used).toFixed(8));
+    const usagePct = max > 0 ? Number(Math.min(100, (used / max) * 100).toFixed(2)) : 0;
+    return {
+      kind: args.kind,
+      window: args.window,
+      metric: args.metric,
+      policy_key: args.policyKey,
+      used,
+      max,
+      remaining,
+      usage_pct: usagePct,
+      reset_at: args.resetAt,
     };
-    if (item.resourceType === 'endpoint') endpoints.push(row);
-    if (item.resourceType === 'source_library') sourceLibraries.push(row);
-    if (item.resourceType === 'agent') agents.push(row);
+  };
+
+  const endpoints: EndpointLimitSummary[] = [];
+  for (const item of byEndpoint.values()) {
+    endpoints.push({
+      endpoint_id: item.endpointId,
+      endpoint_name: item.endpointId,
+      limits: [
+        toRule({
+          kind: 'rate_limit',
+          window: 'minute',
+          metric: 'requests',
+          policyKey: 'endpoint.requests_per_minute',
+          used: item.requestsMinute,
+          max: rateLimitMax.minute,
+          resetAt: minuteResetAt,
+        }),
+        toRule({
+          kind: 'rate_limit',
+          window: '5h',
+          metric: 'requests',
+          policyKey: 'endpoint.requests_per_5_hours',
+          used: item.requests5h,
+          max: rateLimitMax.fiveHours,
+          resetAt: fiveHoursResetAt,
+        }),
+        toRule({
+          kind: 'rate_limit',
+          window: 'day',
+          metric: 'requests',
+          policyKey: 'endpoint.requests_per_day',
+          used: item.requestsDay,
+          max: rateLimitMax.day,
+          resetAt: dayResetAt,
+        }),
+        toRule({
+          kind: 'spending_limit',
+          window: 'minute',
+          metric: 'usd',
+          policyKey: 'endpoint.spending_usd_per_minute',
+          used: item.usdMinute,
+          max: spendingLimitMax.minute,
+          resetAt: minuteResetAt,
+        }),
+        toRule({
+          kind: 'spending_limit',
+          window: '5h',
+          metric: 'usd',
+          policyKey: 'endpoint.spending_usd_per_5_hours',
+          used: item.usd5h,
+          max: spendingLimitMax.fiveHours,
+          resetAt: fiveHoursResetAt,
+        }),
+        toRule({
+          kind: 'spending_limit',
+          window: 'day',
+          metric: 'usd',
+          policyKey: 'endpoint.spending_usd_per_day',
+          used: item.usdDay,
+          max: spendingLimitMax.day,
+          resetAt: dayResetAt,
+        }),
+        toRule({
+          kind: 'spending_limit',
+          window: 'current',
+          metric: 'usd',
+          policyKey: 'endpoint.spending_usd_current_cycle',
+          used: item.usdCurrent,
+          max: spendingLimitMax.current,
+          resetAt: currentResetAt,
+        }),
+      ],
+    });
   }
 
-  const totalLimitsUsed = [...endpoints, ...sourceLibraries, ...agents].reduce((sum, item) => sum + item.limit_used, 0);
-  const totalLimitsCapacity = endpoints.length * limitByResourceType.endpoint
-    + sourceLibraries.length * limitByResourceType.source_library
-    + agents.length * limitByResourceType.agent;
+  endpoints.sort((a, b) => a.endpoint_id.localeCompare(b.endpoint_id));
+  const projectUsed = Number(endpoints.reduce((sum, endpoint) => {
+    const dailySpending = endpoint.limits.find((rule) => rule.kind === 'spending_limit' && rule.window === 'day');
+    return sum + (dailySpending?.used ?? 0);
+  }, 0).toFixed(8));
+  const projectMax = Number((endpoints.length * spendingLimitMax.day).toFixed(8));
+  const projectRemaining = Number(Math.max(0, projectMax - projectUsed).toFixed(8));
+  const projectUsagePct = projectMax > 0 ? Number(Math.min(100, (projectUsed / projectMax) * 100).toFixed(2)) : 0;
 
   return {
     endpoints,
-    source_libraries: sourceLibraries,
-    agents,
-    total_limit_used: totalLimitsUsed || undefined,
-    total_limit_limit: totalLimitsCapacity || undefined,
+    project_summary: {
+      project_used: projectUsed,
+      project_max: projectMax,
+      project_remaining: projectRemaining,
+      project_usage_pct: projectUsagePct,
+    },
   };
 }
 

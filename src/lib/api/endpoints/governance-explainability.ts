@@ -44,9 +44,10 @@ export interface GovernanceLimitCheckRequest {
 
 export interface GovernanceLimitCheckResponse {
   allowed: boolean;
-  limit_remaining: number;
-  limit_total: number;
-  limit_reset_at: string;
+  used: number;
+  remaining: number;
+  max: number;
+  reset_at: string;
   policy_id: string;
 }
 
@@ -178,11 +179,14 @@ export class GovernanceExplainabilityAPI {
   ): Promise<GovernanceLimitCheckResponse> {
     return this.client.post(`/workspaces/${workspaceId}/projects/${projectId}/spending-limits/check`, payload).then((response) => {
       const raw = response as Partial<GovernanceLimitCheckResponse>;
+      const max = raw.max ?? 0;
+      const remaining = raw.remaining ?? 0;
       return {
         allowed: Boolean(raw.allowed),
-        limit_remaining: raw.limit_remaining ?? 0,
-        limit_total: raw.limit_total ?? 0,
-        limit_reset_at: raw.limit_reset_at ?? '',
+        used: raw.used ?? Math.max(0, max - remaining),
+        remaining,
+        max,
+        reset_at: raw.reset_at ?? '',
         policy_id: raw.policy_id ?? '',
       };
     });

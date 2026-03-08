@@ -573,7 +573,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       errorMessage: 'resource_policy_spending_limit_exceeded',
       metadata: {
         governance_kind: 'resource_policy',
-        enforcement_kind: 'limit_limit',
+        enforcement_kind: 'spending_limit',
         route_kind: params.routeKind,
         limit_key: limitCheck.limit_key,
         effective_limit: limitCheck.effective_limit,
@@ -599,7 +599,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       metadata: {
         stage: 'preflight',
         governance_kind: 'resource_policy',
-        enforcement_kind: 'limit_limit',
+        enforcement_kind: 'spending_limit',
         route_kind: params.routeKind,
         limit_key: limitCheck.limit_key,
         effective_limit: limitCheck.effective_limit,
@@ -1811,7 +1811,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
           errorMessage: 'resource_policy_spending_limit_exceeded',
           metadata: {
             governance_kind: 'resource_policy',
-            enforcement_kind: 'limit_limit',
+            enforcement_kind: 'spending_limit',
             route_kind: route.kind,
             limit_key: 'source_library.max_file_size_bytes',
             effective_limit: effectiveLimit,
@@ -1835,7 +1835,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
           metadata: {
             stage: 'preflight',
             governance_kind: 'resource_policy',
-            enforcement_kind: 'limit_limit',
+            enforcement_kind: 'spending_limit',
             route_kind: route.kind,
             limit_key: 'source_library.max_file_size_bytes',
             effective_limit: effectiveLimit,

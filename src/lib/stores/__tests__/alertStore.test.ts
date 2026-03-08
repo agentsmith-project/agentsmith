@@ -90,8 +90,8 @@ describe('alertStore', () => {
         resource_id: 'ep_1',
         resource_name: 'gpt-4',
         metadata: {
-          limit_used: 100000,
-          limit_total: 100000,
+          used: 100000,
+          max: 100000,
         },
       };
 

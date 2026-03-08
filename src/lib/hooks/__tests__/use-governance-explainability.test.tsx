@@ -112,9 +112,10 @@ describe('use-governance-explainability', () => {
       get: vi.fn(),
       post: vi.fn().mockResolvedValue({
         allowed: true,
-        limit_remaining: 5,
-        limit_total: 10,
-        limit_reset_at: '2026-03-02T00:00:00.000Z',
+        used: 5,
+        remaining: 5,
+        max: 10,
+        reset_at: '2026-03-02T00:00:00.000Z',
         policy_id: 'rp_1',
       }),
       put: vi.fn(),
@@ -148,7 +149,8 @@ describe('use-governance-explainability', () => {
       operation: 'invoke',
       estimated_cost: 42,
     });
-    expect(result.current.data?.limit_remaining).toBe(5);
-    expect(result.current.data?.limit_total).toBe(10);
+    expect(result.current.data?.used).toBe(5);
+    expect(result.current.data?.remaining).toBe(5);
+    expect(result.current.data?.max).toBe(10);
   });
 });

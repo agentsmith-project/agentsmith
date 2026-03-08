@@ -76,9 +76,9 @@ MVP execution guard:
 2. `resourceType` in MVP:
 - `endpoint`
 
-3. Historical route naming note:
-- `POST /workspaces/{ws}/projects/{project}/spending-limits/check` is retained for backward compatibility.
-- Frontend/runtime semantics interpret this as limit check (`rate limit` / `spending limit`), not a separate limit domain.
+3. Route semantics:
+- `POST /workspaces/{ws}/projects/{project}/spending-limits/check` is the canonical limit check route in MVP.
+- Response naming follows unified limit semantics (`used` / `remaining` / `max` / `reset_at`).
 4. Usage projection contract:
 - `GET /workspaces/{ws}/projects/{project}/limits/summary` projection and FE rendering rules are defined in `usage-limits-summary-contract.md`.
 

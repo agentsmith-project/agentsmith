@@ -2987,16 +2987,16 @@ export interface components {
                 error_code?: string;
                 error_message?: string;
                 id?: string;
-                limit_limit?: number;
-                limit_remaining?: number;
-                /** Format: date-time */
-                limit_reset_at?: string;
+                max?: number;
                 metadata_json?: {
                     [key: string]: unknown;
                 };
                 policy_id?: string;
                 project_id?: string;
+                remaining?: number;
                 request_id?: string;
+                /** Format: date-time */
+                reset_at?: string;
                 resource_id?: string;
                 resource_type?: string;
                 /** @enum {string} */
@@ -3008,6 +3008,7 @@ export interface components {
                     /** @enum {string} */
                     unit?: "tokens" | "bytes" | "requests" | "seconds";
                 };
+                used?: number;
                 workspace_id?: string;
             }[];
             export_id: string;
@@ -3214,11 +3215,12 @@ export interface components {
         };
         LimitCheckResponse: {
             allowed: boolean;
-            limit_limit: number;
-            limit_remaining: number;
-            /** Format: date-time */
-            limit_reset_at: string;
+            max: number;
             policy_id: string;
+            remaining: number;
+            /** Format: date-time */
+            reset_at: string;
+            used: number;
         };
         /** @description Endpoint-scoped limit summary for Usage page */
         LimitOverview: {

@@ -35,12 +35,12 @@ export function createLimitAlert(params: {
   resource_type: 'endpoint' | 'source_library' | 'agent';
   resource_id: string;
   resource_name: string;
-  limit_used: number;
-  limit_total: number;
-  limit_unit: string;
-  limit_reset_at: string;
+  used: number;
+  max: number;
+  metric: string;
+  reset_at: string;
 }): Omit<Alert, 'id' | 'created_at' | 'status'> {
-  const percentage = (params.limit_used / params.limit_total) * 100;
+  const percentage = (params.used / params.max) * 100;
   const severity: AlertSeverity = percentage >= 100 ? 'critical' : percentage >= 80 ? 'error' : 'warning';
 
   return {
@@ -51,15 +51,15 @@ export function createLimitAlert(params: {
     title: percentage >= 100
       ? `Limit exceeded for ${params.resource_name}`
       : `Limit usage at ${percentage.toFixed(0)}%`,
-    message: `${params.resource_name} has used ${params.limit_used}/${params.limit_total} ${params.limit_unit}`,
+    message: `${params.resource_name} has used ${params.used}/${params.max} ${params.metric}`,
     resource_type: params.resource_type,
     resource_id: params.resource_id,
     resource_name: params.resource_name,
     metadata: {
-      limit_used: params.limit_used,
-      limit_total: params.limit_total,
-      limit_reset_at: params.limit_reset_at,
-      limit_unit: params.limit_unit,
+      used: params.used,
+      max: params.max,
+      reset_at: params.reset_at,
+      metric: params.metric,
       percentage,
     },
     actions: [

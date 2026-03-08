@@ -62,7 +62,15 @@ export interface GovernanceLimitCheckResponse {
   policy_id: string;
 }
 
+/**
+ * @deprecated Use `GovernanceLimitCheckRequest`.
+ * Legacy alias retained for compatibility with older imports.
+ */
 export type GovernanceQuotaCheckRequest = GovernanceLimitCheckRequest;
+/**
+ * @deprecated Use `GovernanceLimitCheckResponse`.
+ * Legacy alias retained for compatibility with older imports.
+ */
 export type GovernanceQuotaCheckResponse = GovernanceLimitCheckResponse;
 
 export interface GovernanceLimitExceededDetails {
@@ -87,6 +95,10 @@ export interface GovernanceLimitExceededDetails {
   current_file_size_bytes?: number;
 }
 
+/**
+ * @deprecated Use `GovernanceLimitExceededDetails`.
+ * Legacy alias retained for compatibility with older imports.
+ */
 export type GovernanceQuotaExceededDetails = GovernanceLimitExceededDetails;
 
 export interface GovernanceEvidenceDetails extends GovernanceLimitExceededDetails {
@@ -190,6 +202,10 @@ export function getGovernanceLimitExceededDetails(error: unknown): GovernanceLim
   return getGovernanceEvidenceDetails(error.details);
 }
 
+/**
+ * @deprecated Use `getGovernanceLimitExceededDetails`.
+ * Legacy alias retained for compatibility with older imports.
+ */
 export const getGovernanceQuotaExceededDetails = getGovernanceLimitExceededDetails;
 
 export function getGovernanceRouteForbiddenDetails(error: unknown): GovernanceRouteForbiddenDetails | null {
@@ -237,6 +253,10 @@ export class GovernanceExplainabilityAPI {
     });
   }
 
+  /**
+   * @deprecated Use `checkLimits`.
+   * Legacy method retained for compatibility with older callers.
+   */
   async checkQuota(
     workspaceId: string,
     projectId: string,

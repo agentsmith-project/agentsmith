@@ -36,4 +36,8 @@ export function useLimitCheck(workspaceId: string, projectId: string) {
   });
 }
 
+/**
+ * @deprecated Use `useLimitCheck`.
+ * Legacy alias retained for compatibility with older callers.
+ */
 export const useQuotaCheck = useLimitCheck;

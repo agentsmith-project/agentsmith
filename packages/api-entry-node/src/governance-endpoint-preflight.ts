@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { EndpointRecord } from './resource-models.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
@@ -9,11 +10,13 @@ import {
 
 export type EndpointGovernancePreflightAllowed = {
   allowed: true;
+  decisionId: string;
   estimatedCostPerTokenUsd?: number;
 };
 
 export type EndpointGovernancePreflightDenied = {
   allowed: false;
+  decisionId: string;
   statusCode: 403 | 429;
   retryAfterSeconds?: number;
   responseBody: {
@@ -77,6 +80,7 @@ export async function enforceEndpointGovernancePreflight(args: {
     recordAccessDeniedEvidence = true,
   } = args;
 
+  const decisionId = `gdec_${randomUUID().replace(/-/g, '')}`;
   const policyCheck = isProjectResourceAccessAllowedForUser({
     workspaceId,
     projectId,
@@ -86,6 +90,7 @@ export async function enforceEndpointGovernancePreflight(args: {
   });
   if (!policyCheck.allowed) {
     const metadata = metadataBase('access_denied', source, {
+      decision_id: decisionId,
       reason: policyCheck.reason ?? 'not_allowed',
       ...(contextMetadata ?? {}),
     });
@@ -121,6 +126,7 @@ export async function enforceEndpointGovernancePreflight(args: {
     }
     return {
       allowed: false,
+      decisionId,
       statusCode: 403,
       responseBody: {
         error_code: 'RESOURCE_POLICY_DENIED',
@@ -141,6 +147,7 @@ export async function enforceEndpointGovernancePreflight(args: {
   });
   if (!rateCheck.allowed) {
     const metadata = metadataBase('policy_rate', source, {
+      decision_id: decisionId,
       rate_key: rateCheck.rate_key,
       effective_limit: rateCheck.effective_limit,
       current_requests: rateCheck.current_requests,
@@ -179,6 +186,7 @@ export async function enforceEndpointGovernancePreflight(args: {
     });
     return {
       allowed: false,
+      decisionId,
       statusCode: 429,
       retryAfterSeconds: rateCheck.retry_after_seconds,
       responseBody: {
@@ -203,6 +211,7 @@ export async function enforceEndpointGovernancePreflight(args: {
   });
   if (!spendingCheck.allowed) {
     const metadata = metadataBase('policy_spending', source, {
+      decision_id: decisionId,
       spending_key: spendingCheck.spending_key,
       effective_limit_usd: spendingCheck.effective_limit_usd,
       current_spending_usd: spendingCheck.current_spending_usd,
@@ -241,6 +250,7 @@ export async function enforceEndpointGovernancePreflight(args: {
     });
     return {
       allowed: false,
+      decisionId,
       statusCode: 429,
       retryAfterSeconds: spendingCheck.retry_after_seconds,
       responseBody: {
@@ -256,6 +266,7 @@ export async function enforceEndpointGovernancePreflight(args: {
 
   return {
     allowed: true,
+    decisionId,
     estimatedCostPerTokenUsd,
   };
 }

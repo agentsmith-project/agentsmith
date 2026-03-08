@@ -85,6 +85,7 @@ describe('governance-endpoint-preflight', () => {
         error_code: 'RESOURCE_POLICY_DENIED',
       },
     });
+    expect(decision.decisionId.startsWith('gdec_')).toBe(true);
 
     const start = new Date(Date.now() - 60_000).toISOString();
     const end = new Date(Date.now() + 60_000).toISOString();
@@ -105,6 +106,8 @@ describe('governance-endpoint-preflight', () => {
       pageSize: 10,
     });
     expect(audit.items.length).toBeGreaterThan(0);
+    const auditDecisionId = audit.items[0]?.metadata_json?.decision_id;
+    expect(auditDecisionId).toBe(decision.decisionId);
 
     const usage = await listUsageFacts(docStore, {
       workspaceId: endpoint.workspace_id,
@@ -119,7 +122,9 @@ describe('governance-endpoint-preflight', () => {
       result: 'error',
       errorClass: null,
     });
-    expect(usage.some((item) => item.error_code === 'RESOURCE_POLICY_DENIED')).toBe(true);
+    const deniedUsage = usage.find((item) => item.error_code === 'RESOURCE_POLICY_DENIED');
+    expect(deniedUsage).toBeDefined();
+    expect(deniedUsage?.metadata_json?.decision_id).toBe(decision.decisionId);
   });
 
   it('denies request when endpoint minute rate limit is hit', async () => {
@@ -162,6 +167,7 @@ describe('governance-endpoint-preflight', () => {
         error_code: 'RESOURCE_POLICY_RATE_LIMITED',
       },
     });
+    expect(decision.decisionId.startsWith('gdec_')).toBe(true);
   });
 
   it('denies request when endpoint spending daily limit is exceeded', async () => {
@@ -205,5 +211,6 @@ describe('governance-endpoint-preflight', () => {
         error_code: 'RESOURCE_POLICY_SPENDING_LIMITED',
       },
     });
+    expect(decision.decisionId.startsWith('gdec_')).toBe(true);
   });
 });

@@ -1,78 +1,37 @@
 # Contracts Index
 
-This directory contains only current-state documents: functional contracts, architecture boundaries, and governance rules.
+当前仅保留现行合同与规范，不保留历史快照说明。
 
-## API Documentation
+## 核心合同
 
-1. **[API_GUIDE.md](API_GUIDE.md)** - Developer guide for MBOS REST API
-   - Authentication & authorization
-   - API endpoints by module
-   - Error codes & response formats
-   - Rate limiting & SSE events
-
-## Core Architecture and Governance
-
-1. `cf-private-hybrid-architecture-guide-v1.md`
+1. `auth-permission-model.md`
 2. `frontend-token-interaction-contract.md`
 3. `frontend-resource-policy-governance-v1.md`
 4. `frontend-backend-gating-matrix.md`
-5. `auth-permission-model.md`
-6. `route-gate-test-checklist.md`
-7. `product-terminology.md`
-8. `workspace-governance-backend-contract.md` (workspace governance persistence API for backend)
+5. `route-gate-test-checklist.md`
+6. `product-terminology.md`
 
-## Module Contracts
+## 模块合同
 
 - `chat-frontend-module-map.md`
+- `notebook-frontend-module-map.md`
+- `files-frontend-module-map.md`
+- `files-object-browser-contract.md`
 - `endpoints-frontend-module-map.md`
 - `endpoints-capability-contract.md`
 - `endpoint-proxy-protocol-bridge-contract.md`
-- `models-catalog-runtime-governance-contract.md`
-- `files-frontend-module-map.md` (Files module contract)
-- `files-object-browser-contract.md` (Files object browser backend contract)
 - `resource-policy-frontend-module-map.md`
 - `projects-frontend-module-map.md`
-- `notebook-frontend-module-map.md` (Notebook module contract)
 - `api-entry-node-module-map.md`
 - `agent-runtime-protocol.md`
 
-## Machine-Readable Specs
+## 机器可读规范
 
-- `specs/openapi.json` / `specs/openapi.yaml` - HTTP API contract
-- `specs/asyncapi.json` / `specs/asyncapi.yaml` - External agent runtime WS protocol
-- `specs/notebook-traces.openapi.json` / `specs/notebook-traces.openapi.yaml` - notebook execution trace route supplement snapshot (reference; now merged into `specs/openapi.*`)
-- `specs/agent-runtime-ws-supplement.asyncapi.json` / `specs/agent-runtime-ws-supplement.asyncapi.yaml` - additive WS frame supplement snapshot (reference; now merged into `specs/asyncapi.*`)
+- `specs/openapi.yaml` / `specs/openapi.json`
+- `specs/asyncapi.yaml` / `specs/asyncapi.json`
 
-Note:
-- `specs/openapi.*` and `specs/asyncapi.*` now include notebook trace API and external-agent runtime notebook extensions, including `agent.response.event`, `agent.response.artifact`, and notebook `runtime_context` fields (for example `notebook_mode`, `task_inputs`, `api_base`).
-- Supplement specs are retained as change-isolated reference snapshots and should not diverge from the canonical main specs.
-- Internal observability endpoints (for example `/api/v1/internal/notebook-runtime-metrics` and `/prometheus`) are auth-protected operational interfaces and are documented in runbooks; they are not currently part of the public OpenAPI contract unless explicitly added.
+## 常用检查
 
-## Validation Commands
-
-Before merge / pre-release: run `npm run contracts:check` (permission gates, route tests) and `npm run contracts:check-openapi` (core, route-kind, breaking); ensure OpenAPI-generated types are in sync (`npm run openapi:check-generated`).
-
-- `npm run contracts:check` — permission gates and route test coverage
-- `npm run contracts:check-openapi-core`
-- `npm run contracts:check-openapi-route-kinds`
-- `npm run contracts:check-openapi-breaking`
+- `npm run contracts:check`
 - `npm run contracts:check-openapi`
-- `npm run openapi:generate`
 - `npm run openapi:check-generated`
-- `npm run openapi:changelog`
-
-`contracts:check-openapi-breaking` runs in strict mode on CI (fails if `origin/main` baseline is unavailable).
-Intentional contract removals must be explicitly recorded in `specs/openapi-breaking-allowlist.json`.
-
-Route-kind mapping source: `specs/openapi-route-kind-map.json`.
-OpenAPI diff changelog output: `specs/CHANGELOG.md`.
-
-## Contract Maintenance Rules
-
-- Keep documents normative and current-state only.
-- Merge updates into canonical files; do not keep temporary/process snapshots.
-- Remove stale or conflicting wording immediately.
-
-## Archived Contracts
-
-- Legacy catalog seed/offline baseline notes were moved to `docs/contracts/archive/models-catalog-offline.md`.

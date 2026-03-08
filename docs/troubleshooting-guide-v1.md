@@ -32,8 +32,6 @@ make notebook-agent-demo-status
 ```
 
 4. 再看对应 lane 的正式入口  
-- 发布验证与 gate：  
-  [release-verification.md](./user-guides/release-verification.md)
 - Notebook / external agent / benchmark / traces：  
   [agent-codex-notebook-runbook.md](./agent-codex-notebook-runbook.md)
 - CI / integration 环境问题：  
@@ -79,8 +77,8 @@ make governance-pages-real-backend-interaction-smoke-strict
 
 3. 如果怀疑是治理 effect 没真正生效  
 直接看：
-- [internal-release-capability-matrix.md](./release/internal-release-capability-matrix.md)
-- [release-governance-control-plane.md](./user-guides/release-governance-control-plane.md)（归档迁移说明）
+- [Audit & Usage Reports](./user-guides/audit-usage-reports.md)
+- [Cost & Limits Dashboard](./user-guides/cost-limits-dashboard.md)
 
 ## 5. Runtime / Usage / Governance 排障
 
@@ -136,9 +134,8 @@ NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 
 1. [Documentation Index](./README.md)
 2. [Development Guide](../DEVELOPMENT.md)
-3. [Release Verification](./user-guides/release-verification.md)
-4. [Release Governance Control Plane (Archived)](./user-guides/release-governance-control-plane.md)
-5. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
+3. [User Guides Index](./user-guides/README.md)
+4. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
 
 ## Token Issues
 

@@ -57,7 +57,7 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 ## Evidence Outputs
 
 - Release report:
-  - `docs/release/` latest markdown/json outputs
+  - `artifacts/release-reports/` latest markdown/json outputs
 - Integration logs:
   - `/tmp/agentsmith-api-node-integration.log`
   - `/tmp/agentsmith-web-integration.log`

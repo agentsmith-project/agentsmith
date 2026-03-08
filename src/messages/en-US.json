@@ -1286,6 +1286,9 @@
         "7d": "7D",
         "30d": "30D"
       },
+      "limits_title": "Remaining Quota",
+      "total_quota": "Total Quota",
+      "limits_empty": "No endpoint quota data available.",
       "open_advanced": "Open Detailed View",
       "no_data": "No usage trend data available."
     },

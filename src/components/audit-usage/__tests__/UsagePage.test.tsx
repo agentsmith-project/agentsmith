@@ -98,6 +98,23 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
     },
     isLoading: false,
   }),
+  useLimitsSummary: () => ({
+    data: {
+      endpoints: [
+        {
+          resource_id: 'ep_1',
+          resource_name: 'Endpoint 1',
+          quota_used: 40,
+          quota_limit: 100,
+          quota_unit: 'requests',
+          quota_reset_at: '2026-03-08T00:00:00.000Z',
+          percentage_used: 40,
+        },
+      ],
+      total_quota_used: 40,
+      total_quota_limit: 100,
+    },
+  }),
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -178,6 +195,7 @@ describe('UsagePage', () => {
 
     expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
     expect(screen.getByTestId('usage-lite__period-30')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('usage-lite__limits')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
   });

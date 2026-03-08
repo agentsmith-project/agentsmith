@@ -13,6 +13,18 @@ export interface UsageLiteViewProps {
   periodDays: 7 | 30;
   onPeriodChange?: (days: 7 | 30) => void;
   onOpenAdvanced?: () => void;
+  limitsSummary?: {
+    endpoints?: Array<{
+      resource_id: string;
+      resource_name: string;
+      quota_used: number;
+      quota_limit: number;
+      percentage_used: number;
+      quota_reset_at: string;
+    }>;
+    total_quota_used?: number;
+    total_quota_limit?: number;
+  } | null;
 }
 
 function getBucketLabel(bucket: string): string {
@@ -29,6 +41,7 @@ export function UsageLiteView({
   periodDays,
   onPeriodChange,
   onOpenAdvanced,
+  limitsSummary,
 }: UsageLiteViewProps) {
   const t = useTranslations('usage');
 
@@ -70,9 +83,50 @@ export function UsageLiteView({
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(kpi?.tokens_today ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-tertiary">{t('lite.cards.period_requests')}</p>
+          <p className="text-xs text-tertiary">{t('lite.cards.period_requests', { days: periodDays })}</p>
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(periodRequests)}</p>
         </div>
+      </div>
+
+      <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage-lite__limits">
+        <p className="text-sm font-semibold text-foreground">{t('lite.limits_title')}</p>
+        {typeof limitsSummary?.total_quota_limit === 'number' && limitsSummary.total_quota_limit > 0 ? (
+          <div className="mt-3 rounded-md border border-subtle bg-bg-base/20 p-3">
+            <div className="flex items-center justify-between text-xs text-tertiary">
+              <span>{t('lite.total_quota')}</span>
+              <span>
+                {formatNumber(limitsSummary.total_quota_limit - (limitsSummary.total_quota_used ?? 0))}
+                {' / '}
+                {formatNumber(limitsSummary.total_quota_limit)}
+              </span>
+            </div>
+            <div className="mt-2 h-2 rounded bg-surface-high">
+              <div
+                className="h-2 rounded bg-accent"
+                style={{
+                  width: `${Math.min(100, Math.max(0, ((limitsSummary.total_quota_used ?? 0) / limitsSummary.total_quota_limit) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
+        ) : null}
+        {Array.isArray(limitsSummary?.endpoints) && limitsSummary.endpoints.length > 0 ? (
+          <div className="mt-3 space-y-2">
+            {limitsSummary.endpoints.slice(0, 3).map((item) => (
+              <div key={item.resource_id} className="rounded-md border border-subtle bg-bg-base/20 p-3">
+                <div className="flex items-center justify-between text-xs text-tertiary">
+                  <span className="truncate pr-2">{item.resource_name || item.resource_id}</span>
+                  <span>{Math.max(0, 100 - Math.round(item.percentage_used))}%</span>
+                </div>
+                <div className="mt-2 h-2 rounded bg-surface-high">
+                  <div className="h-2 rounded bg-accent" style={{ width: `${Math.min(100, Math.max(0, item.percentage_used))}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-sm text-tertiary">{t('lite.limits_empty')}</p>
+        )}
       </div>
 
       <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage-lite__trend">

@@ -10,7 +10,7 @@ import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
 import { UsageTable } from './UsageTable';
 import { UsageFactsTable } from './UsageFactsTable';
 import { UsageLiteView } from './UsageLiteView';
-import { useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useLimitsSummary, useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -323,6 +323,9 @@ export function UsagePage({
   const { data: liteData, isLoading: liteLoading, error: liteError } = useUsageRecords(workspaceId, projectId, liteUsageParams, {
     enabled: canReadUsage && isLiteMode,
   });
+  const { data: liteLimitsSummary } = useLimitsSummary(workspaceId, projectId, {
+    enabled: canReadUsage && isLiteMode,
+  });
 
   const usageDetailRange = React.useMemo(
     () =>
@@ -598,6 +601,7 @@ export function UsagePage({
           loading={liteLoading || kpiLoading}
           periodDays={litePeriodDays}
           onPeriodChange={setLitePeriodDays}
+          limitsSummary={liteLimitsSummary}
         />
       </PageLayout>
     );

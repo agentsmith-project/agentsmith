@@ -1274,7 +1274,7 @@
       "errors": "Errors",
       "resources": "Resources"
     },
-    "lite": {
+    "view": {
       "cards": {
         "requests_today": "Requests Today",
         "errors_today": "Errors Today",

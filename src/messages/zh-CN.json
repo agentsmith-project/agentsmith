@@ -1276,7 +1276,7 @@
       "errors": "错误数",
       "resources": "资源数"
     },
-    "lite": {
+    "view": {
       "cards": {
         "requests_today": "今日请求数",
         "errors_today": "今日错误数",

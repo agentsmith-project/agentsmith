@@ -4,7 +4,7 @@ import * as React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { UsageLiteView } from './UsageLiteView';
+import { UsageView } from './UsageView';
 import { useLimitsSummary, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
@@ -37,30 +37,30 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
-  const [litePeriodDays, setLitePeriodDays] = React.useState<7 | 30>(30);
+  const [periodDays, setPeriodDays] = React.useState<7 | 30>(30);
 
-  const liteRange = React.useMemo(() => {
+  const usageRange = React.useMemo(() => {
     const end = new Date();
-    const start = new Date(end.getTime() - litePeriodDays * 24 * 60 * 60 * 1000);
+    const start = new Date(end.getTime() - periodDays * 24 * 60 * 60 * 1000);
     return {
       start_time: start.toISOString(),
       end_time: end.toISOString(),
     };
-  }, [litePeriodDays]);
+  }, [periodDays]);
 
   const { data: kpiData, isLoading: kpiLoading } = useUsageKPI(
     workspaceId,
     projectId,
-    liteRange.start_time,
-    liteRange.end_time,
+    usageRange.start_time,
+    usageRange.end_time,
     effectiveEndUserId,
     { enabled: canReadUsage },
   );
 
-  const liteUsageParams = React.useMemo<UsageListParams>(
+  const usageParams = React.useMemo<UsageListParams>(
     () => ({
-      start_time: liteRange.start_time,
-      end_time: liteRange.end_time,
+      start_time: usageRange.start_time,
+      end_time: usageRange.end_time,
       end_user_id: effectiveEndUserId,
       page: 1,
       page_size: 30,
@@ -68,23 +68,23 @@ export function UsagePage({
       sort_by: 'time_bucket',
       sort_order: 'asc',
     }),
-    [effectiveEndUserId, liteRange.end_time, liteRange.start_time],
+    [effectiveEndUserId, usageRange.end_time, usageRange.start_time],
   );
 
-  const { data: liteData, isLoading: liteLoading, error: liteError } = useUsageRecords(
+  const { data: usageData, isLoading: usageLoading, error: usageError } = useUsageRecords(
     workspaceId,
     projectId,
-    liteUsageParams,
+    usageParams,
     { enabled: canReadUsage },
   );
 
-  const { data: liteLimitsSummary } = useLimitsSummary(workspaceId, projectId, {
+  const { data: limitsSummary } = useLimitsSummary(workspaceId, projectId, {
     enabled: canReadUsage,
   });
 
-  const liteLimitsOverview = React.useMemo(
+  const limitsOverview = React.useMemo(
     () => ({
-      endpoints: (liteLimitsSummary?.endpoints ?? []).map((item) => ({
+      endpoints: (limitsSummary?.endpoints ?? []).map((item) => ({
         resourceId: item.resource_id,
         resourceName: item.resource_name,
         limitUsed: item.quota_used,
@@ -92,10 +92,10 @@ export function UsagePage({
         percentageUsed: item.percentage_used,
         resetAt: item.quota_reset_at,
       })),
-      totalLimitUsed: liteLimitsSummary?.total_quota_used,
-      totalLimit: liteLimitsSummary?.total_quota_limit,
+      totalLimitUsed: limitsSummary?.total_quota_used,
+      totalLimit: limitsSummary?.total_quota_limit,
     }),
-    [liteLimitsSummary],
+    [limitsSummary],
   );
 
   const handleRefresh = React.useCallback(() => {
@@ -115,13 +115,13 @@ export function UsagePage({
     );
   }
 
-  if (liteError) {
+  if (usageError) {
     return (
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
         <ErrorState
           title={commonT('something_went_wrong')}
           message={t('load_failed_with_reason', {
-            reason: liteError instanceof Error ? liteError.message : commonT('unknown_error'),
+            reason: usageError instanceof Error ? usageError.message : commonT('unknown_error'),
           })}
           onRetry={handleRefresh}
           retryLabel={commonT('retry')}
@@ -137,8 +137,8 @@ export function UsagePage({
           title={t('title')}
           subtitle={t('subtitle')}
           actions={(
-            <Button variant="outline" onClick={handleRefresh} disabled={liteLoading || kpiLoading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${liteLoading || kpiLoading ? 'animate-spin' : ''}`} />
+            <Button variant="outline" onClick={handleRefresh} disabled={usageLoading || kpiLoading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${usageLoading || kpiLoading ? 'animate-spin' : ''}`} />
               {commonT('refresh')}
             </Button>
           )}
@@ -152,13 +152,13 @@ export function UsagePage({
         </PageToolbar>
       )}
     >
-      <UsageLiteView
+      <UsageView
         kpi={kpiData}
-        records={liteData?.items ?? []}
-        loading={liteLoading || kpiLoading}
-        periodDays={litePeriodDays}
-        onPeriodChange={setLitePeriodDays}
-        limitsOverview={liteLimitsOverview}
+        records={usageData?.items ?? []}
+        loading={usageLoading || kpiLoading}
+        periodDays={periodDays}
+        onPeriodChange={setPeriodDays}
+        limitsOverview={limitsOverview}
       />
     </PageLayout>
   );

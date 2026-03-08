@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import type { UsageKPI, UsageRecord } from '@/lib/api/types';
 import { formatNumber } from '@/lib/utils/formatters';
 
-export interface UsageLiteViewProps {
+export interface UsageViewProps {
   kpi?: UsageKPI | null;
   records: UsageRecord[];
   loading?: boolean;
@@ -33,14 +33,14 @@ function getBucketLabel(bucket: string): string {
   return bucket;
 }
 
-export function UsageLiteView({
+export function UsageView({
   kpi,
   records,
   loading = false,
   periodDays,
   onPeriodChange,
   limitsOverview,
-}: UsageLiteViewProps) {
+}: UsageViewProps) {
   const t = useTranslations('usage');
 
   const periodRequests = React.useMemo(
@@ -54,7 +54,7 @@ export function UsageLiteView({
 
   if (loading) {
     return (
-      <div className="space-y-3" data-testid="usage-lite__loading">
+      <div className="space-y-3" data-testid="usage__loading">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
           {Array.from({ length: 4 }).map((_, index) => (
             <div key={index} className="h-28 animate-pulse rounded-xl border border-border bg-surface" />
@@ -66,32 +66,32 @@ export function UsageLiteView({
   }
 
   return (
-    <div className="space-y-3" data-testid="usage-lite__view">
+    <div className="space-y-3" data-testid="usage__view">
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-tertiary">{t('lite.cards.requests_today')}</p>
+          <p className="text-xs text-tertiary">{t('view.cards.requests_today')}</p>
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(kpi?.requests_today ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-tertiary">{t('lite.cards.errors_today')}</p>
+          <p className="text-xs text-tertiary">{t('view.cards.errors_today')}</p>
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(kpi?.errors_today ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-tertiary">{t('lite.cards.tokens_today')}</p>
+          <p className="text-xs text-tertiary">{t('view.cards.tokens_today')}</p>
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(kpi?.tokens_today ?? 0)}</p>
         </div>
         <div className="rounded-xl border border-border bg-surface p-4">
-          <p className="text-xs text-tertiary">{t('lite.cards.period_requests', { days: periodDays })}</p>
+          <p className="text-xs text-tertiary">{t('view.cards.period_requests', { days: periodDays })}</p>
           <p className="mt-2 text-2xl font-semibold text-foreground">{formatNumber(periodRequests)}</p>
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage-lite__limits">
-        <p className="text-sm font-semibold text-foreground">{t('lite.limits_title')}</p>
+      <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage__limits">
+        <p className="text-sm font-semibold text-foreground">{t('view.limits_title')}</p>
         {typeof limitsOverview?.totalLimit === 'number' && limitsOverview.totalLimit > 0 ? (
           <div className="mt-3 rounded-md border border-subtle bg-bg-base/20 p-3">
             <div className="flex items-center justify-between text-xs text-tertiary">
-              <span>{t('lite.total_limit')}</span>
+              <span>{t('view.total_limit')}</span>
               <span>
                 {formatNumber(limitsOverview.totalLimit - (limitsOverview.totalLimitUsed ?? 0))}
                 {' / '}
@@ -123,36 +123,36 @@ export function UsageLiteView({
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-sm text-tertiary">{t('lite.limits_empty')}</p>
+          <p className="mt-3 text-sm text-tertiary">{t('view.limits_empty')}</p>
         )}
       </div>
 
-      <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage-lite__trend">
+      <div className="rounded-xl border border-border bg-surface p-4" data-testid="usage__trend">
         <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold text-foreground">{t('lite.trend_title', { days: periodDays })}</p>
+          <p className="text-sm font-semibold text-foreground">{t('view.trend_title', { days: periodDays })}</p>
           <div className="flex items-center gap-2">
             <Button
               variant={periodDays === 7 ? 'default' : 'outline'}
               size="sm"
               onClick={() => onPeriodChange?.(7)}
-              data-testid="usage-lite__period-7"
+              data-testid="usage__period-7"
               data-active={periodDays === 7}
             >
-              {t('lite.period.7d')}
+              {t('view.period.7d')}
             </Button>
             <Button
               variant={periodDays === 30 ? 'default' : 'outline'}
               size="sm"
               onClick={() => onPeriodChange?.(30)}
-              data-testid="usage-lite__period-30"
+              data-testid="usage__period-30"
               data-active={periodDays === 30}
             >
-              {t('lite.period.30d')}
+              {t('view.period.30d')}
             </Button>
           </div>
         </div>
         {records.length === 0 ? (
-          <p className="text-sm text-tertiary">{t('lite.no_data')}</p>
+          <p className="text-sm text-tertiary">{t('view.no_data')}</p>
         ) : (
           <div className="flex h-56 items-end gap-2">
             {records.map((item) => {

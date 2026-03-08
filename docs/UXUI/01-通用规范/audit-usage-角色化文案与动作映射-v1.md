@@ -43,7 +43,7 @@
 | `audit.subtitle` | 审计事件与合规日志 | 管理员治理证据与处置追踪 | 管理员语义 |
 | `usage.subtitle` | 用量统计与资源消耗 | 我的用量 | 用户语义 |
 | `common.investigation_context_title` | 调查锚点 | 保持不变 | 两端复用 |
-| `usage.lite.limits_title` | 剩余额度 | 剩余限制 | 统一 limit 术语 |
+| `usage.view.limits_title` | 剩余额度 | 剩余限制 | 统一 limit 术语 |
 
 ## 5. 动作映射（v1）
 

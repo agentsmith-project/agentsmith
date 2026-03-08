@@ -85,7 +85,7 @@ describe('UsagePage', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
-    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__open-runtime-observability')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__open-release-ops')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
@@ -105,28 +105,28 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
   });
 
-  it('keeps lite usage view when current user id is set', () => {
+  it('keeps usage view when current user id is set', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__table')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
   });
 
-  it('keeps lite usage view when default end user id is set', () => {
+  it('keeps usage view when default end user id is set', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" defaultEndUserId="user_002" />);
 
-    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
   });
 
-  it('switches lite period between 30d and 7d', async () => {
+  it('switches period between 30d and 7d', async () => {
     const user = userEvent.setup();
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    await user.click(screen.getByTestId('usage-lite__period-7'));
-    expect(screen.getByTestId('usage-lite__period-7')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('usage-lite__period-30')).toHaveAttribute('data-active', 'false');
+    await user.click(screen.getByTestId('usage__period-7'));
+    expect(screen.getByTestId('usage__period-7')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('usage__period-30')).toHaveAttribute('data-active', 'false');
   });
 });

@@ -4,22 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 
 const invalidateQueries = vi.fn();
-const exportReportMock = vi.fn();
-const routerReplaceMock = vi.fn();
-let canManage = true;
-const searchParamsState = {
-  value: '',
-};
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
     params ? `${key}:${JSON.stringify(params)}` : key,
-}));
-
-vi.mock('next/navigation', () => ({
-  useSearchParams: () => new URLSearchParams(searchParamsState.value),
-  usePathname: () => '/en-US/workspaces/ws_1/projects/proj_1/usage',
-  useRouter: () => ({ replace: routerReplaceMock }),
 }));
 
 vi.mock('@tanstack/react-query', async () => {
@@ -31,20 +19,8 @@ vi.mock('@tanstack/react-query', async () => {
 });
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) =>
-    permission === 'project:endpoint:use' || (permission === 'project:manage' && canManage),
+  useHasPermission: (permission: string) => permission === 'project:endpoint:use',
 }));
-
-vi.mock('@/lib/api', async () => {
-  const actual = await vi.importActual<object>('@/lib/api');
-  return {
-    ...actual,
-    getApiClient: () => ({ getToken: () => null }),
-    UsageAPI: class {
-      exportReport = exportReportMock;
-    },
-  };
-});
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
   useUsageKPI: () => ({ data: { requests_today: 10, errors_today: 1, tokens_today: 100 }, isLoading: false }),
@@ -74,30 +50,6 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
     isLoading: false,
     error: null,
   }),
-  useUsageFacts: () => ({
-    data: {
-      items: [
-        {
-          id: 'usgf_1',
-          timestamp: '2026-02-28T15:10:00.000Z',
-          workspace_id: 'ws_1',
-          project_id: 'proj_1',
-          resource_type: 'endpoint',
-          resource_id: 'ep_1',
-          request_id: 'req_1',
-          requests: 1,
-          result: 'ok',
-          runtime: {
-            provider: 'zhipu',
-            resolved_model: 'glm-5',
-            fallback_hops: 0,
-          },
-          metadata_json: {},
-        },
-      ],
-    },
-    isLoading: false,
-  }),
   useLimitsSummary: () => ({
     data: {
       endpoints: [
@@ -126,8 +78,7 @@ vi.mock('@/components/ui/toast', () => ({
 
 describe('UsagePage', () => {
   beforeEach(() => {
-    searchParamsState.value = '';
-    canManage = true;
+    invalidateQueries.mockClear();
   });
 
   it('renders simplified my-usage view', () => {
@@ -140,14 +91,13 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
   });
 
-  it('does not expose export action in lite usage view', () => {
+  it('does not expose export action in usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.queryByTestId('usage__export-trigger')).not.toBeInTheDocument();
-    expect(exportReportMock).not.toHaveBeenCalled();
   });
 
-  it('does not expose advanced view toggles in lite usage view', () => {
+  it('does not expose advanced view toggles in usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
@@ -155,8 +105,7 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
   });
 
-  it('keeps lite view even when investigation query params exist', () => {
-    searchParamsState.value = 'request_id=req_1';
+  it('keeps lite usage view when current user id is set', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
@@ -164,31 +113,8 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
   });
 
-  it('shows lite usage view for non-admin users by default', () => {
-    canManage = false;
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
-    expect(screen.getByTestId('usage-lite__period-30')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('usage-lite__limits')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
-  });
-
-  it('keeps lite view for non-admin users even with advanced query param', () => {
-    canManage = false;
-    searchParamsState.value = 'view=advanced';
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
-  });
-
-  it('keeps lite usage view for admin users', () => {
-    canManage = true;
-    searchParamsState.value = 'view=advanced';
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+  it('keeps lite usage view when default end user id is set', () => {
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" defaultEndUserId="user_002" />);
 
     expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
@@ -196,7 +122,6 @@ describe('UsagePage', () => {
   });
 
   it('switches lite period between 30d and 7d', async () => {
-    canManage = false;
     const user = userEvent.setup();
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 

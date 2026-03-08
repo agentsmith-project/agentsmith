@@ -12,7 +12,6 @@ export interface UsageLiteViewProps {
   loading?: boolean;
   periodDays: 7 | 30;
   onPeriodChange?: (days: 7 | 30) => void;
-  onOpenAdvanced?: () => void;
   limitsOverview?: {
     endpoints?: Array<{
       resourceId: string;
@@ -40,7 +39,6 @@ export function UsageLiteView({
   loading = false,
   periodDays,
   onPeriodChange,
-  onOpenAdvanced,
   limitsOverview,
 }: UsageLiteViewProps) {
   const t = useTranslations('usage');
@@ -151,11 +149,6 @@ export function UsageLiteView({
             >
               {t('lite.period.30d')}
             </Button>
-            {onOpenAdvanced ? (
-              <Button variant="outline" size="sm" onClick={onOpenAdvanced} data-testid="usage-lite__open-advanced">
-                {t('lite.open_advanced')}
-              </Button>
-            ) : null}
           </div>
         </div>
         {records.length === 0 ? (

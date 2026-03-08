@@ -1204,7 +1204,7 @@
   "usage": {
     "title": "Usage",
     "dashboard": "Cost & Limits Dashboard",
-    "subtitle": "My usage and issue triage",
+    "subtitle": "My usage",
     "kpi": {
       "requests_today": "Requests Today",
       "errors_today": "Errors Today",
@@ -1289,7 +1289,6 @@
       "limits_title": "Remaining Limit",
       "total_limit": "Total Limit",
       "limits_empty": "No endpoint limit data available.",
-      "open_advanced": "Open Detailed View",
       "no_data": "No usage trend data available."
     },
     "detail": {

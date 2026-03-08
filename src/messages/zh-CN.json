@@ -1206,7 +1206,7 @@
   "usage": {
     "title": "用量",
     "dashboard": "成本与限额看板",
-    "subtitle": "我的用量与问题定位",
+    "subtitle": "我的用量",
     "kpi": {
       "requests_today": "今日请求数",
       "errors_today": "今日错误数",
@@ -1291,7 +1291,6 @@
       "limits_title": "剩余限制",
       "total_limit": "总限制",
       "limits_empty": "暂无 endpoint 限制数据。",
-      "open_advanced": "查看详细模式",
       "no_data": "暂无用量趋势数据。"
     },
     "detail": {

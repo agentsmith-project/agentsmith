@@ -56,22 +56,6 @@ export interface LimitsSummaryItem {
   limit_total: number;
   limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
   limit_reset_at: string;
-  /**
-   * @deprecated legacy alias kept for compatibility with older callers.
-   */
-  quota_used?: number;
-  /**
-   * @deprecated legacy alias kept for compatibility with older callers.
-   */
-  quota_limit?: number;
-  /**
-   * @deprecated legacy alias kept for compatibility with older callers.
-   */
-  quota_unit?: 'tokens' | 'requests' | 'bytes' | 'files';
-  /**
-   * @deprecated legacy alias kept for compatibility with older callers.
-   */
-  quota_reset_at?: string;
   percentage_used: number;
 }
 
@@ -81,14 +65,6 @@ export interface LimitsOverview {
   agents?: LimitsSummaryItem[];
   total_limit?: number;
   total_limit_used?: number;
-  /**
-   * @deprecated legacy alias kept for compatibility with older callers.
-   */
-  total_quota_limit?: number;
-  /**
-   * @deprecated legacy alias kept for compatibility with older callers.
-   */
-  total_quota_used?: number;
 }
 
 export interface RuntimeObservabilityResponse {
@@ -515,10 +491,10 @@ export class UsageAPI {
       return null;
     }
 
-    const limitUsed = UsageAPI.asNumber(record.limit_used) ?? UsageAPI.asNumber(record.quota_used) ?? 0;
-    const limitTotal = UsageAPI.asNumber(record.limit_total) ?? UsageAPI.asNumber(record.quota_limit) ?? 0;
-    const limitResetAt = UsageAPI.asString(record.limit_reset_at) ?? UsageAPI.asString(record.quota_reset_at) ?? '';
-    const limitUnit = (record.limit_unit ?? record.quota_unit) as LimitsSummaryItem['limit_unit'] | undefined;
+    const limitUsed = UsageAPI.asNumber(record.limit_used) ?? 0;
+    const limitTotal = UsageAPI.asNumber(record.limit_total) ?? 0;
+    const limitResetAt = UsageAPI.asString(record.limit_reset_at) ?? '';
+    const limitUnit = record.limit_unit as LimitsSummaryItem['limit_unit'] | undefined;
     const unit = limitUnit === 'tokens' || limitUnit === 'requests' || limitUnit === 'bytes' || limitUnit === 'files'
       ? limitUnit
       : 'requests';
@@ -533,10 +509,6 @@ export class UsageAPI {
       limit_total: limitTotal,
       limit_unit: unit,
       limit_reset_at: limitResetAt,
-      quota_used: limitUsed,
-      quota_limit: limitTotal,
-      quota_unit: unit,
-      quota_reset_at: limitResetAt,
       percentage_used: percentageUsed,
     };
   }
@@ -550,8 +522,8 @@ export class UsageAPI {
           .filter((item): item is LimitsSummaryItem => item !== null)
         : undefined;
 
-    const totalLimitUsed = UsageAPI.asNumber(record.total_limit_used) ?? UsageAPI.asNumber(record.total_quota_used);
-    const totalLimit = UsageAPI.asNumber(record.total_limit) ?? UsageAPI.asNumber(record.total_quota_limit);
+    const totalLimitUsed = UsageAPI.asNumber(record.total_limit_used);
+    const totalLimit = UsageAPI.asNumber(record.total_limit);
 
     return {
       endpoints: normalizeList('endpoints'),
@@ -559,8 +531,6 @@ export class UsageAPI {
       agents: normalizeList('agents'),
       total_limit_used: totalLimitUsed,
       total_limit: totalLimit,
-      total_quota_used: totalLimitUsed,
-      total_quota_limit: totalLimit,
     };
   }
 

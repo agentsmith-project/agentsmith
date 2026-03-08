@@ -207,22 +207,22 @@ describe('UsageAPI exportReport', () => {
     expect(getMock).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/usage/report-evidence');
   });
 
-  it('normalizes limits summary to limit semantics with quota compatibility', async () => {
+  it('normalizes limits summary to limit semantics', async () => {
     const getMock = vi.fn().mockResolvedValue({
       endpoints: [
         {
           resource_id: 'ep_1',
           resource_name: 'Endpoint 1',
           resource_type: 'endpoint',
-          quota_used: 40,
-          quota_limit: 100,
-          quota_unit: 'requests',
-          quota_reset_at: '2026-03-08T00:00:00.000Z',
+          limit_used: 40,
+          limit_total: 100,
+          limit_unit: 'requests',
+          limit_reset_at: '2026-03-08T00:00:00.000Z',
           percentage_used: 40,
         },
       ],
-      total_quota_used: 40,
-      total_quota_limit: 100,
+      total_limit_used: 40,
+      total_limit: 100,
     });
 
     const api = new UsageAPI({
@@ -235,10 +235,8 @@ describe('UsageAPI exportReport', () => {
 
     expect(firstEndpoint?.limit_used).toBe(40);
     expect(firstEndpoint?.limit_total).toBe(100);
-    expect(firstEndpoint?.quota_used).toBe(40);
     expect(result.total_limit_used).toBe(40);
     expect(result.total_limit).toBe(100);
-    expect(result.total_quota_used).toBe(40);
   });
 });
 

@@ -233,8 +233,8 @@ export function CostDashboardPage({
   );
 
   const totalLimitUsagePercentage = React.useMemo(() => {
-    const totalLimit = limitsOverview?.total_limit ?? limitsOverview?.total_quota_limit;
-    const totalUsed = limitsOverview?.total_limit_used ?? limitsOverview?.total_quota_used;
+    const totalLimit = limitsOverview?.total_limit;
+    const totalUsed = limitsOverview?.total_limit_used;
     if (!totalLimit || !totalUsed) return undefined;
     return Math.min(
       100,
@@ -243,8 +243,6 @@ export function CostDashboardPage({
   }, [
     limitsOverview?.total_limit,
     limitsOverview?.total_limit_used,
-    limitsOverview?.total_quota_limit,
-    limitsOverview?.total_quota_used,
   ]);
 
   const handleRefresh = React.useCallback(() => {

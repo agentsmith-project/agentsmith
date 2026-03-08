@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
 
 export type AnomalySeverity = 'low' | 'medium' | 'high';
-export type AnomalyType = 'requests_spike' | 'error_rate' | 'latency' | 'quota_exceeded';
+export type AnomalyType = 'requests_spike' | 'error_rate' | 'latency' | 'spending_limit_exceeded';
 
 export interface AnomalyAlert {
   id: string;

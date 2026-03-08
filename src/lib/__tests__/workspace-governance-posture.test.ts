@@ -42,7 +42,7 @@ function makeProject(overrides: Partial<Project>): Project {
     join_policy: 'approval_required',
     status: 'active',
     governance_json: {
-      quotas: {
+      limits: {
         source_library: {
           max_total_files: 2000,
           max_file_size_bytes: 104857600,
@@ -116,7 +116,7 @@ describe('buildWorkspaceMemberAdministration', () => {
         makeProject({
           governance_json: {
             project_admins: ['u_3'],
-            quotas: {
+            limits: {
               source_library: {
                 max_total_files: 2000,
                 max_file_size_bytes: 104857600,

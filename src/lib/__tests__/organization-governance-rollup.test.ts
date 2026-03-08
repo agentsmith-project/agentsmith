@@ -36,7 +36,7 @@ function makeProject(overrides?: Partial<Project>): Project {
     owner_id: 'user_1',
     status: 'active',
     governance_json: {
-      quotas: {
+      limits: {
         source_library: {
           max_total_files: 10,
           max_file_size_bytes: 1024,

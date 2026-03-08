@@ -1916,8 +1916,8 @@
     "permission_denied_hint": "You don't have permission to access this resource.",
     "rate_limited_title": "Rate Limited",
     "rate_limited_hint": "Too many requests. Please try again later.",
-    "quota_exceeded_title": "Limit Exceeded",
-    "quota_exceeded_hint": "You have exceeded your limit.",
+    "spending_limit_exceeded_title": "Limit Exceeded",
+    "spending_limit_exceeded_hint": "You have exceeded your limit.",
     "model_not_found_title": "Model Not Found",
     "model_not_found_hint": "The requested model is not available.",
     "endpoint_disabled_title": "Endpoint Disabled",
@@ -3027,7 +3027,7 @@
     "error": {
       "upload_failed": "Upload failed",
       "process_failed": "Processing failed",
-      "quota_exceeded": "Limit exceeded. Cannot start AIReady.",
+      "spending_limit_exceeded": "Limit exceeded. Cannot start AIReady.",
       "delete_failed": "Delete failed"
     },
     "filter_status_all": "All",
@@ -3047,7 +3047,7 @@
     "selection_bar_label": "Selection actions",
     "selection_count": "file(s) selected",
     "selection_clear": "Clear",
-    "quota_exceeded_hint": "Limit exceeded. Cannot start AIReady.",
+    "spending_limit_exceeded_hint": "Limit exceeded. Cannot start AIReady.",
     "action_clear_attachments": "Clear Attachments",
     "action_retry": "Retry",
     "action_delete": "Delete",

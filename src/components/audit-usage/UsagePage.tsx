@@ -102,21 +102,13 @@ export function UsagePage({
       endpoints: (limitsSummary?.endpoints ?? []).map((item) => ({
         resourceId: item.resource_id,
         resourceName: item.resource_name,
-        limitUsed: readNumber(readField(item, 'limit_used'))
-          ?? readNumber(readField(item, 'quota_used'))
-          ?? 0,
-        limitTotal: readNumber(readField(item, 'limit_total'))
-          ?? readNumber(readField(item, 'quota_limit'))
-          ?? 0,
+        limitUsed: readNumber(readField(item, 'limit_used')) ?? 0,
+        limitTotal: readNumber(readField(item, 'limit_total')) ?? 0,
         percentageUsed: item.percentage_used,
-        resetAt: readString(readField(item, 'limit_reset_at'))
-          ?? readString(readField(item, 'quota_reset_at'))
-          ?? '',
+        resetAt: readString(readField(item, 'limit_reset_at')) ?? '',
       })),
-      totalLimitUsed: readNumber(readField(limitsSummary, 'total_limit_used'))
-        ?? readNumber(readField(limitsSummary, 'total_quota_used')),
-      totalLimit: readNumber(readField(limitsSummary, 'total_limit'))
-        ?? readNumber(readField(limitsSummary, 'total_quota_limit')),
+      totalLimitUsed: readNumber(readField(limitsSummary, 'total_limit_used')),
+      totalLimit: readNumber(readField(limitsSummary, 'total_limit')),
     }),
     [limitsSummary, readField, readNumber, readString],
   );

@@ -33,7 +33,7 @@ const STABLE_PROJECTS = [
     join_policy: 'open',
     status: 'active',
     governance_json: {
-      quotas: {
+      limits: {
         source_library: {
           max_total_files: 2000,
           max_file_size_bytes: 104857600,
@@ -55,7 +55,7 @@ const STABLE_PROJECTS = [
     status: 'active',
     governance_json: {
       project_admins: ['u_2'],
-      quotas: {
+      limits: {
         source_library: {
           max_total_files: 2000,
           max_file_size_bytes: 104857600,

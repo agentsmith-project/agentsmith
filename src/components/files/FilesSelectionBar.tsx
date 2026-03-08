@@ -117,7 +117,7 @@ export function FilesSelectionBar({
               </TooltipTrigger>
               {limitExceeded && (
                 <TooltipContent>
-                  <p>{t('quota_exceeded_hint')}</p>
+                  <p>{t('spending_limit_exceeded_hint')}</p>
                 </TooltipContent>
               )}
             </Tooltip>

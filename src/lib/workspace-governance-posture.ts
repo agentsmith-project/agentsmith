@@ -120,7 +120,7 @@ export function resolveWorkspaceGovernanceGroup(member: Pick<WorkspaceMember, 'g
 
 function getSourceLibraryLimit(project: Project, key: 'max_total_files' | 'max_file_size_bytes'): number | undefined {
   const governance = asRecord(project.governance_json);
-  const governanceLimits = asRecord(governance?.limits ?? governance?.quotas);
+  const governanceLimits = asRecord(governance?.limits );
   const governanceSourceLibrary = asRecord(governanceLimits?.source_library);
   const limits = asRecord(project.limits_json);
   const limitsSourceLibrary = asRecord(limits?.source_library);

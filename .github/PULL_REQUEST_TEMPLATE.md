@@ -115,7 +115,7 @@
 #### 4.2.3 Runtime Console 证据（如涉及）
 
 ```txt
-# 粘贴 npx playwright test --project=chromium e2e/legacy/runtime-console.spec.ts 输出
+# 粘贴 npm run test:e2e -- --project=chromium e2e/legacy/runtime-console.spec.ts 输出
 ✅ X passed (Y)
 ```
 
@@ -132,12 +132,22 @@
 #### 4.2.5 Organization Governance 证据（如涉及）
 
 ```txt
-# 粘贴 npx playwright test --project=chromium e2e/organization-governance.spec.ts 输出
+# 粘贴 npm run test:e2e -- --project=chromium e2e/organization-governance.spec.ts 输出
 ✅ Organization Governance Overview tests passed
 
 # 验证下钻功能
 ✅ Governance drilldown links work correctly
-✅ Release Ops trace from organization overview works
+✅ Runtime Console trace from organization overview works
+```
+
+### 4.4 Visual Baseline（手动、非阻断）
+
+- 是否涉及视觉变更：[ ] 是 / [ ] 否
+- 若“是”，是否执行了手动 visual 流程：[ ] 已执行 / [ ] 不适用
+
+```txt
+# 可选：粘贴 visual 手动流程输出
+npm run test:e2e:lane:mock:visual:update
 ```
 
 ### 4.3 覆盖率证据（Coverage）
@@ -269,15 +279,18 @@ npm run contracts:check
 npm run contracts:check-openapi
 
 # 3. E2E 测试（如涉及相关页面）
-npm run test:e2e -- <spec>
+npm run test:e2e
 
 # 4. Evidence Pipeline 相关（如涉及）
 npm test -- governance-evidence
 npm test -- release-policy
 
 # 5. Organization Governance 相关（如涉及）
-npm run test:e2e -- organization-governance.spec.ts
+npm run test:e2e -- --project=chromium e2e/organization-governance.spec.ts
 
-# 6. 无死代码
+# 6. Visual（手动、非阻断，如涉及视觉变更）
+npm run test:e2e:lane:mock:visual:update
+
+# 7. 无死代码
 # 搜索: console.log, debugger, TODO, FIXME, @ts-ignore
 ```

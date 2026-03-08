@@ -55,7 +55,6 @@ export {
   TaskAPI,
   AlertAPI,
   RuntimeAPI,
-  ReleaseOpsAPI,
   GovernanceExplainabilityAPI,
   OrganizationActionsAPI,
 } from './endpoints';

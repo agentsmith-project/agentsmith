@@ -3,7 +3,6 @@ import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
 import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
-import type { ReleaseEscalationEvent, ReleaseGateRunDetail, ReleaseGateRunListItem, ReleaseReportDetail, ReleaseReportListItem } from '@/lib/api/endpoints/release-ops';
 import type { OrganizationActionServerRecord, OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
 import { appendMockNotification } from '../state/me-notifications';
 
@@ -136,7 +135,7 @@ const releasePolicyOverrides = [{
   decided_by_name?: string;
 }>;
 
-const releaseReports: ReleaseReportListItem[] = [
+const releaseReports = [
   {
     name: 'wp11-release-controls-final-20260228',
     generated_at: '2026-02-28T20:35:10.000Z',
@@ -230,7 +229,7 @@ const releaseReports: ReleaseReportListItem[] = [
   },
 ];
 
-const releaseRuns: ReleaseGateRunListItem[] = [
+const releaseRuns = [
   {
     id: 'wp11-release-controls-final-20260228',
     incident_id: 'incident-wp11-release-controls-final-20260228',
@@ -302,7 +301,7 @@ const releaseRuns: ReleaseGateRunListItem[] = [
   },
 ];
 
-const releaseRunDetails = new Map<string, ReleaseGateRunDetail>([
+const releaseRunDetails = new Map([
   ['wp11-release-controls-final-20260228', {
     ...releaseRuns[0],
     failed_step_names: [],
@@ -319,6 +318,59 @@ const releaseRunDetails = new Map<string, ReleaseGateRunDetail>([
     failure_categories: ['authorization', 'unknown'],
   }],
 ]);
+
+type ReleaseIncidentHistoryItem = {
+  id: string;
+  incident_id: string;
+  escalation_id: string;
+  event_kind: string;
+  created_at: string;
+  actor_user_id: string;
+  actor_name: string;
+  previous_assignee_user_id?: string;
+  previous_assignee_name?: string;
+  previous_due_at?: string;
+  next_assignee_user_id?: string;
+  next_assignee_name?: string;
+  next_due_at?: string;
+};
+
+type ReleaseEscalationRecord = {
+  id: string;
+  incident_id: string;
+  report_name: string;
+  run_id: string;
+  created_at: string;
+  event_type: string;
+  severity: string;
+  status: 'open' | 'resolved';
+  title: string;
+  body: string;
+  artifact_name: string;
+  trigger: string;
+  release_policy_decision: string;
+  runtime_release_readiness: string;
+  usage_release_readiness: string;
+  assignee_user_id?: string;
+  assignee_name?: string;
+  due_at?: string;
+  age_ms?: number;
+  sla_status?: 'on_track' | 'due_soon' | 'overdue' | 'resolved';
+  failed_step_name?: string;
+  failure_categories?: string[];
+  governance_blockers?: Array<{ source: string; message: string }>;
+  governance_warnings?: Array<{ source: string; message: string }>;
+  webhook_delivery?: Record<string, unknown>;
+  incident_history?: ReleaseIncidentHistoryItem[];
+  acknowledged_at?: string;
+  acknowledged_by_user_id?: string;
+  acknowledged_by_name?: string;
+  resolution_reason?: string;
+  resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
+  resolved_at?: string;
+  resolved_by_user_id?: string;
+  resolved_by_name?: string;
+};
 
 let releaseGateRunnerStatus = {
   running: false,
@@ -352,7 +404,7 @@ let releaseGateRunnerStatus = {
   }>,
 };
 
-const releaseEscalations: ReleaseEscalationEvent[] = [
+const releaseEscalations: ReleaseEscalationRecord[] = [
   {
     id: 'usage-webhook-signature-policy-check',
     incident_id: 'incident-usage-webhook-signature-policy-check',
@@ -478,7 +530,7 @@ const releaseEscalations: ReleaseEscalationEvent[] = [
   },
 ];
 
-const releaseReportDetails = new Map<string, ReleaseReportDetail>([
+const releaseReportDetails = new Map([
   ['wp11-release-controls-final-20260228', {
     name: 'wp11-release-controls-final-20260228',
     policy_enforcement: releaseReports[0]?.policy_enforcement,

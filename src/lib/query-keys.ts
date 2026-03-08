@@ -226,21 +226,6 @@ export const queryKeys = {
       ['usage-limits-summary', workspaceId, projectId] as const,
   },
 
-  releaseOps: {
-    _def: ['release-ops'] as const,
-    list: (workspaceId = '', projectId = '') => ['release-ops', 'reports', workspaceId, projectId] as const,
-    detail: (name: string, workspaceId = '', projectId = '') =>
-      ['release-ops', 'reports', workspaceId, projectId, name] as const,
-    runs: (workspaceId = '', projectId = '') => ['release-ops', 'runs', workspaceId, projectId] as const,
-    runDetail: (id: string, workspaceId = '', projectId = '') =>
-      ['release-ops', 'runs', workspaceId, projectId, id] as const,
-    runner: () => ['release-ops', 'runner'] as const,
-    escalations: () => ['release-ops', 'escalations'] as const,
-    escalationDetail: (id: string) => ['release-ops', 'escalations', id] as const,
-    overrides: (workspaceId: string, projectId: string, reportName: string) =>
-      ['release-ops', 'overrides', workspaceId, projectId, reportName] as const,
-  },
-
   /** Chat sessions and messages */
   chat: {
     _def: ['chat'] as const,

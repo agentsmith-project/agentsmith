@@ -6,6 +6,7 @@ import { UsagePage } from '../UsagePage';
 const invalidateQueries = vi.fn();
 const exportReportMock = vi.fn();
 const routerReplaceMock = vi.fn();
+let canManage = true;
 const searchParamsState = {
   value: '',
 };
@@ -30,7 +31,8 @@ vi.mock('@tanstack/react-query', async () => {
 });
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) => permission === 'project:endpoint:use' || permission === 'project:manage',
+  useHasPermission: (permission: string) =>
+    permission === 'project:endpoint:use' || (permission === 'project:manage' && canManage),
 }));
 
 vi.mock('@/lib/api', async () => {
@@ -108,6 +110,7 @@ vi.mock('@/components/ui/toast', () => ({
 describe('UsagePage', () => {
   beforeEach(() => {
     searchParamsState.value = '';
+    canManage = true;
   });
 
   it('renders simplified my-usage view and opens detail drawer', async () => {
@@ -167,5 +170,14 @@ describe('UsagePage', () => {
 
     expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__table')).not.toBeInTheDocument();
+  });
+
+  it('shows lite usage view for non-admin users by default', () => {
+    canManage = false;
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    expect(screen.getByTestId('usage-lite__view')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
   });
 });

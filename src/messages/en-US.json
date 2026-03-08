@@ -1274,6 +1274,17 @@
       "errors": "Errors",
       "resources": "Resources"
     },
+    "lite": {
+      "cards": {
+        "requests_today": "Requests Today",
+        "errors_today": "Errors Today",
+        "tokens_today": "Tokens Today",
+        "period_requests": "Requests (30 days)"
+      },
+      "trend_title": "Usage Trend (30 days)",
+      "open_advanced": "Open Detailed View",
+      "no_data": "No usage trend data available."
+    },
     "detail": {
       "title": "Request Runtime Detail",
       "subtitle": "Inspect request-level runtime behavior, pricing evidence, and fallback attempts.",

@@ -9,6 +9,7 @@ import { UsageFilters } from './UsageFilters';
 import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
 import { UsageTable } from './UsageTable';
 import { UsageFactsTable } from './UsageFactsTable';
+import { UsageLiteView } from './UsageLiteView';
 import { useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
@@ -159,6 +160,8 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const canExportUsage = useHasPermission('project:manage');
+  const explicitUsageView = searchParams.get('view');
+  const isLiteMode = !canExportUsage && explicitUsageView !== 'advanced';
   const usageApi = React.useMemo(() => new UsageAPI(getApiClient()), []);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
@@ -294,7 +297,31 @@ export function UsagePage({
   );
 
   const { data, isLoading, error } = useUsageRecords(workspaceId, projectId, apiFilters, {
-    enabled: canReadUsage,
+    enabled: canReadUsage && !isLiteMode,
+  });
+  const liteRange = React.useMemo(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    return {
+      start_time: start.toISOString(),
+      end_time: end.toISOString(),
+    };
+  }, []);
+  const liteUsageParams = React.useMemo<UsageListParams>(
+    () => ({
+      start_time: liteRange.start_time,
+      end_time: liteRange.end_time,
+      end_user_id: effectiveEndUserId,
+      page: 1,
+      page_size: 30,
+      group_by: 'day',
+      sort_by: 'time_bucket',
+      sort_order: 'asc',
+    }),
+    [effectiveEndUserId, liteRange.end_time, liteRange.start_time],
+  );
+  const { data: liteData, isLoading: liteLoading, error: liteError } = useUsageRecords(workspaceId, projectId, liteUsageParams, {
+    enabled: canReadUsage && isLiteMode,
   });
 
   const usageDetailRange = React.useMemo(
@@ -525,16 +552,56 @@ export function UsagePage({
     );
   }
 
-  if (error) {
+  if ((isLiteMode ? liteError : error)) {
     return (
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
         <ErrorState
           title={commonT('something_went_wrong')}
           message={t('load_failed_with_reason', {
-            reason: error instanceof Error ? error.message : commonT('unknown_error'),
+            reason: (isLiteMode ? liteError : error) instanceof Error
+              ? (isLiteMode ? liteError : error)?.message ?? commonT('unknown_error')
+              : commonT('unknown_error'),
           })}
           onRetry={handleRefresh}
           retryLabel={commonT('retry')}
+        />
+      </PageLayout>
+    );
+  }
+
+  if (isLiteMode) {
+    return (
+      <PageLayout
+        header={(
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            actions={(
+              <Button variant="outline" onClick={handleRefresh} disabled={liteLoading || kpiLoading}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${liteLoading || kpiLoading ? 'animate-spin' : ''}`} />
+                {commonT('refresh')}
+              </Button>
+            )}
+          />
+        )}
+        toolbar={(
+          <PageToolbar className="w-full">
+            <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2 text-xs text-tertiary" data-testid="usage__my-scope-badge">
+              {t('scope_my_usage')}
+            </div>
+          </PageToolbar>
+        )}
+      >
+        <UsageLiteView
+          kpi={kpiData}
+          records={liteData?.items ?? []}
+          loading={liteLoading || kpiLoading}
+          onOpenAdvanced={() => {
+            const next = new URLSearchParams(searchParamsKey);
+            next.set('view', 'advanced');
+            const query = next.toString();
+            router.push(query ? `${pathname}?${query}` : pathname);
+          }}
         />
       </PageLayout>
     );

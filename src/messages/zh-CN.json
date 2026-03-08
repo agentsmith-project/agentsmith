@@ -1276,6 +1276,17 @@
       "errors": "错误数",
       "resources": "资源数"
     },
+    "lite": {
+      "cards": {
+        "requests_today": "今日请求数",
+        "errors_today": "今日错误数",
+        "tokens_today": "今日 Token 数",
+        "period_requests": "近 30 天请求数"
+      },
+      "trend_title": "近 30 天用量趋势",
+      "open_advanced": "查看详细模式",
+      "no_data": "暂无用量趋势数据。"
+    },
     "detail": {
       "title": "请求运行时详情",
       "subtitle": "查看请求级运行行为、计费证据与降级尝试。",

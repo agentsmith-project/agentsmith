@@ -53,12 +53,12 @@ Expected:
 Run:
 
 ```bash
-npm run test:e2e -- --grep "usage|audit|resource-policy|notebook"
+npm run test:e2e
 ```
 
 Expected:
 
-1. Smoke/chromium functional cases pass.
+1. Smoke/chromium functional cases pass (default CI release gate).
 2. Visual cases are either:
    - baseline exists and diff within threshold, or
    - approved baseline refresh is completed in the same PR.
@@ -68,6 +68,9 @@ Expected:
 If visual fails because baseline is missing or intentionally changed:
 
 1. Regenerate approved screenshots.
+   ```bash
+   npm run test:e2e:lane:mock:visual -- --update-snapshots
+   ```
 2. Review `audit` and `usage` full-page outputs for low-cognitive readability and role separation.
 3. Commit updated snapshots with explicit note:
    - `visual baseline update: usage/audit/notebook`.

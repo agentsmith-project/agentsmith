@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       run_l2:
-        description: "Run L2 mock full matrix (smoke+chromium+visual)"
+        description: "Run L2 mock full matrix (smoke+chromium)"
         required: false
         default: true
         type: boolean

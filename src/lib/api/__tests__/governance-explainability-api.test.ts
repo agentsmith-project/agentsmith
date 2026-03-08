@@ -49,7 +49,7 @@ describe('GovernanceExplainabilityAPI', () => {
     });
   });
 
-  it('calls quota check endpoint', async () => {
+  it('calls limit check endpoint', async () => {
     const mock = createClient();
     const api = new GovernanceExplainabilityAPI(toApiClient(mock));
 
@@ -94,7 +94,7 @@ describe('GovernanceExplainabilityAPI', () => {
     expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:manage']);
   });
 
-  it('extracts governance quota error details from APIError', () => {
+  it('extracts governance limit error details from APIError', () => {
     const error = new APIError(
       'RESOURCE_POLICY_QUOTA_EXCEEDED',
       'resource_policy_quota_exceeded',

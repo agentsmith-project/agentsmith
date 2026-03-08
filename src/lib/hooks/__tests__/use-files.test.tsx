@@ -23,7 +23,7 @@ vi.mock('@/lib/api/endpoints/files', () => {
     filename: 'test.pdf',
     file_size: 1024,
   });
-  const mockGetQuota = vi.fn().mockResolvedValue({
+  const mockGetLimitSummary = vi.fn().mockResolvedValue({
     storage: { used: 1024, limit: 10240 },
     docdb: { used: 512, limit: 5120 },
     vectordb: { used: 256, limit: 2560 },
@@ -42,7 +42,7 @@ vi.mock('@/lib/api/endpoints/files', () => {
   class MockFilesAPI {
     list = mockList;
     get = mockGet;
-    getQuota = mockGetQuota;
+    getQuota = mockGetLimitSummary;
     upload = mockUpload;
     delete = mockDelete;
     startAIReady = mockStartAIReady;

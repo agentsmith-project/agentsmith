@@ -8,7 +8,7 @@ vi.mock('next-intl', () => ({
 }));
 
 describe('UsageFactDetailDrawer', () => {
-  it('renders governance quota evidence details from fact metadata', () => {
+  it('renders governance limit evidence details from fact metadata', () => {
     render(
       <UsageFactDetailDrawer
         open

@@ -233,12 +233,19 @@ export function CostDashboardPage({
   );
 
   const totalLimitUsagePercentage = React.useMemo(() => {
-    if (!limitsOverview?.total_quota_limit || !limitsOverview.total_quota_used) return undefined;
+    const totalLimit = limitsOverview?.total_limit ?? limitsOverview?.total_quota_limit;
+    const totalUsed = limitsOverview?.total_limit_used ?? limitsOverview?.total_quota_used;
+    if (!totalLimit || !totalUsed) return undefined;
     return Math.min(
       100,
-      (limitsOverview.total_quota_used / Math.max(1, limitsOverview.total_quota_limit)) * 100,
+      (totalUsed / Math.max(1, totalLimit)) * 100,
     );
-  }, [limitsOverview?.total_quota_limit, limitsOverview?.total_quota_used]);
+  }, [
+    limitsOverview?.total_limit,
+    limitsOverview?.total_limit_used,
+    limitsOverview?.total_quota_limit,
+    limitsOverview?.total_quota_used,
+  ]);
 
   const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['usage-timeseries', workspaceId, projectId] });

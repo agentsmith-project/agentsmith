@@ -52,10 +52,26 @@ export interface LimitsSummaryItem {
   resource_id: string;
   resource_name: string;
   resource_type: 'endpoint' | 'source_library' | 'agent';
-  quota_used: number;
-  quota_limit: number;
-  quota_unit: 'tokens' | 'requests' | 'bytes' | 'files';
-  quota_reset_at: string;
+  limit_used: number;
+  limit_total: number;
+  limit_unit: 'tokens' | 'requests' | 'bytes' | 'files';
+  limit_reset_at: string;
+  /**
+   * @deprecated legacy alias kept for compatibility with older callers.
+   */
+  quota_used?: number;
+  /**
+   * @deprecated legacy alias kept for compatibility with older callers.
+   */
+  quota_limit?: number;
+  /**
+   * @deprecated legacy alias kept for compatibility with older callers.
+   */
+  quota_unit?: 'tokens' | 'requests' | 'bytes' | 'files';
+  /**
+   * @deprecated legacy alias kept for compatibility with older callers.
+   */
+  quota_reset_at?: string;
   percentage_used: number;
 }
 
@@ -63,7 +79,15 @@ export interface LimitsOverview {
   endpoints?: LimitsSummaryItem[];
   source_libraries?: LimitsSummaryItem[];
   agents?: LimitsSummaryItem[];
+  total_limit?: number;
+  total_limit_used?: number;
+  /**
+   * @deprecated legacy alias kept for compatibility with older callers.
+   */
   total_quota_limit?: number;
+  /**
+   * @deprecated legacy alias kept for compatibility with older callers.
+   */
   total_quota_used?: number;
 }
 
@@ -473,6 +497,73 @@ export class AuditAPI {
 export class UsageAPI {
   constructor(private client: ApiClient) {}
 
+  private static asNumber(value: unknown): number | undefined {
+    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+  }
+
+  private static asString(value: unknown): string | undefined {
+    return typeof value === 'string' && value.length > 0 ? value : undefined;
+  }
+
+  private static normalizeLimitsSummaryItem(item: unknown): LimitsSummaryItem | null {
+    if (!item || typeof item !== 'object') return null;
+    const record = item as Record<string, unknown>;
+    const resourceId = UsageAPI.asString(record.resource_id);
+    const resourceName = UsageAPI.asString(record.resource_name) ?? resourceId ?? 'unknown';
+    const resourceType = record.resource_type;
+    if (!resourceId || (resourceType !== 'endpoint' && resourceType !== 'source_library' && resourceType !== 'agent')) {
+      return null;
+    }
+
+    const limitUsed = UsageAPI.asNumber(record.limit_used) ?? UsageAPI.asNumber(record.quota_used) ?? 0;
+    const limitTotal = UsageAPI.asNumber(record.limit_total) ?? UsageAPI.asNumber(record.quota_limit) ?? 0;
+    const limitResetAt = UsageAPI.asString(record.limit_reset_at) ?? UsageAPI.asString(record.quota_reset_at) ?? '';
+    const limitUnit = (record.limit_unit ?? record.quota_unit) as LimitsSummaryItem['limit_unit'] | undefined;
+    const unit = limitUnit === 'tokens' || limitUnit === 'requests' || limitUnit === 'bytes' || limitUnit === 'files'
+      ? limitUnit
+      : 'requests';
+    const percentageUsed = UsageAPI.asNumber(record.percentage_used)
+      ?? (limitTotal > 0 ? Math.min(100, (limitUsed / limitTotal) * 100) : 0);
+
+    return {
+      resource_id: resourceId,
+      resource_name: resourceName,
+      resource_type: resourceType,
+      limit_used: limitUsed,
+      limit_total: limitTotal,
+      limit_unit: unit,
+      limit_reset_at: limitResetAt,
+      quota_used: limitUsed,
+      quota_limit: limitTotal,
+      quota_unit: unit,
+      quota_reset_at: limitResetAt,
+      percentage_used: percentageUsed,
+    };
+  }
+
+  private static normalizeLimitsOverview(payload: unknown): LimitsOverview {
+    const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+    const normalizeList = (key: 'endpoints' | 'source_libraries' | 'agents') =>
+      Array.isArray(record[key])
+        ? record[key]
+          .map((item) => UsageAPI.normalizeLimitsSummaryItem(item))
+          .filter((item): item is LimitsSummaryItem => item !== null)
+        : undefined;
+
+    const totalLimitUsed = UsageAPI.asNumber(record.total_limit_used) ?? UsageAPI.asNumber(record.total_quota_used);
+    const totalLimit = UsageAPI.asNumber(record.total_limit) ?? UsageAPI.asNumber(record.total_quota_limit);
+
+    return {
+      endpoints: normalizeList('endpoints'),
+      source_libraries: normalizeList('source_libraries'),
+      agents: normalizeList('agents'),
+      total_limit_used: totalLimitUsed,
+      total_limit: totalLimit,
+      total_quota_used: totalLimitUsed,
+      total_quota_limit: totalLimit,
+    };
+  }
+
   /**
    * Get usage KPI summary
    */
@@ -610,9 +701,10 @@ export class UsageAPI {
     workspaceId: string,
     projectId: string,
   ): Promise<LimitsOverview> {
-    return this.client.get<LimitsOverview>(
+    const response = await this.client.get<unknown>(
       `/workspaces/${workspaceId}/projects/${projectId}/limits/summary`,
     );
+    return UsageAPI.normalizeLimitsOverview(response);
   }
 
   async getRuntimeObservability(

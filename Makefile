@@ -113,8 +113,9 @@ help-extended:
 	@echo "  make web-msw       # start frontend with msw"
 	@echo ""
 	@echo "Tests:"
-	@echo "  make e2e           # run mock e2e (MSW)"
-	@echo "  make e2e-local     # run mock e2e against a manually started web server (BASE_URL)"
+	@echo "  make e2e           # run default e2e gate (smoke+chromium, MSW)"
+	@echo "  make e2e-local     # run default e2e gate against a manually started web server (BASE_URL)"
+	@echo "  make lane-mock-visual # run visual lane only (manual baseline workflow)"
 	@echo "  make e2e-int-minimal   # run minimal integration e2e (real backend)"
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
 	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
@@ -556,11 +557,11 @@ web-msw:
 	$(NPM) run dev:test -- --port $(PORT_WEB)
 
 e2e:
-	$(NPM) run test:e2e -- --project=chromium
+	$(NPM) run test:e2e
 
 e2e-local:
 	BASE_URL=$(BASE_URL) \
-	$(NPM) run test:e2e -- --project=chromium
+	$(NPM) run test:e2e
 
 e2e-int-minimal:
 	$(NPM) run test:e2e:integration:minimal

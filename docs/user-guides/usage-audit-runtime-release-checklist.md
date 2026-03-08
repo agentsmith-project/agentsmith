@@ -69,7 +69,7 @@ If visual fails because baseline is missing or intentionally changed:
 
 1. Regenerate approved screenshots.
    ```bash
-   npm run test:e2e:lane:mock:visual -- --update-snapshots
+   npm run test:e2e:lane:mock:visual:update
    ```
 2. Review `audit` and `usage` full-page outputs for low-cognitive readability and role separation.
 3. Commit updated snapshots with explicit note:

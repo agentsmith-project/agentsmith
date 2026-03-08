@@ -33,6 +33,7 @@ When UI changes need visual review:
    ```
 2. Review generated images locally.
 3. Capture review evidence in PR description (target pages + key diffs).
+4. Optional CI artifact run: trigger `Quality Gates` with `run_visual=true`.
 
 ## 4. Scope Control
 

@@ -1256,7 +1256,6 @@
     "load_failed_with_reason": "加载用量数据失败：{reason}",
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",
-    "scope_project_usage": "项目用量",
     "view_mode": {
       "aggregate": "用量概览",
       "facts": "请求明细"

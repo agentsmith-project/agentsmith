@@ -1254,7 +1254,6 @@
     "load_failed_with_reason": "Failed to load usage data: {reason}",
     "permission_denied": "You don't have permission to view usage statistics.",
     "scope_my_usage": "My Usage",
-    "scope_project_usage": "Project Usage",
     "view_mode": {
       "aggregate": "Usage Overview",
       "facts": "Request Details"

@@ -37,6 +37,7 @@ export interface UsageFactsTableProps {
   loading?: boolean;
   hasActiveFilters?: boolean;
   onClearFilters?: () => void;
+  onRefresh?: () => void;
   onSelectFact?: (fact: UsageFactRecord) => void;
 }
 
@@ -45,6 +46,7 @@ export function UsageFactsTable({
   loading = false,
   hasActiveFilters = false,
   onClearFilters,
+  onRefresh,
   onSelectFact,
 }: UsageFactsTableProps) {
   const t = useTranslations('usage');
@@ -134,6 +136,7 @@ export function UsageFactsTable({
         title={hasActiveFilters ? t('empty.filtered_title') : t('empty.title')}
         description={hasActiveFilters ? t('empty.filtered_description') : t('empty.description')}
         onClearFilters={onClearFilters}
+        onRefresh={onRefresh}
       />
     );
   }

@@ -78,6 +78,7 @@ export interface AuditTableProps {
   loading?: boolean;
   onViewDetails?: (event: AuditEvent) => void;
   onClearFilters?: () => void;
+  onRefresh?: () => void;
 }
 
 export function AuditTable({
@@ -85,6 +86,7 @@ export function AuditTable({
   loading = false,
   onViewDetails,
   onClearFilters,
+  onRefresh,
 }: AuditTableProps) {
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
@@ -397,6 +399,7 @@ export function AuditTable({
         title={t('empty.title')}
         description={t('empty.description')}
         onClearFilters={onClearFilters}
+        onRefresh={onRefresh}
       />
     );
   }

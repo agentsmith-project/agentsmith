@@ -541,6 +541,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
           loading={isLoading}
           onViewDetails={handleViewDetails}
           onClearFilters={handleClearFilters}
+          onRefresh={handleRefresh}
         />
         <div className="mt-4 flex items-center justify-between">
           <p className="text-xs text-tertiary">

@@ -655,6 +655,7 @@ export function UsagePage({
                 data={filteredUsageFactsList}
                 loading={usageFactsListQuery.isLoading}
                 onClearFilters={handleClearFilters}
+                onRefresh={handleRefresh}
                 hasActiveFilters={hasActiveFilters}
                 onSelectFact={handleSelectUsageFact}
               />
@@ -663,6 +664,7 @@ export function UsagePage({
                 data={data?.items || []}
                 loading={isLoading}
                 onClearFilters={handleClearFilters}
+                onRefresh={handleRefresh}
                 hasActiveFilters={hasActiveFilters}
                 onSelectRecord={handleSelectUsageRecord}
               />

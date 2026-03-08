@@ -52,6 +52,7 @@ export interface UsageTableProps {
   data: UsageRecord[];
   loading?: boolean;
   onClearFilters?: () => void;
+  onRefresh?: () => void;
   hasActiveFilters?: boolean;
   onSelectRecord?: (record: UsageRecord) => void;
 }
@@ -60,6 +61,7 @@ export function UsageTable({
   data,
   loading = false,
   onClearFilters,
+  onRefresh,
   hasActiveFilters = false,
   onSelectRecord,
 }: UsageTableProps) {
@@ -159,6 +161,7 @@ export function UsageTable({
         title={hasActiveFilters ? t('empty.filtered_title') : t('empty.title')}
         description={hasActiveFilters ? t('empty.filtered_description') : t('empty.description')}
         onClearFilters={onClearFilters}
+        onRefresh={onRefresh}
       />
     );
   }

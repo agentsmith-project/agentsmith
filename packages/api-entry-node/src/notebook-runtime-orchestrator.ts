@@ -11,7 +11,7 @@ import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-rec
 import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { isProjectResourceAccessAllowedForUser } from './project-resource-policy-store.js';
+import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { buildRuntimeThirdPartyCredentialFiles } from './third-party-runtime-files.js';
 
 type NotebookTaskRecord = {
@@ -165,15 +165,22 @@ export async function runNotebookTaskWithExternalAgent(input: {
       if (!endpoint || endpoint.status !== 'active') {
         throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
       }
-      const endpointPolicyCheck = isProjectResourceAccessAllowedForUser({
+      const preflight = await enforceEndpointGovernancePreflight({
+        deps,
         workspaceId: task.workspace_id,
         projectId: task.project_id,
-        resourceType: 'endpoint',
-        resourceId: endpointId,
+        endpoint,
         userId: user.id,
+        source: 'notebook_runtime_preflight',
+        contextMetadata: {
+          task_id: task.id,
+          run_id: runId,
+        },
       });
-      if (!endpointPolicyCheck.allowed) {
-        throw Object.assign(new Error('resource_policy_denied_endpoint'), { code: 'RESOURCE_POLICY_DENIED' });
+      if (!preflight.allowed) {
+        throw Object.assign(new Error(preflight.responseBody.message), {
+          code: preflight.responseBody.error_code,
+        });
       }
       endpointModel = endpoint.openai_model?.trim() ?? '';
     }

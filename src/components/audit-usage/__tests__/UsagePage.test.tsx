@@ -141,4 +141,13 @@ describe('UsagePage', () => {
     createObjectURLMock.mockRestore();
     revokeObjectURLMock.mockRestore();
   });
+
+  it('switches to request facts view', async () => {
+    const user = userEvent.setup();
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    await user.click(screen.getByTestId('usage__view-facts'));
+
+    expect(screen.getByTestId('usage-facts__table')).toBeInTheDocument();
+  });
 });

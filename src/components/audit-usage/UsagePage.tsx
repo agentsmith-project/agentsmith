@@ -8,6 +8,7 @@ import { UsageKPICards } from './UsageKPICards';
 import { UsageFilters } from './UsageFilters';
 import { UsageFactDetailDrawer } from './UsageFactDetailDrawer';
 import { UsageTable } from './UsageTable';
+import { UsageFactsTable } from './UsageFactsTable';
 import { useUsageFacts, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
@@ -22,6 +23,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { getApiClient, UsageAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import { InvestigationAnchorBar } from './InvestigationAnchorBar';
+import type { UsageFactRecord } from '@/lib/api/types';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -148,8 +150,12 @@ export function UsagePage({
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
   const searchParamsKey = searchParams.toString();
   const [selectedUsageRecord, setSelectedUsageRecord] = React.useState<UsageRecord | null>(null);
+  const [selectedFactId, setSelectedFactId] = React.useState<string | null>(null);
   const [detailOpen, setDetailOpen] = React.useState(false);
   const [exportingFormat, setExportingFormat] = React.useState<'csv' | 'json' | null>(null);
+  const [viewMode, setViewMode] = React.useState<'aggregate' | 'facts'>(
+    () => (searchParams.get('usage_view') === 'facts' ? 'facts' : 'aggregate'),
+  );
   const [filters, setFilters] = React.useState<UsageListParams>(() => {
     const searchFilters = buildUsageFiltersFromSearchParams(new URLSearchParams(searchParamsKey));
     const hasInvestigationFromSearch = !!(
@@ -208,6 +214,12 @@ export function UsagePage({
   }, [effectiveEndUserId, searchParamsKey]);
 
   React.useEffect(() => {
+    const parsed = new URLSearchParams(searchParamsKey);
+    const mode = parsed.get('usage_view') === 'facts' ? 'facts' : 'aggregate';
+    setViewMode((prev) => (prev === mode ? prev : mode));
+  }, [searchParamsKey]);
+
+  React.useEffect(() => {
     const next = new URLSearchParams(searchParamsKey);
     const entries: Array<[keyof Pick<UsageListParams, 'request_id' | 'decision_id' | 'trace_ref' | 'trace_incident_id' | 'trace_escalation_id' | 'trace_run_id'>, string | undefined]> = [
       ['request_id', filters.request_id],
@@ -230,6 +242,16 @@ export function UsagePage({
         changed = true;
       }
     }
+    const currentMode = searchParams.get('usage_view');
+    if (viewMode === 'facts') {
+      if (currentMode !== 'facts') {
+        next.set('usage_view', 'facts');
+        changed = true;
+      }
+    } else if (currentMode) {
+      next.delete('usage_view');
+      changed = true;
+    }
     if (!changed) return;
     const query = next.toString();
     router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
@@ -240,6 +262,7 @@ export function UsagePage({
     filters.trace_incident_id,
     filters.trace_ref,
     filters.trace_run_id,
+    viewMode,
     pathname,
     router,
     searchParams,
@@ -299,15 +322,44 @@ export function UsagePage({
     },
     { enabled: canReadUsage && detailOpen && !!usageDetailRange },
   );
+  const usageFactsListQuery = useUsageFacts(
+    workspaceId,
+    projectId,
+    {
+      start_time: apiFilters.start_time,
+      end_time: apiFilters.end_time,
+      resource_type: apiFilters.resource_type,
+      resource_id: apiFilters.resource_id,
+      end_user_id: apiFilters.end_user_id,
+      result: apiFilters.result,
+      provider: apiFilters.provider,
+      model: apiFilters.model,
+      request_id: apiFilters.request_id,
+      decision_id: apiFilters.decision_id,
+      trace_ref: apiFilters.trace_ref,
+      trace_incident_id: apiFilters.trace_incident_id,
+      trace_escalation_id: apiFilters.trace_escalation_id,
+      trace_run_id: apiFilters.trace_run_id,
+      error_class: apiFilters.error_class,
+      page: filters.page ?? 1,
+      page_size: filters.page_size ?? 25,
+      sort_order: 'desc',
+    },
+    { enabled: canReadUsage && viewMode === 'facts' },
+  );
   const filteredUsageFacts = React.useMemo(
     () => (usageFactsQuery.data?.items ?? []).filter((item) => matchesUsageInvestigation(item, apiFilters)),
     [usageFactsQuery.data?.items, apiFilters],
   );
+  const filteredUsageFactsList = React.useMemo(
+    () => (usageFactsListQuery.data?.items ?? []).filter((item) => matchesUsageInvestigation(item, apiFilters)),
+    [usageFactsListQuery.data?.items, apiFilters],
+  );
 
   React.useEffect(() => {
-    if (!hasInvestigationFilters) return;
+    if (!hasInvestigationFilters || viewMode !== 'aggregate') return;
     setDetailOpen(true);
-  }, [hasInvestigationFilters]);
+  }, [hasInvestigationFilters, viewMode]);
 
   const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.usage._def });
@@ -375,6 +427,7 @@ export function UsagePage({
       page: 1,
       page_size: 25,
     }));
+    setSelectedFactId(null);
     const next = new URLSearchParams(searchParamsKey);
     next.delete('request_id');
     next.delete('decision_id');
@@ -399,12 +452,12 @@ export function UsagePage({
     [effectiveEndUserId],
   );
 
-  const currentPage = data?.page ?? filters.page ?? 1;
-  const pageSize = data?.page_size ?? filters.page_size ?? 25;
-  const totalItems = data?.total ?? 0;
+  const currentPage = (viewMode === 'facts' ? usageFactsListQuery.data?.page : data?.page) ?? filters.page ?? 1;
+  const pageSize = (viewMode === 'facts' ? usageFactsListQuery.data?.page_size : data?.page_size) ?? filters.page_size ?? 25;
+  const totalItems = (viewMode === 'facts' ? usageFactsListQuery.data?.total : data?.total) ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
   const canGoPrev = currentPage > 1;
-  const canGoNext = !!data?.has_more || currentPage < totalPages;
+  const canGoNext = (viewMode === 'facts' ? !!usageFactsListQuery.data?.has_more : !!data?.has_more) || currentPage < totalPages;
   const hasActiveFilters = !!apiFilters.resource_type
     || !!apiFilters.resource_id
     || !!apiFilters.end_user_id
@@ -420,9 +473,19 @@ export function UsagePage({
       || !!apiFilters.error_class;
 
   const handleSelectUsageRecord = React.useCallback((record: UsageRecord) => {
+    setSelectedFactId(null);
     setSelectedUsageRecord(record);
     setDetailOpen(true);
   }, []);
+  const handleSelectUsageFact = React.useCallback((fact: UsageFactRecord) => {
+    setSelectedUsageRecord(null);
+    setSelectedFactId(fact.id);
+    setDetailOpen(true);
+  }, []);
+  const drawerFacts = React.useMemo(() => {
+    if (!selectedFactId) return filteredUsageFacts;
+    return filteredUsageFactsList.filter((item) => item.id === selectedFactId);
+  }, [filteredUsageFacts, filteredUsageFactsList, selectedFactId]);
 
   if (!canReadUsage) {
     return (
@@ -516,15 +579,46 @@ export function UsagePage({
           />
         </div>
 
+        <div className="flex items-center gap-2" data-testid="usage__view-mode">
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === 'aggregate' ? 'default' : 'outline'}
+            onClick={() => setViewMode('aggregate')}
+            data-testid="usage__view-aggregate"
+          >
+            {t('view_mode.aggregate')}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={viewMode === 'facts' ? 'default' : 'outline'}
+            onClick={() => setViewMode('facts')}
+            data-testid="usage__view-facts"
+          >
+            {t('view_mode.facts')}
+          </Button>
+        </div>
+
         <div className="flex-1 min-h-0 overflow-y-auto">
           <div className="rounded-xl border border-border bg-surface p-3">
-            <UsageTable
-              data={data?.items || []}
-              loading={isLoading}
-              onClearFilters={handleClearFilters}
-              hasActiveFilters={hasActiveFilters}
-              onSelectRecord={handleSelectUsageRecord}
-            />
+            {viewMode === 'facts' ? (
+              <UsageFactsTable
+                data={filteredUsageFactsList}
+                loading={usageFactsListQuery.isLoading}
+                onClearFilters={handleClearFilters}
+                hasActiveFilters={hasActiveFilters}
+                onSelectFact={handleSelectUsageFact}
+              />
+            ) : (
+              <UsageTable
+                data={data?.items || []}
+                loading={isLoading}
+                onClearFilters={handleClearFilters}
+                hasActiveFilters={hasActiveFilters}
+                onSelectRecord={handleSelectUsageRecord}
+              />
+            )}
             <div className="mt-3 flex items-center justify-between border-t border-subtle pt-3">
               <p className="text-xs text-tertiary">
                 {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·{' '}
@@ -535,7 +629,7 @@ export function UsagePage({
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!canGoPrev || isLoading}
+                  disabled={!canGoPrev || isLoading || usageFactsListQuery.isLoading}
                   onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
                 >
                   {commonT('previous')}
@@ -544,7 +638,7 @@ export function UsagePage({
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!canGoNext || isLoading}
+                  disabled={!canGoNext || isLoading || usageFactsListQuery.isLoading}
                   onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
                 >
                   {commonT('next')}
@@ -557,8 +651,8 @@ export function UsagePage({
         <UsageFactDetailDrawer
           open={detailOpen}
           onOpenChange={setDetailOpen}
-          facts={filteredUsageFacts}
-          loading={usageFactsQuery.isLoading}
+          facts={drawerFacts}
+          loading={selectedFactId ? usageFactsListQuery.isLoading : usageFactsQuery.isLoading}
           aggregateLabel={selectedUsageRecord?.time_bucket}
           basePath={basePath}
         />

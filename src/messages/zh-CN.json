@@ -1255,6 +1255,20 @@
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",
     "scope_project_usage": "项目用量",
+    "view_mode": {
+      "aggregate": "聚合视图",
+      "facts": "请求事实"
+    },
+    "facts_table": {
+      "timestamp": "时间戳",
+      "request_id": "请求 ID",
+      "decision_id": "决策 ID",
+      "result": "结果",
+      "provider": "提供商",
+      "model": "模型",
+      "tokens": "Token",
+      "estimated_cost": "预估成本"
+    },
     "detail": {
       "title": "请求运行时详情",
       "subtitle": "查看请求级运行行为、计费证据与降级尝试。",

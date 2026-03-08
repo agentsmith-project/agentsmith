@@ -1253,6 +1253,20 @@
     "permission_denied": "You don't have permission to view usage statistics.",
     "scope_my_usage": "My Usage",
     "scope_project_usage": "Project Usage",
+    "view_mode": {
+      "aggregate": "Aggregate",
+      "facts": "Request Facts"
+    },
+    "facts_table": {
+      "timestamp": "Timestamp",
+      "request_id": "Request ID",
+      "decision_id": "Decision ID",
+      "result": "Result",
+      "provider": "Provider",
+      "model": "Model",
+      "tokens": "Tokens",
+      "estimated_cost": "Estimated Cost"
+    },
     "detail": {
       "title": "Request Runtime Detail",
       "subtitle": "Inspect request-level runtime behavior, pricing evidence, and fallback attempts.",

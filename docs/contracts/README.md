@@ -20,8 +20,9 @@
 2. `frontend-token-interaction-contract.md`
 3. `frontend-resource-policy-governance-v1.md`
 4. `frontend-backend-gating-matrix.md`
-5. `route-gate-test-checklist.md`
-6. `product-terminology.md`
+5. `usage-limits-summary-contract.md`
+6. `route-gate-test-checklist.md`
+7. `product-terminology.md`
 
 ## 参考与专题合同
 

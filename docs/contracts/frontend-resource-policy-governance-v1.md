@@ -79,6 +79,8 @@ MVP execution guard:
 3. Historical route naming note:
 - `POST /workspaces/{ws}/projects/{project}/spending-limits/check` is retained for backward compatibility.
 - Frontend/runtime semantics interpret this as limit check (`rate limit` / `spending limit`), not a separate limit domain.
+4. Usage projection contract:
+- `GET /workspaces/{ws}/projects/{project}/limits/summary` projection and FE rendering rules are defined in `usage-limits-summary-contract.md`.
 
 ## Audit Requirements
 

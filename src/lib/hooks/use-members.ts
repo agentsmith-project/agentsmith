@@ -225,13 +225,14 @@ export function useResourcePolicy(
   workspaceId: string,
   projectId: string,
   resourceType: 'endpoint' | 'source_library' | 'agent',
-  resourceId: string
+  resourceId: string,
+  options?: { enabled?: boolean },
 ): UseQueryResult<ResourcePolicy> {
   return useQuery<ResourcePolicy>({
     queryKey: queryKeys.resourcePolicy.detail(workspaceId, projectId, resourceType, resourceId),
     queryFn: () =>
       getMemberAPI().getResourcePolicy(workspaceId, projectId, resourceType, resourceId),
-    enabled: !!workspaceId && !!projectId && !!resourceId,
+    enabled: (options?.enabled ?? true) && !!workspaceId && !!projectId && !!resourceId,
     staleTime: 30 * 1000,
   });
 }

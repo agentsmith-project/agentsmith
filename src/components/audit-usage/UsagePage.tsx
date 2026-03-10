@@ -6,15 +6,17 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { UsageView } from './UsageView';
 import { useLimitsSummary, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useResourcePolicy } from '@/lib/hooks/use-members';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { ErrorState } from '@/components/ui/error-state';
-import type { UsageListParams } from '@/lib/api/types';
+import type { PolicyRule, UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
+import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 
 export interface UsagePageProps {
   workspaceId: string;
@@ -37,16 +39,17 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
-  const [periodDays, setPeriodDays] = React.useState<7 | 30>(30);
+  const [periodHours, setPeriodHours] = React.useState<24 | 48>(48);
+  const [selectedEndpointId, setSelectedEndpointId] = React.useState<string>('all');
 
   const usageRange = React.useMemo(() => {
     const end = new Date();
-    const start = new Date(end.getTime() - periodDays * 24 * 60 * 60 * 1000);
+    const start = new Date(end.getTime() - periodHours * 60 * 60 * 1000);
     return {
       start_time: start.toISOString(),
       end_time: end.toISOString(),
     };
-  }, [periodDays]);
+  }, [periodHours]);
 
   const { data: kpiData, isLoading: kpiLoading } = useUsageKPI(
     workspaceId,
@@ -62,13 +65,15 @@ export function UsagePage({
       start_time: usageRange.start_time,
       end_time: usageRange.end_time,
       end_user_id: effectiveEndUserId,
+      resource_type: selectedEndpointId === 'all' ? undefined : 'endpoint',
+      resource_id: selectedEndpointId === 'all' ? undefined : selectedEndpointId,
       page: 1,
       page_size: 30,
       group_by: 'day',
       sort_by: 'time_bucket',
       sort_order: 'asc',
     }),
-    [effectiveEndUserId, usageRange.end_time, usageRange.start_time],
+    [effectiveEndUserId, selectedEndpointId, usageRange.end_time, usageRange.start_time],
   );
 
   const { data: usageData, isLoading: usageLoading, error: usageError } = useUsageRecords(
@@ -81,33 +86,178 @@ export function UsagePage({
   const { data: limitsSummary } = useLimitsSummary(workspaceId, projectId, {
     enabled: canReadUsage,
   });
+  const { endpoints } = useEndpointsData({
+    workspaceId,
+    projectId,
+    canReadEndpoints: canReadUsage,
+  });
 
-  const limitsOverview = React.useMemo(
-    () => ({
-      endpoints: (limitsSummary?.endpoints ?? []).map((item) => ({
-        endpointId: item.endpoint_id,
-        endpointName: item.endpoint_name,
-        limits: (item.limits ?? []).map((rule) => ({
-          kind: rule.kind,
-          window: rule.window,
-          metric: rule.metric,
-          policyKey: rule.policy_key,
-          used: rule.used,
-          max: rule.max,
-          remaining: rule.remaining,
-          usagePct: rule.usage_pct,
-          resetAt: rule.reset_at,
-        })),
-      })),
-      projectSummary: limitsSummary?.project_summary ? {
-        projectUsed: limitsSummary.project_summary.project_used,
-        projectMax: limitsSummary.project_summary.project_max,
-        projectRemaining: limitsSummary.project_summary.project_remaining,
-        projectUsagePct: limitsSummary.project_summary.project_usage_pct,
-      } : undefined,
-    }),
-    [limitsSummary],
+  const hasLimitsForSelectedEndpoint = React.useMemo(
+    () =>
+      selectedEndpointId !== 'all'
+      && (limitsSummary?.endpoints ?? []).some((item) => item.endpoint_id === selectedEndpointId),
+    [limitsSummary?.endpoints, selectedEndpointId],
   );
+
+  const resourcePolicyQuery = useResourcePolicy(
+    workspaceId,
+    projectId,
+    'endpoint',
+    selectedEndpointId,
+    {
+      enabled: canReadUsage && selectedEndpointId !== 'all' && !hasLimitsForSelectedEndpoint,
+    },
+  );
+
+  const fallbackEndpointFromPolicy = React.useMemo(() => {
+    if (selectedEndpointId === 'all') return null;
+    if (hasLimitsForSelectedEndpoint) return null;
+    const policy = resourcePolicyQuery.data;
+    if (!policy) return null;
+
+    const applyRules = (target: Map<string, PolicyRule>, rules?: PolicyRule[]) => {
+      for (const rule of rules ?? []) {
+        if (!rule?.key || typeof rule.value !== 'number') continue;
+        target.set(rule.key, rule);
+      }
+    };
+
+    const mergedRuleMap = new Map<string, PolicyRule>();
+    applyRules(mergedRuleMap, policy.rate_limits?.rules);
+    applyRules(mergedRuleMap, policy.spending_limits?.rules);
+    if (effectiveEndUserId) {
+      const subjectOverride = policy.allowed_subjects.find(
+        (subject) => subject.subject_type === 'user' && subject.subject_id === effectiveEndUserId,
+      );
+      applyRules(mergedRuleMap, subjectOverride?.rate_limits?.rules);
+      applyRules(mergedRuleMap, subjectOverride?.spending_limits?.rules);
+    }
+
+    const now = new Date();
+    const nextMinute = new Date(now.getTime() + 60 * 1000).toISOString();
+    const next5Hours = new Date(now.getTime() + 5 * 60 * 60 * 1000).toISOString();
+    const nextDay = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+    const mapRuleToLimit = (rule: PolicyRule) => {
+      const key = rule.key;
+      const common = {
+        policyKey: key,
+        used: 0,
+        max: rule.value,
+        remaining: rule.value,
+        usagePct: 0,
+      };
+      if (key === 'endpoint.requests_per_minute') {
+        return { ...common, kind: 'rate_limit' as const, window: 'minute' as const, metric: 'requests' as const, resetAt: nextMinute };
+      }
+      if (key === 'endpoint.requests_per_5_hours') {
+        return { ...common, kind: 'rate_limit' as const, window: '5h' as const, metric: 'requests' as const, resetAt: next5Hours };
+      }
+      if (key === 'endpoint.requests_per_day') {
+        return { ...common, kind: 'rate_limit' as const, window: 'day' as const, metric: 'requests' as const, resetAt: nextDay };
+      }
+      if (key === 'endpoint.spending_usd_per_minute') {
+        return { ...common, kind: 'spending_limit' as const, window: 'minute' as const, metric: 'usd' as const, resetAt: nextMinute };
+      }
+      if (key === 'endpoint.spending_usd_per_5_hours') {
+        return { ...common, kind: 'spending_limit' as const, window: '5h' as const, metric: 'usd' as const, resetAt: next5Hours };
+      }
+      if (key === 'endpoint.spending_usd_per_day') {
+        return { ...common, kind: 'spending_limit' as const, window: 'day' as const, metric: 'usd' as const, resetAt: nextDay };
+      }
+      return null;
+    };
+
+    const limits = Array.from(mergedRuleMap.values())
+      .map((rule) => mapRuleToLimit(rule))
+      .filter((item): item is NonNullable<ReturnType<typeof mapRuleToLimit>> => item !== null);
+    if (limits.length === 0) return null;
+
+    const endpointName = endpoints.find((item) => item.id === selectedEndpointId)?.name ?? selectedEndpointId;
+    return {
+      endpointId: selectedEndpointId,
+      endpointName,
+      limits,
+    };
+  }, [
+    effectiveEndUserId,
+    endpoints,
+    hasLimitsForSelectedEndpoint,
+    resourcePolicyQuery.data,
+    selectedEndpointId,
+  ]);
+
+  const limitsOverview = React.useMemo(() => {
+    const normalizedEndpoints = (limitsSummary?.endpoints ?? []).map((item) => ({
+      endpointId: item.endpoint_id,
+      endpointName: item.endpoint_name,
+      limits: (item.limits ?? []).map((rule) => ({
+        kind: rule.kind,
+        window: rule.window,
+        metric: rule.metric,
+        policyKey: rule.policy_key,
+        used: rule.used,
+        max: rule.max,
+        remaining: rule.remaining,
+        usagePct: rule.usage_pct,
+        resetAt: rule.reset_at,
+      })),
+    }));
+    const endpointsWithFallback = fallbackEndpointFromPolicy
+      ? [...normalizedEndpoints, fallbackEndpointFromPolicy]
+      : normalizedEndpoints;
+    const projectSummaryFromApi = limitsSummary?.project_summary ? {
+      projectUsed: limitsSummary.project_summary.project_used,
+      projectMax: limitsSummary.project_summary.project_max,
+      projectRemaining: limitsSummary.project_summary.project_remaining,
+      projectUsagePct: limitsSummary.project_summary.project_usage_pct,
+    } : undefined;
+    const derivedProjectSummary = !projectSummaryFromApi && endpointsWithFallback.length > 0
+      ? (() => {
+        const allRules = endpointsWithFallback.flatMap((endpoint) => endpoint.limits);
+        const projectUsed = allRules.reduce((sum, rule) => sum + rule.used, 0);
+        const projectMax = allRules.reduce((sum, rule) => sum + rule.max, 0);
+        const projectRemaining = Math.max(0, projectMax - projectUsed);
+        const projectUsagePct = projectMax > 0 ? Math.min(100, (projectUsed / projectMax) * 100) : 0;
+        return {
+          projectUsed,
+          projectMax,
+          projectRemaining,
+          projectUsagePct,
+        };
+      })()
+      : undefined;
+
+    return {
+      endpoints: endpointsWithFallback,
+      projectSummary: projectSummaryFromApi ?? derivedProjectSummary,
+    };
+  }, [fallbackEndpointFromPolicy, limitsSummary]);
+
+  const endpointOptions = React.useMemo(() => {
+    const fromLimits = limitsOverview.endpoints.map((item) => ({
+      id: item.endpointId,
+      name: item.endpointName || item.endpointId,
+    }));
+    if (fromLimits.length > 0) return fromLimits;
+    const fromEndpointsApi = endpoints.map((item) => ({
+      id: item.id,
+      name: item.name || item.id,
+    }));
+    if (fromEndpointsApi.length > 0) return fromEndpointsApi;
+
+    return (usageData?.items ?? [])
+      .filter((item) => item.resource_type === 'endpoint' && !!item.resource_id)
+      .map((item) => ({
+        id: item.resource_id as string,
+        name: item.resource_id as string,
+      }));
+  }, [endpoints, limitsOverview.endpoints, usageData?.items]);
+
+  React.useEffect(() => {
+    if (selectedEndpointId === 'all') return;
+    if (endpointOptions.some((option) => option.id === selectedEndpointId)) return;
+    setSelectedEndpointId('all');
+  }, [endpointOptions, selectedEndpointId]);
 
   const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: queryKeys.usage._def });
@@ -167,8 +317,11 @@ export function UsagePage({
         kpi={kpiData}
         records={usageData?.items ?? []}
         loading={usageLoading || kpiLoading}
-        periodDays={periodDays}
-        onPeriodChange={setPeriodDays}
+        periodHours={periodHours}
+        onPeriodChange={setPeriodHours}
+        endpointOptions={endpointOptions}
+        selectedEndpointId={selectedEndpointId}
+        onEndpointChange={setSelectedEndpointId}
         limitsOverview={limitsOverview}
       />
     </PageLayout>

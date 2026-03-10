@@ -51,7 +51,7 @@ export interface UsageTimeseriesResponse {
 export interface LimitRuleSnapshot {
   kind: 'rate_limit' | 'spending_limit';
   window: 'minute' | '5h' | 'day' | 'current';
-  metric: 'requests' | 'usd';
+  metric: 'requests' | 'usd' | 'tokens';
   policy_key: string;
   used: number;
   max: number;
@@ -483,33 +483,63 @@ export class UsageAPI {
   constructor(private client: ApiClient) {}
 
   private static asNumber(value: unknown): number | undefined {
-    return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string' && value.trim().length > 0) {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
   }
 
   private static asString(value: unknown): string | undefined {
-    return typeof value === 'string' && value.length > 0 ? value : undefined;
+    return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
+  }
+
+  private static pick(record: Record<string, unknown>, keys: string[]): unknown {
+    for (const key of keys) {
+      if (key in record) return record[key];
+    }
+    return undefined;
   }
 
   private static normalizeLimitRule(item: unknown): LimitRuleSnapshot | null {
     if (!item || typeof item !== 'object') return null;
     const record = item as Record<string, unknown>;
-    const kind = record.kind;
-    const window = record.window;
-    const metric = record.metric;
-    const policyKey = UsageAPI.asString(record.policy_key);
-    const used = UsageAPI.asNumber(record.used) ?? 0;
-    const max = UsageAPI.asNumber(record.max) ?? 0;
-    const resetAt = UsageAPI.asString(record.reset_at) ?? '';
+    const rawKind = String(UsageAPI.pick(record, ['kind', 'limit_kind', 'type']) ?? '').toLowerCase();
+    const rawWindow = String(UsageAPI.pick(record, ['window', 'time_window', 'period']) ?? '').toLowerCase();
+    const rawMetric = String(UsageAPI.pick(record, ['metric', 'unit']) ?? '').toLowerCase();
 
-    if ((kind !== 'rate_limit' && kind !== 'spending_limit')
-      || (window !== 'minute' && window !== '5h' && window !== 'day' && window !== 'current')
-      || (metric !== 'requests' && metric !== 'usd')
-      || !policyKey) {
+    const kind: LimitRuleSnapshot['kind'] | null = (() => {
+      if (rawKind === 'rate_limit' || rawKind === 'rate') return 'rate_limit';
+      if (rawKind === 'spending_limit' || rawKind === 'spending' || rawKind === 'cost') return 'spending_limit';
+      return null;
+    })();
+    const window: LimitRuleSnapshot['window'] | null = (() => {
+      if (rawWindow === 'minute' || rawWindow === 'min') return 'minute';
+      if (rawWindow === '5h' || rawWindow === '5hour' || rawWindow === '5hours' || rawWindow === '5_hour') return '5h';
+      if (rawWindow === 'day' || rawWindow === 'daily') return 'day';
+      if (rawWindow === 'current' || rawWindow === 'now') return 'current';
+      return null;
+    })();
+    const metric: LimitRuleSnapshot['metric'] = (() => {
+      if (rawMetric === 'usd' || rawMetric === 'cost' || rawMetric === 'money') return 'usd';
+      if (rawMetric === 'token' || rawMetric === 'tokens') return 'tokens';
+      if (rawMetric === 'requests' || rawMetric === 'request' || rawMetric === 'req') return 'requests';
+      return kind === 'spending_limit' ? 'usd' : 'requests';
+    })();
+
+    const policyKey = UsageAPI.asString(UsageAPI.pick(record, ['policy_key', 'policyKey', 'key']));
+    const used = UsageAPI.asNumber(UsageAPI.pick(record, ['used', 'current_usage', 'currentUsed'])) ?? 0;
+    const max = UsageAPI.asNumber(UsageAPI.pick(record, ['max', 'limit', 'effective_limit', 'effectiveLimit'])) ?? 0;
+    const resetAt = UsageAPI.asString(UsageAPI.pick(record, ['reset_at', 'resetAt', 'window_reset_at', 'windowResetAt'])) ?? '';
+
+    if (!kind || !window || !policyKey) {
       return null;
     }
-    const remaining = UsageAPI.asNumber(record.remaining)
+
+    const remaining = UsageAPI.asNumber(UsageAPI.pick(record, ['remaining', 'remaining_usage', 'remainingUsage']))
       ?? Math.max(0, max - used);
-    const usagePct = UsageAPI.asNumber(record.usage_pct)
+    const usagePct = UsageAPI.asNumber(UsageAPI.pick(record, ['usage_pct', 'usagePct']))
       ?? (max > 0 ? Math.min(100, (used / max) * 100) : 0);
 
     return {
@@ -527,16 +557,22 @@ export class UsageAPI {
 
   private static normalizeLimitsOverview(payload: unknown): LimitsOverview {
     const record = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-    const endpoints = Array.isArray(record.endpoints)
-      ? record.endpoints
+    const rawEndpoints = UsageAPI.pick(record, ['endpoints', 'endpoint_summaries', 'endpointSummaries']);
+    const endpoints = Array.isArray(rawEndpoints)
+      ? rawEndpoints
         .map((item) => {
           if (!item || typeof item !== 'object') return null;
           const endpoint = item as Record<string, unknown>;
-          const endpointId = UsageAPI.asString(endpoint.endpoint_id);
-          const endpointName = UsageAPI.asString(endpoint.endpoint_name) ?? endpointId ?? 'unknown';
+          const endpointId = UsageAPI.asString(
+            UsageAPI.pick(endpoint, ['endpoint_id', 'endpointId', 'id']),
+          );
+          const endpointName = UsageAPI.asString(
+            UsageAPI.pick(endpoint, ['endpoint_name', 'endpointName', 'name']),
+          ) ?? endpointId ?? 'unknown';
           if (!endpointId) return null;
-          const limits = Array.isArray(endpoint.limits)
-            ? endpoint.limits
+          const rawLimits = UsageAPI.pick(endpoint, ['limits', 'rules', 'snapshots']);
+          const limits = Array.isArray(rawLimits)
+            ? rawLimits
               .map((rule) => UsageAPI.normalizeLimitRule(rule))
               .filter((rule): rule is LimitRuleSnapshot => rule !== null)
             : [];
@@ -549,13 +585,14 @@ export class UsageAPI {
         .filter((item): item is EndpointLimitSummary => item !== null)
       : undefined;
 
-    const projectSummaryRecord = record.project_summary && typeof record.project_summary === 'object'
-      ? record.project_summary as Record<string, unknown>
+    const rawProjectSummary = UsageAPI.pick(record, ['project_summary', 'projectSummary']);
+    const projectSummaryRecord = rawProjectSummary && typeof rawProjectSummary === 'object'
+      ? rawProjectSummary as Record<string, unknown>
       : null;
-    const projectUsed = UsageAPI.asNumber(projectSummaryRecord?.project_used);
-    const projectMax = UsageAPI.asNumber(projectSummaryRecord?.project_max);
-    const projectRemaining = UsageAPI.asNumber(projectSummaryRecord?.project_remaining);
-    const projectUsagePct = UsageAPI.asNumber(projectSummaryRecord?.project_usage_pct);
+    const projectUsed = UsageAPI.asNumber(UsageAPI.pick(projectSummaryRecord ?? {}, ['project_used', 'projectUsed', 'used']));
+    const projectMax = UsageAPI.asNumber(UsageAPI.pick(projectSummaryRecord ?? {}, ['project_max', 'projectMax', 'max']));
+    const projectRemaining = UsageAPI.asNumber(UsageAPI.pick(projectSummaryRecord ?? {}, ['project_remaining', 'projectRemaining', 'remaining']));
+    const projectUsagePct = UsageAPI.asNumber(UsageAPI.pick(projectSummaryRecord ?? {}, ['project_usage_pct', 'projectUsagePct', 'usage_pct', 'usagePct']));
     const projectSummary = (
       projectUsed !== undefined
       && projectMax !== undefined

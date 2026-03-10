@@ -1219,11 +1219,17 @@
     "permission_denied": "您没有权限查看用量统计。",
     "scope_my_usage": "我的用量",
     "view": {
+      "endpoint_filter_label": "Endpoint",
+      "endpoint_filter_all": "全部 Endpoint",
+      "limit_mode_label": "限制统计",
+      "limit_mode_all": "全部",
+      "limit_mode_rate": "速率",
+      "limit_mode_spending": "支出",
       "cards": {
         "requests_today": "今日请求数",
         "remaining_limit": "剩余限制",
         "tokens_today": "今日 Token 数",
-        "period_requests": "近 {days} 天请求数"
+        "period_requests": "近 {hours} 小时请求数"
       },
       "limits_title": "剩余限制",
       "project_max": "项目上限",
@@ -1231,6 +1237,7 @@
       "limits_empty": "暂无 endpoint 限制数据。",
       "rate_limit_title": "速率限制",
       "spending_limit_title": "支出限制",
+      "remaining_suffix": "剩余",
       "limit_group_empty": "当前返回暂无该类数据。",
       "window": {
         "minute": "每分钟",
@@ -1238,11 +1245,11 @@
         "day": "每天",
         "current": "当前"
       },
-      "trend_title": "近 {days} 天用量趋势",
+      "trend_title": "近 {hours} 小时用量趋势",
       "no_data": "暂无用量趋势数据。",
       "period": {
-        "7d": "7天",
-        "30d": "30天"
+        "24h": "24小时",
+        "48h": "48小时"
       }
     },
     "detail": {

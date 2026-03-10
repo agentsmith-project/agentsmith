@@ -92,6 +92,19 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
   }),
 }));
 
+vi.mock('@/lib/endpoints/use-endpoints-data', () => ({
+  useEndpointsData: () => ({
+    endpoints: [],
+    endpointsLoading: false,
+  }),
+}));
+
+vi.mock('@/lib/hooks/use-members', () => ({
+  useResourcePolicy: () => ({
+    data: undefined,
+  }),
+}));
+
 vi.mock('@/components/ui/toast', () => ({
   toast: {
     success: vi.fn(),
@@ -148,12 +161,12 @@ describe('UsagePage', () => {
     expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
   });
 
-  it('switches period between 30d and 7d', async () => {
+  it('switches period between 48h and 24h', async () => {
     const user = userEvent.setup();
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
-    await user.click(screen.getByTestId('usage__period-7'));
-    expect(screen.getByTestId('usage__period-7')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('usage__period-30')).toHaveAttribute('data-active', 'false');
+    await user.click(screen.getByTestId('usage__period-24'));
+    expect(screen.getByTestId('usage__period-24')).toHaveAttribute('data-active', 'true');
+    expect(screen.getByTestId('usage__period-48')).toHaveAttribute('data-active', 'false');
   });
 });

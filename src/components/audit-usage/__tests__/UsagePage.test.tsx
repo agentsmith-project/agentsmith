@@ -224,7 +224,6 @@ describe('UsagePage', () => {
     expect(screen.getAllByTestId('usage__progress-card').length).toBe(1);
     expect(screen.getAllByText('Endpoint 2').length).toBeGreaterThan(0);
     expect(screen.queryByText('ep_2')).not.toBeInTheDocument();
-    expect(screen.getByText('view.progress_hint:{"value":50,"unit":"view.rate_limit_title"}')).toBeInTheDocument();
     expect(screen.getByText(/view\.limit_reset_at:/)).toBeInTheDocument();
     expect(screen.getByText('view.status_badge:{"value":50}')).toBeInTheDocument();
     expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();

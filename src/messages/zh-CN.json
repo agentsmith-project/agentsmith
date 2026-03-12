@@ -1266,7 +1266,7 @@
         "current": "当前"
       },
       "trend_title": "近 {hours} 小时用量趋势",
-      "trend_summary": "共 {total} 次请求，峰值 {peak}",
+      "trend_focus_note": "通过柱状变化快速感知最近的使用变化。",
       "no_data": "暂无用量趋势数据。",
       "no_data_hint": "在当前时间范围内产生请求后，这里会显示趋势。",
       "period": {

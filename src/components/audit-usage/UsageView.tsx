@@ -5,7 +5,6 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import type { UsageKPI, UsageRecord } from '@/lib/api/types';
-import { formatNumber } from '@/lib/utils/formatters';
 
 export interface UsageViewProps {
   kpi?: UsageKPI | null;
@@ -97,14 +96,6 @@ export function UsageView({
   const t = useTranslations('usage');
   const [limitMetricMode, setLimitMetricMode] = React.useState<'all' | 'rate' | 'spending'>('all');
 
-  const periodRequests = React.useMemo(
-    () => records.reduce((sum, item) => sum + (item.requests ?? 0), 0),
-    [records],
-  );
-  const trendPeakRequests = React.useMemo(
-    () => Math.max(0, ...records.map((item) => item.requests ?? 0)),
-    [records],
-  );
   const maxRequests = React.useMemo(
     () => Math.max(1, ...records.map((item) => item.requests ?? 0)),
     [records],
@@ -225,27 +216,6 @@ export function UsageView({
 
       <section className="space-y-3">
         <div>
-          <p className="text-lg font-semibold text-foreground">{t('view.overview_title')}</p>
-          <p className="mt-1 text-sm text-tertiary">{t('view.overview_subtitle')}</p>
-        </div>
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-          <div className="rounded-[24px] border border-border bg-surface p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.cards.requests_today')}</p>
-            <p className="mt-3 text-3xl font-semibold text-foreground">{formatNumber(kpi?.requests_today ?? 0)}</p>
-          </div>
-          <div className="rounded-[24px] border border-border bg-surface p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.cards.tokens_today')}</p>
-            <p className="mt-3 text-3xl font-semibold text-foreground">{formatNumber(kpi?.tokens_today ?? 0)}</p>
-          </div>
-          <div className="rounded-[24px] border border-border bg-surface p-5">
-            <p className="text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.cards.period_requests', { hours: periodHours })}</p>
-            <p className="mt-3 text-3xl font-semibold text-foreground">{formatNumber(periodRequests)}</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <div>
           <p className="text-lg font-semibold text-foreground">{t('view.limits_section_title')}</p>
           <p className="mt-1 text-sm text-tertiary">{t('view.limits_section_subtitle')}</p>
         </div>
@@ -310,7 +280,7 @@ export function UsageView({
                               </span>
                             </div>
                             <p className="mt-5 text-4xl font-semibold tracking-tight text-foreground">
-                              {formatNumber(Math.round(remainingPct))}%
+                              {Math.round(remainingPct)}%
                               <span className="ml-2 text-lg font-medium text-tertiary">{t('view.remaining_suffix')}</span>
                             </p>
                             <div className="mt-5 h-3 rounded-full bg-surface-high">
@@ -319,14 +289,8 @@ export function UsageView({
                                 style={{ width: `${remainingPct}%` }}
                               />
                             </div>
-                            <p className="mt-4 text-xs text-tertiary">
-                              {t('view.progress_hint', {
-                                  value: Math.round(usagePct),
-                                  unit: limit.bucket === 'rate' ? t('view.rate_limit_title') : t('view.spending_limit_title'),
-                                })}
-                            </p>
                             {limit.resetAt ? (
-                              <p className="mt-2 text-xs text-tertiary">{t('view.limit_reset_at', { value: formatResetTime(limit.resetAt) })}</p>
+                              <p className="mt-4 text-xs text-tertiary">{t('view.limit_reset_at', { value: formatResetTime(limit.resetAt) })}</p>
                             ) : null}
                           </div>
                         );
@@ -354,12 +318,7 @@ export function UsageView({
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-foreground">{t('view.trend_title', { hours: periodHours })}</p>
-              <p className="mt-1 text-xs text-tertiary">
-                {t('view.trend_summary', {
-                  total: formatNumber(periodRequests),
-                  peak: formatNumber(trendPeakRequests),
-                })}
-              </p>
+              <p className="mt-1 text-xs text-tertiary">{t('view.trend_focus_note')}</p>
             </div>
             <div className="flex items-center gap-2">
               <Button

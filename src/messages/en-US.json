@@ -1264,7 +1264,7 @@
         "current": "Current"
       },
       "trend_title": "Usage Trend ({hours}h)",
-      "trend_summary": "{total} total requests, peak {peak}",
+      "trend_focus_note": "Use the bars to spot recent activity changes.",
       "no_data": "No usage trend data available.",
       "no_data_hint": "This view will populate after requests are recorded for the selected time range.",
       "period": {

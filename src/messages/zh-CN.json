@@ -196,6 +196,7 @@
     "sidebar": {
       "collapse": "收起侧栏",
       "expand": "展开侧栏",
+      "workspace_home": "工作区",
       "projects": "项目",
       "home": "Home",
       "use": "Use",

@@ -34,6 +34,7 @@ vi.mock('next-intl', () => ({
       },
       sidebar: {
         home: 'Home',
+        workspace_home: 'Workspace',
         use: 'Use',
         develop: 'Develop',
         govern: 'Govern',
@@ -152,6 +153,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     render(<AppShellSidebar />, { wrapper });
 
     const sidebar = within(screen.getByTestId('sidebar'));
+    expect(sidebar.getByTestId('sidebar__nav-item--workspace_home')).toBeInTheDocument();
     expect(sidebar.getByTestId('sidebar__nav-item--projects')).toBeInTheDocument();
     expect(sidebar.getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
   });
@@ -166,6 +168,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     render(<AppShellSidebar />, { wrapper });
 
     const sidebar = within(screen.getByTestId('sidebar'));
+    expect(sidebar.getByTestId('sidebar__nav-item--workspace_home')).toBeInTheDocument();
     expect(sidebar.getByTestId('sidebar__nav-item--projects')).toBeInTheDocument();
     expect(sidebar.queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });

@@ -83,6 +83,7 @@ type WorkspaceMenuItem = {
   labelKey: string;
   href: string;
   visible: boolean;
+  isActive: (pathname: string | null | undefined, baseWorkspacePath: string | null) => boolean;
 };
 
 export function AppShellSidebar({
@@ -125,10 +126,32 @@ export function AppShellSidebar({
     }))
     .filter((section) => section.items.length > 0);
   const workspaceMenuItems: WorkspaceMenuItem[] = [
-    { icon: FolderKanban, labelKey: 'sidebar.projects', href: '../projects', visible: canReadWorkspace },
-    { icon: SettingsIcon, labelKey: 'settings', href: '../../settings', visible: canCreateWorkspaceProject },
+    {
+      icon: LayoutDashboard,
+      labelKey: 'sidebar.workspace_home',
+      href: '.',
+      visible: canReadWorkspace,
+      isActive: (currentPath, baseWorkspacePath) => Boolean(currentPath && baseWorkspacePath && currentPath === baseWorkspacePath),
+    },
+    {
+      icon: FolderKanban,
+      labelKey: 'sidebar.projects',
+      href: '../projects',
+      visible: canReadWorkspace,
+      isActive: (currentPath, baseWorkspacePath) =>
+        Boolean(currentPath && baseWorkspacePath && currentPath.startsWith(`${baseWorkspacePath}/projects`)),
+    },
+    {
+      icon: SettingsIcon,
+      labelKey: 'settings',
+      href: '../../settings',
+      visible: canCreateWorkspaceProject,
+      isActive: (currentPath, baseWorkspacePath) =>
+        Boolean(currentPath && baseWorkspacePath && currentPath === `${baseWorkspacePath}/settings`),
+    },
   ];
-  const menuItems = currentProject ? projectMenuItems : workspaceMenuItems.filter((item) => item.visible);
+  const visibleWorkspaceMenuItems = workspaceMenuItems.filter((item) => item.visible);
+  const menuItems = currentProject ? projectMenuItems : visibleWorkspaceMenuItems;
 
   const baseProjectPath =
     locale && workspaceId && projectId
@@ -144,6 +167,7 @@ export function AppShellSidebar({
       if (href.startsWith('/')) return href;
       if (currentProject && baseProjectPath) return `${baseProjectPath}/${href}`;
       if (!currentProject && baseWorkspacePath) {
+        if (href === '.') return baseWorkspacePath;
         if (href === '../projects') return `${baseWorkspacePath}/projects`;
         if (href === '../../settings') return `${baseWorkspacePath}/settings`;
       }
@@ -228,8 +252,10 @@ export function AppShellSidebar({
           </div>
         ) : (
           <div className="space-y-1">
-            {menuItems.map((item) => {
-              const isActive = pathname?.split('/').includes(item.href);
+            {visibleWorkspaceMenuItems.map((item) => {
+              const isActive = currentProject
+                ? pathname?.split('/').includes(item.href)
+                : item.isActive(pathname, baseWorkspacePath);
               const label = t(item.labelKey);
               return (
                 <Link

@@ -194,6 +194,7 @@
     "sidebar": {
       "collapse": "Collapse sidebar",
       "expand": "Expand sidebar",
+      "workspace_home": "Workspace",
       "projects": "Projects",
       "home": "Home",
       "use": "Use",

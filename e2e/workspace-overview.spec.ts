@@ -20,7 +20,7 @@ test.describe('Workspace Overview', () => {
 
     const firstOpenWorkspace = authedPage.getByTestId(/workspace-overview__open-workspace--/).first();
     await expect(firstOpenWorkspace).toBeVisible();
-    await expect(firstOpenWorkspace).toHaveAttribute('href', /\/workspaces\/[^/]+$/);
+    await expect(firstOpenWorkspace).toHaveAttribute('href', /\/workspaces\/[^/]+\/login$/);
   });
 
   test('supports workspace search', async ({ authedPage }) => {

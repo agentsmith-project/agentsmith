@@ -38,7 +38,7 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__card--ws_1')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__open-workspace--ws_1')).toHaveAttribute(
       'href',
-      '/en-US/workspaces/ws_1',
+      '/en-US/workspaces/ws_1/login',
     );
   });
 

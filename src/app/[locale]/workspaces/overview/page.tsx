@@ -130,7 +130,7 @@ export default function WorkspacesOverviewPage() {
 
                           <div className="mt-4 flex items-center gap-2">
                             <Link
-                              href={`/${locale}/workspaces/${workspace.id}`}
+                              href={`/${locale}/workspaces/${workspace.id}/login`}
                               className={cn(
                                 'inline-flex h-9 items-center rounded-sm border border-subtle px-3 text-sm font-medium text-foreground transition-colors',
                                 'hover:bg-hover',

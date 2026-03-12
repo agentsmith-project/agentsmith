@@ -37,9 +37,13 @@ const ACTION_LABELS: Record<string, string> = {
   'resource_policy.updated': 'Updated Resource Policy',
   'resource_policy.update': 'Updated Resource Policy',
   resource_policy_update: 'Updated Resource Policy',
+  'credential.create': 'Created Credential',
   credential_create: 'Created Credential',
+  'credential.update': 'Updated Credential',
   credential_update: 'Updated Credential',
+  'credential.delete': 'Deleted Credential',
   credential_delete: 'Deleted Credential',
+  'credential.rotate': 'Rotated Credential',
   credential_rotate: 'Rotated Credential',
   'project.create': 'Created Project',
   project_create: 'Created Project',
@@ -245,6 +249,22 @@ export function getAuditResourceLabel(event: AuditEvent): string {
     }
     if (governedResourceId) {
       return governedResourceId;
+    }
+  }
+  if (
+    event.metadata_json
+    && typeof event.metadata_json === 'object'
+  ) {
+    const resourceName = typeof event.metadata_json.name === 'string'
+      ? event.metadata_json.name
+      : typeof event.metadata_json.display_name === 'string'
+        ? event.metadata_json.display_name
+        : typeof event.metadata_json.title === 'string'
+          ? event.metadata_json.title
+          : undefined;
+    if (resourceName) {
+      const resourceTypeLabel = getAuditResourceTypeLabel(event.resource_type);
+      return resourceTypeLabel ? `${resourceTypeLabel} ${resourceName}` : resourceName;
     }
   }
   if (event.resource_id) {

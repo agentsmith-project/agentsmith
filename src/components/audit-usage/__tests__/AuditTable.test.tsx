@@ -180,6 +180,52 @@ describe('AuditTable', () => {
     expect(screen.getByText('Invalid rate limit rule')).toBeInTheDocument();
   });
 
+  it('prefers resource names for endpoint and credential configuration events', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_11',
+            timestamp: '2026-03-01T10:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_11',
+            action: 'endpoint.update',
+            resource_type: 'endpoint',
+            resource_id: 'ep_11',
+            result: 'ok',
+            request_id: 'req_endpoint_update',
+            metadata_json: {
+              name: 'Primary GPT Endpoint',
+            },
+          },
+          {
+            id: 'audit_12',
+            timestamp: '2026-03-01T11:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_12',
+            action: 'credential.create',
+            resource_type: 'credential',
+            resource_id: 'cred_12',
+            result: 'ok',
+            request_id: 'req_credential_create',
+            metadata_json: {
+              name: 'OpenAI Admin Key',
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('User Updated Endpoint on Model Endpoint Primary GPT Endpoint and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Model Endpoint Primary GPT Endpoint')).toBeInTheDocument();
+    expect(screen.getByText('User Created Credential on Credential OpenAI Admin Key and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Credential OpenAI Admin Key')).toBeInTheDocument();
+  });
+
   it('humanizes policy enforcement actions for review scanning', () => {
     render(
       <AuditTable

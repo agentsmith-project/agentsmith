@@ -198,6 +198,37 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getAllByText('Invalid rate limit rule').length).toBeGreaterThan(0);
   });
 
+  it('prefers resource names for endpoint configuration events in detail view', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_4b',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'endpoint.update',
+          resource_type: 'endpoint',
+          resource_id: 'ep_1',
+          result: 'ok',
+          request_id: 'req_endpoint_update_named',
+          metadata_json: {
+            name: 'Primary GPT Endpoint',
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Updated Endpoint on Model Endpoint Primary GPT Endpoint and succeeded',
+    );
+    expect(screen.getAllByText('Model Endpoint').length).toBeGreaterThan(0);
+    expect(screen.getByText('Model Endpoint Primary GPT Endpoint')).toBeInTheDocument();
+  });
+
   it('humanizes policy enforcement errors in detail view', () => {
     render(
       <AuditDetailDrawer

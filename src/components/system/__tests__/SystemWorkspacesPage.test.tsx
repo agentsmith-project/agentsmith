@@ -87,7 +87,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__open-projects--ws_alpha').closest('a')).toHaveAttribute(
       'href',
-      '/en-US/workspaces/ws_alpha/projects',
+      '/en-US/workspaces/ws_alpha',
     );
     expect(screen.getByTestId('system-workspaces__preview')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__mode')).toBeInTheDocument();

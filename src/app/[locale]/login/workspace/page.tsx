@@ -4,7 +4,7 @@ import { useCallback } from 'react';
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Building2, FolderKanban } from 'lucide-react';
+import { Building2 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { useWorkspaces } from '@/lib/hooks/use-workspaces';
@@ -141,12 +141,7 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
         </div>
       </div>
 
-      <div className="flex items-center gap-4 text-sm text-tertiary">
-        <span className="flex items-center gap-1">
-          <FolderKanban className="h-4 w-4" />
-          {t('projects_count', { count: 0 })}
-        </span>
-      </div>
+      <p className="text-sm text-tertiary">{t('workspace_card_description')}</p>
     </button>
   );
 }

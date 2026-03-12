@@ -96,7 +96,7 @@ describe('WorkspaceLoginPage', () => {
     fireEvent.click(screen.getByTestId('workspace-login__submit'));
 
     expect(mockSetAuth).toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_alpha/projects');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects');
   });
 
   it('starts keycloak login with workspace-specific callback', async () => {

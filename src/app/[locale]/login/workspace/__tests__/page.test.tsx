@@ -44,7 +44,7 @@ describe('WorkspaceSelectPage', () => {
 
     expect(screen.getByTestId('workspace-select__card--ws_1')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__card--ws_1'));
-    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login');
   });
 
   it('renders entry link to workspace overview page', () => {
@@ -74,7 +74,7 @@ describe('WorkspaceSelectPage', () => {
     expect(screen.getByTestId('workspace-select__session-expired')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__relogin-btn'));
     expect(mockClearAuth).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith('/en-US/login/workspace');
+    expect(mockReplace).toHaveBeenCalledWith('/login/workspace');
   });
 
   it('shows retry state on non-401 errors', () => {

@@ -163,6 +163,8 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('settings-general.png', { fullPage: true });
   });
 
+});
+
 
 // ─── User Pages ─────────────────────────────────────────────────────────────
 

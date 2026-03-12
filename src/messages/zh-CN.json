@@ -2609,7 +2609,7 @@
     "retry": "重试",
     "empty": "当前还没有配置任何工作区。",
     "updated_at": "更新时间：{value}",
-    "open_workspace": "打开工作区",
+  "open_workspace_login": "打开工作区登录",
   "create_label": "创建工作区",
   "create_title": "工作区租户预览",
   "create_subtitle": "工作区数据隔离会根据系统 substrate 规则自动生成。",

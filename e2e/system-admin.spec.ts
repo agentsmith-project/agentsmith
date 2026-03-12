@@ -48,9 +48,9 @@ test.describe('System Admin', () => {
     expect(createdWorkspaceId).toBeTruthy();
     const workspaceCard = page.getByTestId(`system-workspaces__card--${createdWorkspaceId}`);
     await expect(workspaceCard).toBeVisible();
-    await expect(page.getByTestId(`system-workspaces__open-projects--${createdWorkspaceId}`).locator('..')).toHaveAttribute(
+    await expect(page.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`).locator('..')).toHaveAttribute(
       'href',
-      new RegExp(`/en-US/workspaces/${createdWorkspaceId}$`),
+      new RegExp(`/en-US/workspaces/${createdWorkspaceId}/login$`),
     );
 
     await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();

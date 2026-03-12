@@ -2606,7 +2606,7 @@
     "retry": "Retry",
     "empty": "No workspaces are configured yet.",
     "updated_at": "Updated: {value}",
-    "open_workspace": "Open workspace",
+  "open_workspace_login": "Open workspace login",
   "create_label": "Create Workspace",
   "create_title": "Workspace Tenant Preview",
   "create_subtitle": "Workspace data isolation is generated automatically from system substrate rules.",

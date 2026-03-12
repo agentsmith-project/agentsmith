@@ -293,9 +293,9 @@ export function SystemWorkspacesPage() {
                           >
                             {t('configure_workspace')}
                           </Button>
-                          <Link href={`/${locale}/workspaces/${workspace.id}`}>
-                            <Button type="button" variant="outline" data-testid={`system-workspaces__open-projects--${workspace.id}`}>
-                              {t('open_workspace')}
+                          <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
+                            <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
+                              {t('open_workspace_login')}
                             </Button>
                           </Link>
                         </div>

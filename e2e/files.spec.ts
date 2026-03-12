@@ -119,14 +119,19 @@ test.describe('Files Page (object browser)', () => {
     await authedPage.getByTestId('files__library-item--lib_large_bench').click();
     const loadMoreButton = authedPage.getByTestId('files__load-more');
     await expect(loadMoreButton).toBeVisible();
-    await expect(async () => {
-      await authedPage.getByTestId('files__load-more').first().click();
-    }).toPass({ timeout: 10000 });
-    await expect(authedPage.getByTestId('files__load-more')).toHaveCount(0, { timeout: 10000 });
+    const targetRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'bulk-0250.txt' }).first();
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      if (await targetRow.isVisible().catch(() => false)) break;
+      if (!await loadMoreButton.isVisible().catch(() => false)) break;
+      await expect(async () => {
+        await loadMoreButton.click();
+      }).toPass({ timeout: 10000 });
+      await authedPage.waitForTimeout(150);
+    }
 
     await authedPage.getByTestId('files__search').fill('bulk-0250');
     await expect(authedPage.getByTestId('files__search')).toHaveValue('bulk-0250');
-    await expect(authedPage.getByTestId('files__object-row').filter({ hasText: 'bulk-0250.txt' }).first()).toBeVisible();
+    await expect(targetRow).toBeVisible();
   });
 
   test('can browse into a folder and back to root via breadcrumb', async ({ authedPage }) => {

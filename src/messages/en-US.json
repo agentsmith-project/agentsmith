@@ -1231,9 +1231,7 @@
     "scope_my_usage": "My Usage",
     "view": {
       "panel_title": "Usage Panel",
-      "panel_subtitle": "Switch resources and focus on the limit progress that matters right now.",
       "limits_section_title": "Remaining Capacity",
-      "limits_section_subtitle": "Each resource is shown as progress-only limit cards for fast scanning.",
       "trend_section_title": "Usage Trend",
       "trend_section_subtitle": "A simple request trend view for your current time range.",
       "endpoint_tabs_label": "Resources",
@@ -1255,7 +1253,6 @@
         "day": "Per Day",
         "current": "Current"
       },
-      "trend_title": "Usage Trend ({hours}h)",
       "trend_focus_note": "Use the bars to spot recent activity changes.",
       "no_data": "No usage trend data available.",
       "no_data_hint": "This view will populate after requests are recorded for the selected time range.",

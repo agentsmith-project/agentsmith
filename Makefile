@@ -797,13 +797,33 @@ notebook-agent-engineering-smoke-full:
 	@set -e; \
 	echo "[make] running demo readiness check..."; \
 	set +e; \
-	$(MAKE) notebook-agent-demo-check; \
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+		./scripts/notebook-agent-demo-check.sh; \
 	CHECK_RC=$$?; \
 	set -e; \
+	if [ "$$CHECK_RC" -eq 75 ]; then \
+		echo "[make] demo-check reported recoverable missing demo resources without GLM_API_KEY; skipping notebook engineering smoke."; \
+		exit 0; \
+	fi; \
 	if [ "$$CHECK_RC" -ne 0 ]; then \
 		echo "[make] demo-check failed; attempting full demo self-heal (start/recover api+web+runner+token/resources)..."; \
-		DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
-		$(MAKE) notebook-agent-demo-check; \
+		if [ -n "$(GLM_API_KEY)" ]; then \
+			$(MAKE) notebook-agent-demo-up; \
+		else \
+			DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
+		fi; \
+		set +e; \
+		env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+			./scripts/notebook-agent-demo-check.sh; \
+		CHECK_RC=$$?; \
+		set -e; \
+		if [ "$$CHECK_RC" -eq 75 ]; then \
+			echo "[make] demo-check still reports recoverable missing demo resources without GLM_API_KEY; skipping notebook engineering smoke."; \
+			exit 0; \
+		fi; \
+		if [ "$$CHECK_RC" -ne 0 ]; then \
+			exit "$$CHECK_RC"; \
+		fi; \
 	fi; \
 	echo "[make] running engineering smoke bundle..."; \
 	$(MAKE) notebook-agent-engineering-smoke

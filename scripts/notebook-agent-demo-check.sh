@@ -12,6 +12,7 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
 SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
+GLM_API_KEY="${GLM_API_KEY:-}"
 RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
 RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
 DEMO_REQUIRE_RUNNER="${DEMO_REQUIRE_RUNNER:-1}"
@@ -33,6 +34,15 @@ require_file() {
   [[ -f "${path}" ]] || { err "missing file: ${path}"; return 1; }
 }
 
+has_demo_execution_metadata() {
+  [[ -s "${TOKEN_FILE}" ]] \
+    && [[ -s /tmp/agentsmith_project_id.txt ]] \
+    && [[ -s /tmp/agentsmith_agent_id.txt ]] \
+    && [[ -s /tmp/agentsmith_endpoint_id.txt ]] \
+    && [[ -s /tmp/agentsmith_ws_url.txt ]] \
+    && [[ -s /tmp/agentsmith_agent_key.txt ]]
+}
+
 token_is_valid() {
   local token="$1"
   [[ -n "${token}" ]] || return 1
@@ -50,6 +60,13 @@ main() {
   (cd "${ROOT_DIR}" && make notebook-agent-demo-status)
 
   local token project_id agent_id endpoint_id ws_url agent_key
+  if ! has_demo_execution_metadata; then
+    if [[ -z "${GLM_API_KEY}" ]]; then
+      warn_msg="SCENARIO_WARN demo execution metadata missing and GLM_API_KEY is not set; skipping recoverable demo check"
+      info "${warn_msg}"
+      exit 75
+    fi
+  fi
   require_file "${TOKEN_FILE}"
   require_file /tmp/agentsmith_project_id.txt
   require_file /tmp/agentsmith_agent_id.txt
@@ -81,6 +98,10 @@ main() {
       -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${endpoint_get_code}" == "404" ]]; then
+    if [[ -z "${GLM_API_KEY}" ]]; then
+      info "SCENARIO_WARN endpoint metadata is stale and GLM_API_KEY is not set; skipping recoverable demo check"
+      exit 75
+    fi
     err "endpoint metadata is stale (endpoint ${endpoint_id} not found on current API instance)"
     err "re-run demo resource initialization: GLM_API_KEY='***' make notebook-agent-init-resources"
     exit 1

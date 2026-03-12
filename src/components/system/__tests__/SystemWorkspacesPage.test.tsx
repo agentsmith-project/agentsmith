@@ -77,6 +77,7 @@ describe('SystemWorkspacesPage', () => {
       }),
     });
     vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
   it('renders system workspace cards and preview panel', async () => {
@@ -205,5 +206,60 @@ describe('SystemWorkspacesPage', () => {
         expect.objectContaining({ method: 'PATCH' }),
       ),
     );
+  });
+
+  it('deletes selected workspace', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ ok: true }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ items: [] }),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    fireEvent.click(screen.getByTestId('system-workspaces__delete'));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha',
+        expect.objectContaining({ method: 'DELETE' }),
+      ),
+    );
+    expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
   });
 });

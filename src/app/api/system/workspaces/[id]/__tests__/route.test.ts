@@ -6,17 +6,19 @@ const sessionModule = vi.hoisted(() => ({
 
 const registryModule = vi.hoisted(() => ({
   updateSystemWorkspace: vi.fn(),
+  deleteSystemWorkspace: vi.fn(),
 }));
 
 vi.mock('@/lib/system-admin/session', () => sessionModule);
 vi.mock('@/lib/system-admin/workspace-registry', () => registryModule);
 
-import { PATCH } from '../route';
+import { DELETE, PATCH } from '../route';
 
 describe('/api/system/workspaces/[id]', () => {
   beforeEach(() => {
     sessionModule.isSystemAdminAuthenticated.mockReset();
     registryModule.updateSystemWorkspace.mockReset();
+    registryModule.deleteSystemWorkspace.mockReset();
   });
 
   it('returns 401 when system admin session is missing', async () => {
@@ -56,5 +58,18 @@ describe('/api/system/workspaces/[id]', () => {
         workspace_admin: 'ops-admin@example.com',
       }),
     );
+  });
+
+  it('deletes workspace config for authenticated system admin', async () => {
+    sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    registryModule.deleteSystemWorkspace.mockResolvedValue(undefined);
+
+    const response = await DELETE(
+      new Request('http://localhost/api/system/workspaces/ws_alpha', { method: 'DELETE' }),
+      { params: Promise.resolve({ id: 'ws_alpha' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(registryModule.deleteSystemWorkspace).toHaveBeenCalledWith('ws_alpha');
   });
 });

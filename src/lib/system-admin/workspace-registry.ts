@@ -143,3 +143,12 @@ export async function updateSystemWorkspace(
   await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));
   return updated;
 }
+
+export async function deleteSystemWorkspace(id: string): Promise<void> {
+  const records = await readRegistryFile();
+  const nextRecords = records.filter((record) => record.id !== id);
+  if (nextRecords.length === records.length) {
+    throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
+  }
+  await writeRegistryFile(nextRecords);
+}

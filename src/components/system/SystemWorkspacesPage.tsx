@@ -124,6 +124,31 @@ export function SystemWorkspacesPage() {
     }
   };
 
+  const handleDelete = async () => {
+    if (!selectedWorkspaceId) return;
+    const confirmed = window.confirm(t('delete_confirm'));
+    if (!confirmed) return;
+
+    setIsSubmitting(true);
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      const response = await fetch(`/api/system/workspaces/${selectedWorkspaceId}`, {
+        method: 'DELETE',
+      });
+      const data = (await response.json().catch(() => null)) as { error_message?: string } | null;
+      if (!response.ok) {
+        setSaveError(data?.error_message || 'workspace_delete_failed');
+        return;
+      }
+      await loadWorkspaces();
+      resetDraft();
+      setSaveNotice(t('delete_success'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const canSubmit =
     draftName.trim() &&
     draftAdmin.trim() &&
@@ -330,6 +355,17 @@ export function SystemWorkspacesPage() {
                   {selectedWorkspaceId ? (
                     <Button type="button" variant="outline" onClick={resetDraft} data-testid="system-workspaces__reset">
                       {t('new_workspace')}
+                    </Button>
+                  ) : null}
+                  {selectedWorkspaceId ? (
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      onClick={() => void handleDelete()}
+                      disabled={isSubmitting}
+                      data-testid="system-workspaces__delete"
+                    >
+                      {t('delete_workspace')}
                     </Button>
                   ) : null}
                 </div>

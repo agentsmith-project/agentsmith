@@ -92,7 +92,10 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__preview')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__mode')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_admin_card_label');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
   });
 
   it('filters workspaces and generates preview values', async () => {

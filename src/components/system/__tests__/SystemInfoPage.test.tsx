@@ -40,8 +40,12 @@ describe('SystemInfoPage', () => {
     expect(screen.getByTestId('system-info__heading')).toBeInTheDocument();
     expect(screen.getByTestId('system-info__back').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
     expect(screen.getByTestId('system-info__notice')).toBeInTheDocument();
+    expect(screen.getByText('system_admin_title')).toBeInTheDocument();
+    expect(screen.getByText('api_service_title')).toBeInTheDocument();
+    expect(screen.getByText('workspace_registry_title')).toBeInTheDocument();
     expect(screen.getByText('default_workspace_title')).toBeInTheDocument();
     expect(screen.getByText('default_idp_title')).toBeInTheDocument();
+    expect(screen.getByText('data_service_title')).toBeInTheDocument();
     expect(screen.getByText('mongodb://localhost:27017')).toBeInTheDocument();
     expect(screen.getByText('artifacts/system-workspaces.json')).toBeInTheDocument();
     expect(screen.getByText('https://login.example.com')).toBeInTheDocument();

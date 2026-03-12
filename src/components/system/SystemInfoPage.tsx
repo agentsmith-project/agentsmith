@@ -49,13 +49,25 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 title={t('system_admin_title')}
                 rows={[
                   { label: t('system_admin_username_label'), value: snapshot.system_admin_username },
+                ]}
+              />
+              <InfoCard
+                icon={<Wrench className="h-5 w-5" />}
+                title={t('api_service_title')}
+                rows={[
                   { label: t('api_base_url_label'), value: snapshot.api_base_url },
+                ]}
+              />
+              <InfoCard
+                icon={<Wrench className="h-5 w-5" />}
+                title={t('workspace_registry_title')}
+                rows={[
                   { label: t('workspace_registry_path_label'), value: snapshot.workspace_registry_path },
                 ]}
               />
               <InfoCard
                 icon={<Database className="h-5 w-5" />}
-                title={t('substrate_title')}
+                title={t('data_service_title')}
                 rows={[
                   { label: t('substrate_label_label'), value: snapshot.substrate_label },
                   { label: t('substrate_url_label'), value: snapshot.substrate_url },

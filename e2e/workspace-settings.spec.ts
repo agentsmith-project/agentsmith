@@ -65,7 +65,7 @@ test.describe('Workspace Settings Page', () => {
     );
     await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-audit-secondary')).toHaveAttribute(
       'href',
-      /gov_reason=blocked_projects_runtime_activation/,
+      /gov_reason=blocked_projects_audit_review/,
     );
   });
 

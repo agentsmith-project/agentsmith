@@ -1302,7 +1302,7 @@
       "open_audit": "Open Audit",
       "tokens": "Tokens",
       "decision_id": "Decision ID",
-      "pricing_version": "Pricing Version",
+      "pricing_source": "Pricing Source",
       "estimated_cost": "Estimated Cost",
       "timeline_title": "Request Attempts",
       "timeline_empty": "No request attempts were recorded for this request.",

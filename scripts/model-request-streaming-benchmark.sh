@@ -4,7 +4,7 @@ set -euo pipefail
 BASE_URL="${BASE_URL:-http://localhost:20000}"
 WS_ID="${WS_ID:-ws_default}"
 PROJECT_ID="${PROJECT_ID:-proj_001}"
-MODEL="${MODEL:-combo:default_chat}"
+MODEL="${MODEL:-openai/gpt-4o-mini}"
 PROMPT="${PROMPT:-benchmark streaming request}"
 REQUESTS="${REQUESTS:-30}"
 CONCURRENCY="${CONCURRENCY:-5}"

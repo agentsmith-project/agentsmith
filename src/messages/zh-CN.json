@@ -1304,7 +1304,7 @@
       "open_audit": "打开审计",
       "tokens": "Token",
       "decision_id": "决策 ID",
-      "pricing_version": "定价版本",
+      "pricing_source": "定价来源",
       "estimated_cost": "预估成本",
       "timeline_title": "请求尝试",
       "timeline_empty": "该请求没有记录请求尝试。",

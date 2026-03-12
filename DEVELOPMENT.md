@@ -107,7 +107,7 @@ src/
 补充说明：
 
 1. `release-ops` 已从当前功能基线中移除
-2. `Runtime Console` 不再作为 MVP 独立产品面继续建设
+2. 独立的第三产品面已被移除，不再继续建设独立运行控制台
 3. 若历史能力仍需保留，应并入 `Audit`
 4. `release` / `engineering gate` / `rollout` 等术语若出现在仓库内，默认指工程流程，不是平台对外能力名；产品内权限约束一律表述为 `permission gate`
 5. 以下对象不再作为前端产品对象继续扩张：`guardrails`、`probe`、`alias`、`combo`、`routing`、`activation`

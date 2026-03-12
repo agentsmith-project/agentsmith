@@ -80,3 +80,17 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 3. Policy rate/spending limits not taking effect
 - Re-run `make governance-policy-requests-rate-effect-smoke`
 - Check audit/usage evidence for deny/rate-limit records
+
+
+## Config Audit Smoke
+
+```bash
+make governance-config-audit-effect-smoke
+```
+
+This smoke verifies that project configuration changes appear in `Audit` with both success and failure outcomes:
+
+1. `credential.create`
+2. `endpoint.create`
+3. failed `endpoint.create` (`ENDPOINT_MODEL_CONFLICT`)
+4. `endpoint.update`

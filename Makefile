@@ -9,7 +9,7 @@
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
 	notebook-agent-source-read-mount-smoke notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
-	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
+	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke organization-governance-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
@@ -160,6 +160,7 @@ help-extended:
 	@echo "  make governance-policy-access-effect-smoke # real-backend endpoint policy allow-list effect smoke (deny->allow + audit/usage evidence)"
 	@echo "  make governance-policy-group-access-effect-smoke # real-backend endpoint policy group allow-list effect smoke (deny->group-allow)"
 	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
+	@echo "  make governance-config-audit-effect-smoke # real-backend endpoint/credential config change -> audit event smoke"
 	@echo "  make governance-policy-spending-effect-smoke # real-backend endpoint policy spending-limit effect smoke (block -> audit/usage evidence)"
 	@echo "  make governance-policy-requests-rate-effect-smoke # real-backend endpoint policy requests/day rate effect smoke (block -> audit/usage evidence)"
 	@echo "  make governance-member-permission-effect-smoke # optional smoke (not part of default MVP engineering gate)"
@@ -871,6 +872,10 @@ governance-policy-update-audit-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-update-audit-smoke.sh
 
+governance-config-audit-effect-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/governance-config-audit-effect-smoke.sh
+
 governance-policy-spending-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-policy-spending-effect-smoke.sh
@@ -924,6 +929,7 @@ governance-smoke:
 	run_with_token_retry governance-policy-access-effect-smoke; \
 	run_with_token_retry governance-policy-group-access-effect-smoke; \
 	run_with_token_retry governance-policy-update-audit-smoke; \
+	run_with_token_retry governance-config-audit-effect-smoke; \
 	run_with_token_retry governance-policy-effect-smoke; \
 	run_with_token_retry governance-policy-spending-effect-smoke; \
 	run_with_token_retry governance-policy-requests-rate-effect-smoke; \

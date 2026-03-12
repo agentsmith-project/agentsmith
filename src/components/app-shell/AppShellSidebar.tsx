@@ -5,7 +5,7 @@ import { useParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { useCanManageResourcePolicy, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageResourcePolicy, useHasPermission, useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { Button } from '@/components/ui/button';
 import {
@@ -78,10 +78,12 @@ const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }>
   { id: 'operate', labelKey: 'sidebar.operate' },
 ];
 
-const WORKSPACE_MENU_ITEMS = [
-  { icon: FolderKanban, labelKey: 'sidebar.projects', href: '../projects' },
-  { icon: SettingsIcon, labelKey: 'settings', href: '../../settings' },
-];
+type WorkspaceMenuItem = {
+  icon: LucideIcon;
+  labelKey: string;
+  href: string;
+  visible: boolean;
+};
 
 export function AppShellSidebar({
   currentValue: _currentValue,
@@ -96,6 +98,8 @@ export function AppShellSidebar({
   const canReadAgents = useHasPermission('project:agent:manage');
   const canManageProject = useHasPermission('project:manage');
   const canManageResourcePolicy = useCanManageResourcePolicy();
+  const canReadWorkspace = useHasWorkspacePermission('workspace:read');
+  const canCreateWorkspaceProject = useHasWorkspacePermission('workspace:project:create');
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
@@ -120,7 +124,11 @@ export function AppShellSidebar({
       items: projectMenuItems.filter((item) => item.section === section.id),
     }))
     .filter((section) => section.items.length > 0);
-  const menuItems = currentProject ? projectMenuItems : WORKSPACE_MENU_ITEMS;
+  const workspaceMenuItems: WorkspaceMenuItem[] = [
+    { icon: FolderKanban, labelKey: 'sidebar.projects', href: '../projects', visible: canReadWorkspace },
+    { icon: SettingsIcon, labelKey: 'settings', href: '../../settings', visible: canCreateWorkspaceProject },
+  ];
+  const menuItems = currentProject ? projectMenuItems : workspaceMenuItems.filter((item) => item.visible);
 
   const baseProjectPath =
     locale && workspaceId && projectId

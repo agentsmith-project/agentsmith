@@ -3,12 +3,14 @@ import { render, screen, within } from '@testing-library/react';
 import { AppShellSidebar } from '../AppShellSidebar';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
+const mockUseParams = vi.fn<() => { workspace: string; project?: string; locale: string }>(() => ({
+  workspace: 'ws_default',
+  project: 'proj_001',
+  locale: 'en-US',
+}));
+
 vi.mock('next/navigation', () => ({
-  useParams: () => ({
-    workspace: 'ws_default',
-    project: 'proj_001',
-    locale: 'en-US',
-  }),
+  useParams: () => mockUseParams(),
   usePathname: () => '/en-US/workspaces/ws_default/projects/proj_001/overview',
 }));
 
@@ -45,18 +47,23 @@ vi.mock('next-intl', () => ({
   },
 }));
 
+const mockUseHasWorkspacePermission = vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create');
+
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: () => true,
   useCanManageResourcePolicy: () => true,
+  useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
-  useProject: () => ({
-    data: {
-      id: 'proj_001',
-      name: 'Test Project',
-      visibility: 'private',
-    },
+  useProject: (_workspaceId: string, projectId: string) => ({
+    data: projectId
+      ? {
+          id: 'proj_001',
+          name: 'Test Project',
+          visibility: 'private',
+        }
+      : null,
   }),
 }));
 
@@ -94,6 +101,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
   beforeEach(() => {
     localStorageMock.clear();
     vi.clearAllMocks();
+    mockUseParams.mockReturnValue({
+      workspace: 'ws_default',
+      project: 'proj_001',
+      locale: 'en-US',
+    });
+    mockUseHasWorkspacePermission.mockImplementation(
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
+    );
   });
 
   it('renders core sections without operate section', () => {
@@ -126,5 +141,32 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).queryByTestId('sidebar__nav-item--usage')).not.toBeInTheDocument();
+  });
+
+  it('shows workspace settings only for workspace admins in workspace scope', () => {
+    const wrapper = createWrapper();
+    mockUseParams.mockReturnValue({
+      workspace: 'ws_default',
+      locale: 'en-US',
+    });
+    render(<AppShellSidebar />, { wrapper });
+
+    const sidebar = within(screen.getByTestId('sidebar'));
+    expect(sidebar.getByTestId('sidebar__nav-item--projects')).toBeInTheDocument();
+    expect(sidebar.getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
+  });
+
+  it('hides workspace settings for non-admin workspace users', () => {
+    const wrapper = createWrapper();
+    mockUseParams.mockReturnValue({
+      workspace: 'ws_default',
+      locale: 'en-US',
+    });
+    mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
+    render(<AppShellSidebar />, { wrapper });
+
+    const sidebar = within(screen.getByTestId('sidebar'));
+    expect(sidebar.getByTestId('sidebar__nav-item--projects')).toBeInTheDocument();
+    expect(sidebar.queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 });

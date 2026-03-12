@@ -55,7 +55,7 @@ export default function WorkspaceSettingsPage() {
     );
   }
 
-  if (!canReadWorkspace) {
+  if (!canReadWorkspace || !canCreateProject) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -111,11 +111,7 @@ export default function WorkspaceSettingsPage() {
                 >
                   {t('workspace_open_projects')}
                 </Link>
-                {canCreateProject ? (
-                  <StatusBadge status="ready">{t('workspace_can_create_projects')}</StatusBadge>
-                ) : (
-                  <StatusBadge status="info">{t('workspace_cannot_create_projects')}</StatusBadge>
-                )}
+                <StatusBadge status="ready">{t('workspace_can_create_projects')}</StatusBadge>
               </div>
             </section>
 

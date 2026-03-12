@@ -157,14 +157,12 @@ describe('WorkspaceSettingsPage', () => {
     });
   });
 
-  it('shows create-project restriction notice when user lacks workspace:project:create', async () => {
+  it('shows permission denied when user lacks workspace:project:create', async () => {
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
     render(<WorkspaceSettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__workspace')).toBeInTheDocument();
+      expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     });
-
-    expect(screen.getByText('workspace_cannot_create_projects')).toBeInTheDocument();
   });
 });

@@ -81,14 +81,14 @@ export interface ProjectMembership {
 // Agent
 // ============================================================
 
-/** Runtime stats for external agents (source IP, connection duration, QPM) */
+/** Execution stats for external agents (source IP, connection duration, QPM) */
 export interface AgentExternalStats {
   source_ip?: string;
   connection_duration_sec?: number;
   qpm?: number; // queries per minute, turn-based
 }
 
-/** Runtime stats for internal agents (pod count, etc.) */
+/** Execution stats for internal agents (pod count, etc.) */
 export interface AgentInternalStats {
   pod_count?: number;
   desired_replicas?: number;

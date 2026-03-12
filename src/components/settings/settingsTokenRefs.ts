@@ -1,6 +1,6 @@
 /**
  * Supported token references for Project Settings.
- * Runtime preferences only (MVP).
+ * Execution preferences only (MVP).
  */
 
 import type { TokenItem } from './SettingsTokenReference';

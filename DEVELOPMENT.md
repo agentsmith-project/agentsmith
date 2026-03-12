@@ -769,4 +769,4 @@ Current known boundary:
   - source-library allow-list / rate / upload limit effects
   - notebook/chat agent access and agent request-rate effects
   - member permission, limit, suspend / restore / revoke downstream effects
-  - opaque SSE ticket issuance with legacy JWT query fallback disabled
+  - opaque SSE ticket issuance with JWT query fallback disabled

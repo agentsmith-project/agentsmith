@@ -1560,18 +1560,18 @@ function generateMarkdown(report: GovernanceReport): string {
     }
     md += `\n`;
 
-    md += `| Runtime Guardrail Signal | Count |\n`;
-    md += `|--------------------------|-------|\n`;
+    md += `| Execution Check Signal | Count |\n`;
+    md += `|------------------------|-------|\n`;
     md += `| Blockers | ${executionEvidence.checks.blockers.length} |\n`;
     md += `| Warnings | ${executionEvidence.checks.warnings.length} |\n`;
     md += `| Missing pricing coverage | ${executionEvidence.pricing_source_coverage.missing_usage_facts} |\n\n`;
 
     if (executionEvidence.checks.blockers.length > 0) {
-      md += `**Runtime Check Blockers:** ${executionEvidence.checks.blockers.join(', ')}\n\n`;
+      md += `**Execution Check Blockers:** ${executionEvidence.checks.blockers.join(', ')}\n\n`;
     }
 
     if (executionEvidence.checks.warnings.length > 0) {
-      md += `**Runtime Check Warnings:** ${executionEvidence.checks.warnings.join(', ')}\n\n`;
+      md += `**Execution Check Warnings:** ${executionEvidence.checks.warnings.join(', ')}\n\n`;
     }
   }
 

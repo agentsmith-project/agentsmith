@@ -618,7 +618,7 @@ const governanceReportDetails = new Map([
         skipped: 0,
         checks: [
           { name: 'TypeScript typecheck', category: 'typecheck', status: 'pass', duration_ms: 18200 },
-          { name: 'Runtime proxy billing governance workflow', category: 'e2e', status: 'pass', duration_ms: 94100 },
+          { name: 'Model request billing governance workflow', category: 'e2e', status: 'pass', duration_ms: 94100 },
         ],
       },
     },

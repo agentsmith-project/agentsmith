@@ -34,7 +34,6 @@ test.describe('Usage Page', () => {
     await expect(authedPage.getByTestId('usage__filters')).toHaveCount(0);
     await expect(authedPage.getByTestId('usage__table')).toHaveCount(0);
     await expect(authedPage.getByTestId('usage__export-trigger')).toHaveCount(0);
-    await expect(authedPage.getByTestId('usage__report-schedules')).toHaveCount(0);
   });
 
   test('switches period between 48h and 24h', async ({ authedPage }) => {

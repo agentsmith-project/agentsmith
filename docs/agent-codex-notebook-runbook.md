@@ -853,7 +853,7 @@ make notebook-agent-benchmark-archive
 - R1: User bearer token forwarded to runner process env for proxy auth/audit.
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.
 
-## 8.1 Deployment Model and Runtime Coordination Limits
+## 8.1 Deployment Model and Execution Coordination Limits
 - Current notebook execution coordination is optimized for a single API instance (or sticky-session routing to one API instance).
 - The following coordination state is in-process memory in `api-entry-node`:
   - active task run guard (`ACTIVE_RUNS_BY_TASK`)

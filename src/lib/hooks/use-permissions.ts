@@ -71,7 +71,7 @@ export function useHasAllPermissions(permissions: string[]): boolean {
   return useMemo(() => permissions.every((p) => permissionMatches(currentPermissions, p)), [currentPermissions, permissions]);
 }
 
-// Semantic aliases mapped to token checks.
+// Semantic permission helpers mapped directly to token checks.
 export function useIsOwnerOrAdmin(): boolean {
   return useHasPermission('project:manage');
 }

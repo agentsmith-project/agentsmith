@@ -45,7 +45,7 @@
 
 ### `INT-AGENT-OFFLINE`
 - Symptom:
-  - Runtime route reports `AGENT_OFFLINE`.
+  - Execution route reports `AGENT_OFFLINE`.
 - Check:
   - External execution websocket agent actually connected.
   - Agent key is valid and belongs to target agent.

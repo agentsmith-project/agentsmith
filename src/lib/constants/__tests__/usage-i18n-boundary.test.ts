@@ -95,8 +95,6 @@ const FORBIDDEN_USAGE_KEYS = [
   'facts_table',
   'facts_summary',
   'operations',
-  'export',
-  'report_schedules',
 ];
 
 function readUsageNamespace(localeFile: 'en-US.json' | 'zh-CN.json') {

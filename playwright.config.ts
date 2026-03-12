@@ -103,6 +103,8 @@ export default defineConfig({
           args: desktopWindowArgs,
         },
       },
+      fullyParallel: false,
+      workers: 1,
     },
   ],
 });

@@ -227,4 +227,40 @@ describe('UsagePage', () => {
     expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();
   });
 
+  it('hides resource tabs when only one endpoint is available', () => {
+    render(
+      <UsageView
+        records={[]}
+        periodHours={48}
+        endpointOptions={[{ id: 'ep_1', name: 'Endpoint 1' }]}
+        selectedEndpointId="ep_1"
+        limitsOverview={{
+          endpoints: [
+            {
+              endpointId: 'ep_1',
+              endpointName: 'Endpoint 1',
+              limits: [
+                {
+                  kind: 'rate_limit',
+                  window: 'minute',
+                  metric: 'requests',
+                  policyKey: 'endpoint.requests_per_minute',
+                  used: 1,
+                  max: 10,
+                  remaining: 9,
+                  usagePct: 10,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.queryByTestId('usage__endpoint-tabs')).not.toBeInTheDocument();
+    expect(screen.getByText('Endpoint 1')).toBeInTheDocument();
+    expect(screen.getAllByTestId('usage__progress-card').length).toBe(1);
+  });
+
 });

@@ -195,21 +195,23 @@ export function UsageView({
         <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__limits">
           {selectedEndpoint ? (
             <Tabs value={effectiveEndpointId} onValueChange={(value) => onEndpointChange?.(value)} className="space-y-4">
-              <TabsList
-                className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-2xl border border-subtle bg-bg-base/20 p-1.5"
-                data-testid="usage__endpoint-tabs"
-              >
-                {endpointLimitGroups.map((endpoint) => (
-                  <TabsTrigger
-                    key={endpoint.endpointId}
-                    value={endpoint.endpointId}
-                    className="rounded-xl px-4 py-2.5 text-sm"
-                    data-testid={`usage__resource-tab-${endpoint.endpointId}`}
-                  >
-                    {endpoint.endpointName}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
+              {endpointLimitGroups.length > 1 ? (
+                <TabsList
+                  className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-2xl border border-subtle bg-bg-base/20 p-1.5"
+                  data-testid="usage__endpoint-tabs"
+                >
+                  {endpointLimitGroups.map((endpoint) => (
+                    <TabsTrigger
+                      key={endpoint.endpointId}
+                      value={endpoint.endpointId}
+                      className="rounded-xl px-4 py-2.5 text-sm"
+                      data-testid={`usage__resource-tab-${endpoint.endpointId}`}
+                    >
+                      {endpoint.endpointName}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+              ) : null}
 
               {endpointLimitGroups.map((endpoint) => {
                 const cards = [

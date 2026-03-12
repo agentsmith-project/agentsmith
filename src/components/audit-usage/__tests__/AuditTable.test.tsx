@@ -341,4 +341,49 @@ describe('AuditTable', () => {
     expect(screen.getByText('Join Request')).toBeInTheDocument();
     expect(screen.getByText('Join Request user_alt')).toBeInTheDocument();
   });
+
+  it('humanizes common management actions without falling back to raw tokens', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_13',
+            timestamp: '2026-03-01T12:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_13',
+            action: 'project.member.manage',
+            resource_type: 'project',
+            resource_id: 'proj_1',
+            result: 'error',
+            error_code: 'FORBIDDEN',
+            request_id: 'req_project_member_manage',
+            metadata_json: {},
+          },
+          {
+            id: 'audit_14',
+            timestamp: '2026-03-01T13:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_14',
+            action: 'agent.key.issue',
+            resource_type: 'agent',
+            resource_id: 'agent_14',
+            result: 'ok',
+            request_id: 'req_agent_key_issue',
+            metadata_json: {
+              name: 'Support Agent',
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Managed Member Access')).toBeInTheDocument();
+    expect(screen.getByText('User Managed Member Access on proj_1 and failed')).toBeInTheDocument();
+    expect(screen.getByText('Issued Agent Key')).toBeInTheDocument();
+    expect(screen.getByText('User Issued Agent Key on Agent Support Agent and succeeded')).toBeInTheDocument();
+  });
 });

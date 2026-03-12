@@ -185,7 +185,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('should support endpoint invoke/use permission aliases', () => {
+    it('should reject removed endpoint invoke alias', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -204,51 +204,7 @@ describe('use-permissions hooks', () => {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toBe(true);
-    });
-
-    it('should support agent manage/create permission aliases', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:agent:create'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasPermission('project:agent:manage'), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('should support agent public/publish permission aliases', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:agent:publish'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasPermission('project:agent:public'), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
+      expect(result.current).toBe(false);
     });
   });
 
@@ -297,7 +253,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('useCanAccessChat should also accept project:endpoint:invoke alias', () => {
+    it('useCanAccessChat should reject removed project:endpoint:invoke alias', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -316,7 +272,7 @@ describe('use-permissions hooks', () => {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toBe(true);
+      expect(result.current).toBe(false);
     });
 
     it('notebook task capability hooks should all follow notebook access', () => {

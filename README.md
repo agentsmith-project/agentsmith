@@ -136,11 +136,7 @@ Use canonical project tokens in all new code:
 - `project:agent:public`
 - `project:manage`
 
-Deprecated aliases are still accepted only for compatibility:
-
-- `project:endpoint:invoke` -> `project:endpoint:use`
-- `project:agent:create` -> `project:agent:manage`
-- `project:agent:publish` -> `project:agent:public`
+Only canonical permission tokens are valid in current code and tests.
 
 ## Project Structure
 

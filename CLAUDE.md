@@ -16,7 +16,7 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 
 **定位**: 企业级控制面，非 ToC 产品，非低代码平台。 **后端为唯一权威**。
 
-**范围**: 认证/身份, 工作区, 项目, Chat, Notebook, Files, Agents, Endpoints, 资源策略, 成员, 凭据, 审计与用量, Runtime Console, 设置.
+**范围**: 认证/身份, 工作区, 项目, Chat, Notebook, Files, Agents, Endpoints, 资源策略, 成员, 凭据, 审计与用量, 设置.
 
 **非范围**: 文件级策略, Chat/Notebook 独立配额, 角色名鉴权, 性能压测, E2E 覆盖后端鉴权.
 

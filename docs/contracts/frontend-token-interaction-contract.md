@@ -37,11 +37,6 @@ Related docs:
 - `project:agent:public`
 - `project:manage`
 
-Legacy aliases currently accepted by frontend permission gates:
-- `project:endpoint:invoke` -> `project:endpoint:use`
-- `project:agent:create` -> `project:agent:manage`
-- `project:agent:publish` -> `project:agent:public`
-
 ## Route-Level Permission Gate Contract
 
 - Projects list: `workspace:read`

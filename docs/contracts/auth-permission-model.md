@@ -19,11 +19,6 @@ Clarify the boundary between authentication data and authorization enforcement t
   - `project:agent:manage`
   - `project:agent:public`
 
-Legacy aliases accepted by frontend permission-gate compatibility layer:
-- `project:endpoint:invoke` -> `project:endpoint:use`
-- `project:agent:create` -> `project:agent:manage`
-- `project:agent:publish` -> `project:agent:public`
-
 3. `Frontend permission gate`
 - Uses permission points to drive UX states (show/hide/disable/error state).
 - Optimization for usability; not security authority.

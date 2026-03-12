@@ -22,23 +22,23 @@ type PageReport = {
   hasAuthFallbackGate: boolean;
 };
 
-type DeprecatedTokenUsage = {
+type RemovedTokenUsage = {
   file: string;
   token: string;
 };
 
-const DEPRECATED_PERMISSION_TOKENS = [
+const REMOVED_PERMISSION_TOKENS = [
   'project:endpoint:invoke',
   'project:agent:create',
   'project:agent:publish',
 ] as const;
 
-const DEPRECATED_TOKEN_ALLOWLIST = new Set<string>([
+const REMOVED_TOKEN_ALLOWLIST = new Set<string>([
   'src/lib/constants/permissions.ts',
   'src/lib/hooks/use-permissions.ts',
 ]);
 
-const DEPRECATED_TOKEN_DOC_ALLOWLIST = new Set<string>([
+const REMOVED_TOKEN_DOC_ALLOWLIST = new Set<string>([
   'docs/contracts/auth-permission-model.md',
   'docs/contracts/frontend-token-interaction-contract.md',
 ]);
@@ -142,17 +142,17 @@ function hasAuthFallbackGate(pageFile: string, source: string): boolean {
   return readFallback || createFallback;
 }
 
-function collectDeprecatedTokenUsageInSource(): DeprecatedTokenUsage[] {
+function collectRemovedTokenUsageInSource(): RemovedTokenUsage[] {
   const srcDir = path.join(ROOT, 'src');
   if (!fs.existsSync(srcDir)) return [];
   const files = collectTsSourceFiles(srcDir);
-  const results: DeprecatedTokenUsage[] = [];
+  const results: RemovedTokenUsage[] = [];
 
   for (const file of files) {
     const rel = toWorkspaceRelative(file);
-    if (DEPRECATED_TOKEN_ALLOWLIST.has(rel)) continue;
+    if (REMOVED_TOKEN_ALLOWLIST.has(rel)) continue;
     const source = fs.readFileSync(file, 'utf8');
-    for (const token of DEPRECATED_PERMISSION_TOKENS) {
+    for (const token of REMOVED_PERMISSION_TOKENS) {
       if (source.includes(token)) {
         results.push({ file: rel, token });
       }
@@ -161,20 +161,20 @@ function collectDeprecatedTokenUsageInSource(): DeprecatedTokenUsage[] {
   return results;
 }
 
-function collectDeprecatedTokenUsageInContractDocs(): DeprecatedTokenUsage[] {
+function collectRemovedTokenUsageInContractDocs(): RemovedTokenUsage[] {
   const contractsDir = path.join(ROOT, 'docs/contracts');
   if (!fs.existsSync(contractsDir)) return [];
   const files = fs
     .readdirSync(contractsDir, { withFileTypes: true })
     .filter((entry) => entry.isFile() && entry.name.endsWith('.md'))
     .map((entry) => path.join(contractsDir, entry.name));
-  const results: DeprecatedTokenUsage[] = [];
+  const results: RemovedTokenUsage[] = [];
 
   for (const file of files) {
     const rel = toWorkspaceRelative(file);
-    if (DEPRECATED_TOKEN_DOC_ALLOWLIST.has(rel)) continue;
+    if (REMOVED_TOKEN_DOC_ALLOWLIST.has(rel)) continue;
     const source = fs.readFileSync(file, 'utf8');
-    for (const token of DEPRECATED_PERMISSION_TOKENS) {
+    for (const token of REMOVED_PERMISSION_TOKENS) {
       if (source.includes(token)) {
         results.push({ file: rel, token });
       }
@@ -213,8 +213,8 @@ function main(): void {
   const pagesMissingInvalidParamTest: string[] = [];
   const pagesMissingForbiddenTest: string[] = [];
   const pagesWithAuthFallbackGate: string[] = [];
-  const deprecatedTokenUsage = collectDeprecatedTokenUsageInSource();
-  const deprecatedTokenUsageInDocs = collectDeprecatedTokenUsageInContractDocs();
+  const removedTokenUsage = collectRemovedTokenUsageInSource();
+  const removedTokenUsageInDocs = collectRemovedTokenUsageInContractDocs();
 
   for (const report of reports) {
     for (const permission of report.permissions) {
@@ -302,18 +302,18 @@ function main(): void {
     }
   }
 
-  if (deprecatedTokenUsage.length > 0) {
+  if (removedTokenUsage.length > 0) {
     hasErrors = true;
-    console.error('\nDeprecated permission tokens found in source code:');
-    for (const row of deprecatedTokenUsage) {
+    console.error('\nRemoved permission tokens found in source code:');
+    for (const row of removedTokenUsage) {
       console.error(`  - ${row.file}: ${row.token}`);
     }
   }
 
-  if (deprecatedTokenUsageInDocs.length > 0) {
+  if (removedTokenUsageInDocs.length > 0) {
     hasErrors = true;
-    console.error('\nDeprecated permission tokens found in contract docs:');
-    for (const row of deprecatedTokenUsageInDocs) {
+    console.error('\nRemoved permission tokens found in contract docs:');
+    for (const row of removedTokenUsageInDocs) {
       console.error(`  - ${row.file}: ${row.token}`);
     }
   }

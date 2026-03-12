@@ -120,7 +120,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   let terminalResult: 'ok' | 'error' = 'ok';
   let terminalErrorCode: string | undefined;
   let usageTokensTotal: number | undefined;
-  let runtimeRequestId: string | undefined;
+  let requestExecutionId: string | undefined;
   let keepaliveTimer: NodeJS.Timeout | undefined;
   let sawCancelledTerminalTrace = false;
 
@@ -245,7 +245,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         notebook_mode: true,
       },
     });
-    runtimeRequestId = dispatched.requestId;
+    requestExecutionId = dispatched.requestId;
     onDispatched?.({
       taskId: task.id,
       runId,
@@ -494,7 +494,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           ? 'notebook.task.run.completed'
           : 'notebook.task.run.failed',
       result: terminalResult,
-      requestId: runtimeRequestId,
+      requestId: requestExecutionId,
       resourceType: 'notebook_task',
       resourceId: task.id,
       errorCode: terminalErrorCode,
@@ -510,7 +510,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       projectId: task.project_id,
       resourceType: 'notebook_task',
       resourceId: task.id,
-      requestId: runtimeRequestId,
+      requestId: requestExecutionId,
       durationMs,
       tokensTotal: usageTokensTotal,
       result: terminalResult,
@@ -523,7 +523,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       resourceType: 'agent',
       resourceId: agentId,
       endUserId: user.id,
-      requestId: runtimeRequestId,
+      requestId: requestExecutionId,
       durationMs,
       result: terminalResult,
       errorCode: terminalErrorCode,

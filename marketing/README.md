@@ -36,8 +36,8 @@ screenshots/   # 手动拷贝后使用
 │   └── usage.png
 ├── 11-settings/                # 项目设置（含全部 token 展示）
 │   ├── settings-general.png
-│   ├── settings-runtime-with-tokens.png   # 运行偏好 + 支持的 token
-│   ├── settings-governance-with-tokens.png # 治理规则 + 全部 limit/rate_limits/guardrails token
+│   ├── settings-execution-with-tokens.png   # 执行偏好 + 支持的 token
+│   ├── settings-governance-with-tokens.png # 治理规则 + 全部 limit/rate_limits/checks token
 │   └── settings-limits-with-tokens.png    # 资源限制 + 全部 limits token
 ├── 12-sources/                 # 文件管理
 │   └── sources.png
@@ -51,16 +51,16 @@ screenshots/   # 手动拷贝后使用
 
 ## 支持的 Token 说明
 
-### 运行偏好 (Runtime Preferences)
+### 执行偏好 (Execution Preferences)
 - `locale.language`, `locale.timezone`
 - `ai_behavior.tone`, `ai_behavior.verbosity`
 - `shared_context.*`, `extensions`
 
-### 治理规则 (Governance) - Limit / Rate Limits / Guardrails
+### 治理规则 (Governance) - Limit / Rate Limits / Checks
 - **Capabilities**: userdata.storage/docdb/vectordb, endpoint, plugins
 - **Limits**: storage bytes/objects, docdb collections/document/query_timeout, vectordb indexes/top_k/upsert, endpoint requests
 - **Rate Limits**: user_rpm, agent_rpm, agent_rpm_high_risk
-- **Guardrails**: agent_invoke max_depth/max_concurrent/budgets, turns, internal_agents
+- **Checks**: agent_invoke max_depth/max_concurrent/budgets, turns, internal_agents
 
 ### 资源限制 (Limits)
 - **UserData**: max_total_bytes, max_total_collections, max_total_indexes

@@ -540,7 +540,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     artifactsDir = preparedAssets.artifactsDir;
     taskInputsManifestPath = preparedAssets.taskInputsManifestPath;
   }
-  const runtimeFilesResult = await applyExecutionContextFiles(cwd, credentialFiles);
+  const executionFilesResult = await applyExecutionContextFiles(cwd, credentialFiles);
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
       artifactsDir,
@@ -579,8 +579,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     has_user_bearer_token: Boolean(executionContext.user_bearer_token && executionContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,
-    credential_files_count: runtimeFilesResult.written,
-    credential_files_bytes: runtimeFilesResult.totalBytes,
+    credential_files_count: executionFilesResult.written,
+    credential_files_bytes: executionFilesResult.totalBytes,
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
     builtin_skills_mounted: builtinSkillsResult.mounted,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
@@ -646,7 +646,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       yolo: codexYolo,
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,
-      credential_files_count: runtimeFilesResult.written,
+      credential_files_count: executionFilesResult.written,
       builtin_skills_count: builtinSkillsResult.mounted.length,
       artifacts_dir: isNotebookMode ? 'artifacts/' : null,
     },

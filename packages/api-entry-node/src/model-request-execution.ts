@@ -163,13 +163,13 @@ export async function executeModelRequest(params: {
     };
   }
 
-  const runtimeStore = createModelConfigStore(deps.docStore);
+  const modelConfigStore = createModelConfigStore(deps.docStore);
   const projectScope = { workspaceId, projectId };
   const startedAtMs = nowMs();
 
   const [providers, pricing] = await Promise.all([
-    runtimeStore.listProviders(projectScope),
-    runtimeStore.resolvePricing(projectScope),
+    modelConfigStore.listProviders(projectScope),
+    modelConfigStore.resolvePricing(projectScope),
   ]);
   const pricingMap = pricing.pricing_map ?? {};
 

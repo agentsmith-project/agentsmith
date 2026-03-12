@@ -524,7 +524,7 @@ export async function listUsageFacts(
 
 function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
   const metadata = fact.metadata_json && typeof fact.metadata_json === 'object' ? fact.metadata_json : undefined;
-  const runtimeAttempts = Array.isArray(metadata?.attempt_trace)
+  const requestAttempts = Array.isArray(metadata?.attempt_trace)
     ? metadata.attempt_trace.filter((item) => item && typeof item === 'object') as Array<Record<string, unknown>>
     : undefined;
   return {
@@ -554,7 +554,7 @@ function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
       pricing_source: typeof metadata?.pricing_source === 'string' ? metadata.pricing_source : null,
       estimated_cost: typeof metadata?.estimated_cost === 'number' ? metadata.estimated_cost : null,
       missing_price: metadata?.missing_price === true,
-      attempts: runtimeAttempts,
+      attempts: requestAttempts,
     },
     metadata_json: metadata,
   };

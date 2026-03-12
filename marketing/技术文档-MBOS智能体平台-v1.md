@@ -63,7 +63,7 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 **Governance（治理规则）**
 - 每成员配额（limits）
 - 限流（rate_limits）
-- 护栏（guardrails）
+- 检查项（checks）
 - 能力开关
 
 **Limits（资源限制）**
@@ -134,8 +134,8 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 ### 3.3 设置子功能
 
 - **常规**：项目名称、可见性、加入策略
-- **运行偏好**：Runtime Preferences（JSON）
-- **治理规则**：Governance JSON（配额、限流、护栏）
+- **执行偏好**：Execution Preferences（JSON）
+- **治理规则**：Governance JSON（配额、限流、检查项）
 - **资源限制**：Limits JSON
 
 ### 3.4 凭据与 Token
@@ -192,7 +192,7 @@ E2E 脚本生成到 `test-results/screenshots/`（临时）。用于 marketing �
 | 08-members | members-list.png, member-detail-overview.png, member-permissions-template.png, member-permissions-advanced.png, member-limits.png, member-resource-acl.png | 成员、权限配置详情、配额覆盖、资源 ACL |
 | 09-audit | audit.png | 审计日志 |
 | 10-usage | usage.png | 用量统计 |
-| 11-settings | settings-general.png, settings-runtime-with-tokens.png, settings-governance-with-tokens.png, settings-limits-with-tokens.png | 常规、运行偏好、治理规则、资源限制（含全部 token） |
+| 11-settings | settings-general.png, settings-execution-with-tokens.png, settings-governance-with-tokens.png, settings-limits-with-tokens.png | 常规、执行偏好、治理规则、资源限制（含全部 token） |
 | 12-sources | sources.png | 文件管理 |
 | 13-credentials | credentials-list.png, create-credential-dialog.png | 凭据、创建对话框 |
 | 14-user | profile.png, api-keys.png | 用户资料、API Key |

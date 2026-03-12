@@ -4803,19 +4803,19 @@ describe('api-entry-node projects routes', () => {
     expect(createAgentKeyRes.status).toBe(201);
     const agentKey = (await createAgentKeyRes.json()) as { key: string };
 
-    const runtimeInfoRes = await apiFetch(
+    const connectionInfoRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
     );
-    expect(runtimeInfoRes.status).toBe(200);
-    const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
+    expect(connectionInfoRes.status).toBe(200);
+    const connectionInfo = (await connectionInfoRes.json()) as { ws_url: string };
 
     const executionSocket = new WebSocket(
-      runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      connectionInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
 
-    const runtimeReady = new Promise<void>((resolve) => {
+    const executionChannelReady = new Promise<void>((resolve) => {
       executionSocket.on('open', () => {
         executionSocket.send(
           JSON.stringify({
@@ -4871,7 +4871,7 @@ describe('api-entry-node projects routes', () => {
       );
     });
 
-    await runtimeReady;
+    await executionChannelReady;
 
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -5702,15 +5702,15 @@ describe('api-entry-node projects routes', () => {
     expect(createAgentKeyRes.status).toBe(201);
     const agentKey = (await createAgentKeyRes.json()) as { key: string };
 
-    const runtimeInfoRes = await apiFetch(
+    const connectionInfoRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
     );
-    expect(runtimeInfoRes.status).toBe(200);
-    const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
+    expect(connectionInfoRes.status).toBe(200);
+    const connectionInfo = (await connectionInfoRes.json()) as { ws_url: string };
 
     const executionSocket = new WebSocket(
-      runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      connectionInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
 
@@ -5837,15 +5837,15 @@ describe('api-entry-node projects routes', () => {
     expect(createAgentKeyRes.status).toBe(201);
     const agentKey = (await createAgentKeyRes.json()) as { key: string };
 
-    const runtimeInfoRes = await apiFetch(
+    const connectionInfoRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
     );
-    expect(runtimeInfoRes.status).toBe(200);
-    const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
+    expect(connectionInfoRes.status).toBe(200);
+    const connectionInfo = (await connectionInfoRes.json()) as { ws_url: string };
 
     const executionSocket = new WebSocket(
-      runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      connectionInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
     executionSocket.on('message', (raw) => {
@@ -5978,15 +5978,15 @@ describe('api-entry-node projects routes', () => {
     expect(createAgentKeyRes.status).toBe(201);
     const agentKey = (await createAgentKeyRes.json()) as { key: string };
 
-    const runtimeInfoRes = await apiFetch(
+    const connectionInfoRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
     );
-    expect(runtimeInfoRes.status).toBe(200);
-    const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
+    expect(connectionInfoRes.status).toBe(200);
+    const connectionInfo = (await connectionInfoRes.json()) as { ws_url: string };
 
     const executionSocket = new WebSocket(
-      runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
+      connectionInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
     executionSocket.on('message', (raw) => {

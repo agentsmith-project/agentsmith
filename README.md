@@ -4,13 +4,13 @@ AgentSmith is the enterprise control plane for the Microservices-Based Agent Sys
 
 - operate AI agents through project-scoped Chat and Notebook workflows
 - manage AI resources such as files, endpoints, credentials, and agents
-- govern runtime behavior, usage, and cost with project-scoped policy evidence
+- govern project resource configuration, usage, and cost with project-scoped policy evidence
 
 Core product positioning:
 
 - enterprise AI agent usage and management platform
 - AI resource governance platform
-- AI runtime operations and project governance surface
+- project-scoped usage and audit control plane
 
 ## Tech Stack
 

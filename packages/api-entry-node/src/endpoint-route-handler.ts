@@ -2,7 +2,7 @@ import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import type { EndpointImportPayload, EndpointRecord } from './resource-models.js';
-import { writeProjectUsageFact } from './audit-usage-recorders.js';
+import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import {
   isCapabilitySupportedByProtocol,
@@ -314,6 +314,16 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         type: 'api_key',
       },
     );
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'credential.create',
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      resourceType: 'credential',
+      resourceId: created.id,
+      metadata: { name: created.name, type: created.type },
+    });
     json(res, 201, created);
     return true;
   }
@@ -334,6 +344,16 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
       return true;
     }
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'credential.rotate',
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      resourceType: 'credential',
+      resourceId: updated.id,
+      metadata: { name: updated.name, type: updated.type },
+    });
     json(res, 200, updated);
     return true;
   }
@@ -348,6 +368,15 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
       return true;
     }
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'credential.delete',
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      resourceType: 'credential',
+      resourceId: route.credentialId,
+    });
     res.statusCode = 204;
     res.end();
     return true;
@@ -379,6 +408,16 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         route.projectId,
         raw,
       );
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'endpoint.create',
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+        resourceType: 'endpoint',
+        resourceId: created.id,
+        metadata: { name: created.name, model: created.model, protocol: created.protocol },
+      });
       json(res, 201, created);
     } catch (error) {
       if (error instanceof Error && error.message === 'endpoint_model_conflict') {
@@ -424,6 +463,16 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'endpoint.update',
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      resourceType: 'endpoint',
+      resourceId: updated.id,
+      metadata: { name: updated.name, model: updated.model, protocol: updated.protocol },
+    });
     json(res, 200, updated);
     return true;
   }
@@ -438,6 +487,15 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'endpoint.delete',
+      requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+      resourceType: 'endpoint',
+      resourceId: route.endpointId,
+    });
     res.statusCode = 204;
     res.end();
     return true;

@@ -8111,6 +8111,58 @@ describe('api-entry-node projects routes', () => {
     expect(agentUsage?.tokens).toBeUndefined();
   });
 
+
+  it('records credential and endpoint configuration changes in audit events', async () => {
+    const { baseUrl } = startServer();
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_cfg_1' },
+        body: JSON.stringify({
+          name: 'audit-credential',
+          type: 'api_key',
+          value: 'sk-audit',
+        }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const endpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_cfg_2' },
+        body: JSON.stringify({
+          name: 'audit-endpoint',
+          model: 'deepseek-chat',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'https://api.example.invalid',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(endpointRes.status).toBe(201);
+    const endpoint = (await endpointRes.json()) as { id: string };
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{ action: string; resource_type?: string; resource_id?: string; request_id: string }>;
+    };
+    expect(audit.items.some((item) => item.action === 'credential.create' && item.resource_type === 'credential' && item.resource_id === credential.id && item.request_id === 'req_cfg_1')).toBe(true);
+    expect(audit.items.some((item) => item.action === 'endpoint.create' && item.resource_type === 'endpoint' && item.resource_id === endpoint.id && item.request_id === 'req_cfg_2')).toBe(true);
+  });
+
   it('serves audit endpoint with persisted events and supports filtering', async () => {
     const deps = createDefaultNodeApiDeps();
     await recordAuditEvent(deps.docStore, {

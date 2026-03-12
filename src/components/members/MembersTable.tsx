@@ -165,12 +165,12 @@ export function MembersTable({
         },
       }),
       columnHelper.accessor('role', {
-        header: t('table.group_alias'),
+        header: t('table.access_group'),
         cell: (info) => {
-          const groupAlias = info.getValue();
+          const accessGroup = info.getValue();
           return (
-            <Badge variant={getGroupBadgeVariant(groupAlias)} className="text-xs font-medium">
-              {formatGroupAlias(groupAlias)}
+            <Badge variant={getGroupBadgeVariant(accessGroup)} className="text-xs font-medium">
+              {formatGroupAlias(accessGroup)}
             </Badge>
           );
         },

@@ -2340,7 +2340,7 @@ export interface paths {
             };
             cookie?: never;
         };
-        /** Get usage report activation evidence summary */
+        /** Get usage report review evidence summary */
         get: operations["getUsageReportEvidence"];
         put?: never;
         post?: never;
@@ -2407,7 +2407,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Acknowledge a usage report delivery for activation evidence */
+        /** Acknowledge a usage report delivery for review evidence */
         post: operations["acknowledgeUsageReportDelivery"];
         delete?: never;
         options?: never;
@@ -8455,7 +8455,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Usage report activation evidence */
+            /** @description Usage report review evidence */
             200: {
                 headers: {
                     [name: string]: unknown;

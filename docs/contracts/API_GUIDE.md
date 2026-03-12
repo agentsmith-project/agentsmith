@@ -24,7 +24,7 @@ This guide does not define independent endpoint semantics.
 
 1. Read auth and permission rules in `auth-permission-model.md`.
 2. Use OpenAPI for REST route/path/params/error schema.
-3. Use AsyncAPI and runtime protocol contracts for stream/websocket semantics.
+3. Use AsyncAPI and execution protocol contracts for stream/websocket semantics.
 4. Run contract checks before merge:
 
 ```bash

@@ -7221,10 +7221,10 @@
           "Governance"
         ],
         "operationId": "getUsageReportEvidence",
-        "summary": "Get usage report activation evidence summary",
+        "summary": "Get usage report review evidence summary",
         "responses": {
           "200": {
-            "description": "Usage report activation evidence",
+            "description": "Usage report review evidence",
             "content": {
               "application/json": {
                 "schema": {
@@ -7530,7 +7530,7 @@
           "Governance"
         ],
         "operationId": "acknowledgeUsageReportDelivery",
-        "summary": "Acknowledge a usage report delivery for activation evidence",
+        "summary": "Acknowledge a usage report delivery for review evidence",
         "responses": {
           "200": {
             "description": "Usage report delivery acknowledged",

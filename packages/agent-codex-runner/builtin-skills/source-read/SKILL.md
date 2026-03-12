@@ -18,4 +18,4 @@ Use this skill to inspect and fetch notebook task input files referenced in `./.
 
 - The helper uses MBOS runtime env vars provided by the runner.
 - Downloaded files are stored locally under `./inputs/` for analysis.
-- Do not attempt GUI file pickers; this is a headless notebook runtime.
+- Do not attempt GUI file pickers; this is a headless notebook execution environment.

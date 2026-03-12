@@ -394,7 +394,7 @@ Added tooling and Make targets for:
 - Runbook (authoritative operational workflow for this workline):
   - `docs/agent-codex-notebook-runbook.md`
 - Execution protocol contract:
-  - `docs/contracts/agent-runtime-protocol.md`
+  - `docs/contracts/agent-execution-protocol.md`
 - Notebook module/contract mapping docs updated:
   - `docs/contracts/notebook-frontend-module-map.md`
 - Main generated specs updated to include notebook traces + execution event coverage:

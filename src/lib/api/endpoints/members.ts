@@ -19,14 +19,14 @@ export interface Member {
   email: string;
   name: string;
   avatar?: string;
-  role: 'owner' | 'admin' | 'developer' | 'user'; // project group alias id (template key)
+  role: 'owner' | 'admin' | 'developer' | 'user'; // project access group id (template key)
   permissions: string[]; // 平台层权限点
   status: 'active' | 'removed';
   joined_at: string;
 }
 
 export interface UpdateMemberGroupRequest {
-  role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
+  role: 'owner' | 'admin' | 'developer' | 'user'; // access group id
   permissions: string[];
 }
 
@@ -65,7 +65,7 @@ export interface JoinInviteActionResponse {
 export interface Membership {
   project_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'developer' | 'user'; // group alias id
+  role: 'owner' | 'admin' | 'developer' | 'user'; // access group id
   permissions: string[];
   status: 'active' | 'pending' | 'suspended';
   joined_at: string;
@@ -96,7 +96,7 @@ export class MemberAPI {
   }
 
   /**
-   * Update member group alias and resolved permissions.
+   * Update member access group and resolved permissions.
    * Backend contract path keeps `/role` for now.
    */
   async updateMemberGroup(

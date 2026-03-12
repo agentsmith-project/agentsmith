@@ -47,7 +47,7 @@ export function ChangeHistoryDrawer({
       case 'resource_policy':
         return t('acl_updated');
       case 'role':
-        return 'Group alias updated';
+        return 'Access group updated';
       default:
         return type;
     }

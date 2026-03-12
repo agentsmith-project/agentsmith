@@ -3551,7 +3551,7 @@ describe('api-entry-node projects routes', () => {
 
   });
 
-  it('returns AGENT_OFFLINE when external agent session streams without active runtime socket', async () => {
+  it('returns AGENT_OFFLINE when external agent session streams without active execution socket', async () => {
     const { baseUrl } = startServer();
 
     const createAgentRes = await apiFetch(
@@ -8458,7 +8458,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(gatewayResInternalModel.status).toBe(200);
     expect(upstream.lastPath()).toBe('/v1/messages');
-    // Internal endpoint model alias should be translated to the endpoint's provider model.
+    // Project model name should be translated to the endpoint's provider model.
     expect((upstream.lastBody() as { model?: string }).model).toBe('glm-5');
 
     const gatewayResInternalName = await apiFetch(

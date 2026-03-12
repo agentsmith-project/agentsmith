@@ -142,13 +142,13 @@ describe('WorkspaceSettingsPage', () => {
       expect(screen.getByTestId('ws-settings__workspace')).toBeInTheDocument();
     });
 
-    expect(screen.getByText('workspace_admin_subtitle')).toBeInTheDocument();
+    expect(screen.queryByText('workspace_admin_subtitle')).not.toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__name')).toHaveTextContent('ws_1');
     expect(screen.getByTestId('ws-settings__open-projects')).toHaveAttribute(
       'href',
       '/en/workspaces/ws_1/projects',
     );
-    expect(screen.getByText('workspace_can_create_projects')).toBeInTheDocument();
+    expect(screen.queryByText('workspace_can_create_projects')).not.toBeInTheDocument();
   });
 
   it('renders project administration list', async () => {

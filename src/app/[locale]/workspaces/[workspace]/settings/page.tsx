@@ -151,14 +151,12 @@ export default function WorkspaceSettingsPage() {
                 <SettingsIcon className="w-6 h-6 text-icon-default" />
                 {t('workspace_title')}
               </h1>
-              <p className="text-tertiary">{t('workspace_admin_subtitle')}</p>
             </div>
 
             <section className="rounded-xl border border-border bg-surface p-5" data-testid="ws-settings__workspace">
               <SectionHeading
                 eyebrow={t('workspace_general')}
                 title={workspaceDisplayName}
-                subtitle={t('workspace_admin_scope')}
               />
 
               <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -184,16 +182,13 @@ export default function WorkspaceSettingsPage() {
                 >
                   {t('workspace_open_projects')}
                 </Link>
-                <StatusBadge status="ready">{t('workspace_can_create_projects')}</StatusBadge>
               </div>
             </section>
 
             <section className="rounded-xl border border-border bg-surface p-5" data-testid="ws-settings__projects">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <SectionHeading
-                  eyebrow={t('workspace_projects_eyebrow')}
                   title={t('workspace_projects_title')}
-                  subtitle={t('workspace_projects_admin_subtitle')}
                 />
                 <Button
                   type="button"

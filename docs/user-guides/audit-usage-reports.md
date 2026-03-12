@@ -265,7 +265,6 @@ Required permissions:
 
 ## Related Features
 
-- [Cost & Limits Dashboard](./cost-limits-dashboard.md) - Visual usage metrics
 - [Alert Center](./alert-center.md) - Set up usage-based alerts
 - [API Documentation](../contracts/API_GUIDE.md) - API access to audit data
 

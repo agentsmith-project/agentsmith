@@ -272,7 +272,6 @@ Required permissions:
 
 ## Related Features
 
-- [Cost & Limits Dashboard](./cost-limits-dashboard.md) - Monitor metrics that trigger alerts
 - [Audit Logs](./audit-usage-reports.md) - Investigate alert causes
 - [Settings](../../DEVELOPMENT.md) - Configure alert preferences
 

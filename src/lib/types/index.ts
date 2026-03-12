@@ -1,38 +1,9 @@
 /**
- * Epic C Types Index
+ * Frontend type index.
  *
- * Centralized exports for all Epic C (Operations) type definitions.
- * Import from this file for convenience:
- *
- * import { EndpointLimitSummary, Alert, AlertPreferences } from '@/lib/types/epic-c';
- * import type { ChartConfig, LineChartConfig } from '@/lib/types/epic-c';
+ * This file only re-exports active frontend type groups.
  */
 
-// Cost & Limit Dashboard (Epic C1)
-export type {
-  LimitRuleSnapshot,
-  EndpointLimitSummary,
-  ProjectLimitSummary,
-  LimitOverview,
-  LimitSummaryRequest,
-  TimeRange,
-  TimeGranularity,
-  TimeRangePreset,
-  MetricType,
-  CostTimeSeriesDataPoint,
-  ResourceCostBreakdown,
-  CostChartData,
-  CostTimeSeriesRequest,
-  DashboardFilters,
-  DashboardViewMode,
-  ChartType as DashboardChartType,
-  DashboardPreferences,
-  ExportFormat,
-  CostExportRequest,
-  CostExportResponse,
-} from './cost-dashboard';
-
-// Alert Center (Epic C2)
 export type {
   // Core alert types
   Alert,
@@ -85,7 +56,6 @@ export type {
   SilenceNotificationRequest,
 } from './alerts';
 
-// Shared Chart Types
 export type {
   // Data types
   ChartDataPoint,

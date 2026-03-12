@@ -55,13 +55,11 @@ Owner: Frontend + Backend
    - `src/lib/api/endpoints/audit-usage.ts`
    - `src/components/audit-usage/UsagePage.tsx`
    - `src/components/audit-usage/UsageView.tsx`
-   - `src/components/dashboard/CostDashboardPage.tsx`
 4. Mock 与测试：
    - `src/mocks/handlers/usage.ts`
    - `src/lib/api/__tests__/audit-usage-api.test.ts`
    - `src/components/audit-usage/__tests__/UsagePage.test.tsx`
 5. 用户文档：
-   - `docs/user-guides/cost-limits-dashboard.md`
    - `docs/user-guides/audit-usage-reports.md`
    - `docs/user-guides/usage-limits-summary-backend-alignment-checklist.md`
 

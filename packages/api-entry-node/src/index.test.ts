@@ -8164,6 +8164,56 @@ describe('api-entry-node projects routes', () => {
   });
 
 
+  it('records failed resource policy update attempts in audit events', async () => {
+    const { baseUrl } = startServer();
+
+    const failedPolicyRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/ep_test/policy',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_policy_invalid' },
+        body: JSON.stringify({
+          access_mode: 'allow_list',
+          allowed_subjects: [],
+          rate_limits: { rules: [{ key: 'endpoint.invalid_key', value: 10 }] },
+          spending_limits: { rules: [] },
+        }),
+      },
+    );
+    expect(failedPolicyRes.status).toBe(422);
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=resource_policy.updated&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        result?: string;
+        resource_type?: string;
+        resource_id?: string;
+        request_id?: string;
+        error_code?: string;
+        error_message?: string;
+      }>;
+    };
+    expect(
+      audit.items.some(
+        (item) => item.action === 'resource_policy.updated'
+          && item.result === 'error'
+          && item.resource_type === 'resource_policy'
+          && item.resource_id === 'endpoint:ep_test'
+          && item.request_id === 'req_policy_invalid'
+          && item.error_code === 'VALIDATION_ERROR'
+          && item.error_message === 'rate_limits_rule_key_invalid',
+      ),
+    ).toBe(true);
+  });
+
   it('records failed endpoint creation attempts in audit events', async () => {
     const { baseUrl } = startServer();
     const credentialRes = await apiFetch(

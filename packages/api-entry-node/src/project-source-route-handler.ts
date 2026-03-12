@@ -125,6 +125,16 @@ function isManagedPolicyResourceType(resourceType: string): resourceType is 'end
   return resourceType === 'endpoint' || resourceType === 'source_library' || resourceType === 'agent';
 }
 
+function readRequestId(req: http.IncomingMessage): string | undefined {
+  const value = req.headers['x-request-id'];
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  if (Array.isArray(value)) {
+    const first = value.find((item) => typeof item === 'string' && item.trim());
+    if (first) return first.trim();
+  }
+  return undefined;
+}
+
 function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
 }
@@ -1391,7 +1401,27 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.resourceType
     && route.resourceId
   ) {
+    const requestId = readRequestId(req);
+    const writePolicyUpdateError = async (errorMessage: string) => {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId!,
+        projectId: route.projectId!,
+        actor: { type: 'user', id: user.id },
+        action: 'resource_policy.updated',
+        result: 'error',
+        requestId,
+        resourceType: 'resource_policy',
+        resourceId: `${route.resourceType}:${route.resourceId}`,
+        errorCode: 'VALIDATION_ERROR',
+        errorMessage,
+        metadata: {
+          governed_resource_type: route.resourceType,
+          governed_resource_id: route.resourceId,
+        },
+      });
+    };
     if (!isManagedPolicyResourceType(route.resourceType)) {
+      await writePolicyUpdateError('unsupported_resource_type');
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'unsupported_resource_type' });
       return true;
     }
@@ -1407,6 +1437,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       spending_limits?: Record<string, unknown>;
     };
     if (!body || (body.access_mode !== 'allow_all_members' && body.access_mode !== 'allow_list') || !Array.isArray(body.allowed_subjects)) {
+      await writePolicyUpdateError('access_mode and allowed_subjects are required');
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'access_mode and allowed_subjects are required' });
       return true;
     }
@@ -1417,6 +1448,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       payload: body.rate_limits,
     });
     if (!rateValidation.ok) {
+      await writePolicyUpdateError(rateValidation.message);
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: rateValidation.message });
       return true;
     }
@@ -1426,6 +1458,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       payload: body.spending_limits,
     });
     if (!spendingValidation.ok) {
+      await writePolicyUpdateError(spendingValidation.message);
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: spendingValidation.message });
       return true;
     }
@@ -1463,6 +1496,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         payload: typedSubject.rate_limits,
       });
       if (!subjectRateValidation.ok) {
+        await writePolicyUpdateError(subjectRateValidation.message);
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectRateValidation.message });
         return true;
       }
@@ -1472,6 +1506,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         payload: typedSubject.spending_limits,
       });
       if (!subjectSpendingValidation.ok) {
+        await writePolicyUpdateError(subjectSpendingValidation.message);
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: subjectSpendingValidation.message });
         return true;
       }
@@ -1493,6 +1528,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       projectId: route.projectId,
       actor: { type: 'user', id: user.id },
       action: 'resource_policy.updated',
+      requestId,
       resourceType: 'resource_policy',
       resourceId: `${route.resourceType}:${route.resourceId}`,
       metadata: {

@@ -41,13 +41,15 @@ json_get() {
 main() {
   require_file "${TOKEN_FILE}"
   require_file /tmp/agentsmith_project_id.txt
-  require_file /tmp/agentsmith_endpoint_id.txt
 
   local token project_id endpoint_id
   token="$(cat "${TOKEN_FILE}")"
   project_id="$(cat /tmp/agentsmith_project_id.txt)"
-  endpoint_id="$(cat /tmp/agentsmith_endpoint_id.txt)"
-  [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
+  endpoint_id="${ENDPOINT_ID:-}"
+  if [[ -z "${endpoint_id}" && -f /tmp/agentsmith_endpoint_id.txt ]]; then
+    endpoint_id="$(cat /tmp/agentsmith_endpoint_id.txt)"
+  fi
+  [[ -n "${token}" && -n "${project_id}" ]] || {
     err "required metadata/token is empty"
     exit 1
   }
@@ -57,13 +59,71 @@ main() {
   fi
 
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
-  local policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
-
-  local original_policy_file patch_resp_file audit_file
+  local policy_url
+  local original_policy_file patch_resp_file invalid_resp_file audit_file bootstrap_credential_file bootstrap_endpoint_file
+  local bootstrap_credential_id="" temp_endpoint_id=""
   original_policy_file="$(mktemp)"
   patch_resp_file="$(mktemp)"
+  invalid_resp_file="$(mktemp)"
   audit_file="$(mktemp)"
-  trap 'rm -f "${patch_resp_file}" "${audit_file}"; if [[ -n "${token:-}" && -s "${original_policy_file}" ]]; then curl -sS -o /dev/null -X PATCH "${policy_url}" -H "Authorization: Bearer ${token}" -H "Content-Type: application/json" --data-binary @"${original_policy_file}" || true; fi; rm -f "${original_policy_file}"' EXIT
+  bootstrap_credential_file="$(mktemp)"
+  bootstrap_endpoint_file="$(mktemp)"
+
+  if [[ -z "${endpoint_id}" ]]; then
+    local suffix bootstrap_credential_code bootstrap_endpoint_code
+    suffix="$(date +%s)"
+    info "bootstrapping endpoint for policy audit smoke"
+    bootstrap_credential_code="$(
+      curl -sS -o "${bootstrap_credential_file}" -w '%{http_code}' \
+        -X POST "${base}/credentials" \
+        -H "Authorization: Bearer ${token}" \
+        -H 'Content-Type: application/json' \
+        --data '{"name":"gov-policy-update-audit-key-'"${suffix}"'","type":"api_key","value":"sk-gov-policy-update-audit"}' || true
+    )"
+    if [[ "${bootstrap_credential_code}" != "201" ]]; then
+      err "failed to bootstrap credential (HTTP ${bootstrap_credential_code})"
+      cat "${bootstrap_credential_file}" >&2 || true
+      exit 1
+    fi
+    bootstrap_credential_id="$(cat "${bootstrap_credential_file}" | json_get 'process.stdout.write(String(data.id||""))')"
+
+    bootstrap_endpoint_code="$(
+      curl -sS -o "${bootstrap_endpoint_file}" -w '%{http_code}' \
+        -X POST "${base}/endpoints" \
+        -H "Authorization: Bearer ${token}" \
+        -H 'Content-Type: application/json' \
+        --data '{"name":"gov-policy-update-audit-endpoint-'"${suffix}"'","model":"gov-policy-update-audit-model-'"${suffix}"'","type":"openai","mode":"openai","base_url":"https://api.example.invalid","credential_ref":"'"${bootstrap_credential_id}"'"}' || true
+    )"
+    if [[ "${bootstrap_endpoint_code}" != "201" ]]; then
+      err "failed to bootstrap endpoint (HTTP ${bootstrap_endpoint_code})"
+      cat "${bootstrap_endpoint_file}" >&2 || true
+      exit 1
+    fi
+    temp_endpoint_id="$(cat "${bootstrap_endpoint_file}" | json_get 'process.stdout.write(String(data.id||""))')"
+    endpoint_id="${temp_endpoint_id}"
+  fi
+
+  policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
+
+  cleanup() {
+    rm -f "${patch_resp_file}" "${invalid_resp_file}" "${audit_file}" "${bootstrap_credential_file}" "${bootstrap_endpoint_file}"
+    if [[ -n "${token:-}" && -s "${original_policy_file}" ]]; then
+      curl -sS -o /dev/null -X PATCH "${policy_url}" \
+        -H "Authorization: Bearer ${token}" \
+        -H "Content-Type: application/json" \
+        --data-binary @"${original_policy_file}" || true
+    fi
+    if [[ -n "${temp_endpoint_id}" ]]; then
+      curl -sS -o /dev/null -X DELETE "${base}/endpoints/${temp_endpoint_id}" \
+        -H "Authorization: Bearer ${token}" || true
+    fi
+    if [[ -n "${bootstrap_credential_id}" ]]; then
+      curl -sS -o /dev/null -X DELETE "${base}/credentials/${bootstrap_credential_id}" \
+        -H "Authorization: Bearer ${token}" || true
+    fi
+    rm -f "${original_policy_file}"
+  }
+  trap cleanup EXIT
 
   info "reading current endpoint policy"
   local policy_get_code
@@ -76,7 +136,7 @@ main() {
     exit 1
   fi
 
-  local start_time end_time
+  local start_time mid_time end_time
   start_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
   info "patching endpoint policy and expecting audit action resource_policy.updated"
@@ -100,10 +160,35 @@ main() {
   fi
 
   sleep 1
+  mid_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+  info "sending invalid endpoint policy patch and expecting error audit event"
+  local invalid_patch_code
+  invalid_patch_code="$(
+    curl -sS -o "${invalid_resp_file}" -w '%{http_code}' \
+      -X PATCH "${policy_url}" \
+      -H "Authorization: Bearer ${token}" \
+      -H "Content-Type: application/json" \
+      -H 'x-request-id: req_policy_update_invalid' \
+      --data '{
+        "access_mode":"allow_list",
+        "allowed_subjects":[],
+        "rate_limits":{"rules":[{"key":"endpoint.invalid_key","value":1}]},
+        "spending_limits":{"rules":[]}
+      }' || true
+  )"
+  if [[ "${invalid_patch_code}" != "422" ]]; then
+    err "invalid policy patch did not fail as expected (HTTP ${invalid_patch_code})"
+    cat "${invalid_resp_file}" >&2 || true
+    exit 1
+  fi
+
+  sleep 1
   end_time="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-  local enc_start enc_end audit_code
+  local enc_start enc_mid enc_end audit_code
   enc_start="$(urlencode "${start_time}")"
+  enc_mid="$(urlencode "${mid_time}")"
   enc_end="$(urlencode "${end_time}")"
   info "checking audit evidence for policy update"
   audit_code="$(
@@ -117,10 +202,16 @@ main() {
     exit 1
   fi
 
-  local audit_has
-  audit_has="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.updated'&&String(i.resource_type||'')==='resource_policy'&&String(i.resource_id||'')==='endpoint:${endpoint_id}'); process.stdout.write(ok?'1':'0');")"
-  if [[ "${audit_has}" != "1" ]]; then
-    err "audit missing resource_policy.updated for endpoint:${endpoint_id}"
+  local audit_has_success audit_has_error
+  audit_has_success="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.updated'&&i.result==='ok'&&String(i.resource_type||'')==='resource_policy'&&String(i.resource_id||'')==='endpoint:${endpoint_id}'); process.stdout.write(ok?'1':'0');")"
+  audit_has_error="$(cat "${audit_file}" | json_get "const ok=Array.isArray(data.items)&&data.items.some(i=>i.action==='resource_policy.updated'&&i.result==='error'&&String(i.resource_type||'')==='resource_policy'&&String(i.resource_id||'')==='endpoint:${endpoint_id}'&&String(i.request_id||'')==='req_policy_update_invalid'&&String(i.error_code||'')==='VALIDATION_ERROR'); process.stdout.write(ok?'1':'0');")"
+  if [[ "${audit_has_success}" != "1" ]]; then
+    err "audit missing successful resource_policy.updated for endpoint:${endpoint_id}"
+    cat "${audit_file}" >&2 || true
+    exit 1
+  fi
+  if [[ "${audit_has_error}" != "1" ]]; then
+    err "audit missing failed resource_policy.updated for endpoint:${endpoint_id}"
     cat "${audit_file}" >&2 || true
     exit 1
   fi
@@ -141,7 +232,7 @@ main() {
 
   : > "${original_policy_file}"
   trap - EXIT
-  rm -f "${patch_resp_file}" "${audit_file}" "${original_policy_file}"
+  cleanup
   info "OK"
 }
 

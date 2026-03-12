@@ -49,6 +49,8 @@ describe('WorkspaceHomePage', () => {
 
     expect(screen.getByTestId('workspace-home__heading')).toHaveTextContent('Alpha Workspace');
     expect(screen.getByTestId('workspace-home__workspace-id')).toHaveTextContent('ws_alpha');
+    expect(screen.getByTestId('workspace-home__projects-section')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-home__admin-section')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-home__open-projects')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/projects');
     expect(screen.getByTestId('workspace-home__open-settings')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/settings');
   });
@@ -61,6 +63,8 @@ describe('WorkspaceHomePage', () => {
       expect(screen.getByTestId('workspace-home__page')).toBeInTheDocument();
     });
 
+    expect(screen.getByTestId('workspace-home__projects-section')).toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-home__admin-section')).not.toBeInTheDocument();
     expect(screen.queryByTestId('workspace-home__open-settings')).not.toBeInTheDocument();
   });
 

@@ -76,24 +76,43 @@ export default function WorkspaceHomePage() {
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-3">
-                <Link
-                  href={`${workspaceBasePath}/projects`}
-                  className={cn(buttonVariants({ variant: 'primary' }))}
-                  data-testid="workspace-home__open-projects"
+              <div className="grid gap-4 md:grid-cols-2">
+                <section
+                  className="rounded-lg border border-subtle bg-bg-base/20 p-4 space-y-3"
+                  data-testid="workspace-home__projects-section"
                 >
-                  <FolderKanban className="mr-2 h-4 w-4" />
-                  {t('workspace_open_projects')}
-                </Link>
-                {canCreateProject ? (
+                  <div className="space-y-1">
+                    <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_projects_title')}</h2>
+                    <p className="text-sm text-tertiary">{t('workspace_home_projects_description')}</p>
+                  </div>
                   <Link
-                    href={`${workspaceBasePath}/settings`}
-                    className={cn(buttonVariants({ variant: 'outline' }))}
-                    data-testid="workspace-home__open-settings"
+                    href={`${workspaceBasePath}/projects`}
+                    className={cn(buttonVariants({ variant: 'primary' }))}
+                    data-testid="workspace-home__open-projects"
                   >
-                    <SettingsIcon className="mr-2 h-4 w-4" />
-                    {t('workspace_home_open_settings')}
+                    <FolderKanban className="mr-2 h-4 w-4" />
+                    {t('workspace_open_projects')}
                   </Link>
+                </section>
+
+                {canCreateProject ? (
+                  <section
+                    className="rounded-lg border border-subtle bg-bg-base/20 p-4 space-y-3"
+                    data-testid="workspace-home__admin-section"
+                  >
+                    <div className="space-y-1">
+                      <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_admin_title')}</h2>
+                      <p className="text-sm text-tertiary">{t('workspace_home_admin_description')}</p>
+                    </div>
+                    <Link
+                      href={`${workspaceBasePath}/settings`}
+                      className={cn(buttonVariants({ variant: 'outline' }))}
+                      data-testid="workspace-home__open-settings"
+                    >
+                      <SettingsIcon className="mr-2 h-4 w-4" />
+                      {t('workspace_home_open_settings')}
+                    </Link>
+                  </section>
                 ) : null}
               </div>
             </section>

@@ -57,6 +57,23 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
     expect(screen.queryByTestId('project-hub__governance-links')).not.toBeInTheDocument();
   });
 
+  it('shows governance links for project admins with project manage permission', () => {
+    mockUseHasPermission.mockImplementation((permission: string) => {
+      if (permission === 'project:endpoint:use') return true;
+      if (permission === 'project:manage') return true;
+      return false;
+    });
+
+    render(<OverviewPage />);
+
+    const governance = screen.getByTestId('project-hub__governance-links');
+    expect(governance).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'resource_policy' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'credentials' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'members' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'settings' })).toBeInTheDocument();
+  });
+
   it('shows invalid parameter error for unsafe route params', () => {
     mockUseParams.mockReturnValue({
       workspace: '<script>',

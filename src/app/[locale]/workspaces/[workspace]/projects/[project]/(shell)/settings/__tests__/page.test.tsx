@@ -105,6 +105,25 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
   });
 
+  it('allows project admins with project manage permission to access settings', async () => {
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
+
+    render(
+      <SettingsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
+  });
+
   it('shows permission denied when user lacks settings manage permission', async () => {
     mockUseHasPermission.mockReturnValue(false);
     render(

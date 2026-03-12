@@ -1232,8 +1232,6 @@
     "view": {
       "panel_title": "Usage Panel",
       "panel_subtitle": "Switch resources and focus on the limit progress that matters right now.",
-      "overview_title": "Overview",
-      "overview_subtitle": "A lightweight snapshot of your recent usage activity.",
       "limits_section_title": "Remaining Capacity",
       "limits_section_subtitle": "Each resource is shown as progress-only limit cards for fast scanning.",
       "trend_section_title": "Usage Trend",
@@ -1243,18 +1241,12 @@
       "limit_mode_all": "All",
       "limit_mode_rate": "Rate",
       "limit_mode_spending": "Spending",
-      "cards": {
-        "requests_today": "Requests Today",
-        "tokens_today": "Tokens Today",
-        "period_requests": "Requests ({hours}h)"
-      },
       "limits_title": "Endpoint Limit Usage",
       "limits_empty": "No endpoint limit data available.",
       "rate_limit_title": "Rate Limit",
       "spending_limit_title": "Spending Limit",
       "remaining_suffix": "remaining",
       "status_badge": "{value}% left",
-      "progress_hint": "{unit} usage is at {value}%.",
       "limit_reset_at": "Reset time: {value}",
       "limit_group_empty": "No data in current response.",
       "window": {

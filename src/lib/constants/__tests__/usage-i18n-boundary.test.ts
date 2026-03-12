@@ -13,7 +13,6 @@ const EXPECTED_USAGE_TOP_LEVEL_KEYS = [
 ];
 
 const EXPECTED_USAGE_VIEW_KEYS = [
-  'cards',
   'endpoint_tabs_label',
   'limit_mode_all',
   'limit_mode_label',
@@ -30,24 +29,15 @@ const EXPECTED_USAGE_VIEW_KEYS = [
   'limits_empty',
   'panel_title',
   'panel_subtitle',
-  'overview_title',
-  'overview_subtitle',
-  'progress_hint',
   'remaining_suffix',
   'status_badge',
   'trend_section_title',
   'trend_section_subtitle',
-  'trend_summary',
+  'trend_focus_note',
   'trend_title',
   'no_data',
   'no_data_hint',
   'period',
-];
-
-const EXPECTED_USAGE_VIEW_CARD_KEYS = [
-  'requests_today',
-  'tokens_today',
-  'period_requests',
 ];
 
 const EXPECTED_USAGE_VIEW_PERIOD_KEYS = [
@@ -66,6 +56,7 @@ const EXPECTED_USAGE_DETAIL_KEYS = [
   'recovered_badge',
   'recovered_status',
   'missing_price',
+  'pricing_source',
   'provider',
   'model',
   'error_class',
@@ -126,9 +117,6 @@ describe('usage i18n boundary guard', () => {
 
     const view = usage.view as Record<string, unknown>;
     expect(Object.keys(view).sort()).toEqual([...EXPECTED_USAGE_VIEW_KEYS].sort());
-
-    const viewCards = view.cards as Record<string, unknown>;
-    expect(Object.keys(viewCards).sort()).toEqual([...EXPECTED_USAGE_VIEW_CARD_KEYS].sort());
 
     const viewPeriod = view.period as Record<string, unknown>;
     expect(Object.keys(viewPeriod).sort()).toEqual([...EXPECTED_USAGE_VIEW_PERIOD_KEYS].sort());

@@ -1234,8 +1234,6 @@
     "view": {
       "panel_title": "使用情况面板",
       "panel_subtitle": "切换资源，专注查看当前最需要关心的限制进度。",
-      "overview_title": "概览",
-      "overview_subtitle": "用最低心智成本查看最近的个人使用情况。",
       "limits_section_title": "剩余额度",
       "limits_section_subtitle": "每个资源都以进度卡片展示，方便快速扫读。",
       "trend_section_title": "使用趋势",
@@ -1245,18 +1243,12 @@
       "limit_mode_all": "全部",
       "limit_mode_rate": "速率",
       "limit_mode_spending": "支出",
-      "cards": {
-        "requests_today": "今日请求数",
-        "tokens_today": "今日 Token 数",
-        "period_requests": "近 {hours} 小时请求数"
-      },
       "limits_title": "Endpoint 限制消耗",
       "limits_empty": "暂无 endpoint 限制数据。",
       "rate_limit_title": "速率限制",
       "spending_limit_title": "支出限制",
       "remaining_suffix": "剩余",
       "status_badge": "还剩 {value}%",
-      "progress_hint": "{unit} 已使用 {value}%。",
       "limit_reset_at": "重置时间：{value}",
       "limit_group_empty": "当前返回暂无该类数据。",
       "window": {

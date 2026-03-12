@@ -22,12 +22,17 @@ test.describe('Audit Page', () => {
     expect(await rows.count()).toBeGreaterThanOrEqual(3);
   });
 
-  test('displays audit event data from mock', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('audit__table')).toBeVisible({ timeout: 10000 });
+  test('displays audit review structure from mock', async ({ authedPage }) => {
+    const table = authedPage.getByTestId('audit__table');
+    await expect(table).toBeVisible({ timeout: 10000 });
 
     await expect(authedPage.getByTestId('audit__summary')).toBeVisible();
     await expect(authedPage.getByTestId('audit__category-summary')).toBeVisible();
-    await expect(authedPage.getByText(/Created Project|Created Agent|Invoked/i).first()).toBeVisible();
+    await expect(authedPage.getByTestId('audit__category-summary--change')).toBeVisible();
+    await expect(authedPage.getByTestId('audit__category-summary--event')).toBeVisible();
+    await expect(authedPage.getByTestId('audit__category-summary--anomaly')).toBeVisible();
+    await expect(table.getByTestId(/audit__category-badge--/).first()).toBeVisible();
+    await expect(table.getByTestId('audit__table__row').first()).toBeVisible();
   });
 
   test('filter controls are visible', async ({ authedPage }) => {

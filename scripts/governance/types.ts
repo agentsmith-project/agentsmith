@@ -350,18 +350,17 @@ export interface OrganizationGovernanceReviewEvidence {
   source: 'dry_run' | 'artifact';
   /** ISO timestamp when organization governance evidence was generated */
   generated_at: string;
-  /** Release readiness derived from organization governance checks */
+  /** Review status derived from workspace overview checks */
   review_status: 'ready' | 'blocked';
-  /** Blocking organization governance failures */
+  /** Blocking workspace overview failures */
   blockers: string[];
-  /** Warning-only organization governance debt */
+  /** Warning-only workspace overview debt */
   warnings: string[];
-  /** Focused organization governance checks covered by this evidence */
+  /** Focused workspace overview checks covered by this evidence */
   checks: {
-    org_overview_summary: boolean;
-    workspace_matrix: boolean;
-    actions_queue_execution: boolean;
-    evidence_drilldown_chain: boolean;
+    workspace_overview_entry: boolean;
+    workspace_search: boolean;
+    workspace_project_entry: boolean;
   };
   /** Optional reviewer note */
   note?: string;

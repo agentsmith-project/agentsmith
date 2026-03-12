@@ -10,7 +10,7 @@
 	notebook-agent-source-read-mount-smoke notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
-	build-reliability-smoke workspace-governance-smoke organization-governance-smoke \
+	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
@@ -166,7 +166,7 @@ help-extended:
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
 	@echo "  make build-reliability-smoke # build reliability smoke (chat recovery + notebook task execution + contract suite)"
 	@echo "  make workspace-governance-smoke # workspace governance smoke (overview + member admin + cross-project actions + explainability)"
-	@echo "  make organization-governance-smoke # organization governance smoke (org overview + actions queue + drilldown chain)"
+	@echo "  make workspace-overview-smoke # workspace entry smoke (overview + project entry path)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook task execution internal metrics (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
@@ -317,8 +317,8 @@ build-reliability-smoke:
 workspace-governance-smoke:
 	./scripts/workspace-governance-smoke.sh
 
-organization-governance-smoke:
-	./scripts/organization-governance-smoke.sh
+workspace-overview-smoke:
+	./scripts/workspace-overview-smoke.sh
 
 verify-contracts:
 	$(NPM) run ws:typecheck
@@ -942,7 +942,7 @@ governance-smoke:
 	}; \
 	$(MAKE) governance-pages-real-backend-smoke-strict; \
 	$(MAKE) governance-pages-real-backend-interaction-smoke-strict; \
-	$(MAKE) organization-governance-smoke; \
+	$(MAKE) workspace-overview-smoke; \
 	run_with_token_retry governance-policy-access-effect-smoke; \
 	run_with_token_retry governance-policy-group-access-effect-smoke; \
 	run_with_token_retry governance-policy-update-audit-smoke; \

@@ -5,11 +5,11 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 BASE_URL="${BASE_URL:-http://localhost:3061}"
 ORGANIZATION_GOVERNANCE_EVIDENCE_PATH="${ORGANIZATION_GOVERNANCE_EVIDENCE_PATH:-}"
-ORG_GOVERNANCE_WEB_LOG="${ORG_GOVERNANCE_WEB_LOG:-/tmp/agentsmith-org-governance-web.log}"
+WORKSPACE_OVERVIEW_WEB_LOG="${WORKSPACE_OVERVIEW_WEB_LOG:-/tmp/agentsmith-workspace-overview-web.log}"
 WEB_PID=""
 MANAGED_WEB=0
 
-info() { echo "[organization-governance-smoke] $*"; }
+info() { echo "[workspace-overview-smoke] $*"; }
 
 cleanup() {
   if [[ "${MANAGED_WEB}" -eq 1 && -n "${WEB_PID}" ]]; then
@@ -36,9 +36,9 @@ wait_for_web() {
   fi
 
   echo "Web did not become ready at ${BASE_URL} (last status: ${code:-n/a})." >&2
-  if [[ -f "${ORG_GOVERNANCE_WEB_LOG}" ]]; then
-    echo "--- organization governance web log tail ---" >&2
-    tail -n 120 "${ORG_GOVERNANCE_WEB_LOG}" >&2 || true
+  if [[ -f "${WORKSPACE_OVERVIEW_WEB_LOG}" ]]; then
+    echo "--- workspace overview web log tail ---" >&2
+    tail -n 120 "${WORKSPACE_OVERVIEW_WEB_LOG}" >&2 || true
   fi
   return 1
 }
@@ -56,7 +56,7 @@ ensure_web() {
   nohup env \
     -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
     NEXT_PUBLIC_USE_MSW=true \
-    npm run dev:test -- --port "${web_port}" >"${ORG_GOVERNANCE_WEB_LOG}" 2>&1 &
+    npm run dev:test -- --port "${web_port}" >"${WORKSPACE_OVERVIEW_WEB_LOG}" 2>&1 &
   WEB_PID=$!
   MANAGED_WEB=1
 
@@ -65,17 +65,17 @@ ensure_web() {
 
 ensure_web
 
-info "running organization governance contract suite"
+info "running workspace overview contract suite"
 npm run test:run -- \
-  src/lib/__tests__/organization-governance-rollup.test.ts \
+  src/app/[locale]/login/workspace/__tests__/page.test.tsx \
   src/app/[locale]/workspaces/overview/__tests__/page.test.tsx
 
-info "running organization governance browser lane"
-BASE_URL="${BASE_URL}" npx playwright test --project=chromium e2e/organization-governance.spec.ts --workers=1
+info "running workspace overview browser lane"
+BASE_URL="${BASE_URL}" npx playwright test --project=chromium e2e/workspace-overview.spec.ts --workers=1
 
 if [[ -n "${ORGANIZATION_GOVERNANCE_EVIDENCE_PATH}" ]]; then
-  info "writing organization governance evidence"
+  info "writing workspace overview evidence"
   node scripts/write-organization-governance-evidence.js "${ORGANIZATION_GOVERNANCE_EVIDENCE_PATH}"
 fi
 
-info "organization governance smoke passed"
+info "workspace overview smoke passed"

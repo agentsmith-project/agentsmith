@@ -98,10 +98,10 @@ const CHECK_DEFINITIONS: Array<{
     timeout: 600000, // 10 minutes
   },
   {
-    id: 'organization-governance-evidence',
-    name: 'Organization governance workflow',
+    id: 'workspace-overview-evidence',
+    name: 'Workspace overview workflow',
     category: 'e2e',
-    command: 'make organization-governance-smoke',
+    command: 'make workspace-overview-smoke',
     timeout: 300000, // 5 minutes
   },
 ];
@@ -1200,10 +1200,9 @@ function loadOrganizationGovernanceReviewEvidence(options: VerifyReleaseOptions)
         blockers: ['organization_governance_evidence_unreadable'],
         warnings: [],
         checks: {
-          org_overview_summary: false,
-          workspace_matrix: false,
-          actions_queue_execution: false,
-          evidence_drilldown_chain: false,
+          workspace_overview_entry: false,
+          workspace_search: false,
+          workspace_project_entry: false,
         },
         note: `Failed to parse organization governance evidence: ${message}`,
       };
@@ -1218,12 +1217,11 @@ function loadOrganizationGovernanceReviewEvidence(options: VerifyReleaseOptions)
       blockers: [],
       warnings: [],
       checks: {
-        org_overview_summary: true,
-        workspace_matrix: true,
-        actions_queue_execution: true,
-        evidence_drilldown_chain: true,
+        workspace_overview_entry: true,
+        workspace_search: true,
+        workspace_project_entry: true,
       },
-      note: 'Dry-run evidence uses deterministic fixture data and does not call live organization governance smoke lanes.',
+      note: 'Dry-run evidence uses deterministic fixture data and does not call live workspace overview smoke lanes.',
     };
   }
 

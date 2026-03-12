@@ -20,12 +20,11 @@ const evidence = {
   blockers: [],
   warnings: [],
   checks: {
-    org_overview_summary: true,
-    workspace_matrix: true,
-    actions_queue_execution: true,
-    evidence_drilldown_chain: true,
+    workspace_overview_entry: true,
+    workspace_search: true,
+    workspace_project_entry: true,
   },
-  note: 'Generated after organization-governance-smoke completed successfully.',
+  note: 'Generated after workspace-overview-smoke completed successfully.',
 };
 
 writeFileSync(resolvedPath, JSON.stringify(evidence, null, 2), 'utf8');

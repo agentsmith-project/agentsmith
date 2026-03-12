@@ -173,10 +173,9 @@ describe('verify-governance-report: TDD Suite', () => {
         blockers: ['organization_governance_drilldown_chain_missing'],
         warnings: ['organization_governance_pending_actions_exist'],
         checks: {
-          org_overview_summary: true,
-          workspace_matrix: true,
-          actions_queue_execution: true,
-          evidence_drilldown_chain: false,
+          workspace_overview_entry: true,
+          workspace_search: true,
+          workspace_project_entry: false,
         },
       }), 'utf-8');
 
@@ -435,7 +434,7 @@ describe('verify-governance-report: TDD Suite', () => {
       expect(Object.values(report.summary?.organization_governance_evidence?.checks ?? {})).toEqual(
         expect.arrayContaining([true]),
       );
-      expect(report.summary?.organization_governance_evidence?.checks?.evidence_drilldown_chain).toBe(true);
+      expect(report.summary?.organization_governance_evidence?.checks?.workspace_project_entry).toBe(true);
     });
 
     it('should fail when execution review evidence reports blocked checks', () => {
@@ -589,10 +588,9 @@ describe('verify-governance-report: TDD Suite', () => {
         blockers: ['organization_governance_drilldown_chain_missing'],
         warnings: [],
         checks: {
-          org_overview_summary: true,
-          workspace_matrix: true,
-          actions_queue_execution: true,
-          evidence_drilldown_chain: false,
+          workspace_overview_entry: true,
+          workspace_search: true,
+          workspace_project_entry: false,
         },
       };
       mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -624,10 +622,9 @@ describe('verify-governance-report: TDD Suite', () => {
         blockers: ['organization_compliance_hard_fail', 'organization_critical_escalation_unassigned'],
         warnings: ['organization_pending_action'],
         checks: {
-          org_overview_summary: true,
-          workspace_matrix: true,
-          actions_queue_execution: true,
-          evidence_drilldown_chain: false,
+          workspace_overview_entry: true,
+          workspace_search: true,
+          workspace_project_entry: false,
         },
       };
       mkdirSync(OUTPUT_DIR, { recursive: true });

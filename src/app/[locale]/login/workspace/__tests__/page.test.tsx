@@ -7,7 +7,6 @@ const mockReplace = vi.fn();
 const mockRefetch = vi.fn();
 const mockClearAuth = vi.fn();
 const mockUseWorkspaces = vi.fn();
-const mockUseOrganizationGovernanceRollup = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, replace: mockReplace }),
@@ -16,10 +15,6 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspaces: () => mockUseWorkspaces(),
-}));
-
-vi.mock('@/lib/hooks/use-organization-governance-rollup', () => ({
-  useOrganizationGovernanceRollup: () => mockUseOrganizationGovernanceRollup(),
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
@@ -34,12 +29,6 @@ describe('WorkspaceSelectPage', () => {
     mockReplace.mockClear();
     mockRefetch.mockClear();
     mockClearAuth.mockClear();
-    mockUseOrganizationGovernanceRollup.mockReturnValue({
-      isLoading: false,
-      isError: false,
-      rollup: null,
-      refetch: vi.fn(),
-    });
   });
 
   it('renders workspace cards when data is available', () => {
@@ -58,7 +47,7 @@ describe('WorkspaceSelectPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/projects');
   });
 
-  it('renders entry link to organization overview page', () => {
+  it('renders entry link to workspace overview page', () => {
     mockUseWorkspaces.mockReturnValue({
       data: [{ id: 'ws_1', name: 'Workspace One' }],
       isLoading: false,
@@ -68,51 +57,7 @@ describe('WorkspaceSelectPage', () => {
     });
 
     render(<WorkspaceSelectPage />);
-    expect(screen.getByTestId('workspace-select__open-org-overview')).toBeInTheDocument();
-  });
-
-  it('renders organization governance overview when rollup is available', () => {
-    mockUseWorkspaces.mockReturnValue({
-      data: [{ id: 'ws_1', name: 'Workspace One' }],
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: mockRefetch,
-    });
-    mockUseOrganizationGovernanceRollup.mockReturnValue({
-      isLoading: false,
-      isError: false,
-      refetch: vi.fn(),
-      rollup: {
-        summary: {
-          readiness: 'warning',
-          totalWorkspaces: 1,
-          blockedWorkspaces: 0,
-          warningWorkspaces: 1,
-          riskyWorkspaces: 1,
-          totalRiskyProjects: 2,
-        },
-        workspaceRanking: [
-          {
-            workspaceId: 'ws_1',
-            workspaceName: 'Workspace One',
-            readiness: 'warning',
-            riskScore: 12,
-            blockedItems: 0,
-            warningItems: 1,
-            riskyProjects: 2,
-            totalProjects: 3,
-          },
-        ],
-        attention: [],
-        actionsQueue: [],
-      },
-    });
-
-    render(<WorkspaceSelectPage />);
-
-    expect(screen.getByTestId('workspace-select__org-governance-overview')).toBeInTheDocument();
-    expect(screen.getByTestId('workspace-select__org-governance-rank--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-select__open-workspaces')).toBeInTheDocument();
   });
 
   it('shows session-expired state on 401 and can clear auth then redirect', () => {

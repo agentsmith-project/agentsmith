@@ -247,13 +247,37 @@ export function SystemWorkspacesPage() {
                           <div className="min-w-0 flex-1">
                             <h2 className="truncate text-base font-semibold text-foreground">{workspace.name}</h2>
                             <p className="mt-1 truncate text-sm text-tertiary">{workspace.id}</p>
-                            <div className="mt-3 rounded-sm border border-subtle bg-surface px-3 py-2">
-                              <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">
-                                {t('workspace_admin_card_label')}
-                              </p>
-                              <p className="mt-1 truncate text-sm font-medium text-foreground">
-                                {workspace.workspace_admin}
-                              </p>
+                            <div className="mt-3 space-y-2">
+                              <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">
+                                  {t('workspace_admin_card_label')}
+                                </p>
+                                <p className="mt-1 truncate text-sm font-medium text-foreground">
+                                  {workspace.workspace_admin}
+                                </p>
+                              </div>
+                              <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">
+                                  {t('workspace_idp_card_label')}
+                                </p>
+                                <p className="mt-1 truncate text-sm font-medium text-foreground">
+                                  {workspace.idp.realm}
+                                </p>
+                                <p className="mt-1 truncate text-xs text-tertiary">
+                                  {workspace.idp.url}
+                                </p>
+                              </div>
+                              <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">
+                                  {t('workspace_tenant_card_label')}
+                                </p>
+                                <p className="mt-1 truncate text-sm font-medium text-foreground">
+                                  {workspace.tenant.substrate_label}
+                                </p>
+                                <p className="mt-1 truncate text-xs text-tertiary">
+                                  {workspace.tenant.database_name}
+                                </p>
+                              </div>
                             </div>
                             <p className="mt-2 text-xs text-tertiary">
                               {t('updated_at', { value: new Date(workspace.updated_at).toLocaleString(locale) })}

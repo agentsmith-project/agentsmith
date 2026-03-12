@@ -97,6 +97,10 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_idle');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_admin_card_label');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_idp_card_label');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('https://alpha.example.com');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_tenant_card_label');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('agentsmith_ws_ws_alpha');
   });
 
   it('filters workspaces and generates preview values', async () => {

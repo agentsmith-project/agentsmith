@@ -2622,6 +2622,8 @@
   "workspace_admin_title": "Workspace administrator assignment",
   "workspace_admin_description": "Assign the person responsible for creating projects and delegating project administrators in this workspace.",
   "workspace_admin_card_label": "Assigned workspace administrator",
+  "workspace_idp_card_label": "Identity provider",
+  "workspace_tenant_card_label": "Tenant configuration",
   "idp_title": "Identity Provider",
   "idp_url_placeholder": "Keycloak URL",
   "idp_realm_placeholder": "Realm",

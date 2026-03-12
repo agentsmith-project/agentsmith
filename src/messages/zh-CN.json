@@ -2625,6 +2625,8 @@
   "workspace_admin_title": "工作区管理员分配",
   "workspace_admin_description": "指定负责在当前工作区创建项目并分配项目管理员的人。",
   "workspace_admin_card_label": "当前工作区管理员",
+  "workspace_idp_card_label": "身份提供方",
+  "workspace_tenant_card_label": "租户配置",
   "idp_title": "身份提供方",
   "idp_url_placeholder": "Keycloak 地址",
   "idp_realm_placeholder": "Realm",

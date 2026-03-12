@@ -1,0 +1,67 @@
+import { test, expect } from './fixtures/test-base';
+import { waitForPageReady } from './utils/navigation';
+
+async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
+  await page.goto('/en-US/system/login');
+  await waitForPageReady(page);
+  await expect(page.getByTestId('system-login__heading')).toBeVisible();
+  await page.getByTestId('system-login__username').fill('mbos-admin');
+  await page.getByTestId('system-login__password').fill('mbos-admin');
+  await page.getByTestId('system-login__submit').click();
+  await page.waitForURL(/\/en-US\/system\/workspaces/, { timeout: 15_000 });
+  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+}
+
+test.describe('System Admin', () => {
+  test('system admin can open system info', async ({ page }) => {
+    await loginAsSystemAdmin(page);
+
+    await page.getByTestId('system-workspaces__open-info').click();
+    await page.waitForURL(/\/en-US\/system\/info/, { timeout: 15_000 });
+    await expect(page.getByTestId('system-info__heading')).toBeVisible();
+    await expect(page.getByTestId('system-info__notice')).toBeVisible();
+  });
+
+  test('system admin can create, update, and delete a workspace', async ({ page }) => {
+    await loginAsSystemAdmin(page);
+
+    const workspaceName = `Platform Ops ${Date.now()}`;
+    const updatedAdmin = 'ops-admin-updated@example.com';
+    const updatedRealm = 'platform-ops-updated';
+
+    await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
+    await page.getByTestId('system-workspaces__draft-admin').fill('ops-admin@example.com');
+    await page.getByTestId('system-workspaces__draft-idp-url').fill('https://login.example.com');
+    await page.getByTestId('system-workspaces__draft-idp-realm').fill('platform-ops');
+    await page.getByTestId('system-workspaces__draft-idp-client-id').fill('platform-ops-client');
+    await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('platform-ops-secret');
+    await page.getByTestId('system-workspaces__save').click();
+
+    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible();
+    const createdWorkspaceId = await page.evaluate(async (name) => {
+      const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+      const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
+      const item = payload.items?.find((candidate) => candidate.name === name);
+      return item?.id ?? null;
+    }, workspaceName);
+
+    expect(createdWorkspaceId).toBeTruthy();
+    const workspaceCard = page.getByTestId(`system-workspaces__card--${createdWorkspaceId}`);
+    await expect(workspaceCard).toBeVisible();
+
+    await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
+    await page.getByTestId('system-workspaces__draft-admin').fill(updatedAdmin);
+    await page.getByTestId('system-workspaces__draft-idp-realm').fill(updatedRealm);
+    await page.getByTestId('system-workspaces__save').click();
+
+    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible();
+    await expect(page.getByTestId('system-workspaces__draft-admin')).toHaveValue(updatedAdmin);
+    await expect(page.getByTestId('system-workspaces__draft-idp-realm')).toHaveValue(updatedRealm);
+
+    page.once('dialog', (dialog) => dialog.accept());
+    await page.getByTestId('system-workspaces__delete').click();
+
+    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible();
+    await expect(workspaceCard).not.toBeVisible();
+  });
+});

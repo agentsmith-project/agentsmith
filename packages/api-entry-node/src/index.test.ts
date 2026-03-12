@@ -8301,6 +8301,60 @@ describe('api-entry-node projects routes', () => {
       && item.error_message === 'project_not_found')).toBe(true);
   });
 
+  it('records project admin assignment updates in audit events', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Project Admin Audit',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const updateRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_project_admin_assignment',
+      },
+      body: JSON.stringify({
+        governance_json: {
+          project_admins: ['user_alt'],
+        },
+      }),
+    });
+    expect(updateRes.status).toBe(200);
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=project.update&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        request_id: string;
+        result: string;
+        metadata_json?: { updated_fields?: string[] };
+      }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.update'
+      && item.request_id === 'req_project_admin_assignment'
+      && item.result === 'ok'
+      && Array.isArray(item.metadata_json?.updated_fields)
+      && item.metadata_json?.updated_fields?.includes('governance_json'))).toBe(true);
+  });
+
 
   it('records failed resource policy update attempts in audit events', async () => {
     const { baseUrl } = startServer();

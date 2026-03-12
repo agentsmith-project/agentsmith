@@ -274,6 +274,18 @@ export class UpdateProjectUseCase {
       patch.status = input.status;
     }
 
+    if (input.governance_json !== undefined) {
+      patch.governance_json = input.governance_json;
+    }
+
+    if (input.execution_preferences_json !== undefined) {
+      patch.execution_preferences_json = input.execution_preferences_json;
+    }
+
+    if (input.limits_json !== undefined) {
+      patch.limits_json = input.limits_json;
+    }
+
     const updated = await this.projectRepo.update(command.workspaceId, command.projectId, patch);
     if (!updated) {
       throw new Error('project_not_found');

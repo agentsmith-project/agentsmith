@@ -13,6 +13,9 @@ export const ProjectSchema = z.object({
   join_policy: ProjectJoinPolicySchema.optional(),
   owner_id: z.string().min(1),
   status: ProjectStatusSchema,
+  governance_json: z.record(z.string(), z.unknown()).optional(),
+  execution_preferences_json: z.record(z.string(), z.unknown()).optional(),
+  limits_json: z.record(z.string(), z.unknown()).optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
@@ -31,6 +34,9 @@ export const UpdateProjectRequestSchema = z
     visibility: ProjectVisibilitySchema.optional(),
     join_policy: ProjectJoinPolicySchema.optional(),
     status: ProjectStatusSchema.optional(),
+    governance_json: z.record(z.string(), z.unknown()).optional(),
+    execution_preferences_json: z.record(z.string(), z.unknown()).optional(),
+    limits_json: z.record(z.string(), z.unknown()).optional(),
   })
   .refine((value) => Object.keys(value).length > 0, {
     message: 'at_least_one_field_required',

@@ -579,6 +579,40 @@ describe('Project use cases', () => {
     expect(updated.updated_at).toBe('2026-02-08T00:00:00.000Z');
   });
 
+  it('updates project governance and execution config fields', async () => {
+    const repo = new FakeProjectRepo([
+      {
+        id: 'proj_1',
+        workspace_id: 'ws_a',
+        name: 'A',
+        visibility: 'private',
+        join_policy: 'approval_required',
+        owner_id: 'user_1',
+        status: 'active',
+        governance_json: {},
+        execution_preferences_json: {},
+        limits_json: {},
+        created_at: '2026-02-08T00:00:00.000Z',
+        updated_at: '2026-02-08T00:00:00.000Z',
+      },
+    ]);
+
+    const updated = await new UpdateProjectUseCase(repo, new FixedClock()).execute({
+      workspaceId: 'ws_a',
+      projectId: 'proj_1',
+      input: {
+        governance_json: { project_admins: ['user_alt'] },
+        execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
+        limits_json: { requests_per_day: 1000 },
+      },
+    });
+
+    expect(updated.governance_json).toEqual({ project_admins: ['user_alt'] });
+    expect(updated.execution_preferences_json).toEqual({ notebook_endpoint_id: 'ep_notebook' });
+    expect(updated.limits_json).toEqual({ requests_per_day: 1000 });
+    expect(updated.updated_at).toBe('2026-02-08T00:00:00.000Z');
+  });
+
   it('deletes project and then cannot retrieve it', async () => {
     const repo = new FakeProjectRepo([
       {

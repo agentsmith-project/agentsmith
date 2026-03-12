@@ -1,0 +1,73 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+const registryModule = vi.hoisted(() => ({
+  getSystemWorkspace: vi.fn(),
+}));
+
+vi.mock('@/lib/system-admin/workspace-registry', () => registryModule);
+
+import { GET } from '../route';
+
+describe('/api/public/workspaces/[id]', () => {
+  const envBackup = { ...process.env };
+
+  beforeEach(() => {
+    registryModule.getSystemWorkspace.mockReset();
+    process.env = { ...envBackup };
+  });
+
+  it('returns configured workspace login settings', async () => {
+    registryModule.getSystemWorkspace.mockResolvedValue({
+      id: 'ws_alpha',
+      name: 'Alpha Workspace',
+      idp: {
+        kind: 'keycloak',
+        url: 'https://login.example.com',
+        realm: 'alpha',
+        client_id: 'alpha-client',
+        client_secret: 'secret',
+      },
+    });
+
+    const response = await GET(new Request('http://localhost/api/public/workspaces/ws_alpha'), {
+      params: Promise.resolve({ id: 'ws_alpha' }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: 'ws_alpha',
+      name: 'Alpha Workspace',
+      idp: {
+        kind: 'keycloak',
+        url: 'https://login.example.com',
+        realm: 'alpha',
+        client_id: 'alpha-client',
+      },
+    });
+  });
+
+  it('falls back to default workspace identity config', async () => {
+    process.env.MBOS_DEFAULT_WORKSPACE_ID = 'ws_default';
+    process.env.MBOS_DEFAULT_WORKSPACE_NAME = 'Default Workspace';
+    process.env.NEXT_PUBLIC_KEYCLOAK_URL = 'https://login.example.com';
+    process.env.NEXT_PUBLIC_KEYCLOAK_REALM = 'mbos';
+    process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID = 'agentsmith-web';
+    registryModule.getSystemWorkspace.mockResolvedValue(null);
+
+    const response = await GET(new Request('http://localhost/api/public/workspaces/ws_default'), {
+      params: Promise.resolve({ id: 'ws_default' }),
+    });
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      id: 'ws_default',
+      name: 'Default Workspace',
+      idp: {
+        kind: 'keycloak',
+        url: 'https://login.example.com',
+        realm: 'mbos',
+        client_id: 'agentsmith-web',
+      },
+    });
+  });
+});

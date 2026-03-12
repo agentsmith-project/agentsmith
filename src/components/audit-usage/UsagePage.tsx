@@ -90,11 +90,15 @@ export function UsagePage({
     projectId,
     canReadEndpoints: canReadUsage,
   });
+  const endpointNameMap = React.useMemo(
+    () => new Map(endpoints.map((item) => [item.id, item.name || item.id])),
+    [endpoints],
+  );
 
   const limitsOverview = React.useMemo(() => {
     const normalizedEndpoints = (limitsSummary?.endpoints ?? []).map((item) => ({
       endpointId: item.endpoint_id,
-      endpointName: item.endpoint_name,
+      endpointName: item.endpoint_name || endpointNameMap.get(item.endpoint_id) || item.endpoint_id,
       limits: (item.limits ?? []).map((rule) => ({
         kind: rule.kind,
         window: rule.window,
@@ -111,12 +115,12 @@ export function UsagePage({
     return {
       endpoints: normalizedEndpoints,
     };
-  }, [limitsSummary]);
+  }, [endpointNameMap, limitsSummary]);
 
   const endpointOptions = React.useMemo(() => {
     const fromLimits = limitsOverview.endpoints.map((item) => ({
       id: item.endpointId,
-      name: item.endpointName || item.endpointId,
+      name: item.endpointName || endpointNameMap.get(item.endpointId) || item.endpointId,
     }));
     if (fromLimits.length > 0) return fromLimits;
     const fromEndpointsApi = endpoints.map((item) => ({
@@ -129,9 +133,9 @@ export function UsagePage({
       .filter((item) => item.resource_type === 'endpoint' && !!item.resource_id)
       .map((item) => ({
         id: item.resource_id as string,
-        name: item.resource_id as string,
+        name: endpointNameMap.get(item.resource_id as string) || (item.resource_id as string),
       }));
-  }, [endpoints, limitsOverview.endpoints, usageData?.items]);
+  }, [endpointNameMap, endpoints, limitsOverview.endpoints, usageData?.items]);
 
   React.useEffect(() => {
     if (selectedEndpointId === 'all' && endpointOptions.length > 0) {

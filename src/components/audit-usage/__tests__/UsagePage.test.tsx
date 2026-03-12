@@ -56,7 +56,7 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
       endpoints: [
         {
           endpoint_id: 'ep_1',
-          endpoint_name: 'Endpoint 1',
+          endpoint_name: '',
           limits: [
             {
               kind: 'rate_limit',
@@ -229,4 +229,5 @@ describe('UsagePage', () => {
     expect(screen.getByText('view.status_badge:{"value":50}')).toBeInTheDocument();
     expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();
   });
+
 });

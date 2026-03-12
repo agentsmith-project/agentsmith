@@ -583,7 +583,7 @@ scrape_configs:
 groups:
   - name: agentsmith_notebook_execution
     rules:
-      - alert: AgentSmithNotebookRuntimeTerminalWithoutDone
+      - alert: AgentSmithNotebookExecutionTerminalWithoutDone
         expr: increase(notebook_task_runs_terminal_without_done_total[10m]) > 0
         for: 2m
         labels:
@@ -591,7 +591,7 @@ groups:
         annotations:
           summary: "Notebook execution stream finalized without terminal event"
 
-      - alert: AgentSmithNotebookRuntimeFailuresHigh
+      - alert: AgentSmithNotebookExecutionFailuresHigh
         expr: increase(notebook_task_runs_failed_total[15m]) >= 3
         for: 5m
         labels:

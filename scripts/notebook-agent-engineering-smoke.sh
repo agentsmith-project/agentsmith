@@ -28,7 +28,7 @@ read_file_trim() {
   tr -d '\r\n' < "${path}"
 }
 
-proxy_probe_status() {
+proxy_precheck_status() {
   local token project_id endpoint_id url
   token="$(read_file_trim "${TOKEN_FILE}" || true)"
   project_id="$(read_file_trim "${PROJECT_ID_FILE}" || true)"
@@ -43,7 +43,7 @@ proxy_probe_status() {
     -X POST "${url}" \
     -H "Authorization: Bearer ${token}" \
     -H 'Content-Type: application/json' \
-    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"engineering smoke probe"}]}))' "${GLM_MODEL}")" || true
+    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"engineering smoke precheck"}]}))' "${GLM_MODEL}")" || true
 }
 
 wait_proxy_ready() {
@@ -51,33 +51,33 @@ wait_proxy_ready() {
   local sleep_sec="${2:-5}"
   local code refreshed=0
   for i in $(seq 1 "${max_attempts}"); do
-    code="$(proxy_probe_status)"
+    code="$(proxy_precheck_status)"
     case "${code}" in
       200)
-        info "proxy probe ready (HTTP 200)"
+        info "proxy precheck ready (HTTP 200)"
         return 0
         ;;
       429)
-        warn "proxy probe reachable but rate-limited (HTTP 429); continue with target execution"
+        warn "proxy precheck reachable but rate-limited (HTTP 429); continue with target execution"
         return 0
         ;;
       401)
         if [[ "${refreshed}" == "0" ]]; then
-          info "proxy probe unauthorized (HTTP 401); refreshing token once"
+          info "proxy precheck unauthorized (HTTP 401); refreshing token once"
           (cd "${ROOT_DIR}" && BASE_URL="${BASE_URL:-http://localhost:3001}" make notebook-agent-refresh-token)
           refreshed=1
           continue
         fi
         ;;
       403)
-        err "proxy probe denied (HTTP 403) - check resource policy state"
+        err "proxy precheck denied (HTTP 403) - check resource policy state"
         return 1
         ;;
     esac
-    info "proxy probe not ready (HTTP ${code}), waiting ${sleep_sec}s (${i}/${max_attempts})"
+    info "proxy precheck not ready (HTTP ${code}), waiting ${sleep_sec}s (${i}/${max_attempts})"
     sleep "${sleep_sec}"
   done
-  warn "proxy probe did not become ready in precheck; continue and let target provide concrete failure signal"
+  warn "proxy precheck did not become ready; continue and let target provide concrete failure signal"
   return 0
 }
 

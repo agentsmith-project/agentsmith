@@ -60,7 +60,7 @@ export async function evaluateResourcePolicy(
 ): Promise<PolicyEvaluationResult> {
   const { resource_type, resource_id, subject_id, policy_version = 1 } = context;
 
-  // MVP guardrail: only endpoint resource policy is enforceable.
+  // MVP rule: only endpoint resource policy is enforceable.
   if (resource_type !== 'endpoint') {
     return {
       decision: 'deny',

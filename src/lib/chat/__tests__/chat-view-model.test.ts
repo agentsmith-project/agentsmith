@@ -46,7 +46,7 @@ describe('buildChatViewModel', () => {
     expect(model.mergedStreamingSessionIds).toContain(session.id);
   });
 
-  it('falls back to runtime status when local state is idle', () => {
+  it('falls back to execution status when local state is idle', () => {
     const session = makeSession({ execution_status: 'running' });
     const model = buildChatViewModel({
       currentSessionId: session.id,

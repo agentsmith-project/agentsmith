@@ -127,7 +127,7 @@ test.describe('Members Page', () => {
     await expect(templateSelect).toContainText(/select template|owner|admin|governance|manager/i);
   });
 
-  test('group alias badges are displayed for each member', async ({ authedPage }) => {
+  test('access group badges are displayed for each member', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('members__table')).toBeVisible({ timeout: 10000 });
 
     const table = authedPage.getByTestId('members__table');

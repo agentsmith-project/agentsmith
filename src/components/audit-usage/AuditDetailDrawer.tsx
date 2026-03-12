@@ -177,27 +177,18 @@ export function AuditDetailDrawer({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-tertiary">{t('table.actor')}</span>
-              <div className="flex items-center gap-2">
-                <Badge
-                  variant={
-                    event.actor_type === 'user'
-                      ? 'default'
-                      : event.actor_type === 'agent'
-                        ? 'secondary'
-                        : 'outline'
-                  }
-                >
-                  {getAuditActorLabel(event.actor_type, t)}
-                </Badge>
-                <span className="text-sm text-foreground font-mono">{event.actor_id}</span>
-              </div>
+              <Badge
+                variant={
+                  event.actor_type === 'user'
+                    ? 'default'
+                    : event.actor_type === 'agent'
+                      ? 'secondary'
+                      : 'outline'
+                }
+              >
+                {getAuditActorLabel(event.actor_type, t)}
+              </Badge>
             </div>
-            {event.end_user_id && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-tertiary">{t('table.end_user')}</span>
-                <span className="text-sm text-foreground font-mono">{event.end_user_id}</span>
-              </div>
-            )}
             {event.resource_type && (
               <div className="flex items-center justify-between">
                 <span className="text-sm text-tertiary">{t('table.resource')}</span>

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import { ArrowLeft } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
@@ -44,6 +45,7 @@ export default function OverviewPage() {
   }
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
+  const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
   const quickLinks = [
     { label: tNav('chat'), href: `${basePath}/chat` },
     { label: tNav('notebook'), href: `${basePath}/notebook` },
@@ -59,6 +61,15 @@ export default function OverviewPage() {
     <PageState state="success">
       <PageLayout header={<PageHeader title={tNav('overview')} subtitle={tGuide('subtitle')} />}>
         <div className="space-y-4" data-testid="project-hub__page">
+          <Link
+            href={workspaceBasePath}
+            className="inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
+            data-testid="project-hub__back-to-workspace"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {tGuide('back_to_workspace')}
+          </Link>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">{tGuide('quick_links.title')}</CardTitle>
@@ -73,20 +84,6 @@ export default function OverviewPage() {
                   {item.label}
                 </Link>
               ))}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">{tGuide('steps.title')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-tertiary" data-testid="project-hub__getting-started">
-              <p>{tGuide('steps.step_1')}</p>
-              <p>{tGuide('steps.step_2')}</p>
-              <p>{tGuide('steps.step_3')}</p>
-              <p>{tGuide('steps.step_4')}</p>
-              <p>{tGuide('steps.step_5')}</p>
-              <p>{tGuide('steps.step_6')}</p>
             </CardContent>
           </Card>
         </div>

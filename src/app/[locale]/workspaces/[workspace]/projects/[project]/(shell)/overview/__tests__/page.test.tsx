@@ -29,12 +29,16 @@ describe('OverviewPage', () => {
     });
   });
 
-  it('renders project hub quick links and getting started card', () => {
+  it('renders project hub quick links and workspace return link', () => {
     render(<OverviewPage />);
 
     expect(screen.getByTestId('project-hub__page')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__back-to-workspace')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_default',
+    );
     expect(screen.getByTestId('project-hub__quick-links')).toBeInTheDocument();
-    expect(screen.getByTestId('project-hub__getting-started')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-hub__getting-started')).not.toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', () => {

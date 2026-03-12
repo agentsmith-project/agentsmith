@@ -10,7 +10,7 @@
 
 import { test as base, expect, type Page } from '@playwright/test';
 import { withAuth } from './fixtures/authenticated';
-import { waitForPageReady } from './utils/navigation';
+import { gotoAndWait, waitForPageReady } from './utils/navigation';
 
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
@@ -24,7 +24,7 @@ const test = base.extend<{ authedPage: Page }>({
 
 /** Navigate and wait for page to settle before screenshot */
 async function stableNavigate(page: Page, path: string) {
-  await page.goto(path, { waitUntil: 'domcontentloaded', timeout: 20000 });
+  await gotoAndWait(page, path, 20000);
   await waitForPageReady(page);
   // In MSW mode, the app can briefly render a full-page "Starting mocks..." overlay after the route is technically mounted.
   // Wait for it to disappear to avoid capturing transient bootstrap screens as baselines.

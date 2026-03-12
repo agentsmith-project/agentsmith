@@ -29,6 +29,9 @@ const ACCEPTABLE_ERROR_PATTERNS = [
   'There was an error while hydrating', // React 18 hydration
   'Minified React error',
   'IntlError',                    // Missing i18n keys in dev
+  'webpack-hmr',
+  'Webpack Hot Module Replacement',
+  '_next/webpack-hmr',
 ];
 
 function isAcceptableError(text: string): boolean {

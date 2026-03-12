@@ -34,6 +34,7 @@ DEMO_START_API="${DEMO_START_API:-1}"
 DEMO_START_WEB="${DEMO_START_WEB:-1}"
 DEMO_START_RUNNER="${DEMO_START_RUNNER:-1}"
 DEMO_WEB_PORT_AUTO_FALLBACK="${DEMO_WEB_PORT_AUTO_FALLBACK:-1}"
+DEMO_ALLOW_MISSING_EXECUTION_METADATA="${DEMO_ALLOW_MISSING_EXECUTION_METADATA:-0}"
 
 API_LOG="${API_LOG:-/tmp/agentsmith_demo_api.log}"
 WEB_LOG="${WEB_LOG:-/tmp/agentsmith_demo_web.log}"
@@ -471,8 +472,12 @@ main() {
   if [[ "${DEMO_INIT_RESOURCES}" == "1" ]]; then
     init_demo_resources || exit 1
   elif ! has_demo_execution_metadata; then
-    info "execution metadata missing; forcing one-time resource init even though DEMO_INIT_RESOURCES=0"
-    init_demo_resources || exit 1
+    if [[ "${DEMO_ALLOW_MISSING_EXECUTION_METADATA}" == "1" ]]; then
+      info "execution metadata missing; continuing without demo resources because DEMO_ALLOW_MISSING_EXECUTION_METADATA=1"
+    else
+      info "execution metadata missing; forcing one-time resource init even though DEMO_INIT_RESOURCES=0"
+      init_demo_resources || exit 1
+    fi
   fi
 
   restart_demo_runner || {

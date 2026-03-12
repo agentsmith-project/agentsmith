@@ -105,7 +105,7 @@ export const usageHandlers = [
     const pageSize = Number.parseInt(url.searchParams.get('page_size') ?? '30', 10) || 30;
 
     const items = buildRequestUsageRecords({
-      bucket: 'day',
+      groupBy: 'day',
       filters: {
         startTime: start,
         endTime: end,

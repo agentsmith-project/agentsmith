@@ -142,36 +142,49 @@ wait_http_ok() {
 }
 
 start_mock_server() {
-  if is_port_listening; then
-    info "mock lane requires deterministic MSW mode; restarting :${PORT_WEB}"
-    kill_port_listeners
-  fi
+  local launch_attempt=1
+  while [[ "${launch_attempt}" -le 3 ]]; do
+    if is_port_listening; then
+      info "mock lane requires deterministic MSW mode; restarting :${PORT_WEB}"
+      kill_port_listeners
+    fi
 
-  if is_port_listening; then
-    info "port :${PORT_WEB} is still busy after cleanup; finding an alternate free port"
-    fallback_port="$(pick_free_port || true)"
-    if [[ -z "${fallback_port}" ]]; then
-      err "failed to find a free port for mock lane"
+    if is_port_listening; then
+      info "port :${PORT_WEB} is still busy after cleanup; finding an alternate free port"
+      fallback_port="$(pick_free_port || true)"
+      if [[ -z "${fallback_port}" ]]; then
+        err "failed to find a free port for mock lane"
+        exit 1
+      fi
+      rebind_urls_for_port "${fallback_port}"
+      info "using fallback port :${PORT_WEB}"
+    fi
+
+    info "starting mock web server on :${PORT_WEB} (log: ${LOG_FILE}) [attempt ${launch_attempt}/3]"
+    : > "${LOG_FILE}"
+    (
+      cd "${ROOT_DIR}"
+      exec env NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port "${PORT_WEB}"
+    ) >>"${LOG_FILE}" 2>&1 &
+    echo $! > "${PID_FILE}"
+    STARTED_BY_SCRIPT=1
+
+    if wait_http_ok 120; then
+      return 0
+    fi
+
+    if [[ "${launch_attempt}" -ge 3 ]]; then
+      err "web server is not ready at ${HEALTH_URL}"
+      tail -n 120 "${LOG_FILE}" 2>/dev/null || true
       exit 1
     fi
-    rebind_urls_for_port "${fallback_port}"
-    info "using fallback port :${PORT_WEB}"
-  fi
 
-  info "starting mock web server on :${PORT_WEB} (log: ${LOG_FILE})"
-  : > "${LOG_FILE}"
-  (
-    cd "${ROOT_DIR}"
-    exec env NEXT_PUBLIC_USE_MSW=true npm run dev:test -- --port "${PORT_WEB}"
-  ) >>"${LOG_FILE}" 2>&1 &
-  echo $! > "${PID_FILE}"
-  STARTED_BY_SCRIPT=1
-
-  if ! wait_http_ok 120; then
-    err "web server is not ready at ${HEALTH_URL}"
-    tail -n 120 "${LOG_FILE}" 2>/dev/null || true
-    exit 1
-  fi
+    info "mock web server failed to become ready; restarting lane bootstrap (${launch_attempt}/3)"
+    kill_port_listeners
+    rm -f "${PID_FILE}"
+    sleep 2
+    launch_attempt=$((launch_attempt + 1))
+  done
 }
 
 run_playwright_once() {

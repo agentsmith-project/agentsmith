@@ -1,22 +1,34 @@
 import { Page } from '@playwright/test';
 
 const DEFAULT_NAVIGATION_TIMEOUT = 60000;
+const TRANSIENT_NAVIGATION_ERRORS = [
+  'net::ERR_ABORTED',
+  'net::ERR_CONNECTION_REFUSED',
+  'net::ERR_EMPTY_RESPONSE',
+];
 
-/** Navigate to a URL with retry on ERR_ABORTED */
+/** Navigate to a URL with retry on transient dev-server connection failures */
 export async function gotoAndWait(
   page: Page,
   url: string,
   timeout = DEFAULT_NAVIGATION_TIMEOUT,
 ) {
-  try {
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (!message.includes('net::ERR_ABORTED')) {
-      throw error;
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    try {
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
+      return;
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const isTransient = TRANSIENT_NAVIGATION_ERRORS.some((pattern) => message.includes(pattern));
+      if (!isTransient || attempt >= 3) {
+        throw error;
+      }
+      await page.waitForTimeout(500 * (attempt + 1));
     }
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout });
   }
+  throw lastError instanceof Error ? lastError : new Error(`Failed to navigate to ${url}`);
 }
 
 /** Wait for the page to reach a ready state */

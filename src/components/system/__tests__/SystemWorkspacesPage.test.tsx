@@ -90,6 +90,9 @@ describe('SystemWorkspacesPage', () => {
       '/en-US/workspaces/ws_alpha/projects',
     );
     expect(screen.getByTestId('system-workspaces__preview')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__mode')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
   });
 
   it('filters workspaces and generates preview values', async () => {
@@ -186,6 +189,8 @@ describe('SystemWorkspacesPage', () => {
 
     expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    expect(screen.getByTestId('system-workspaces__mode')).toHaveTextContent('edit_mode_label');
+    expect(screen.getByTestId('system-workspaces__mode')).toHaveTextContent('editing_workspace');
     fireEvent.change(screen.getByTestId('system-workspaces__draft-admin'), {
       target: { value: 'ops-admin@example.com' },
     });

@@ -155,6 +155,7 @@ export function SystemWorkspacesPage() {
     draftIdpUrl.trim() &&
     draftIdpRealm.trim() &&
     draftIdpClientId.trim();
+  const isEditingWorkspace = Boolean(selectedWorkspaceId);
 
   return (
     <PageState state="success">
@@ -258,31 +259,48 @@ export function SystemWorkspacesPage() {
                   <p className="text-sm text-tertiary">{t('create_subtitle')}</p>
                 </div>
 
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">{t('workspace_name')}</span>
-                  <input
-                    type="text"
-                    value={draftName}
-                    onChange={(event) => setDraftName(event.target.value)}
-                    placeholder={t('workspace_name_placeholder')}
-                    className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
-                    data-testid="system-workspaces__draft-name"
-                  />
-                </label>
+                <div className="rounded-sm border border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__mode">
+                  <p className="text-xs uppercase tracking-[0.08em] text-tertiary">
+                    {isEditingWorkspace ? t('edit_mode_label') : t('create_mode_label')}
+                  </p>
+                  <p className="mt-1 text-sm font-medium text-foreground">
+                    {isEditingWorkspace
+                      ? t('editing_workspace', { workspaceId: selectedWorkspaceId ?? '' })
+                      : t('creating_workspace')}
+                  </p>
+                </div>
 
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
-                  <input
-                    type="text"
-                    value={draftAdmin}
-                    onChange={(event) => setDraftAdmin(event.target.value)}
-                    placeholder={t('workspace_admin_placeholder')}
-                    className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
-                    data-testid="system-workspaces__draft-admin"
-                  />
-                </label>
+                <div className="space-y-3 rounded-sm border border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__basics">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_basics_label')}</p>
+                    <p className="text-sm font-medium text-foreground">{t('workspace_basics_title')}</p>
+                  </div>
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-foreground">{t('workspace_name')}</span>
+                    <input
+                      type="text"
+                      value={draftName}
+                      onChange={(event) => setDraftName(event.target.value)}
+                      placeholder={t('workspace_name_placeholder')}
+                      className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
+                      data-testid="system-workspaces__draft-name"
+                    />
+                  </label>
 
-                <div className="space-y-3 rounded-sm border border-subtle bg-bg-base/20 p-4">
+                  <label className="block space-y-2">
+                    <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
+                    <input
+                      type="text"
+                      value={draftAdmin}
+                      onChange={(event) => setDraftAdmin(event.target.value)}
+                      placeholder={t('workspace_admin_placeholder')}
+                      className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
+                      data-testid="system-workspaces__draft-admin"
+                    />
+                  </label>
+                </div>
+
+                <div className="space-y-3 rounded-sm border border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__idp">
                   <div className="flex items-center gap-2 text-sm font-medium text-foreground">
                     <ShieldCheck className="h-4 w-4" />
                     {t('idp_title')}

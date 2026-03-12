@@ -13,7 +13,7 @@ test.describe('Controls Matrix', () => {
     await goTo(authedPage, `/${LOCALE}/workspaces/${WS_ID}/settings`);
     await expect(
       authedPage
-        .getByTestId('ws-settings__members')
+        .getByTestId('ws-settings__workspace')
         .or(permissionDenied)
         .first()
     ).toBeVisible();

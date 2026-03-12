@@ -13,7 +13,7 @@ export const ROUTES = {
   ],
   workspace: [
     { path: '/zh-CN/workspaces/ws_default/projects', testId: 'projects__create-btn' },
-    { path: '/zh-CN/workspaces/ws_default/settings', testId: 'ws-settings__members' },
+    { path: '/zh-CN/workspaces/ws_default/settings', testId: 'ws-settings__workspace' },
   ],
   project: [
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'project-hub__page' },

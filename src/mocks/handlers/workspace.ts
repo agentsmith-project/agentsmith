@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { workspaceFixtures } from '../fixtures/workspaces';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { CURRENT_USER_ID } from '../fixtures/projects';
 
 const workspaceItems = (() => {
@@ -14,6 +14,16 @@ const workspaceItems = (() => {
 })();
 
 const workspaceMembers = (() => {
+  const getWorkspacePermissionsForRole = (role: 'owner' | 'admin' | 'developer' | 'user') => {
+    if (role === 'owner' || role === 'admin') {
+      return [...PLATFORM_PERMISSIONS.WORKSPACE];
+    }
+    if (role === 'developer') {
+      return ['workspace:read'];
+    }
+    return ['workspace:read'];
+  };
+
   const fromP0 = (p0.workspace_members ?? []).map((member) => {
     const memberRecord = member as Record<string, unknown>;
     const userId = String(member.id ?? '');
@@ -34,7 +44,7 @@ const workspaceMembers = (() => {
           : role === 'owner' || role === 'admin'
             ? 'wheel'
             : 'user',
-      permissions: Array.isArray(explicitPermissions) ? explicitPermissions : [...GROUP_TEMPLATES[role]],
+      permissions: Array.isArray(explicitPermissions) ? explicitPermissions : getWorkspacePermissionsForRole(role),
       status: 'active' as const,
       joined_at: '2026-01-01T00:00:00Z',
     };
@@ -48,7 +58,7 @@ const workspaceMembers = (() => {
       email: p0.auth.user.email,
       role: 'owner',
       governance_group: 'wheel',
-      permissions: [...GROUP_TEMPLATES.owner],
+      permissions: [...PLATFORM_PERMISSIONS.WORKSPACE],
       status: 'active' as const,
       joined_at: '2026-01-01T00:00:00Z',
     });

@@ -1,10 +1,3 @@
-/**
- * Workspace Settings Page E2E Tests
- *
- * Tests the workspace-level settings page including workspace info display,
- * members list, and page structure.
- */
-
 import { test, expect, goTo, LOCALE, WS_ID } from './fixtures/test-base';
 
 const wsSettingsPath = `/${LOCALE}/workspaces/${WS_ID}/settings`;
@@ -14,81 +7,36 @@ test.describe('Workspace Settings Page', () => {
     await goTo(authedPage, wsSettingsPath);
   });
 
-  test('should display workspace settings heading', async ({ authedPage }) => {
+  test('shows workspace administration summary and project actions', async ({ authedPage }) => {
     await expect(
       authedPage.getByRole('heading', { name: /Workspace Settings/i }),
-    ).toBeVisible({ timeout: 10000 });
+    ).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__workspace')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__projects')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__name')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__open-projects')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__create-project')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-edit-admins--proj_001')).toBeVisible();
   });
 
-  test('should display workspace name', async ({ authedPage }) => {
-    const wsName = authedPage.getByTestId('ws-settings__name');
-    await expect(wsName).toBeVisible({ timeout: 10000 });
-    // The workspace name element should display the workspace identifier
-    const text = await wsName.textContent();
-    expect(text?.trim().length).toBeGreaterThan(0);
+  test('workspace admin can open create project dialog and create a project', async ({ authedPage }) => {
+    await authedPage.getByTestId('ws-settings__create-project').click();
+    await expect(authedPage.getByRole('heading', { name: /Create Project/i })).toBeVisible();
+
+    await authedPage.getByLabel('Project Name').fill('Workspace Admin Project');
+    await authedPage.getByRole('button', { name: /^Create$/i }).click();
+
+    await expect(authedPage.getByRole('heading', { name: /Create Project/i })).not.toBeVisible();
   });
 
-  test('should display members section', async ({ authedPage }) => {
-    const membersSection = authedPage.getByTestId('ws-settings__members');
-    await expect(membersSection).toBeVisible({ timeout: 10000 });
-  });
-
-  test('should display governance overview and project posture sections', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('ws-settings__governance-overview')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('ws-settings__project-posture')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('should expose cross-project governance actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('ws-settings__project-open-resource-policy--proj_001')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('ws-settings__project-open-audit-secondary--proj_001')).toHaveAttribute(
-      'href',
-      /\/audit/,
-    );
-    await expect(authedPage.getByTestId('ws-settings__project-open-audit-secondary--proj_001')).toHaveAttribute(
-      'href',
-      /gov_from=workspace_settings/,
-    );
-  });
-
-  test('should display governance attention feed', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('ws-settings__governance-attention')).toBeVisible({ timeout: 10000 });
-  });
-
-  test('should display governance explainability summary', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('ws-settings__governance-explainability')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-audit')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-audit-secondary')).toHaveAttribute(
-      'href',
-      /\/audit/,
-    );
-    await expect(authedPage.getByTestId('ws-settings__explain-open-blocked-project-audit-secondary')).toHaveAttribute(
-      'href',
-      /gov_reason=blocked_projects_audit_review/,
-    );
-  });
-
-  test('should expose audit shortcut in governance attention feed', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('ws-settings__governance-attention')).toBeVisible({ timeout: 10000 });
-    const link = authedPage.getByTestId('ws-settings__attention-open-audit-secondary--project--proj_001');
-    await expect(link).toBeVisible({ timeout: 10000 });
-    await expect(link).toHaveAttribute('href', /\/audit/);
-    await expect(link).toHaveAttribute('href', /gov_from=workspace_settings/);
-  });
-
-  test('should display workspace members from mock data', async ({ authedPage }) => {
-    const membersSection = authedPage.getByTestId('ws-settings__members');
-    await expect(membersSection).toBeVisible({ timeout: 10000 });
-
-    // Workspace members from MSW fixture should be listed
-    // Verify at least one member entry is displayed
-    const memberEntries = membersSection.locator('[class*="flex"][class*="items-center"]');
-    await expect(memberEntries.first()).toBeVisible({ timeout: 10000 });
-  });
-
-  test('should display topbar on workspace settings page', async ({ authedPage }) => {
-    const topbar = authedPage.getByTestId('topbar');
-    await expect(topbar).toBeVisible({ timeout: 10000 });
+  test('workspace admin can assign project admins', async ({ authedPage }) => {
+    await authedPage.getByTestId('ws-settings__project-edit-admins--proj_001').click();
+    await expect(authedPage.getByTestId('ws-settings__project-admin-dialog')).toBeVisible();
+    await authedPage.getByRole('checkbox', { name: /Dev Two/i }).click();
+    await authedPage.getByTestId('ws-settings__project-admin-save').click();
+    await expect(authedPage.getByTestId('ws-settings__project-admin-dialog')).not.toBeVisible();
   });
 });

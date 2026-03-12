@@ -110,6 +110,13 @@ test.describe('Visual - Workspace Pages', () => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
     await expect(authedPage).toHaveScreenshot('workspace-settings.png', { fullPage: true });
   });
+
+  test('workspace settings create project dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
+    await authedPage.getByTestId('ws-settings__create-project').click();
+    await expect(authedPage.getByRole('heading', { name: /Create Project/i })).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-settings-create-project.png', { fullPage: true });
+  });
 });
 
 // ─── System Pages ───────────────────────────────────────────────────────────

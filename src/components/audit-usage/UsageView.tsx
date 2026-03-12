@@ -154,59 +154,36 @@ export function UsageView({
           <p className="mt-1 text-sm text-tertiary">{t('view.panel_subtitle')}</p>
         </div>
         <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__planning-controls">
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto]">
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.endpoint_tabs_label')}</p>
-              <div className="flex flex-wrap gap-2" data-testid="usage__endpoint-tabs">
-                {endpointOptions.map((endpoint) => (
-                  <button
-                    key={endpoint.id}
-                    type="button"
-                    className={[
-                      'inline-flex items-center rounded-full border px-3.5 py-2 text-sm transition-colors',
-                      effectiveEndpointId === endpoint.id
-                        ? 'border-border bg-surface-high text-foreground shadow-sm'
-                        : 'border-subtle bg-bg-base/20 text-tertiary hover:border-border hover:text-foreground',
-                    ].join(' ')}
-                    onClick={() => onEndpointChange?.(endpoint.id)}
-                    data-testid={`usage__endpoint-tab-${endpoint.id}`}
-                  >
-                    {endpoint.name}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="mb-2 text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.limit_mode_label')}</p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  type="button"
-                  variant={limitMetricMode === 'all' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setLimitMetricMode('all')}
-                  data-testid="usage__limit-mode-all"
-                >
-                  {t('view.limit_mode_all')}
-                </Button>
-                <Button
-                  type="button"
-                  variant={limitMetricMode === 'rate' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setLimitMetricMode('rate')}
-                  data-testid="usage__limit-mode-rate"
-                >
-                  {t('view.limit_mode_rate')}
-                </Button>
-                <Button
-                  type="button"
-                  variant={limitMetricMode === 'spending' ? 'default' : 'outline'}
-                  size="sm"
-                  onClick={() => setLimitMetricMode('spending')}
-                  data-testid="usage__limit-mode-spending"
-                >
-                  {t('view.limit_mode_spending')}
-                </Button>
-              </div>
+          <div>
+            <p className="mb-2 text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.limit_mode_label')}</p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                type="button"
+                variant={limitMetricMode === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setLimitMetricMode('all')}
+                data-testid="usage__limit-mode-all"
+              >
+                {t('view.limit_mode_all')}
+              </Button>
+              <Button
+                type="button"
+                variant={limitMetricMode === 'rate' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setLimitMetricMode('rate')}
+                data-testid="usage__limit-mode-rate"
+              >
+                {t('view.limit_mode_rate')}
+              </Button>
+              <Button
+                type="button"
+                variant={limitMetricMode === 'spending' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setLimitMetricMode('spending')}
+                data-testid="usage__limit-mode-spending"
+              >
+                {t('view.limit_mode_spending')}
+              </Button>
             </div>
           </div>
         </div>
@@ -220,7 +197,10 @@ export function UsageView({
         <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__limits">
           {selectedEndpoint ? (
             <Tabs value={effectiveEndpointId} onValueChange={(value) => onEndpointChange?.(value)} className="space-y-4">
-              <TabsList className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-2xl border border-subtle bg-bg-base/20 p-1.5">
+              <TabsList
+                className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-2xl border border-subtle bg-bg-base/20 p-1.5"
+                data-testid="usage__endpoint-tabs"
+              >
                 {endpointLimitGroups.map((endpoint) => (
                   <TabsTrigger
                     key={endpoint.endpointId}

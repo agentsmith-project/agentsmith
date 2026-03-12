@@ -1242,8 +1242,6 @@
       "limits_empty": "暂无 endpoint 限制数据。",
       "rate_limit_title": "速率限制",
       "spending_limit_title": "支出限制",
-      "remaining_suffix": "剩余",
-      "status_badge": "还剩 {value}%",
       "limit_reset_at": "重置时间：{value}",
       "limit_group_empty": "当前返回暂无该类数据。",
       "window": {

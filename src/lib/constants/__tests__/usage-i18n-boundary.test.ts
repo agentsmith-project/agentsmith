@@ -25,8 +25,6 @@ const EXPECTED_USAGE_VIEW_KEYS = [
   'limit_reset_at',
   'limits_empty',
   'panel_title',
-  'remaining_suffix',
-  'status_badge',
   'trend_section_title',
   'no_data',
   'no_data_hint',

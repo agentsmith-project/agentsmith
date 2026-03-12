@@ -246,20 +246,14 @@ export function UsageView({
                             className={`rounded-[28px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.01)_100%)] p-6 ${tone.ringClassName}`}
                             data-testid="usage__progress-card"
                           >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm text-tertiary">
-                                  {limit.bucket === 'rate' ? t('view.rate_limit_title') : t('view.spending_limit_title')}
-                                </p>
-                                <p className="mt-1 text-xs text-tertiary">{t(`view.window.${limit.window}`)}</p>
-                              </div>
-                              <span className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${tone.badgeClassName}`}>
-                                {t('view.status_badge', { value: Math.round(remainingPct) })}
-                              </span>
+                            <div>
+                              <p className="text-sm text-tertiary">
+                                {limit.bucket === 'rate' ? t('view.rate_limit_title') : t('view.spending_limit_title')}
+                              </p>
+                              <p className="mt-1 text-xs text-tertiary">{t(`view.window.${limit.window}`)}</p>
                             </div>
                             <p className="mt-5 text-4xl font-semibold tracking-tight text-foreground">
                               {Math.round(remainingPct)}%
-                              <span className="ml-2 text-lg font-medium text-tertiary">{t('view.remaining_suffix')}</span>
                             </p>
                             <div className="mt-5 h-3 rounded-full bg-surface-high">
                               <div

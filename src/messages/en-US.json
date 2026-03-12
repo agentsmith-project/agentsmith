@@ -1240,8 +1240,6 @@
       "limits_empty": "No endpoint limit data available.",
       "rate_limit_title": "Rate Limit",
       "spending_limit_title": "Spending Limit",
-      "remaining_suffix": "remaining",
-      "status_badge": "{value}% left",
       "limit_reset_at": "Reset time: {value}",
       "limit_group_empty": "No data in current response.",
       "window": {

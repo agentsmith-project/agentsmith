@@ -22,11 +22,17 @@ describe('SystemInfoPage', () => {
         snapshot={{
           system_admin_username: 'mbos-admin',
           api_base_url: 'http://localhost:20000',
+          workspace_registry_path: 'artifacts/system-workspaces.json',
           substrate_label: 'primary',
           substrate_url: 'mongodb://localhost:27017',
           database_prefix: 'agentsmith_ws_',
           collection_prefix: 'ws_',
           key_prefix: 'ws:',
+          default_workspace_id: 'ws_default',
+          default_workspace_name: 'Default Workspace',
+          default_idp_url: 'https://login.example.com',
+          default_idp_realm: 'mbos',
+          default_idp_client_id: 'agentsmith',
         }}
       />,
     );
@@ -35,5 +41,7 @@ describe('SystemInfoPage', () => {
     expect(screen.getByTestId('system-info__back').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
     expect(screen.getByTestId('system-info__notice')).toBeInTheDocument();
     expect(screen.getByText('mongodb://localhost:27017')).toBeInTheDocument();
+    expect(screen.getByText('artifacts/system-workspaces.json')).toBeInTheDocument();
+    expect(screen.getByText('https://login.example.com')).toBeInTheDocument();
   });
 });

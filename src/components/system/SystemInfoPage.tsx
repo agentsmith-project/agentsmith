@@ -50,6 +50,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 rows={[
                   { label: t('system_admin_username_label'), value: snapshot.system_admin_username },
                   { label: t('api_base_url_label'), value: snapshot.api_base_url },
+                  { label: t('workspace_registry_path_label'), value: snapshot.workspace_registry_path },
                 ]}
               />
               <InfoCard
@@ -58,6 +59,17 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 rows={[
                   { label: t('substrate_label_label'), value: snapshot.substrate_label },
                   { label: t('substrate_url_label'), value: snapshot.substrate_url },
+                ]}
+              />
+              <InfoCard
+                icon={<Wrench className="h-5 w-5" />}
+                title={t('default_workspace_title')}
+                rows={[
+                  { label: t('default_workspace_id_label'), value: snapshot.default_workspace_id },
+                  { label: t('default_workspace_name_label'), value: snapshot.default_workspace_name },
+                  { label: t('default_idp_url_label'), value: snapshot.default_idp_url || '-' },
+                  { label: t('default_idp_realm_label'), value: snapshot.default_idp_realm || '-' },
+                  { label: t('default_idp_client_id_label'), value: snapshot.default_idp_client_id || '-' },
                 ]}
               />
               <InfoCard

@@ -10,11 +10,17 @@ export interface WorkspaceTenantPreview {
 export interface SystemInfoSnapshot {
   system_admin_username: string;
   api_base_url: string;
+  workspace_registry_path: string;
   substrate_label: string;
   substrate_url: string;
   database_prefix: string;
   collection_prefix: string;
   key_prefix: string;
+  default_workspace_id: string;
+  default_workspace_name: string;
+  default_idp_url: string;
+  default_idp_realm: string;
+  default_idp_client_id: string;
 }
 
 const DEFAULT_SYSTEM_ADMIN_USERNAME = 'mbos-admin';
@@ -63,10 +69,16 @@ export function getSystemInfoSnapshot(): SystemInfoSnapshot {
   return {
     system_admin_username: getSystemAdminUsername(),
     api_base_url: process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000',
+    workspace_registry_path: process.env.SYSTEM_WORKSPACE_REGISTRY_PATH || 'artifacts/system-workspaces.json',
     substrate_label: process.env.SYSTEM_SUBSTRATE_LABEL || DEFAULT_SUBSTRATE_LABEL,
     substrate_url: process.env.SYSTEM_SUBSTRATE_URL || DEFAULT_SUBSTRATE_URL,
     database_prefix: process.env.SYSTEM_TENANT_DATABASE_PREFIX || DEFAULT_DATABASE_PREFIX,
     collection_prefix: process.env.SYSTEM_TENANT_COLLECTION_PREFIX || DEFAULT_COLLECTION_PREFIX,
     key_prefix: process.env.SYSTEM_TENANT_KEY_PREFIX || DEFAULT_KEY_PREFIX,
+    default_workspace_id: process.env.MBOS_DEFAULT_WORKSPACE_ID || 'ws_default',
+    default_workspace_name: process.env.MBOS_DEFAULT_WORKSPACE_NAME || 'Default Workspace',
+    default_idp_url: process.env.NEXT_PUBLIC_KEYCLOAK_URL || '',
+    default_idp_realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || '',
+    default_idp_client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || '',
   };
 }

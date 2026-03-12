@@ -5,10 +5,14 @@ test.describe('Project Hub', () => {
     await goToProject(authedPage, 'overview');
   });
 
-  test('renders quick links and getting started guidance', async ({ authedPage }) => {
+  test('renders quick links and workspace return link', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('project-hub__back-to-workspace')).toBeVisible();
     await expect(authedPage.getByTestId('project-hub__quick-links')).toBeVisible();
-    await expect(authedPage.getByTestId('project-hub__getting-started')).toBeVisible();
+    await expect(authedPage.getByTestId('project-hub__back-to-workspace')).toHaveAttribute(
+      'href',
+      /\/workspaces\/ws_default$/,
+    );
   });
 
   test('quick links cover current project surfaces', async ({ authedPage }) => {

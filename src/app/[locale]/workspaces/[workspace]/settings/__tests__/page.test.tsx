@@ -16,10 +16,10 @@ const STABLE_MEMBERS = [
   {
     id: 'wm_2',
     user_id: 'u_2',
-    name: 'Removed Admin',
-    email: 'removed@example.com',
+    name: 'Proj Admin',
+    email: 'admin@example.com',
     role: 'admin',
-    status: 'removed',
+    status: 'active',
     joined_at: '2026-02-01T00:00:00Z',
   },
 ];
@@ -33,12 +33,7 @@ const STABLE_PROJECTS = [
     join_policy: 'open',
     status: 'active',
     governance_json: {
-      limits: {
-        source_library: {
-          max_total_files: 2000,
-          max_file_size_bytes: 104857600,
-        },
-      },
+      project_admins: ['u_2'],
     },
     execution_preferences_json: {},
     limits_json: {},
@@ -48,20 +43,12 @@ const STABLE_PROJECTS = [
   {
     id: 'proj_2',
     workspace_id: 'ws_1',
-    name: 'Sensitive Project',
-    owner_id: 'u_1',
+    name: 'Archived Project',
+    owner_id: 'u_2',
     visibility: 'private',
     join_policy: 'approval_required',
-    status: 'active',
-    governance_json: {
-      project_admins: ['u_2'],
-      limits: {
-        source_library: {
-          max_total_files: 2000,
-          max_file_size_bytes: 104857600,
-        },
-      },
-    },
+    status: 'archived',
+    governance_json: {},
     execution_preferences_json: {},
     limits_json: {},
     created_at: '2026-03-01T00:00:00Z',
@@ -80,7 +67,7 @@ vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasWorkspacePermission: vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update'),
+  useHasWorkspacePermission: vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create'),
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
@@ -89,10 +76,6 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
   }),
   useWorkspaceMembers: () => ({
     data: STABLE_MEMBERS,
-  }),
-  useUpdateWorkspaceMemberGovernanceGroup: () => ({
-    mutateAsync: vi.fn(),
-    isPending: false,
   }),
 }));
 
@@ -113,81 +96,48 @@ const mockUseHasWorkspacePermission = vi.mocked(useHasWorkspacePermission);
 describe('WorkspaceSettingsPage', () => {
   beforeEach(() => {
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
-    mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update');
-  });
-
-  it('renders members section', async () => {
-    render(<WorkspaceSettingsPage />);
-    await waitFor(() => {
-      expect(screen.getByText('workspace_members')).toBeInTheDocument();
-    });
-    expect(within(screen.getByTestId('ws-settings__members')).getByText('dev1@example.com')).toBeInTheDocument();
-  });
-
-  it('renders governance overview and project posture', async () => {
-    render(<WorkspaceSettingsPage />);
-    await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__governance-overview')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('ws-settings__project-posture')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__project-posture--proj_1')).toBeInTheDocument();
-    expect(screen.getByText('workspace_projects_risk_public_open_access')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/settings');
-    expect(screen.getByTestId('ws-settings__project-open-audit-secondary--proj_1')).toHaveAttribute(
-      'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit'),
+    mockUseHasWorkspacePermission.mockImplementation(
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
     );
   });
 
-  it('renders member administration risk view', async () => {
+  it('renders workspace administration summary', async () => {
     render(<WorkspaceSettingsPage />);
+
     await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__member-administration')).toBeInTheDocument();
+      expect(screen.getByTestId('ws-settings__workspace')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('ws-settings__member-administration--wm_2')).toBeInTheDocument();
-    expect(screen.getByText('workspace_member_admin_risk_removed_member_with_project_scope')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__member-open-members--wm_2')).toHaveAttribute(
+
+    expect(screen.getByText('workspace_admin_subtitle')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__name')).toHaveTextContent('ws_1');
+    expect(screen.getByTestId('ws-settings__open-projects')).toHaveAttribute(
       'href',
-      '/en/workspaces/ws_1/projects/proj_2/members?member_id=wm_2',
+      '/en/workspaces/ws_1/projects',
     );
+    expect(screen.getByText('workspace_can_create_projects')).toBeInTheDocument();
   });
 
-  it('renders governance attention feed with audit drill-downs', async () => {
+  it('renders project administration list', async () => {
     render(<WorkspaceSettingsPage />);
-    await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__governance-attention')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('ws-settings__governance-attention--project--proj_1')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
-      'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit?'),
-    );
-    expect(screen.getByTestId('ws-settings__attention-open-audit-secondary--project--proj_1')).toHaveAttribute(
-      'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit'),
-    );
-    expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
-      'href',
-      expect.stringContaining('gov_from=workspace_settings'),
-    );
-  });
 
-  it('renders governance explainability summary with quick drill-down actions', async () => {
-    render(<WorkspaceSettingsPage />);
     await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__governance-explainability')).toBeInTheDocument();
+      expect(screen.getByTestId('ws-settings__projects')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit')).toHaveAttribute(
+
+    const projectCard = screen.getByTestId('ws-settings__project--proj_1');
+    expect(within(projectCard).getByText('workspace_open_project')).toBeInTheDocument();
+    expect(within(projectCard).getByText('Proj Admin, Dev One')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-open-overview--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit?'),
+      '/en/workspaces/ws_1/projects/proj_1/overview',
     );
-    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__project-open-members--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('gov_reason=blocked_projects'),
+      '/en/workspaces/ws_1/projects/proj_1/members',
     );
-    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit-secondary')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit'),
+      '/en/workspaces/ws_1/projects/proj_1/settings',
     );
   });
 
@@ -205,5 +155,16 @@ describe('WorkspaceSettingsPage', () => {
     await waitFor(() => {
       expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     });
+  });
+
+  it('shows create-project restriction notice when user lacks workspace:project:create', async () => {
+    mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
+    render(<WorkspaceSettingsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__workspace')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('workspace_cannot_create_projects')).toBeInTheDocument();
   });
 });

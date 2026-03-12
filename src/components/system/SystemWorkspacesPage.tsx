@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -9,24 +9,52 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
 import { SystemLogoutButton } from './SystemLogoutButton';
-import { useWorkspaces } from '@/lib/hooks/use-workspaces';
 import { buildWorkspaceTenantPreview } from '@/lib/system-admin/config';
+import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
 
 export function SystemWorkspacesPage() {
   const params = useParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
-  const { data: workspaces, isLoading, isError, refetch } = useWorkspaces({ public: true });
+  const [workspaces, setWorkspaces] = useState<PublicSystemWorkspaceRecord[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isError, setIsError] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [draftName, setDraftName] = useState('');
   const [draftAdmin, setDraftAdmin] = useState('');
   const [draftIdpUrl, setDraftIdpUrl] = useState('');
   const [draftIdpRealm, setDraftIdpRealm] = useState('');
   const [draftIdpClientId, setDraftIdpClientId] = useState('');
+  const [draftIdpClientSecret, setDraftIdpClientSecret] = useState('');
+
+  const loadWorkspaces = async () => {
+    setIsLoading(true);
+    setIsError(false);
+    try {
+      const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+      if (!response.ok) {
+        throw new Error('load_failed');
+      }
+      const data = (await response.json()) as { items?: PublicSystemWorkspaceRecord[] };
+      setWorkspaces(Array.isArray(data.items) ? data.items : []);
+    } catch {
+      setIsError(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadWorkspaces();
+  }, []);
 
   const filteredWorkspaces = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
-    const items = workspaces ?? [];
+    const items = workspaces;
     if (!query) return items;
     return items.filter((workspace) => {
       return workspace.name.toLowerCase().includes(query) || workspace.id.toLowerCase().includes(query);
@@ -34,6 +62,74 @@ export function SystemWorkspacesPage() {
   }, [searchQuery, workspaces]);
 
   const preview = useMemo(() => buildWorkspaceTenantPreview(draftName || 'workspace'), [draftName]);
+
+  const resetDraft = () => {
+    setSelectedWorkspaceId(null);
+    setDraftName('');
+    setDraftAdmin('');
+    setDraftIdpUrl('');
+    setDraftIdpRealm('');
+    setDraftIdpClientId('');
+    setDraftIdpClientSecret('');
+  };
+
+  const handleSelectWorkspace = (workspace: PublicSystemWorkspaceRecord) => {
+    setSelectedWorkspaceId(workspace.id);
+    setSaveError(null);
+    setSaveNotice(null);
+    setDraftName(workspace.name);
+    setDraftAdmin(workspace.workspace_admin);
+    setDraftIdpUrl(workspace.idp.url);
+    setDraftIdpRealm(workspace.idp.realm);
+    setDraftIdpClientId(workspace.idp.client_id);
+    setDraftIdpClientSecret('');
+  };
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      const payload = {
+        name: draftName,
+        workspace_admin: draftAdmin,
+        idp_url: draftIdpUrl,
+        idp_realm: draftIdpRealm,
+        idp_client_id: draftIdpClientId,
+        idp_client_secret: draftIdpClientSecret || undefined,
+      };
+      const endpoint = selectedWorkspaceId
+        ? `/api/system/workspaces/${selectedWorkspaceId}`
+        : '/api/system/workspaces';
+      const method = selectedWorkspaceId ? 'PATCH' : 'POST';
+      const response = await fetch(endpoint, {
+        method,
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = (await response.json().catch(() => null)) as { error_message?: string } | null;
+      if (!response.ok) {
+        setSaveError(data?.error_message || 'invalid_system_workspace_payload');
+        return;
+      }
+      await loadWorkspaces();
+      if (!selectedWorkspaceId) {
+        resetDraft();
+      } else {
+        setDraftIdpClientSecret('');
+      }
+      setSaveNotice(selectedWorkspaceId ? t('update_success') : t('create_success'));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const canSubmit =
+    draftName.trim() &&
+    draftAdmin.trim() &&
+    draftIdpUrl.trim() &&
+    draftIdpRealm.trim() &&
+    draftIdpClientId.trim();
 
   return (
     <PageState state="success">
@@ -63,7 +159,7 @@ export function SystemWorkspacesPage() {
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_list_label')}</p>
-                    <p className="mt-1 text-2xl font-semibold text-foreground">{(workspaces ?? []).length}</p>
+                    <p className="mt-1 text-2xl font-semibold text-foreground">{workspaces.length}</p>
                   </div>
                   <input
                     type="text"
@@ -81,7 +177,7 @@ export function SystemWorkspacesPage() {
                   <div className="space-y-3 rounded-sm border border-warning/30 bg-bg-base/20 p-4" data-testid="system-workspaces__error">
                     <p className="text-sm font-medium text-foreground">{t('load_error_title')}</p>
                     <p className="text-sm text-tertiary">{t('load_error_description')}</p>
-                    <Button type="button" variant="outline" onClick={() => void refetch()} data-testid="system-workspaces__retry">
+                    <Button type="button" variant="outline" onClick={() => void loadWorkspaces()} data-testid="system-workspaces__retry">
                       {t('retry')}
                     </Button>
                   </div>
@@ -110,6 +206,14 @@ export function SystemWorkspacesPage() {
                           </div>
                         </div>
                         <div className="mt-4 flex items-center gap-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => handleSelectWorkspace(workspace)}
+                            data-testid={`system-workspaces__configure--${workspace.id}`}
+                          >
+                            {t('configure_workspace')}
+                          </Button>
                           <Link href={`/${locale}/workspaces/${workspace.id}/projects`}>
                             <Button type="button" variant="outline" data-testid={`system-workspaces__open-projects--${workspace.id}`}>
                               {t('open_workspace')}
@@ -182,6 +286,14 @@ export function SystemWorkspacesPage() {
                     className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
                     data-testid="system-workspaces__draft-idp-client-id"
                   />
+                  <input
+                    type="password"
+                    value={draftIdpClientSecret}
+                    onChange={(event) => setDraftIdpClientSecret(event.target.value)}
+                    placeholder={t('idp_client_secret_placeholder')}
+                    className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
+                    data-testid="system-workspaces__draft-idp-client-secret"
+                  />
                 </div>
 
                 <div className="space-y-3 rounded-sm border border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__preview">
@@ -197,7 +309,29 @@ export function SystemWorkspacesPage() {
                 </div>
 
                 <div className="rounded-sm border border-dashed border-subtle bg-bg-base/20 p-4 text-sm text-tertiary" data-testid="system-workspaces__notice">
-                  {t('create_notice')}
+                  {saveError ? (
+                    <p className="text-error" data-testid="system-workspaces__save-error">{saveError}</p>
+                  ) : saveNotice ? (
+                    <p className="text-foreground" data-testid="system-workspaces__save-notice">{saveNotice}</p>
+                  ) : (
+                    t('create_notice')
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    onClick={() => void handleSubmit()}
+                    disabled={!canSubmit || isSubmitting}
+                    data-testid="system-workspaces__save"
+                  >
+                    {isSubmitting ? t('saving') : selectedWorkspaceId ? t('update_workspace') : t('create_workspace')}
+                  </Button>
+                  {selectedWorkspaceId ? (
+                    <Button type="button" variant="outline" onClick={resetDraft} data-testid="system-workspaces__reset">
+                      {t('new_workspace')}
+                    </Button>
+                  ) : null}
                 </div>
               </aside>
             </section>

@@ -1,4 +1,5 @@
 import type { WorkspaceRecord } from './resource-models.js';
+import { readRegisteredWorkspaces } from './workspace-registry.js';
 
 export const OWNER_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
@@ -29,10 +30,18 @@ export function buildWorkspaceRecords(): WorkspaceRecord[] {
   const now = new Date().toISOString();
   const workspaceId = process.env.MBOS_DEFAULT_WORKSPACE_ID ?? 'ws_default';
   const workspaceName = process.env.MBOS_DEFAULT_WORKSPACE_NAME ?? 'Default Workspace';
-  return [{
+  const defaults: WorkspaceRecord[] = [{
     id: workspaceId,
     name: workspaceName,
     created_at: now,
     updated_at: now,
   }];
+  const merged = new Map<string, WorkspaceRecord>();
+  for (const item of defaults) {
+    merged.set(item.id, item);
+  }
+  for (const item of readRegisteredWorkspaces()) {
+    merged.set(item.id, item);
+  }
+  return [...merged.values()];
 }

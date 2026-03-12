@@ -1,7 +1,5 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-const mockUseWorkspaces = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US' }),
@@ -16,10 +14,6 @@ vi.mock('next-intl', () => ({
   },
 }));
 
-vi.mock('@/lib/hooks/use-workspaces', () => ({
-  useWorkspaces: () => mockUseWorkspaces(),
-}));
-
 vi.mock('../SystemLogoutButton', () => ({
   SystemLogoutButton: () => <button type="button" data-testid="system__logout">logout</button>,
 }));
@@ -27,35 +21,68 @@ vi.mock('../SystemLogoutButton', () => ({
 import { SystemWorkspacesPage } from '../SystemWorkspacesPage';
 
 describe('SystemWorkspacesPage', () => {
-  const refetch = vi.fn();
+  const fetchMock = vi.fn();
 
   beforeEach(() => {
-    refetch.mockClear();
-    mockUseWorkspaces.mockReturnValue({
-      data: [
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [
         {
           id: 'ws_alpha',
           name: 'Alpha Workspace',
+          workspace_admin: 'alpha-admin@example.com',
+          idp: {
+            kind: 'keycloak',
+            url: 'https://alpha.example.com',
+            realm: 'alpha',
+            client_id: 'alpha-client',
+            has_client_secret: true,
+          },
+          tenant: {
+            workspace_id: 'ws_alpha',
+            workspace_name: 'Alpha Workspace',
+            substrate_label: 'primary',
+            database_name: 'agentsmith_ws_ws_alpha',
+            collection_prefix: 'ws_ws_alpha_',
+            key_prefix: 'ws:ws_alpha:',
+          },
           created_at: '2026-03-01T00:00:00.000Z',
           updated_at: '2026-03-10T00:00:00.000Z',
         },
         {
           id: 'ws_beta',
           name: 'Beta Workspace',
+          workspace_admin: 'beta-admin@example.com',
+          idp: {
+            kind: 'keycloak',
+            url: 'https://beta.example.com',
+            realm: 'beta',
+            client_id: 'beta-client',
+            has_client_secret: false,
+          },
+          tenant: {
+            workspace_id: 'ws_beta',
+            workspace_name: 'Beta Workspace',
+            substrate_label: 'primary',
+            database_name: 'agentsmith_ws_ws_beta',
+            collection_prefix: 'ws_ws_beta_',
+            key_prefix: 'ws:ws_beta:',
+          },
           created_at: '2026-03-01T00:00:00.000Z',
           updated_at: '2026-03-11T00:00:00.000Z',
         },
       ],
-      isLoading: false,
-      isError: false,
-      refetch,
+      }),
     });
+    vi.stubGlobal('fetch', fetchMock);
   });
 
-  it('renders system workspace cards and preview panel', () => {
+  it('renders system workspace cards and preview panel', async () => {
     render(<SystemWorkspacesPage />);
 
-    expect(screen.getByTestId('system-workspaces__heading')).toBeInTheDocument();
+    expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__open-projects--ws_alpha').closest('a')).toHaveAttribute(
       'href',
@@ -64,9 +91,10 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__preview')).toBeInTheDocument();
   });
 
-  it('filters workspaces and generates preview values', () => {
+  it('filters workspaces and generates preview values', async () => {
     render(<SystemWorkspacesPage />);
 
+    expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'beta' } });
     expect(screen.queryByTestId('system-workspaces__card--ws_alpha')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_beta')).toBeInTheDocument();
@@ -75,17 +103,107 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__preview')).toHaveTextContent('platform_ops');
   });
 
-  it('shows retry state when loading fails', () => {
-    mockUseWorkspaces.mockReturnValue({
-      data: undefined,
-      isLoading: false,
-      isError: true,
-      refetch,
+  it('shows retry state when loading fails', async () => {
+    fetchMock.mockReset();
+    fetchMock.mockResolvedValue({
+      ok: false,
     });
 
     render(<SystemWorkspacesPage />);
 
+    expect(await screen.findByTestId('system-workspaces__error')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__retry'));
-    expect(refetch).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('loads existing workspace into the editor and saves updates', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'ws_alpha' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              workspace_admin: 'ops-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://login.example.com',
+                realm: 'alpha-prod',
+                client_id: 'alpha-client-prod',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-admin'), {
+      target: { value: 'ops-admin@example.com' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
+      target: { value: 'https://login.example.com' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-realm'), {
+      target: { value: 'alpha-prod' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
+      target: { value: 'alpha-client-prod' },
+    });
+    fireEvent.click(screen.getByTestId('system-workspaces__save'));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha',
+        expect.objectContaining({ method: 'PATCH' }),
+      ),
+    );
   });
 });

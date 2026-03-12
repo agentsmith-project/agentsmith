@@ -8163,6 +8163,70 @@ describe('api-entry-node projects routes', () => {
     expect(audit.items.some((item) => item.action === 'endpoint.create' && item.resource_type === 'endpoint' && item.resource_id === endpoint.id && item.request_id === 'req_cfg_2')).toBe(true);
   });
 
+
+  it('records failed endpoint creation attempts in audit events', async () => {
+    const { baseUrl } = startServer();
+    const credentialRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'audit-fail-credential', type: 'api_key', value: 'sk-audit-fail' }),
+      },
+    );
+    expect(credentialRes.status).toBe(201);
+    const credential = (await credentialRes.json()) as { id: string };
+
+    const firstEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'audit-endpoint-conflict-a',
+          model: 'duplicate-model',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'https://api.example.invalid',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(firstEndpointRes.status).toBe(201);
+
+    const failedEndpointRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_cfg_conflict' },
+        body: JSON.stringify({
+          name: 'audit-endpoint-conflict-b',
+          model: 'duplicate-model',
+          type: 'openai',
+          mode: 'openai',
+          base_url: 'https://api.example.invalid',
+          credential_ref: credential.id,
+        }),
+      },
+    );
+    expect(failedEndpointRes.status).toBe(409);
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=20&result=error`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{ action: string; request_id: string; result: string; error_code?: string }>;
+    };
+    expect(audit.items.some((item) => item.action === 'endpoint.create' && item.request_id === 'req_cfg_conflict' && item.result === 'error' && item.error_code === 'ENDPOINT_MODEL_CONFLICT')).toBe(true);
+  });
+
   it('serves audit endpoint with persisted events and supports filtering', async () => {
     const deps = createDefaultNodeApiDeps();
     await recordAuditEvent(deps.docStore, {

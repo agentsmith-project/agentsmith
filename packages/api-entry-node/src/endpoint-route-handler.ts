@@ -341,6 +341,18 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       raw.value,
     );
     if (!updated) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'credential.rotate',
+        result: 'error',
+        errorCode: 'RESOURCE_NOT_FOUND',
+        errorMessage: 'credential_not_found',
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+        resourceType: 'credential',
+        resourceId: route.credentialId,
+      });
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'credential_not_found' });
       return true;
     }
@@ -421,10 +433,34 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       json(res, 201, created);
     } catch (error) {
       if (error instanceof Error && error.message === 'endpoint_model_conflict') {
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'endpoint.create',
+          result: 'error',
+          errorCode: 'ENDPOINT_MODEL_CONFLICT',
+          errorMessage: 'endpoint_model_conflict',
+          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+          resourceType: 'endpoint',
+          metadata: { name: raw.name, model: raw.model },
+        });
         json(res, 409, { error_code: 'ENDPOINT_MODEL_CONFLICT', message: 'endpoint_model_conflict' });
         return true;
       }
       if (error instanceof Error && error.message === 'endpoint_model_required') {
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'endpoint.create',
+          result: 'error',
+          errorCode: 'VALIDATION_ERROR',
+          errorMessage: 'endpoint_model_required',
+          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+          resourceType: 'endpoint',
+          metadata: { name: raw.name },
+        });
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_required' });
         return true;
       }
@@ -460,6 +496,18 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       raw,
     );
     if (!updated) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'endpoint.update',
+        result: 'error',
+        errorCode: 'RESOURCE_NOT_FOUND',
+        errorMessage: 'endpoint_not_found',
+        requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
+        resourceType: 'endpoint',
+        resourceId: route.endpointId,
+      });
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
     }

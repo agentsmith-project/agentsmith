@@ -7,8 +7,10 @@ test.describe('@lane-real minimal integration flow', () => {
     const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
     const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 
-    await page.goto(`/${locale}/login`);
-    await page.getByTestId('login__keycloak-btn').click();
+    await page.goto(`/${locale}/login/workspace`);
+    await page.getByTestId('workspace-select__card--ws_default').click();
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+    await page.getByTestId('workspace-login__keycloak-btn').click();
 
     const keycloakError = page.getByTestId('login__keycloak-error');
     if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
@@ -24,14 +26,9 @@ test.describe('@lane-real minimal integration flow', () => {
     await usernameInput.fill(username);
     await page.locator('input#password, input[name="password"]').first().fill(password);
     await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
+      page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
       page.locator('#kc-login, button[type="submit"]').first().click(),
     ]);
-
-    const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-    await workspaceCard.waitFor({ state: 'visible', timeout: 30_000 });
-    await workspaceCard.click();
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`));
 
     const projectName = `it-proj-${Date.now()}`;
     const createButton = page.getByTestId('projects__create-btn');

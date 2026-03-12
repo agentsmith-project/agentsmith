@@ -73,7 +73,7 @@ export function ProtectedRoute({
   const loginPath = useMemo(() => {
     const segments = pathname.split('/');
     const locale = segments[1] || 'en-US'; // Default to en-US if no locale in path
-    return `/${locale}/login`;
+    return `/${locale}/login/workspace`;
   }, [pathname]);
 
   useEffect(() => {

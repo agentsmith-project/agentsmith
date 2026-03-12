@@ -74,7 +74,7 @@ describe('WorkspaceSelectPage', () => {
     expect(screen.getByTestId('workspace-select__session-expired')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__relogin-btn'));
     expect(mockClearAuth).toHaveBeenCalledTimes(1);
-    expect(mockReplace).toHaveBeenCalledWith('/en-US/login');
+    expect(mockReplace).toHaveBeenCalledWith('/en-US/login/workspace');
   });
 
   it('shows retry state on non-401 errors', () => {

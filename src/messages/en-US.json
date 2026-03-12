@@ -206,6 +206,12 @@
   "auth": {
     "login": "Login",
     "logout": "Logout",
+    "entry_title": "Choose how to enter AgentSmith",
+    "entry_subtitle": "Workspace users continue through workspace sign-in. System administrators use the separate system console.",
+    "entry_workspace_title": "Open workspace sign-in",
+    "entry_workspace_description": "Choose a workspace, then sign in through that workspace's identity provider.",
+    "entry_system_title": "Open system administration",
+    "entry_system_description": "Use the system administrator account to manage workspaces, identity providers, and tenant configuration.",
     "login_with_keycloak": "Login with Keycloak",
     "dev_mode": "Development Mode",
     "select_workspace": "Select Workspace",

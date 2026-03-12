@@ -5,19 +5,24 @@ import path from 'node:path';
 
 async function keycloakLogin(page: Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
-  await page.goto(`/${locale}/login`);
+  await page.goto(`/${locale}/login/workspace`);
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
 
   for (let cycle = 0; cycle < 2; cycle += 1) {
-    if (!new RegExp(`/${locale}/login`).test(page.url())) {
-      await page.goto(`/${locale}/login`);
+    if (!new RegExp(`/${locale}/login/workspace|/${locale}/workspaces/ws_default/login`).test(page.url())) {
+      await page.goto(`/${locale}/login/workspace`);
     }
 
-    await page.getByTestId('login__keycloak-btn').click();
-    const keycloakError = page.getByTestId('login__keycloak-error');
+    if (new RegExp(`/${locale}/login/workspace`).test(page.url())) {
+      await page.getByTestId('workspace-select__card--ws_default').click();
+      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+    }
+
+    await page.getByTestId('workspace-login__keycloak-btn').click();
+    const keycloakError = page.getByTestId('workspace-login__keycloak-error');
     if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
       throw new Error(`Keycloak login bootstrap failed: ${await keycloakError.textContent()}`);
     }
@@ -29,28 +34,9 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
     await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
     await page.locator('input#password, input[name="password"]').first().fill(password);
     await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
+      page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
       page.locator('#kc-login, button[type="submit"]').first().click(),
     ]);
-
-    const reloginBtn = page.getByTestId('workspace-select__relogin-btn');
-    if (await reloginBtn.isVisible({ timeout: 1_500 }).catch(() => false)) {
-      await reloginBtn.click();
-      continue;
-    }
-
-    const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (await workspaceCard.isVisible({ timeout: 5_000 }).catch(() => false)) {
-        break;
-      }
-      const retryButton = page.getByTestId('workspace-select__retry-btn');
-      if (await retryButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
-        await retryButton.click();
-      }
-    }
-    await expect(workspaceCard).toBeVisible({ timeout: 15_000 });
-    await workspaceCard.click();
     await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
     return;
   }

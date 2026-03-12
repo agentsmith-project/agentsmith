@@ -30,12 +30,12 @@ export default function WorkspaceSelectPage() {
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
 
   const handleWorkspaceSelect = (workspaceId: string) => {
-    router.push(`/${locale}/workspaces/${workspaceId}/login`);
+    router.push(`/workspaces/${workspaceId}/login`);
   };
 
   const handleReLogin = useCallback(() => {
     clearAuth();
-    router.replace(`/${locale}/login`);
+    router.replace('/login/workspace');
   }, [clearAuth, locale, router]);
 
   return (
@@ -125,7 +125,8 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
   const t = useTranslations('auth');
 
   return (
-    <div
+    <button
+      type="button"
       data-testid={`workspace-select__card--${workspace.id}`}
       onClick={onSelect}
       className="group relative cursor-pointer rounded-md border border-border bg-surface p-6 transition-colors duration-200 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
@@ -146,6 +147,6 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
           {t('projects_count', { count: 0 })}
         </span>
       </div>
-    </div>
+    </button>
   );
 }

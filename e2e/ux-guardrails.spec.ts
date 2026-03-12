@@ -22,19 +22,17 @@ const PROJECT_SECTIONS = [
 ] as const;
 
 test.describe('UX Guardrails', () => {
-  test('login CTA is visible and properly styled', async ({ page }) => {
+  test('login entry actions are visible and properly styled', async ({ page }) => {
     await gotoAndWait(page, `/${LOCALE}/login`);
 
     await expect(page.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
-    const loginBtn = page.getByTestId('login__submit');
-    await expect(loginBtn).toBeVisible();
+    const workspaceEntry = page.getByTestId('login-entry__workspace');
+    const systemEntry = page.getByTestId('login-entry__system');
+    await expect(workspaceEntry).toBeVisible();
+    await expect(systemEntry).toBeVisible();
 
-    // Verify the button has visible text and appropriate styling
-    const text = await loginBtn.textContent();
-    expect(text?.trim().length).toBeGreaterThan(0);
-
-    // Quick Login is disabled when no email is entered – just verify it's visible
-    // (login.spec.ts covers the enable/disable behavior in detail)
+    expect((await workspaceEntry.textContent())?.trim().length).toBeGreaterThan(0);
+    expect((await systemEntry.textContent())?.trim().length).toBeGreaterThan(0);
   });
 
   test('app shell structure renders topbar and sidebar', async ({ authedPage }) => {

@@ -60,8 +60,10 @@ function startOpenAICompatibleTaskUpstream(): Promise<{
 }
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
-  await page.goto(`/${locale}/login`);
-  await page.getByTestId('login__keycloak-btn').click();
+  await page.goto(`/${locale}/login/workspace`);
+  await page.getByTestId('workspace-select__card--ws_default').click();
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+  await page.getByTestId('workspace-login__keycloak-btn').click();
 
   const keycloakError = page.getByTestId('login__keycloak-error');
   if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
@@ -74,11 +76,9 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
   await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
   await page.locator('input#password, input[name="password"]').first().fill(password);
   await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
+    page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
     page.locator('#kc-login, button[type="submit"]').first().click(),
   ]);
-  await page.getByTestId('workspace-select__card--ws_default').click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
 }
 
 async function getToken(page: import('@playwright/test').Page): Promise<string> {

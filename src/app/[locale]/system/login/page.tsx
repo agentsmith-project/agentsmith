@@ -33,7 +33,7 @@ export default function SystemLoginPage() {
         setError(data?.error_message || 'invalid_system_admin_credentials');
         return;
       }
-      router.replace(`/${locale}/system/workspaces`);
+      router.replace('/system/workspaces');
     } finally {
       setIsSubmitting(false);
     }

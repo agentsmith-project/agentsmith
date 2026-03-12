@@ -5,14 +5,17 @@ import { test, expect, type Page } from '@playwright/test';
 
 async function keycloakLogin(page: Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
-  await page.goto(`/${locale}/login`);
+  await page.goto(`/${locale}/login/workspace`);
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
 
-  await page.getByTestId('login__keycloak-btn').click();
-  const keycloakError = page.getByTestId('login__keycloak-error');
+  await page.getByTestId('workspace-select__card--ws_default').click();
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+
+  await page.getByTestId('workspace-login__keycloak-btn').click();
+  const keycloakError = page.getByTestId('workspace-login__keycloak-error');
   if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {
     throw new Error(`Keycloak login bootstrap failed: ${await keycloakError.textContent()}`);
   }
@@ -24,14 +27,9 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
   await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
   await page.locator('input#password, input[name="password"]').first().fill(password);
   await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/login/workspace`), { timeout: 60_000 }),
+    page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
     page.locator('#kc-login, button[type="submit"]').first().click(),
   ]);
-
-  const workspaceCard = page.getByTestId('workspace-select__card--ws_default');
-  await expect(workspaceCard).toBeVisible({ timeout: 15_000 });
-  await workspaceCard.click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
 }
 
 async function ensureProject(page: Page, locale: string): Promise<string> {

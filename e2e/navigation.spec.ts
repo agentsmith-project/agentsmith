@@ -195,7 +195,7 @@ test.describe('User Menu', () => {
     await expect(authedPage.getByRole('menuitem', { name: /中文/i })).toBeVisible();
   });
 
-  test('logout navigates to login page', async ({ authedPage }) => {
+  test('logout navigates to workspace login entry', async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
 
     const userMenu = authedPage.getByTestId('topbar__user-menu');
@@ -203,7 +203,7 @@ test.describe('User Menu', () => {
     await userMenu.click();
     await authedPage.getByTestId('user-menu__logout').click();
 
-    await authedPage.waitForURL('**/login', { timeout: 10000 });
-    expect(authedPage.url()).toContain('/login');
+    await authedPage.waitForURL('**/login/workspace', { timeout: 10000 });
+    expect(authedPage.url()).toContain('/login/workspace');
   });
 });

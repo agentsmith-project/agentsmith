@@ -16,7 +16,7 @@ export function SystemLogoutButton() {
     setIsSubmitting(true);
     try {
       await fetch('/api/system/session', { method: 'DELETE' });
-      router.replace(`/${locale}/system/login`);
+      router.replace('/system/login');
     } finally {
       setIsSubmitting(false);
     }

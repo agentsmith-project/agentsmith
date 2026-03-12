@@ -165,7 +165,7 @@ export default function WorkspaceLoginCallbackPage() {
       getApiClient().setToken(token.access_token);
       sessionStorage.removeItem('mbos:keycloak:pkce');
       if (!cancelled) {
-        router.replace(`/${locale}/workspaces/${workspaceId}/projects`);
+        router.replace(`/workspaces/${workspaceId}/projects`);
       }
     };
 
@@ -192,7 +192,7 @@ export default function WorkspaceLoginCallbackPage() {
                 <button
                   type="button"
                   className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200"
-                  onClick={() => router.replace(`/${locale}/workspaces/${workspaceId}/login`)}
+                  onClick={() => router.replace(`/workspaces/${workspaceId}/login`)}
                 >
                   {t('keycloak_back_to_login')}
                 </button>

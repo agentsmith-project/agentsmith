@@ -85,8 +85,8 @@ test.describe('Language Switching', () => {
     // Wait for page to load
     await expect(page.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
 
-    // Chinese login text should be visible
-    await expect(page.getByText('欢迎使用 MBOS')).toBeVisible({ timeout: 10000 });
+    // Chinese entry text should be visible
+    await expect(page.getByText('选择进入 AgentSmith 的方式')).toBeVisible({ timeout: 10000 });
   });
 });
 

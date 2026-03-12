@@ -94,7 +94,7 @@ export function Topbar({ className = '' }: TopbarProps) {
 
   const handleLogout = () => {
     clearAuth();
-    router.push(`/login`);
+    router.push('/login/workspace');
   };
 
   const handleLayoutToggle = React.useCallback(() => {

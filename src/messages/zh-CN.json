@@ -208,6 +208,12 @@
   "auth": {
     "login": "登录",
     "logout": "退出登录",
+    "entry_title": "选择进入 AgentSmith 的方式",
+    "entry_subtitle": "工作区业务用户先进入工作区登录，系统超级管理员使用独立系统控制台。",
+    "entry_workspace_title": "进入工作区登录",
+    "entry_workspace_description": "先选择工作空间，再通过该工作空间绑定的身份提供方登录。",
+    "entry_system_title": "进入系统管理",
+    "entry_system_description": "使用系统超级管理员账号管理工作空间、身份提供方和租户配置。",
     "login_with_keycloak": "使用 Keycloak 登录",
     "dev_mode": "开发模式",
     "select_workspace": "选择工作空间",

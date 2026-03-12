@@ -59,6 +59,24 @@ const workspaceMembers = (() => {
 
 export const workspaceHandlers = [
   http.get('/api/v1/workspaces', () => HttpResponse.json({ items: workspaceItems })),
+  http.get('/api/public/workspaces/:id', ({ params }) => {
+    const workspaceId = String(params.id ?? '');
+    const workspace = workspaceItems.find((item) => item.id === workspaceId);
+    if (!workspace) {
+      return HttpResponse.json({ error_code: 'WORKSPACE_NOT_FOUND', error_message: 'workspace_not_found' }, { status: 404 });
+    }
+
+    return HttpResponse.json({
+      id: workspace.id,
+      name: workspace.name,
+      idp: {
+        kind: 'keycloak',
+        url: process.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() || 'http://localhost:8080',
+        realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() || 'mbos',
+        client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID?.trim() || 'agentsmith-web',
+      },
+    });
+  }),
   http.get('/api/v1/workspaces/:ws', ({ params }) => {
     const workspaceId = String(params.ws ?? '');
     const workspace = workspaceItems.find((item) => item.id === workspaceId);

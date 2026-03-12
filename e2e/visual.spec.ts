@@ -207,6 +207,29 @@ test.describe('Visual - User Pages', () => {
 // ─── Dialog / Drawer Screenshots ────────────────────────────────────────────
 
 test.describe('Visual - Overlays', () => {
+  test('audit - empty state', async ({ authedPage }) => {
+    await stableNavigate(authedPage, `${projectPath('audit')}?resource_id=__visual_empty__`);
+    await expect(authedPage.getByTestId('audit-usage__empty-state')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('audit-empty-state.png', { fullPage: true });
+  });
+
+  test('alerts - notifications tab', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('alerts'));
+    await authedPage.getByRole('tab', { name: /notifications/i }).click();
+    await expect(authedPage.getByRole('tabpanel', { name: /notifications/i })).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('alerts-notifications-tab.png', { fullPage: true });
+  });
+
+  test('members - join requests tab', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('members'));
+    await authedPage.getByRole('tab', { name: /requests/i }).first().click();
+    await expect(authedPage.getByRole('tabpanel', { name: /requests/i })).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('members-join-requests-tab.png', { fullPage: true });
+  });
+
   test('audit detail drawer', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('audit'));
     const table = authedPage.getByTestId('audit__table');

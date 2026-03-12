@@ -185,7 +185,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('should reject removed endpoint invoke alias', () => {
+    it('should reject removed endpoint invoke permission name', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -253,7 +253,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('useCanAccessChat should reject removed project:endpoint:invoke alias', () => {
+    it('useCanAccessChat should reject removed project:endpoint:invoke permission name', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',

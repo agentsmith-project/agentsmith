@@ -43,7 +43,7 @@ describe('resolveApiErrorPresentation', () => {
     expect(presentation.description).toBe('The external agent returned an invalid protocol payload.');
   });
 
-  it('supports 429 alias key rateLimitError.*', () => {
+  it('supports 429 translation key rateLimitError.*', () => {
     const presentation = resolveApiErrorPresentation({
       error: new APIError('RATE_LIMIT_EXCEEDED', 'Too many requests', 'req-2', 429),
       t,

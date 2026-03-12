@@ -31,7 +31,7 @@ export {
   getErrorSuggestions,
 } from './errors';
 
-// Re-export ApiError alias from client.
+// Re-export ApiError from the client module.
 export { ApiError } from './client';
 
 // Types

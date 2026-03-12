@@ -2094,8 +2094,8 @@
       "request_activity": "请求活动",
       "cost": "成本健康",
       "cost_body": "平均成本 {avg_cost}，{anomalies} 个异常峰值",
-      "activation": "配置检查",
-      "activation_body": "{blockers} 个阻塞项，{warnings} 个警告项",
+      "configuration_checks": "配置检查",
+      "configuration_checks_body": "{blockers} 个阻塞项，{warnings} 个警告项",
       "incidents": "待处理 Incident",
       "incidents_body": "{overdue} 个已逾期，{due_soon} 个即将到期"
     },
@@ -2104,7 +2104,7 @@
       "warning": "警告",
       "blocked": "阻塞"
     },
-    "activation_labels": {
+    "configuration_review_labels": {
       "ready": "就绪",
       "warning": "警告",
       "blocked": "阻塞",
@@ -2115,8 +2115,8 @@
     "attention": {
       "title": "今日待处理",
       "empty": "当前没有紧急待处理事项。",
-      "activation_blocked_title": "当前配置审查被阻断",
-      "activation_blocked_body": "请先检查当前检查项、阻塞项和已批准例外。",
+      "configuration_review_blocked_title": "当前配置审查被阻断",
+      "configuration_review_blocked_body": "请先检查当前检查项、阻塞项和已批准例外。",
       "overdue_escalations_title": "{count} 个升级事件已逾期",
       "overdue_escalations_body": "当前 open incident 已超过 SLA，需要明确负责人或处理结论。",
       "missing_price_title": "{count} 条运行事实缺少价格",
@@ -2132,8 +2132,8 @@
     },
     "primary_actions": {
       "title": "现在要做什么",
-      "resolve_activation_blockers_title": "先处理配置阻塞",
-      "resolve_activation_blockers_body": "当前配置审查已被阻断，继续变更前应先清掉阻塞项。",
+      "resolve_configuration_blockers_title": "先处理配置阻塞",
+      "resolve_configuration_blockers_body": "当前配置审查已被阻断，继续变更前应先清掉阻塞项。",
       "review_cost_anomalies_title": "检查成本异常",
       "review_cost_anomalies_body": "近期成本波动或缺价覆盖需要尽快确认，避免演变成治理问题。",
       "review_cost_health_title": "确认成本健康度",
@@ -2151,7 +2151,7 @@
     },
     "snapshots": {
       "cost_title": "成本摘要",
-      "activation_title": "配置检查",
+      "configuration_checks_title": "配置检查",
       "incidents_title": "责任人与 incident",
       "requests": "请求数",
       "error_rate": "错误率",
@@ -2162,7 +2162,7 @@
       "top_cost_surfaces": "高成本目标",
       "policy": "策略状态",
       "latest_run": "最近一次运行",
-      "activation_details": "{blockers} 个阻塞项，{warnings} 个警告项，{overrides} 个已批准例外",
+      "configuration_checks_details": "{blockers} 个阻塞项，{warnings} 个警告项，{overrides} 个已批准例外",
       "usage_readiness": "用量证据：{status}",
       "open_incidents": "Open incidents",
       "critical_incidents": "Critical incidents",

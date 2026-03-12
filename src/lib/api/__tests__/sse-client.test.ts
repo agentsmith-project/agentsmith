@@ -219,7 +219,7 @@ describe('SSE Ticket Migration - Feature Flag', () => {
   });
 });
 
-describe('SSE Ticket Migration - Grayscale Rollout', () => {
+describe('SSE Ticket Migration - Percentage Gate', () => {
   beforeEach(() => {
     vi.stubGlobal('EventSource', MockEventSource);
     vi.resetModules();
@@ -230,7 +230,7 @@ describe('SSE Ticket Migration - Grayscale Rollout', () => {
     vi.restoreAllMocks();
   });
 
-  it('respects SSE_TICKET_PERCENTAGE for grayscale rollout (10%)', async () => {
+  it('respects SSE_TICKET_PERCENTAGE for ticket percentage gate (10%)', async () => {
     process.env.NEXT_PUBLIC_SSE_TICKET_ENABLED = 'true';
     process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE = '10';
 
@@ -248,7 +248,7 @@ describe('SSE Ticket Migration - Grayscale Rollout', () => {
     delete process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE;
   });
 
-  it('respects SSE_TICKET_PERCENTAGE for grayscale rollout (100%)', async () => {
+  it('respects SSE_TICKET_PERCENTAGE for ticket percentage gate (100%)', async () => {
     process.env.NEXT_PUBLIC_SSE_TICKET_ENABLED = 'true';
     process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE = '100';
 
@@ -263,7 +263,7 @@ describe('SSE Ticket Migration - Grayscale Rollout', () => {
     delete process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE;
   });
 
-  it('respects SSE_TICKET_PERCENTAGE for grayscale rollout (0%)', async () => {
+  it('respects SSE_TICKET_PERCENTAGE for ticket percentage gate (0%)', async () => {
     process.env.NEXT_PUBLIC_SSE_TICKET_ENABLED = 'true';
     process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE = '0';
 
@@ -405,7 +405,7 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
     expect(mockFetch).toHaveBeenCalled();
   });
 
-  it('smoke: deterministic user assignment for grayscale rollout', async () => {
+  it('smoke: deterministic user assignment for ticket percentage gate', async () => {
     process.env.NEXT_PUBLIC_SSE_TICKET_ENABLED = 'true';
     process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE = '50';
 

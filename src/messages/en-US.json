@@ -2092,8 +2092,8 @@
       "request_activity": "Request activity",
       "cost": "Cost health",
       "cost_body": "{avg_cost} avg cost, {anomalies} anomaly peaks",
-      "activation": "Configuration checks",
-      "activation_body": "{blockers} blockers, {warnings} warnings",
+      "configuration_checks": "Configuration checks",
+      "configuration_checks_body": "{blockers} blockers, {warnings} warnings",
       "incidents": "Open incidents",
       "incidents_body": "{overdue} overdue, {due_soon} due soon"
     },
@@ -2102,7 +2102,7 @@
       "warning": "Warning",
       "blocked": "Blocked"
     },
-    "activation_labels": {
+    "configuration_review_labels": {
       "ready": "Ready",
       "warning": "Warning",
       "blocked": "Blocked",
@@ -2113,8 +2113,8 @@
     "attention": {
       "title": "Today needs attention",
       "empty": "No urgent issues are active right now.",
-      "activation_blocked_title": "Configuration review is currently blocked",
-      "activation_blocked_body": "Review current checks, blockers, and approved exceptions before proceeding.",
+      "configuration_review_blocked_title": "Configuration review is currently blocked",
+      "configuration_review_blocked_body": "Review current checks, blockers, and approved exceptions before proceeding.",
       "overdue_escalations_title": "{count} escalations are overdue",
       "overdue_escalations_body": "Open incidents have crossed SLA and need explicit ownership or resolution.",
       "missing_price_title": "{count} request facts are missing pricing",
@@ -2129,8 +2129,8 @@
     },
     "primary_actions": {
       "title": "What to do now",
-      "resolve_activation_blockers_title": "Resolve configuration blockers",
-      "resolve_activation_blockers_body": "Current configuration review is blocked and should be cleared before more work stacks up.",
+      "resolve_configuration_blockers_title": "Resolve configuration blockers",
+      "resolve_configuration_blockers_body": "Current configuration review is blocked and should be cleared before more work stacks up.",
       "review_cost_anomalies_title": "Review cost anomalies",
       "review_cost_anomalies_body": "Recent cost movement or missing price coverage should be checked before it becomes a governance issue.",
       "review_cost_health_title": "Review cost health",
@@ -2148,7 +2148,7 @@
     },
     "snapshots": {
       "cost_title": "Cost snapshot",
-      "activation_title": "Configuration checks",
+      "configuration_checks_title": "Configuration checks",
       "incidents_title": "Ownership and incidents",
       "requests": "Requests",
       "error_rate": "Error rate",
@@ -2159,7 +2159,7 @@
       "top_cost_surfaces": "Top cost surfaces",
       "policy": "Policy",
       "latest_run": "Latest run",
-      "activation_details": "{blockers} blockers, {warnings} warnings, {overrides} approved overrides",
+      "configuration_checks_details": "{blockers} blockers, {warnings} warnings, {overrides} approved overrides",
       "usage_readiness": "Usage evidence: {status}",
       "open_incidents": "Open incidents",
       "critical_incidents": "Critical incidents",

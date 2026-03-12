@@ -29,7 +29,7 @@ const SSE_ALLOW_JWT_FALLBACK =
 export interface SSETicketConfig {
   /** Whether ticket mode is enabled via environment switch */
   enabled: boolean;
-  /** Grayscale rollout percentage (0-100) */
+  /** Ticket percentage gate (0-100) */
   percentage: number;
 }
 
@@ -44,11 +44,11 @@ export function getSSETicketConfig(): SSETicketConfig {
 }
 
 /**
- * Determine if a given user should use ticket-based authentication based on grayscale rollout
+ * Determine if a given user should use ticket-based authentication based on the ticket percentage gate
  *
  * Uses a deterministic hash-based approach to ensure consistent behavior for each user.
  *
- * @param userId - User identifier for consistent rollout decision
+ * @param userId - User identifier for consistent ticket assignment
  * @returns true if user should use ticket, false otherwise
  */
 export function shouldUseTicket(userId: string): boolean {
@@ -69,7 +69,7 @@ export function shouldUseTicket(userId: string): boolean {
     return false;
   }
 
-  // Simple hash-based rollout: hash userId to number 0-99, compare with percentage
+  // Hash userId to number 0-99, then compare with the configured percentage gate.
   let hash = 0;
   for (let i = 0; i < userId.length; i++) {
     const char = userId.charCodeAt(i);

@@ -10,7 +10,7 @@ This contract replaces development-time-only sync as the primary operating mode.
 
 - Model/provider catalog ingestion from `https://models.dev/api.json`
 - Cold-start initialization from in-repo seed snapshot when catalog storage is empty
-- Catalog versioning, activation, rollback, and auditability
+- Catalog versioning, version switching, revert operations, and auditability
 - Endpoint CRUD dependency on catalog data for provider/model selection
 
 ## Non-Scope
@@ -51,8 +51,8 @@ Core invariants:
 
 - One and only one active version at a time.
 - `provider_id + model_id` unique within a version.
-- Version activation is atomic (no partially visible state).
-- All sync/activation/rollback actions are auditable.
+- Version switching is atomic (no partially visible state).
+- All sync/version-switch/revert actions are auditable.
 
 ## Cold-Start Initialization Contract
 
@@ -138,7 +138,7 @@ Minimum required checks:
 
 - Type/contract: schema validation + API contract checks
 - Unit: normalizer, capability inference, pricing mapping, empty/partial field handling
-- Integration: cold-start bootstrap, remote sync success/failure, activate/rollback atomicity
+- Integration: cold-start bootstrap, remote sync success/failure, version-switch/revert atomicity
 - E2E/smoke: admin sync -> activate -> endpoint create flow with new catalog data
 - Regression: catalog unavailable and degraded modes
 

@@ -22,6 +22,7 @@ import {
   getAuditActorLabel,
   getAuditEventCategory,
   getAuditErrorLabel,
+  getAuditErrorMessageLabel,
   getAuditResourceIdLabel,
   getAuditResourceTypeLabel,
   getAuditSummary,
@@ -156,7 +157,7 @@ export function AuditDetailDrawer({
             </div>
             <p className="text-sm font-medium text-foreground">{summary}</p>
             {event.error_message ? (
-              <p className="text-sm text-tertiary">{event.error_message}</p>
+              <p className="text-sm text-tertiary">{getAuditErrorMessageLabel(event.error_message)}</p>
             ) : null}
           </div>
 
@@ -251,7 +252,7 @@ export function AuditDetailDrawer({
               {event.error_message ? (
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.error_message')}:</span>
-                  <p className="text-sm text-foreground mt-1">{event.error_message}</p>
+                  <p className="text-sm text-foreground mt-1">{getAuditErrorMessageLabel(event.error_message)}</p>
                 </div>
               ) : null}
             </div>

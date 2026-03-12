@@ -62,7 +62,7 @@ describe('AuditDetailDrawer', () => {
     const governance = screen.getByTestId('audit__detail-governance');
     const summary = screen.getByTestId('audit__detail-summary');
     expect(summary).toHaveTextContent('User Hit Spending Limit on lib_1 and failed');
-    expect(summary).toHaveTextContent('resource_policy_spending_limit_exceeded');
+    expect(summary).toHaveTextContent('Spending limit exceeded');
     expect(governance).toHaveTextContent('detail.governance_title');
     expect(governance).toHaveTextContent('source_library.max_file_size_bytes');
     expect(governance).toHaveTextContent('1048576');
@@ -122,7 +122,7 @@ describe('AuditDetailDrawer', () => {
     const governance = screen.getByTestId('audit__detail-governance');
     const summary = screen.getByTestId('audit__detail-summary');
     expect(summary).toHaveTextContent('User Updated Member Access on proj_1 and failed');
-    expect(summary).toHaveTextContent('forbidden');
+    expect(summary).toHaveTextContent('Permission denied');
     expect(screen.getByText('Permission Denied')).toBeInTheDocument();
     expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
@@ -195,6 +195,7 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getAllByText('Resource Policy').length).toBeGreaterThan(0);
     expect(screen.getByText('ep_1')).toBeInTheDocument();
     expect(screen.getByText('Validation Error')).toBeInTheDocument();
+    expect(screen.getAllByText('Invalid rate limit rule').length).toBeGreaterThan(0);
   });
 
   it('humanizes policy enforcement errors in detail view', () => {
@@ -225,5 +226,6 @@ describe('AuditDetailDrawer', () => {
       'User Denied Access on ep_access and failed',
     );
     expect(screen.getByText('Access Denied')).toBeInTheDocument();
+    expect(screen.getAllByText('Access denied by resource policy').length).toBeGreaterThan(0);
   });
 });

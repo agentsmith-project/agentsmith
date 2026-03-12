@@ -85,6 +85,24 @@ const ERROR_CODE_LABELS: Record<string, string> = {
   resource_policy_spending_limit_exceeded: 'Spending Limit Exceeded',
 };
 
+const ERROR_MESSAGE_LABELS: Record<string, string> = {
+  forbidden: 'Permission denied',
+  blocked: 'Blocked',
+  endpoint_model_conflict: 'Endpoint model already exists',
+  endpoint_not_found: 'Endpoint not found',
+  credential_not_found: 'Credential not found',
+  unsupported_resource_type: 'Unsupported resource type',
+  'access_mode and allowed_subjects are required': 'Access mode and allowed subjects are required',
+  rate_limits_rule_key_invalid: 'Invalid rate limit rule',
+  rate_limits_rule_value_invalid: 'Invalid rate limit value',
+  spending_limits_rule_key_invalid: 'Invalid spending limit rule',
+  spending_limits_rule_value_invalid: 'Invalid spending limit value',
+  resource_policy_denied: 'Access denied by resource policy',
+  resource_policy_rate_limited: 'Rate limited by resource policy',
+  resource_policy_spending_limited: 'Spending limited by resource policy',
+  resource_policy_spending_limit_exceeded: 'Spending limit exceeded',
+};
+
 const ACTOR_LABEL_KEYS: Record<string, string> = {
   user: 'summary.user_actor',
   agent: 'summary.agent_actor',
@@ -138,6 +156,14 @@ export function getAuditErrorLabel(errorCode?: string): string | undefined {
   }
   const normalized = errorCode.trim();
   return ERROR_CODE_LABELS[normalized] ?? humanizeAuditToken(errorCode);
+}
+
+export function getAuditErrorMessageLabel(errorMessage?: string): string | undefined {
+  if (!errorMessage) {
+    return undefined;
+  }
+  const normalized = errorMessage.trim();
+  return ERROR_MESSAGE_LABELS[normalized] ?? humanizeAuditToken(errorMessage);
 }
 
 export function getAuditResourceTypeLabel(resourceType?: string): string | undefined {

@@ -30,6 +30,7 @@ import type { AuditEvent } from '@/lib/api/types';
 import {
   getAuditActionLabel,
   getAuditActorLabel,
+  getAuditErrorMessageLabel,
   getAuditEventCategory,
   getAuditResourceIdLabel,
   getAuditResourceTypeLabel,
@@ -144,7 +145,7 @@ export function AuditTable({
             <div className="min-w-[280px]">
               <p className="text-sm text-foreground">{getAuditSummary(event, t)}</p>
               {event.error_message ? (
-                <p className="mt-1 line-clamp-1 text-xs text-tertiary">{event.error_message}</p>
+                <p className="mt-1 line-clamp-1 text-xs text-tertiary">{getAuditErrorMessageLabel(event.error_message)}</p>
               ) : null}
             </div>
           );

@@ -204,12 +204,6 @@ export type EndpointLimitSummary = {
 
 export type LimitsOverview = {
   endpoints?: EndpointLimitSummary[];
-  project_summary?: {
-    project_used: number;
-    project_max: number;
-    project_remaining: number;
-    project_usage_pct: number;
-  };
 };
 
 export type UsageRecordsSummaryResponse = {
@@ -1199,22 +1193,8 @@ export async function getLimitsSummary(
   }
 
   endpoints.sort((a, b) => a.endpoint_id.localeCompare(b.endpoint_id));
-  const projectUsed = Number(endpoints.reduce((sum, endpoint) => {
-    const dailySpending = endpoint.limits.find((rule) => rule.kind === 'spending_limit' && rule.window === 'day');
-    return sum + (dailySpending?.used ?? 0);
-  }, 0).toFixed(8));
-  const projectMax = Number((endpoints.length * spendingLimitMax.day).toFixed(8));
-  const projectRemaining = Number(Math.max(0, projectMax - projectUsed).toFixed(8));
-  const projectUsagePct = projectMax > 0 ? Number(Math.min(100, (projectUsed / projectMax) * 100).toFixed(2)) : 0;
-
   return {
     endpoints,
-    project_summary: {
-      project_used: projectUsed,
-      project_max: projectMax,
-      project_remaining: projectRemaining,
-      project_usage_pct: projectUsagePct,
-    },
   };
 }
 

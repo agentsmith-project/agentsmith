@@ -2153,20 +2153,8 @@ export const usageHandlers = [
           ],
         };
       });
-    const allRules = endpoints.flatMap((endpoint) => endpoint.limits);
-    const projectUsed = allRules.reduce((sum, item) => sum + item.used, 0);
-    const projectMax = allRules.reduce((sum, item) => sum + item.max, 0);
-    const projectRemaining = Math.max(0, projectMax - projectUsed);
-    const projectUsagePct = Number((projectMax > 0 ? Math.min(100, (projectUsed / projectMax) * 100) : 0).toFixed(2));
-
     return HttpResponse.json({
       endpoints,
-      project_summary: {
-        project_used: projectUsed,
-        project_max: projectMax,
-        project_remaining: projectRemaining,
-        project_usage_pct: projectUsagePct,
-      },
     });
   }),
 ];

@@ -40,7 +40,7 @@ export interface ProjectLimitSummary {
 
 export interface LimitOverview {
   endpoints?: EndpointLimitSummary[];
-  project_summary: ProjectLimitSummary;
+  project_summary?: ProjectLimitSummary;
 }
 
 // ============================================================================

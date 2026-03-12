@@ -232,19 +232,6 @@ export function CostDashboardPage({
     [kpiData, timeseriesData?.total_cost],
   );
 
-  const totalLimitUsagePercentage = React.useMemo(() => {
-    const totalLimit = limitsOverview?.project_summary?.project_max;
-    const totalUsed = limitsOverview?.project_summary?.project_used;
-    if (!totalLimit || !totalUsed) return undefined;
-    return Math.min(
-      100,
-      (totalUsed / Math.max(1, totalLimit)) * 100,
-    );
-  }, [
-    limitsOverview?.project_summary?.project_max,
-    limitsOverview?.project_summary?.project_used,
-  ]);
-
   const handleRefresh = React.useCallback(() => {
     queryClient.invalidateQueries({ queryKey: ['usage-timeseries', workspaceId, projectId] });
     queryClient.invalidateQueries({ queryKey: ['usage-kpi', workspaceId, projectId] });
@@ -276,16 +263,6 @@ export function CostDashboardPage({
       )}
 
       <DashboardKPICards kpi={dashboardKpi} loading={kpiLoading} />
-
-      {totalLimitUsagePercentage !== undefined && (
-        <div
-          className="rounded-xl border border-border bg-surface p-3 text-sm text-tertiary"
-          data-testid="dashboard-limit-overview"
-        >
-          Limit usage: {totalLimitUsagePercentage.toFixed(1)}%
-        </div>
-      )}
-
       <DashboardFilters
         filters={filters}
         onChange={handleFiltersChange}

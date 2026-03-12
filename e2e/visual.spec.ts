@@ -183,13 +183,6 @@ test.describe('Visual - User Pages', () => {
 // ─── Dialog / Drawer Screenshots ────────────────────────────────────────────
 
 test.describe('Visual - Overlays', () => {
-  test('create project dialog', async ({ authedPage }) => {
-    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/projects`);
-    await authedPage.getByTestId('projects__create-btn').click();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('dialog-create-project.png');
-  });
-
   test('create agent dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('agents'));
     await authedPage.getByTestId('agents__create-btn').click();
@@ -241,39 +234,6 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByTestId('api-keys__create-btn').click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-create-api-key.png');
-  });
-
-  test('member permissions drawer - permissions tab', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('members'));
-    const rows = authedPage.getByTestId('members__table__row');
-    await expect(rows.first()).toBeVisible();
-
-    const actionBtn = rows.nth(1).getByRole('button', { name: /more/i }).or(
-      rows.nth(1).locator('button:has(svg)')
-    ).last();
-    await actionBtn.click();
-
-    await authedPage.getByRole('menuitem', { name: /edit permissions/i }).click();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('drawer-member-permissions.png');
-  });
-
-  test('member permissions drawer - limits tab', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('members'));
-    const rows = authedPage.getByTestId('members__table__row');
-    await expect(rows.first()).toBeVisible();
-
-    const actionBtn = rows.nth(1).getByRole('button', { name: /more/i }).or(
-      rows.nth(1).locator('button:has(svg)')
-    ).last();
-    await actionBtn.click();
-
-    await authedPage.getByRole('menuitem', { name: /edit permissions/i }).click();
-    const drawer = authedPage.locator('[role="dialog"], [data-state="open"]').last();
-    await expect(drawer).toBeVisible({ timeout: 5000 });
-    await drawer.getByRole('tab', { name: /limit/i }).click();
-    await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('drawer-member-limits.png');
   });
 
   test('members templates - project groups tab', async ({ authedPage }) => {

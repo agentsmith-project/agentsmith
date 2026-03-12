@@ -49,10 +49,12 @@ vi.mock('next-intl', () => ({
 }));
 
 const mockUseHasWorkspacePermission = vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create');
+const mockUseHasPermission = vi.fn((_: string) => true);
+const mockUseCanManageResourcePolicy = vi.fn(() => true);
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
-  useCanManageResourcePolicy: () => true,
+  useHasPermission: (permission: string) => mockUseHasPermission(permission),
+  useCanManageResourcePolicy: () => mockUseCanManageResourcePolicy(),
   useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
 }));
 
@@ -107,6 +109,8 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       project: 'proj_001',
       locale: 'en-US',
     });
+    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanManageResourcePolicy.mockReturnValue(true);
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
     );
@@ -171,5 +175,21 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(sidebar.getByTestId('sidebar__nav-item--workspace_home')).toBeInTheDocument();
     expect(sidebar.getByTestId('sidebar__nav-item--projects')).toBeInTheDocument();
     expect(sidebar.queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
+  });
+
+  it('shows governance project links for project admins', () => {
+    const wrapper = createWrapper();
+    mockUseHasPermission.mockImplementation((permission: string) =>
+      permission === 'project:endpoint:use' || permission === 'project:manage',
+    );
+    mockUseCanManageResourcePolicy.mockReturnValue(false);
+
+    render(<AppShellSidebar />, { wrapper });
+
+    const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
+    expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
   });
 });

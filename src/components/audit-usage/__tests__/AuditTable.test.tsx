@@ -178,4 +178,48 @@ describe('AuditTable', () => {
     expect(screen.getByText('Resource Policy')).toBeInTheDocument();
     expect(screen.getByText('ep_1')).toBeInTheDocument();
   });
+
+  it('humanizes policy enforcement actions for review scanning', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_6',
+            timestamp: '2026-03-01T05:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_6',
+            action: 'resource_policy.access_denied',
+            resource_type: 'endpoint',
+            resource_id: 'ep_access',
+            result: 'error',
+            error_code: 'RESOURCE_POLICY_ACCESS_DENIED',
+            request_id: 'req_access',
+            metadata_json: {},
+          },
+          {
+            id: 'audit_7',
+            timestamp: '2026-03-01T06:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_7',
+            action: 'resource_policy.rate_limited',
+            resource_type: 'endpoint',
+            resource_id: 'ep_rate',
+            result: 'error',
+            error_code: 'RESOURCE_POLICY_RATE_LIMIT_EXCEEDED',
+            request_id: 'req_rate',
+            metadata_json: {},
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('User Denied Access on ep_access and failed')).toBeInTheDocument();
+    expect(screen.getByText('User Rate Limited on ep_rate and failed')).toBeInTheDocument();
+    expect(screen.getByText('Denied Access')).toBeInTheDocument();
+    expect(screen.getByText('Rate Limited')).toBeInTheDocument();
+  });
 });

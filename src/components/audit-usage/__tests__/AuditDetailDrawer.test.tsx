@@ -196,4 +196,34 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('ep_1')).toBeInTheDocument();
     expect(screen.getByText('Validation Error')).toBeInTheDocument();
   });
+
+  it('humanizes policy enforcement errors in detail view', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_5',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'resource_policy.access_denied',
+          resource_type: 'endpoint',
+          resource_id: 'ep_access',
+          result: 'error',
+          error_code: 'RESOURCE_POLICY_ACCESS_DENIED',
+          error_message: 'resource_policy_denied',
+          request_id: 'req_policy_denied',
+          metadata_json: {},
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Denied Access on ep_access and failed',
+    );
+    expect(screen.getByText('Access Denied')).toBeInTheDocument();
+  });
 });

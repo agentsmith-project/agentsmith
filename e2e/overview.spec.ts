@@ -1,52 +1,35 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 
-test.describe('AI Ops Home', () => {
+test.describe('Project Hub', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'overview');
   });
 
-  test('shows project status strip and attention panel', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('overview__ai-ops-home')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('overview__open-runtime')).toHaveAttribute('href', /runtime-observability\?/);
-    await expect(authedPage.getByTestId('overview__open-usage')).toHaveAttribute('href', /usage\?/);
-    await expect(authedPage.getByTestId('overview__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
-    await expect(authedPage.getByTestId('overview__status-runtime')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__status-cost')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__status-release')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__status-incidents')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__attention')).toBeVisible();
+  test('renders quick links and getting started guidance', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('project-hub__page')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('project-hub__quick-links')).toBeVisible();
+    await expect(authedPage.getByTestId('project-hub__getting-started')).toBeVisible();
   });
 
-  test('supports time range switching', async ({ authedPage }) => {
-    const timeRange = authedPage.getByTestId('overview__time-range');
-    await expect(timeRange).toBeVisible({ timeout: 10000 });
-    await timeRange.click();
-    await authedPage.getByRole('option', { name: /last 7 days/i }).click();
-    await expect(timeRange).toContainText(/7/i);
+  test('quick links cover current project surfaces', async ({ authedPage }) => {
+    const quickLinks = authedPage.getByTestId('project-hub__quick-links');
+    await expect(quickLinks).toBeVisible({ timeout: 10000 });
+
+    await expect(quickLinks.getByRole('link', { name: /chat/i })).toHaveAttribute('href', /\/chat$/);
+    await expect(quickLinks.getByRole('link', { name: /notebook/i })).toHaveAttribute('href', /\/notebook$/);
+    await expect(quickLinks.getByRole('link', { name: /files/i })).toHaveAttribute('href', /\/files$/);
+    await expect(quickLinks.getByRole('link', { name: /endpoints/i })).toHaveAttribute('href', /\/endpoints$/);
+    await expect(quickLinks.getByRole('link', { name: /resource policy/i })).toHaveAttribute('href', /\/resource-policy$/);
+    await expect(quickLinks.getByRole('link', { name: /usage/i })).toHaveAttribute('href', /\/usage$/);
+    await expect(quickLinks.getByRole('link', { name: /audit/i })).toHaveAttribute('href', /\/audit$/);
   });
 
-  test('renders snapshot sections and quick actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('overview__snapshot-runtime')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('overview__snapshot-cost')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__snapshot-release')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__snapshot-incidents')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__primary-actions')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__primary-action-0')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__primary-action-link-0')).toHaveAttribute('href', /release-ops\?/);
-    await expect(authedPage.getByTestId('overview__primary-action-link-1')).toHaveAttribute('href', /runtime-observability\?/);
-    await expect(authedPage.getByTestId('overview__primary-action-link-2')).toHaveAttribute('href', /usage\?/);
-    await expect(authedPage.getByTestId('overview__primary-action-link-3')).toHaveAttribute('href', /release-ops\?/);
-    await expect(authedPage.getByTestId('overview__quick-actions')).toBeVisible();
-    await expect(authedPage.getByTestId('overview__snapshot-runtime-link')).toHaveAttribute('href', /runtime-observability\?/);
-    await expect(authedPage.getByTestId('overview__snapshot-cost-link')).toHaveAttribute('href', /usage\?/);
-    await expect(authedPage.getByTestId('overview__snapshot-release-link')).toHaveAttribute('href', /release-ops\?/);
-  });
+  test('navigates to usage from project hub quick links', async ({ authedPage }) => {
+    const quickLinks = authedPage.getByTestId('project-hub__quick-links');
+    await expect(quickLinks).toBeVisible({ timeout: 10000 });
 
-  test('navigates to chat from quick actions', async ({ authedPage }) => {
-    const quickActions = authedPage.getByTestId('overview__quick-actions');
-    await expect(quickActions).toBeVisible({ timeout: 10000 });
-    await quickActions.getByText(/Chat/i).first().click();
-    await authedPage.waitForURL(/\/chat/, { timeout: 10000 });
-    await expect(authedPage.getByTestId('chat__main-pane')).toBeVisible();
+    await quickLinks.getByRole('link', { name: /usage/i }).click();
+    await authedPage.waitForURL(/\/usage$/, { timeout: 10000 });
+    await expect(authedPage.getByTestId('usage__view')).toBeVisible();
   });
 });

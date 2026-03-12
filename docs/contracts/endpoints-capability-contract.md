@@ -15,10 +15,10 @@ without adding runtime feature switches.
 
 ## Endpoint Entity
 
-`Endpoint` keeps legacy fields for compatibility and introduces capability-first fields.
+`Endpoint` uses the current capability-first fields only.
 
 - Legacy compatibility:
-- `openai_model`
+- `model`
 - `type`
 - Capability-first:
 - `provider_family`: `openai | anthropic | deepseek | minimax | kimi | google | glm | alibaba | custom`
@@ -80,7 +80,7 @@ Output:
 
 - `assets/models-catalog/catalog.normalized.json`
 - `assets/models-catalog/logos/*.svg`
-- `src/lib/endpoints/models-catalog.runtime.json` (UI-consumable subset)
+- `src/lib/endpoints/models-catalog.config.json` (UI-consumable subset)
 - `public/models-catalog/logos/*.svg` (runtime logo assets)
 
 ## Verification

@@ -18,7 +18,7 @@ Define the MVP model for resource access and consumption governance across manag
 ## Core Principles
 
 1. Keep permission tokens for operation authorization.
-2. Use resource policy for runtime usage control:
+2. Use resource policy for request usage control:
 - who can access a resource
 - how much each user can consume on that resource
 3. Default posture:

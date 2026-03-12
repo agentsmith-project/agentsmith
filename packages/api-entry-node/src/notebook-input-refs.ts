@@ -2,8 +2,8 @@ import {
   buildResolvedArtifactInput,
   buildResolvedLibraryObjectInput,
   buildResolvedUrlInput,
-  resolveRuntimeInputRef,
-} from './input-ref-runtime-resolver.js';
+  resolveInputRef,
+} from './input-ref-input-resolver.js';
 
 type SourceInputRefRecord = { id: string; kind: 'source'; source_id: string };
 type LibraryObjectInputRefRecord = {
@@ -163,7 +163,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
   if (attachedInputs.length === 0) return [];
   return Promise.all(attachedInputs.map(async (inputRef) => {
     if (inputRef.kind === 'library_object') {
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'library_object',
         deps,
         workspaceId,
@@ -188,7 +188,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
       }) satisfies NotebookRuntimeTaskInput;
     }
     if (inputRef.kind === 'url') {
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'url',
         deps,
         workspaceId,
@@ -201,7 +201,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
       }) satisfies NotebookRuntimeTaskInput;
     }
     if (inputRef.kind === 'artifact') {
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'artifact',
         input: inputRef,
       });
@@ -270,7 +270,7 @@ export async function resolveNotebookTaskInputDetails(args: {
       }
     }
     if (inputRef.kind === 'library_object') {
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'library_object',
         deps,
         workspaceId,
@@ -292,7 +292,7 @@ export async function resolveNotebookTaskInputDetails(args: {
     if (inputRef.kind === 'artifact') {
       const sourceArtifacts = await loadArtifactsForTask(inputRef.task_id);
       const artifact = sourceArtifacts.find((item) => item.id === inputRef.artifact_id);
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'artifact',
         input: inputRef,
         artifact,
@@ -306,7 +306,7 @@ export async function resolveNotebookTaskInputDetails(args: {
         ...detail,
       };
     }
-    const resolved = await resolveRuntimeInputRef({
+    const resolved = await resolveInputRef({
       kind: 'url',
       deps,
       workspaceId,

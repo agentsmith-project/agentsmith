@@ -3,12 +3,12 @@ import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
-  appendNotebookRuntimePrometheusMetrics,
-  getNotebookRuntimeMetricsState,
+  appendNotebookTaskPrometheusMetrics,
+  getNotebookTaskMetricsState,
   getNotebookTraceQueryLatencyByScopeSnapshot,
   observeNotebookTraceQueryLatency,
   type TraceQueryScope,
-} from './notebook-runtime-metrics.js';
+} from './notebook-task-metrics.js';
 import {
   countInMemoryTraceRecords,
   deleteTaskTraceEvents,
@@ -27,7 +27,7 @@ import {
   writeNotebookTaskSseEvent,
 } from './notebook-task-sse-broker.js';
 import { resolveNotebookTaskInputDetails, type NotebookTaskInputRefRecord as SharedNotebookTaskInputRefRecord } from './notebook-input-refs.js';
-import { runNotebookTaskWithExternalAgent } from './notebook-runtime-orchestrator.js';
+import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
@@ -140,14 +140,14 @@ const TASKS_COLLECTION = 'notebook_tasks';
 const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
 const TASK_ARTIFACTS_COLLECTION = 'notebook_task_artifacts';
 
-function debugNotebookRuntime(message: string, extra?: Record<string, unknown>): void {
-  if (process.env.DEBUG_NOTEBOOK_RUNTIME !== '1') return;
+function debugNotebookExecution(message: string, extra?: Record<string, unknown>): void {
+  if (process.env.DEBUG_NOTEBOOK_EXECUTION !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
-  process.stdout.write(`[notebook-runtime] ${message}${suffix}\n`);
+  process.stdout.write(`[notebook-execution] ${message}${suffix}\n`);
 }
 
-export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
-  const metrics = getNotebookRuntimeMetricsState();
+export function getNotebookTaskMetricsSnapshot(): Record<string, unknown> {
+  const metrics = getNotebookTaskMetricsState();
   const taskCount = [...TASKS_BY_PROJECT.values()].reduce((acc, items) => acc + items.length, 0);
   const messageCount = [...MESSAGES_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
   const artifactCount = [...ARTIFACTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
@@ -173,8 +173,8 @@ export function getNotebookRuntimeMetricsSnapshot(): Record<string, unknown> {
   };
 }
 
-export function getNotebookRuntimeMetricsPrometheusText(): string {
-  const snapshot = getNotebookRuntimeMetricsSnapshot() as {
+export function getNotebookTaskMetricsPrometheusText(): string {
+  const snapshot = getNotebookTaskMetricsSnapshot() as {
     task_runs_started: number;
     task_runs_completed: number;
     task_runs_failed: number;
@@ -202,7 +202,7 @@ export function getNotebookRuntimeMetricsPrometheusText(): string {
   };
 
   const lines: string[] = [];
-  appendNotebookRuntimePrometheusMetrics(lines, snapshot);
+  appendNotebookTaskPrometheusMetrics(lines, snapshot);
   return `${lines.join('\n')}\n`;
 }
 
@@ -842,8 +842,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const nextAfterId = hasMore && items.length > 0 ? items[0]!.id : null;
     const latencyMs = Date.now() - traceQueryStart;
     observeNotebookTraceQueryLatency(queryScope, latencyMs);
-    if (process.env.DEBUG_NOTEBOOK_RUNTIME === '1') {
-      debugNotebookRuntime('task_traces_query', {
+    if (process.env.DEBUG_NOTEBOOK_EXECUTION === '1') {
+      debugNotebookExecution('task_traces_query', {
         task_id: route.taskId,
         scope: queryScope,
         message_id: messageId ?? null,
@@ -902,7 +902,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
       ACTIVE_RUNS_BY_TASK.add(route.taskId);
 
-      void runNotebookTaskWithExternalAgent({
+      void runNotebookTaskWithExecutionAgent({
         deps,
         task,
         assistantMessage,
@@ -952,7 +952,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           const marker = ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK.get(route.taskId);
           return !!marker;
         },
-        debugLog: debugNotebookRuntime,
+        debugLog: debugNotebookExecution,
         taskCollections: {
           tasks: TASKS_COLLECTION,
           messages: TASK_MESSAGES_COLLECTION,
@@ -998,7 +998,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     active.cancel();
-    debugNotebookRuntime('task_run_cancel_requested', {
+    debugNotebookExecution('task_run_cancel_requested', {
       task_id: route.taskId,
       run_id: active.runId,
       request_id: active.requestId,

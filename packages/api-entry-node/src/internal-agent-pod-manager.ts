@@ -244,7 +244,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
 
     if (status.phase === 'offline') {
-      const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-runtime/ws?agent_id=${encodeURIComponent(agent.id)}`;
+      const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`;
       await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
         image: config.image,
         env: {

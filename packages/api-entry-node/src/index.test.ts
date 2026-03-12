@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
 import { createUsageReportSchedule, recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
-import type { ReleaseGateRunnerController } from './release-gate-runner.js';
+import type { GovernanceRunnerController } from './governance-runner.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 
 const servers: Server[] = [];
@@ -948,7 +948,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'attached-sources-endpoint',
-          openai_model: 'gpt-5-codex',
+          model: 'gpt-5-codex',
           type: 'openai',
           mode: 'openai',
           base_url: 'http://upstream.invalid/v1',
@@ -969,7 +969,7 @@ describe('api-entry-node projects routes', () => {
           name: 'notebook-agent-for-attached-sources',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: {
+          execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,
               wire_api: 'chat',
@@ -2976,7 +2976,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'deepseek-chat',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -3474,7 +3474,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-rate-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -3644,7 +3644,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           interaction_mode: 'both',
-          runtime_preferences: {
+          execution_preferences: {
             notebook: {},
           },
         }),
@@ -3736,7 +3736,7 @@ describe('api-entry-node projects routes', () => {
       })(),
       cancel: vi.fn(),
     }));
-    deps.agentRuntimeService.dispatchStreamingRequest = dispatchStreamingRequest as typeof deps.agentRuntimeService.dispatchStreamingRequest;
+    deps.agentExecutionService.dispatchStreamingRequest = dispatchStreamingRequest as typeof deps.agentExecutionService.dispatchStreamingRequest;
     const setIntervalSpy = vi.spyOn(globalThis, 'setInterval');
     const clearIntervalSpy = vi.spyOn(globalThis, 'clearInterval');
     const { baseUrl } = startServerWithDeps(deps);
@@ -3752,7 +3752,7 @@ describe('api-entry-node projects routes', () => {
       } as never,
       owner_id: 'user_test',
       visibility: 'private',
-      runtime_preferences_json: {
+      execution_preferences_json: {
         notebook: {
           endpoint_id: 'ep_internal',
         },
@@ -3813,7 +3813,7 @@ describe('api-entry-node projects routes', () => {
       } as never,
       owner_id: 'user_test',
       visibility: 'private',
-      runtime_preferences_json: {
+      execution_preferences_json: {
         notebook: {
           endpoint_id: 'ep_internal',
         },
@@ -3925,7 +3925,7 @@ describe('api-entry-node projects routes', () => {
       } as never,
       owner_id: 'user_test',
       visibility: 'private',
-      runtime_preferences_json: {
+      execution_preferences_json: {
         notebook: {
           endpoint_id: 'ep_internal',
         },
@@ -3959,7 +3959,7 @@ describe('api-entry-node projects routes', () => {
     expect(releasePod).toHaveBeenCalledWith('ws_default', 'proj_1', sanitizeWorkloadId(task.id));
   });
 
-  it('runs notebook task message through external runtime and enforces single active run per task', async () => {
+  it('runs notebook task message through external execution service and enforces single active run per task', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();
 
@@ -3987,7 +3987,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'task-endpoint',
-          openai_model: 'gpt-5-codex',
+          model: 'gpt-5-codex',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -4008,7 +4008,7 @@ describe('api-entry-node projects routes', () => {
           name: 'notebook-runner',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: {
+          execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,
               wire_api: 'chat',
@@ -4064,7 +4064,7 @@ describe('api-entry-node projects routes', () => {
             resource_proxy?: {
               base_url?: string;
             };
-            runtime_context?: {
+            execution_context?: {
               api_base?: string;
               user_bearer_token?: string;
               notebook_mode?: boolean;
@@ -4082,19 +4082,19 @@ describe('api-entry-node projects routes', () => {
           requestId: msg.request_id,
           helloProxyBase,
           endpointProxyBase: null,
-          apiBase: msg.payload?.runtime_context?.api_base ?? '',
-          userToken: msg.payload?.runtime_context?.user_bearer_token ?? '',
-          notebookMode: typeof msg.payload?.runtime_context?.notebook_mode === 'boolean'
-            ? msg.payload.runtime_context.notebook_mode
+          apiBase: msg.payload?.execution_context?.api_base ?? '',
+          userToken: msg.payload?.execution_context?.user_bearer_token ?? '',
+          notebookMode: typeof msg.payload?.execution_context?.notebook_mode === 'boolean'
+            ? msg.payload.execution_context.notebook_mode
             : null,
-          taskInputsCount: Array.isArray(msg.payload?.runtime_context?.task_inputs)
-            ? msg.payload.runtime_context.task_inputs.length
+          taskInputsCount: Array.isArray(msg.payload?.execution_context?.task_inputs)
+            ? msg.payload.execution_context.task_inputs.length
             : null,
-          credentialFilesCount: Array.isArray(msg.payload?.runtime_context?.credential_files)
-            ? msg.payload.runtime_context.credential_files.length
+          credentialFilesCount: Array.isArray(msg.payload?.execution_context?.credential_files)
+            ? msg.payload.execution_context.credential_files.length
             : null,
-          hasCredentialIndexFile: Array.isArray(msg.payload?.runtime_context?.credential_files)
-            ? msg.payload.runtime_context.credential_files.some((item) => item?.relative_path === '.codex/credential/index.json')
+          hasCredentialIndexFile: Array.isArray(msg.payload?.execution_context?.credential_files)
+            ? msg.payload.execution_context.credential_files.some((item) => item?.relative_path === '.codex/credential/index.json')
             : false,
           close: () => ws.close(),
         });
@@ -4307,7 +4307,7 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
-  it('synthesizes terminal trace and closes task when notebook runtime dispatch fails', async () => {
+  it('synthesizes terminal trace and closes task when notebook execution dispatch fails', async () => {
     const { baseUrl } = startServer();
 
     const createCredentialRes = await apiFetch(
@@ -4334,7 +4334,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'task-endpoint-offline',
-          openai_model: 'gpt-5-codex',
+          model: 'gpt-5-codex',
           type: 'openai',
           mode: 'openai',
           base_url: 'https://example.com/v1',
@@ -4355,7 +4355,7 @@ describe('api-entry-node projects routes', () => {
           name: 'notebook-runner-offline',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: {
+          execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,
               wire_api: 'chat',
@@ -4376,7 +4376,7 @@ describe('api-entry-node projects routes', () => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          title: 'Notebook task offline runtime',
+          title: 'Notebook task offline execution',
           agent_id: agent.id,
         }),
       },
@@ -4392,7 +4392,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           role: 'user',
-          content: 'run this despite offline runtime',
+          content: 'run this despite offline execution',
         }),
       },
     );
@@ -4408,11 +4408,11 @@ describe('api-entry-node projects routes', () => {
       tracesBody = (await tracesRes.json()) as {
         items: Array<{ status?: string; name?: string; summary?: string; details?: Record<string, unknown> }>;
       };
-      if (tracesBody.items.some((item) => item.name === 'runtime.terminal' && item.status === 'error')) break;
+      if (tracesBody.items.some((item) => item.name === 'execution.terminal' && item.status === 'error')) break;
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     expect(tracesBody).not.toBeNull();
-    const terminalTrace = tracesBody!.items.find((item) => item.name === 'runtime.terminal');
+    const terminalTrace = tracesBody!.items.find((item) => item.name === 'execution.terminal');
     expect(terminalTrace?.status).toBe('error');
     expect(terminalTrace?.summary).toContain('AGENT_OFFLINE');
     expect((terminalTrace?.details as { synthesized?: boolean } | undefined)?.synthesized).toBe(true);
@@ -4426,7 +4426,7 @@ describe('api-entry-node projects routes', () => {
     expect(taskAfterRun.status).toBe('active');
   });
 
-  it('deduplicates notebook task artifacts by task_relative_path across repeated runtime artifact frames', async () => {
+  it('deduplicates notebook task artifacts by task_relative_path across repeated execution artifact frames', async () => {
     const { baseUrl } = startServer();
 
     const credentialRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/credentials', {
@@ -4441,7 +4441,7 @@ describe('api-entry-node projects routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'task-endpoint',
-        openai_model: 'gpt-5-codex',
+        model: 'gpt-5-codex',
         type: 'openai',
         mode: 'openai',
         base_url: 'https://example.com/v1',
@@ -4457,7 +4457,7 @@ describe('api-entry-node projects routes', () => {
         name: 'NotebookAgent',
         mode: 'external',
         interaction_mode: 'notebook',
-        runtime_preferences: {
+        execution_preferences: {
           notebook: {
             endpoint_id: endpoint.id,
             model: 'gpt-5-codex',
@@ -4567,7 +4567,7 @@ describe('api-entry-node projects routes', () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'task-endpoint',
-        openai_model: 'gpt-5-codex',
+        model: 'gpt-5-codex',
         type: 'openai',
         mode: 'openai',
         base_url: 'https://example.com/v1',
@@ -4583,7 +4583,7 @@ describe('api-entry-node projects routes', () => {
         name: 'NotebookAgent',
         mode: 'external',
         interaction_mode: 'notebook',
-        runtime_preferences: {
+        execution_preferences: {
           notebook: {
             endpoint_id: endpoint.id,
             model: 'gpt-5-codex',
@@ -4696,7 +4696,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'glm-chat',
-          openai_model: 'glm-4-flash',
+          model: 'glm-4-flash',
           type: 'custom',
           mode: 'openai',
           base_url: `${upstream.baseUrl}/chat/completions`,
@@ -4771,7 +4771,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          openai_model: 'glm-4.7',
+          model: 'glm-4.7',
           credential_ref: credential.id,
         }),
       },
@@ -4789,7 +4789,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: {
+          execution_preferences: {
             notebook: {
               endpoint_id: endpoint.id,
               wire_api: 'responses',
@@ -4946,10 +4946,10 @@ describe('api-entry-node projects routes', () => {
     runtime.close();
   });
 
-  it('exposes authenticated notebook runtime metrics snapshot', async () => {
+  it('exposes authenticated notebook task metrics snapshot', async () => {
     const { baseUrl } = startServer();
 
-    const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-runtime-metrics');
+    const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-task-metrics');
     expect(res.status).toBe(200);
 
     const body = (await res.json()) as {
@@ -4979,7 +4979,7 @@ describe('api-entry-node projects routes', () => {
   it('exposes authenticated notebook runtime metrics in prometheus text format', async () => {
     const { baseUrl } = startServer();
 
-    const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-runtime-metrics/prometheus');
+    const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-task-metrics/prometheus');
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/plain');
     const text = await res.text();
@@ -5014,7 +5014,7 @@ describe('api-entry-node projects routes', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
     await deps.docStore.upsert('project_usage_report_schedules', created.id, {
@@ -5074,7 +5074,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          openai_model: 'glm-4.7',
+          model: 'glm-4.7',
           credential_ref: credential.id,
         }),
       },
@@ -5092,7 +5092,7 @@ describe('api-entry-node projects routes', () => {
           name: 'Metrics notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },
@@ -5118,7 +5118,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(tracesRes.status).toBe(200);
 
-    const metricsRes = await apiFetch(baseUrl, '/api/v1/internal/notebook-runtime-metrics');
+    const metricsRes = await apiFetch(baseUrl, '/api/v1/internal/notebook-task-metrics');
     expect(metricsRes.status).toBe(200);
     const metrics = (await metricsRes.json()) as {
       task_traces_queries_total: number;
@@ -5130,15 +5130,15 @@ describe('api-entry-node projects routes', () => {
     expect(metrics.trace_query_latency_by_scope?.message?.count ?? 0).toBeGreaterThan(0);
   });
 
-  it('lists and reads internal release report artifacts', async () => {
+  it('lists and reads internal governance report artifacts', async () => {
     const deps = createDefaultNodeApiDeps();
-    const reportsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-reports-'));
-    const runsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-runs-'));
-    const escalationsDir = mkdtempSync(join(tmpdir(), 'agentsmith-release-escalations-'));
-    deps.releaseReportsDir = reportsDir;
-    deps.releaseRunsDir = runsDir;
-    deps.releaseEscalationsDir = escalationsDir;
-    writeFileSync(join(reportsDir, 'sample-release.json'), JSON.stringify({
+    const reportsDir = mkdtempSync(join(tmpdir(), 'agentsmith-governance-reports-'));
+    const runsDir = mkdtempSync(join(tmpdir(), 'agentsmith-governance-runs-'));
+    const escalationsDir = mkdtempSync(join(tmpdir(), 'agentsmith-governance-incidents-'));
+    deps.governanceReportsDir = reportsDir;
+    deps.governanceRunsDir = runsDir;
+    deps.governanceIncidentsDir = escalationsDir;
+    writeFileSync(join(reportsDir, 'sample-governance.json'), JSON.stringify({
       metadata: {
         timestamp: '2026-02-28T20:35:10.000Z',
         git: {
@@ -5148,7 +5148,7 @@ describe('api-entry-node projects routes', () => {
       },
       summary: {
         status: 'pass',
-        release_policy: {
+        governance_policy: {
           decision: 'blocked',
           blockers: [
             {
@@ -5175,21 +5175,21 @@ describe('api-entry-node projects routes', () => {
             overridable_count: 2,
           },
         },
-        runtime_release_evidence: {
-          guardrails: {
-            release_readiness: 'ready',
+        execution_review_evidence: {
+          checks: {
+            review_status: 'ready',
           },
         },
         usage_report_evidence: {
-          release_readiness: 'blocked',
+          review_status: 'blocked',
         },
       },
     }), 'utf-8');
-    writeFileSync(join(reportsDir, 'sample-release.md'), '# Sample Release\n\nPASS\n', 'utf-8');
-    writeFileSync(join(runsDir, 'sample-release.json'), JSON.stringify({
-      id: 'sample-release',
-      report_name: 'sample-release',
-      artifact_name: 'sample-release',
+    writeFileSync(join(reportsDir, 'sample-governance.md'), '# Sample Governance\n\nPASS\n', 'utf-8');
+    writeFileSync(join(runsDir, 'sample-governance.json'), JSON.stringify({
+      id: 'sample-governance',
+      report_name: 'sample-governance',
+      artifact_name: 'sample-governance',
       trigger: 'manual',
       started_at: '2026-02-28T20:34:50.000Z',
       completed_at: '2026-02-28T20:35:10.000Z',
@@ -5197,36 +5197,36 @@ describe('api-entry-node projects routes', () => {
       status: 'pass',
       branch: 'main',
       commit_short: 'abc1234',
-      release_policy_decision: 'ready',
-      runtime_release_readiness: 'ready',
-      usage_release_readiness: 'blocked',
+      governance_decision: 'ready',
+      execution_review_status: 'ready',
+      usage_review_status: 'blocked',
       total_checks: 6,
       passed_checks: 6,
       failed_checks: 0,
       failed_step_names: [],
       failure_categories: [],
     }), 'utf-8');
-    writeFileSync(join(escalationsDir, 'sample-release.json'), JSON.stringify({
-      id: 'sample-release',
-      report_name: 'sample-release',
-      run_id: 'sample-release',
+    writeFileSync(join(escalationsDir, 'sample-governance.json'), JSON.stringify({
+      id: 'sample-governance',
+      report_name: 'sample-governance',
+      run_id: 'sample-governance',
       created_at: '2026-02-28T20:35:10.000Z',
       event_type: 'gate_warning',
       severity: 'warning',
       status: 'open',
-      title: 'Release gate completed with warning state',
-      body: 'Latest release gate completed with 1 warning issues.',
-      artifact_name: 'sample-release',
+      title: 'Governance run completed with warning state',
+      body: 'Latest governance run completed with 1 warning issues.',
+      artifact_name: 'sample-governance',
       trigger: 'manual',
-      release_policy_decision: 'warning',
-      runtime_release_readiness: 'ready',
-      usage_release_readiness: 'blocked',
+      governance_decision: 'warning',
+      execution_review_status: 'ready',
+      usage_review_status: 'blocked',
       failure_categories: [],
     }), 'utf-8');
 
     const { baseUrl } = startServerWithDeps(deps);
 
-    const listRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports?workspace_id=ws_default&project_id=proj_1');
+    const listRes = await apiFetch(baseUrl, '/api/v1/internal/governance-reports?workspace_id=ws_default&project_id=proj_1');
     expect(listRes.status).toBe(200);
     const listPayload = (await listRes.json()) as {
       items: Array<{
@@ -5237,7 +5237,7 @@ describe('api-entry-node projects routes', () => {
       }>;
     };
     expect(listPayload.items[0]).toEqual(expect.objectContaining({
-      name: 'sample-release',
+      name: 'sample-governance',
       status: 'pass',
       markdown_available: true,
       policy_enforcement: expect.objectContaining({
@@ -5245,7 +5245,7 @@ describe('api-entry-node projects routes', () => {
       }),
     }));
 
-    const detailRes = await apiFetch(baseUrl, '/api/v1/internal/release-reports/sample-release?workspace_id=ws_default&project_id=proj_1');
+    const detailRes = await apiFetch(baseUrl, '/api/v1/internal/governance-reports/sample-governance?workspace_id=ws_default&project_id=proj_1');
     expect(detailRes.status).toBe(200);
     const detailPayload = (await detailRes.json()) as {
       name: string;
@@ -5253,43 +5253,43 @@ describe('api-entry-node projects routes', () => {
       report?: { summary?: { status?: string } };
       policy_enforcement?: { decision?: string };
     };
-    expect(detailPayload.name).toBe('sample-release');
-    expect(detailPayload.markdown).toContain('# Sample Release');
+    expect(detailPayload.name).toBe('sample-governance');
+    expect(detailPayload.markdown).toContain('# Sample Governance');
     expect(detailPayload.report?.summary?.status).toBe('pass');
     expect(detailPayload.policy_enforcement?.decision).toBe('blocked');
 
-    const createOverrideRes = await apiFetch(baseUrl, '/api/v1/internal/release-policy-overrides', {
+    const createOverrideRes = await apiFetch(baseUrl, '/api/v1/internal/governance-policy-overrides', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        report_name: 'sample-release',
-        incident_id: 'incident-sample-release',
+        report_name: 'sample-governance',
+        incident_id: 'incident-sample-governance',
         issue_id: 'execution_failures_present',
         issue_source: 'execution',
         issue_message: 'Execution has 1 failed checks.',
         reason_category: 'governance_window',
-        reason: 'Accepted during controlled release window',
+        reason: 'Accepted during controlled governance window',
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     });
     expect(createOverrideRes.status).toBe(201);
     const createdOverride = (await createOverrideRes.json()) as { id: string };
-    const approveOverrideRes = await apiFetch(baseUrl, `/api/v1/internal/release-policy-overrides/${createdOverride.id}/decision`, {
+    const approveOverrideRes = await apiFetch(baseUrl, `/api/v1/internal/governance-policy-overrides/${createdOverride.id}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
     });
     expect(approveOverrideRes.status).toBe(409);
-    const ownerApproveOverrideRes = await apiFetchWithToken(baseUrl, `/api/v1/internal/release-policy-overrides/${createdOverride.id}/decision`, 'owner-token', {
+    const ownerApproveOverrideRes = await apiFetchWithToken(baseUrl, `/api/v1/internal/governance-policy-overrides/${createdOverride.id}/decision`, 'owner-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
     });
     expect(ownerApproveOverrideRes.status).toBe(200);
 
-    const runListRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs?workspace_id=ws_default&project_id=proj_1');
+    const runListRes = await apiFetch(baseUrl, '/api/v1/internal/governance-runs?workspace_id=ws_default&project_id=proj_1');
     expect(runListRes.status).toBe(200);
     const runListPayload = (await runListRes.json()) as {
       items: Array<{
@@ -5300,15 +5300,15 @@ describe('api-entry-node projects routes', () => {
       }>;
     };
     expect(runListPayload.items[0]).toEqual(expect.objectContaining({
-      id: 'sample-release',
+      id: 'sample-governance',
       trigger: 'manual',
-      artifact_name: 'sample-release',
+      artifact_name: 'sample-governance',
       policy_enforcement: expect.objectContaining({
         decision: 'releasable_with_override',
       }),
     }));
 
-    const runDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-runs/sample-release?workspace_id=ws_default&project_id=proj_1');
+    const runDetailRes = await apiFetch(baseUrl, '/api/v1/internal/governance-runs/sample-governance?workspace_id=ws_default&project_id=proj_1');
     expect(runDetailRes.status).toBe(200);
     const runDetailPayload = (await runDetailRes.json()) as {
       id: string;
@@ -5316,25 +5316,25 @@ describe('api-entry-node projects routes', () => {
       status: string;
       policy_enforcement?: { decision?: string };
     };
-    expect(runDetailPayload.id).toBe('sample-release');
+    expect(runDetailPayload.id).toBe('sample-governance');
     expect(runDetailPayload.duration_ms).toBe(20000);
     expect(runDetailPayload.status).toBe('pass');
     expect(runDetailPayload.policy_enforcement?.decision).toBe('releasable_with_override');
 
-    const escalationListRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations');
+    const escalationListRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents');
     expect(escalationListRes.status).toBe(200);
     const escalationListPayload = (await escalationListRes.json()) as { items: Array<{ id: string; event_type: string }> };
     expect(escalationListPayload.items[0]).toEqual(expect.objectContaining({
-      id: 'sample-release',
+      id: 'sample-governance',
       event_type: 'gate_warning',
     }));
 
-    const escalationDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release');
+    const escalationDetailRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents/sample-governance');
     expect(escalationDetailRes.status).toBe(200);
     const escalationDetailPayload = (await escalationDetailRes.json()) as { title: string };
     expect(escalationDetailPayload.title).toContain('warning');
 
-    const acknowledgeRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/acknowledge', {
+    const acknowledgeRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents/sample-governance/acknowledge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
     });
@@ -5342,7 +5342,7 @@ describe('api-entry-node projects routes', () => {
     const acknowledged = (await acknowledgeRes.json()) as { acknowledged_by_user_id?: string };
     expect(acknowledged.acknowledged_by_user_id).toBeTruthy();
 
-    const assignRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/assignment', {
+    const assignRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents/sample-governance/assignment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -5356,17 +5356,17 @@ describe('api-entry-node projects routes', () => {
     expect(assigned.assignee_user_id).toBe('user_oncall');
     expect(assigned.sla_status).toBe('due_soon');
 
-    const reassignRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/assignment', {
+    const reassignRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents/sample-governance/assignment', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        assignee_user_id: 'user_release',
+        assignee_user_id: 'user_governance',
         assignee_name: 'Release Owner',
       }),
     });
     expect(reassignRes.status).toBe(200);
 
-    const historyDetailRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release');
+    const historyDetailRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents/sample-governance');
     expect(historyDetailRes.status).toBe(200);
     const historyDetail = (await historyDetailRes.json()) as {
       incident_history?: Array<{
@@ -5376,13 +5376,13 @@ describe('api-entry-node projects routes', () => {
       }>;
     };
     const reassignment = historyDetail.incident_history?.find(
-      (item) => item.next_assignee_user_id === 'user_release',
+      (item) => item.next_assignee_user_id === 'user_governance',
     );
     expect(reassignment?.event_kind).toBe('escalation_assignment');
     expect(reassignment?.previous_assignee_user_id).toBe('user_oncall');
-    expect(reassignment?.next_assignee_user_id).toBe('user_release');
+    expect(reassignment?.next_assignee_user_id).toBe('user_governance');
 
-    const resolveRes = await apiFetch(baseUrl, '/api/v1/internal/release-escalations/sample-release/resolution', {
+    const resolveRes = await apiFetch(baseUrl, '/api/v1/internal/governance-incidents/sample-governance/resolution', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'resolved', reason: 'Mitigated by rerun', category: 'mitigated' }),
@@ -5397,38 +5397,38 @@ describe('api-entry-node projects routes', () => {
     const notificationsRes = await apiFetch(baseUrl, '/api/v1/me/notifications');
     expect(notificationsRes.status).toBe(200);
     const notificationsPayload = (await notificationsRes.json()) as { items: Array<{ id: string; title: string }> };
-    expect(notificationsPayload.items.some((item) => item.id === 'release_escalation_sample-release')).toBe(true);
+    expect(notificationsPayload.items.some((item) => item.id === 'governance_incident_sample-governance')).toBe(true);
   });
 
-  it('creates and lists release policy overrides', async () => {
+  it('creates and lists governance policy overrides', async () => {
     const { baseUrl } = startServer();
 
-    const createRes = await apiFetch(baseUrl, '/api/v1/internal/release-policy-overrides', {
+    const createRes = await apiFetch(baseUrl, '/api/v1/internal/governance-policy-overrides', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        report_name: 'sample-release',
-        incident_id: 'incident-sample-release',
+        report_name: 'sample-governance',
+        incident_id: 'incident-sample-governance',
         issue_id: 'usage_warning',
         issue_source: 'usage',
         issue_message: 'usage_report_webhook_signature_recommended',
-        reason_category: 'rollout_exception',
-        reason: 'Accepted for staged rollout',
+        reason_category: 'approved_exception',
+        reason: 'Accepted exception for current governance review',
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     });
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { issue_id: string; reason: string; effective_status?: string; incident_id?: string };
     expect(created.issue_id).toBe('usage_warning');
-    expect(created.reason).toBe('Accepted for staged rollout');
+    expect(created.reason).toBe('Accepted exception for current governance review');
     expect(created.effective_status).toBe('pending');
-    expect(created.incident_id).toBe('incident-sample-release');
+    expect(created.incident_id).toBe('incident-sample-governance');
 
     const listRes = await apiFetch(
       baseUrl,
-      '/api/v1/internal/release-policy-overrides?workspace_id=ws_default&project_id=proj_1&report_name=sample-release',
+      '/api/v1/internal/governance-policy-overrides?workspace_id=ws_default&project_id=proj_1&report_name=sample-governance',
     );
     expect(listRes.status).toBe(200);
     const listPayload = (await listRes.json()) as { items: Array<{ issue_id: string }> };
@@ -5563,35 +5563,35 @@ describe('api-entry-node projects routes', () => {
     expect(emptyPayload.items).toHaveLength(0);
   });
 
-  it('approves a release policy override', async () => {
+  it('approves a governance policy override', async () => {
     const { baseUrl } = startServer();
 
-    const createRes = await apiFetch(baseUrl, '/api/v1/internal/release-policy-overrides', {
+    const createRes = await apiFetch(baseUrl, '/api/v1/internal/governance-policy-overrides', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         workspace_id: 'ws_default',
         project_id: 'proj_1',
-        report_name: 'sample-release',
-        incident_id: 'incident-sample-release',
+        report_name: 'sample-governance',
+        incident_id: 'incident-sample-governance',
         issue_id: 'usage_warning',
         issue_source: 'usage',
         issue_message: 'usage_report_webhook_signature_recommended',
-        reason_category: 'rollout_exception',
-        reason: 'Accepted for staged rollout',
+        reason_category: 'approved_exception',
+        reason: 'Accepted exception for current governance review',
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
       }),
     });
     const created = (await createRes.json()) as { id: string };
 
-    const decideRes = await apiFetch(baseUrl, `/api/v1/internal/release-policy-overrides/${created.id}/decision`, {
+    const decideRes = await apiFetch(baseUrl, `/api/v1/internal/governance-policy-overrides/${created.id}/decision`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
     });
     expect(decideRes.status).toBe(409);
 
-    const ownerApproveRes = await apiFetchWithToken(baseUrl, `/api/v1/internal/release-policy-overrides/${created.id}/decision`, 'owner-token', {
+    const ownerApproveRes = await apiFetchWithToken(baseUrl, `/api/v1/internal/governance-policy-overrides/${created.id}/decision`, 'owner-token', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'approved' }),
@@ -5670,9 +5670,9 @@ describe('api-entry-node projects routes', () => {
     expect(historyPayload.items[0]?.status).toBe('completed');
   });
 
-  it('returns release gate runner status and triggers a manual rerun request', async () => {
+  it('returns governance runner status and triggers a manual rerun request', async () => {
     const deps = createDefaultNodeApiDeps();
-    const mockRunner: ReleaseGateRunnerController = {
+    const mockRunner: GovernanceRunnerController = {
       getStatus: () => ({
         running: false,
         recent_operations: [],
@@ -5682,7 +5682,7 @@ describe('api-entry-node projects routes', () => {
         status: 'running',
         mode: params.mode,
         started_at: '2026-03-01T00:00:00.000Z',
-        report_name: 'release-manual-20260301T000000Z',
+        report_name: 'governance-manual-20260301T000000Z',
         source_run_id: params.sourceRunId,
         notes: params.notes,
         actor_user_id: params.actorUserId,
@@ -5690,26 +5690,26 @@ describe('api-entry-node projects routes', () => {
       }),
     };
     const { baseUrl } = startServerWithDeps(deps);
-    deps.releaseGateRunner = mockRunner;
+    deps.governanceRunner = mockRunner;
 
-    const statusRes = await apiFetch(baseUrl, '/api/v1/internal/release-gate-runner');
+    const statusRes = await apiFetch(baseUrl, '/api/v1/internal/governance-runner');
     expect(statusRes.status).toBe(200);
     const statusPayload = (await statusRes.json()) as { running: boolean };
     expect(statusPayload.running).toBe(false);
 
-    const triggerRes = await apiFetch(baseUrl, '/api/v1/internal/release-gate-runner/trigger', {
+    const triggerRes = await apiFetch(baseUrl, '/api/v1/internal/governance-runner/trigger', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         mode: 'failed_only',
-        source_run_id: 'sample-release',
+        source_run_id: 'sample-governance',
         notes: 'rerun failing checks',
       }),
     });
     expect(triggerRes.status).toBe(202);
     const triggerPayload = (await triggerRes.json()) as { mode: string; source_run_id?: string };
     expect(triggerPayload.mode).toBe('failed_only');
-    expect(triggerPayload.source_run_id).toBe('sample-release');
+    expect(triggerPayload.source_run_id).toBe('sample-governance');
   });
 
   it('truncates oversized notebook trace details payloads', async () => {
@@ -5739,7 +5739,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          openai_model: 'glm-4.7',
+          model: 'glm-4.7',
           credential_ref: credential.id,
         }),
       },
@@ -5757,7 +5757,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },
@@ -5874,7 +5874,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          openai_model: 'glm-4.7',
+          model: 'glm-4.7',
           credential_ref: credential.id,
         }),
       },
@@ -5892,7 +5892,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },
@@ -6015,7 +6015,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          openai_model: 'glm-4.7',
+          model: 'glm-4.7',
           credential_ref: credential.id,
         }),
       },
@@ -6033,7 +6033,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          runtime_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },
@@ -6149,7 +6149,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'vision-endpoint',
-          openai_model: 'gpt-4o',
+          model: 'gpt-4o',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -6317,7 +6317,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'vision-endpoint-infer',
-          openai_model: 'gpt-4o',
+          model: 'gpt-4o',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -6426,7 +6426,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'vision-endpoint-missing-dataurl',
-          openai_model: 'gpt-4o',
+          model: 'gpt-4o',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -6522,7 +6522,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-inputref-endpoint',
-          openai_model: 'gpt-4o-mini',
+          model: 'gpt-4o-mini',
           type: 'openai',
           mode: 'openai',
           base_url: 'https://api.example.com/v1',
@@ -6666,7 +6666,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-inputref-meta-endpoint',
-          openai_model: 'gpt-4o-mini',
+          model: 'gpt-4o-mini',
           type: 'openai',
           mode: 'openai',
           base_url: 'https://api.example.com/v1',
@@ -6749,7 +6749,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-only-endpoint',
-          openai_model: 'gpt-4o-mini',
+          model: 'gpt-4o-mini',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -6887,7 +6887,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'rerank-endpoint',
-          openai_model: 'qwen-reranker',
+          model: 'qwen-reranker',
           type: 'custom',
           mode: 'openai',
           protocol: 'openai_compatible',
@@ -6951,7 +6951,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-only',
-          openai_model: 'chat-model',
+          model: 'chat-model',
           protocol: 'openai_compatible',
           type: 'openai',
           base_url: upstream.baseUrl,
@@ -6986,7 +6986,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'google-rerank',
-          openai_model: 'gemini-rerank',
+          model: 'gemini-rerank',
           protocol: 'google_gemini',
           provider_family: 'google',
           type: 'custom',
@@ -7043,7 +7043,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'media-endpoint',
-          openai_model: 'gpt-4o-mini',
+          model: 'gpt-4o-mini',
           protocol: 'openai_compatible',
           type: 'custom',
           base_url: upstream.baseUrl,
@@ -7148,7 +7148,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7256,7 +7256,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7359,7 +7359,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7483,7 +7483,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7582,7 +7582,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7699,7 +7699,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7799,7 +7799,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'branch-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -7955,7 +7955,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'chat-endpoint',
-          openai_model: 'deepseek-chat',
+          model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
@@ -8192,7 +8192,7 @@ describe('api-entry-node projects routes', () => {
           time_window: 'last_7d',
           delivery_channel: 'webhook',
           delivery_config: {},
-          release_evidence_required: true,
+          governance_evidence_required: true,
           empty_result_policy: 'deliver',
         }),
       },
@@ -8231,7 +8231,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'bridge-anthropic-endpoint',
-          openai_model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-5',
           type: 'anthropic',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
@@ -8292,7 +8292,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'bridge-openai-endpoint',
-          openai_model: 'gpt-4o-mini',
+          model: 'gpt-4o-mini',
           type: 'openai',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
@@ -8354,7 +8354,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'bridge-anthropic-responses-endpoint',
-          openai_model: 'claude-sonnet-4-5',
+          model: 'claude-sonnet-4-5',
           type: 'anthropic',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
@@ -8412,7 +8412,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'gateway-anthropic-endpoint',
-          openai_model: 'glm-5',
+          model: 'glm-5',
           type: 'anthropic',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
@@ -8502,7 +8502,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'gateway-anthropic-endpoint-headers',
-          openai_model: 'glm-4.7',
+          model: 'glm-4.7',
           type: 'anthropic',
           base_url: 'http://127.0.0.1:0/unused',
           credential_ref: credential.id,
@@ -8568,7 +8568,7 @@ describe('api-entry-node projects routes', () => {
             webhook_url: 'https://example.internal/report-hook',
             credential_ref: 'cred_webhook',
           },
-          release_evidence_required: true,
+          governance_evidence_required: true,
           empty_result_policy: 'deliver',
         }),
       },
@@ -8607,7 +8607,7 @@ describe('api-entry-node projects routes', () => {
             signature_header_name: 'x-agentsmith-signature',
             retry_attempts: 9,
           },
-          release_evidence_required: true,
+          governance_evidence_required: true,
           empty_result_policy: 'deliver',
         }),
       },

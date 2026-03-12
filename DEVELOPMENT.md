@@ -97,6 +97,21 @@ src/
 └── stories/             # Storybook stories
 ```
 
+## Current Surface Baseline
+
+当前治理与可观测相关的产品基线固定为：
+
+1. `Usage`：用户查看自己在各 endpoint 上的用量与限制消耗程度
+2. `Audit`：管理员查看资源、配置、状态与异常事件记录，并完成审查与追溯
+
+补充说明：
+
+1. `release-ops` 已从当前功能基线中移除
+2. `Runtime Console` 不再作为 MVP 独立产品面继续建设
+3. 若历史能力仍需保留，应并入 `Audit`
+4. `release` / `engineering gate` / `rollout` 等术语若出现在仓库内，默认指工程流程，不是平台对外能力名；产品内权限约束一律表述为 `permission gate`
+5. 以下对象不再作为前端产品对象继续扩张：`guardrails`、`probe`、`alias`、`combo`、`routing`、`activation`
+
 ## Design System Reference
 
 See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for the design system index. All UI designs must follow the in-repo [视觉设计系统](./docs/UXUI/00-设计系统/视觉设计系统-v1.md).
@@ -188,6 +203,7 @@ Use this runbook when E2E is unstable or intermittently timing out.
 Notes:
 - By default, Playwright manages its own `next dev` web server (port `3001`) with MSW enabled.
 - If you set `BASE_URL=...`, Playwright will not start a server. In that mode you must start the dev server yourself.
+- Desktop Playwright runs in this repo use an explicit browser window and viewport of `1920x1080`. This is especially required for visual baseline consistency.
 
 ### 1) Start dev server in a persistent terminal
 
@@ -216,6 +232,7 @@ We keep two E2E modes with distinct responsibilities:
 
 - Uses MSW fixtures as the source of truth.
 - Runs fast and is used for frontend regression testing.
+- Playwright launch/window baseline: `1920x1080`.
 
 ```bash
 npm run test:e2e -- --project=chromium
@@ -225,6 +242,7 @@ npm run test:e2e -- --project=chromium
 
 - Uses a real backend (Keycloak + API).
 - Only runs `e2e/integration-*.spec.ts`.
+- Playwright launch/window baseline: `1920x1080`.
 
 ```bash
 npm run test:e2e:integration:minimal

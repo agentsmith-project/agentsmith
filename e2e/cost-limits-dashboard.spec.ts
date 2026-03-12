@@ -1,47 +1,41 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 
-test.describe('Cost & Limits Dashboard', () => {
+test.describe('Usage Limits Board', () => {
   test.beforeEach(async ({ authedPage }) => {
     await goToProject(authedPage, 'usage');
-    await authedPage.getByTestId('usage__panel-tab--dashboard').click();
   });
 
-  test('dashboard panel renders trend/top/anomaly sections', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('dashboard-trend-chart')).toBeVisible({ timeout: 10000 });
-    await expect(authedPage.getByTestId('dashboard-top-resources')).toBeVisible();
-    await expect(authedPage.getByTestId('dashboard-top-users')).toBeVisible();
-    await expect(authedPage.getByTestId('dashboard-anomalies')).toBeVisible();
+  test('renders overview, limits, and trend sections', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('usage__view')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('usage__planning-controls')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__limits')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__trend')).toBeVisible();
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
   });
 
-  test('resource type filter triggers usage timeseries query with resource_type', async ({ authedPage }) => {
-    const timeseriesReq = authedPage.waitForRequest((req) => {
-      if (req.method() !== 'GET') return false;
-      if (!/\/api\/v1\/workspaces\/.*\/projects\/.*\/usage\/timeseries/.test(req.url())) return false;
-      return req.url().includes('resource_type=agent');
-    });
+  test('supports limit mode switching without removed dashboard panels', async ({ authedPage }) => {
+    await authedPage.getByTestId('usage__limit-mode-rate').click();
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
 
-    await authedPage.getByTestId('dashboard-filters__resource-type').selectOption('agent');
-    await timeseriesReq;
+    await authedPage.getByTestId('usage__limit-mode-spending').click();
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
+
+    await expect(authedPage.getByTestId('usage__panel-tab--dashboard')).toHaveCount(0);
+    await expect(authedPage.getByTestId('dashboard-top-resources')).toHaveCount(0);
+    await expect(authedPage.getByTestId('dashboard-anomalies')).toHaveCount(0);
   });
 
-  test('top resource drill-down switches to usage panel and sets resource filter', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('dashboard-top-resources__row--ep_1')).toBeVisible();
-    await authedPage.getByTestId('dashboard-top-resources__row--ep_1').click();
+  test('supports resource tab switching in the limits board', async ({ authedPage }) => {
+    const resourceTabs = authedPage.locator('[data-testid^="usage__resource-tab-"]');
+    const resourceTabCount = await resourceTabs.count();
 
-    await expect(authedPage.getByTestId('usage__filters')).toBeVisible({ timeout: 10000 });
-    await expect(
-      authedPage.getByPlaceholder(/filter by resource id/i),
-    ).toHaveValue('ep_1');
-  });
-
-  test('anomaly drill-down switches to usage panel and sets resource filter', async ({ authedPage }) => {
-    const anomalyRow = authedPage.locator('[data-testid^="dashboard-anomalies__row--"]').first();
-    await expect(anomalyRow).toBeVisible();
-    await anomalyRow.click();
-
-    await expect(authedPage.getByTestId('usage__filters')).toBeVisible({ timeout: 10000 });
-    await expect(
-      authedPage.getByPlaceholder(/filter by resource id/i),
-    ).toHaveValue('ep_1');
+    if (resourceTabCount > 1) {
+      await resourceTabs.nth(1).click();
+      await expect(resourceTabs.nth(1)).toHaveAttribute('data-state', 'active');
+    } else if (resourceTabCount === 1) {
+      await expect(resourceTabs.first()).toHaveAttribute('data-state', 'active');
+    } else {
+      await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
+    }
   });
 });

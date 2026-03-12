@@ -1,11 +1,11 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentRuntimeTraceEventPayload } from './agent-runtime-service.js';
+import type { AgentExecutionTraceEventPayload } from './agent-execution-service.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
   recordNotebookTraceDetailsTruncated,
   recordNotebookTraceEventStored,
   recordNotebookTraceEventsTruncated,
-} from './notebook-runtime-metrics.js';
+} from './notebook-task-metrics.js';
 
 export interface TaskTraceEventRecord {
   id: string;
@@ -14,9 +14,9 @@ export interface TaskTraceEventRecord {
   run_id: string;
   seq: number;
   at: string;
-  category: AgentRuntimeTraceEventPayload['category'];
-  phase?: AgentRuntimeTraceEventPayload['phase'];
-  status?: AgentRuntimeTraceEventPayload['status'];
+  category: AgentExecutionTraceEventPayload['category'];
+  phase?: AgentExecutionTraceEventPayload['phase'];
+  status?: AgentExecutionTraceEventPayload['status'];
   name: string;
   summary: string;
   details?: Record<string, unknown>;
@@ -135,7 +135,7 @@ export function buildTaskTraceEvent(args: {
   taskId: string;
   messageId: string;
   runId: string;
-  payload: AgentRuntimeTraceEventPayload;
+  payload: AgentExecutionTraceEventPayload;
 }): TaskTraceEventRecord {
   const { taskId, messageId, runId, payload } = args;
   let details: Record<string, unknown> | undefined;

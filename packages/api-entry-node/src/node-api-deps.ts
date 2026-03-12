@@ -37,21 +37,21 @@ import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { ChatResourceService } from './chat-resource-service.js';
 import type { EndpointResourceService } from './endpoint-resource-service.js';
 import type { AgentResourceService } from './agent-resource-service.js';
-import type { AgentRuntimeService } from './agent-runtime-service.js';
+import type { AgentExecutionService } from './agent-execution-service.js';
 import type { InternalAgentPodManager } from './internal-agent-pod-manager.js';
 import type { UsageReportRunnerController } from './usage-report-runner.js';
-import type { ReleaseGateRunnerController } from './release-gate-runner.js';
+import type { GovernanceRunnerController } from './governance-runner.js';
 
 export interface NodeApiDeps {
-  releaseReportsDir?: string;
-  releaseRunsDir?: string;
-  releaseEscalationsDir?: string;
+  governanceReportsDir?: string;
+  governanceRunsDir?: string;
+  governanceIncidentsDir?: string;
   cache: CachePort;
   docStore: JsonDocStorePort;
   chatResourceService: ChatResourceService;
   endpointResourceService: EndpointResourceService;
   agentResourceService: AgentResourceService;
-  agentRuntimeService: AgentRuntimeService;
+  agentExecutionService: AgentExecutionService;
   internalAgentPodManager?: InternalAgentPodManager;
   sourceBucket: string;
   aiReadyJobQueue: InMemoryJobQueue;
@@ -88,5 +88,5 @@ export interface NodeApiDeps {
   cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
   runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
   usageReportRunner?: UsageReportRunnerController;
-  releaseGateRunner?: ReleaseGateRunnerController;
+  governanceRunner?: GovernanceRunnerController;
 }

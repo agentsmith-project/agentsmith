@@ -14,29 +14,45 @@ const EXPECTED_USAGE_TOP_LEVEL_KEYS = [
 
 const EXPECTED_USAGE_VIEW_KEYS = [
   'cards',
+  'endpoint_tabs_label',
+  'limit_mode_all',
+  'limit_mode_label',
+  'limit_mode_rate',
+  'limit_mode_spending',
   'rate_limit_title',
   'spending_limit_title',
   'limit_group_empty',
   'window',
+  'limits_section_title',
+  'limits_section_subtitle',
   'limits_title',
-  'project_max',
-  'limit_reset',
+  'limit_reset_at',
   'limits_empty',
+  'panel_title',
+  'panel_subtitle',
+  'overview_title',
+  'overview_subtitle',
+  'progress_hint',
+  'remaining_suffix',
+  'status_badge',
+  'trend_section_title',
+  'trend_section_subtitle',
+  'trend_summary',
   'trend_title',
   'no_data',
+  'no_data_hint',
   'period',
 ];
 
 const EXPECTED_USAGE_VIEW_CARD_KEYS = [
   'requests_today',
-  'remaining_limit',
   'tokens_today',
   'period_requests',
 ];
 
 const EXPECTED_USAGE_VIEW_PERIOD_KEYS = [
-  '7d',
-  '30d',
+  '24h',
+  '48h',
 ];
 
 const EXPECTED_USAGE_DETAIL_KEYS = [
@@ -69,7 +85,6 @@ const EXPECTED_USAGE_DETAIL_KEYS = [
   'open_audit',
   'tokens',
   'decision_id',
-  'pricing_version',
   'estimated_cost',
   'timeline_title',
   'timeline_empty',

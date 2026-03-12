@@ -14,7 +14,7 @@ import { taskHandlers } from './handlers/tasks';
 import { meHandlers } from './handlers/me';
 import { userKeyHandlers } from './handlers/user-keys';
 import { alertsHandlers } from './handlers/alerts';
-import { runtimeHandlers } from './handlers/runtime';
+import { modelConfigHandlers } from './handlers/model-config';
 
 export const handlers = [
   ...authHandlers,
@@ -33,5 +33,5 @@ export const handlers = [
   ...taskHandlers,
   ...userKeyHandlers,
   ...alertsHandlers,
-  ...runtimeHandlers,
+  ...modelConfigHandlers,
 ];

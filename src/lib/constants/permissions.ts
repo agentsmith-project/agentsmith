@@ -11,16 +11,10 @@
 export const PLATFORM_PERMISSIONS = {
   WORKSPACE: ['workspace:read', 'workspace:project:create'] as const,
   PROJECT: [
-    // Canonical tokens
     'project:endpoint:use',
     'project:agent:manage',
     'project:agent:public',
     'project:manage',
-    // Deprecated legacy aliases (read-only compatibility bridge).
-    // Removal target: after all issuers emit canonical tokens only.
-    'project:endpoint:invoke',
-    'project:agent:create',
-    'project:agent:publish',
   ] as const,
 } as const;
 
@@ -36,9 +30,6 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:agent:manage': 'Create and manage own agents',
   'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
   'project:manage': 'Manage all project resources and governance settings',
-  'project:endpoint:invoke': 'Use project endpoints (legacy alias)',
-  'project:agent:create': 'Create and manage own agents (legacy alias)',
-  'project:agent:publish': 'Publish or unpublish agents (legacy alias)',
 };
 
 export const PLATFORM_PERMISSIONS_GROUPED = [
@@ -72,14 +63,6 @@ export const HIGH_RISK_PERMISSIONS = [
   'project:agent:public',
   'project:manage',
 ] as const;
-
-export const LEGACY_PERMISSION_ALIASES: Record<string, string> = {
-  'project:endpoint:invoke': 'project:endpoint:use',
-  'project:agent:create': 'project:agent:manage',
-  'project:agent:publish': 'project:agent:public',
-};
-
-export const LEGACY_PERMISSION_ALIAS_REMOVAL_TARGET = 'post-mvp-canonical-token-cutover';
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];
 export type GroupTemplate = keyof typeof GROUP_TEMPLATES;

@@ -89,7 +89,7 @@ export function useChatThreadActions(args: UseChatThreadActionsArgs): UseChatThr
     if (!canManageChatSessions || !activeSession) return;
     updateSession({
       sessionId: activeSession.id,
-      data: { endpoint_id: endpoint.id, external_agent_id: undefined, model: endpoint.openai_model },
+      data: { endpoint_id: endpoint.id, external_agent_id: undefined, model: endpoint.model },
     });
   }, [activeSession, canManageChatSessions, updateSession]);
 

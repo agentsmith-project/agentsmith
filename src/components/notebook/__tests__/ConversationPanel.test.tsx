@@ -35,7 +35,7 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.realtime_status_ticket_network_description': 'The client could not establish the ticket needed for realtime notebook updates.',
       'notebook.conversation.realtime_status_reconcile_failed_title': 'Trace recovery needs manual refresh',
       'notebook.conversation.realtime_status_reconcile_failed_description': 'The realtime stream reconnected, but trace backfill did not complete. Refresh to rebuild the task timeline.',
-      'notebook.conversation.sandbox_starting_title': 'Preparing managed runtime',
+      'notebook.conversation.sandbox_starting_title': 'Preparing managed execution environment',
       'notebook.conversation.sandbox_starting_description': 'Starting internal agent sandbox. First response may take up to a minute.',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
@@ -155,7 +155,7 @@ describe('ConversationPanel', () => {
       );
 
       expect(screen.getByTestId('notebook__sandbox-starting')).toBeInTheDocument();
-      expect(screen.getByText('Preparing managed runtime')).toBeInTheDocument();
+      expect(screen.getByText('Preparing managed execution environment')).toBeInTheDocument();
     });
   });
 
@@ -408,16 +408,16 @@ describe('ConversationPanel', () => {
           connectionStatus="error"
           connectionErrorCode="TASK_EVENTS_STREAM_UNAVAILABLE"
           diagnosticsLinks={{
-            runtime: '/runtime-observability?result=error',
+            audit: '/audit?result=error',
             usage: '/usage?result=error',
             agent: '/agents?agent=agent_123',
           }}
         />
       );
 
-      expect(screen.getByTestId('notebook__sse-status-open-runtime')).toHaveAttribute(
+      expect(screen.getByTestId('notebook__sse-status-open-audit')).toHaveAttribute(
         'href',
-        '/runtime-observability?result=error',
+        '/audit?result=error',
       );
       expect(screen.getByTestId('notebook__sse-status-open-usage')).toHaveAttribute(
         'href',

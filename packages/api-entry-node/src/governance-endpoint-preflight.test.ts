@@ -13,7 +13,7 @@ function buildEndpoint(overrides?: Partial<EndpointRecord>): EndpointRecord {
     workspace_id: 'ws_1',
     project_id: 'proj_1',
     name: 'endpoint-1',
-    openai_model: 'glm-5',
+    model: 'glm-5',
     type: 'openai',
     base_url: 'https://example.com',
     status: 'active',
@@ -32,7 +32,7 @@ describe('governance-endpoint-preflight', () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
     const endpoint = buildEndpoint({
-      runtime_profile: {
+      model_profile: {
         max_context_tokens: 100000,
         max_output_tokens: 8000,
         supports_file: true,

@@ -23,7 +23,7 @@ vi.mock('@/lib/api', () => ({
       ]),
     };
   }),
-  RuntimeAPI: vi.fn().mockImplementation(function () {
+  ModelConfigAPI: vi.fn().mockImplementation(function () {
     return {
       listCatalogModels: vi.fn().mockResolvedValue({ items: [] }),
     };
@@ -70,7 +70,7 @@ describe('EditEndpointDialog', () => {
             project_id: 'prj_1',
             name: 'OpenAI Main',
             description: 'Primary endpoint',
-            openai_model: 'gpt-4o',
+            model: 'gpt-4o',
             type: 'openai',
             base_url: 'https://api.openai.com/v1',
             credential_ref: 'cred_1',
@@ -112,7 +112,7 @@ describe('EditEndpointDialog', () => {
             project_id: 'prj_1',
             name: 'Custom Anthropic',
             description: 'Custom endpoint',
-            openai_model: 'glm-4.5',
+            model: 'glm-4.5',
             type: 'custom',
             protocol: 'anthropic_compatible',
             base_url: 'https://open.bigmodel.cn/api/anthropic',

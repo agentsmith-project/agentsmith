@@ -127,14 +127,14 @@ function startMockOpenAIUpstream(): {
   };
 }
 
-type RuntimeWsMessage = {
+type ExecutionWsMessage = {
   type?: string;
   request_id?: string;
   payload?: {
     resource_proxy?: {
       base_url?: string;
     };
-    runtime_context?: {
+    execution_context?: {
       user_bearer_token?: string;
       task_id?: string;
       run_id?: string;
@@ -143,7 +143,7 @@ type RuntimeWsMessage = {
   };
 };
 
-test.describe('@lane-real integration notebook external runtime', () => {
+test.describe('@lane-real integration notebook external execution service', () => {
   test('task message streams through runtime->endpoint proxy chain', async ({ page }) => {
     test.setTimeout(180_000);
 
@@ -175,7 +175,7 @@ test.describe('@lane-real integration notebook external runtime', () => {
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           data: {
             name: `it-proxy-endpoint-${Date.now()}`,
-            openai_model: 'gpt-5-codex',
+            model: 'gpt-5-codex',
             type: 'openai',
             mode: 'openai',
             base_url: upstream.baseUrl,
@@ -194,7 +194,7 @@ test.describe('@lane-real integration notebook external runtime', () => {
             name: `it-notebook-external-${Date.now()}`,
             mode: 'external',
             interaction_mode: 'notebook',
-            runtime_preferences: {
+            execution_preferences: {
               notebook: {
                 endpoint_id: endpoint.id,
                 wire_api: 'chat',
@@ -236,17 +236,17 @@ test.describe('@lane-real integration notebook external runtime', () => {
         ws = new WebSocket(wsUrl, { headers: { Authorization: `Bearer ${keyPayload.key}` } });
         ws.once('error', reject);
         ws.on('message', (raw) => {
-          const msg = JSON.parse(raw.toString('utf-8')) as RuntimeWsMessage;
+          const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
           if (msg.type === 'server.hello') {
             helloProxyBase = msg.payload?.resource_proxy?.base_url ?? '';
             return;
           }
           if (msg.type !== 'server.request.start' || !msg.request_id) return;
-          const runtimeContext = msg.payload?.runtime_context ?? {};
+          const executionContext = msg.payload?.execution_context ?? {};
           const endpointProxyBase = helloProxyBase;
-          const userToken = runtimeContext.user_bearer_token ?? '';
-          const taskId = runtimeContext.task_id ?? '';
-          const runId = runtimeContext.run_id ?? '';
+          const userToken = executionContext.user_bearer_token ?? '';
+          const taskId = executionContext.task_id ?? '';
+          const runId = executionContext.run_id ?? '';
           resolve({ endpointProxyBase, userToken, taskId, runId });
 
           void (async () => {

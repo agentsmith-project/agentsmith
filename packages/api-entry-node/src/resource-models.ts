@@ -30,8 +30,8 @@ export interface EndpointRecord {
   workspace_id: string;
   name: string;
   description?: string;
-  openai_model: string; // Deprecated compatibility field.
-  type: 'openai' | 'anthropic' | 'custom'; // Deprecated compatibility field.
+  model: string;
+  type: 'openai' | 'anthropic' | 'custom';
   mode?: 'openai';
   base_url: string;
   status: 'active' | 'disabled';
@@ -43,7 +43,7 @@ export interface EndpointRecord {
   defaults?: EndpointDefaults;
   health?: EndpointHealth;
   meta?: Record<string, string>;
-  runtime_profile?: EndpointRuntimeProfile;
+  model_profile?: EndpointModelProfile;
   limits?: {
     max_requests_per_minute?: number;
     max_requests_per_day?: number;
@@ -54,7 +54,7 @@ export interface EndpointRecord {
   updated_at: string;
 }
 
-export interface EndpointRuntimeProfile {
+export interface EndpointModelProfile {
   max_context_tokens: number;
   max_output_tokens: number;
   supports_file: boolean;
@@ -146,7 +146,7 @@ export interface ChatSessionRecord {
   updated_at: string;
   message_count: number;
   total_tokens: number;
-  runtime_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+  execution_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 }
 
 export interface AgentRecord {
@@ -172,7 +172,7 @@ export interface AgentRecord {
     _internal_raw_key?: string;
     max_concurrent_sessions_override?: number;
   };
-  runtime_preferences_json?: Record<string, unknown>;
+  execution_preferences_json?: Record<string, unknown>;
   interaction_mode?: 'chat' | 'notebook' | 'both';
   owner_id?: string;
   admin_id?: string;

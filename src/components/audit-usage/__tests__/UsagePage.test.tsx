@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
+import { UsageView } from '../UsageView';
 
 const invalidateQueries = vi.fn();
 
@@ -81,27 +82,35 @@ vi.mock('@/lib/hooks/use-audit-usage', () => ({
             },
           ],
         },
+        {
+          endpoint_id: 'ep_2',
+          endpoint_name: 'Endpoint 2',
+          limits: [
+            {
+              kind: 'rate_limit',
+              window: 'day',
+              metric: 'requests',
+              policy_key: 'endpoint.requests_per_day',
+              used: 10,
+              max: 20,
+              remaining: 10,
+              usage_pct: 50,
+              reset_at: '2026-03-08T00:00:00.000Z',
+            },
+          ],
+        },
       ],
-      project_summary: {
-        project_used: 40,
-        project_max: 100,
-        project_remaining: 60,
-        project_usage_pct: 40,
-      },
     },
   }),
 }));
 
 vi.mock('@/lib/endpoints/use-endpoints-data', () => ({
   useEndpointsData: () => ({
-    endpoints: [],
+    endpoints: [
+      { id: 'ep_1', name: 'Endpoint 1' },
+      { id: 'ep_2', name: 'Endpoint 2' },
+    ],
     endpointsLoading: false,
-  }),
-}));
-
-vi.mock('@/lib/hooks/use-members', () => ({
-  useResourcePolicy: () => ({
-    data: undefined,
   }),
 }));
 
@@ -122,13 +131,14 @@ describe('UsagePage', () => {
 
     expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
     expect(screen.getByTestId('usage__view')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__open-runtime-observability')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__open-release-ops')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__open-runtime-console')).not.toBeInTheDocument();
     expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
-    expect(screen.getByText('60 / 100')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__endpoint-limits')).toBeInTheDocument();
-    expect(screen.getByText('view.rate_limit_title')).toBeInTheDocument();
-    expect(screen.getByText('view.spending_limit_title')).toBeInTheDocument();
+    expect(screen.getByTestId('usage__endpoint-tabs')).toBeInTheDocument();
+    expect(screen.getAllByTestId('usage__endpoint-dimensions').length).toBeGreaterThan(0);
+    expect(screen.getAllByTestId('usage__progress-card').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('view.rate_limit_title').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('view.spending_limit_title').length).toBeGreaterThan(0);
+    expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();
   });
 
   it('does not expose export action in usage view', () => {
@@ -168,5 +178,55 @@ describe('UsagePage', () => {
     await user.click(screen.getByTestId('usage__period-24'));
     expect(screen.getByTestId('usage__period-24')).toHaveAttribute('data-active', 'true');
     expect(screen.getByTestId('usage__period-48')).toHaveAttribute('data-active', 'false');
+  });
+
+  it('shows selected endpoint dimensions without project aggregate', () => {
+    render(
+      <UsageView
+        records={[]}
+        periodHours={48}
+        endpointOptions={[
+          { id: 'ep_1', name: 'Endpoint 1' },
+          { id: 'ep_2', name: 'Endpoint 2' },
+        ]}
+        selectedEndpointId="ep_2"
+        limitsOverview={{
+          endpoints: [
+            {
+              endpointId: 'ep_1',
+              endpointName: 'Endpoint 1',
+              limits: [],
+            },
+            {
+              endpointId: 'ep_2',
+              endpointName: 'Endpoint 2',
+              limits: [
+                {
+                  kind: 'rate_limit',
+                  window: 'day',
+                  metric: 'requests',
+                  policyKey: 'endpoint.requests_per_day',
+                  used: 10,
+                  max: 20,
+                  remaining: 10,
+                  usagePct: 50,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getAllByTestId('usage__endpoint-dimensions').length).toBeGreaterThan(0);
+    expect(screen.getByTestId('usage__resource-tab-ep_2')).toBeInTheDocument();
+    expect(screen.getAllByTestId('usage__progress-card').length).toBe(1);
+    expect(screen.getAllByText('Endpoint 2').length).toBeGreaterThan(0);
+    expect(screen.queryByText('ep_2')).not.toBeInTheDocument();
+    expect(screen.getByText('view.progress_hint:{"value":50,"unit":"view.rate_limit_title"}')).toBeInTheDocument();
+    expect(screen.getByText(/view\.limit_reset_at:/)).toBeInTheDocument();
+    expect(screen.getByText('view.status_badge:{"value":50}')).toBeInTheDocument();
+    expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();
   });
 });

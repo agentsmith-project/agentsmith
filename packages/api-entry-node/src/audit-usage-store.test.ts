@@ -4,7 +4,7 @@ import {
   acknowledgeUsageReportDelivery,
   createUsageReportSchedule,
   exportUsageData,
-  getRuntimeObservability,
+  getUsageRecordsSummary,
   getUsageReportEvidence,
   getUsageOperationsSummary,
   listAuditEvents,
@@ -19,7 +19,7 @@ import {
   USAGE_REPORT_SCHEDULES_COLLECTION,
 } from './audit-usage-store.js';
 
-describe('audit-usage-store runtime observability', () => {
+describe('audit-usage-store usage records summary', () => {
   it('aggregates fallback hops and error classes from usage facts', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';
@@ -60,7 +60,7 @@ describe('audit-usage-store runtime observability', () => {
 
     const end = new Date();
     const start = new Date(end.getTime() - 60_000);
-    const summary = await getRuntimeObservability(store, {
+    const summary = await getUsageRecordsSummary(store, {
       workspaceId,
       projectId,
       startTime: start.toISOString(),
@@ -70,23 +70,23 @@ describe('audit-usage-store runtime observability', () => {
     expect(summary.total_requests).toBe(3);
     expect(summary.total_errors).toBe(2);
     expect(summary.error_rate).toBeCloseTo(0.6667, 4);
-    expect(summary.fallback_hops_histogram['0']).toBe(1);
-    expect(summary.fallback_hops_histogram['1']).toBe(1);
-    expect(summary.fallback_hops_histogram['2']).toBe(1);
+    expect(summary.reroute_hops_histogram['0']).toBe(1);
+    expect(summary.reroute_hops_histogram['1']).toBe(1);
+    expect(summary.reroute_hops_histogram['2']).toBe(1);
     expect(summary.error_class_counts.provider_retryable).toBe(1);
     expect(summary.error_class_counts.provider_non_retryable).toBe(1);
     expect(summary.avg_estimated_cost).toBeGreaterThan(0);
     expect(summary.p95_estimated_cost).toBeGreaterThan(0);
-    expect(summary.health_summary.recovered_requests).toBe(2);
-    expect(summary.health_summary.missing_price_facts).toBe(1);
+    expect(summary.records_health.rerouted_requests).toBe(2);
+    expect(summary.records_health.missing_price_records).toBe(1);
     expect(summary.request_trend.length).toBeGreaterThan(0);
     expect(summary.cost_distribution_usd.p95).toBeGreaterThan(0);
-    expect(summary.degradation_signals).toEqual(
+    expect(summary.issue_signals).toEqual(
       expect.arrayContaining([expect.objectContaining({ kind: 'missing_price' })]),
     );
     expect(summary.provider_breakdown).toEqual([
-      expect.objectContaining({ provider: 'openai', requests: 2, errors: 1, fallback_rate: 0.5 }),
-      expect.objectContaining({ provider: 'anthropic', requests: 1, errors: 1, missing_price_facts: 1 }),
+      expect.objectContaining({ provider: 'openai', requests: 2, errors: 1, reroute_rate: 0.5 }),
+      expect.objectContaining({ provider: 'anthropic', requests: 1, errors: 1, missing_price_records: 1 }),
     ]);
     expect(summary.model_breakdown).toEqual([
       expect.objectContaining({ provider: 'openai', model: 'gpt-4o', requests: 2 }),
@@ -94,7 +94,7 @@ describe('audit-usage-store runtime observability', () => {
     ]);
   });
 
-  it('lists request-level usage facts with runtime metadata', async () => {
+  it('lists request-level usage facts with request details', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';
     const projectId = 'proj_1';
@@ -113,7 +113,7 @@ describe('audit-usage-store runtime observability', () => {
         provider: 'secondaryok',
         resolved_model: 'model-b',
         fallback_hops: 1,
-        pricing_version: 'runtime-pricing-v1',
+        pricing_source: 'project-pricing-v1',
         estimated_cost: 0.0068,
         attempt_trace: [
           { index: 0, provider: 'primaryfail', model: 'model-a', outcome: 'fallback_upstream_error' },
@@ -135,13 +135,13 @@ describe('audit-usage-store runtime observability', () => {
 
     expect(rows.total).toBe(1);
     expect(rows.items[0]?.request_id).toBe('req_1');
-    expect(rows.items[0]?.runtime?.provider).toBe('secondaryok');
-    expect(rows.items[0]?.runtime?.resolved_model).toBe('model-b');
-    expect(rows.items[0]?.runtime?.error_class).toBeUndefined();
-    expect(rows.items[0]?.runtime?.fallback_hops).toBe(1);
-    expect(rows.items[0]?.runtime?.pricing_version).toBe('runtime-pricing-v1');
-    expect(rows.items[0]?.runtime?.estimated_cost).toBe(0.0068);
-    expect(rows.items[0]?.runtime?.attempts).toHaveLength(2);
+    expect(rows.items[0]?.request_details?.provider).toBe('secondaryok');
+    expect(rows.items[0]?.request_details?.resolved_model).toBe('model-b');
+    expect(rows.items[0]?.request_details?.error_class).toBeUndefined();
+    expect(rows.items[0]?.request_details?.fallback_hops).toBe(1);
+    expect(rows.items[0]?.request_details?.pricing_source).toBe('project-pricing-v1');
+    expect(rows.items[0]?.request_details?.estimated_cost).toBe(0.0068);
+    expect(rows.items[0]?.request_details?.attempts).toHaveLength(2);
   });
 
   it('surfaces decision_id in audit and usage list responses', async () => {
@@ -212,7 +212,7 @@ describe('audit-usage-store runtime observability', () => {
     expect(usageRows.items[0]?.decision_id).toBe(decisionId);
   });
 
-  it('filters usage facts by runtime provider, model, and error class', async () => {
+  it('filters usage facts by request provider, model, and error class', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';
     const projectId = 'proj_1';
@@ -263,10 +263,10 @@ describe('audit-usage-store runtime observability', () => {
 
     expect(rows.total).toBe(1);
     expect(rows.items[0]?.request_id).toBe('req_error');
-    expect(rows.items[0]?.runtime?.error_class).toBe('provider_retryable');
+    expect(rows.items[0]?.request_details?.error_class).toBe('provider_retryable');
   });
 
-  it('builds usage operations summary from filtered runtime facts', async () => {
+  it('builds usage operations summary from filtered request facts', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';
     const projectId = 'proj_1';
@@ -420,7 +420,7 @@ describe('audit-usage-store runtime observability', () => {
         provider: 'openai',
         resolved_model: 'gpt-4o',
         fallback_hops: 0,
-        pricing_version: 'runtime-pricing-v1',
+        pricing_source: 'project-pricing-v1',
         estimated_cost: 0.0042,
       },
     });
@@ -450,11 +450,11 @@ describe('audit-usage-store runtime observability', () => {
     const payload = JSON.parse(json.body) as {
       kpi: { requests_today?: number };
       facts: Array<{ request_id?: string }>;
-      runtime_observability: { total_requests: number };
+      records_summary: { total_requests: number };
       operations_summary: { top_providers: Array<{ provider: string }> };
     };
     expect(payload.facts).toEqual(expect.arrayContaining([expect.objectContaining({ request_id: 'req_export' })]));
-    expect(payload.runtime_observability.total_requests).toBe(1);
+    expect(payload.records_summary.total_requests).toBe(1);
     expect(payload.operations_summary.top_providers).toEqual(expect.arrayContaining([expect.objectContaining({ provider: 'openai' })]));
   });
 
@@ -489,7 +489,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: true,
+      governance_evidence_required: true,
       empty_result_policy: 'deliver',
       filters: {
         provider: 'secondaryok',
@@ -528,7 +528,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_24h',
       delivery_channel: 'in_app',
-      release_evidence_required: true,
+      governance_evidence_required: true,
       empty_result_policy: 'fail',
       filters: {
         provider: 'secondaryok',
@@ -548,7 +548,7 @@ describe('audit-usage-store runtime observability', () => {
     }));
 
     let evidence = await getUsageReportEvidence(store, { workspaceId, projectId });
-    expect(evidence.release_readiness).toBe('blocked');
+    expect(evidence.review_status).toBe('blocked');
     expect(evidence.blockers).toEqual(
       expect.arrayContaining([
         expect.stringContaining('usage_report_schedule_latest_delivery_failed:Required Empty Guard'),
@@ -587,7 +587,7 @@ describe('audit-usage-store runtime observability', () => {
     }));
 
     evidence = await getUsageReportEvidence(store, { workspaceId, projectId });
-    expect(evidence.release_readiness).toBe('blocked');
+    expect(evidence.review_status).toBe('blocked');
     expect(evidence.blockers).toEqual(
       expect.arrayContaining([expect.stringContaining('usage_report_schedule_unacknowledged:Required Empty Guard')]),
     );
@@ -608,7 +608,7 @@ describe('audit-usage-store runtime observability', () => {
     expect(acknowledged?.acknowledged_by).toBe('user_admin');
 
     evidence = await getUsageReportEvidence(store, { workspaceId, projectId });
-    expect(evidence.release_readiness).toBe('ready');
+    expect(evidence.review_status).toBe('ready');
     expect(evidence.blockers).toEqual([]);
     expect(evidence.unacknowledged_required_deliveries).toBe(0);
   });
@@ -642,7 +642,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
     await createUsageReportSchedule(store, {
@@ -654,7 +654,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
 
@@ -704,7 +704,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
     const second = await createUsageReportSchedule(store, {
@@ -716,7 +716,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
 
@@ -768,7 +768,7 @@ describe('audit-usage-store runtime observability', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
 
@@ -829,7 +829,7 @@ describe('audit-usage-store runtime observability', () => {
         credential_ref: 'cred_webhook',
         secret_header_name: 'x-webhook-secret',
       },
-      release_evidence_required: true,
+      governance_evidence_required: true,
       empty_result_policy: 'deliver',
     });
 
@@ -845,7 +845,7 @@ describe('audit-usage-store runtime observability', () => {
       },
     });
 
-    expect(evidence.release_readiness).toBe('blocked');
+    expect(evidence.review_status).toBe('blocked');
     expect(evidence.blockers).toContain('usage_report_schedule_missing_delivery:Release Snapshot');
     expect(evidence.blockers).toContain('usage_report_runner_disabled');
     expect(evidence.warnings).toContain('usage_report_schedule_webhook_signature_missing:Release Snapshot');

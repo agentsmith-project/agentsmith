@@ -9,7 +9,7 @@ import type {
   EndpointImportItem,
   EndpointImportPayload,
   EndpointModelBinding,
-  EndpointRuntimeProfile,
+  EndpointModelProfile,
   EndpointRecord,
 } from './resource-models.js';
 
@@ -100,10 +100,10 @@ export class EndpointResourceService {
     return protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible';
   }
 
-  private normalizeRuntimeProfile(
-    profile: EndpointRuntimeProfile | undefined,
-    fallback?: EndpointRuntimeProfile,
-  ): EndpointRuntimeProfile | undefined {
+  private normalizeModelProfile(
+    profile: EndpointModelProfile | undefined,
+    fallback?: EndpointModelProfile,
+  ): EndpointModelProfile | undefined {
     const source = profile ?? fallback;
     if (!source) return undefined;
     const clampRatio = (value: number | undefined, defaultValue = 0): number => {
@@ -138,7 +138,7 @@ export class EndpointResourceService {
     };
   }
 
-  private defaultRuntimeProfileForEndpoint(input: Partial<EndpointRecord>): EndpointRuntimeProfile | undefined {
+  private defaultModelProfileForEndpoint(input: Partial<EndpointRecord>): EndpointModelProfile | undefined {
     const isCustom = input.type === 'custom' || input.provider_family === 'custom';
     if (!isCustom) return undefined;
     return {
@@ -155,7 +155,7 @@ export class EndpointResourceService {
   }
 
   private normalizeEndpointFields(input: Partial<EndpointRecord>, fallbackOpenAIModel?: string): {
-    openaiModel: string;
+    model: string;
     capabilities: EndpointCapability[] | undefined;
     models: EndpointModelBinding[] | undefined;
     defaults: EndpointDefaults | undefined;
@@ -174,12 +174,12 @@ export class EndpointResourceService {
       })),
     );
 
-    const legacyOpenAIModel = String(input.openai_model ?? fallbackOpenAIModel ?? '').trim();
+    const directModel = String(input.model ?? fallbackOpenAIModel ?? '').trim();
     const chatModel = normalizedModels.find((item) => item.capability === 'chat_completion')?.model_id;
     const multimodalModel = normalizedModels.find(
       (item) => item.capability === 'multimodal_completion',
     )?.model_id;
-    const primaryModel = chatModel ?? multimodalModel ?? legacyOpenAIModel;
+    const primaryModel = chatModel ?? multimodalModel ?? directModel;
     const defaults = this.buildDefaults(normalizedModels, input.defaults);
 
     if (normalizedCapabilities.length === 0 && primaryModel) {
@@ -198,7 +198,7 @@ export class EndpointResourceService {
     }
 
     return {
-      openaiModel: primaryModel,
+      model: primaryModel,
       capabilities: normalizedCapabilities.length > 0 ? normalizedCapabilities : undefined,
       models: normalizedModels.length > 0 ? normalizedModels : undefined,
       defaults,
@@ -340,11 +340,11 @@ export class EndpointResourceService {
     input: Partial<EndpointRecord>,
   ): Promise<EndpointRecord> {
     const normalized = this.normalizeEndpointFields(input);
-    if (!normalized.openaiModel) {
+    if (!normalized.model) {
       throw new Error('endpoint_model_required');
     }
     const existing = await this.listEndpoints(workspaceId, projectId);
-    if (existing.some((item) => item.openai_model === normalized.openaiModel)) {
+    if (existing.some((item) => item.model === normalized.model)) {
       throw new Error('endpoint_model_conflict');
     }
     const now = new Date().toISOString();
@@ -355,7 +355,7 @@ export class EndpointResourceService {
       project_id: projectId,
       name: String(input.name ?? '').trim(),
       description: input.description?.trim() || undefined,
-      openai_model: normalized.openaiModel,
+      model: normalized.model,
       type: (input.type as EndpointRecord['type']) ?? 'openai',
       mode: input.mode,
       base_url: this.normalizeBaseUrl(String(input.base_url ?? '')),
@@ -368,9 +368,9 @@ export class EndpointResourceService {
       defaults: normalized.defaults,
       health: input.health ?? { status: 'unknown' },
       meta: input.meta,
-      runtime_profile: this.normalizeRuntimeProfile(
-        input.runtime_profile,
-        this.defaultRuntimeProfileForEndpoint(input),
+      model_profile: this.normalizeModelProfile(
+        input.model_profile,
+        this.defaultModelProfileForEndpoint(input),
       ),
       limits: input.limits,
       created_at: now,
@@ -399,7 +399,7 @@ export class EndpointResourceService {
         ...existing,
         ...patch,
       },
-      existing.openai_model,
+      existing.model,
     );
     const protocol = this.inferProtocol(
       patch.base_url !== undefined ? this.normalizeBaseUrl(String(patch.base_url)) : existing.base_url,
@@ -409,7 +409,7 @@ export class EndpointResourceService {
       ...existing,
       ...patch,
       name: patch.name !== undefined ? String(patch.name).trim() : existing.name,
-      openai_model: normalized.openaiModel,
+      model: normalized.model,
       base_url:
         patch.base_url !== undefined
           ? this.normalizeBaseUrl(String(patch.base_url))
@@ -419,9 +419,9 @@ export class EndpointResourceService {
       capabilities: normalized.capabilities,
       models: normalized.models,
       defaults: normalized.defaults,
-      runtime_profile: this.normalizeRuntimeProfile(
-        patch.runtime_profile,
-        existing.runtime_profile ?? this.defaultRuntimeProfileForEndpoint({ ...existing, ...patch }),
+      model_profile: this.normalizeModelProfile(
+        patch.model_profile,
+        existing.model_profile ?? this.defaultModelProfileForEndpoint({ ...existing, ...patch }),
       ),
       updated_at: new Date().toISOString(),
     };
@@ -469,7 +469,7 @@ export class EndpointResourceService {
       });
       const endpoint = await this.createEndpoint(workspaceId, projectId, {
         name: `${pair.name}-${pair.item.model}`,
-        openai_model: pair.item.model,
+        model: pair.item.model,
         type: pair.type,
         mode: pair.item.mode,
         base_url: pair.item.api_base,

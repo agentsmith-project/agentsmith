@@ -72,7 +72,7 @@ export type ProjectsRoute =
   | { kind: 'usageFacts'; workspaceId: string; projectId: string }
   | { kind: 'usageKpi'; workspaceId: string; projectId: string }
   | { kind: 'usageTimeseries'; workspaceId: string; projectId: string }
-  | { kind: 'usageRuntimeObservability'; workspaceId: string; projectId: string }
+  | { kind: 'usageRecordsSummary'; workspaceId: string; projectId: string }
   | { kind: 'usageOperationsSummary'; workspaceId: string; projectId: string }
   | { kind: 'limitsSummary'; workspaceId: string; projectId: string }
   | { kind: 'projectMembers'; workspaceId: string; projectId: string }
@@ -98,7 +98,7 @@ export type ProjectsRoute =
   | { kind: 'agents'; workspaceId: string; projectId: string }
   | { kind: 'agentItem'; workspaceId: string; projectId: string; agentId: string }
   | { kind: 'agentDiagnostics'; workspaceId: string; projectId: string; agentId: string }
-  | { kind: 'agentRuntimeConfig'; workspaceId: string; projectId: string; agentId: string }
+  | { kind: 'agentExecutionConfig'; workspaceId: string; projectId: string; agentId: string }
   | { kind: 'agentConnectionInfo'; workspaceId: string; projectId: string; agentId: string }
   | { kind: 'agentKeys'; workspaceId: string; projectId: string; agentId: string }
   | {
@@ -130,58 +130,10 @@ export type ProjectsRoute =
   }
   | { kind: 'endpointImportOpenAICompatible'; workspaceId: string; projectId: string }
   | { kind: 'llmUnifiedChat'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeProviders'; workspaceId: string; projectId: string }
-  | {
-    kind: 'runtimeProviderItem';
-    workspaceId: string;
-    projectId: string;
-    providerConnectionId: string;
-  }
-  | { kind: 'runtimeModels'; workspaceId: string; projectId: string }
-  | {
-    kind: 'runtimeModelItem';
-    workspaceId: string;
-    projectId: string;
-    provider: string;
-    modelId: string;
-  }
-  | { kind: 'runtimeRoutingAliases'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeRoutingDryRun'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeImpactPreview'; workspaceId: string; projectId: string }
-  | {
-    kind: 'runtimeRoutingAliasItem';
-    workspaceId: string;
-    projectId: string;
-    alias: string;
-  }
-  | {
-    kind: 'runtimeRoutingAliasPublish';
-    workspaceId: string;
-    projectId: string;
-    alias: string;
-  }
-  | { kind: 'runtimeRoutingCombos'; workspaceId: string; projectId: string }
-  | {
-    kind: 'runtimeRoutingComboItem';
-    workspaceId: string;
-    projectId: string;
-    combo: string;
-  }
-  | {
-    kind: 'runtimeRoutingComboPublish';
-    workspaceId: string;
-    projectId: string;
-    combo: string;
-  }
-  | { kind: 'runtimePricing'; workspaceId: string; projectId: string }
-  | { kind: 'runtimePricingVersions'; workspaceId: string; projectId: string }
-  | { kind: 'runtimePricingVersionActivate'; workspaceId: string; projectId: string; pricingVersionId: string }
-  | { kind: 'runtimePricingCompare'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeCatalogProviders'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeCatalogModels'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeCatalogSync'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeCatalogJobs'; workspaceId: string; projectId: string }
-  | { kind: 'runtimeCatalogStatus'; workspaceId: string; projectId: string }
+  | { kind: 'projectPricing'; workspaceId: string; projectId: string }
+  | { kind: 'modelCatalogProviders'; workspaceId: string; projectId: string }
+  | { kind: 'modelCatalogModels'; workspaceId: string; projectId: string }
+  | { kind: 'modelCatalogSync'; workspaceId: string; projectId: string }
   | { kind: 'credentials'; workspaceId: string; projectId: string }
   | { kind: 'credentialItem'; workspaceId: string; projectId: string; credentialId: string }
   | { kind: 'credentialRotate'; workspaceId: string; projectId: string; credentialId: string };
@@ -375,14 +327,14 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const usageRuntimeObservabilityMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/runtime-observability\/?$/,
+  const usageRecordsSummaryMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/records-summary\/?$/,
   );
-  if (usageRuntimeObservabilityMatched) {
+  if (usageRecordsSummaryMatched) {
     return {
-      kind: 'usageRuntimeObservability',
-      workspaceId: decodeURIComponent(usageRuntimeObservabilityMatched[1]),
-      projectId: decodeURIComponent(usageRuntimeObservabilityMatched[2]),
+      kind: 'usageRecordsSummary',
+      workspaceId: decodeURIComponent(usageRecordsSummaryMatched[1]),
+      projectId: decodeURIComponent(usageRecordsSummaryMatched[2]),
     };
   }
 
@@ -987,15 +939,15 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const agentRuntimeConfigMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/runtime-config\/?$/,
+  const agentExecutionConfigMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/agents\/([^/]+)\/execution-config\/?$/,
   );
-  if (agentRuntimeConfigMatched) {
+  if (agentExecutionConfigMatched) {
     return {
-      kind: 'agentRuntimeConfig',
-      workspaceId: decodeURIComponent(agentRuntimeConfigMatched[1]),
-      projectId: decodeURIComponent(agentRuntimeConfigMatched[2]),
-      agentId: decodeURIComponent(agentRuntimeConfigMatched[3]),
+      kind: 'agentExecutionConfig',
+      workspaceId: decodeURIComponent(agentExecutionConfigMatched[1]),
+      projectId: decodeURIComponent(agentExecutionConfigMatched[2]),
+      agentId: decodeURIComponent(agentExecutionConfigMatched[3]),
     };
   }
 
@@ -1057,242 +1009,47 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const runtimeProviderItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/providers\/([^/]+)\/?$/,
+  const projectPricingMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/project-pricing\/?$/,
   );
-  if (runtimeProviderItemMatched) {
+  if (projectPricingMatched) {
     return {
-      kind: 'runtimeProviderItem',
-      workspaceId: decodeURIComponent(runtimeProviderItemMatched[1]),
-      projectId: decodeURIComponent(runtimeProviderItemMatched[2]),
-      providerConnectionId: decodeURIComponent(runtimeProviderItemMatched[3]),
+      kind: 'projectPricing',
+      workspaceId: decodeURIComponent(projectPricingMatched[1]),
+      projectId: decodeURIComponent(projectPricingMatched[2]),
     };
   }
 
-  const runtimeProvidersMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/providers\/?$/,
+  const modelCatalogProvidersMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/model-catalog\/providers\/?$/,
   );
-  if (runtimeProvidersMatched) {
+  if (modelCatalogProvidersMatched) {
     return {
-      kind: 'runtimeProviders',
-      workspaceId: decodeURIComponent(runtimeProvidersMatched[1]),
-      projectId: decodeURIComponent(runtimeProvidersMatched[2]),
+      kind: 'modelCatalogProviders',
+      workspaceId: decodeURIComponent(modelCatalogProvidersMatched[1]),
+      projectId: decodeURIComponent(modelCatalogProvidersMatched[2]),
     };
   }
 
-  const runtimeModelsMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/models\/?$/,
+  const modelCatalogModelsMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/model-catalog\/models\/?$/,
   );
-  if (runtimeModelsMatched) {
+  if (modelCatalogModelsMatched) {
     return {
-      kind: 'runtimeModels',
-      workspaceId: decodeURIComponent(runtimeModelsMatched[1]),
-      projectId: decodeURIComponent(runtimeModelsMatched[2]),
+      kind: 'modelCatalogModels',
+      workspaceId: decodeURIComponent(modelCatalogModelsMatched[1]),
+      projectId: decodeURIComponent(modelCatalogModelsMatched[2]),
     };
   }
 
-  const runtimeModelItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/providers\/([^/]+)\/models\/([^/]+)\/?$/,
+  const modelCatalogSyncMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/model-catalog\/sync\/?$/,
   );
-  if (runtimeModelItemMatched) {
+  if (modelCatalogSyncMatched) {
     return {
-      kind: 'runtimeModelItem',
-      workspaceId: decodeURIComponent(runtimeModelItemMatched[1]),
-      projectId: decodeURIComponent(runtimeModelItemMatched[2]),
-      provider: decodeURIComponent(runtimeModelItemMatched[3]),
-      modelId: decodeURIComponent(runtimeModelItemMatched[4]),
-    };
-  }
-
-  const runtimeRoutingAliasesMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/?$/,
-  );
-  if (runtimeRoutingAliasesMatched) {
-    return {
-      kind: 'runtimeRoutingAliases',
-      workspaceId: decodeURIComponent(runtimeRoutingAliasesMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingAliasesMatched[2]),
-    };
-  }
-
-  const runtimeRoutingDryRunMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/dry-run\/?$/,
-  );
-  if (runtimeRoutingDryRunMatched) {
-    return {
-      kind: 'runtimeRoutingDryRun',
-      workspaceId: decodeURIComponent(runtimeRoutingDryRunMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingDryRunMatched[2]),
-    };
-  }
-
-  const runtimeImpactPreviewMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/impact-preview\/?$/,
-  );
-  if (runtimeImpactPreviewMatched) {
-    return {
-      kind: 'runtimeImpactPreview',
-      workspaceId: decodeURIComponent(runtimeImpactPreviewMatched[1]),
-      projectId: decodeURIComponent(runtimeImpactPreviewMatched[2]),
-    };
-  }
-
-  const runtimeRoutingAliasPublishMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/([^/]+)\/publish\/?$/,
-  );
-  if (runtimeRoutingAliasPublishMatched) {
-    return {
-      kind: 'runtimeRoutingAliasPublish',
-      workspaceId: decodeURIComponent(runtimeRoutingAliasPublishMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingAliasPublishMatched[2]),
-      alias: decodeURIComponent(runtimeRoutingAliasPublishMatched[3]),
-    };
-  }
-
-  const runtimeRoutingAliasItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/aliases\/([^/]+)\/?$/,
-  );
-  if (runtimeRoutingAliasItemMatched) {
-    return {
-      kind: 'runtimeRoutingAliasItem',
-      workspaceId: decodeURIComponent(runtimeRoutingAliasItemMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingAliasItemMatched[2]),
-      alias: decodeURIComponent(runtimeRoutingAliasItemMatched[3]),
-    };
-  }
-
-  const runtimeRoutingCombosMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/?$/,
-  );
-  if (runtimeRoutingCombosMatched) {
-    return {
-      kind: 'runtimeRoutingCombos',
-      workspaceId: decodeURIComponent(runtimeRoutingCombosMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingCombosMatched[2]),
-    };
-  }
-
-  const runtimeRoutingComboPublishMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/([^/]+)\/publish\/?$/,
-  );
-  if (runtimeRoutingComboPublishMatched) {
-    return {
-      kind: 'runtimeRoutingComboPublish',
-      workspaceId: decodeURIComponent(runtimeRoutingComboPublishMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingComboPublishMatched[2]),
-      combo: decodeURIComponent(runtimeRoutingComboPublishMatched[3]),
-    };
-  }
-
-  const runtimeRoutingComboItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/routing\/combos\/([^/]+)\/?$/,
-  );
-  if (runtimeRoutingComboItemMatched) {
-    return {
-      kind: 'runtimeRoutingComboItem',
-      workspaceId: decodeURIComponent(runtimeRoutingComboItemMatched[1]),
-      projectId: decodeURIComponent(runtimeRoutingComboItemMatched[2]),
-      combo: decodeURIComponent(runtimeRoutingComboItemMatched[3]),
-    };
-  }
-
-  const runtimePricingMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/?$/,
-  );
-  if (runtimePricingMatched) {
-    return {
-      kind: 'runtimePricing',
-      workspaceId: decodeURIComponent(runtimePricingMatched[1]),
-      projectId: decodeURIComponent(runtimePricingMatched[2]),
-    };
-  }
-
-  const runtimePricingVersionsMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/versions\/?$/,
-  );
-  if (runtimePricingVersionsMatched) {
-    return {
-      kind: 'runtimePricingVersions',
-      workspaceId: decodeURIComponent(runtimePricingVersionsMatched[1]),
-      projectId: decodeURIComponent(runtimePricingVersionsMatched[2]),
-    };
-  }
-
-  const runtimePricingVersionActivateMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/versions\/([^/]+)\/activate\/?$/,
-  );
-  if (runtimePricingVersionActivateMatched) {
-    return {
-      kind: 'runtimePricingVersionActivate',
-      workspaceId: decodeURIComponent(runtimePricingVersionActivateMatched[1]),
-      projectId: decodeURIComponent(runtimePricingVersionActivateMatched[2]),
-      pricingVersionId: decodeURIComponent(runtimePricingVersionActivateMatched[3]),
-    };
-  }
-
-  const runtimePricingCompareMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/pricing\/compare\/?$/,
-  );
-  if (runtimePricingCompareMatched) {
-    return {
-      kind: 'runtimePricingCompare',
-      workspaceId: decodeURIComponent(runtimePricingCompareMatched[1]),
-      projectId: decodeURIComponent(runtimePricingCompareMatched[2]),
-    };
-  }
-
-  const runtimeCatalogProvidersMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/providers\/?$/,
-  );
-  if (runtimeCatalogProvidersMatched) {
-    return {
-      kind: 'runtimeCatalogProviders',
-      workspaceId: decodeURIComponent(runtimeCatalogProvidersMatched[1]),
-      projectId: decodeURIComponent(runtimeCatalogProvidersMatched[2]),
-    };
-  }
-
-  const runtimeCatalogModelsMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/models\/?$/,
-  );
-  if (runtimeCatalogModelsMatched) {
-    return {
-      kind: 'runtimeCatalogModels',
-      workspaceId: decodeURIComponent(runtimeCatalogModelsMatched[1]),
-      projectId: decodeURIComponent(runtimeCatalogModelsMatched[2]),
-    };
-  }
-
-  const runtimeCatalogSyncMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/sync\/?$/,
-  );
-  if (runtimeCatalogSyncMatched) {
-    return {
-      kind: 'runtimeCatalogSync',
-      workspaceId: decodeURIComponent(runtimeCatalogSyncMatched[1]),
-      projectId: decodeURIComponent(runtimeCatalogSyncMatched[2]),
-    };
-  }
-
-  const runtimeCatalogJobsMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/jobs\/?$/,
-  );
-  if (runtimeCatalogJobsMatched) {
-    return {
-      kind: 'runtimeCatalogJobs',
-      workspaceId: decodeURIComponent(runtimeCatalogJobsMatched[1]),
-      projectId: decodeURIComponent(runtimeCatalogJobsMatched[2]),
-    };
-  }
-
-  const runtimeCatalogStatusMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/runtime\/catalog\/status\/?$/,
-  );
-  if (runtimeCatalogStatusMatched) {
-    return {
-      kind: 'runtimeCatalogStatus',
-      workspaceId: decodeURIComponent(runtimeCatalogStatusMatched[1]),
-      projectId: decodeURIComponent(runtimeCatalogStatusMatched[2]),
+      kind: 'modelCatalogSync',
+      workspaceId: decodeURIComponent(modelCatalogSyncMatched[1]),
+      projectId: decodeURIComponent(modelCatalogSyncMatched[2]),
     };
   }
 

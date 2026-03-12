@@ -69,7 +69,7 @@ describe('UsageAPI exportReport', () => {
       time_window: 'last_7d',
       delivery_channel: 'in_app',
       delivery_config: undefined,
-      release_evidence_required: true,
+      governance_evidence_required: true,
       empty_result_policy: 'deliver',
       filters: { provider: 'openai' },
     });
@@ -127,7 +127,7 @@ describe('UsageAPI exportReport', () => {
         retry_attempts: 2,
         retry_backoff_ms: 250,
       },
-      release_evidence_required: true,
+      governance_evidence_required: true,
       empty_result_policy: 'deliver',
     });
 
@@ -153,7 +153,7 @@ describe('UsageAPI exportReport', () => {
   it('calls usage report lifecycle endpoints', async () => {
     const getMock = vi.fn().mockResolvedValue({
       source: 'artifact',
-      release_readiness: 'ready',
+      review_status: 'ready',
       blockers: [],
       warnings: [],
     });
@@ -255,6 +255,50 @@ describe('UsageAPI exportReport', () => {
     expect(result.project_summary?.project_used).toBe(40);
     expect(result.project_summary?.project_max).toBe(100);
   });
+
+  it('normalizes endpoint limits when project summary is absent', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      endpoints: [
+        {
+          endpointName: 'Endpoint 2',
+          endpointId: 'ep_2',
+          snapshots: [
+            {
+              type: 'cost',
+              period: '5hours',
+              unit: 'money',
+              key: 'endpoint.spending_usd_per_5_hours',
+              currentUsed: '12.5',
+              limit: '20',
+              remainingUsage: '7.5',
+              usagePct: '62.5',
+              windowResetAt: '2026-03-08T05:00:00.000Z',
+            },
+          ],
+        },
+      ],
+    });
+
+    const api = new UsageAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof UsageAPI>[0]);
+
+    const result = await api.getLimitsSummary('ws_1', 'proj_1');
+    const firstEndpoint = result.endpoints?.[0];
+    const firstRule = firstEndpoint?.limits?.[0];
+
+    expect(firstEndpoint?.endpoint_id).toBe('ep_2');
+    expect(firstEndpoint?.endpoint_name).toBe('Endpoint 2');
+    expect(firstRule?.kind).toBe('spending_limit');
+    expect(firstRule?.window).toBe('5h');
+    expect(firstRule?.metric).toBe('usd');
+    expect(firstRule?.used).toBe(12.5);
+    expect(firstRule?.max).toBe(20);
+    expect(firstRule?.remaining).toBe(7.5);
+    expect(firstRule?.usage_pct).toBe(62.5);
+    expect(result.project_summary).toBeUndefined();
+  });
 });
 
 describe('AuditAPI list normalization', () => {
@@ -266,7 +310,7 @@ describe('AuditAPI list normalization', () => {
           timestamp: '2026-03-02T00:00:00.000Z',
           actor_type: 'user',
           actor_id: 'user_1',
-          action: 'release_gate_blocked',
+          action: 'governance_blocked',
           result: 'error',
           request_id: 'req_1',
           metadata_json: {

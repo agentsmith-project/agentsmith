@@ -20,10 +20,9 @@ const SIDEBAR_NAV_ITEMS = [
   'usage',
   'audit',
   'settings',
-  'runtime_console',
 ] as const;
 
-const SIDEBAR_SECTIONS = ['home', 'use', 'develop', 'govern', 'operate'] as const;
+const SIDEBAR_SECTIONS = ['home', 'use', 'develop', 'govern'] as const;
 
 test.describe('Sidebar', () => {
   test('renders with all nav items', async ({ authedPage }) => {
@@ -49,15 +48,13 @@ test.describe('Sidebar', () => {
     const sidebar = authedPage.getByTestId('sidebar');
     await expect(sidebar).toBeVisible({ timeout: 10000 });
 
-    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'runtime_console', 'settings'] as const;
+    const sectionsToTest = ['chat', 'resource_policy', 'agents', 'members', 'settings'] as const;
 
     for (const section of sectionsToTest) {
       const navItem = authedPage.getByTestId(`sidebar__nav-item--${section}`);
       const expectedPath = section === 'resource_policy'
         ? '/resource-policy'
-        : section === 'runtime_console'
-          ? '/runtime-console'
-          : `/${section}`;
+        : `/${section}`;
       await expect(navItem).toHaveAttribute('href', new RegExp(`${expectedPath}$`));
       const targetHref = await navItem.getAttribute('href');
       try {

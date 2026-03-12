@@ -1,0 +1,30 @@
+{
+  "id": "report-test",
+  "incident_id": "incident-report-test",
+  "report_name": "report-test",
+  "artifact_name": "report-test",
+  "trigger": "manual",
+  "started_at": "2026-03-11T07:46:11.517Z",
+  "completed_at": "2026-03-11T07:46:11.592Z",
+  "duration_ms": 75,
+  "status": "fail",
+  "branch": "main",
+  "commit_short": "3762ef1f",
+  "governance_policy_decision": "blocked",
+  "governance_blockers": [],
+  "governance_warnings": [],
+  "total_checks": 5,
+  "passed_checks": 2,
+  "failed_checks": 3,
+  "failed_step_name": "TypeScript typecheck",
+  "failed_step_category": "typecheck",
+  "failed_step_names": [
+    "TypeScript typecheck",
+    "OpenAPI generated check",
+    "Mainline release smoke"
+  ],
+  "failed_check_ids": [],
+  "failure_categories": [
+    "token"
+  ]
+}

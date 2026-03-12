@@ -5,7 +5,7 @@ Owner: Frontend + Backend
 
 ## Purpose
 
-Provide an executable alignment path from `usage-limits-summary-contract.md` to backend implementation and release verification.
+Provide an executable alignment path from `usage-limits-summary-contract.md` to backend implementation and governance verification.
 
 ## Preconditions
 
@@ -22,7 +22,7 @@ Target endpoint:
 Required payload support:
 
 1. endpoint rows expose `endpoints[].limits[]` with `used/max/remaining/usage_pct`.
-2. aggregate exposes `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
+2. `project_summary` is optional and must only be returned when backend can provide semantically valid aggregate meaning.
 3. preferred fields exposed for matrix rendering:
    - `kind: rate_limit | spending_limit`
    - `window: minute | 5h | day | current`
@@ -32,7 +32,8 @@ Required payload support:
 
 1. Build endpoint rows by effective policy windows and current usage counters.
 2. Emit grouped rows under each endpoint (`limits[]`), one item per limit dimension.
-3. No compatibility fields; use final schema only.
+3. Do not force frontend to reconstruct project aggregate from mixed endpoint metrics.
+4. No compatibility fields; use final schema only.
 
 ## Step 3: OpenAPI & Generated Types
 
@@ -53,7 +54,7 @@ Expected:
 1. Update MSW or fixture payload to include:
    - at least one endpoint with `rate_limit` rows (`minute`, `day`)
    - at least one endpoint with `spending_limit` row (`day`)
-2. Do not keep legacy fixture shapes.
+2. Do not keep outdated fixture shapes.
 
 ## Step 5: Frontend Rendering Verification
 
@@ -62,6 +63,8 @@ Verify Usage page behavior:
 1. endpoint-grouped cards render correctly.
 2. each endpoint shows `rate limit` and `spending limit` sections.
 3. window rows render in order: `minute` -> `5h` -> `day` -> `current`.
+4. page remains useful when `project_summary` is absent.
+5. frontend does not synthesize a fake total remaining percentage across `requests` and `usd`.
 
 ## Step 6: Test & Release Gates
 
@@ -86,3 +89,4 @@ npm run test:e2e:lane:mock:visual:update
 1. Contract + OpenAPI + FE rendering are mutually consistent.
 2. Usage remains low-cognitive personal view (no admin troubleshooting actions).
 3. No `quota` naming in UI/contracts for this path.
+4. Usage truth is endpoint-scoped visibility first, not project-wide aggregate scoring.

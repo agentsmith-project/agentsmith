@@ -180,7 +180,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     if (!workspaceId || !projectId || sessions.length === 0) return;
     const candidates = sessions.filter(
       (session) =>
-        (session.runtime_status === 'running' || session.runtime_status === 'stopping') &&
+        (session.execution_status === 'running' || session.execution_status === 'stopping') &&
         !streamIdsRef.current.has(session.id),
     );
     if (candidates.length === 0) return;
@@ -213,7 +213,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
     if (!workspaceId || !projectId || sessions.length === 0) return;
 
     const candidates = sessions.filter((session) => {
-      if (session.runtime_status !== 'running' && session.runtime_status !== 'stopping') return false;
+      if (session.execution_status !== 'running' && session.execution_status !== 'stopping') return false;
       if (streamControllersRef.current.has(session.id)) return false;
       return typeof streamIdBySession[session.id] === 'string';
     });
@@ -347,7 +347,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
             queryClient.invalidateQueries({ queryKey: chatSessionsKey(workspaceId, projectId) });
           } catch (e: unknown) {
             if (controller.signal.aborted) {
-              // Detaching shouldn't be treated as user stop; let runtime_status drive indicators.
+              // Detaching shouldn't be treated as user stop; let execution_status drive indicators.
               if (streamStillActive()) {
                 setSessionStreamState(session.id, { status: 'idle', assistant: null });
               }

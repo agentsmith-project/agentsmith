@@ -5,7 +5,7 @@
 
 这份文档只保留当前仍然有效的排障入口，不再重复历史阶段性流程、过时环境值或已被新版 user guide 取代的说明。
 
-术语边界：文中的 `governance-release-smoke`、`release:report` 等命令名沿用历史脚本命名，仅用于本项目工程验收与排障（engineering gate）；`permission gate` 仅表示产品权限门禁语义，不代表平台对外发布管理能力。
+术语边界：文中的 `governance-smoke`、`governance:report` 等命令名沿用历史脚本命名，仅用于本项目工程验收与排障（engineering gate）；`permission gate` 仅表示产品权限门禁语义，不代表平台对外发布管理能力。
 
 ## 1. 先判断是哪一类问题
 
@@ -64,11 +64,11 @@ GLM_API_KEY=<your-key> make notebook-agent-demo-restart-runner
 
 ## 4. 治理链路排障
 
-如果问题落在 `Members / Resource Policy / Audit / Usage / Runtime Console`：
+如果问题落在 `Members / Resource Policy / Audit / Usage`：
 
 1. 先跑正式 smoke，不先猜  
 ```bash
-make governance-release-smoke
+make governance-smoke
 ```
 
 2. 如果只想定位页面级问题  
@@ -82,17 +82,16 @@ make governance-pages-real-backend-interaction-smoke-strict
 - [Audit & Usage Reports](./user-guides/audit-usage-reports.md)
 - [Cost & Limits Dashboard](./user-guides/cost-limits-dashboard.md)
 
-## 5. Runtime / Usage / Governance 排障
+## 5. Audit / Usage / Governance 排障
 
-如果问题落在 runtime、usage、治理链路：
+如果问题落在 audit、usage、治理链路：
 
-1. 先看 `Runtime Console` + `Usage` + `Audit` 的治理证据链：
-   - runtime control/monitoring 状态
+1. 先看 `Usage` + `Audit` 的治理证据链：
    - usage/cost/rate-spending 指标
-   - audit 的 deny/limit/policy 命中证据
+   - audit 中的变更、事件、异常与 deny/limit/policy 命中证据
 2. 再跑工程诊断报告：
 ```bash
-npm run release:report -- --name local-debug
+npm run governance:report -- --name local-debug
 ```
 
 ## 6. 如何区分“外部波动”还是“结构性故障”
@@ -150,7 +149,7 @@ Token 排障遵循上文 `2` 和 `3` 节：先确认服务在线，再执行 `ma
 
 ## Backend Issues
 
-后端行为异常统一按治理链路排障：先跑 `make governance-release-smoke`，再按 `Members / Resource Policy / Audit / Usage / Runtime Console` 定位。
+后端行为异常统一按治理链路排障：先跑 `make governance-smoke`，再按 `Members / Resource Policy / Audit / Usage` 定位。
 
 ## Timeout Issues
 

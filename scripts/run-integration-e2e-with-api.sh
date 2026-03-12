@@ -57,7 +57,7 @@ done
 
 if [[ "${web_ready}" -ne 1 ]]; then
   echo "Web did not become ready at ${WEB_BASE_URL} (last status: ${web_code:-n/a})." >&2
-  echo "Hint: start frontend first, or use the *-auto make targets (for example: make e2e-int-runtime-proxy-billing-auto)." >&2
+  echo "Hint: start frontend first, or use the *-auto make targets (for example: make e2e-int-chat-auto)." >&2
   exit 1
 fi
 

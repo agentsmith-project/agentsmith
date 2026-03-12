@@ -10,7 +10,7 @@ import type {
   EndpointDefaults,
   EndpointModelBinding,
   EndpointProtocol,
-  EndpointRuntimeProfile,
+  EndpointModelProfile,
   EndpointProviderFamily,
   PaginationParams,
   PaginatedResponse,
@@ -20,7 +20,7 @@ import type { ApiClient } from '../client';
 export interface CreateEndpointRequest {
   name: string;
   description?: string;
-  openai_model?: string;
+  model?: string;
   type: 'openai' | 'anthropic' | 'custom';
   base_url: string;
   credential_ref?: string;
@@ -30,7 +30,7 @@ export interface CreateEndpointRequest {
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;
   meta?: Record<string, string>;
-  runtime_profile?: EndpointRuntimeProfile;
+  model_profile?: EndpointModelProfile;
   limits?: {
     max_requests_per_minute?: number;
     max_requests_per_day?: number;
@@ -42,7 +42,7 @@ export interface CreateEndpointRequest {
 export interface UpdateEndpointRequest {
   name?: string;
   description?: string;
-  openai_model?: string;
+  model?: string;
   base_url?: string;
   credential_ref?: string;
   provider_family?: EndpointProviderFamily;
@@ -51,7 +51,7 @@ export interface UpdateEndpointRequest {
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;
   meta?: Record<string, string>;
-  runtime_profile?: EndpointRuntimeProfile;
+  model_profile?: EndpointModelProfile;
   status?: 'active' | 'disabled';
   limits?: {
     max_requests_per_minute?: number;

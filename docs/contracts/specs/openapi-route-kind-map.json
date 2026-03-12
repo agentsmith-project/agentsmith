@@ -83,8 +83,8 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/timeseries",
     "method": "get"
   },
-  "usageRuntimeObservability": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/runtime-observability",
+  "usageRecordsSummary": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/records-summary",
     "method": "get"
   },
   "usageOperationsSummary": {
@@ -287,89 +287,21 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/llm/chat/completions",
     "method": "post"
   },
-  "runtimeProviders": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers",
+  "projectPricing": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/project-pricing",
     "method": "get"
   },
-  "runtimeProviderItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}",
-    "method": "put"
-  },
-  "runtimeModels": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models",
+  "modelCatalogProviders": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/providers",
     "method": "get"
   },
-  "runtimeModelItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}",
-    "method": "put"
-  },
-  "runtimeRoutingAliases": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases",
+  "modelCatalogModels": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/models",
     "method": "get"
   },
-  "runtimeRoutingDryRun": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/dry-run",
+  "modelCatalogSync": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/sync",
     "method": "post"
-  },
-  "runtimeImpactPreview": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/impact-preview",
-    "method": "post"
-  },
-  "runtimeRoutingAliasItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}",
-    "method": "put"
-  },
-  "runtimeRoutingAliasPublish": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}/publish",
-    "method": "post"
-  },
-  "runtimeRoutingCombos": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos",
-    "method": "get"
-  },
-  "runtimeRoutingComboItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}",
-    "method": "put"
-  },
-  "runtimeRoutingComboPublish": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}/publish",
-    "method": "post"
-  },
-  "runtimePricing": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing",
-    "method": "get"
-  },
-  "runtimePricingVersions": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions",
-    "method": "get"
-  },
-  "runtimePricingVersionActivate": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions/{versionId}/activate",
-    "method": "post"
-  },
-  "runtimePricingCompare": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/compare",
-    "method": "post"
-  },
-  "runtimeCatalogProviders": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/providers",
-    "method": "get"
-  },
-  "runtimeCatalogModels": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/models",
-    "method": "get"
-  },
-  "runtimeCatalogSync": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/sync",
-    "method": "post"
-  },
-  "runtimeCatalogJobs": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/jobs",
-    "method": "get"
-  },
-  "runtimeCatalogStatus": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/catalog/status",
-    "method": "get"
   },
   "agentItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}",
@@ -379,8 +311,8 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/diagnostics",
     "method": "get"
   },
-  "agentRuntimeConfig": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/runtime-config",
+  "agentExecutionConfig": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/execution-config",
     "method": "get"
   },
   "agentConnectionInfo": {

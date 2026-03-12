@@ -134,18 +134,18 @@ NODE
 echo "[traces-bench] results:"
 printf '%s\n' "${summary_json}"
 
-METRICS_URL="${API_BASE%/}/api/v1/internal/notebook-runtime-metrics"
+METRICS_URL="${API_BASE%/}/api/v1/internal/notebook-task-metrics"
 metrics_code="$(
   curl -sS -o "${TMP_DIR}/metrics.json" -w '%{http_code}' \
     "${METRICS_URL}" -H "Authorization: Bearer ${TOKEN}" || true
 )"
 if [[ "${metrics_code}" == "200" ]]; then
-  echo "[traces-bench] notebook-runtime-metrics snapshot:"
+  echo "[traces-bench] notebook-task-metrics snapshot:"
   cat "${TMP_DIR}/metrics.json"
   echo
 fi
 
-PROM_URL="${API_BASE%/}/api/v1/internal/notebook-runtime-metrics/prometheus"
+PROM_URL="${API_BASE%/}/api/v1/internal/notebook-task-metrics/prometheus"
 prom_code="$(
   curl -sS -o "${TMP_DIR}/metrics.prom" -w '%{http_code}' \
     "${PROM_URL}" -H "Authorization: Bearer ${TOKEN}" || true

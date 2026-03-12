@@ -158,7 +158,7 @@ export function useEndpointsTableColumns({
       }),
 
       // Model column
-      columnHelper.accessor('openai_model', {
+      columnHelper.accessor('model', {
         header: t('table.model') || 'Model',
         cell: (info) => (
           <span className="text-sm text-tertiary font-mono">{info.getValue()}</span>

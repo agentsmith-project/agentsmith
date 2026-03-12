@@ -324,12 +324,12 @@ export default function WorkspacesOverviewPage() {
                         </Link>
                         {workspace.topRiskProjectId ? (
                           <Link
-                            href={`/${locale}/workspaces/${workspace.workspaceId}/projects/${workspace.topRiskProjectId}/runtime-console?tab=control${buildGovernanceDrilldownQuery({
+                            href={`/${locale}/workspaces/${workspace.workspaceId}/projects/${workspace.topRiskProjectId}/audit${buildGovernanceDrilldownQuery({
                               gov_from: 'organization_overview',
                               gov_kind: 'workspace',
                               gov_workspace_id: workspace.workspaceId,
                               gov_project_id: workspace.topRiskProjectId,
-                              gov_reason: 'workspace_release_readiness',
+                              gov_reason: 'workspace_audit_review',
                               gov_workspace_risk_score: workspace.riskScore,
                               gov_workspace_blocked_items: workspace.blockedItems,
                               gov_workspace_warning_items: workspace.warningItems,
@@ -339,16 +339,16 @@ export default function WorkspacesOverviewPage() {
                               'inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs font-medium text-foreground transition-colors',
                               'hover:bg-hover',
                             )}
-                            data-testid={`workspace-overview__open-runtime-console--${workspace.workspaceId}`}
+                            data-testid={`workspace-overview__open-audit--${workspace.workspaceId}`}
                           >
-                            {t('org_overview_open_release_ops')}
+                            {t('org_overview_open_audit')}
                           </Link>
                         ) : (
                           <span
                             className="inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs text-tertiary"
-                            data-testid={`workspace-overview__open-release-readiness-disabled--${workspace.workspaceId}`}
+                            data-testid={`workspace-overview__open-runtime-activation-disabled--${workspace.workspaceId}`}
                           >
-                            {t('org_overview_open_release_ops')}
+                            {t('org_overview_open_audit')}
                           </span>
                         )}
                       </div>
@@ -511,14 +511,14 @@ export default function WorkspacesOverviewPage() {
                                   {t('org_overview_open_audit')}
                                 </Link>
                                 <Link
-                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/runtime-console?tab=control${drilldownQuery.replace('?', '&')}`}
+                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit${drilldownQuery.replace('?', '&')}`}
                                   className={cn(
                                     'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                     'hover:bg-hover',
                                   )}
-                                  data-testid={`workspace-overview__attention-open-runtime-console--${testIdSegment}`}
+                                  data-testid={`workspace-overview__attention-open-audit-secondary--${testIdSegment}`}
                                 >
-                                  {t('org_overview_open_release_ops')}
+                                  {t('org_overview_open_audit')}
                                 </Link>
                               </>
                             ) : null}
@@ -645,14 +645,14 @@ export default function WorkspacesOverviewPage() {
                             </Link>
                             {action.projectId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/runtime-console?tab=control${actionDrilldownQuery.replace('?', '&')}`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/audit${actionDrilldownQuery.replace('?', '&')}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',
                                 )}
-                                data-testid={`workspace-overview__actions-queue-open-runtime-console--${actionIdForTest}`}
+                                data-testid={`workspace-overview__actions-queue-open-audit-secondary--${actionIdForTest}`}
                               >
-                                {t('org_overview_open_release_ops')}
+                                {t('org_overview_open_audit')}
                               </Link>
                             ) : null}
                             {action.projectId && action.memberId ? (

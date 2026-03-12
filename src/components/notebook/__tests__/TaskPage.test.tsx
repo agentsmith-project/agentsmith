@@ -51,7 +51,7 @@ vi.mock('next-intl', () => ({
       'notebook.conversation.send_rate_limited_description': 'This request exceeded the current limit. Please retry shortly.',
       'notebook.conversation.send_conflict_title': 'Task run still in progress',
       'notebook.conversation.send_conflict_description': 'The previous turn has not finished yet. Wait for it to complete before sending.',
-      'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent runtime before sending.',
+      'notebook.conversation.agent_offline_send_blocked': 'Agent is offline. Start/reconnect the external agent execution channel before sending.',
     };
     const scoped = namespace ? `${namespace}.${key}` : key;
     return dict[scoped] ?? scoped;

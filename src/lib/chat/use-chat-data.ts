@@ -32,7 +32,7 @@ export function useChatData(args: UseChatDataArgs): UseChatDataResult {
     refetchInterval: (query) => {
       const data = query.state.data as { items: ChatSession[] } | undefined;
       const items = data?.items ?? [];
-      return items.some((s) => s.runtime_status === 'running' || s.runtime_status === 'stopping') ? 2000 : false;
+      return items.some((s) => s.execution_status === 'running' || s.execution_status === 'stopping') ? 2000 : false;
     },
   });
 

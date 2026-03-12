@@ -12,7 +12,7 @@ const mockList = vi.fn().mockResolvedValue({
       project_id: 'prj_1',
       name: 'OpenAI Main',
       description: 'Primary endpoint',
-      openai_model: 'gpt-4o',
+      model: 'gpt-4o',
       type: 'openai',
       base_url: 'https://api.openai.com/v1',
       status: 'active',
@@ -35,7 +35,7 @@ vi.mock('@/lib/api', () => ({
       delete: vi.fn().mockResolvedValue(undefined),
     };
   }),
-  RuntimeAPI: vi.fn().mockImplementation(function () {
+  ModelConfigAPI: vi.fn().mockImplementation(function () {
     return {
       syncCatalog: vi.fn().mockResolvedValue({ version: { id: 'cat_1' } }),
     };

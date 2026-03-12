@@ -88,8 +88,8 @@ function buildDrillDownUrl(baseUrl: string, workspaceId: string, projectId?: str
   const basePath = `${baseUrl}/${workspaceId}`;
 
   if (projectId) {
-    // Navigate to project runtime console for project-level investigation
-    return `${basePath}/projects/${projectId}/runtime-console?tab=control`;
+    // Navigate to project audit for project-level investigation
+    return `${basePath}/projects/${projectId}/audit`;
   }
 
   if (memberId) {

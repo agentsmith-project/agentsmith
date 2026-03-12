@@ -62,7 +62,7 @@ export interface Project {
   owner_id: string;
   status: 'active' | 'archived' | 'deleted';
   governance_json?: Record<string, unknown>;
-  runtime_preferences_json?: Record<string, unknown>;
+  execution_preferences_json?: Record<string, unknown>;
   limits_json?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
@@ -118,7 +118,7 @@ export interface Agent {
   status: 'enabled' | 'disabled';
   config?: AgentConfig;
   config_json?: Record<string, unknown>;
-  runtime_preferences_json?: Record<string, unknown>;
+  execution_preferences_json?: Record<string, unknown>;
   internal_config_json?: Record<string, unknown>;
   /** External agents: source IP, connection duration, QPM */
   external_stats?: AgentExternalStats;
@@ -202,8 +202,8 @@ export interface Endpoint {
   project_id: string;
   name: string;
   description?: string;
-  openai_model: string; // Deprecated: preserved for backward compatibility
-  type: 'openai' | 'anthropic' | 'custom'; // Deprecated: preserved for backward compatibility
+  model: string;
+  type: 'openai' | 'anthropic' | 'custom';
   base_url: string;
   status: 'active' | 'disabled';
   credential_ref?: string;
@@ -214,7 +214,7 @@ export interface Endpoint {
   defaults?: EndpointDefaults;
   health?: EndpointHealth;
   meta?: Record<string, string>;
-  runtime_profile?: EndpointRuntimeProfile;
+  model_profile?: EndpointModelProfile;
   limits?: EndpointLimits;
   created_at: string;
   updated_at: string;
@@ -285,7 +285,7 @@ export interface EndpointLimits {
   timeout_seconds?: number;
 }
 
-export interface EndpointRuntimeProfile {
+export interface EndpointModelProfile {
   max_context_tokens: number;
   max_output_tokens: number;
   supports_file: boolean;
@@ -314,7 +314,7 @@ export interface ChatSession {
   updated_at: string;
   message_count: number;
   total_tokens: number;
-  runtime_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+  execution_status?: 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 }
 
 export interface ChatMessage {
@@ -352,7 +352,7 @@ export interface ChatAttachmentSnapshot {
 }
 
 export interface ChatRequest {
-  model: string; // openai_model
+  model: string; // model
   messages: ChatMessage[];
   stream: boolean;
   max_tokens?: number;
@@ -479,12 +479,12 @@ export interface UsageRecord {
   tokens?: number;
 }
 
-export interface UsageFactRuntimeMetadata {
+export interface UsageFactRequestDetails {
   provider?: string;
   resolved_model?: string;
   error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   fallback_hops?: number;
-  pricing_version?: string | null;
+  pricing_source?: string | null;
   estimated_cost?: number | null;
   missing_price?: boolean;
   attempts?: Array<Record<string, unknown>>;
@@ -509,7 +509,7 @@ export interface UsageFactRecord {
   tokens_total?: number;
   result: 'ok' | 'error';
   error_code?: string;
-  runtime?: UsageFactRuntimeMetadata;
+  request_details?: UsageFactRequestDetails;
   metadata_json?: Record<string, unknown>;
 }
 

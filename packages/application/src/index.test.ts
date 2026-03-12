@@ -770,27 +770,27 @@ describe('Project use cases', () => {
     expect(afterDelete.items).toHaveLength(0);
   });
 
-  it('lists objects with legacy library prefix (without trailing slash) correctly', async () => {
+  it('lists objects with existing library prefix (without trailing slash) correctly', async () => {
     const libraryRepo = new FakeSourceLibraryRepo();
     const objectStore = new FakeObjectStore();
     const clock = new FixedClock();
     libraryRepo.items.push({
-      id: 'lib_legacy',
+      id: 'lib_existing',
       workspace_id: 'ws_a',
       project_id: 'proj_1',
       name: 'Legacy',
       visibility: 'shared',
-      // legacy stored prefix without trailing slash
-      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_legacy',
-      doc_namespace: 'doc_ws_a_proj_1_lib_legacy',
-      vector_namespace: 'vec_ws_a_proj_1_lib_legacy',
+      // stored prefix without trailing slash
+      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_existing',
+      doc_namespace: 'doc_ws_a_proj_1_lib_existing',
+      vector_namespace: 'vec_ws_a_proj_1_lib_existing',
       created_by_user_id: 'user_1',
       created_at: clock.nowIso(),
       updated_at: clock.nowIso(),
     });
     await objectStore.putObject(
       'mbos-dev',
-      'workspaces/ws_a/projects/proj_1/libraries/lib_legacy/docs/readme.txt',
+      'workspaces/ws_a/projects/proj_1/libraries/lib_existing/docs/readme.txt',
       new TextEncoder().encode('hello'),
     );
 
@@ -801,7 +801,7 @@ describe('Project use cases', () => {
     ).execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
-      libraryId: 'lib_legacy',
+      libraryId: 'lib_existing',
       prefix: 'docs/',
       delimiter: '/',
       pageSize: 200,

@@ -7,6 +7,19 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/components/ui/select', () => ({
+  Select: ({ value, onValueChange, children }: any) => (
+    <div data-value={value}>
+      {children}
+      <button type="button" onClick={() => onValueChange?.('anomaly')}>select-anomaly</button>
+    </div>
+  ),
+  SelectTrigger: ({ children, ...props }: any) => <button type="button" {...props}>{children}</button>,
+  SelectValue: ({ placeholder }: any) => <span>{placeholder}</span>,
+  SelectContent: ({ children }: any) => <div>{children}</div>,
+  SelectItem: ({ children }: any) => <div>{children}</div>,
+}));
+
 vi.mock('../TimeRangePicker', () => ({
   TimeRangePicker: () => <div data-testid="time-range-picker" />,
 }));
@@ -35,6 +48,8 @@ describe('AuditFilters', () => {
 
     expect(screen.getByTestId('audit-filters__investigation')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'expand' })).toBeInTheDocument();
+    expect(screen.queryByLabelText('filters.action')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('filters.actor_type')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('filters.request_id')).not.toBeInTheDocument();
   });
 
@@ -48,6 +63,7 @@ describe('AuditFilters', () => {
     );
 
     expect(screen.getByRole('button', { name: 'collapse' })).toBeInTheDocument();
+    expect(screen.getByLabelText('filters.action')).toBeInTheDocument();
     expect(screen.getByLabelText('filters.trace_ref')).toBeInTheDocument();
     expect(screen.getByLabelText('filters.trace_incident_id')).toBeInTheDocument();
   });
@@ -74,5 +90,22 @@ describe('AuditFilters', () => {
     });
     expect(handleChange).toHaveBeenCalledWith(expect.objectContaining({ trace_run_id: 'run_1' }));
     vi.useRealTimers();
+  });
+
+  it('applies category filter immediately', () => {
+    const handleCategoryChange = vi.fn();
+
+    render(
+      <AuditFilters
+        filters={buildFilters()}
+        onChange={vi.fn()}
+        onClear={vi.fn()}
+        categoryFilter="all"
+        onCategoryFilterChange={handleCategoryChange}
+      />
+    );
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'select-anomaly' })[0]!);
+    expect(handleCategoryChange).toHaveBeenCalledWith('anomaly');
   });
 });

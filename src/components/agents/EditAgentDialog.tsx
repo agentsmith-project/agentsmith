@@ -17,7 +17,7 @@ import { AgentAPI, EndpointAPI, getApiClient } from '@/lib/api';
 import type { UpdateAgentRequest } from '@/lib/api/endpoints/agents';
 import type { Agent, Endpoint } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
-import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
+import { ExecutionPreferencesEditor, type ExecutionPreferences } from '@/components/settings/ExecutionPreferencesEditor';
 import { useApiError } from '@/lib/hooks/use-api-error';
 
 export interface EditAgentDialogProps {
@@ -50,8 +50,8 @@ export function EditAgentDialog({
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
   const [interactionMode, setInteractionMode] = React.useState<'chat' | 'notebook' | 'both'>('both');
-  const [runtimePrefsOpen, setRuntimePrefsOpen] = React.useState(false);
-  const [runtimePreferences, setRuntimePreferences] = React.useState<RuntimePreferences>({});
+  const [executionPrefsOpen, setExecutionPrefsOpen] = React.useState(false);
+  const [executionPreferences, setExecutionPreferences] = React.useState<ExecutionPreferences>({});
   const [externalMultimodal, setExternalMultimodal] = React.useState(false);
   const [externalAcceptedMimeTypes, setExternalAcceptedMimeTypes] = React.useState('');
   const [externalMaxFileCount, setExternalMaxFileCount] = React.useState('');
@@ -99,9 +99,9 @@ export function EditAgentDialog({
       setName(agent.name ?? '');
       setDescription(agent.description ?? '');
       setInteractionMode(agent.interaction_mode ?? 'both');
-      setRuntimePreferences((agent.runtime_preferences_json as RuntimePreferences) ?? {});
-      const runtimePrefs = (agent.runtime_preferences_json as Record<string, unknown> | undefined) ?? {};
-      const notebook = (runtimePrefs.notebook as Record<string, unknown> | undefined) ?? {};
+      setExecutionPreferences((agent.execution_preferences_json as ExecutionPreferences) ?? {});
+      const executionPrefs = (agent.execution_preferences_json as Record<string, unknown> | undefined) ?? {};
+      const notebook = (executionPrefs.notebook as Record<string, unknown> | undefined) ?? {};
       setNotebookEndpointId(typeof notebook.endpoint_id === 'string' ? notebook.endpoint_id : '');
       const config = (agent.config as Record<string, unknown> | undefined) ?? {};
       setImage(typeof config.image === 'string' ? config.image : '');
@@ -148,9 +148,9 @@ export function EditAgentDialog({
       name: name.trim(),
       description: description.trim() || undefined,
       interaction_mode: interactionMode,
-      runtime_preferences: (() => {
+      execution_preferences: (() => {
         const nextPreferences: Record<string, unknown> = {
-          ...(runtimePreferences as Record<string, unknown>),
+          ...(executionPreferences as Record<string, unknown>),
         };
         if (interactionMode === 'notebook' || interactionMode === 'both' || agent.mode === 'internal') {
           if (!notebookEndpointId.trim()) {
@@ -235,7 +235,7 @@ export function EditAgentDialog({
 
   const canSubmit = name.trim().length > 0 && !updateMutation.isPending;
   const endpointLabel = (endpoint: Endpoint) => {
-    const model = endpoint.openai_model?.trim() || 'n/a';
+    const model = endpoint.model?.trim() || 'n/a';
     const family = endpoint.provider_family ?? 'custom';
     return `${endpoint.name} (${family}/${model})`;
   };
@@ -488,21 +488,21 @@ export function EditAgentDialog({
           <div className="border border-subtle rounded-sm">
             <button
               type="button"
-              onClick={() => setRuntimePrefsOpen((o) => !o)}
+              onClick={() => setExecutionPrefsOpen((o) => !o)}
               className="w-full flex items-center gap-2 px-4 py-3 text-left text-sm font-medium text-foreground hover:bg-hover"
             >
-              {runtimePrefsOpen ? (
+              {executionPrefsOpen ? (
                 <ChevronDown className="w-4 h-4" />
               ) : (
                 <ChevronRight className="w-4 h-4" />
               )}
-              Runtime Preferences
+              Execution Preferences
             </button>
-            {runtimePrefsOpen && (
+            {executionPrefsOpen && (
               <div className="p-4 border-t border-subtle">
-                <RuntimePreferencesEditor
-                  value={runtimePreferences}
-                  onChange={setRuntimePreferences}
+                <ExecutionPreferencesEditor
+                  value={executionPreferences}
+                  onChange={setExecutionPreferences}
                   disabled={updateMutation.isPending}
                 />
               </div>

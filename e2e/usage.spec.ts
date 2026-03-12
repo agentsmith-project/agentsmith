@@ -1,8 +1,10 @@
 /**
- * Usage Page – E2E Tests
+ * Usage Page - E2E Tests
  *
- * Covers table/data rendering, filter controls, and KPI/metrics cards
- * using MSW-provided mock data.
+ * Covers the current low-cognitive personal usage view:
+ * - resource tabs
+ * - progress cards for endpoint limits
+ * - period switching
  */
 
 import { test, expect, goToProject } from './fixtures/test-base';
@@ -12,72 +14,62 @@ test.describe('Usage Page', () => {
     await goToProject(authedPage, 'usage');
   });
 
-  test('table renders with usage data', async ({ authedPage }) => {
-    const table = authedPage.getByTestId('usage__table');
-    await expect(table).toBeVisible({ timeout: 10000 });
-
-    const rows = table.locator('[data-testid="usage__table__row"]');
-    await expect(rows.first()).toBeVisible({ timeout: 10000 });
+  test('renders usage panel with resource tabs and progress cards', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('usage__view')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('usage__my-scope-badge')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__endpoint-tabs')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__limits')).toBeVisible();
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
   });
 
-  test('filter controls are visible', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('usage__table')).toBeVisible({ timeout: 10000 });
+  test('shows current low-cognitive usage structure without removed controls', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('usage__planning-controls')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__trend')).toBeVisible();
 
-    const filters = authedPage.getByTestId('usage__filters');
-    await expect(filters).toBeVisible();
-    await expect(filters.getByText(/Resource Type/i)).toBeVisible();
-    await expect(filters.getByText(/Resource ID/i)).toBeVisible();
-    await expect(filters.getByText(/End User ID/i)).toBeVisible();
+    await expect(authedPage.getByTestId('usage__endpoint-tabs')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__limit-mode-all')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__limit-mode-rate')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__limit-mode-spending')).toBeVisible();
+
+    await expect(authedPage.getByTestId('usage__filters')).toHaveCount(0);
+    await expect(authedPage.getByTestId('usage__table')).toHaveCount(0);
+    await expect(authedPage.getByTestId('usage__export-trigger')).toHaveCount(0);
+    await expect(authedPage.getByTestId('usage__report-schedules')).toHaveCount(0);
   });
 
-  test('KPI cards display usage statistics', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+  test('switches period between 48h and 24h', async ({ authedPage }) => {
+    const period24 = authedPage.getByTestId('usage__period-24');
+    const period48 = authedPage.getByTestId('usage__period-48');
 
-    // UsageKPICards renders summary stats from usageKPI fixture
-    // Look for KPI values (requests_today: 4523, errors_today: 23, tokens_today: 2456000)
-    // The cards should render formatted numbers
-    await expect(authedPage.getByText('Usage').first()).toBeVisible();
-
-    // At least one KPI card should be visible
-    // UsageKPICards renders in the section between header and filters
-    await expect(authedPage.getByText(/requests/i).first()).toBeVisible();
+    await expect(period48).toHaveAttribute('data-active', 'true');
+    await period24.click();
+    await expect(period24).toHaveAttribute('data-active', 'true');
+    await expect(period48).toHaveAttribute('data-active', 'false');
   });
 
-  test('page header shows title and refresh button', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('page-state__success')).toBeVisible({ timeout: 10000 });
+  test('switches limit mode between all and rate', async ({ authedPage }) => {
+    const allMode = authedPage.getByTestId('usage__limit-mode-all');
+    const rateMode = authedPage.getByTestId('usage__limit-mode-rate');
 
-    await expect(authedPage.getByText('Usage').first()).toBeVisible();
-    await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
-    await expect(authedPage.getByTestId('usage__export-trigger')).toBeVisible();
-    await expect(authedPage.getByTestId('usage__open-runtime-observability')).toHaveAttribute('href', /runtime-observability\?/);
-    await expect(authedPage.getByTestId('usage__open-release-ops')).toHaveAttribute('href', /release-ops\?/);
+    await expect(allMode).toBeVisible();
+    await rateMode.click();
+
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
   });
 
-  test('export dropdown exposes csv and json actions', async ({ authedPage }) => {
-    await authedPage.getByTestId('usage__export-trigger').click();
-    await expect(authedPage.getByTestId('usage__export-option-csv')).toBeVisible();
-    await expect(authedPage.getByTestId('usage__export-option-json')).toBeVisible();
-  });
+  test('can switch resource tabs', async ({ authedPage }) => {
+    const endpointTabs = authedPage.getByTestId('usage__endpoint-tabs');
+    await expect(endpointTabs).toBeVisible();
 
-  test('scheduled report panel can open create dialog', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('usage__report-schedules')).toBeVisible();
-    await authedPage.getByTestId('usage__report-schedules-create').click();
-    await expect(authedPage.getByTestId('usage__report-schedules-form-name')).toBeVisible();
-  });
+    const resourceTabs = authedPage.locator('[data-testid^="usage__resource-tab-"]');
+    const resourceTabCount = await resourceTabs.count();
+    expect(resourceTabCount).toBeGreaterThan(0);
 
-  test('scheduled report panel exposes evidence and delivery actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('usage__report-evidence')).toBeVisible();
-    await expect(authedPage.getByTestId('usage__report-schedules-run-due')).toBeVisible();
-    await expect(authedPage.locator('[data-testid^="usage__report-schedule-run-"]').first()).toBeVisible();
-    await expect(authedPage.locator('[data-testid^="usage__report-schedule-deliveries-"]').first()).toBeVisible();
-  });
-
-  test('text filter and clear filters interaction works', async ({ authedPage }) => {
-    const filters = authedPage.getByTestId('usage__filters');
-    await expect(filters).toBeVisible({ timeout: 10000 });
-
-    const resourceIdInput = filters.getByPlaceholder(/filter by resource id/i);
-    await resourceIdInput.fill('agent_1');
-    await expect(filters.getByRole('button', { name: /clear filters/i })).toBeVisible();
+    if (resourceTabCount > 1) {
+      await resourceTabs.nth(1).click();
+      await expect(authedPage.locator('[data-testid="usage__endpoint-dimensions"]').first()).toBeVisible();
+    } else {
+      await expect(resourceTabs.first()).toBeVisible();
+    }
   });
 });

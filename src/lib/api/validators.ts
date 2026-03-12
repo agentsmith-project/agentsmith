@@ -65,12 +65,7 @@ export function validateUsageKPI(data: unknown): UsageKPI {
   return validated;
 }
 
-/**
- * Safe number formatter that handles undefined, null, and NaN
- * 
- * @deprecated Use formatNumber from '@/lib/utils/formatters' instead
- * This function is kept for backward compatibility but will be removed in a future version.
- */
+/** Safe number formatter that handles undefined, null, and NaN. */
 export function formatNumberSafe(
   num: number | undefined | null,
   defaultValue: string = '0',

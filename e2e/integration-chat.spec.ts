@@ -574,7 +574,7 @@ async function createEndpoint(
       },
       data: {
         name: endpointName,
-        openai_model: endpointModel,
+        model: endpointModel,
         type: 'openai',
         base_url: upstreamBaseUrl,
         credential_ref: credential!.id,

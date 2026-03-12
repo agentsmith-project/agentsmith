@@ -32,7 +32,7 @@ Applies to route:
 ## 3. Data and API Contract
 
 - Endpoint payload follows `docs/contracts/endpoints-capability-contract.md`.
-- When runtime catalog capability is enabled, catalog metadata and sync flow follow `docs/contracts/models-catalog-runtime-governance-contract.md`.
+- When model catalog capability is enabled, catalog metadata and sync flow follow `docs/contracts/model-catalog-project-pricing-contract.md`.
 - Frontend must not call remote provider catalogs at runtime.
 - Create/update/import/export must preserve capability semantics:
   - `chat_completion`

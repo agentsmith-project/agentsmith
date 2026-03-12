@@ -17,6 +17,13 @@ import { toast } from '@/components/ui/toast';
 import type { AuditEvent } from '@/lib/api/types';
 import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
+import {
+  getAuditActionLabel,
+  getAuditEventCategory,
+  getAuditErrorLabel,
+  getAuditResourceTypeLabel,
+  getAuditSummary,
+} from './audit-event-presenter';
 
 export interface AuditDetailDrawerProps {
   open: boolean;
@@ -32,6 +39,18 @@ function formatFullTimestamp(timestamp: string): string {
 function formatGovernanceValue(value?: number | string | null): string {
   if (value === undefined || value === null || value === '') return '--';
   return String(value);
+}
+
+function hasGovernanceContext(event: AuditEvent): boolean {
+  return Boolean(
+    event.decision_id
+    || event.error_code
+    || event.error_message
+    || event.trace_ref
+    || event.trace_incident_id
+    || event.trace_escalation_id
+    || event.trace_run_id,
+  );
 }
 
 function getDefaultGovernanceAction(resourceType?: string): string {
@@ -108,6 +127,9 @@ export function AuditDetailDrawer({
     navigator.clipboard.writeText(event.request_id);
     toast.success(toastT('copied'));
   };
+  const summary = getAuditSummary(event, t);
+  const category = getAuditEventCategory(event);
+  const showInvestigationRefs = hasGovernanceContext(event);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -120,6 +142,21 @@ export function AuditDetailDrawer({
         </DialogHeader>
 
         <div className="space-y-4">
+          <div className="bg-surface border border-border rounded-md p-4 space-y-2" data-testid="audit__detail-summary">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={category === 'anomaly' ? 'destructive' : category === 'change' ? 'secondary' : 'outline'}>
+                {t(`category.${category}`)}
+              </Badge>
+              {event.resource_type ? (
+                <Badge variant="outline">{getAuditResourceTypeLabel(event.resource_type)}</Badge>
+              ) : null}
+            </div>
+            <p className="text-sm font-medium text-foreground">{summary}</p>
+            {event.error_message ? (
+              <p className="text-sm text-tertiary">{event.error_message}</p>
+            ) : null}
+          </div>
+
           {/* Basic Info Card */}
           <div className="bg-surface border border-border rounded-md p-4 space-y-3">
             <div className="flex items-center justify-between">
@@ -130,7 +167,7 @@ export function AuditDetailDrawer({
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-tertiary">{t('table.action')}</span>
-              <Badge variant="outline">{event.action}</Badge>
+              <Badge variant="outline">{getAuditActionLabel(event.action)}</Badge>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-tertiary">{t('table.actor')}</span>
@@ -144,7 +181,7 @@ export function AuditDetailDrawer({
                         : 'outline'
                   }
                 >
-                  {event.actor_type}
+                  {t(`summary.${event.actor_type}_actor`)}
                 </Badge>
                 <span className="text-sm text-foreground font-mono">{event.actor_id}</span>
               </div>
@@ -159,7 +196,7 @@ export function AuditDetailDrawer({
               <div className="flex items-center justify-between">
                 <span className="text-sm text-tertiary">{t('table.resource')}</span>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">{event.resource_type}</Badge>
+                  <Badge variant="outline">{getAuditResourceTypeLabel(event.resource_type)}</Badge>
                   {event.resource_id && (
                     <span className="text-sm text-foreground font-mono">
                       {event.resource_id}
@@ -174,41 +211,48 @@ export function AuditDetailDrawer({
                 {event.result === 'ok' ? commonT('success') : commonT('error')}
               </Badge>
             </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-tertiary">{t('table.request_id')}</span>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-foreground font-mono">{event.request_id}</span>
-                <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyRequestId}>
-                  <Copy className="h-3 w-3" />
-                </Button>
-              </div>
-            </div>
-            {event.decision_id ? (
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-tertiary">{t('table.decision_id')}</span>
-                <span className="text-sm text-foreground font-mono">{event.decision_id}</span>
-              </div>
-            ) : null}
           </div>
 
-          {/* Error Info Card */}
-          {event.result === 'error' && (
-            <div className="bg-surface border border-border rounded-md p-4 space-y-2">
+          {showInvestigationRefs ? (
+            <div className="bg-surface border border-border rounded-md p-4 space-y-3">
               <h4 className="text-sm font-semibold text-foreground">{t('detail.error_information')}</h4>
-              {event.error_code && (
+              {event.error_code ? (
                 <div className="flex items-center gap-2">
                   <span className="text-sm text-tertiary">{t('table.error_code')}:</span>
-                  <Badge variant="destructive">{event.error_code}</Badge>
+                  <Badge variant="destructive">{getAuditErrorLabel(event.error_code)}</Badge>
                 </div>
-              )}
-              {event.error_message && (
+              ) : null}
+              {event.request_id ? (
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm text-tertiary">{t('table.request_id')}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-foreground font-mono">{event.request_id}</span>
+                    <Button variant="ghost" size="icon" className="h-6 w-6" onClick={handleCopyRequestId}>
+                      <Copy className="h-3 w-3" />
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
+              {event.decision_id ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-tertiary">{t('table.decision_id')}</span>
+                  <span className="text-sm text-foreground font-mono">{event.decision_id}</span>
+                </div>
+              ) : null}
+              {event.trace_ref ? (
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-tertiary">{t('table.trace_ref')}</span>
+                  <span className="text-sm text-foreground font-mono">{event.trace_ref}</span>
+                </div>
+              ) : null}
+              {event.error_message ? (
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.error_message')}:</span>
                   <p className="text-sm text-foreground mt-1">{event.error_message}</p>
                 </div>
-              )}
+              ) : null}
             </div>
-          )}
+          ) : null}
 
           {governance ? (
             <div className="bg-surface border border-border rounded-md p-4 space-y-3" data-testid="audit__detail-governance">
@@ -246,20 +290,8 @@ export function AuditDetailDrawer({
               </div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <span className="text-sm text-tertiary">{t('detail.governance_kind')}:</span>
-                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.governance_kind)}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-tertiary">{t('detail.enforcement_kind')}:</span>
-                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.enforcement_kind)}</p>
-                </div>
-                <div>
                   <span className="text-sm text-tertiary">{t('detail.limit_key')}:</span>
                   <p className="mt-1 text-sm font-mono text-foreground">{formatGovernanceValue(governance.limit_key)}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-tertiary">{t('detail.scope')}:</span>
-                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.scope)}</p>
                 </div>
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.effective_limit')}:</span>
@@ -268,10 +300,6 @@ export function AuditDetailDrawer({
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.current_usage')}:</span>
                   <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.current_usage)}</p>
-                </div>
-                <div>
-                  <span className="text-sm text-tertiary">{t('detail.usage_unit')}:</span>
-                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.usage_unit)}</p>
                 </div>
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.reason_label')}:</span>

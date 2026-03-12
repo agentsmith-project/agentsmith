@@ -14,8 +14,8 @@ Provide a single operational path to validate MVP core readiness on real backend
 
 Note:
 
-- Some command names still contain `release-*` for backward compatibility.
-- In current MVP, they are used only for smoke artifact generation and validation, not for DevOps release orchestration.
+- Current command names use `engineering-*` / `governance-*` naming consistently.
+- In current MVP, these commands are used only for engineering smoke validation and evidence generation, not for DevOps engineering orchestration.
 
 ## Prerequisites
 
@@ -36,20 +36,20 @@ Default test user:
 make notebook-agent-no-sandbox-smoke
 make e2e-int-core-local-api
 make governance-policy-requests-rate-effect-smoke
-make release-report REPORT_ARCHIVE=1
+make governance-report REPORT_ARCHIVE=1
 ```
 
 ## One-command Smoke Path
 
 ```bash
-make release-core-smoke
+make engineering-core-smoke
 ```
 
 This runs:
 
 1. `e2e-int-core-local-api`
 2. `governance-policy-requests-rate-effect-smoke`
-3. `release-report REPORT_ARCHIVE=1`
+3. `governance-report REPORT_ARCHIVE=1`
 
 ## Auto Bootstrap Path
 
@@ -62,7 +62,7 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 ## Evidence Outputs
 
 - Smoke artifacts (command name kept for compatibility):
-  - `artifacts/release-reports/` latest markdown/json outputs
+  - `artifacts/governance-reports/` latest markdown/json outputs
 - Integration logs:
   - `/tmp/agentsmith-api-node-integration.log`
   - `/tmp/agentsmith-web-integration.log`

@@ -41,7 +41,7 @@ const _createMockEndpoint = (overrides: Partial<Endpoint> = {}): Endpoint => ({
   project_id: 'proj-001',
   name: 'GPT-4o Production',
   description: 'Production GPT-4o endpoint',
-  openai_model: 'gpt-4o',
+  model: 'gpt-4o',
   type: 'openai',
   provider_family: 'openai',
   protocol: 'openai_compatible',

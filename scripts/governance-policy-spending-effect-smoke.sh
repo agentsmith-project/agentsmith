@@ -97,7 +97,7 @@ main() {
     -H "Authorization: Bearer ${token}" || true
   for candidate_model in "${GLM_MODEL}" "GLM-5" "glm-5" "glm-4.6v-flash" "glm-4.6" "glm-4-plus" "glm-4.5-air"; do
     local model_in_use
-    model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.openai_model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
+    model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
     if [[ "${model_in_use}" == "1" ]]; then
       continue
     fi
@@ -110,9 +110,9 @@ main() {
           \"name\":\"${temp_endpoint_name}-${candidate_model//./-}\",
           \"protocol\":\"${endpoint_protocol}\",
           \"base_url\":\"${endpoint_base_url}\",
-          \"openai_model\":\"${candidate_model}\",
+          \"model\":\"${candidate_model}\",
           \"credential_ref\":\"${endpoint_credential_ref}\",
-          \"runtime_profile\":{
+          \"model_profile\":{
             \"max_context_tokens\":200000,
             \"max_output_tokens\":110000,
             \"price_input_per_1m\":10,
@@ -151,10 +151,10 @@ main() {
         \"name\":\"${temp_endpoint_name}-${temp_model//./-}\",
         \"protocol\":\"${endpoint_protocol}\",
         \"base_url\":\"${endpoint_base_url}\",
-        \"openai_model\":\"${temp_model}\",
+        \"model\":\"${temp_model}\",
         \"credential_ref\":\"${endpoint_credential_ref}\",
         \"status\":\"active\",
-        \"runtime_profile\":{
+        \"model_profile\":{
           \"max_context_tokens\":200000,
           \"max_output_tokens\":110000,
           \"price_input_per_1m\":10,
@@ -168,7 +168,7 @@ main() {
       }" || true
   )"
   if [[ "${temp_update_code}" != "200" ]]; then
-    err "failed to set runtime profile on temporary endpoint (HTTP ${temp_update_code})"
+    err "failed to set model profile on temporary endpoint (HTTP ${temp_update_code})"
     cat "${temp_update_file}" >&2 || true
     exit 1
   fi

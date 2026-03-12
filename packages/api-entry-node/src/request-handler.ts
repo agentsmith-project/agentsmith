@@ -6,7 +6,7 @@ import { handleAuditUsageRoute } from './audit-usage-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
-import { handleRuntimeRoute } from './runtime-route-handler.js';
+import { handleModelConfigRoute } from './model-config-route-handler.js';
 import { handleAgentRoute } from './agent-route-handler.js';
 import { matchProjectsRoute, type ProjectsRoute } from './projects-route-match.js';
 import type { ChatRoute } from './chat-route-match.js';
@@ -28,35 +28,35 @@ import {
   getFeishuOAuthFrontendConfig,
 } from './feishu-oauth.js';
 import { appendUserNotification } from './me-notifications-store.js';
-import { getReleaseEscalationDetail, listReleaseEscalations } from './release-escalation-store.js';
+import { getGovernanceIncidentDetail, listGovernanceIncidents } from './governance-incident-store.js';
 import {
-  acknowledgeReleaseEscalation,
-  assignReleaseEscalation,
-  getReleaseEscalationState,
-  listReleaseEscalationStates,
-  setReleaseEscalationResolution,
-} from './release-escalation-state-store.js';
+  acknowledgeGovernanceIncident,
+  assignGovernanceIncident,
+  getGovernanceIncidentState,
+  listGovernanceIncidentStates,
+  setGovernanceIncidentResolution,
+} from './governance-incident-state-store.js';
 import {
-  listReleaseIncidentHistory,
-  recordReleaseEscalationAssignmentHistory,
-} from './release-incident-history-store.js';
-import { getReleaseReportDetail, listReleaseReports } from './release-report-store.js';
-import { getReleaseGateRunDetail, listReleaseGateRuns } from './release-run-store.js';
+  listGovernanceIncidentHistory,
+  recordGovernanceIncidentAssignmentHistory,
+} from './governance-incident-history-store.js';
+import { getGovernanceReportDetail, listGovernanceReports } from './governance-report-store.js';
+import { getGovernanceRunDetail, listGovernanceRuns } from './governance-run-store.js';
 import {
-  createReleasePolicyOverride,
-  getReleasePolicyOverrideEffectiveStatus,
-  listReleasePolicyOverrides,
-  updateReleasePolicyOverrideDecision,
-} from './release-policy-override-store.js';
+  createGovernancePolicyOverride,
+  getGovernancePolicyOverrideEffectiveStatus,
+  listGovernancePolicyOverrides,
+  updateGovernancePolicyOverrideDecision,
+} from './governance-policy-override-store.js';
 import {
-  enforceReleasePolicy,
-  evaluateReleasePolicy,
-  mergeReleasePolicyEvaluations,
-  type ReleasePolicyEvaluation,
-} from './release-policy-bridge.js';
+  enforceGovernance,
+  evaluateGovernance,
+  mergeGovernanceEvaluations,
+  type GovernanceEvaluation,
+} from './governance-evaluation.js';
 import {
-  getNotebookRuntimeMetricsPrometheusText,
-  getNotebookRuntimeMetricsSnapshot,
+  getNotebookTaskMetricsPrometheusText,
+  getNotebookTaskMetricsSnapshot,
   handleTaskRoute,
 } from './task-route-handler.js';
 import { issueSSETicket } from './sse-ticket-store.js';
@@ -67,9 +67,9 @@ import {
   parseOrganizationActionStatus,
 } from './organization-actions-store.js';
 
-type ReleaseReportPolicyShape = {
+type GovernanceReportPolicyShape = {
   summary?: {
-    release_policy?: ReleasePolicyEvaluation;
+    governance_policy?: GovernanceEvaluation;
   };
 };
 
@@ -95,20 +95,20 @@ async function buildPolicyEnforcement(
   report: Record<string, unknown>,
   scope?: { workspaceId?: string | null; projectId?: string | null },
 ) {
-  const baseEvaluation = (report as ReleaseReportPolicyShape).summary?.release_policy;
+  const baseEvaluation = (report as GovernanceReportPolicyShape).summary?.governance_policy;
   if (!baseEvaluation) return undefined;
   const workspaceId = scope?.workspaceId?.trim();
   const projectId = scope?.projectId?.trim();
   const overrides = workspaceId && projectId
-    ? await listReleasePolicyOverrides(deps.docStore, { workspaceId, projectId, reportName })
+    ? await listGovernancePolicyOverrides(deps.docStore, { workspaceId, projectId, reportName })
     : [];
-  const escalations = listReleaseEscalations(deps.releaseEscalationsDir ?? 'artifacts/release-escalations')
+  const escalations = listGovernanceIncidents(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents')
     .filter((item) => item.report_name === reportName);
-  const escalationStates = await listReleaseEscalationStates(deps.docStore);
+  const escalationStates = await listGovernanceIncidentStates(deps.docStore);
   const escalationStateById = new Map(escalationStates.map((item) => [item.id, item]));
   const mergedEscalations = escalations.map((item) => mergeEscalationState(item, escalationStateById.get(item.id)));
   const governanceEvaluation = mergedEscalations.length > 0
-    ? evaluateReleasePolicy({
+    ? evaluateGovernance({
       governance: {
         open_escalations: mergedEscalations.filter((item) => item.status !== 'resolved').length,
         critical_unassigned: mergedEscalations.filter((item) =>
@@ -120,11 +120,11 @@ async function buildPolicyEnforcement(
       },
     })
     : undefined;
-  const evaluation = mergeReleasePolicyEvaluations(baseEvaluation, governanceEvaluation);
-  return enforceReleasePolicy(
+  const evaluation = mergeGovernanceEvaluations(baseEvaluation, governanceEvaluation);
+  return enforceGovernance(
     evaluation,
     overrides.map((item) => {
-      const effectiveStatus = getReleasePolicyOverrideEffectiveStatus(item);
+      const effectiveStatus = getGovernancePolicyOverrideEffectiveStatus(item);
       return {
         issue_id: item.issue_id,
         status: effectiveStatus === 'expired' ? 'rejected' : effectiveStatus,
@@ -141,7 +141,7 @@ function isAgentRoute(route: { kind: string }): boolean {
   return route.kind === 'agents'
     || route.kind === 'agentItem'
     || route.kind === 'agentDiagnostics'
-    || route.kind === 'agentRuntimeConfig'
+    || route.kind === 'agentExecutionConfig'
     || route.kind === 'agentConnectionInfo'
     || route.kind === 'agentKeys'
     || route.kind === 'agentKeyItem';
@@ -189,7 +189,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'usageKpi'
     || route.kind === 'usageTimeseries'
     || route.kind === 'usageFacts'
-    || route.kind === 'usageRuntimeObservability'
+    || route.kind === 'usageRecordsSummary'
     || route.kind === 'usageOperationsSummary'
     || route.kind === 'limitsSummary'
   ) {
@@ -239,27 +239,15 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
 
   if (
     route.kind === 'llmUnifiedChat'
-    || route.kind === 'runtimeProviders'
-    || route.kind === 'runtimeProviderItem'
-    || route.kind === 'runtimeModels'
-    || route.kind === 'runtimeRoutingAliases'
-    || route.kind === 'runtimeRoutingCombos'
-    || route.kind === 'runtimePricing'
-    || route.kind === 'runtimeCatalogProviders'
-    || route.kind === 'runtimeCatalogModels'
-    || route.kind === 'runtimeCatalogSync'
-    || route.kind === 'runtimeCatalogJobs'
-    || route.kind === 'runtimeCatalogStatus'
+    || route.kind === 'projectPricing'
+    || route.kind === 'modelCatalogProviders'
+    || route.kind === 'modelCatalogModels'
+    || route.kind === 'modelCatalogSync'
   ) {
     if (route.kind === 'llmUnifiedChat') {
       return ['project:endpoint:use'];
     }
-    if (
-      route.kind === 'runtimeCatalogProviders'
-      || route.kind === 'runtimeCatalogModels'
-      || route.kind === 'runtimeCatalogJobs'
-      || route.kind === 'runtimeCatalogStatus'
-    ) {
+    if (route.kind === 'modelCatalogProviders' || route.kind === 'modelCatalogModels') {
       return ['project:endpoint:use'];
     }
     return ['project:manage'];
@@ -318,7 +306,7 @@ export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
     return `${cleanBase}/v1/${suffix}`;
   }
 
-  // Be tolerant of legacy/base URLs that already include the target API path.
+  // Be tolerant of base URLs that already include the target API path.
   // Example: base_url ".../chat/completions" + proxyPath "chat/completions".
   if (
     cleanBase.toLowerCase().endsWith(`/${cleanPath.toLowerCase()}`) ||
@@ -465,17 +453,17 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/notebook-runtime-metrics' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/notebook-task-metrics' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    json(res, 200, getNotebookRuntimeMetricsSnapshot());
+    json(res, 200, getNotebookTaskMetricsSnapshot());
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/notebook-runtime-metrics/prometheus' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/notebook-task-metrics/prometheus' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
@@ -483,7 +471,7 @@ export async function handleRequest(
     }
     res.statusCode = 200;
     res.setHeader('content-type', 'text/plain; version=0.0.4; charset=utf-8');
-    res.end(getNotebookRuntimeMetricsPrometheusText());
+    res.end(getNotebookTaskMetricsPrometheusText());
     return;
   }
 
@@ -594,7 +582,7 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-reports' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-reports' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
@@ -602,10 +590,10 @@ export async function handleRequest(
     }
     const workspaceId = requestUrl.searchParams.get('workspace_id');
     const projectId = requestUrl.searchParams.get('project_id');
-    const reports = listReleaseReports(deps.releaseReportsDir ?? 'artifacts/release-reports');
+    const reports = listGovernanceReports(deps.governanceReportsDir ?? 'artifacts/governance-reports');
     const items = await Promise.all(
       reports.map(async (item) => {
-        const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', item.name);
+        const detail = getGovernanceReportDetail(deps.governanceReportsDir ?? 'artifacts/governance-reports', item.name);
         if (!detail) return item;
         return {
           ...item,
@@ -619,27 +607,27 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-gate-runner' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-runner' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    json(res, 200, deps.releaseGateRunner?.getStatus() ?? {
+    json(res, 200, deps.governanceRunner?.getStatus() ?? {
       running: false,
       recent_operations: [],
     });
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-gate-runner/trigger' && method === 'POST') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-runner/trigger' && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    if (!deps.releaseGateRunner) {
-      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'release_gate_runner_unavailable' });
+    if (!deps.governanceRunner) {
+      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'governance_runner_unavailable' });
       return;
     }
     const body = await readBody(req) as Record<string, unknown>;
@@ -655,7 +643,7 @@ export async function handleRequest(
       return;
     }
     try {
-      const operation = await deps.releaseGateRunner.triggerRun({
+      const operation = await deps.governanceRunner.triggerRun({
         mode,
         sourceRunId,
         notes,
@@ -664,23 +652,23 @@ export async function handleRequest(
       });
       json(res, 202, operation);
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'release_gate_runner_failed';
-      const status = message === 'release_gate_runner_busy' ? 409 : 422;
-      json(res, status, { error_code: 'RELEASE_GATE_RUNNER_ERROR', message });
+      const message = error instanceof Error ? error.message : 'governance_runner_failed';
+      const status = message === 'governance_runner_busy' ? 409 : 422;
+      json(res, status, { error_code: 'GOVERNANCE_RUNNER_ERROR', message });
     }
     return;
   }
 
-  if (requestUrl.pathname.startsWith('/api/v1/internal/release-reports/') && method === 'GET') {
+  if (requestUrl.pathname.startsWith('/api/v1/internal/governance-reports/') && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const reportName = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-reports/', ''));
-    const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', reportName);
+    const reportName = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-reports/', ''));
+    const detail = getGovernanceReportDetail(deps.governanceReportsDir ?? 'artifacts/governance-reports', reportName);
     if (!detail) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_report_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_report_not_found' });
       return;
     }
     const workspaceId = requestUrl.searchParams.get('workspace_id');
@@ -692,7 +680,7 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-runs' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-runs' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
@@ -700,10 +688,10 @@ export async function handleRequest(
     }
     const workspaceId = requestUrl.searchParams.get('workspace_id');
     const projectId = requestUrl.searchParams.get('project_id');
-    const runs = listReleaseGateRuns(deps.releaseRunsDir ?? 'artifacts/release-runs');
+    const runs = listGovernanceRuns(deps.governanceRunsDir ?? 'artifacts/governance-runs');
     const items = await Promise.all(
       runs.map(async (item) => {
-        const detail = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', item.report_name);
+        const detail = getGovernanceReportDetail(deps.governanceReportsDir ?? 'artifacts/governance-reports', item.report_name);
         if (!detail) return item;
         return {
           ...item,
@@ -717,21 +705,21 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname.startsWith('/api/v1/internal/release-runs/') && method === 'GET') {
+  if (requestUrl.pathname.startsWith('/api/v1/internal/governance-runs/') && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const runName = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-runs/', ''));
-    const detail = getReleaseGateRunDetail(deps.releaseRunsDir ?? 'artifacts/release-runs', runName);
+    const runName = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-runs/', ''));
+    const detail = getGovernanceRunDetail(deps.governanceRunsDir ?? 'artifacts/governance-runs', runName);
     if (!detail) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_run_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_run_not_found' });
       return;
     }
     const workspaceId = requestUrl.searchParams.get('workspace_id');
     const projectId = requestUrl.searchParams.get('project_id');
-    const report = getReleaseReportDetail(deps.releaseReportsDir ?? 'artifacts/release-reports', detail.report_name);
+    const report = getGovernanceReportDetail(deps.governanceReportsDir ?? 'artifacts/governance-reports', detail.report_name);
     json(res, 200, {
       ...detail,
       policy_enforcement: report
@@ -741,14 +729,14 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-escalations' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-incidents' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const items = listReleaseEscalations(deps.releaseEscalationsDir ?? 'artifacts/release-escalations');
-    const states = await listReleaseEscalationStates(deps.docStore);
+    const items = listGovernanceIncidents(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents');
+    const states = await listGovernanceIncidentStates(deps.docStore);
     const stateById = new Map(states.map((item) => [item.id, item]));
     json(res, 200, {
       items: items.map((item) => mergeEscalationState(item, stateById.get(item.id))),
@@ -756,21 +744,21 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname.startsWith('/api/v1/internal/release-escalations/') && method === 'GET') {
+  if (requestUrl.pathname.startsWith('/api/v1/internal/governance-incidents/') && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', ''));
-    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-incidents/', ''));
+    const detail = getGovernanceIncidentDetail(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents', escalationId);
     if (!detail) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_incident_not_found' });
       return;
     }
-    const state = await getReleaseEscalationState(deps.docStore, escalationId);
+    const state = await getGovernanceIncidentState(deps.docStore, escalationId);
     const merged = mergeEscalationState(detail, state);
-    const incidentHistory = await listReleaseIncidentHistory(deps.docStore, { incidentId: merged.incident_id });
+    const incidentHistory = await listGovernanceIncidentHistory(deps.docStore, { incidentId: merged.incident_id });
     json(res, 200, {
       ...merged,
       incident_history: incidentHistory,
@@ -778,26 +766,26 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/acknowledge\/?$/) && method === 'POST') {
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-incidents\/[^/]+\/acknowledge\/?$/) && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', '').replace('/acknowledge', '').replace(/\/$/, ''));
-    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-incidents/', '').replace('/acknowledge', '').replace(/\/$/, ''));
+    const detail = getGovernanceIncidentDetail(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents', escalationId);
     if (!detail) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_incident_not_found' });
       return;
     }
-    const state = await acknowledgeReleaseEscalation(deps.docStore, {
+    const state = await acknowledgeGovernanceIncident(deps.docStore, {
       escalationId,
       userId: user.id,
       userName: user.name,
     });
     appendUserNotification(user.id, {
-      type: 'release_escalation_acknowledged',
-      title: 'Release escalation acknowledged',
+      type: 'governance_incident_acknowledged',
+      title: 'Governance incident acknowledged',
       body: detail.title,
       link_url: null,
     });
@@ -805,16 +793,16 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/assignment\/?$/) && method === 'POST') {
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-incidents\/[^/]+\/assignment\/?$/) && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', '').replace('/assignment', '').replace(/\/$/, ''));
-    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-incidents/', '').replace('/assignment', '').replace(/\/$/, ''));
+    const detail = getGovernanceIncidentDetail(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents', escalationId);
     if (!detail) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_incident_not_found' });
       return;
     }
     const body = await readBody(req) as Record<string, unknown>;
@@ -830,14 +818,14 @@ export async function handleRequest(
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'due_at must be a valid ISO timestamp' });
       return;
     }
-    const previousState = await getReleaseEscalationState(deps.docStore, escalationId);
-    const state = await assignReleaseEscalation(deps.docStore, {
+    const previousState = await getGovernanceIncidentState(deps.docStore, escalationId);
+    const state = await assignGovernanceIncident(deps.docStore, {
       escalationId,
       assigneeUserId,
       assigneeName,
       dueAt,
     });
-    await recordReleaseEscalationAssignmentHistory(deps.docStore, {
+    await recordGovernanceIncidentAssignmentHistory(deps.docStore, {
       incidentId: detail.incident_id,
       escalationId,
       actorUserId: user.id,
@@ -850,8 +838,8 @@ export async function handleRequest(
       nextDueAt: dueAt,
     });
     appendUserNotification(user.id, {
-      type: 'release_escalation_assigned',
-      title: 'Release escalation assigned',
+      type: 'governance_incident_assigned',
+      title: 'Governance incident assigned',
       body: detail.title,
       link_url: null,
     });
@@ -859,16 +847,16 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-escalations\/[^/]+\/resolution\/?$/) && method === 'POST') {
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-incidents\/[^/]+\/resolution\/?$/) && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-escalations/', '').replace('/resolution', '').replace(/\/$/, ''));
-    const detail = getReleaseEscalationDetail(deps.releaseEscalationsDir ?? 'artifacts/release-escalations', escalationId);
+    const escalationId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-incidents/', '').replace('/resolution', '').replace(/\/$/, ''));
+    const detail = getGovernanceIncidentDetail(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents', escalationId);
     if (!detail) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_escalation_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_incident_not_found' });
       return;
     }
     const body = await readBody(req) as Record<string, unknown>;
@@ -888,7 +876,7 @@ export async function handleRequest(
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'resolution category is required when resolving escalation' });
       return;
     }
-    const state = await setReleaseEscalationResolution(deps.docStore, {
+    const state = await setGovernanceIncidentResolution(deps.docStore, {
       escalationId,
       status,
       reason,
@@ -897,8 +885,8 @@ export async function handleRequest(
       userName: user.name,
     });
     appendUserNotification(user.id, {
-      type: 'release_escalation_resolved',
-      title: status === 'resolved' ? 'Release escalation resolved' : 'Release escalation reopened',
+      type: 'governance_incident_resolved',
+      title: status === 'resolved' ? 'Governance incident resolved' : 'Governance incident reopened',
       body: detail.title,
       link_url: null,
     });
@@ -906,7 +894,7 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-policy-overrides' && method === 'GET') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-policy-overrides' && method === 'GET') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
@@ -919,7 +907,7 @@ export async function handleRequest(
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_id, project_id, and report_name are required' });
       return;
     }
-    const items = await listReleasePolicyOverrides(deps.docStore, {
+    const items = await listGovernancePolicyOverrides(deps.docStore, {
       workspaceId,
       projectId,
       reportName,
@@ -928,7 +916,7 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname === '/api/v1/internal/release-policy-overrides' && method === 'POST') {
+  if (requestUrl.pathname === '/api/v1/internal/governance-policy-overrides' && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
@@ -940,13 +928,13 @@ export async function handleRequest(
     const reportName = typeof body.report_name === 'string' ? body.report_name.trim() : '';
     const incidentId = typeof body.incident_id === 'string' ? body.incident_id.trim() : '';
     const issueId = typeof body.issue_id === 'string' ? body.issue_id.trim() : '';
-    const issueSource = body.issue_source === 'execution' || body.issue_source === 'runtime' || body.issue_source === 'usage'
+    const issueSource = body.issue_source === 'execution' || body.issue_source === 'configuration' || body.issue_source === 'usage'
       ? body.issue_source
       : null;
     const issueMessage = typeof body.issue_message === 'string' ? body.issue_message.trim() : '';
     const reasonCategory = body.reason_category === 'upstream_transient'
       || body.reason_category === 'known_acceptable_risk'
-      || body.reason_category === 'rollout_exception'
+      || body.reason_category === 'approved_exception'
       || body.reason_category === 'governance_window'
       ? body.reason_category
       : null;
@@ -961,7 +949,7 @@ export async function handleRequest(
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'expires_at must be a future ISO timestamp' });
       return;
     }
-    const record = await createReleasePolicyOverride(deps.docStore, {
+    const record = await createGovernancePolicyOverride(deps.docStore, {
       workspaceId,
       projectId,
       reportName,
@@ -976,8 +964,8 @@ export async function handleRequest(
       createdByName: user.name,
     });
     appendUserNotification(user.id, {
-      type: 'release_override_requested',
-      title: 'Release override requested',
+      type: 'governance_override_requested',
+      title: 'Governance override requested',
       body: `${record.issue_source}: ${record.issue_message}`,
       link_url: null,
     });
@@ -985,13 +973,13 @@ export async function handleRequest(
     return;
   }
 
-  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/release-policy-overrides\/[^/]+\/decision\/?$/) && method === 'POST') {
+  if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-policy-overrides\/[^/]+\/decision\/?$/) && method === 'POST') {
     const user = await verifyBearerToken(req);
     if (!user) {
       unauthorized(res);
       return;
     }
-    const overrideId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/release-policy-overrides/', '').replace('/decision', '').replace(/\/$/, ''));
+    const overrideId = decodeURIComponent(requestUrl.pathname.replace('/api/v1/internal/governance-policy-overrides/', '').replace('/decision', '').replace(/\/$/, ''));
     const body = await readBody(req) as Record<string, unknown>;
     const status = body.status === 'approved' || body.status === 'rejected' ? body.status : null;
     if (!overrideId || !status) {
@@ -1000,24 +988,24 @@ export async function handleRequest(
     }
     const existing = await deps.docStore.get<{
       created_by_user_id?: string;
-    }>('release_policy_overrides', overrideId);
+    }>('governance_policy_overrides', overrideId);
     if (existing?.created_by_user_id === user.id) {
       json(res, 409, { error_code: 'OVERRIDE_SELF_APPROVAL_FORBIDDEN', message: 'override requester cannot approve or reject their own override' });
       return;
     }
-    const updated = await updateReleasePolicyOverrideDecision(deps.docStore, {
+    const updated = await updateGovernancePolicyOverrideDecision(deps.docStore, {
       overrideId,
       status,
       decidedByUserId: user.id,
       decidedByName: user.name,
     });
     if (!updated) {
-      json(res, 404, { error_code: 'NOT_FOUND', message: 'release_policy_override_not_found' });
+      json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_policy_override_not_found' });
       return;
     }
     appendUserNotification(user.id, {
-      type: 'release_override_decided',
-      title: `Release override ${updated.status}`,
+      type: 'governance_override_decided',
+      title: `Governance override ${updated.status}`,
       body: `${updated.issue_source}: ${updated.issue_message}`,
       link_url: null,
     });
@@ -1055,7 +1043,7 @@ export async function handleRequest(
       requestUrl,
       user,
       docStore: deps.docStore,
-      releaseEscalationsDir: deps.releaseEscalationsDir,
+      governanceIncidentsDir: deps.governanceIncidentsDir,
     })) {
       return;
     }
@@ -1315,7 +1303,7 @@ export async function handleRequest(
       }
     }
 
-    const handledRuntimeRoute = await handleRuntimeRoute({
+    const handledModelConfigRoute = await handleModelConfigRoute({
       route,
       method,
       req,
@@ -1325,7 +1313,7 @@ export async function handleRequest(
       json,
       readBody,
     });
-    if (handledRuntimeRoute) {
+    if (handledModelConfigRoute) {
       return;
     }
 

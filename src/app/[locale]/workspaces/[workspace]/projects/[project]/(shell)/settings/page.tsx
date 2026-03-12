@@ -23,12 +23,7 @@ import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useTranslations } from 'next-intl';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { RuntimePreferencesEditor, type RuntimePreferences } from '@/components/settings/RuntimePreferencesEditor';
-import { SettingsTokenReference } from '@/components/settings/SettingsTokenReference';
-import { RuntimeControlPlanePanel } from '@/components/settings/RuntimeControlPlanePanel';
 import { useApiError } from '@/lib/hooks/use-api-error';
-import { RUNTIME_PREFERENCES_TOKENS } from '@/components/settings/settingsTokenRefs';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
@@ -44,12 +39,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     locale: string;
   } | null>(null);
   const [savingGeneral, setSavingGeneral] = useState(false);
-  const [savingRuntime, setSavingRuntime] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<'public' | 'private'>('private');
   const [joinPolicy, setJoinPolicy] = useState<'approval_required' | 'open'>('approval_required');
-  const [runtimePreferences, setRuntimePreferences] = useState<RuntimePreferences>({});
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const router = useRouter();
   const commonT = useTranslations('common');
@@ -86,7 +79,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       setDescription(currentProject.description ?? '');
       setVisibility(currentProject.visibility || 'private');
       setJoinPolicy(currentProject.join_policy || 'approval_required');
-      setRuntimePreferences((currentProject.runtime_preferences_json as RuntimePreferences) ?? {});
     }
   }, [currentProject]);
 
@@ -117,22 +109,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     }
   };
 
-  const handleSaveRuntimePrefs = async () => {
-    if (!resolvedParams) return;
-    if (!canManageSettings) return;
-    if (!resolvedParams.workspace || !resolvedParams.project) return;
-    setSavingRuntime(true);
-    try {
-      await projectAPI.update(resolvedParams.workspace, resolvedParams.project, {
-        runtime_preferences_json: runtimePreferences as Record<string, unknown>,
-      });
-      toast.success(commonT('refreshed_data'));
-    } catch (error) {
-      handleError(error, { context: settingsT('tab_runtime_preferences') });
-    } finally {
-      setSavingRuntime(false);
-    }
-  };
+
 
   if (!resolvedParams) {
     return (
@@ -182,10 +159,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
             actions={(
               <div className="flex flex-wrap items-center gap-2">
-                {/* WP-03: Updated to new runtime-console route */}
-                <Button asChild variant="action" size="sm" data-testid="settings__open-runtime-console">
-                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-console`}>
-                    {settingsT('runtime_open_control_plane')}
+                <Button asChild variant="action" size="sm" data-testid="settings__open-audit">
+                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/audit`}>
+                    {settingsT('open_audit')}
                   </Link>
                 </Button>
                 <Button asChild variant="outline" size="sm" data-testid="settings__open-members">
@@ -204,14 +180,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         )}
       >
         <div className="w-full space-y-6">
-      <Tabs defaultValue="general" className="space-y-5">
-        <TabsList>
-          <TabsTrigger value="general" data-testid="settings__tab--general">{settingsT('tab_general')}</TabsTrigger>
-          <TabsTrigger value="runtime" data-testid="settings__tab--runtime">{settingsT('tab_runtime_preferences')}</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="general">
-          <div className="rounded-xl border border-border bg-surface p-5 md:p-6">
+          <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__general-section">
             <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h2>
             <p className="text-sm text-tertiary mb-4">{settingsT('general_help')}</p>
             <div className="grid gap-4 md:grid-cols-2">
@@ -265,48 +234,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </Button>
             </div>
           </div>
-        </TabsContent>
-
-        <TabsContent value="runtime">
-          <div className="rounded-xl border border-border bg-surface p-5 md:p-6 space-y-4">
-            <div>
-              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('runtime_preferences_title')}</h2>
-              <p className="text-sm text-tertiary">{settingsT('runtime_help')}</p>
-            </div>
-            <div className="flex justify-end gap-2">
-              {/* WP-03: Updated to new runtime-console route with monitoring tab */}
-              <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-observability">
-                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-console?tab=monitoring`}>
-                  {settingsT('runtime_observability_open_console')}
-                </Link>
-              </Button>
-              {/* WP-03: Updated to new runtime-console route */}
-              <Button asChild variant="outline" size="sm" data-testid="settings__runtime-open-control-plane">
-                <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/runtime-console`}>
-                  {settingsT('runtime_open_control_plane')}
-                </Link>
-              </Button>
-            </div>
-            <SettingsTokenReference tokens={RUNTIME_PREFERENCES_TOKENS} />
-            <RuntimePreferencesEditor
-              value={runtimePreferences}
-              onChange={setRuntimePreferences}
-              disabled={!canManageSettings}
-            />
-            <RuntimeControlPlanePanel
-              workspaceId={resolvedParams.workspace}
-              projectId={resolvedParams.project}
-              disabled={!canManageSettings}
-            />
-            <div className="mt-4 flex justify-end">
-              <Button onClick={handleSaveRuntimePrefs} disabled={!canManageSettings || savingRuntime} variant="primary" data-testid="settings__save-btn">
-                <Save className="w-4 h-4" />
-                {savingRuntime ? 'Saving...' : commonT('save')}
-              </Button>
-            </div>
-          </div>
-        </TabsContent>
-      </Tabs>
 
       <div className="mt-2 rounded-xl border border-subtle bg-surface-high border-l-2 border-l-error/70 p-6">
         <h2 className="font-semibold text-error mb-4">Danger Zone</h2>

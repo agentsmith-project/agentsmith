@@ -15,15 +15,15 @@ import {
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
-import { resolveTaskCwd } from './workspace-runtime.js';
-import { applyRuntimeContextFiles, type RuntimeContextFileItem } from './runtime-context-files.js';
+import { resolveTaskCwd } from './task-workspace.js';
+import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 
 type ServerStartPayload = {
   model?: string;
   messages?: Array<{ role?: string; content?: unknown }>;
-  runtime_context?: {
+  execution_context?: {
     workspace_id?: string;
     project_id?: string;
     task_id?: string;
@@ -51,7 +51,7 @@ type ServerStartPayload = {
       file_size?: number;
       ai_ready_status?: string;
     }>;
-    credential_files?: RuntimeContextFileItem[];
+    credential_files?: ExecutionContextFileItem[];
   };
 };
 
@@ -506,9 +506,9 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
 }
 
 async function runCodexRequest(requestId: string, payload: ServerStartPayload): Promise<void> {
-  const runtimeContext = payload.runtime_context ?? {};
-  const taskId = sanitizePathPart(runtimeContext.task_id, `task_${requestId.slice(0, 8)}`);
-  const username = sanitizePathPart(runtimeContext.username, 'unknown_user');
+  const executionContext = payload.execution_context ?? {};
+  const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
+  const username = sanitizePathPart(executionContext.username, 'unknown_user');
   const cwdResult = resolveTaskCwd({
     workspacePath: process.env.WORKSPACE_PATH,
     username,
@@ -523,24 +523,24 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     skills: builtinSkillsConfig.skills,
     required: builtinSkillsConfig.required,
   });
-  const isNotebookMode = runtimeContext.notebook_mode === true;
+  const isNotebookMode = executionContext.notebook_mode === true;
   const userPrompt = extractPrompt(payload.messages);
-  const taskInputs = Array.isArray(runtimeContext.task_inputs) ? runtimeContext.task_inputs : [];
-  const credentialFiles = Array.isArray(runtimeContext.credential_files)
-    ? runtimeContext.credential_files
+  const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
+  const credentialFiles = Array.isArray(executionContext.credential_files)
+    ? executionContext.credential_files
     : [];
   let artifactsDir = join(cwd, 'artifacts');
   let taskInputsManifestPath = join(cwd, '.mbos', 'task-inputs.json');
   if (isNotebookMode) {
     const preparedAssets = await prepareNotebookWorkspaceAssets({
       cwd,
-      runtimeContext,
+      executionContext,
       taskInputs,
     });
     artifactsDir = preparedAssets.artifactsDir;
     taskInputsManifestPath = preparedAssets.taskInputsManifestPath;
   }
-  const runtimeFilesResult = await applyRuntimeContextFiles(cwd, credentialFiles);
+  const runtimeFilesResult = await applyExecutionContextFiles(cwd, credentialFiles);
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
       artifactsDir,
@@ -555,7 +555,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   // codex-cli >=0.104 no longer accepts wire_api=chat in provider config.
   const wireApi = 'responses';
 
-  const model = runtimeContext.model ?? payload.model ?? 'gpt-5-codex';
+  const model = executionContext.model ?? payload.model ?? 'gpt-5-codex';
   const codexConfigDir = join(cwd, '.codex');
   await mkdir(codexConfigDir, { recursive: true });
   await writeFile(
@@ -564,7 +564,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       model,
       endpointProxyBase,
       wireApi,
-      userBearerToken: runtimeContext.user_bearer_token,
+      userBearerToken: executionContext.user_bearer_token,
     }),
     'utf-8',
   );
@@ -576,7 +576,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     wire_api: wireApi,
     resource_proxy_base: endpointProxyBase,
     proxy_source: 'server_hello',
-    has_user_bearer_token: Boolean(runtimeContext.user_bearer_token && runtimeContext.user_bearer_token.trim()),
+    has_user_bearer_token: Boolean(executionContext.user_bearer_token && executionContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,
     credential_files_count: runtimeFilesResult.written,
@@ -593,7 +593,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     cwd,
     endpointProxyBase,
     wireApi,
-    userBearerToken: runtimeContext.user_bearer_token,
+    userBearerToken: executionContext.user_bearer_token,
     notebookMode: isNotebookMode,
     yolo: codexYolo,
   });
@@ -607,10 +607,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         ...process.env,
         NO_COLOR: '1',
         ...(isNotebookMode ? {
-          MBOS_NOTEBOOK_API_BASE: runtimeContext.api_base ?? '',
-          MBOS_NOTEBOOK_WORKSPACE_ID: runtimeContext.workspace_id ?? '',
-          MBOS_NOTEBOOK_PROJECT_ID: runtimeContext.project_id ?? '',
-          MBOS_NOTEBOOK_USER_BEARER_TOKEN: runtimeContext.user_bearer_token ?? '',
+          MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
+          MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
+          MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
+          MBOS_NOTEBOOK_USER_BEARER_TOKEN: executionContext.user_bearer_token ?? '',
           MBOS_NOTEBOOK_TASK_INPUTS_MANIFEST: './.mbos/task-inputs.json',
         } : {}),
       },
@@ -910,7 +910,7 @@ ws.on('open', () => {
           streaming_completion: true,
           multimodal_completion: false,
         },
-        runtime: {
+        request_details: {
           executor: 'codex_cli',
           wire_api: 'responses',
         },
@@ -982,9 +982,9 @@ ws.on('message', (raw) => {
   sendRunLifecycleEvent(message.request_id, 'queued', 'running', 'Run queued');
   debugLog('received start', {
     request_id: message.request_id,
-    model: startPayload.runtime_context?.model ?? startPayload.model ?? null,
-    wire_api: startPayload.runtime_context?.wire_api ?? null,
-    task_id: startPayload.runtime_context?.task_id ?? null,
+    model: startPayload.execution_context?.model ?? startPayload.model ?? null,
+    wire_api: startPayload.execution_context?.wire_api ?? null,
+    task_id: startPayload.execution_context?.task_id ?? null,
   });
 
   void runCodexRequest(message.request_id, startPayload).catch((error) => {

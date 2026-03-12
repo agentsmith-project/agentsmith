@@ -104,9 +104,9 @@ vi.mock('@/lib/api', () => ({
   CredentialsAPI: class {
     list = mockListCredentials;
   },
-  RuntimeAPI: class {
-    listCatalogProviders = mockListCatalogProviders;
-    listCatalogModels = mockListCatalogModels;
+  ModelConfigAPI: class {
+    listModelCatalogProviders = mockListCatalogProviders;
+    listModelCatalogModels = mockListCatalogModels;
   },
 }));
 
@@ -139,20 +139,32 @@ beforeEach(() => {
       {
         id: 'p1',
         version_id: 'v1',
+        provider: 'openai',
+        family: 'openai',
         provider_key: 'openai',
         provider_id: 'openai',
         name: 'OpenAI',
+        label: 'OpenAI',
         api: 'https://api.openai.com/v1',
+        default_base_url: 'https://api.openai.com/v1',
+        protocol: 'openai_compatible',
+        compatibility_interface: 'openai',
         env: [],
         model_count: 1,
       },
       {
         id: 'p2',
         version_id: 'v1',
+        provider: 'zhipuai',
+        family: 'custom',
         provider_key: 'zhipuai',
         provider_id: 'zhipuai',
         name: 'Zhipu AI',
+        label: 'Zhipu AI',
         api: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        default_base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        protocol: 'openai_compatible',
+        compatibility_interface: 'openai',
         env: [],
         model_count: 1,
       },

@@ -432,11 +432,3 @@ describe('SSE Ticket Migration - Smoke Tests (Full Flow)', () => {
     delete process.env.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE;
   });
 });
-  it('supports legacy ticket_id response for backward compatibility', async () => {
-    (globalThis.fetch as ReturnType<typeof vi.fn>).mockResolvedValue({
-      ok: true,
-      json: () => Promise.resolve({ ticket_id: 'legacy-ticket-123' }),
-    });
-    const result = await fetchSSETicket('jwt-token', 'https://api.example.com/api/v1');
-    expect(result).toBe('legacy-ticket-123');
-  });

@@ -19,7 +19,7 @@ function buildDispatchArgs(
       time_window: 'last_7d',
       delivery_channel: 'webhook',
       delivery_config: { webhook_url: 'https://example.internal/hook', timeout_seconds: 10 },
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
       created_at: '2026-03-01T00:00:00.000Z',
       updated_at: '2026-03-01T00:00:00.000Z',

@@ -52,7 +52,7 @@ export interface ConversationPanelProps {
   disabled?: boolean;
   sending?: boolean;
   diagnosticsLinks?: {
-    runtime: string;
+    audit: string;
     usage: string;
     agent?: string | null;
   };
@@ -171,11 +171,11 @@ export function ConversationPanel({
           {diagnosticsLinks ? (
             <div className="mt-2 flex flex-wrap gap-2">
               <Link
-                href={diagnosticsLinks.runtime}
+                href={diagnosticsLinks.audit}
                 className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                data-testid="notebook__sse-status-open-runtime"
+                data-testid="notebook__sse-status-open-audit"
               >
-                {t('open_runtime_observability')}
+                {t('open_audit')}
               </Link>
               <Link
                 href={diagnosticsLinks.usage}

@@ -4,7 +4,7 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
 
 ## 1. Module Boundaries
 - `page.tsx`: route param validation, permission gate, hook wiring, cross-hook coordination.
-- `src/lib/chat`: business logic and state derivation (`runtime-store`, data/mutation hooks, streaming orchestration, composer actions, variants, view model).
+- `src/lib/chat`: business logic and state derivation (`model-config-store`, data/mutation hooks, streaming orchestration, composer actions, variants, view model).
 - `src/components/chat`: presentational composition and interaction rendering (`ThreadsPane`, `ChatHeader`, `MessageList`, `Composer`, dialogs).
 
 ## 2. Interaction Invariants

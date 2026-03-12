@@ -57,7 +57,7 @@ import {
 import { EndpointResourceService } from './endpoint-resource-service.js';
 import { ChatResourceService } from './chat-resource-service.js';
 import { AgentResourceService } from './agent-resource-service.js';
-import { AgentRuntimeService } from './agent-runtime-service.js';
+import { AgentExecutionService } from './agent-execution-service.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import { SandboxManagerClient } from './sandbox-manager-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
@@ -75,7 +75,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const objectStore = new InMemoryObjectStore();
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentResourceService = new AgentResourceService(docStore);
-  const agentRuntimeService = new AgentRuntimeService(agentResourceService);
+  const agentExecutionService = new AgentExecutionService(agentResourceService);
   const sourceBucket = 'mbos-dev';
   const vectorStore = new NoopVectorStore();
   const parser = new Utf8DocumentParser();
@@ -98,15 +98,15 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   );
 
   return {
-    releaseReportsDir: join(process.cwd(), 'artifacts/release-reports'),
-    releaseRunsDir: join(process.cwd(), 'artifacts/release-runs'),
-    releaseEscalationsDir: join(process.cwd(), 'artifacts/release-escalations'),
+    governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
+    governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
+    governanceIncidentsDir: join(process.cwd(), 'artifacts/governance-incidents'),
     cache,
     docStore,
     chatResourceService,
     endpointResourceService,
     agentResourceService,
-    agentRuntimeService,
+    agentExecutionService,
     sourceBucket,
     aiReadyJobQueue,
     createAIReadyJobUseCase: new CreateAIReadyJobUseCase(
@@ -223,15 +223,15 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const aiReadyJobQueue = new InMemoryJobQueue();
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentResourceService = new AgentResourceService(docStore);
-  const agentRuntimeService = new AgentRuntimeService(agentResourceService);
+  const agentExecutionService = new AgentExecutionService(agentResourceService);
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
     : undefined;
   const internalAgentPodManager = sandboxClient
     ? new InternalAgentPodManagerImpl(
       sandboxClient,
-      agentRuntimeService,
-      (env.AGENT_RUNTIME_WS_BASE_URL?.trim() || `ws://localhost:${env.PORT ?? '20000'}`).replace(/\/+$/, ''),
+      agentExecutionService,
+      (env.AGENT_EXECUTION_WS_BASE_URL?.trim() || `ws://localhost:${env.PORT ?? '20000'}`).replace(/\/+$/, ''),
       {
         startupTimeoutMs: Number(env.INTERNAL_AGENT_STARTUP_TIMEOUT_MS ?? '120000'),
       },
@@ -283,15 +283,15 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
 
   return {
     deps: {
-      releaseReportsDir: join(process.cwd(), 'artifacts/release-reports'),
-      releaseRunsDir: join(process.cwd(), 'artifacts/release-runs'),
-      releaseEscalationsDir: join(process.cwd(), 'artifacts/release-escalations'),
+      governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
+      governanceRunsDir: join(process.cwd(), 'artifacts/governance-runs'),
+      governanceIncidentsDir: join(process.cwd(), 'artifacts/governance-incidents'),
       cache,
       docStore,
       chatResourceService,
       endpointResourceService,
       agentResourceService,
-      agentRuntimeService,
+      agentExecutionService,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
       sourceBucket,
       aiReadyJobQueue,

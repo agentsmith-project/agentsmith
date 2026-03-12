@@ -13,7 +13,7 @@ if [[ ! -f "${TOKEN_FILE}" ]]; then
   exit 1
 fi
 TOKEN="$(cat "${TOKEN_FILE}")"
-URL="${API_BASE%/}/api/v1/internal/notebook-runtime-metrics"
+URL="${API_BASE%/}/api/v1/internal/notebook-task-metrics"
 
 json_line() {
   node -e '

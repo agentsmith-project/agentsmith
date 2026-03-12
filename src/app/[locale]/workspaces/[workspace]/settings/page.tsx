@@ -229,15 +229,15 @@ export default function WorkspaceSettingsPage() {
                         {t('workspace_explainability_open_audit')}
                       </Link>
                       <Link
-                        href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/runtime-console?tab=control${buildWorkspaceEvidenceQuery({
+                        href={`${workspaceBasePath}/projects/${explainabilitySummary.primaryBlockedProjectId}/audit${buildWorkspaceEvidenceQuery({
                           kind: 'project',
                           projectId: explainabilitySummary.primaryBlockedProjectId,
-                          reason: 'blocked_projects_release_readiness',
+                          reason: 'blocked_projects_audit_review',
                         }).replace('?', '&')}`}
                         className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-7 px-2')}
-                        data-testid="ws-settings__explain-open-blocked-project-runtime-console"
+                        data-testid="ws-settings__explain-open-blocked-project-audit-secondary"
                       >
-                        {t('workspace_explainability_open_release_ops')}
+                        {t('workspace_explainability_open_audit')}
                       </Link>
                     </div>
                   ) : null}
@@ -351,11 +351,11 @@ export default function WorkspaceSettingsPage() {
                             ) : null}
                             {item.projectId ? (
                               <Link
-                                href={`${workspaceBasePath}/projects/${item.projectId}/runtime-console?tab=control${attentionQuery.replace('?', '&')}`}
+                                href={`${workspaceBasePath}/projects/${item.projectId}/audit${attentionQuery.replace('?', '&')}`}
                                 className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                                data-testid={`ws-settings__attention-open-runtime-console--${item.id.replace(':', '--')}`}
+                                data-testid={`ws-settings__attention-open-audit-secondary--${item.id.replace(':', '--')}`}
                               >
-                                {t('workspace_attention_open_release_ops')}
+                                {t('workspace_attention_open_audit')}
                               </Link>
                             ) : null}
                             {item.projectId && item.memberId ? (
@@ -467,15 +467,15 @@ export default function WorkspaceSettingsPage() {
                           {t('workspace_projects_open_resource_policy')}
                         </Link>
                         <Link
-                          href={`${workspaceBasePath}/projects/${project.projectId}/runtime-console?tab=control${buildWorkspaceEvidenceQuery({
+                          href={`${workspaceBasePath}/projects/${project.projectId}/audit${buildWorkspaceEvidenceQuery({
                             kind: 'project',
                             projectId: project.projectId,
-                            reason: 'workspace_project_release_readiness',
+                            reason: 'workspace_project_audit_review',
                           }).replace('?', '&')}`}
                           className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                          data-testid={`ws-settings__project-open-runtime-console--${project.projectId}`}
+                          data-testid={`ws-settings__project-open-audit-secondary--${project.projectId}`}
                         >
-                          {t('workspace_projects_open_release_ops')}
+                          {t('workspace_attention_open_audit')}
                         </Link>
                       </div>
                     </div>

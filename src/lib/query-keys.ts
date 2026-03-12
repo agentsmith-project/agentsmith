@@ -169,19 +169,11 @@ export const queryKeys = {
       ['endpoints', workspaceId, projectId] as const,
   },
 
-  /** LLM runtime control plane */
-  runtime: {
-    _def: ['runtime'] as const,
-    providers: (workspaceId: string, projectId: string) =>
-      ['runtime', workspaceId, projectId, 'providers'] as const,
-    models: (workspaceId: string, projectId: string) =>
-      ['runtime', workspaceId, projectId, 'models'] as const,
-    aliases: (workspaceId: string, projectId: string) =>
-      ['runtime', workspaceId, projectId, 'aliases'] as const,
-    combos: (workspaceId: string, projectId: string) =>
-      ['runtime', workspaceId, projectId, 'combos'] as const,
-    pricing: (workspaceId: string, projectId: string) =>
-      ['runtime', workspaceId, projectId, 'pricing'] as const,
+  /** Project pricing */
+  projectPricing: {
+    _def: ['project-pricing'] as const,
+    detail: (workspaceId: string, projectId: string) =>
+      ['project-pricing', workspaceId, projectId] as const,
   },
 
   /** Credentials */
@@ -214,8 +206,6 @@ export const queryKeys = {
       ['usage-facts', workspaceId, projectId, params] as const,
     timeseries: (workspaceId: string, projectId: string, params?: object) =>
       ['usage-timeseries', workspaceId, projectId, params] as const,
-    runtimeObservability: (workspaceId: string, projectId: string, params?: object) =>
-      ['usage-runtime-observability', workspaceId, projectId, params] as const,
     operationsSummary: (workspaceId: string, projectId: string, params?: object) =>
       ['usage-operations-summary', workspaceId, projectId, params] as const,
     reportSchedules: (workspaceId: string, projectId: string) =>

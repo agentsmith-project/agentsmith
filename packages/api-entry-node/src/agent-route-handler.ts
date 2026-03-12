@@ -35,9 +35,9 @@ async function resolveActorPermissions(
   }
 }
 
-function validateNotebookEndpoint(runtimePreferences: Record<string, unknown> | undefined): boolean {
-  if (!runtimePreferences) return false;
-  const notebook = runtimePreferences.notebook;
+function validateNotebookEndpoint(executionPreferences: Record<string, unknown> | undefined): boolean {
+  if (!executionPreferences) return false;
+  const notebook = executionPreferences.notebook;
   if (typeof notebook !== 'object' || notebook === null) return false;
   const endpointId = (notebook as Record<string, unknown>).endpoint_id;
   return typeof endpointId === 'string' && endpointId.trim().length > 0;
@@ -119,15 +119,15 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_name_required' });
       return true;
     }
-    const runtimePreferences =
-      typeof raw.runtime_preferences_json === 'object' && raw.runtime_preferences_json !== null
-        ? (raw.runtime_preferences_json as Record<string, unknown>)
-        : (typeof raw.runtime_preferences === 'object' && raw.runtime_preferences !== null
-          ? (raw.runtime_preferences as Record<string, unknown>)
+    const executionPreferences =
+      typeof raw.execution_preferences_json === 'object' && raw.execution_preferences_json !== null
+        ? (raw.execution_preferences_json as Record<string, unknown>)
+        : (typeof raw.execution_preferences === 'object' && raw.execution_preferences !== null
+          ? (raw.execution_preferences as Record<string, unknown>)
           : undefined);
     if (
       (raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both')
-      && !validateNotebookEndpoint(runtimePreferences)
+      && !validateNotebookEndpoint(executionPreferences)
     ) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
       return true;
@@ -152,7 +152,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
           ? raw.interaction_mode
           : 'both',
       status: raw.status === 'disabled' ? 'disabled' : 'enabled',
-      runtime_preferences_json: runtimePreferences,
+      execution_preferences_json: executionPreferences,
       config: readObject(raw.config) as never,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
@@ -219,17 +219,17 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_public_forbidden' });
       return true;
     }
-    const runtimePreferences =
-      typeof raw.runtime_preferences_json === 'object' && raw.runtime_preferences_json !== null
-        ? (raw.runtime_preferences_json as Record<string, unknown>)
-        : (typeof raw.runtime_preferences === 'object' && raw.runtime_preferences !== null
-          ? (raw.runtime_preferences as Record<string, unknown>)
+    const executionPreferences =
+      typeof raw.execution_preferences_json === 'object' && raw.execution_preferences_json !== null
+        ? (raw.execution_preferences_json as Record<string, unknown>)
+        : (typeof raw.execution_preferences === 'object' && raw.execution_preferences !== null
+          ? (raw.execution_preferences as Record<string, unknown>)
           : undefined);
     const requestedInteraction =
       raw.interaction_mode === 'chat' || raw.interaction_mode === 'notebook' || raw.interaction_mode === 'both'
         ? raw.interaction_mode
         : undefined;
-    if ((requestedInteraction === 'notebook' || requestedInteraction === 'both') && !validateNotebookEndpoint(runtimePreferences)) {
+    if ((requestedInteraction === 'notebook' || requestedInteraction === 'both') && !validateNotebookEndpoint(executionPreferences)) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
       return true;
     }
@@ -293,7 +293,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         raw.visibility === 'public' || raw.visibility === 'private'
           ? raw.visibility
           : undefined,
-      runtime_preferences_json: runtimePreferences,
+      execution_preferences_json: executionPreferences,
       config: mergedConfig as never,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
@@ -350,7 +350,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
     return true;
   }
 
-  if (route.kind === 'agentRuntimeConfig' && method === 'GET') {
+  if (route.kind === 'agentExecutionConfig' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
     const canManageProject = actorPermissions.has('project:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
@@ -365,7 +365,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
     json(res, 200, {
       project_id: route.projectId,
       agent_id: route.agentId,
-      runtime_preferences: item.runtime_preferences_json ?? {},
+      execution_preferences: item.execution_preferences_json ?? {},
       schema_version: 1,
     });
     return true;

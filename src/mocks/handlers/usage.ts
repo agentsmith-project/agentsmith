@@ -1,7 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
-import { buildRuntimeUsageRecords, listRuntimeUsageFacts } from '../state/runtime-usage';
+import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
 import type { OrganizationActionServerRecord, OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
 import { appendMockNotification } from '../state/me-notifications';
@@ -23,14 +23,14 @@ type UsageLikeRecord = {
   tokens?: number;
 };
 
-type RuntimeFactLike = {
+type RequestFactLike = {
   requests?: number;
   result: 'ok' | 'error';
   timestamp?: string;
   end_user_id?: string;
   request_id?: string;
   error_code?: string;
-  runtime?: {
+  request_details?: {
     provider?: string;
     resolved_model?: string;
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
@@ -52,7 +52,7 @@ const usageReportSchedules: UsageReportSchedule[] = [{
   id: 'usage_schedule_001',
   workspace_id: 'ws_default',
   project_id: 'proj_001',
-  name: 'Weekly Runtime Ops Snapshot',
+  name: 'Weekly Request Activity Snapshot',
   cadence: 'weekly',
   status: 'active',
   format: 'json',
@@ -62,7 +62,7 @@ const usageReportSchedules: UsageReportSchedule[] = [{
   filters: {
     provider: 'secondaryok',
   },
-  release_evidence_required: true,
+  governance_evidence_required: true,
   empty_result_policy: 'deliver',
   created_at: '2026-02-27T00:00:00.000Z',
   updated_at: '2026-02-27T00:00:00.000Z',
@@ -96,7 +96,7 @@ function normalizeActionStatus(value: unknown): OrganizationActionStatus | null 
   }
   return null;
 }
-const releasePolicyOverrides = [{
+const governancePolicyOverrides = [{
   id: 'rpo_001',
   incident_id: 'incident-usage-webhook-signature-policy-check',
   workspace_id: 'ws_default',
@@ -105,8 +105,8 @@ const releasePolicyOverrides = [{
   issue_id: 'usage_usage_report_webhook_signature_recommended',
   issue_source: 'usage',
   issue_message: 'usage_report_webhook_signature_recommended',
-  reason_category: 'rollout_exception',
-  reason: 'Accepted temporarily while the webhook receiver rollout is being staged.',
+  reason_category: 'approved_exception',
+  reason: 'Accepted temporarily during the current governance review.',
   expires_at: '2026-03-07T22:20:00.000Z',
   status: 'pending',
   created_at: '2026-02-28T22:20:00.000Z',
@@ -120,9 +120,9 @@ const releasePolicyOverrides = [{
   project_id: string;
   report_name: string;
   issue_id: string;
-  issue_source: 'execution' | 'runtime' | 'usage';
+  issue_source: 'execution' | 'configuration' | 'usage';
   issue_message: string;
-  reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
+  reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'approved_exception' | 'governance_window';
   reason: string;
   expires_at: string;
   status: 'pending' | 'approved' | 'rejected';
@@ -135,18 +135,18 @@ const releasePolicyOverrides = [{
   decided_by_name?: string;
 }>;
 
-const releaseReports = [
+const governanceReports = [
   {
-    name: 'wp11-release-controls-final-20260228',
+    name: 'wp11-governance-controls-final-20260228',
     generated_at: '2026-02-28T20:35:10.000Z',
     status: 'pass',
     branch: 'main',
     commit_short: '6e002bd',
-    release_policy_decision: 'ready',
+    governance_decision: 'ready',
     policy_blocker_count: 0,
     policy_warning_count: 0,
-    runtime_release_readiness: 'ready',
-    usage_release_readiness: 'ready',
+    execution_review_status: 'ready',
+    usage_review_status: 'ready',
     markdown_available: true,
     policy_enforcement: {
       decision: 'ready',
@@ -167,11 +167,11 @@ const releaseReports = [
     status: 'pass',
     branch: 'main',
     commit_short: '5d1e26e',
-    release_policy_decision: 'warning',
+    governance_decision: 'warning',
     policy_blocker_count: 0,
     policy_warning_count: 1,
-    runtime_release_readiness: 'ready',
-    usage_release_readiness: 'ready',
+    execution_review_status: 'ready',
+    usage_review_status: 'ready',
     markdown_available: true,
     policy_enforcement: {
       decision: 'warning',
@@ -187,16 +187,16 @@ const releaseReports = [
     },
   },
   {
-    name: 'runtime-evidence-gate-regression-20260227',
+    name: 'execution-review-governance-regression-20260227',
     generated_at: '2026-02-27T19:25:00.000Z',
     status: 'fail',
     branch: 'main',
     commit_short: 'a0f74a6',
-    release_policy_decision: 'blocked',
+    governance_decision: 'blocked',
     policy_blocker_count: 5,
     policy_warning_count: 2,
-    runtime_release_readiness: 'blocked',
-    usage_release_readiness: 'blocked',
+    execution_review_status: 'blocked',
+    usage_review_status: 'blocked',
     markdown_available: true,
     policy_enforcement: {
       decision: 'blocked',
@@ -210,7 +210,7 @@ const releaseReports = [
           id: 'governance_critical_escalations_overdue',
           severity: 'blocker',
           source: 'governance',
-          message: '1 critical release escalations are overdue.',
+          message: '1 critical governance incidents are overdue.',
           overridable: false,
         },
       ],
@@ -229,12 +229,12 @@ const releaseReports = [
   },
 ];
 
-const releaseRuns = [
+const governanceRuns = [
   {
-    id: 'wp11-release-controls-final-20260228',
-    incident_id: 'incident-wp11-release-controls-final-20260228',
-    report_name: 'wp11-release-controls-final-20260228',
-    artifact_name: 'wp11-release-controls-final-20260228',
+    id: 'wp11-governance-controls-final-20260228',
+    incident_id: 'incident-wp11-governance-controls-final-20260228',
+    report_name: 'wp11-governance-controls-final-20260228',
+    artifact_name: 'wp11-governance-controls-final-20260228',
     started_at: '2026-02-28T20:30:00.000Z',
     completed_at: '2026-02-28T20:35:10.000Z',
     duration_ms: 310000,
@@ -242,10 +242,10 @@ const releaseRuns = [
     status: 'pass',
     branch: 'main',
     commit_short: '6e002bd',
-    release_policy_decision: 'ready',
-    policy_enforcement: releaseReports[0]?.policy_enforcement,
-    runtime_release_readiness: 'ready',
-    usage_release_readiness: 'ready',
+    governance_decision: 'ready',
+    policy_enforcement: governanceReports[0]?.policy_enforcement,
+    execution_review_status: 'ready',
+    usage_review_status: 'ready',
     total_checks: 6,
     passed_checks: 6,
     failed_checks: 0,
@@ -262,19 +262,19 @@ const releaseRuns = [
     status: 'pass',
     branch: 'main',
     commit_short: '5d1e26e',
-    release_policy_decision: 'warning',
-    policy_enforcement: releaseReports[1]?.policy_enforcement,
-    runtime_release_readiness: 'ready',
-    usage_release_readiness: 'ready',
+    governance_decision: 'warning',
+    policy_enforcement: governanceReports[1]?.policy_enforcement,
+    execution_review_status: 'ready',
+    usage_review_status: 'ready',
     total_checks: 6,
     passed_checks: 6,
     failed_checks: 0,
   },
   {
-    id: 'runtime-evidence-gate-regression-20260227',
-    incident_id: 'incident-runtime-evidence-gate-regression-20260227',
-    report_name: 'runtime-evidence-gate-regression-20260227',
-    artifact_name: 'runtime-evidence-gate-regression-20260227',
+    id: 'execution-review-governance-regression-20260227',
+    incident_id: 'incident-execution-review-governance-regression-20260227',
+    report_name: 'execution-review-governance-regression-20260227',
+    artifact_name: 'execution-review-governance-regression-20260227',
     started_at: '2026-02-27T19:15:00.000Z',
     completed_at: '2026-02-27T19:25:00.000Z',
     duration_ms: 600000,
@@ -282,10 +282,10 @@ const releaseRuns = [
     status: 'fail',
     branch: 'main',
     commit_short: 'a0f74a6',
-    release_policy_decision: 'blocked',
-    policy_enforcement: releaseReports[2]?.policy_enforcement,
-    runtime_release_readiness: 'blocked',
-    usage_release_readiness: 'blocked',
+    governance_decision: 'blocked',
+    policy_enforcement: governanceReports[2]?.policy_enforcement,
+    execution_review_status: 'blocked',
+    usage_review_status: 'blocked',
     governance_blockers: [
       { source: 'organization_governance', message: 'organization_governance_drilldown_chain_missing' },
       { source: 'workspace_governance', message: 'workspace_governance_explainability_missing' },
@@ -296,30 +296,30 @@ const releaseRuns = [
     total_checks: 6,
     passed_checks: 3,
     failed_checks: 2,
-    failed_step_name: 'Governance release smoke',
+    failed_step_name: 'Governance smoke',
     failed_step_category: 'smoke',
   },
 ];
 
-const releaseRunDetails = new Map([
-  ['wp11-release-controls-final-20260228', {
-    ...releaseRuns[0],
+const governanceRunDetails = new Map([
+  ['wp11-governance-controls-final-20260228', {
+    ...governanceRuns[0],
     failed_step_names: [],
     failure_categories: [],
   }],
   ['usage-webhook-signature-policy-check', {
-    ...releaseRuns[1],
+    ...governanceRuns[1],
     failed_step_names: [],
     failure_categories: [],
   }],
-  ['runtime-evidence-gate-regression-20260227', {
-    ...releaseRuns[2],
-    failed_step_names: ['Governance release smoke', 'Runtime pricing coverage'],
+  ['execution-review-governance-regression-20260227', {
+    ...governanceRuns[2],
+    failed_step_names: ['Governance smoke', 'Project pricing coverage'],
     failure_categories: ['authorization', 'unknown'],
   }],
 ]);
 
-type ReleaseIncidentHistoryItem = {
+type GovernanceIncidentHistoryItem = {
   id: string;
   incident_id: string;
   escalation_id: string;
@@ -335,7 +335,7 @@ type ReleaseIncidentHistoryItem = {
   next_due_at?: string;
 };
 
-type ReleaseEscalationRecord = {
+type GovernanceIncidentRecord = {
   id: string;
   incident_id: string;
   report_name: string;
@@ -348,9 +348,9 @@ type ReleaseEscalationRecord = {
   body: string;
   artifact_name: string;
   trigger: string;
-  release_policy_decision: string;
-  runtime_release_readiness: string;
-  usage_release_readiness: string;
+  governance_decision: string;
+  execution_review_status: string;
+  usage_review_status: string;
   assignee_user_id?: string;
   assignee_name?: string;
   due_at?: string;
@@ -361,7 +361,7 @@ type ReleaseEscalationRecord = {
   governance_blockers?: Array<{ source: string; message: string }>;
   governance_warnings?: Array<{ source: string; message: string }>;
   webhook_delivery?: Record<string, unknown>;
-  incident_history?: ReleaseIncidentHistoryItem[];
+  incident_history?: GovernanceIncidentHistoryItem[];
   acknowledged_at?: string;
   acknowledged_by_user_id?: string;
   acknowledged_by_name?: string;
@@ -372,7 +372,7 @@ type ReleaseEscalationRecord = {
   resolved_by_name?: string;
 };
 
-let releaseGateRunnerStatus = {
+let governanceRunnerStatus = {
   running: false,
   current_operation: undefined as undefined | {
     id: string;
@@ -404,23 +404,23 @@ let releaseGateRunnerStatus = {
   }>,
 };
 
-const releaseEscalations: ReleaseEscalationRecord[] = [
+const governanceIncidents: GovernanceIncidentRecord[] = [
   {
     id: 'usage-webhook-signature-policy-check',
     incident_id: 'incident-usage-webhook-signature-policy-check',
     report_name: 'usage-webhook-signature-policy-check',
     run_id: 'usage-webhook-signature-policy-check',
     created_at: '2026-02-28T22:10:00.000Z',
-    event_type: 'gate_warning',
+    event_type: 'governance_warning',
     severity: 'warning',
     status: 'open',
-    title: 'Release gate completed with warning state',
-    body: 'Latest release gate completed with 1 warning issues.',
+    title: 'Governance run completed with warning state',
+    body: 'Latest governance run completed with 1 warning issues.',
     artifact_name: 'usage-webhook-signature-policy-check',
     trigger: 'scheduled',
-    release_policy_decision: 'warning',
-    runtime_release_readiness: 'ready',
-    usage_release_readiness: 'ready',
+    governance_decision: 'warning',
+    execution_review_status: 'ready',
+    usage_review_status: 'ready',
     assignee_user_id: 'user_runtime_owner',
     assignee_name: 'Runtime Owner',
     due_at: '2026-03-02T12:00:00.000Z',
@@ -446,21 +446,21 @@ const releaseEscalations: ReleaseEscalationRecord[] = [
     ],
   },
   {
-    id: 'runtime-evidence-gate-regression-20260227',
-    incident_id: 'incident-runtime-evidence-gate-regression-20260227',
-    report_name: 'runtime-evidence-gate-regression-20260227',
-    run_id: 'runtime-evidence-gate-regression-20260227',
+    id: 'execution-review-governance-regression-20260227',
+    incident_id: 'incident-execution-review-governance-regression-20260227',
+    report_name: 'execution-review-governance-regression-20260227',
+    run_id: 'execution-review-governance-regression-20260227',
     created_at: '2026-02-27T19:25:00.000Z',
-    event_type: 'gate_blocked',
+    event_type: 'governance_blocked',
     severity: 'critical',
     status: 'open',
-    title: 'Release gate blocked',
-    body: 'Latest release gate is blocked by 4 issues.',
-    artifact_name: 'runtime-evidence-gate-regression-20260227',
+    title: 'Governance run blocked',
+    body: 'Latest governance run is blocked by 4 issues.',
+    artifact_name: 'execution-review-governance-regression-20260227',
     trigger: 'ci',
-    release_policy_decision: 'blocked',
-    runtime_release_readiness: 'blocked',
-    usage_release_readiness: 'blocked',
+    governance_decision: 'blocked',
+    execution_review_status: 'blocked',
+    usage_review_status: 'blocked',
     governance_blockers: [
       { source: 'organization_governance', message: 'organization_governance_drilldown_chain_missing' },
       { source: 'workspace_governance', message: 'workspace_governance_explainability_missing' },
@@ -473,7 +473,7 @@ const releaseEscalations: ReleaseEscalationRecord[] = [
     due_at: '2026-02-27T20:00:00.000Z',
     age_ms: 5 * 60 * 60 * 1000,
     sla_status: 'overdue',
-    failed_step_name: 'Governance release smoke',
+    failed_step_name: 'Governance smoke',
     failure_categories: ['authorization', 'unknown'],
     webhook_delivery: {
       status: 'failed',
@@ -485,8 +485,8 @@ const releaseEscalations: ReleaseEscalationRecord[] = [
     incident_history: [
       {
         id: 'rih_runtime_001',
-        incident_id: 'incident-runtime-evidence-gate-regression-20260227',
-        escalation_id: 'runtime-evidence-gate-regression-20260227',
+        incident_id: 'incident-execution-review-governance-regression-20260227',
+        escalation_id: 'execution-review-governance-regression-20260227',
         event_kind: 'escalation_assignment',
         created_at: '2026-02-27T19:30:00.000Z',
         actor_user_id: 'mock-user',
@@ -498,23 +498,23 @@ const releaseEscalations: ReleaseEscalationRecord[] = [
     ],
   },
   {
-    id: 'wp11-release-controls-final-20260228',
-    incident_id: 'incident-wp11-release-controls-final-20260228',
-    report_name: 'wp11-release-controls-final-20260228',
-    run_id: 'wp11-release-controls-final-20260228',
+    id: 'wp11-governance-controls-final-20260228',
+    incident_id: 'incident-wp11-governance-controls-final-20260228',
+    report_name: 'wp11-governance-controls-final-20260228',
+    run_id: 'wp11-governance-controls-final-20260228',
     created_at: '2026-02-28T20:35:10.000Z',
-    event_type: 'gate_ready',
+    event_type: 'governance_ready',
     severity: 'info',
     status: 'resolved',
-    title: 'Release gate recovered to ready state',
-    body: 'Latest release gate completed successfully and no blocking policy issues remain.',
-    artifact_name: 'wp11-release-controls-final-20260228',
+    title: 'Governance run recovered to ready state',
+    body: 'Latest governance run completed successfully and no blocking policy issues remain.',
+    artifact_name: 'wp11-governance-controls-final-20260228',
     trigger: 'manual',
-    release_policy_decision: 'ready',
-    runtime_release_readiness: 'ready',
-    usage_release_readiness: 'ready',
-    assignee_user_id: 'user_release_mgr',
-    assignee_name: 'Release Manager',
+    governance_decision: 'ready',
+    execution_review_status: 'ready',
+    usage_review_status: 'ready',
+    assignee_user_id: 'user_governance_mgr',
+    assignee_name: 'Governance Manager',
     due_at: '2026-02-28T20:15:00.000Z',
     age_ms: 30 * 60 * 1000,
     sla_status: 'resolved',
@@ -530,10 +530,10 @@ const releaseEscalations: ReleaseEscalationRecord[] = [
   },
 ];
 
-const releaseReportDetails = new Map([
-  ['wp11-release-controls-final-20260228', {
-    name: 'wp11-release-controls-final-20260228',
-    policy_enforcement: releaseReports[0]?.policy_enforcement,
+const governanceReportDetails = new Map([
+  ['wp11-governance-controls-final-20260228', {
+    name: 'wp11-governance-controls-final-20260228',
+    policy_enforcement: governanceReports[0]?.policy_enforcement,
     report: {
       metadata: {
         timestamp: '2026-02-28T20:35:10.000Z',
@@ -541,7 +541,7 @@ const releaseReportDetails = new Map([
       },
       summary: {
         status: 'pass',
-        release_policy: {
+        governance_policy: {
           decision: 'ready',
           blockers: [],
           warnings: [],
@@ -552,10 +552,10 @@ const releaseReportDetails = new Map([
             overridable_count: 0,
           },
         },
-        runtime_release_evidence: {
+        execution_review_evidence: {
           generated_at: '2026-02-28T20:35:09.000Z',
-          guardrails: { release_readiness: 'ready', blockers: [], warnings: [], target: 'combo:prod-chat', planned_attempts: 2 },
-          pricing_version_coverage: {
+          checks: { review_status: 'ready', blockers: [], warnings: [], target: 'openai/gpt-4o', planned_attempts: 2 },
+          pricing_source_coverage: {
             total_usage_facts: 3,
             covered_usage_facts: 3,
             missing_usage_facts: 0,
@@ -564,7 +564,7 @@ const releaseReportDetails = new Map([
           },
         },
         usage_report_evidence: {
-          release_readiness: 'ready',
+          review_status: 'ready',
           blockers: [],
           warnings: [],
           active_schedules: 1,
@@ -581,15 +581,15 @@ const releaseReportDetails = new Map([
         skipped: 0,
         checks: [
           { name: 'TypeScript typecheck', category: 'typecheck', status: 'pass', duration_ms: 18200 },
-          { name: 'Runtime proxy billing release workflow', category: 'e2e', status: 'pass', duration_ms: 94100 },
+          { name: 'Runtime proxy billing governance workflow', category: 'e2e', status: 'pass', duration_ms: 94100 },
         ],
       },
     },
-    markdown: '# Release Report\n\nStatus: PASS\n',
+    markdown: '# Governance Report\n\nStatus: PASS\n',
   }],
   ['usage-webhook-signature-policy-check', {
     name: 'usage-webhook-signature-policy-check',
-    policy_enforcement: releaseReports[1]?.policy_enforcement,
+    policy_enforcement: governanceReports[1]?.policy_enforcement,
     report: {
       metadata: {
         timestamp: '2026-02-28T22:10:00.000Z',
@@ -597,7 +597,7 @@ const releaseReportDetails = new Map([
       },
       summary: {
         status: 'pass',
-        release_policy: {
+        governance_policy: {
           decision: 'warning',
           blockers: [],
           warnings: [
@@ -616,10 +616,10 @@ const releaseReportDetails = new Map([
             overridable_count: 1,
           },
         },
-        runtime_release_evidence: {
+        execution_review_evidence: {
           generated_at: '2026-02-28T22:09:58.000Z',
-          guardrails: { release_readiness: 'ready', blockers: [], warnings: [], target: 'combo:prod-chat', planned_attempts: 2 },
-          pricing_version_coverage: {
+          checks: { review_status: 'ready', blockers: [], warnings: [], target: 'openai/gpt-4o', planned_attempts: 2 },
+          pricing_source_coverage: {
             total_usage_facts: 4,
             covered_usage_facts: 4,
             missing_usage_facts: 0,
@@ -628,7 +628,7 @@ const releaseReportDetails = new Map([
           },
         },
         usage_report_evidence: {
-          release_readiness: 'ready',
+          review_status: 'ready',
           blockers: [],
           warnings: ['usage_report_webhook_signature_recommended'],
           active_schedules: 2,
@@ -651,9 +651,9 @@ const releaseReportDetails = new Map([
     },
     markdown: '# Usage Webhook Signature Policy Check\n\nStatus: PASS\n',
   }],
-  ['runtime-evidence-gate-regression-20260227', {
-    name: 'runtime-evidence-gate-regression-20260227',
-    policy_enforcement: releaseReports[2]?.policy_enforcement,
+  ['execution-review-governance-regression-20260227', {
+    name: 'execution-review-governance-regression-20260227',
+    policy_enforcement: governanceReports[2]?.policy_enforcement,
     report: {
       metadata: {
         timestamp: '2026-02-27T19:25:00.000Z',
@@ -661,7 +661,7 @@ const releaseReportDetails = new Map([
       },
       summary: {
         status: 'fail',
-        release_policy: {
+        governance_policy: {
           decision: 'blocked',
           blockers: [
             {
@@ -672,17 +672,17 @@ const releaseReportDetails = new Map([
               overridable: false,
             },
             {
-              id: 'runtime_runtime_guardrail_primary_pricing_missing',
+              id: 'configuration_check_primary_pricing_missing',
               severity: 'blocker',
-              source: 'runtime',
-              message: 'runtime_guardrail_primary_pricing_missing',
+              source: 'configuration',
+              message: 'configuration_check_primary_pricing_missing',
               overridable: false,
             },
             {
-              id: 'runtime_missing_price_facts',
+              id: 'request_missing_price_records',
               severity: 'blocker',
-              source: 'runtime',
-              message: 'Runtime contains 1 missing-price facts.',
+              source: 'configuration',
+              message: 'Configuration contains 1 missing-price facts.',
               overridable: false,
             },
             {
@@ -695,10 +695,10 @@ const releaseReportDetails = new Map([
           ],
           warnings: [
             {
-              id: 'runtime_runtime_guardrail_fallback_pricing_missing',
+              id: 'configuration_check_reroute_pricing_missing',
               severity: 'warning',
-              source: 'runtime',
-              message: 'runtime_guardrail_fallback_pricing_missing',
+              source: 'configuration',
+              message: 'configuration_check_reroute_pricing_missing',
               overridable: true,
             },
             {
@@ -716,16 +716,16 @@ const releaseReportDetails = new Map([
             overridable_count: 2,
           },
         },
-        runtime_release_evidence: {
+        execution_review_evidence: {
           generated_at: '2026-02-27T19:24:56.000Z',
-          guardrails: {
-            release_readiness: 'blocked',
-            blockers: ['runtime_guardrail_primary_pricing_missing'],
-            warnings: ['runtime_guardrail_fallback_pricing_missing'],
-            target: 'combo:prod-chat',
+          checks: {
+            review_status: 'blocked',
+            blockers: ['configuration_check_primary_pricing_missing'],
+            warnings: ['configuration_check_reroute_pricing_missing'],
+            target: 'openai/gpt-4o',
             planned_attempts: 2,
           },
-          pricing_version_coverage: {
+          pricing_source_coverage: {
             total_usage_facts: 3,
             covered_usage_facts: 2,
             missing_usage_facts: 1,
@@ -734,7 +734,7 @@ const releaseReportDetails = new Map([
           },
         },
         usage_report_evidence: {
-          release_readiness: 'blocked',
+          review_status: 'blocked',
           blockers: ['usage_report_runner_not_yet_executed'],
           warnings: ['usage_report_webhook_signature_recommended'],
           active_schedules: 1,
@@ -751,13 +751,13 @@ const releaseReportDetails = new Map([
         skipped: 1,
         checks: [
           { name: 'TypeScript typecheck', category: 'typecheck', status: 'pass', duration_ms: 18100 },
-          { name: 'Governance release smoke', category: 'smoke', status: 'fail', duration_ms: 60300 },
-          { name: 'Runtime pricing coverage', category: 'runtime', status: 'fail', duration_ms: 12400 },
+          { name: 'Governance smoke', category: 'smoke', status: 'fail', duration_ms: 60300 },
+          { name: 'Project pricing coverage', category: 'pricing', status: 'fail', duration_ms: 12400 },
           { name: 'Visual regression', category: 'visual', status: 'skipped', duration_ms: 0 },
         ],
       },
     },
-    markdown: '# Runtime Evidence Gate Regression\n\nStatus: FAIL\n',
+    markdown: '# Execution Review Governance Regression\n\nStatus: FAIL\n',
   }],
 ]);
 
@@ -779,7 +779,7 @@ function findSchedule(ws: string, prj: string, scheduleId: string) {
   return usageReportSchedules.find((item) => item.id === scheduleId && item.workspace_id === ws && item.project_id === prj);
 }
 
-function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'failed', trigger: UsageReportDelivery['trigger'], facts: ReturnType<typeof listRuntimeUsageFacts>, options?: { error?: string; attemptCount?: number; parentDeliveryId?: string }) {
+function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'failed', trigger: UsageReportDelivery['trigger'], facts: ReturnType<typeof listRequestUsageFacts>, options?: { error?: string; attemptCount?: number; parentDeliveryId?: string }) {
   const now = new Date().toISOString();
   const deliveryId = `usage_delivery_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
   const delivery: UsageReportDelivery = {
@@ -799,8 +799,8 @@ function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'fai
     summary: {
       requests: facts.length,
       errors: facts.filter((fact) => fact.result === 'error').length,
-      top_provider: facts[0]?.runtime?.provider,
-      estimated_cost: Number(facts.reduce((sum, fact) => sum + (fact.runtime?.estimated_cost ?? 0), 0).toFixed(8)),
+      top_provider: facts[0]?.request_details?.provider,
+      estimated_cost: Number(facts.reduce((sum, fact) => sum + (fact.request_details?.estimated_cost ?? 0), 0).toFixed(8)),
     },
     error: options?.error,
     parent_delivery_id: options?.parentDeliveryId,
@@ -839,7 +839,7 @@ function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'fai
 }
 
 function getScheduleFacts(item: UsageReportSchedule) {
-  return listRuntimeUsageFacts({
+  return listRequestUsageFacts({
     startTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
     endTime: new Date().toISOString(),
     provider: item.filters?.provider ?? null,
@@ -865,7 +865,7 @@ function executeScheduleDelivery(item: UsageReportSchedule, trigger: UsageReport
 
 function buildUsageReportEvidence(ws: string, prj: string): UsageReportEvidence {
   const activeSchedules = usageReportSchedules.filter((item) => item.workspace_id === ws && item.project_id === prj && item.status === 'active');
-  const requiredSchedules = activeSchedules.filter((item) => item.release_evidence_required);
+  const requiredSchedules = activeSchedules.filter((item) => item.governance_evidence_required);
   const blockers: string[] = [];
   let successful = 0;
   let failed = 0;
@@ -893,7 +893,7 @@ function buildUsageReportEvidence(ws: string, prj: string): UsageReportEvidence 
   return {
     source: 'artifact',
     generated_at: new Date().toISOString(),
-    release_readiness: blockers.length > 0 ? 'blocked' : 'ready',
+    review_status: blockers.length > 0 ? 'blocked' : 'ready',
     blockers,
     warnings,
     active_schedules: activeSchedules.length,
@@ -952,7 +952,7 @@ function aggregateUsageRecords(records: UsageLikeRecord[], groupBy: 'day' | 'hou
   });
 }
 
-function classifyRuntimeErrorClass(errorCode?: string): 'provider_retryable' | 'provider_non_retryable' | 'system_error' {
+function classifyProviderErrorClass(errorCode?: string): 'provider_retryable' | 'provider_non_retryable' | 'system_error' {
   if (!errorCode?.startsWith('UPSTREAM_')) return 'system_error';
   const status = Number.parseInt(errorCode.replace('UPSTREAM_', ''), 10);
   if (!Number.isFinite(status)) return 'system_error';
@@ -961,27 +961,27 @@ function classifyRuntimeErrorClass(errorCode?: string): 'provider_retryable' | '
   return 'system_error';
 }
 
-function toRuntimeFact(item: RuntimeFactLike | Record<string, unknown>): RuntimeFactLike {
-  const runtime = typeof item.runtime === 'object' && item.runtime
-    ? item.runtime as RuntimeFactLike['runtime']
+function toRequestFact(item: RequestFactLike | Record<string, unknown>): RequestFactLike {
+  const requestDetails = typeof item.request_details === 'object' && item.request_details
+    ? item.request_details as RequestFactLike['request_details']
     : undefined;
   return {
     requests: typeof item.requests === 'number' ? item.requests : 1,
     result: item.result === 'error' ? 'error' : 'ok',
     error_code: typeof item.error_code === 'string' ? item.error_code : undefined,
-    runtime: {
-      provider: runtime?.provider,
-      resolved_model: runtime?.resolved_model,
-      error_class: runtime?.error_class ?? (item.result === 'error' ? classifyRuntimeErrorClass(typeof item.error_code === 'string' ? item.error_code : undefined) : undefined),
-      fallback_hops: typeof runtime?.fallback_hops === 'number' ? runtime.fallback_hops : 0,
-      estimated_cost: typeof runtime?.estimated_cost === 'number' ? runtime.estimated_cost : null,
-      missing_price: runtime?.missing_price === true,
+    request_details: {
+      provider: requestDetails?.provider,
+      resolved_model: requestDetails?.resolved_model,
+      error_class: requestDetails?.error_class ?? (item.result === 'error' ? classifyProviderErrorClass(typeof item.error_code === 'string' ? item.error_code : undefined) : undefined),
+      fallback_hops: typeof requestDetails?.fallback_hops === 'number' ? requestDetails.fallback_hops : 0,
+      estimated_cost: typeof requestDetails?.estimated_cost === 'number' ? requestDetails.estimated_cost : null,
+      missing_price: requestDetails?.missing_price === true,
     },
   };
 }
 
-function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Record<string, unknown>>, start: string, end: string) {
-  const facts = records.map(toRuntimeFact);
+function buildUsageRecordsSummary(records: Array<RequestFactLike | Record<string, unknown>>, start: string, end: string) {
+  const facts = records.map(toRequestFact);
   const errorClassCounts = {
     provider_retryable: 0,
     provider_non_retryable: 0,
@@ -1022,19 +1022,19 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
   for (const fact of facts) {
     const reqs = fact.requests ?? 1;
     totalRequests += reqs;
-    const fallbackHops = fact.runtime?.fallback_hops ?? 0;
+    const fallbackHops = fact.request_details?.fallback_hops ?? 0;
     fallbackHopsHistogram[String(fallbackHops)] = (fallbackHopsHistogram[String(fallbackHops)] ?? 0) + reqs;
     if (fallbackHops > 0) recoveredRequests += reqs;
     if (fact.result === 'error') {
       totalErrors += reqs;
-      const errorClass = fact.runtime?.error_class ?? classifyRuntimeErrorClass(fact.error_code);
+      const errorClass = fact.request_details?.error_class ?? classifyProviderErrorClass(fact.error_code);
       errorClassCounts[errorClass] += reqs;
     }
-    const cost = typeof fact.runtime?.estimated_cost === 'number' ? fact.runtime.estimated_cost : 0;
+    const cost = typeof fact.request_details?.estimated_cost === 'number' ? fact.request_details.estimated_cost : 0;
     if (cost > 0) costs.push(cost);
     const durationMs = typeof (fact as { duration_ms?: number }).duration_ms === 'number' ? (fact as { duration_ms?: number }).duration_ms : undefined;
     if (typeof durationMs === 'number') durations.push(durationMs);
-    if (fact.runtime?.missing_price) missingPriceFacts += reqs;
+    if (fact.request_details?.missing_price) missingPriceFacts += reqs;
     const bucketKey = typeof fact.timestamp === 'string' ? fact.timestamp.slice(0, 13).replace('T', ' ') + ':00' : 'unknown';
     const trendItem = trend.get(bucketKey) ?? {
       requests: 0,
@@ -1050,9 +1050,9 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
     if (typeof durationMs === 'number') trendItem.durations.push(durationMs);
     trend.set(bucketKey, trendItem);
 
-    if (fact.runtime?.provider) {
-      const providerAgg = providerBreakdown.get(fact.runtime.provider) ?? {
-        provider: fact.runtime.provider,
+    if (fact.request_details?.provider) {
+      const providerAgg = providerBreakdown.get(fact.request_details.provider) ?? {
+        provider: fact.request_details.provider,
         requests: 0,
         errors: 0,
         fallbackRequests: 0,
@@ -1063,15 +1063,15 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
       if (fact.result === 'error') providerAgg.errors += reqs;
       if (fallbackHops > 0) providerAgg.fallbackRequests += reqs;
       if (cost > 0) providerAgg.costs.push(cost);
-      if (fact.runtime?.missing_price) providerAgg.missingPriceFacts += reqs;
-      providerBreakdown.set(fact.runtime.provider, providerAgg);
+      if (fact.request_details?.missing_price) providerAgg.missingPriceFacts += reqs;
+      providerBreakdown.set(fact.request_details.provider, providerAgg);
     }
 
-    if (fact.runtime?.provider && fact.runtime?.resolved_model) {
-      const key = `${fact.runtime.provider}:${fact.runtime.resolved_model}`;
+    if (fact.request_details?.provider && fact.request_details?.resolved_model) {
+      const key = `${fact.request_details.provider}:${fact.request_details.resolved_model}`;
       const modelAgg = modelBreakdown.get(key) ?? {
-        provider: fact.runtime.provider,
-        model: fact.runtime.resolved_model,
+        provider: fact.request_details.provider,
+        model: fact.request_details.resolved_model,
         requests: 0,
         errors: 0,
         fallbackRequests: 0,
@@ -1082,7 +1082,7 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
       if (fact.result === 'error') modelAgg.errors += reqs;
       if (fallbackHops > 0) modelAgg.fallbackRequests += reqs;
       if (cost > 0) modelAgg.costs.push(cost);
-      if (fact.runtime?.missing_price) modelAgg.missingPriceFacts += reqs;
+      if (fact.request_details?.missing_price) modelAgg.missingPriceFacts += reqs;
       modelBreakdown.set(key, modelAgg);
     }
   }
@@ -1111,7 +1111,7 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
   >(items: T[]) =>
     items.map((item) => ({
       error_rate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
-      fallback_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
+      reroute_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
       avg_estimated_cost: item.costs.length > 0
         ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
         : 0,
@@ -1131,49 +1131,49 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
     time_bucket,
     requests: item.requests,
     errors: item.errors,
-    recovered_requests: item.recoveredRequests,
+    rerouted_requests: item.recoveredRequests,
     avg_estimated_cost: item.costs.length > 0
       ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
       : 0,
     duration_p95_ms: percentile(item.durations, 0.95),
   }));
   const latestTrend = requestTrend[requestTrend.length - 1];
-  const degradationSignals = [];
-  if (latestTrend && latestTrend.recovered_requests > Math.max(1, latestTrend.requests * 0.4)) {
-    degradationSignals.push({
+  const issueSignals = [];
+  if (latestTrend && latestTrend.rerouted_requests > Math.max(1, latestTrend.requests * 0.4)) {
+    issueSignals.push({
       id: `fallback-${latestTrend.time_bucket}`,
       severity: 'high',
       kind: 'fallback_spike',
-      title: 'Fallback spike detected',
-      message: `${latestTrend.recovered_requests} recovered requests in ${latestTrend.time_bucket}`,
+      title: 'Reroute activity increased',
+      message: `${latestTrend.rerouted_requests} rerouted requests in ${latestTrend.time_bucket}`,
     });
   }
   if (latestTrend && latestTrend.errors > Math.max(1, latestTrend.requests * 0.2)) {
-    degradationSignals.push({
+    issueSignals.push({
       id: `errors-${latestTrend.time_bucket}`,
       severity: 'high',
       kind: 'error_rate_spike',
-      title: 'Error spike detected',
-      message: `${latestTrend.errors} errored requests in ${latestTrend.time_bucket}`,
+      title: 'Request errors increased',
+      message: `${latestTrend.errors} failed requests in ${latestTrend.time_bucket}`,
     });
   }
   if (missingPriceFacts > 0) {
-    degradationSignals.push({
+    issueSignals.push({
       id: 'missing-price',
       severity: missingPriceFacts > 1 ? 'high' : 'medium',
       kind: 'missing_price',
-      title: 'Missing price coverage',
-      message: `${missingPriceFacts} runtime facts are missing price attribution`,
+      title: 'Price data is incomplete',
+      message: `${missingPriceFacts} records are missing price attribution`,
     });
   }
   const latencyP95 = percentile(durations, 0.95);
   if (latestTrend?.duration_p95_ms && latencyP95 && latestTrend.duration_p95_ms > latencyP95 * 1.25) {
-    degradationSignals.push({
+    issueSignals.push({
       id: `latency-${latestTrend.time_bucket}`,
       severity: 'medium',
       kind: 'latency_spike',
-      title: 'Latency spike detected',
-      message: `P95 latency elevated to ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
+      title: 'Latency increased',
+      message: `P95 latency reached ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
     });
   }
 
@@ -1181,12 +1181,12 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
     total_requests: totalRequests,
     total_errors: totalErrors,
     error_rate: totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(4)) : 0,
-    fallback_hops_histogram: fallbackHopsHistogram,
+    reroute_hops_histogram: fallbackHopsHistogram,
     error_class_counts: errorClassCounts,
     avg_estimated_cost: costs.length > 0 ? Number((totalCost / costs.length).toFixed(8)) : 0,
     p95_estimated_cost: Number(percentile95(costs).toFixed(8)),
-    health_summary: {
-      recovered_requests: recoveredRequests,
+    records_health: {
+      rerouted_requests: recoveredRequests,
       terminal_error_requests: totalErrors,
       missing_price_facts: missingPriceFacts,
       provider_count: providerBreakdown.size,
@@ -1203,7 +1203,7 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
       p95: percentile(costs, 0.95),
       p99: percentile(costs, 0.99),
     },
-    degradation_signals: degradationSignals,
+    issue_signals: issueSignals,
     provider_breakdown: mapBreakdown(Array.from(providerBreakdown.values()).sort((a, b) => b.requests - a.requests)),
     model_breakdown: mapBreakdown(Array.from(modelBreakdown.values()).sort((a, b) => b.requests - a.requests)),
     time_range: {
@@ -1213,8 +1213,8 @@ function buildRuntimeObservabilitySummary(records: Array<RuntimeFactLike | Recor
   };
 }
 
-function buildUsageOperationsSummary(records: Array<RuntimeFactLike | Record<string, unknown>>) {
-  const facts = records.map(toRuntimeFact);
+function buildUsageOperationsSummary(records: Array<RequestFactLike | Record<string, unknown>>) {
+  const facts = records.map(toRequestFact);
   const providerAgg = new Map<string, { provider: string; requests: number; errors: number; estimated_cost: number }>();
   const modelAgg = new Map<string, { provider: string; model: string; requests: number; errors: number; estimated_cost: number }>();
   const endUserAgg = new Map<string, { end_user_id: string; requests: number; errors: number; estimated_cost: number }>();
@@ -1222,9 +1222,9 @@ function buildUsageOperationsSummary(records: Array<RuntimeFactLike | Record<str
 
   for (const fact of facts) {
     const reqs = fact.requests ?? 1;
-    const cost = typeof fact.runtime?.estimated_cost === 'number' ? fact.runtime.estimated_cost : 0;
-    const provider = fact.runtime?.provider;
-    const model = fact.runtime?.resolved_model;
+    const cost = typeof fact.request_details?.estimated_cost === 'number' ? fact.request_details.estimated_cost : 0;
+    const provider = fact.request_details?.provider;
+    const model = fact.request_details?.resolved_model;
     const endUserId = fact.end_user_id;
     const bucketKey = typeof fact.timestamp === 'string' ? fact.timestamp.slice(0, 13).replace('T', ' ') + ':00' : 'unknown';
     const trendItem = trend.get(bucketKey) ?? { requests: 0, errors: 0, cost: 0 };
@@ -1292,15 +1292,15 @@ function buildUsageOperationsSummary(records: Array<RuntimeFactLike | Record<str
       .sort((a, b) => String(b.timestamp ?? '').localeCompare(String(a.timestamp ?? '')))
       .slice(0, 12)
       .map((fact) => ({
-        id: fact.request_id ?? `${fact.timestamp ?? 'unknown'}-${fact.runtime?.provider ?? 'runtime'}`,
+        id: fact.request_id ?? `${fact.timestamp ?? 'unknown'}-${fact.request_details?.provider ?? 'unknown-provider'}`,
         timestamp: fact.timestamp ?? new Date().toISOString(),
         request_id: fact.request_id,
-        provider: fact.runtime?.provider,
-        model: fact.runtime?.resolved_model,
+        provider: fact.request_details?.provider,
+        model: fact.request_details?.resolved_model,
         end_user_id: fact.end_user_id,
         result: fact.result,
-        error_class: fact.runtime?.error_class ?? (fact.result === 'error' ? classifyRuntimeErrorClass(fact.error_code) : undefined),
-        estimated_cost: fact.runtime?.estimated_cost ?? undefined,
+        error_class: fact.request_details?.error_class ?? (fact.result === 'error' ? classifyProviderErrorClass(fact.error_code) : undefined),
+        estimated_cost: fact.request_details?.estimated_cost ?? undefined,
       })),
   };
 }
@@ -1356,33 +1356,33 @@ export const usageHandlers = [
     organizationActionRecords.set(actionId, updated);
     return HttpResponse.json(updated);
   }),
-  http.get('/api/v1/internal/release-reports', () => {
-    return HttpResponse.json({ items: releaseReports });
+  http.get('/api/v1/internal/governance-reports', () => {
+    return HttpResponse.json({ items: governanceReports });
   }),
-  http.get('/api/v1/internal/release-reports/:name', ({ params }) => {
-    const detail = releaseReportDetails.get(String(params.name));
+  http.get('/api/v1/internal/governance-reports/:name', ({ params }) => {
+    const detail = governanceReportDetails.get(String(params.name));
     if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_report_not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_report_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
   }),
-  http.get('/api/v1/internal/release-runs', () => {
-    return HttpResponse.json({ items: releaseRuns });
+  http.get('/api/v1/internal/governance-runs', () => {
+    return HttpResponse.json({ items: governanceRuns });
   }),
-  http.get('/api/v1/internal/release-runs/:id', ({ params }) => {
-    const detail = releaseRunDetails.get(String(params.id));
+  http.get('/api/v1/internal/governance-runs/:id', ({ params }) => {
+    const detail = governanceRunDetails.get(String(params.id));
     if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_run_not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_run_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
   }),
-  http.get('/api/v1/internal/release-gate-runner', () => {
-    return HttpResponse.json(releaseGateRunnerStatus);
+  http.get('/api/v1/internal/governance-runner', () => {
+    return HttpResponse.json(governanceRunnerStatus);
   }),
-  http.post('/api/v1/internal/release-gate-runner/trigger', async ({ request }) => {
+  http.post('/api/v1/internal/governance-runner/trigger', async ({ request }) => {
     const body = await request.json() as { mode?: 'full' | 'failed_only'; source_run_id?: string; notes?: string };
-    if (releaseGateRunnerStatus.running) {
-      return HttpResponse.json({ error_code: 'RELEASE_GATE_RUNNER_ERROR', message: 'release_gate_runner_busy' }, { status: 409 });
+    if (governanceRunnerStatus.running) {
+      return HttpResponse.json({ error_code: 'GOVERNANCE_RUNNER_ERROR', message: 'governance_runner_busy' }, { status: 409 });
     }
     if (body.mode !== 'full' && body.mode !== 'failed_only') {
       return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'mode is required' }, { status: 422 });
@@ -1392,39 +1392,39 @@ export const usageHandlers = [
       status: 'running' as const,
       mode: body.mode,
       started_at: new Date().toISOString(),
-      report_name: body.mode === 'failed_only' && body.source_run_id ? `release-rerun-${body.source_run_id}` : `release-manual-${Date.now()}`,
+      report_name: body.mode === 'failed_only' && body.source_run_id ? `governance-rerun-${body.source_run_id}` : `governance-manual-${Date.now()}`,
       source_run_id: body.source_run_id,
       notes: body.notes,
     };
-    releaseGateRunnerStatus = {
+    governanceRunnerStatus = {
       running: true,
       current_operation: operation,
-      recent_operations: [operation, ...releaseGateRunnerStatus.recent_operations].slice(0, 10),
+      recent_operations: [operation, ...governanceRunnerStatus.recent_operations].slice(0, 10),
     };
     return HttpResponse.json(operation, { status: 202 });
   }),
-  http.get('/api/v1/internal/release-escalations', () => {
-    return HttpResponse.json({ items: releaseEscalations });
+  http.get('/api/v1/internal/governance-incidents', () => {
+    return HttpResponse.json({ items: governanceIncidents });
   }),
-  http.get('/api/v1/internal/release-escalations/:id', ({ params }) => {
-    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+  http.get('/api/v1/internal/governance-incidents/:id', ({ params }) => {
+    const detail = governanceIncidents.find((item) => item.id === String(params.id));
     if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_incident_not_found' }, { status: 404 });
     }
     return HttpResponse.json(detail);
   }),
-  http.post('/api/v1/internal/release-escalations/:id/acknowledge', ({ params }) => {
-    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+  http.post('/api/v1/internal/governance-incidents/:id/acknowledge', ({ params }) => {
+    const detail = governanceIncidents.find((item) => item.id === String(params.id));
     if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_incident_not_found' }, { status: 404 });
     }
     detail.acknowledged_at = new Date().toISOString();
     detail.acknowledged_by_user_id = 'mock-user';
     detail.acknowledged_by_name = 'Mock User';
     appendMockNotification({
-      id: `notif_release_escalation_ack_${Date.now()}`,
-      type: 'release_escalation_acknowledged',
-      title: 'Release escalation acknowledged',
+      id: `notif_governance_incident_ack_${Date.now()}`,
+      type: 'governance_incident_acknowledged',
+      title: 'Governance incident acknowledged',
       body: detail.title,
       link_url: null,
       read_at: null,
@@ -1432,9 +1432,9 @@ export const usageHandlers = [
     });
     return HttpResponse.json(detail);
   }),
-  http.post('/api/v1/internal/release-escalations/:id/assignment', async ({ params, request }) => {
+  http.post('/api/v1/internal/governance-incidents/:id/assignment', async ({ params, request }) => {
     const body = await request.json() as { assignee_user_id?: string; assignee_name?: string; due_at?: string };
-    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+    const detail = governanceIncidents.find((item) => item.id === String(params.id));
     if (!detail || !body.assignee_user_id?.trim()) {
       return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'assignee_user_id is required' }, { status: 422 });
     }
@@ -1464,9 +1464,9 @@ export const usageHandlers = [
       ...(detail.incident_history ?? []),
     ];
     appendMockNotification({
-      id: `notif_release_escalation_assignment_${Date.now()}`,
-      type: 'release_escalation_assigned',
-      title: 'Release escalation assigned',
+      id: `notif_governance_incident_assignment_${Date.now()}`,
+      type: 'governance_incident_assigned',
+      title: 'Governance incident assigned',
       body: detail.title,
       link_url: null,
       read_at: null,
@@ -1474,15 +1474,15 @@ export const usageHandlers = [
     });
     return HttpResponse.json(detail);
   }),
-  http.post('/api/v1/internal/release-escalations/:id/resolution', async ({ params, request }) => {
+  http.post('/api/v1/internal/governance-incidents/:id/resolution', async ({ params, request }) => {
     const body = await request.json() as {
       status?: 'open' | 'resolved';
       reason?: string;
       category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
     };
-    const detail = releaseEscalations.find((item) => item.id === String(params.id));
+    const detail = governanceIncidents.find((item) => item.id === String(params.id));
     if (!detail || (body.status !== 'open' && body.status !== 'resolved')) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_escalation_not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_incident_not_found' }, { status: 404 });
     }
     if (body.status === 'resolved' && !body.category) {
       return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'resolution category is required when resolving escalation' }, { status: 422 });
@@ -1495,9 +1495,9 @@ export const usageHandlers = [
     detail.resolved_by_user_id = body.status === 'resolved' ? 'mock-user' : undefined;
     detail.resolved_by_name = body.status === 'resolved' ? 'Mock User' : undefined;
     appendMockNotification({
-      id: `notif_release_escalation_resolution_${Date.now()}`,
-      type: body.status === 'resolved' ? 'release_escalation_resolved' : 'release_escalation_reopened',
-      title: body.status === 'resolved' ? 'Release escalation resolved' : 'Release escalation reopened',
+      id: `notif_governance_incident_resolution_${Date.now()}`,
+      type: body.status === 'resolved' ? 'governance_incident_resolved' : 'governance_incident_reopened',
+      title: body.status === 'resolved' ? 'Governance incident resolved' : 'Governance incident reopened',
       body: detail.title,
       link_url: null,
       read_at: null,
@@ -1505,30 +1505,30 @@ export const usageHandlers = [
     });
     return HttpResponse.json(detail);
   }),
-  http.get('/api/v1/internal/release-policy-overrides', ({ request }) => {
+  http.get('/api/v1/internal/governance-policy-overrides', ({ request }) => {
     const url = new URL(request.url);
     const workspaceId = url.searchParams.get('workspace_id');
     const projectId = url.searchParams.get('project_id');
     const reportName = url.searchParams.get('report_name');
     return HttpResponse.json({
-      items: releasePolicyOverrides.filter((item) =>
+      items: governancePolicyOverrides.filter((item) =>
         item.workspace_id === workspaceId && item.project_id === projectId && item.report_name === reportName),
     });
   }),
-  http.post('/api/v1/internal/release-policy-overrides', async ({ request }) => {
+  http.post('/api/v1/internal/governance-policy-overrides', async ({ request }) => {
     const body = await request.json() as {
       workspace_id: string;
       project_id: string;
       report_name: string;
       incident_id: string;
       issue_id: string;
-      issue_source: 'execution' | 'runtime' | 'usage';
+      issue_source: 'execution' | 'configuration' | 'usage';
       issue_message: string;
-      reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'rollout_exception' | 'governance_window';
+      reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'approved_exception' | 'governance_window';
       reason: string;
       expires_at: string;
     };
-    const existing = releasePolicyOverrides.find((item) =>
+    const existing = governancePolicyOverrides.find((item) =>
       item.workspace_id === body.workspace_id
       && item.project_id === body.project_id
       && item.report_name === body.report_name
@@ -1546,14 +1546,14 @@ export const usageHandlers = [
       created_by_user_id: 'mock-user',
       created_by_name: 'Mock User',
     };
-    releasePolicyOverrides.unshift(created);
+    governancePolicyOverrides.unshift(created);
     return HttpResponse.json(created, { status: 201 });
   }),
-  http.post('/api/v1/internal/release-policy-overrides/:overrideId/decision', async ({ params, request }) => {
+  http.post('/api/v1/internal/governance-policy-overrides/:overrideId/decision', async ({ params, request }) => {
     const body = await request.json() as { status?: 'approved' | 'rejected' };
-    const record = releasePolicyOverrides.find((item) => item.id === String(params.overrideId));
+    const record = governancePolicyOverrides.find((item) => item.id === String(params.overrideId));
     if (!record || (body.status !== 'approved' && body.status !== 'rejected')) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'release_policy_override_not_found' }, { status: 404 });
+      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_policy_override_not_found' }, { status: 404 });
     }
     record.status = body.status;
     record.effective_status = body.status;
@@ -1582,7 +1582,7 @@ export const usageHandlers = [
       if (endUserId && item.end_user_id !== endUserId) return false;
       return true;
     });
-    const runtimeItems = buildRuntimeUsageRecords({
+    const requestItems = buildRequestUsageRecords({
       groupBy,
       filters: {
         startTime: url.searchParams.get('start_time'),
@@ -1597,7 +1597,7 @@ export const usageHandlers = [
       },
     });
     const aggregatedBaseItems = aggregateUsageRecords(baseItems as UsageLikeRecord[], groupBy);
-    const items = [...runtimeItems, ...aggregatedBaseItems];
+    const items = [...requestItems, ...aggregatedBaseItems];
     return HttpResponse.json({
       items,
       total: items.length,
@@ -1626,7 +1626,7 @@ export const usageHandlers = [
         resource_type: 'endpoint',
         resource_id: 'endpoint_001',
         end_user_id: 'user_001',
-        request_id: 'req_runtime_001',
+        request_id: 'req_model_001',
         requests: 1,
         duration_ms: 1840,
         bytes_in: 2048,
@@ -1635,12 +1635,12 @@ export const usageHandlers = [
         tokens_out: 210,
         tokens_total: 750,
         result: 'ok',
-        runtime: {
+        request_details: {
           provider: 'secondaryok',
           resolved_model: 'model-b',
           error_class: undefined,
           fallback_hops: 1,
-          pricing_version: 'runtime-pricing-v1',
+          pricing_source: 'project-pricing-v1',
           estimated_cost: 0.0068,
           missing_price: false,
           attempts: [
@@ -1651,7 +1651,7 @@ export const usageHandlers = [
               outcome: 'fallback_upstream_error',
               statusCode: 429,
               errorClass: 'provider_retryable',
-              reason: 'runtime_upstream_error_recovered',
+              reason: 'model_upstream_error_recovered',
               durationMs: 821,
             },
             {
@@ -1659,7 +1659,7 @@ export const usageHandlers = [
               provider: 'secondaryok',
               model: 'model-b',
               outcome: 'success',
-              reason: 'runtime_upstream_ok',
+              reason: 'model_upstream_ok',
               durationMs: 1019,
             },
           ],
@@ -1668,7 +1668,7 @@ export const usageHandlers = [
           provider: 'secondaryok',
           resolved_model: 'model-b',
           fallback_hops: 1,
-          pricing_version: 'runtime-pricing-v1',
+          pricing_source: 'project-pricing-v1',
           estimated_cost: 0.0068,
         },
       },
@@ -1680,7 +1680,7 @@ export const usageHandlers = [
         resource_type: 'endpoint',
         resource_id: 'endpoint_001',
         end_user_id: 'user_001',
-        request_id: 'req_runtime_002',
+        request_id: 'req_model_002',
         requests: 1,
         duration_ms: 932,
         bytes_in: 1536,
@@ -1690,12 +1690,12 @@ export const usageHandlers = [
         tokens_total: 440,
         result: 'error',
         error_code: 'UPSTREAM_429',
-        runtime: {
+        request_details: {
           provider: 'primaryfail',
           resolved_model: 'model-a',
           error_class: 'provider_retryable',
           fallback_hops: 0,
-          pricing_version: null,
+          pricing_source: null,
           estimated_cost: null,
           missing_price: true,
           attempts: [
@@ -1706,7 +1706,7 @@ export const usageHandlers = [
               outcome: 'terminal_upstream_error',
               statusCode: 429,
               errorClass: 'provider_retryable',
-              reason: 'runtime_upstream_error',
+              reason: 'model_upstream_error',
               durationMs: 932,
             },
           ],
@@ -1722,13 +1722,13 @@ export const usageHandlers = [
       if (resourceType && item.resource_type !== resourceType) return false;
       if (resourceId && item.resource_id !== resourceId) return false;
       if (endUserId && item.end_user_id !== endUserId) return false;
-      if (provider && item.runtime?.provider !== provider) return false;
-      if (model && item.runtime?.resolved_model !== model) return false;
+      if (provider && item.request_details?.provider !== provider) return false;
+      if (model && item.request_details?.resolved_model !== model) return false;
       if (result && item.result !== result) return false;
-      if (errorClass && item.runtime?.error_class !== errorClass) return false;
+      if (errorClass && item.request_details?.error_class !== errorClass) return false;
       return true;
     });
-    const runtimeItems = listRuntimeUsageFacts({
+    const requestItems = listRequestUsageFacts({
       startTime,
       endTime,
       resourceType,
@@ -1739,7 +1739,7 @@ export const usageHandlers = [
       result: result === 'ok' || result === 'error' ? result : null,
       errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
     });
-    const items = [...runtimeItems, ...fixtureItems];
+    const items = [...requestItems, ...fixtureItems];
     return HttpResponse.json({
       items,
       total: items.length,
@@ -1801,7 +1801,7 @@ export const usageHandlers = [
       total_cost: Number(totalCost.toFixed(2)),
     });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/runtime-observability', ({ request }) => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/records-summary', ({ request }) => {
     const url = new URL(request.url);
     const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const end = url.searchParams.get('end_time') ?? new Date().toISOString();
@@ -1809,7 +1809,7 @@ export const usageHandlers = [
     const model = url.searchParams.get('model');
     const result = url.searchParams.get('result');
     const errorClass = url.searchParams.get('error_class');
-    const factsResponse = listRuntimeUsageFacts({
+    const factsResponse = listRequestUsageFacts({
       startTime: start,
       endTime: end,
       resourceType: 'endpoint',
@@ -1821,7 +1821,7 @@ export const usageHandlers = [
       {
         requests: 1,
         result: 'ok',
-        runtime: {
+        request_details: {
           provider: 'secondaryok',
           resolved_model: 'model-b',
           fallback_hops: 1,
@@ -1833,7 +1833,7 @@ export const usageHandlers = [
         requests: 1,
         result: 'error',
         error_code: 'UPSTREAM_429',
-        runtime: {
+        request_details: {
           provider: 'primaryfail',
           resolved_model: 'model-a',
           error_class: 'provider_retryable',
@@ -1843,13 +1843,13 @@ export const usageHandlers = [
         },
       },
     ].filter((item) => {
-      if (provider && item.runtime.provider !== provider) return false;
-      if (model && item.runtime.resolved_model !== model) return false;
+      if (provider && item.request_details.provider !== provider) return false;
+      if (model && item.request_details.resolved_model !== model) return false;
       if (result && item.result !== result) return false;
-      if (errorClass && item.runtime.error_class !== errorClass) return false;
+      if (errorClass && item.request_details.error_class !== errorClass) return false;
       return true;
     });
-    return HttpResponse.json(buildRuntimeObservabilitySummary([...factsResponse, ...fixtureFactsResponse], start, end));
+    return HttpResponse.json(buildUsageRecordsSummary([...factsResponse, ...fixtureFactsResponse], start, end));
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/export', ({ request, params }) => {
     const url = new URL(request.url);
@@ -1863,7 +1863,7 @@ export const usageHandlers = [
     const model = url.searchParams.get('model');
     const result = url.searchParams.get('result');
     const errorClass = url.searchParams.get('error_class');
-    const items = listRuntimeUsageFacts({
+    const items = listRequestUsageFacts({
       startTime,
       endTime,
       resourceType,
@@ -1909,7 +1909,7 @@ export const usageHandlers = [
       'error_code',
       'error_class',
       'fallback_hops',
-      'pricing_version',
+      'pricing_source',
       'estimated_cost',
       'missing_price',
     ];
@@ -1919,15 +1919,15 @@ export const usageHandlers = [
       item.resource_type,
       item.resource_id,
       item.end_user_id,
-      item.runtime?.provider,
-      item.runtime?.resolved_model,
+      item.request_details?.provider,
+      item.request_details?.resolved_model,
       item.result,
       item.error_code,
-      item.runtime?.error_class,
-      item.runtime?.fallback_hops,
-      item.runtime?.pricing_version,
-      item.runtime?.estimated_cost,
-      item.runtime?.missing_price,
+      item.request_details?.error_class,
+      item.request_details?.fallback_hops,
+      item.request_details?.pricing_source,
+      item.request_details?.estimated_cost,
+      item.request_details?.missing_price,
     ].map((cell) => {
       const value = cell === null || cell === undefined ? '' : String(cell);
       return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
@@ -1963,7 +1963,7 @@ export const usageHandlers = [
         ? body.delivery_config as UsageReportSchedule['delivery_config']
         : undefined,
       filters: typeof body.filters === 'object' && body.filters ? body.filters as UsageReportSchedule['filters'] : undefined,
-      release_evidence_required: body.release_evidence_required !== false,
+      governance_evidence_required: body.governance_evidence_required !== false,
       empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
       created_at: now,
       updated_at: now,
@@ -2053,7 +2053,7 @@ export const usageHandlers = [
     const model = url.searchParams.get('model');
     const result = url.searchParams.get('result');
     const errorClass = url.searchParams.get('error_class');
-    const runtimeFacts = listRuntimeUsageFacts({
+    const requestFacts = listRequestUsageFacts({
       startTime: start,
       endTime: end,
       resourceType,
@@ -2068,10 +2068,10 @@ export const usageHandlers = [
       {
         timestamp: end,
         end_user_id: 'user_001',
-        request_id: 'req_runtime_001',
+        request_id: 'req_model_001',
         requests: 1,
         result: 'ok',
-        runtime: {
+        request_details: {
           provider: 'secondaryok',
           resolved_model: 'model-b',
           estimated_cost: 0.0068,
@@ -2080,11 +2080,11 @@ export const usageHandlers = [
       {
         timestamp: start,
         end_user_id: 'user_002',
-        request_id: 'req_runtime_002',
+        request_id: 'req_model_002',
         requests: 1,
         result: 'error',
         error_code: 'UPSTREAM_429',
-        runtime: {
+        request_details: {
           provider: 'primaryfail',
           resolved_model: 'model-a',
           error_class: 'provider_retryable',
@@ -2093,13 +2093,13 @@ export const usageHandlers = [
       },
     ].filter((item) => {
       if (endUserId && item.end_user_id !== endUserId) return false;
-      if (provider && item.runtime.provider !== provider) return false;
-      if (model && item.runtime.resolved_model !== model) return false;
+      if (provider && item.request_details.provider !== provider) return false;
+      if (model && item.request_details.resolved_model !== model) return false;
       if (result && item.result !== result) return false;
-      if (errorClass && item.runtime.error_class !== errorClass) return false;
+      if (errorClass && item.request_details.error_class !== errorClass) return false;
       return true;
     });
-    return HttpResponse.json(buildUsageOperationsSummary([...runtimeFacts, ...fixtureFacts]));
+    return HttpResponse.json(buildUsageOperationsSummary([...requestFacts, ...fixtureFacts]));
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/limits/summary', () => {
     const resources = p0.top_resources as Array<{

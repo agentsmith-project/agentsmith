@@ -29,8 +29,7 @@ export interface ApiResponse<T> {
   request_id?: string;
 }
 
-// Re-export unified error class from errors.ts
-// ApiError is an alias for APIError for backward compatibility
+// Re-export unified error class from errors.ts.
 export { APIError, APIError as ApiError } from './errors';
 
 /**

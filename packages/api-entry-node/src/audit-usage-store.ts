@@ -130,12 +130,12 @@ export type UsageFactListItem = {
   result: 'ok' | 'error';
   error_code?: string;
   decision_id?: string;
-  runtime?: {
+  request_details?: {
     provider?: string;
     resolved_model?: string;
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     fallback_hops?: number;
-    pricing_version?: string | null;
+    pricing_source?: string | null;
     estimated_cost?: number | null;
     missing_price?: boolean;
     attempts?: Array<Record<string, unknown>>;
@@ -212,18 +212,18 @@ export type LimitsOverview = {
   };
 };
 
-export type RuntimeObservabilityResponse = {
+export type UsageRecordsSummaryResponse = {
   total_requests: number;
   total_errors: number;
   error_rate: number;
-  fallback_hops_histogram: Record<string, number>;
+  reroute_hops_histogram: Record<string, number>;
   error_class_counts: Record<'provider_retryable' | 'provider_non_retryable' | 'system_error', number>;
   avg_estimated_cost: number;
   p95_estimated_cost: number;
-  health_summary: {
-    recovered_requests: number;
+  records_health: {
+    rerouted_requests: number;
     terminal_error_requests: number;
-    missing_price_facts: number;
+    missing_price_records: number;
     provider_count: number;
     model_count: number;
   };
@@ -231,7 +231,7 @@ export type RuntimeObservabilityResponse = {
     time_bucket: string;
     requests: number;
     errors: number;
-    recovered_requests: number;
+    rerouted_requests: number;
     avg_estimated_cost: number;
     duration_p95_ms?: number;
   }>;
@@ -245,7 +245,7 @@ export type RuntimeObservabilityResponse = {
     p95?: number;
     p99?: number;
   };
-  degradation_signals: Array<{
+  issue_signals: Array<{
     id: string;
     severity: 'low' | 'medium' | 'high';
     kind: 'fallback_spike' | 'error_rate_spike' | 'missing_price' | 'latency_spike';
@@ -257,10 +257,10 @@ export type RuntimeObservabilityResponse = {
     requests: number;
     errors: number;
     error_rate: number;
-    fallback_rate: number;
+    reroute_rate: number;
     avg_estimated_cost: number;
     p95_estimated_cost: number;
-    missing_price_facts: number;
+    missing_price_records: number;
   }>;
   model_breakdown: Array<{
     provider: string;
@@ -268,10 +268,10 @@ export type RuntimeObservabilityResponse = {
     requests: number;
     errors: number;
     error_rate: number;
-    fallback_rate: number;
+    reroute_rate: number;
     avg_estimated_cost: number;
     p95_estimated_cost: number;
-    missing_price_facts: number;
+    missing_price_records: number;
   }>;
   time_range: {
     start: string;
@@ -386,7 +386,7 @@ export type UsageReportScheduleRecord = {
     result?: 'ok' | 'error';
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   };
-  release_evidence_required: boolean;
+  governance_evidence_required: boolean;
   empty_result_policy: 'deliver' | 'fail';
   created_at: string;
   updated_at: string;
@@ -448,7 +448,7 @@ export type UsageReportDeliveryRecord = {
 export type UsageReportEvidence = {
   source: 'artifact' | 'dry_run';
   generated_at: string;
-  release_readiness: 'ready' | 'blocked';
+  review_status: 'ready' | 'blocked';
   blockers: string[];
   warnings: string[];
   active_schedules: number;
@@ -555,7 +555,7 @@ function estimateFactCost(fact: UsageFactRecord): number {
   return typeof raw === 'number' && Number.isFinite(raw) ? raw : 0;
 }
 
-function classifyRuntimeErrorClass(errorCode?: string): 'provider_retryable' | 'provider_non_retryable' | 'system_error' {
+function classifyProviderErrorClass(errorCode?: string): 'provider_retryable' | 'provider_non_retryable' | 'system_error' {
   if (!errorCode) return 'system_error';
   const normalized = errorCode.toUpperCase();
   if (!normalized.startsWith('UPSTREAM_')) return 'system_error';
@@ -577,7 +577,7 @@ function getFactModel(fact: UsageFactRecord): string | undefined {
 
 function getFactErrorClass(fact: UsageFactRecord): 'provider_retryable' | 'provider_non_retryable' | 'system_error' | undefined {
   if (fact.result !== 'error') return undefined;
-  return classifyRuntimeErrorClass(fact.error_code);
+  return classifyProviderErrorClass(fact.error_code);
 }
 
 function getFactFallbackHops(fact: UsageFactRecord): number {
@@ -735,12 +735,12 @@ function mapFactToListItem(fact: UsageFactRecord): UsageFactListItem {
     result: fact.result,
     error_code: fact.error_code,
     decision_id: fact.decision_id ?? extractDecisionIdFromMetadata(metadata),
-    runtime: {
+    request_details: {
       provider: nonEmptyString(metadata?.provider),
       resolved_model: nonEmptyString(metadata?.resolved_model),
-      error_class: fact.result === 'error' ? classifyRuntimeErrorClass(fact.error_code) : undefined,
+      error_class: fact.result === 'error' ? classifyProviderErrorClass(fact.error_code) : undefined,
       fallback_hops: typeof metadata?.fallback_hops === 'number' ? metadata.fallback_hops : undefined,
-      pricing_version: typeof metadata?.pricing_version === 'string' ? metadata.pricing_version : null,
+      pricing_source: typeof metadata?.pricing_source === 'string' ? metadata.pricing_source : null,
       estimated_cost: typeof metadata?.estimated_cost === 'number' ? metadata.estimated_cost : null,
       missing_price: metadata?.missing_price === true,
       attempts: runtimeAttempts,
@@ -1218,7 +1218,7 @@ export async function getLimitsSummary(
   };
 }
 
-export async function getRuntimeObservability(
+export async function getUsageRecordsSummary(
   docStore: JsonDocStorePort,
   query: {
     workspaceId: string;
@@ -1230,7 +1230,7 @@ export async function getRuntimeObservability(
     result?: 'ok' | 'error' | null;
     errorClass?: 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null;
   },
-): Promise<RuntimeObservabilityResponse> {
+): Promise<UsageRecordsSummaryResponse> {
   const facts = await listUsageFacts(docStore, {
     workspaceId: query.workspaceId,
     projectId: query.projectId,
@@ -1244,7 +1244,7 @@ export async function getRuntimeObservability(
   });
 
   const fallbackHopsHistogram = new Map<string, number>();
-  const errorClassCounts: RuntimeObservabilityResponse['error_class_counts'] = {
+  const errorClassCounts: UsageRecordsSummaryResponse['error_class_counts'] = {
     provider_retryable: 0,
     provider_non_retryable: 0,
     system_error: 0,
@@ -1371,7 +1371,7 @@ export async function getRuntimeObservability(
       time_bucket: timeBucket,
       requests: item.requests,
       errors: item.errors,
-      recovered_requests: item.recoveredRequests,
+      rerouted_requests: item.recoveredRequests,
       avg_estimated_cost: item.costs.length > 0
         ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
         : 0,
@@ -1384,43 +1384,43 @@ export async function getRuntimeObservability(
     ? requestTrend.reduce((sum, item) => sum + item.errors, 0) / requestTrend.length
     : 0;
   const latestTrend = requestTrend[requestTrend.length - 1];
-  const degradationSignals: RuntimeObservabilityResponse['degradation_signals'] = [];
-  if (latestTrend && baselineRequests > 0 && latestTrend.recovered_requests > Math.max(3, latestTrend.requests * 0.4)) {
-    degradationSignals.push({
+  const issueSignals: UsageRecordsSummaryResponse['issue_signals'] = [];
+  if (latestTrend && baselineRequests > 0 && latestTrend.rerouted_requests > Math.max(3, latestTrend.requests * 0.4)) {
+    issueSignals.push({
       id: `fallback-${latestTrend.time_bucket}`,
       severity: 'high',
       kind: 'fallback_spike',
-      title: 'Fallback spike detected',
-      message: `${latestTrend.recovered_requests} recovered requests in ${latestTrend.time_bucket}`,
+      title: 'Reroute activity increased',
+      message: `${latestTrend.rerouted_requests} rerouted requests in ${latestTrend.time_bucket}`,
     });
   }
   if (latestTrend && baselineErrors > 0 && latestTrend.errors > Math.max(2, baselineErrors * 1.5)) {
-    degradationSignals.push({
+    issueSignals.push({
       id: `errors-${latestTrend.time_bucket}`,
       severity: 'high',
       kind: 'error_rate_spike',
-      title: 'Error spike detected',
-      message: `${latestTrend.errors} errored requests in ${latestTrend.time_bucket}`,
+      title: 'Request errors increased',
+      message: `${latestTrend.errors} failed requests in ${latestTrend.time_bucket}`,
     });
   }
   if (missingPriceFacts > 0) {
-    degradationSignals.push({
+    issueSignals.push({
       id: 'missing-price',
       severity: missingPriceFacts > 3 ? 'high' : 'medium',
       kind: 'missing_price',
-      title: 'Missing price coverage',
-      message: `${missingPriceFacts} runtime facts are missing price attribution`,
+      title: 'Price data is incomplete',
+      message: `${missingPriceFacts} records are missing price attribution`,
     });
   }
   const p95Latency = durations.length > 0 ? percentile95(durations) : undefined;
   const p99Latency = durations.length > 0 ? percentile(durations, 0.99) : undefined;
   if (latestTrend?.duration_p95_ms && p95Latency && latestTrend.duration_p95_ms > p95Latency * 1.25) {
-    degradationSignals.push({
+    issueSignals.push({
       id: `latency-${latestTrend.time_bucket}`,
       severity: 'medium',
       kind: 'latency_spike',
-      title: 'Latency spike detected',
-      message: `P95 latency elevated to ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
+      title: 'Latency increased',
+      message: `P95 latency reached ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
     });
   }
 
@@ -1428,14 +1428,14 @@ export async function getRuntimeObservability(
     total_requests: totalRequests,
     total_errors: totalErrors,
     error_rate: errorRate,
-    fallback_hops_histogram: Object.fromEntries(fallbackHopsHistogram.entries()),
+    reroute_hops_histogram: Object.fromEntries(fallbackHopsHistogram.entries()),
     error_class_counts: errorClassCounts,
     avg_estimated_cost: Number(avgCost.toFixed(8)),
     p95_estimated_cost: Number(p95Cost.toFixed(8)),
-    health_summary: {
-      recovered_requests: recoveredRequests,
+    records_health: {
+      rerouted_requests: recoveredRequests,
       terminal_error_requests: totalErrors,
-      missing_price_facts: missingPriceFacts,
+      missing_price_records: missingPriceFacts,
       provider_count: providerBreakdown.size,
       model_count: modelBreakdown.size,
     },
@@ -1450,7 +1450,7 @@ export async function getRuntimeObservability(
       p95: percentile(estimatedCosts, 0.95),
       p99: percentile(estimatedCosts, 0.99),
     },
-    degradation_signals: degradationSignals,
+    issue_signals: issueSignals,
     provider_breakdown: Array.from(providerBreakdown.values())
       .sort((a, b) => b.requests - a.requests || a.provider.localeCompare(b.provider))
       .map((item) => ({
@@ -1458,12 +1458,12 @@ export async function getRuntimeObservability(
         requests: item.requests,
         errors: item.errors,
         error_rate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
-        fallback_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
+        reroute_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
         avg_estimated_cost: item.costs.length > 0
           ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
           : 0,
         p95_estimated_cost: item.costs.length > 0 ? Number((percentile95(item.costs) ?? 0).toFixed(8)) : 0,
-        missing_price_facts: item.missingPriceFacts,
+        missing_price_records: item.missingPriceFacts,
       })),
     model_breakdown: Array.from(modelBreakdown.values())
       .sort((a, b) => b.requests - a.requests || a.provider.localeCompare(b.provider) || a.model.localeCompare(b.model))
@@ -1473,12 +1473,12 @@ export async function getRuntimeObservability(
         requests: item.requests,
         errors: item.errors,
         error_rate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
-        fallback_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
+        reroute_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
         avg_estimated_cost: item.costs.length > 0
           ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
           : 0,
         p95_estimated_cost: item.costs.length > 0 ? Number((percentile95(item.costs) ?? 0).toFixed(8)) : 0,
-        missing_price_facts: item.missingPriceFacts,
+        missing_price_records: item.missingPriceFacts,
       })),
     time_range: {
       start: query.startTime,
@@ -1822,7 +1822,7 @@ export async function exportUsageData(
       'error_code',
       'error_class',
       'fallback_hops',
-      'pricing_version',
+      'pricing_source',
       'estimated_cost',
       'missing_price',
       'requests',
@@ -1839,15 +1839,15 @@ export async function exportUsageData(
       item.resource_type,
       item.resource_id,
       item.end_user_id,
-      item.runtime?.provider,
-      item.runtime?.resolved_model,
+      item.request_details?.provider,
+      item.request_details?.resolved_model,
       item.result,
       item.error_code,
-      item.runtime?.error_class,
-      item.runtime?.fallback_hops,
-      item.runtime?.pricing_version,
-      item.runtime?.estimated_cost,
-      item.runtime?.missing_price,
+      item.request_details?.error_class,
+      item.request_details?.fallback_hops,
+      item.request_details?.pricing_source,
+      item.request_details?.estimated_cost,
+      item.request_details?.missing_price,
       item.requests,
       item.duration_ms,
       item.tokens_in,
@@ -1880,7 +1880,7 @@ export async function exportUsageData(
       page: 1,
       pageSize: 10_000,
     }),
-    getRuntimeObservability(docStore, {
+    getUsageRecordsSummary(docStore, {
       workspaceId: query.workspaceId,
       projectId: query.projectId,
       startTime: query.startTime,
@@ -1914,7 +1914,7 @@ export async function exportUsageData(
       kpi,
       records: records.items,
       facts: usageFacts.items,
-      runtime_observability: runtimeObservability,
+      records_summary: runtimeObservability,
       operations_summary: operationsSummary,
     }, null, 2),
   };
@@ -1978,7 +1978,7 @@ export async function updateUsageReportSchedule(
     patch: Partial<
       Pick<
         UsageReportScheduleRecord,
-        'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters' | 'release_evidence_required' | 'empty_result_policy' | 'delivery_config'
+        'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'filters' | 'governance_evidence_required' | 'empty_result_policy' | 'delivery_config'
       >
     >;
   },
@@ -2098,7 +2098,7 @@ export async function executeUsageReportScheduleDelivery(
     result: schedule.filters?.result ?? null,
     errorClass: schedule.filters?.error_class ?? null,
   });
-  const estimatedCost = facts.items.reduce((sum, item) => sum + (item.runtime?.estimated_cost ?? 0), 0);
+  const estimatedCost = facts.items.reduce((sum, item) => sum + (item.request_details?.estimated_cost ?? 0), 0);
   const errors = facts.items.filter((item) => item.result === 'error').length;
   const summary = {
     requests: facts.items.length,
@@ -2394,7 +2394,7 @@ export async function getUsageReportEvidence(
   const now = query.now ?? new Date().toISOString();
   const recentCutoff = new Date(new Date(now).getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
   const activeSchedules = listed.items.filter((item) => item.status === 'active');
-  const requiredSchedules = activeSchedules.filter((item) => item.release_evidence_required);
+  const requiredSchedules = activeSchedules.filter((item) => item.governance_evidence_required);
   const blockers: string[] = [];
   let successful = 0;
   let failed = 0;
@@ -2442,7 +2442,7 @@ export async function getUsageReportEvidence(
   return {
     source: 'artifact',
     generated_at: now,
-    release_readiness: blockers.length > 0 ? 'blocked' : 'ready',
+    review_status: blockers.length > 0 ? 'blocked' : 'ready',
     blockers,
     warnings,
     active_schedules: activeSchedules.length,

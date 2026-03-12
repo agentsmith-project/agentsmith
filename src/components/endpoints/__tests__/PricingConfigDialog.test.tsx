@@ -4,15 +4,15 @@ import { PricingConfigDialog } from '../PricingConfigDialog';
 
 // Mock the runtime hooks
 const mockPatchPricing = vi.fn();
-const mockUseRuntimePricing = vi.fn();
-const mockUsePatchRuntimePricing = vi.fn(() => ({
+const mockUseProjectPricing = vi.fn();
+const mockUsePatchProjectPricing = vi.fn(() => ({
   mutateAsync: mockPatchPricing,
   isPending: false,
 }));
 
-vi.mock('@/lib/hooks/use-runtime', () => ({
-  useRuntimePricing: () => mockUseRuntimePricing(),
-  usePatchRuntimePricing: () => mockUsePatchRuntimePricing(),
+vi.mock('@/lib/hooks/use-project-pricing', () => ({
+  useProjectPricing: () => mockUseProjectPricing(),
+  usePatchProjectPricing: () => mockUsePatchProjectPricing(),
 }));
 
 // Mock next-intl
@@ -103,7 +103,7 @@ describe('PricingConfigDialog', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockPatchPricing.mockResolvedValue(mockPricingData);
-    mockUsePatchRuntimePricing.mockReturnValue({
+    mockUsePatchProjectPricing.mockReturnValue({
       mutateAsync: mockPatchPricing,
       isPending: false,
     });
@@ -111,7 +111,7 @@ describe('PricingConfigDialog', () => {
 
   describe('Rendering', () => {
     it('should show loading state when pricing data is not loaded', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: undefined,
         isLoading: true,
         error: null,
@@ -123,7 +123,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should render pricing data when loaded', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -139,7 +139,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should render all pricing fields for each model', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -160,7 +160,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should show empty state when no pricing data available', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: {},
         isLoading: false,
         error: null,
@@ -172,7 +172,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should not render when closed', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -186,12 +186,12 @@ describe('PricingConfigDialog', () => {
 
   describe('Editing Pricing', () => {
     it('should update hasChanges state when value is modified', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -213,7 +213,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should handle decimal values correctly', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -230,7 +230,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should allow editing pricing input field', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -250,12 +250,12 @@ describe('PricingConfigDialog', () => {
 
   describe('Save Functionality', () => {
     it('should call API with updated pricing when save is clicked', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -281,12 +281,12 @@ describe('PricingConfigDialog', () => {
 
     it('should close dialog after successful save', async () => {
       const onOpenChange = vi.fn();
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -306,13 +306,13 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should show loading state while saving', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
       const mockMutateAsync = vi.fn().mockResolvedValue({});
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockMutateAsync,
         isPending: true,
       });
@@ -331,13 +331,13 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should handle save error gracefully', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
       const mockMutateAsync = vi.fn().mockRejectedValue(new Error('API Error'));
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockMutateAsync,
         isPending: false,
       });
@@ -361,12 +361,12 @@ describe('PricingConfigDialog', () => {
 
   describe('Reset Functionality', () => {
     it('should show confirmation dialog when reset is clicked', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -385,12 +385,12 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should reset pricing when confirmed', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -416,12 +416,12 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should not reset when cancelled', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -450,12 +450,12 @@ describe('PricingConfigDialog', () => {
   describe('Cancel Functionality', () => {
     it('should close dialog when cancel is clicked', async () => {
       const onOpenChange = vi.fn();
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -469,12 +469,12 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should reset form state when dialog is reopened', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -496,12 +496,12 @@ describe('PricingConfigDialog', () => {
 
   describe('Change Count Indicator', () => {
     it('should show change count when values are modified', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -524,7 +524,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should increment change count for multiple field changes', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -549,12 +549,12 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should reset change count when reset is clicked', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -587,7 +587,7 @@ describe('PricingConfigDialog', () => {
   describe('Keyboard Shortcuts', () => {
     it('should close dialog when Escape key is pressed', async () => {
       const onOpenChange = vi.fn();
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -602,12 +602,12 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should save when Ctrl+Enter is pressed with changes', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
       });
-      mockUsePatchRuntimePricing.mockReturnValue({
+      mockUsePatchProjectPricing.mockReturnValue({
         mutateAsync: mockPatchPricing,
         isPending: false,
       });
@@ -629,7 +629,7 @@ describe('PricingConfigDialog', () => {
 
   describe('Visual Change Indicators', () => {
     it('should add visual indicator class to changed input fields', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -652,7 +652,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should remove visual indicator when field value matches original', async () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -681,7 +681,7 @@ describe('PricingConfigDialog', () => {
 
   describe('Accessibility', () => {
     it('should have correct test IDs for E2E testing', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,
@@ -695,7 +695,7 @@ describe('PricingConfigDialog', () => {
     });
 
     it('should have proper ARIA labels', () => {
-      mockUseRuntimePricing.mockReturnValue({
+      mockUseProjectPricing.mockReturnValue({
         data: mockPricingData,
         isLoading: false,
         error: null,

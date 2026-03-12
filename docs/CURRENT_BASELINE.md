@@ -1,6 +1,6 @@
 # Current Baseline (Whitelist)
 
-更新时间：2026-03-08  
+更新时间：2026-03-11  
 状态：`authoritative`
 
 本文件是当前唯一白名单。新人入项、评审、实施、验收都以本清单为准。
@@ -17,34 +17,79 @@
 - 文档中的 `release` / `engineering gate` 仅表示 AgentSmith 本项目研发治理与验收流程命名。
 - `permission gate` 表示产品内路由/交互权限门禁，不等于工程流程门禁。
 - 不代表 AgentSmith 产品对外提供 DevOps 发布编排、发布门禁平台能力。
+- 若必须描述底层技术职责，应优先使用更具体的词，例如 `agent execution`、`notebook execution`、`model request execution`、`model catalog sync`、`project pricing config`；避免用 `Runtime` 这种大词兜底。在当前 MVP 中，`Runtime` 不再是独立产品面。
 
-## 2. 必读文档（必须）
+## 2. 当前 MVP 对外产品面（唯一）
+
+1. `Usage`
+- 面向普通用户。
+- 唯一目标是查看自己在各资源上的当前用量与限制消耗程度。
+
+2. `Audit`
+- 面向管理员。
+- 唯一目标是查看资源、配置、状态与异常事件的记录，并完成审查、追溯与治理判断。
+
+补充约束：
+
+2. 任何原本归入 `Runtime` 的用户可见能力，如仍然必要，必须并入 `Audit`。
+
+## 3. 当前 MVP 最小产品对象模型（唯一）
+
+1. `Resource`
+- 当前 MVP 中主要指 project scope 下的 endpoint 资源。
+
+2. `UsageRecord`
+- 用户在资源上的时间窗口用量事实。
+
+3. `LimitRecord`
+- 用户在资源上的 rate / spending 限制事实。
+
+4. `ConfigurationChange`
+- 管理员或系统对资源配置产生的变更记录。
+
+5. `SystemEvent`
+- 资源状态变化、异常、失败、恢复、限流、限额等关键事件。
+
+禁止在前端产品建模层继续扩张以下对象为一等概念：
+
+- `guardrails`
+- `probe`
+- `alias`
+- `combo`
+- `routing`
+- `activation`
+
+这些如仍存在，只能作为实现细节，不得继续主导页面结构、导航、文案与用户心智。
+
+## 4. 必读文档（必须）
 
 1. [项目宪法](./项目宪法.md)
 2. [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
-3. [Contracts Index](./contracts/README.md)
-4. [User Guides Index](./user-guides/README.md)
-5. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
+3. [Usage / Audit MVP 职责边界](./UXUI/01-通用规范/usage-audit-职责边界-v1.md)
+4. [Usage / Audit MVP 功能与 UX 定义](./UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md)
+5. [Contracts Index](./contracts/README.md)
+6. [User Guides Index](./user-guides/README.md)
+7. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 
-## 3. 设计与交互规范（必须遵循）
+## 5. 设计与交互规范（必须遵循）
 
 1. `docs/UXUI/00-设计系统/*`
 2. `docs/UXUI/01-通用规范/*`
 3. `docs/UXUI/02-组件规格/*`
 4. `docs/UXUI/2026-02-05-前端-testid-规范.md`
 
-## 4. 合同与接口规范（实施依据）
+## 6. 合同与接口规范（实施依据）
 
 1. `docs/contracts/README.md` 中列出的现行合同
 2. `docs/contracts/specs/openapi.yaml`
 3. `docs/contracts/specs/asyncapi.yaml`
 
-## 5. 运行操作文档（按需）
+## 7. 运行操作文档（按需）
 
 1. [Agent Codex Notebook Runbook](./agent-codex-notebook-runbook.md)
 2. [CI Integration Troubleshooting](./ci-integration-troubleshooting.md)
 
-## 6. 执行规则
+## 8. 执行规则
 
 1. 白名单之外文档不作为需求与评审依据。
 2. 若需新增治理维度，先改宪法与合同，再做代码。

@@ -12,7 +12,7 @@ const mockListEndpoints = vi.fn().mockResolvedValue({
       id: 'ep_1',
       project_id: 'prj_1',
       name: 'OpenAI Main',
-      openai_model: 'gpt-4o',
+      model: 'gpt-4o',
       type: 'openai',
       base_url: 'https://api.openai.com/v1',
       status: 'active',

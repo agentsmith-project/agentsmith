@@ -434,10 +434,6 @@ export function checkLimitThreshold(
   return { shouldAlert: false, severity: 'info' };
 }
 
-// Backward compatible aliases for legacy imports
-export const createSpendingLimitAlert = createLimitAlert;
-export const checkSpendingLimitThreshold = checkLimitThreshold;
-
 /**
  * Check if cost budget is exceeded
  */

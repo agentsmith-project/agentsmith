@@ -146,7 +146,7 @@ export function useChatMutations(args: UseChatMutationsArgs) {
       return chatAPI.createSession(
         workspaceId,
         projectId,
-        firstActive ? { endpoint_id: firstActive.id, model: firstActive.openai_model } : {},
+        firstActive ? { endpoint_id: firstActive.id, model: firstActive.model } : {},
       );
     },
     onSuccess: (data: ChatSession) => {

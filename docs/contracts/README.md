@@ -27,7 +27,7 @@
 ## 参考与专题合同
 
 - `API_GUIDE.md`（API 导航入口；具体接口以 OpenAPI/AsyncAPI 为准）
-- `models-catalog-runtime-governance-contract.md`（模型目录能力启用时适用）
+- `model-catalog-project-pricing-contract.md`（模型目录能力启用时适用）
 
 ## 模块合同
 
@@ -41,7 +41,7 @@
 - `resource-policy-frontend-module-map.md`
 - `projects-frontend-module-map.md`
 - `api-entry-node-module-map.md`
-- `agent-runtime-protocol.md`
+- `agent-execution-protocol.md`
 
 ## 机器可读规范
 

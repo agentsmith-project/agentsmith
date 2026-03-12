@@ -141,7 +141,7 @@ describe('AuditPage route', () => {
       project_id: 'proj_1',
       actor_type: 'user',
       actor_id: 'user_1',
-      action: 'release_gate_blocked',
+      action: 'governance_blocked',
       result: 'error',
       request_id: 'req_trace_1',
       metadata_json: {
@@ -211,6 +211,33 @@ describe('AuditPage route', () => {
   });
 
   it('renders header and toolbar layout', async () => {
+    STABLE_AUDIT_ITEMS = [
+      {
+        id: 'audit_1',
+        timestamp: '2026-03-02T00:00:00.000Z',
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        actor_type: 'user',
+        actor_id: 'user_1',
+        action: 'credential_create',
+        result: 'ok',
+        resource_type: 'endpoint',
+        resource_id: 'endpoint_1',
+      },
+      {
+        id: 'audit_2',
+        timestamp: '2026-03-02T01:00:00.000Z',
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        actor_type: 'user',
+        actor_id: 'user_2',
+        action: 'governance_blocked',
+        result: 'error',
+        resource_type: 'endpoint',
+        resource_id: 'endpoint_2',
+      },
+    ];
+
     render(
       <AuditPage
         params={Promise.resolve({
@@ -227,11 +254,13 @@ describe('AuditPage route', () => {
 
     const header = screen.getByTestId('page-layout__header');
     expect(within(header).getByRole('heading', { level: 1, name: 'title' })).toBeInTheDocument();
-    expect(within(header).getByTestId('audit__open-members')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/members');
-    expect(within(header).getByTestId('audit__open-resource-policy')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/resource-policy');
-    expect(within(header).getByTestId('audit__open-usage')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/usage');
     const toolbar = screen.getByTestId('page-layout__toolbar');
     expect(within(toolbar).getByRole('button', { name: 'refresh' })).toBeInTheDocument();
+    expect(screen.getByTestId('audit__summary')).toBeInTheDocument();
+    expect(screen.getByTestId('audit__summary-card--changes')).toHaveTextContent('1');
+    expect(screen.getByTestId('audit__summary-card--anomalies')).toHaveTextContent('1');
+    expect(screen.getByTestId('audit__summary-card--resources')).toHaveTextContent('2');
+    expect(screen.getByText(/overview\.events: 2/)).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {

@@ -42,10 +42,10 @@ type RawCatalog = Record<string, RawProviderRecord>;
 const MODELS_DEV_API_URL = 'https://models.dev/api.json';
 const MODELS_DEV_LOGO_URL = 'https://models.dev/logos';
 const OUTPUT_ROOT = resolve(process.cwd(), 'assets/models-catalog');
-const RUNTIME_OUTPUT_PATH = resolve(process.cwd(), 'src/lib/endpoints/models-catalog.runtime.json');
+const RUNTIME_OUTPUT_PATH = resolve(process.cwd(), 'src/lib/endpoints/models-catalog.config.json');
 const PUBLIC_LOGO_ROOT = resolve(process.cwd(), 'public/models-catalog/logos');
 
-type RuntimeProviderKey =
+type CatalogProviderKey =
   | 'openai'
   | 'anthropic'
   | 'deepseek'
@@ -56,7 +56,7 @@ type RuntimeProviderKey =
   | 'alibaba';
 
 const RUNTIME_PROVIDER_MAP: Array<{
-  key: RuntimeProviderKey;
+  key: CatalogProviderKey;
   display_name: string;
   aliases: string[];
   logo_key: string;

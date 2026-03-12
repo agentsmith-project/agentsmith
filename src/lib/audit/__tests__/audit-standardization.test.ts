@@ -77,8 +77,8 @@ describe('Audit Field Standardization', () => {
   });
 
   describe('standardizeAuditEvent adapter', () => {
-    it('transforms legacy AuditEvent to StandardizedAuditEvent', () => {
-      const legacyEvent = {
+    it('transforms AuditEvent to StandardizedAuditEvent', () => {
+      const auditEvent = {
         id: 'audit-001',
         timestamp: '2026-02-27T10:00:00Z',
         workspace_id: 'ws-1',
@@ -94,7 +94,7 @@ describe('Audit Field Standardization', () => {
         metadata_json: { invited_user: 'user-456', role: 'developer' },
       };
 
-      const standardized = standardizeAuditEvent(legacyEvent);
+      const standardized = standardizeAuditEvent(auditEvent);
 
       expect(standardized.actor).toEqual({ type: 'user', id: 'user-123' });
       expect(standardized.target).toEqual({
@@ -109,7 +109,7 @@ describe('Audit Field Standardization', () => {
     });
 
     it('includes metadata_json as diff when action implies change', () => {
-      const legacyEvent = {
+      const auditEvent = {
         id: 'audit-002',
         timestamp: '2026-02-27T10:00:00Z',
         workspace_id: 'ws-1',
@@ -125,7 +125,7 @@ describe('Audit Field Standardization', () => {
         metadata_json: { previous_role: 'user', new_role: 'developer' },
       };
 
-      const standardized = standardizeAuditEvent(legacyEvent);
+      const standardized = standardizeAuditEvent(auditEvent);
 
       expect(standardized.diff).toBeDefined();
       expect(standardized.diff).toEqual({
@@ -135,7 +135,7 @@ describe('Audit Field Standardization', () => {
     });
 
     it('handles agent actor type', () => {
-      const legacyEvent = {
+      const auditEvent = {
         id: 'audit-003',
         timestamp: '2026-02-27T10:00:00Z',
         workspace_id: 'ws-1',
@@ -151,7 +151,7 @@ describe('Audit Field Standardization', () => {
         metadata_json: { model: 'gpt-4o' },
       };
 
-      const standardized = standardizeAuditEvent(legacyEvent);
+      const standardized = standardizeAuditEvent(auditEvent);
 
       expect(standardized.actor.type).toBe('agent');
       expect(standardized.actor.id).toBe('agent-789');

@@ -127,7 +127,7 @@ describe('matchProjectsRoute', () => {
     });
   });
 
-  it('matches runtime routing and unified chat routes', () => {
+  it('matches retained runtime routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/llm/chat/completions'),
     ).toEqual({
@@ -144,162 +144,55 @@ describe('matchProjectsRoute', () => {
       proxyPath: 'v1/messages',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/project-pricing'),
     ).toEqual({
-      kind: 'runtimeProviders',
+      kind: 'projectPricing',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers/prov_1'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/model-catalog/providers'),
     ).toEqual({
-      kind: 'runtimeProviderItem',
+      kind: 'modelCatalogProviders',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
-      providerConnectionId: 'prov_1',
     });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/model-catalog/models'),
+    ).toEqual({
+      kind: 'modelCatalogModels',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/model-catalog/sync'),
+    ).toEqual({
+      kind: 'modelCatalogSync',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers'),
+    ).toBeNull();
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/models'),
-    ).toEqual({
-      kind: 'runtimeModels',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers/openai/models/gpt-4o'),
-    ).toEqual({
-      kind: 'runtimeModelItem',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      provider: 'openai',
-      modelId: 'gpt-4o',
-    });
+    ).toBeNull();
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases'),
-    ).toEqual({
-      kind: 'runtimeRoutingAliases',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
+    ).toBeNull();
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/dry-run'),
-    ).toEqual({
-      kind: 'runtimeRoutingDryRun',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
+    ).toBeNull();
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/impact-preview'),
-    ).toEqual({
-      kind: 'runtimeImpactPreview',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
+    ).toBeNull();
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases/assistant-main/publish'),
-    ).toEqual({
-      kind: 'runtimeRoutingAliasPublish',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      alias: 'assistant-main',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases/assistant-main'),
-    ).toEqual({
-      kind: 'runtimeRoutingAliasItem',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      alias: 'assistant-main',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos'),
-    ).toEqual({
-      kind: 'runtimeRoutingCombos',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos/prod-chat/publish'),
-    ).toEqual({
-      kind: 'runtimeRoutingComboPublish',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      combo: 'prod-chat',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/combos/prod-chat'),
-    ).toEqual({
-      kind: 'runtimeRoutingComboItem',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      combo: 'prod-chat',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing'),
-    ).toEqual({
-      kind: 'runtimePricing',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions'),
-    ).toEqual({
-      kind: 'runtimePricingVersions',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/versions/rpv_1/activate'),
-    ).toEqual({
-      kind: 'runtimePricingVersionActivate',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      pricingVersionId: 'rpv_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/pricing/compare'),
-    ).toEqual({
-      kind: 'runtimePricingCompare',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/providers'),
-    ).toEqual({
-      kind: 'runtimeCatalogProviders',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/models'),
-    ).toEqual({
-      kind: 'runtimeCatalogModels',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/sync'),
-    ).toEqual({
-      kind: 'runtimeCatalogSync',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/project-pricing/versions'),
+    ).toBeNull();
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/jobs'),
-    ).toEqual({
-      kind: 'runtimeCatalogJobs',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/status'),
-    ).toEqual({
-      kind: 'runtimeCatalogStatus',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
+    ).toBeNull();
   });
-
   it('matches usage report lifecycle routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules/run-due'),
@@ -626,9 +519,9 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/runtime-observability'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/records-summary'),
     ).toEqual({
-      kind: 'usageRuntimeObservability',
+      kind: 'usageRecordsSummary',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });

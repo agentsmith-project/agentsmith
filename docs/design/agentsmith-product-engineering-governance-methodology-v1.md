@@ -1,6 +1,6 @@
 # AgentSmith 产品研发与治理方法论 v1
 
-更新时间：2026-03-08  
+更新时间：2026-03-11  
 状态：`current-baseline`
 
 ## 1. 方法论目标
@@ -28,15 +28,24 @@ AgentSmith 当前只采用一条治理主线：
 3. policy audit evidence
 4. usage evidence
 
+补充边界：
+
+1. `release` / `engineering gate` 只属于 AgentSmith 自身研发流程与工程验收语境。
+2. 产品能力不提供 DevOps 发布编排、发布门禁或外部发布运营对象。
+3. 当前 MVP 对外产品面只有 `Usage` 与 `Audit`。
+4. 若必须描述底层技术职责，应使用更具体的词，例如 `agent execution`、`notebook execution`、`model request execution`、`model catalog sync`、`project pricing config`；不再用 `Runtime` 这种大词兜底，也不再把它扩张成独立产品面。
+
 ## 3. 六层方法框架
 
 1. Product Model
-- 对象先行：endpoint、policy、usage fact、audit fact
+- 对象先行：`Resource`、`UsageRecord`、`LimitRecord`、`ConfigurationChange`、`SystemEvent`
 - 页面是对象的投影，不是系统真相
+- 不把实现细节对象抬升为产品对象
 
 2. Runtime Truth
 - 只认运行时事实，不认配置想象
 - 关注“请求最终如何被允许/拒绝、为何触发限流/限额、证据是否完整”
+- 这里强调的是系统运行事实，不是独立产品模块；落到实现时应尽量拆成具体职责名，而不是继续使用模糊的 `runtime` 大词
 
 3. Contract First
 - 先收紧 OpenAPI/AsyncAPI 与错误语义
@@ -48,7 +57,7 @@ AgentSmith 当前只采用一条治理主线：
 
 5. Governance by Control Plane
 - 治理是产品能力，不是文档注释
-- 策略生效、拒绝原因、用量事实都应在控制面可追踪
+- 当前 MVP 中治理能力落在 `Audit`，不是多控制台并存
 
 6. Operational Closure
 - 每次问题必须进入 owner/SLA/处置闭环
@@ -98,6 +107,8 @@ AgentSmith 当前只采用一条治理主线：
 
 1. `docs/CURRENT_BASELINE.md`
 2. `docs/项目宪法.md`
-3. `docs/contracts/README.md`
-4. `docs/user-guides/README.md`
-5. `docs/troubleshooting-guide-v1.md`
+3. `docs/UXUI/01-通用规范/usage-audit-职责边界-v1.md`
+4. `docs/UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md`
+5. `docs/contracts/README.md`
+6. `docs/user-guides/README.md`
+7. `docs/troubleshooting-guide-v1.md`

@@ -123,7 +123,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
       id: item.id,
       type: 'endpoint' as const,
       name: item.name,
-      subtitle: item.openai_model,
+      subtitle: item.model,
     }));
     return endpoints;
   }, [endpointsData?.items]);

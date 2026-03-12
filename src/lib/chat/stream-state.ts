@@ -19,11 +19,11 @@ export interface SessionStreamState {
   errorMessage?: string | null;
 }
 
-export function mapRuntimeStatusToStreamStatus(
-  runtimeStatus: ChatSession['runtime_status'] | undefined,
+export function mapExecutionStatusToStreamStatus(
+  executionStatus: ChatSession['execution_status'] | undefined,
 ): SessionStreamStatus {
-  if (runtimeStatus === 'running' || runtimeStatus === 'stopping') return 'streaming';
-  if (runtimeStatus === 'failed') return 'error';
-  if (runtimeStatus === 'stopped') return 'stopped';
+  if (executionStatus === 'running' || executionStatus === 'stopping') return 'streaming';
+  if (executionStatus === 'failed') return 'error';
+  if (executionStatus === 'stopped') return 'stopped';
   return 'idle';
 }

@@ -9,32 +9,13 @@ import { useParams } from 'next/navigation';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { validateProjectWithMembership, type ProjectWithMembership as ValidationProjectWithMembership } from '@/lib/utils/validation-zod';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { LEGACY_PERMISSION_ALIASES } from '@/lib/constants/permissions';
 
 export type ProjectWithMembership = ValidationProjectWithMembership;
 
 const EMPTY_PERMISSIONS: readonly string[] = Object.freeze([]);
 
-// Deprecated alias bridge for mixed-token environments.
-// New gates must use canonical tokens: endpoint:use / agent:manage / agent:public.
-function buildPermissionAliases(): Record<string, readonly string[]> {
-  const map: Record<string, string[]> = {};
-  for (const [legacy, canonical] of Object.entries(LEGACY_PERMISSION_ALIASES)) {
-    map[legacy] ??= [];
-    map[canonical] ??= [];
-    map[legacy].push(canonical);
-    map[canonical].push(legacy);
-  }
-  return map;
-}
-
-const PERMISSION_ALIASES = buildPermissionAliases();
-
 function permissionMatches(granted: readonly string[], required: string): boolean {
-  if (granted.includes(required)) return true;
-  const aliases = PERMISSION_ALIASES[required];
-  if (!aliases || aliases.length === 0) return false;
-  return aliases.some((alias) => granted.includes(alias));
+  return granted.includes(required);
 }
 
 export function useIsAuthenticated(): boolean {

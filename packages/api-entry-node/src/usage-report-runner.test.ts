@@ -27,7 +27,7 @@ describe('usage-report-runner', () => {
       format: 'json',
       time_window: 'last_7d',
       delivery_channel: 'in_app',
-      release_evidence_required: false,
+      governance_evidence_required: false,
       empty_result_policy: 'deliver',
     });
     await docStore.upsert('project_usage_report_schedules', created.id, {

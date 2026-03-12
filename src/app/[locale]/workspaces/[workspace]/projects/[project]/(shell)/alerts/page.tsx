@@ -198,7 +198,7 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   }
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
-  const runtimeHref = `${basePath}/runtime-observability${buildSharedOpsFilterQuery(timeRange)}`;
+  const auditHref = `${basePath}/audit${buildSharedOpsFilterQuery(timeRange)}`;
   const usageHref = `${basePath}/usage${buildSharedOpsFilterQuery(timeRange, { panel: 'usage' })}`;
 
   return (
@@ -211,11 +211,11 @@ export default function AlertsPage({ params }: AlertsPageProps) {
             actions={(
               <div className="flex flex-wrap items-center gap-2">
                 <Link
-                  href={runtimeHref}
+                  href={auditHref}
                   className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="alerts__open-runtime"
+                  data-testid="alerts__open-audit"
                 >
-                  {tCommon('open_runtime')}
+                  {tCommon('open_audit')}
                 </Link>
                 <Link
                   href={usageHref}

@@ -15,7 +15,7 @@ import {
   stopActiveSessionStreams,
   writeSessionStreamState,
   writeStreamRegistry,
-} from './chat-stream-runtime.js';
+} from './chat-stream-state.js';
 import {
   indexChatAttachmentsByLibraryObjectRef,
   readChatMessageInputs,
@@ -24,8 +24,8 @@ import {
   type ChatMessageInputRef,
 } from './chat-input-refs.js';
 import {
-  resolveRuntimeInputRef,
-} from './input-ref-runtime-resolver.js';
+  resolveInputRef,
+} from './input-ref-input-resolver.js';
 
 interface ChatNonStreamHandlerArgs {
   route: ChatRoute;
@@ -140,7 +140,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     const itemsWithRuntime = await Promise.all(
       pageItems.map(async (item) => ({
         ...item,
-        runtime_status: await readSessionStreamState(
+        execution_status: await readSessionStreamState(
           deps.cache,
           route.workspaceId,
           route.projectId,
@@ -196,7 +196,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       title: raw.title,
-      model: raw.model ?? chosenEndpoint.openai_model,
+      model: raw.model ?? chosenEndpoint.model,
       endpointId: chosenEndpoint.id,
     });
     json(res, 201, created);
@@ -213,7 +213,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
       return true;
     }
-    const runtimeStatus = await readSessionStreamState(
+    const executionStatus = await readSessionStreamState(
       deps.cache,
       route.workspaceId,
       route.projectId,
@@ -221,7 +221,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     );
     json(res, 200, {
       ...session,
-      runtime_status: runtimeStatus ?? undefined,
+      execution_status: executionStatus ?? undefined,
     });
     return true;
   }
@@ -588,7 +588,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       | { fileName: string; fileType: string; fileSize: number }
       | undefined;
     if (inputRef?.kind === 'library_object') {
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'library_object',
         deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
         workspaceId: route.workspaceId,
@@ -601,7 +601,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         fileSize: typeof resolved.meta.file_size === 'number' ? resolved.meta.file_size : raw.file_size!,
       };
     } else if (inputRef?.kind === 'url') {
-      const resolved = await resolveRuntimeInputRef({
+      const resolved = await resolveInputRef({
         kind: 'url',
         deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
         workspaceId: route.workspaceId,

@@ -167,7 +167,7 @@ async function createEndpointViaApi(
       headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       data: {
         name: args.name,
-        openai_model: args.model,
+        model: args.model,
         type: providerFamily,
         base_url: args.baseUrl,
         credential_ref: args.credentialRef,

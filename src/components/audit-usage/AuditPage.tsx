@@ -1,9 +1,7 @@
 'use client';
 import * as React from 'react';
-import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { buttonVariants } from '@/components/ui/button';
 import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { AuditFilters } from './AuditFilters';
@@ -18,10 +16,14 @@ import { PageToolbar } from '@/components/layout/PageToolbar';
 import { ErrorState } from '@/components/ui/error-state';
 import type { AuditEvent, AuditListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
-import { cn } from '@/lib/utils';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 import { InvestigationAnchorBar } from './InvestigationAnchorBar';
+import type { AuditEventCategoryFilter } from './AuditFilters';
+import {
+  getAuditEventCategory,
+  isConfigurationChangeAction,
+} from './audit-event-presenter';
 
 export interface AuditPageProps {
   workspaceId: string;
@@ -29,6 +31,13 @@ export interface AuditPageProps {
   defaultEndUserId?: string;
   locale?: string;
 }
+
+type AuditOverviewSummary = {
+  eventCount: number;
+  changeCount: number;
+  anomalyCount: number;
+  affectedResourceCount: number;
+};
 
 function getDefaultTimeRange() {
   return {
@@ -67,6 +76,31 @@ function metadataContainsString(value: unknown, expected: string): boolean {
     return Object.values(value as Record<string, unknown>).some((item) => metadataContainsString(item, expected));
   }
   return false;
+}
+
+function buildAuditOverviewSummary(events: AuditEvent[]): AuditOverviewSummary {
+  const affectedResources = new Set<string>();
+  let changeCount = 0;
+  let anomalyCount = 0;
+
+  for (const event of events) {
+    if (event.resource_id || event.resource_type) {
+      affectedResources.add(event.resource_id ?? `${event.resource_type}:unknown`);
+    }
+    if (isConfigurationChangeAction(event.action)) {
+      changeCount += 1;
+    }
+    if (event.result === 'error') {
+      anomalyCount += 1;
+    }
+  }
+
+  return {
+    eventCount: events.length,
+    changeCount,
+    anomalyCount,
+    affectedResourceCount: affectedResources.size,
+  };
 }
 
 function matchesAuditInvestigationFilters(event: AuditEvent, filters: AuditListParams): boolean {
@@ -226,6 +260,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const [filters, setFilters] = React.useState<AuditListParams>(() =>
     buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId),
   );
+  const [categoryFilter, setCategoryFilter] = React.useState<AuditEventCategoryFilter>('all');
   const [selectedEvent, setSelectedEvent] = React.useState<AuditEvent | null>(null);
   const [drawerOpen, setDrawerOpen] = React.useState(false);
   const [traceMatchStatus, setTraceMatchStatus] = React.useState<'matched' | 'unmatched' | null>(null);
@@ -236,8 +271,17 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   });
   const auditItems = React.useMemo(() => {
     const items = data?.items ?? [];
-    return items.filter((event) => matchesAuditInvestigationFilters(event, filters));
-  }, [data?.items, filters]);
+    return items.filter((event) => {
+      if (!matchesAuditInvestigationFilters(event, filters)) {
+        return false;
+      }
+      if (categoryFilter === 'all') {
+        return true;
+      }
+      return getAuditEventCategory(event) === categoryFilter;
+    });
+  }, [categoryFilter, data?.items, filters]);
+  const overviewSummary = React.useMemo(() => buildAuditOverviewSummary(auditItems), [auditItems]);
 
   React.useEffect(() => {
     setFilters(buildAuditFiltersFromSearchParams(searchParams, defaultEndUserId));
@@ -313,31 +357,6 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/members`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="audit__open-members"
-                >
-                  {t('open_members')}
-                </Link>
-                <Link
-                  href={`${basePath}/resource-policy`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="audit__open-resource-policy"
-                >
-                  {t('open_resource_policy')}
-                </Link>
-                <Link
-                  href={`${basePath}/usage`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="audit__open-usage"
-                >
-                  {t('open_usage')}
-                </Link>
-              </div>
-            )}
           />
         )}
       >
@@ -373,6 +392,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
       sort_order: 'desc',
       ...(defaultEndUserId && { end_user_id: defaultEndUserId }),
     });
+    setCategoryFilter('all');
   };
   const handleClearInvestigation = () => {
     setFilters((prev) => ({
@@ -422,31 +442,6 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/members`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="audit__open-members"
-                >
-                  {t('open_members')}
-                </Link>
-                <Link
-                  href={`${basePath}/resource-policy`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="audit__open-resource-policy"
-                >
-                  {t('open_resource_policy')}
-                </Link>
-                <Link
-                  href={`${basePath}/usage`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="audit__open-usage"
-                >
-                  {t('open_usage')}
-                </Link>
-              </div>
-            )}
           />
         )}
       >
@@ -468,31 +463,6 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
         <PageHeader
           title={t('title')}
           subtitle={t('subtitle')}
-          actions={(
-            <div className="flex flex-wrap items-center gap-2">
-              <Link
-                href={`${basePath}/members`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="audit__open-members"
-              >
-                {t('open_members')}
-              </Link>
-              <Link
-                href={`${basePath}/resource-policy`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="audit__open-resource-policy"
-              >
-                {t('open_resource_policy')}
-              </Link>
-              <Link
-                href={`${basePath}/usage`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="audit__open-usage"
-              >
-                {t('open_usage')}
-              </Link>
-            </div>
-          )}
         />
       )}
       toolbar={(
@@ -504,80 +474,102 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
         </PageToolbar>
       )}
     >
-      {drilldownContext ? (
-        <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
-      ) : null}
-      <div className="mb-3">
-        <InvestigationAnchorBar
-          traceSource={traceSource}
-          requestId={filters.request_id}
-          decisionId={filters.decision_id}
-          traceRef={filters.trace_ref}
-          traceIncidentId={filters.trace_incident_id}
-          traceEscalationId={filters.trace_escalation_id}
-          traceRunId={filters.trace_run_id}
-          onClear={handleClearInvestigation}
-        />
-        {traceMatchStatus ? (
-          <p className="mt-1 text-xs text-tertiary" data-testid="audit__trace-match-status">
-            {traceMatchStatus === 'matched'
-              ? commonT('trace_context_match_found')
-              : commonT('trace_context_match_missing')}
-          </p>
+      <div className="flex min-h-0 flex-1 flex-col" data-testid="audit__page">
+        {drilldownContext ? (
+          <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
-      </div>
-      <div data-testid="audit__filters">
-        <AuditFilters
-          filters={filters}
-          onChange={setFilters}
-          onClear={handleClearFilters}
-          defaultEndUserId={defaultEndUserId}
-        />
-      </div>
-
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <AuditTable
-          data={auditItems}
-          loading={isLoading}
-          onViewDetails={handleViewDetails}
-          onClearFilters={handleClearFilters}
-          onRefresh={handleRefresh}
-        />
-        <div className="mt-4 flex items-center justify-between">
-          <p className="text-xs text-tertiary">
-            {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
-            {' '}
-            {commonT('total_items', { count: String(totalItems) })}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canGoPrev || isLoading}
-              onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
-            >
-              {commonT('previous')}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={!canGoNext || isLoading}
-              onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
-            >
-              {commonT('next')}
-            </Button>
+        <div
+          className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3"
+          data-testid="audit__summary"
+        >
+          <div className="rounded-xl border border-subtle bg-surface px-4 py-3" data-testid="audit__summary-card--changes">
+            <p className="text-xs font-medium uppercase tracking-wide text-tertiary">{t('overview.changes')}</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{overviewSummary.changeCount}</p>
+          </div>
+          <div className="rounded-xl border border-subtle bg-surface px-4 py-3" data-testid="audit__summary-card--anomalies">
+            <p className="text-xs font-medium uppercase tracking-wide text-tertiary">{t('overview.anomalies')}</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{overviewSummary.anomalyCount}</p>
+          </div>
+          <div className="rounded-xl border border-subtle bg-surface px-4 py-3" data-testid="audit__summary-card--resources">
+            <p className="text-xs font-medium uppercase tracking-wide text-tertiary">{t('overview.resources')}</p>
+            <p className="mt-2 text-2xl font-semibold text-foreground">{overviewSummary.affectedResourceCount}</p>
           </div>
         </div>
-      </div>
+        <div className="mb-3">
+          <InvestigationAnchorBar
+            traceSource={traceSource}
+            requestId={filters.request_id}
+            decisionId={filters.decision_id}
+            traceRef={filters.trace_ref}
+            traceIncidentId={filters.trace_incident_id}
+            traceEscalationId={filters.trace_escalation_id}
+            traceRunId={filters.trace_run_id}
+            onClear={handleClearInvestigation}
+          />
+          {traceMatchStatus ? (
+            <p className="mt-1 text-xs text-tertiary" data-testid="audit__trace-match-status">
+              {traceMatchStatus === 'matched'
+                ? commonT('trace_context_match_found')
+                : commonT('trace_context_match_missing')}
+            </p>
+          ) : null}
+        </div>
+        <div data-testid="audit__filters">
+          <AuditFilters
+            filters={filters}
+            onChange={setFilters}
+            onClear={handleClearFilters}
+            defaultEndUserId={defaultEndUserId}
+            categoryFilter={categoryFilter}
+            onCategoryFilterChange={setCategoryFilter}
+          />
+        </div>
 
-      <AuditDetailDrawer
-        open={drawerOpen}
-        onOpenChange={setDrawerOpen}
-        event={selectedEvent}
-        basePath={basePath}
-      />
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <AuditTable
+            data={auditItems}
+            loading={isLoading}
+            onViewDetails={handleViewDetails}
+            onClearFilters={handleClearFilters}
+            onRefresh={handleRefresh}
+          />
+          <div className="mt-4 flex items-center justify-between">
+            <p className="text-xs text-tertiary">
+              {t('overview.events')}: {overviewSummary.eventCount} ·{' '}
+              {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
+              {' '}
+              {commonT('total_items', { count: String(totalItems) })}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canGoPrev || isLoading}
+                onClick={() => setFilters((prev) => ({ ...prev, page: Math.max(1, (prev.page ?? 1) - 1) }))}
+              >
+                {commonT('previous')}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!canGoNext || isLoading}
+                onClick={() => setFilters((prev) => ({ ...prev, page: (prev.page ?? 1) + 1 }))}
+              >
+                {commonT('next')}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <AuditDetailDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          event={selectedEvent}
+          basePath={basePath}
+        />
+      </div>
     </PageLayout>
   );
 }

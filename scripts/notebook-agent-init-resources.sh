@@ -84,7 +84,7 @@ echo "[init] creating endpoint..."
 endpoint_resp="$(api_curl -X POST "${PROJECT_BASE}/endpoints" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], openai_model:process.argv[4], credential_ref:process.argv[5]}))' \
+  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5]}))' \
       "${ENDPOINT_NAME}" "${ENDPOINT_PROTOCOL}" "${GLM_BASE_URL}" "${GLM_MODEL}" "${CRED_ID}")")"
 ENDPOINT_ID="$(printf '%s' "${endpoint_resp}" | json_get id)"
 echo "${ENDPOINT_ID}" > /tmp/agentsmith_endpoint_id.txt
@@ -94,7 +94,7 @@ echo "[init] creating external notebook agent..."
 agent_resp="$(api_curl -X POST "${PROJECT_BASE}/agents" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], mode:"external", interaction_mode:"notebook", runtime_preferences:{notebook:{endpoint_id:process.argv[2], wire_api:process.argv[3], model:process.argv[4]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' \
+  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[2], wire_api:process.argv[3], model:process.argv[4]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' \
       "${AGENT_NAME}" "${ENDPOINT_ID}" "${WIRE_API}" "${GLM_MODEL}")")"
 AGENT_ID="$(printf '%s' "${agent_resp}" | json_get id)"
 echo "${AGENT_ID}" > /tmp/agentsmith_agent_id.txt

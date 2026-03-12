@@ -82,7 +82,7 @@ describe('auth', () => {
     expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('rejects legacy token query fallback', async () => {
+  it('rejects query-token fallback', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       json: async () => ({

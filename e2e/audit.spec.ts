@@ -13,6 +13,7 @@ test.describe('Audit Page', () => {
   });
 
   test('table renders with audit event rows', async ({ authedPage }) => {
+    await expect(authedPage.getByTestId('audit__page')).toBeVisible({ timeout: 10000 });
     const table = authedPage.getByTestId('audit__table');
     await expect(table).toBeVisible({ timeout: 10000 });
 
@@ -24,10 +25,9 @@ test.describe('Audit Page', () => {
   test('displays audit event data from mock', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('audit__table')).toBeVisible({ timeout: 10000 });
 
-    // Verify action types from auditEventFixtures are displayed
-    // Actions like "project.create", "agent.create", "endpoint.invoke"
-    await expect(authedPage.getByText('project.create').first()).toBeVisible();
-    await expect(authedPage.getByText('agent.create').first()).toBeVisible();
+    await expect(authedPage.getByTestId('audit__summary')).toBeVisible();
+    await expect(authedPage.getByTestId('audit__category-summary')).toBeVisible();
+    await expect(authedPage.getByText(/Created Project|Created Agent|Invoked/i).first()).toBeVisible();
   });
 
   test('filter controls are visible', async ({ authedPage }) => {
@@ -35,8 +35,8 @@ test.describe('Audit Page', () => {
 
     const filters = authedPage.getByTestId('audit__filters');
     await expect(filters).toBeVisible();
-    await expect(filters.getByText(/Action/i)).toBeVisible();
-    await expect(filters.getByText(/Actor Type/i)).toBeVisible();
+    await expect(filters.getByText(/Category/i)).toBeVisible();
+    await expect(filters.getByText(/Resource Type/i)).toBeVisible();
     await expect(filters.getByText(/Result/i)).toBeVisible();
   });
 
@@ -48,18 +48,12 @@ test.describe('Audit Page', () => {
     await expect(authedPage.getByRole('button', { name: /refresh/i })).toBeVisible();
   });
 
-  test('shows govern header actions', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('audit__open-members')).toHaveAttribute('href', /\/members$/);
-    await expect(authedPage.getByTestId('audit__open-resource-policy')).toHaveAttribute('href', /\/resource-policy$/);
-    await expect(authedPage.getByTestId('audit__open-usage')).toHaveAttribute('href', /\/usage$/);
-  });
-
   test('text filter and clear filters interaction works', async ({ authedPage }) => {
     const filters = authedPage.getByTestId('audit__filters');
     await expect(filters).toBeVisible({ timeout: 10000 });
 
-    const actorIdInput = filters.getByPlaceholder(/filter by actor id/i);
-    await actorIdInput.fill('user_001');
+    const resourceIdInput = filters.getByPlaceholder(/filter by resource id/i);
+    await resourceIdInput.fill('endpoint');
     await expect(filters.getByRole('button', { name: /clear filters/i })).toBeVisible();
   });
 

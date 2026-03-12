@@ -6,7 +6,7 @@
 
 - `index.ts`
 - 仅保留服务启动与生命周期管理（HTTP server + job worker + CLI 启动）
-- 负责 WebSocket upgrade 分发（agent runtime）
+- 负责 WebSocket upgrade 分发（agent execution channel）
 - 不再承载业务路由与资源逻辑
 
 - `request-handler.ts`
@@ -45,8 +45,8 @@
 - `agent-resource-service.ts`
 - agent/agent-key 资源读写与连接状态元信息
 
-- `agent-runtime-service.ts`
-- external agent websocket runtime（鉴权、在线会话、请求分发、流式事件回传）
+- `agent-execution-service.ts`
+- external agent websocket execution channel（鉴权、在线会话、请求分发、流式事件回传）
 
 - `endpoint-resource-service.ts`
 - endpoint/credential 资源读写与 OpenAI-compatible 批量导入逻辑

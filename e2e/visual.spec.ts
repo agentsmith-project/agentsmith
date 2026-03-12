@@ -163,63 +163,6 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('settings-general.png', { fullPage: true });
   });
 
-  test('settings - runtime', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('settings'));
-    const tab = authedPage.getByTestId('settings__tab--runtime');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('settings-runtime.png', { fullPage: true });
-  });
-
-  // Runtime Console tests (WP-05: Replaced runtime-control-plane, runtime-observability, release-ops)
-  test('runtime console - overview', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-console'));
-    await expect(authedPage).toHaveScreenshot('runtime-console-overview.png', { fullPage: true });
-  });
-
-  test('runtime console - monitoring', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-console'));
-    const tab = authedPage.getByTestId('tabs-trigger-monitoring');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('runtime-console-monitoring.png', { fullPage: true });
-  });
-
-  test('runtime console - alerts', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-console'));
-    const tab = authedPage.getByTestId('tabs-trigger-alerts');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('runtime-console-alerts.png', { fullPage: true });
-  });
-
-  test('runtime console - control', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-console'));
-    const tab = authedPage.getByTestId('tabs-trigger-control');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('runtime-console-control.png', { fullPage: true });
-  });
-
-  test('runtime console - reports', async ({ authedPage }) => {
-    await stableNavigate(authedPage, projectPath('runtime-console'));
-    const tab = authedPage.getByTestId('tabs-trigger-reports');
-    if (await tab.isVisible()) {
-      await tab.click();
-      await authedPage.waitForTimeout(400);
-    }
-    await expect(authedPage).toHaveScreenshot('runtime-console-reports.png', { fullPage: true });
-  });
-
-});
 
 // ─── User Pages ─────────────────────────────────────────────────────────────
 

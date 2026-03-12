@@ -16,6 +16,8 @@ import { defineConfig, devices } from '@playwright/test';
  */
 const baseURL = process.env.BASE_URL || 'http://localhost:3001';
 const isCI = !!process.env.CI;
+const desktopViewport = { width: 1920, height: 1080 };
+const desktopWindowArgs = ['--window-size=1920,1080'];
 
 export default defineConfig({
   testDir: './e2e',
@@ -36,12 +38,22 @@ export default defineConfig({
     video: isCI ? 'retain-on-failure' : 'off',
     actionTimeout: 15000,
     navigationTimeout: 30000,
+    viewport: desktopViewport,
+    launchOptions: {
+      args: desktopWindowArgs,
+    },
   },
   projects: [
     {
       name: 'chromium',
       testMatch: /integration-.*\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
     },
   ],
 });

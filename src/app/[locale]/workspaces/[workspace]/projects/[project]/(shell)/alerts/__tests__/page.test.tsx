@@ -73,7 +73,7 @@ describe('AlertsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('alerts__center')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('alerts__open-runtime')).toBeInTheDocument();
+    expect(screen.getByTestId('alerts__open-audit')).toBeInTheDocument();
     expect(screen.getByTestId('alerts__open-usage')).toBeInTheDocument();
   });
 

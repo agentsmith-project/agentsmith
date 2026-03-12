@@ -65,7 +65,7 @@ test.describe('Chat Page', () => {
 
   test('does not render stream diagnostics banner in chat pane', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('chat__stream-error-open-runtime')).toHaveCount(0);
-    await expect(authedPage.getByTestId('chat__stream-error-open-release-ops')).toHaveCount(0);
+    await expect(authedPage.getByTestId('chat__stream-error-open-runtime-console')).toHaveCount(0);
     await expect(authedPage.getByTestId('chat__stream-error-open-agent')).toHaveCount(0);
     await expect(authedPage.getByTestId('chat__stream-error-banner')).toHaveCount(0);
   });

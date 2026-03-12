@@ -96,7 +96,7 @@ main() {
   fi
   endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_compatible"))')"
   endpoint_base_url="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.base_url||""))')"
-  endpoint_model="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.openai_model||""))')"
+  endpoint_model="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.model||""))')"
   endpoint_credential_ref="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.credential_ref||""))')"
   if [[ -z "${endpoint_base_url}" || -z "${endpoint_model}" || -z "${endpoint_credential_ref}" ]]; then
     err "endpoint metadata incomplete for smoke endpoint clone"
@@ -114,7 +114,7 @@ main() {
     -H "Authorization: Bearer ${token}" || true
   for candidate_model in "${endpoint_model}" "${GLM_MODEL}" "GLM-5" "glm-5" "glm-4.6v-flash" "glm-4.6" "glm-4-plus" "glm-4.5-air"; do
     local model_in_use
-    model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.openai_model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
+    model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
     if [[ "${model_in_use}" == "1" ]]; then
       continue
     fi
@@ -127,7 +127,7 @@ main() {
           \"name\":\"${temp_endpoint_name}-${candidate_model//./-}\",
           \"protocol\":\"${endpoint_protocol}\",
           \"base_url\":\"${endpoint_base_url}\",
-          \"openai_model\":\"${candidate_model}\",
+          \"model\":\"${candidate_model}\",
           \"credential_ref\":\"${endpoint_credential_ref}\"
         }" || true
     )"

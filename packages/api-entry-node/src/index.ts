@@ -2,7 +2,7 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { drainJobQueue } from '@mbos/application';
 import type { ProjectRepoFactoryResult } from '@mbos/adapters-private';
-import { ACTIVE_CHAT_STREAMS } from './chat-stream-runtime.js';
+import { ACTIVE_CHAT_STREAMS } from './chat-stream-state.js';
 import {
   createDefaultNodeApiDeps,
   createNodeApiDepsFromEnv,
@@ -10,8 +10,8 @@ import {
 import { handleRequest } from './request-handler.js';
 import { createUsageReportRunner } from './usage-report-runner.js';
 import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
-import { createReleaseGateRunner } from './release-gate-runner.js';
-import { ensureRuntimeCatalogBootstrap } from './runtime-catalog-service.js';
+import { createGovernanceRunner } from './governance-runner.js';
+import { ensureModelCatalogBootstrap } from './model-catalog-service.js';
 import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
@@ -30,9 +30,9 @@ export function createNodeApiServer(
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
   options?: CreateNodeApiServerOptions,
 ): http.Server {
-  void ensureRuntimeCatalogBootstrap(deps.docStore).catch((error: unknown) => {
+  void ensureModelCatalogBootstrap(deps.docStore).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'unknown_error';
-    process.stderr.write(`[api-entry-node] runtime catalog bootstrap failed: ${message}\n`);
+    process.stderr.write(`[api-entry-node] model catalog bootstrap failed: ${message}\n`);
   });
 
   const usageReportDeliveryDispatch = createUsageReportDeliveryDispatcher({
@@ -45,15 +45,15 @@ export function createNodeApiServer(
     deliveryDispatch: usageReportDeliveryDispatch,
   });
   deps.usageReportRunner = usageReportRunner;
-  deps.releaseGateRunner = createReleaseGateRunner({
-    releaseRunsDir: deps.releaseRunsDir ?? 'artifacts/release-runs',
+  deps.governanceRunner = createGovernanceRunner({
+    governanceRunsDir: deps.governanceRunsDir ?? 'artifacts/governance-runs',
   });
 
   const server = http.createServer((req, res) => {
     void handleRequest(req, res, deps);
   });
   server.on('upgrade', (req, socket, head) => {
-    deps.agentRuntimeService.handleUpgrade(req, socket, head);
+    deps.agentExecutionService.handleUpgrade(req, socket, head);
   });
 
   const jobWorkerInterval = setInterval(() => {

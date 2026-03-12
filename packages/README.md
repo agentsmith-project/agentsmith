@@ -32,7 +32,7 @@ Current status:
     (example: `chat/completions`, `embeddings`)
   - `POST /api/v1/workspaces/:ws/projects/:prj/llm-gateway/{path}`
     (single-base-url gateway, supports `chat/completions`, `responses`, `messages`, `messages/count_tokens`)
-- Node API entry now serves chat runtime endpoints on real project data store:
+- Node API entry now serves chat execution endpoints on real project data store:
   - `GET/POST /api/v1/workspaces/:ws/projects/:prj/chat/sessions`
   - `GET/PATCH/DELETE /api/v1/workspaces/:ws/projects/:prj/chat/sessions/:sessionId`
   - `GET/POST /api/v1/workspaces/:ws/projects/:prj/chat/sessions/:sessionId/messages`

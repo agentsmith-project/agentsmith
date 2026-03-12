@@ -13,13 +13,15 @@ const useManagedDevServer = !process.env.BASE_URL;
 /** Local worker count; override with PW_WORKERS (e.g. PW_WORKERS=12). */
 const localWorkers = Number(process.env.PW_WORKERS ?? 6);
 const isCI = !!process.env.CI;
+const desktopViewport = { width: 1920, height: 1080 };
+const desktopWindowArgs = ['--window-size=1920,1080'];
 
 const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true NEXT_PUBLIC_MSW_STRICT_READY=true npm run dev:test -- --port 3001')].join(
   ' ',
 );
 
-// MVP release lane: keep chromium gate focused on current product mainline.
-// Legacy/archived specs are intentionally excluded from default release gate.
+// MVP engineering lane: keep chromium gate focused on current product mainline.
+// Legacy/archived specs are intentionally excluded from default engineering gate.
 const chromiumMvpSpecMatch = [
   /account\.spec\.ts$/,
   /agents\.spec\.ts$/,
@@ -61,23 +63,45 @@ export default defineConfig({
     video: isCI ? 'retain-on-failure' : 'off',
     actionTimeout: 10000,
     navigationTimeout: 20000,
+    viewport: desktopViewport,
+    launchOptions: {
+      args: desktopWindowArgs,
+    },
   },
   projects: [
     {
       name: 'smoke',
       testMatch: /smoke\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
       fullyParallel: false,
     },
     {
       name: 'chromium',
       testMatch: chromiumMvpSpecMatch,
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
     },
     {
       name: 'visual',
       testMatch: /visual\.spec\.ts/,
-      use: { ...devices['Desktop Chrome'] },
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
     },
   ],
 });

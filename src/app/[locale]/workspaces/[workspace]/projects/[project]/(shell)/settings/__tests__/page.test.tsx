@@ -11,7 +11,7 @@ const STABLE_PROJECT = {
   description: 'desc',
   visibility: 'private',
   join_policy: 'approval_required',
-  runtime_preferences_json: {},
+  execution_preferences_json: {},
   governance_json: {},
   limits_json: {},
   owner_id: 'owner_1',
@@ -60,17 +60,8 @@ vi.mock('@/components/projects/DeleteProjectDialog', () => ({
   DeleteProjectDialog: () => null,
 }));
 
-vi.mock('@/components/settings/RuntimePreferencesEditor', () => ({
-  RuntimePreferencesEditor: () => <div data-testid="settings__runtime-editor" />,
-}));
 
-vi.mock('@/components/settings/SettingsTokenReference', () => ({
-  SettingsTokenReference: () => <div data-testid="settings__token-ref" />,
-}));
 
-vi.mock('@/components/settings/RuntimeControlPlanePanel', () => ({
-  RuntimeControlPlanePanel: () => <div data-testid="settings__runtime-control-plane" />,
-}));
 
 // Keep Tabs simple to reduce render complexity in route-level tests
 vi.mock('@/components/ui/tabs', () => ({
@@ -107,9 +98,8 @@ describe('SettingsPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('settings__tab--general')).toBeInTheDocument();
+      expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('settings__tab--runtime')).toBeInTheDocument();
     expect(screen.queryByTestId('settings__tab--governance')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__tab--limits')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();

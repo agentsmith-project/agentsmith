@@ -14,7 +14,7 @@ import {
   readStreamRegistry,
   writeSessionStreamState,
   writeStreamRegistry,
-} from './chat-stream-runtime.js';
+} from './chat-stream-state.js';
 import {
   parseOpenAIStreamChunk,
   safeAssistantContent,
@@ -31,7 +31,7 @@ import {
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { buildRuntimeThirdPartyCredentialFiles } from './third-party-runtime-files.js';
+import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -554,7 +554,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     },
   });
   const streamEndpointId = useExternalAgent ? `agent:${session.external_agent_id}` : (endpoint?.id ?? '');
-  const streamModel = useExternalAgent ? (raw.model ?? session.model) : (endpoint?.openai_model ?? session.model);
+  const streamModel = useExternalAgent ? (raw.model ?? session.model) : (endpoint?.model ?? session.model);
   ACTIVE_CHAT_STREAMS.set(streamId, {
     workspaceId: route.workspaceId,
     projectId: route.projectId,
@@ -639,18 +639,18 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           ).catch(() => undefined);
         }, 60_000);
       }
-      const thirdPartyCredentialFiles = await buildRuntimeThirdPartyCredentialFiles(
+      const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
         deps.docStore,
         user.id,
       );
-      const dispatched = await deps.agentRuntimeService.dispatchStreamingRequest({
+      const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         sessionId: route.sessionId,
         agentId: externalAgentId,
         model: raw.model ?? session.model,
         messages: upstreamMessages,
-        runtimeContext: {
+        executionContext: {
           workspace_id: route.workspaceId,
           project_id: route.projectId,
           username: buildProxyUsername(user),
@@ -971,7 +971,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   const upstreamProxyPath = isAnthropicCompatible ? 'messages' : 'chat/completions';
   const upstreamUrl = buildUpstreamUrl(endpoint.base_url, upstreamProxyPath);
   const sourceRequestBody = {
-    model: raw.model ?? endpoint.openai_model,
+    model: raw.model ?? endpoint.model,
     stream: true,
     messages: upstreamMessages,
   };
@@ -1139,7 +1139,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
   broadcast(streamId, 'meta', {
     stream_id: streamId,
     session_id: route.sessionId,
-    model: endpoint.openai_model,
+    model: endpoint.model,
     endpoint_id: endpoint.id,
     assistant_message_id: createdAssistant.id,
     parent_message_id: parentForAssistant,
@@ -1504,12 +1504,12 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     result: messageStatus === 'stopped' ? 'error' : 'ok',
     ...(messageStatus === 'stopped' ? { errorCode: 'CHAT_STREAM_STOPPED' } : {}),
     metadata: {
-      ...(typeof usageTokens === 'number' && usageTokens > 0 && endpoint?.runtime_profile
+      ...(typeof usageTokens === 'number' && usageTokens > 0 && endpoint?.model_profile
         ? {
           cost_usd: Number(
             (
               usageTokens
-              * (Math.max(endpoint.runtime_profile.price_input_per_1m, endpoint.runtime_profile.price_output_per_1m) / 1_000_000)
+              * (Math.max(endpoint.model_profile.price_input_per_1m, endpoint.model_profile.price_output_per_1m) / 1_000_000)
             ).toFixed(6),
           ),
         }
@@ -1519,7 +1519,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       session_id: route.sessionId,
       message_status: messageStatus,
       stop_reason: stopReason ?? null,
-      model: endpoint?.openai_model ?? session.model,
+      model: endpoint?.model ?? session.model,
     },
   });
   if (useExternalAgent && session.external_agent_id) {

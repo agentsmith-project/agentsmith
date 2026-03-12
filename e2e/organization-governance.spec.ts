@@ -28,7 +28,7 @@ test.describe('Organization Governance Overview', () => {
     await expect(authedPage.getByTestId('workspace-overview__action-explain-panel')).toBeVisible();
   });
 
-  test('actions queue drilldown carries governance context to runtime console control tab', async ({ authedPage }) => {
+  test('actions queue drilldown carries governance context to audit', async ({ authedPage }) => {
     if (await isOverviewErrorState(authedPage)) {
       await expect(authedPage.getByTestId('workspace-overview__retry')).toBeVisible();
       test.info().annotations.push({
@@ -37,22 +37,21 @@ test.describe('Organization Governance Overview', () => {
       });
       return;
     }
-    const runtimeConsoleLink = authedPage.locator(
-      'a[href*="/runtime-console"][href*="tab=control"][href*="gov_from=organization_overview"]',
+    const auditLink = authedPage.locator(
+      'a[href*="/audit"][href*="gov_from=organization_overview"]',
     ).first();
-    await expect(runtimeConsoleLink).toBeVisible({ timeout: 10000 });
-    await expect(runtimeConsoleLink).toHaveAttribute('href', /\/runtime-console\?/);
-    await expect(runtimeConsoleLink).toHaveAttribute('href', /gov_from=organization_overview/);
-    const href = await runtimeConsoleLink.getAttribute('href');
+    await expect(auditLink).toBeVisible({ timeout: 10000 });
+    await expect(auditLink).toHaveAttribute('href', /\/audit\?/);
+    await expect(auditLink).toHaveAttribute('href', /gov_from=organization_overview/);
+    const href = await auditLink.getAttribute('href');
     expect(href).toBeTruthy();
     await goTo(authedPage, href ?? '/en-US/workspaces/overview');
-    await expect(authedPage).toHaveURL(/\/runtime-console\?/);
-    await expect(authedPage).toHaveURL(/tab=control/);
+    await expect(authedPage).toHaveURL(/\/audit\?/);
     await expect(authedPage).toHaveURL(/gov_from=organization_overview/);
-    await expect(authedPage.getByTestId('tabs-trigger-control')).toBeVisible({ timeout: 10000 });
+    await expect(authedPage.getByTestId('audit__page')).toBeVisible({ timeout: 10000 });
   });
 
-  test('matrix row provides runtime-console readiness shortcut with governance context', async ({ authedPage }) => {
+  test('matrix row provides audit shortcut with governance context', async ({ authedPage }) => {
     if (await isOverviewErrorState(authedPage)) {
       await expect(authedPage.getByTestId('workspace-overview__retry')).toBeVisible();
       test.info().annotations.push({
@@ -61,12 +60,11 @@ test.describe('Organization Governance Overview', () => {
       });
       return;
     }
-    const readinessLink = authedPage.locator('[data-testid^="workspace-overview__open-runtime-console--"]').first();
+    const readinessLink = authedPage.locator('[data-testid^="workspace-overview__open-audit--"]').first();
     await expect(readinessLink).toBeVisible({ timeout: 10000 });
-    await expect(readinessLink).toHaveAttribute('href', /\/runtime-console\?/);
-    await expect(readinessLink).toHaveAttribute('href', /tab=control/);
+    await expect(readinessLink).toHaveAttribute('href', /\/audit\?/);
     await expect(readinessLink).toHaveAttribute('href', /gov_from=organization_overview/);
-    await expect(readinessLink).toHaveAttribute('href', /gov_reason=workspace_release_readiness/);
+    await expect(readinessLink).toHaveAttribute('href', /gov_reason=workspace_audit_review/);
   });
 
   test('batch preview updates after selecting workspace rows', async ({ authedPage }) => {

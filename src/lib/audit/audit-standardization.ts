@@ -77,29 +77,29 @@ export interface StandardizedAuditEvent {
 // =============================================================================
 
 /**
- * Transform legacy AuditEvent to StandardizedAuditEvent
+ * Transform AuditEvent to StandardizedAuditEvent
  *
  * Maps the old AuditEvent structure to the new standardized format.
  */
-export function standardizeAuditEvent(legacy: AuditEvent): StandardizedAuditEvent {
+export function standardizeAuditEvent(event: AuditEvent): StandardizedAuditEvent {
   const standardized: StandardizedAuditEvent = {
     actor: {
-      type: legacy.actor_type,
-      id: legacy.actor_id,
+      type: event.actor_type,
+      id: event.actor_id,
     },
     target: {
-      type: legacy.resource_type ?? 'unknown',
-      id: legacy.resource_id ?? 'unknown',
-      workspace_id: legacy.workspace_id,
-      project_id: legacy.project_id,
+      type: event.resource_type ?? 'unknown',
+      id: event.resource_id ?? 'unknown',
+      workspace_id: event.workspace_id,
+      project_id: event.project_id,
     },
-    action: legacy.action,
-    at: legacy.timestamp,
-    request_id: legacy.request_id,
+    action: event.action,
+    at: event.timestamp,
+    request_id: event.request_id,
   };
 
   // Parse diff for update actions
-  const diff = parseAuditDiff(legacy.action, legacy.metadata_json);
+  const diff = parseAuditDiff(event.action, event.metadata_json);
   if (diff) {
     standardized.diff = diff;
   }

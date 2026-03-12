@@ -1,6 +1,6 @@
 import type { ChatSession } from '@/lib/api/types';
 import {
-  mapRuntimeStatusToStreamStatus,
+  mapExecutionStatusToStreamStatus,
   type SessionStreamState,
   type SessionStreamStatus,
   type SessionStreamingAssistant,
@@ -27,7 +27,7 @@ export function buildChatViewModel(args: {
     ? (() => {
         const localStatus = streamStateBySession[currentSessionId]?.status ?? 'idle';
         if (localStatus !== 'idle') return localStatus;
-        return mapRuntimeStatusToStreamStatus(activeSession?.runtime_status);
+        return mapExecutionStatusToStreamStatus(activeSession?.execution_status);
       })()
     : 'idle';
   const activeStreamingAssistant = currentSessionId
@@ -43,7 +43,7 @@ export function buildChatViewModel(args: {
     .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
     .map(([sessionId]) => sessionId);
   const runtimeStreamingSessionIds = sessions
-    .filter((session) => session.runtime_status === 'running' || session.runtime_status === 'stopping')
+    .filter((session) => session.execution_status === 'running' || session.execution_status === 'stopping')
     .map((session) => session.id);
   const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...runtimeStreamingSessionIds]));
   const disabled = activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming';

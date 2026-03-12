@@ -135,9 +135,9 @@ export function TaskPage({
   const artifactsKey = queryKeys.tasks.artifacts(workspaceId, projectId, taskId);
   const taskDetailKey = queryKeys.tasks.detail(workspaceId, projectId, taskId);
   const diagnosticsQuery = buildBuildDiagnosticsOpsQuery();
-  // WP-03: Updated to new runtime-console route with appropriate tabs
+  // Diagnostics jump to the unified audit surface.
   const notebookDiagnosticsLinks = React.useMemo(() => ({
-    runtime: `${basePath}/runtime-console?tab=monitoring${diagnosticsQuery}`,
+    audit: `${basePath}/audit${diagnosticsQuery}`,
     usage: `${basePath}/usage${diagnosticsQuery}`,
     agent: buildAgentDiagnosticsLink(basePath, task?.agent_id ?? null),
   }), [basePath, diagnosticsQuery, task?.agent_id]);

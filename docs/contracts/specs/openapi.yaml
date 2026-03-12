@@ -1640,11 +1640,11 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/runtime-config:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/agents/{agentId}/execution-config:
     get:
       tags:
         - Agents
-      operationId: get_agentRuntimeConfig
+      operationId: get_agentExecutionConfig
       responses:
         "200":
           description: OK
@@ -2227,7 +2227,7 @@ paths:
         "422":
           description: Validation error (for example TASK_AGENT_ENDPOINT_NOT_CONFIGURED)
         "502":
-          description: External agent runtime error
+          description: External agent execution error
             (AGENT_OFFLINE/AGENT_PROTOCOL_ERROR/AGENT_UPSTREAM_ERROR)
       requestBody:
         required: true
@@ -2292,7 +2292,7 @@ paths:
                     task_relative_path:
                       type: string
                       description: Relative path inside the notebook task working directory for
-                        runtime-originated artifacts.
+                        execution-originated artifacts.
                     title:
                       type: string
                     content:
@@ -2737,7 +2737,9 @@ paths:
           required: true
           schema:
             type: string
-            enum: [csv, json]
+            enum:
+              - csv
+              - json
         - name: resource_type
           in: query
           schema:
@@ -2762,12 +2764,17 @@ paths:
           in: query
           schema:
             type: string
-            enum: [ok, error]
+            enum:
+              - ok
+              - error
         - name: error_class
           in: query
           schema:
             type: string
-            enum: [provider_retryable, provider_non_retryable, system_error]
+            enum:
+              - provider_retryable
+              - provider_non_retryable
+              - system_error
       responses:
         "200":
           description: Usage export file
@@ -2843,17 +2850,24 @@ paths:
           in: query
           schema:
             type: string
-            enum: [ok, error]
+            enum:
+              - ok
+              - error
         - name: error_class
           in: query
           schema:
             type: string
-            enum: [provider_retryable, provider_non_retryable, system_error]
+            enum:
+              - provider_retryable
+              - provider_non_retryable
+              - system_error
         - name: sort_order
           in: query
           schema:
             type: string
-            enum: [asc, desc]
+            enum:
+              - asc
+              - desc
       responses:
         "200":
           description: Request-level usage facts
@@ -4009,14 +4023,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthorizationResponse"
-        "401": *a1
-        "403": *a2
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limits/check:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4026,8 +4040,10 @@ paths:
         - Governance
       operationId: checkLimit
       summary: Verify limit before operation
-      description: |
-        Checks if a subject has sufficient limit remaining to perform an operation.
+      description: >
+        Checks if a subject has sufficient limit remaining to perform an
+        operation.
+
         Returns limit status including remaining amount, limit, and reset time.
       requestBody:
         required: true
@@ -4042,14 +4058,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LimitCheckResponse"
-        "401": *a1
-        "403": *a2
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/audit/export:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4082,7 +4098,9 @@ paths:
           description: Export format
           schema:
             type: string
-            enum: [csv, json]
+            enum:
+              - csv
+              - json
             default: json
         - name: action
           in: query
@@ -4094,13 +4112,18 @@ paths:
           description: Filter by actor type
           schema:
             type: string
-            enum: [user, agent, plugin]
+            enum:
+              - user
+              - agent
+              - plugin
         - name: result
           in: query
           description: Filter by result
           schema:
             type: string
-            enum: [ok, error]
+            enum:
+              - ok
+              - error
       responses:
         "200":
           description: Audit export
@@ -4112,14 +4135,14 @@ paths:
               schema:
                 type: string
                 format: binary
-        "401": *a1
-        "403": *a2
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/sse-ticket:
     post:
       tags:
@@ -4145,13 +4168,13 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/SSETicketResponse"
-        "401": *a1
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/limits/summary:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4161,8 +4184,10 @@ paths:
         - Governance
       operationId: getLimitsSummary
       summary: Get limit summary for all resources
-      description: |
-        Returns limit usage summary across all resource types (endpoints, source libraries, agents).
+      description: >
+        Returns limit usage summary across all resource types (endpoints, source
+        libraries, agents).
+
         Includes current usage, limits, percentage used, and reset times.
       responses:
         "200":
@@ -4192,7 +4217,11 @@ paths:
           required: false
           schema:
             type: string
-            enum: [tokens, requests, cost, bytes]
+            enum:
+              - tokens
+              - requests
+              - cost
+              - bytes
             default: tokens
         - name: start_time
           in: query
@@ -4214,7 +4243,11 @@ paths:
           required: false
           schema:
             type: string
-            enum: [hour, day, week, month]
+            enum:
+              - hour
+              - day
+              - week
+              - month
             default: day
         - name: resource_type
           in: query
@@ -4222,7 +4255,10 @@ paths:
           required: false
           schema:
             type: string
-            enum: [endpoint, source_library, agent]
+            enum:
+              - endpoint
+              - source_library
+              - agent
       responses:
         "200":
           description: Time series data
@@ -4230,26 +4266,28 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UsageTimeseriesResponse"
-        "401": *a1
-        "403": *a2
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/runtime-observability:
+        "401": *a1
+        "403": *a2
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/records-summary:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
     get:
       tags:
         - Governance
-      operationId: getRuntimeObservability
-      summary: Get runtime routing observability snapshot
-      description: |
-        Returns aggregate runtime routing health for a time range, including
-        fallback hop distribution, error class counts, and estimated cost metrics.
+      operationId: getUsageRecordsSummary
+      summary: Get usage records summary
+      description: >
+        Returns aggregate usage record health for a time range, including
+
+        fallback hop distribution, error class counts, and estimated cost
+        metrics.
       parameters:
         - name: start_time
           in: query
@@ -4267,13 +4305,13 @@ paths:
             format: date-time
         - name: provider
           in: query
-          description: Filter by runtime provider
+          description: Filter by provider
           required: false
           schema:
             type: string
         - name: model
           in: query
-          description: Filter by resolved runtime model
+          description: Filter by resolved model
           required: false
           schema:
             type: string
@@ -4283,29 +4321,34 @@ paths:
           required: false
           schema:
             type: string
-            enum: [ok, error]
+            enum:
+              - ok
+              - error
         - name: error_class
           in: query
-          description: Filter by runtime error class
+          description: Filter by error class
           required: false
           schema:
             type: string
-            enum: [provider_retryable, provider_non_retryable, system_error]
+            enum:
+              - provider_retryable
+              - provider_non_retryable
+              - system_error
       responses:
         "200":
-          description: Runtime observability snapshot
+          description: Usage records summary
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RuntimeObservabilityResponse"
-        "401": *a1
-        "403": *a2
+                $ref: "#/components/schemas/UsageRecordsSummaryResponse"
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/operations-summary:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4315,8 +4358,10 @@ paths:
         - Governance
       operationId: getUsageOperationsSummary
       summary: Get usage operations summary
-      description: |
-        Returns top providers/models/end users, anomaly peaks, and recent request outcomes
+      description: >
+        Returns top providers/models/end users, anomaly peaks, and recent
+        request outcomes
+
         for the current usage filter scope.
       parameters:
         - name: start_time
@@ -4361,13 +4406,18 @@ paths:
           required: false
           schema:
             type: string
-            enum: [ok, error]
+            enum:
+              - ok
+              - error
         - name: error_class
           in: query
           required: false
           schema:
             type: string
-            enum: [provider_retryable, provider_non_retryable, system_error]
+            enum:
+              - provider_retryable
+              - provider_non_retryable
+              - system_error
       responses:
         "200":
           description: Usage operations summary
@@ -4375,14 +4425,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/UsageOperationsSummaryResponse"
-        "401": *a1
-        "403": *a2
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/report-schedules:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -4399,7 +4449,8 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required:
+                  - items
                 properties:
                   items:
                     type: array
@@ -4459,10 +4510,10 @@ paths:
       tags:
         - Governance
       operationId: getUsageReportEvidence
-      summary: Get usage report release evidence summary
+      summary: Get usage report activation evidence summary
       responses:
         "200":
-          description: Usage report release evidence
+          description: Usage report activation evidence
           content:
             application/json:
               schema:
@@ -4630,7 +4681,7 @@ paths:
       tags:
         - Governance
       operationId: acknowledgeUsageReportDelivery
-      summary: Acknowledge a usage report delivery for release evidence
+      summary: Acknowledge a usage report delivery for activation evidence
       responses:
         "200":
           description: Usage report delivery acknowledged
@@ -4682,616 +4733,42 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/project-pricing:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
     get:
       tags:
         - LLM Runtime
-      operationId: listRuntimeProviders
-      summary: List runtime provider connections
-      responses:
-        "200":
-          description: Provider connection list
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/RuntimeProviderConnection"
-        "401": *a1
-        "403": *a2
-    post:
-      tags:
-        - LLM Runtime
-      operationId: createRuntimeProvider
-      summary: Create runtime provider connection
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeProviderConnectionCreate"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeProviderConnection"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: providerConnectionId
-        in: path
-        required: true
-        schema:
-          type: string
-    put:
-      tags:
-        - LLM Runtime
-      operationId: updateRuntimeProvider
-      summary: Update runtime provider connection
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeProviderConnectionUpdate"
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeProviderConnection"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    delete:
-      tags:
-        - LLM Runtime
-      operationId: deleteRuntimeProvider
-      summary: Delete runtime provider connection
-      responses:
-        "204":
-          description: Deleted
-        "401": *a1
-        "403": *a2
-        "404": *a3
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/models:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    get:
-      tags:
-        - LLM Runtime
-      operationId: listRuntimeModels
-      summary: List runtime model catalog entries
-      responses:
-        "200":
-          description: Model list
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/RuntimeModelCatalogEntry"
-        "401": *a1
-        "403": *a2
-    post:
-      tags:
-        - LLM Runtime
-      operationId: createRuntimeModel
-      summary: Create runtime model catalog entry
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeModelCatalogEntryCreate"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelCatalogEntry"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: provider
-        in: path
-        required: true
-        schema:
-          type: string
-      - name: modelId
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      tags:
-        - LLM Runtime
-      operationId: getRuntimeModel
-      summary: Get runtime model catalog entry
-      responses:
-        "200":
-          description: Model entry
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelCatalogEntry"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    put:
-      tags:
-        - LLM Runtime
-      operationId: updateRuntimeModel
-      summary: Update runtime model catalog entry
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeModelCatalogEntryUpdate"
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelCatalogEntry"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    delete:
-      tags:
-        - LLM Runtime
-      operationId: deleteRuntimeModel
-      summary: Delete runtime model catalog entry
-      responses:
-        "204":
-          description: Deleted
-        "401": *a1
-        "403": *a2
-        "404": *a3
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    get:
-      tags:
-        - LLM Runtime
-      operationId: listRuntimeRoutingAliases
-      summary: List model aliases
-      responses:
-        "200":
-          description: Alias list
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/RuntimeModelAlias"
-        "401": *a1
-        "403": *a2
-    post:
-      tags:
-        - LLM Runtime
-      operationId: createRuntimeRoutingAlias
-      summary: Create model alias
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeModelAliasCreate"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelAlias"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/dry-run:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    post:
-      tags:
-        - LLM Runtime
-      operationId: dryRunRuntimeRouting
-      summary: Preview runtime routing plan
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeRoutingDryRunRequest"
-      responses:
-        "200":
-          description: Dry-run route plan
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeRoutingDryRunResponse"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/impact-preview:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    post:
-      tags:
-        - LLM Runtime
-      operationId: previewRuntimeImpact
-      summary: Preview runtime route cost impact
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeImpactPreviewRequest"
-      responses:
-        "200":
-          description: Runtime impact preview
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeImpactPreviewResponse"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: alias
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      tags:
-        - LLM Runtime
-      operationId: getRuntimeRoutingAlias
-      summary: Get model alias
-      responses:
-        "200":
-          description: Alias
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelAlias"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    put:
-      tags:
-        - LLM Runtime
-      operationId: updateRuntimeRoutingAlias
-      summary: Update model alias
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeModelAliasUpdate"
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelAlias"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    delete:
-      tags:
-        - LLM Runtime
-      operationId: deleteRuntimeRoutingAlias
-      summary: Delete model alias
-      responses:
-        "204":
-          description: Deleted
-        "401": *a1
-        "403": *a2
-        "404": *a3
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}/publish:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: alias
-        in: path
-        required: true
-        schema:
-          type: string
-    post:
-      tags:
-        - LLM Runtime
-      operationId: publishRuntimeRoutingAlias
-      summary: Publish runtime alias after release checks
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeRoutePublishRequest"
-      responses:
-        "200":
-          description: Alias published
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeRoutePublishAliasResponse"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-        "409":
-          description: Publish blocked by approvals or guardrails
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    get:
-      tags:
-        - LLM Runtime
-      operationId: listRuntimeRoutingCombos
-      summary: List model combos
-      responses:
-        "200":
-          description: Combo list
-          content:
-            application/json:
-              schema:
-                type: object
-                required:
-                  - items
-                properties:
-                  items:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/RuntimeModelCombo"
-        "401": *a1
-        "403": *a2
-    post:
-      tags:
-        - LLM Runtime
-      operationId: createRuntimeRoutingCombo
-      summary: Create model combo
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeModelComboCreate"
-      responses:
-        "201":
-          description: Created
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelCombo"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: combo
-        in: path
-        required: true
-        schema:
-          type: string
-    get:
-      tags:
-        - LLM Runtime
-      operationId: getRuntimeRoutingCombo
-      summary: Get model combo
-      responses:
-        "200":
-          description: Combo
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelCombo"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    put:
-      tags:
-        - LLM Runtime
-      operationId: updateRuntimeRoutingCombo
-      summary: Update model combo
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeModelComboUpdate"
-      responses:
-        "200":
-          description: Updated
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeModelCombo"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-    delete:
-      tags:
-        - LLM Runtime
-      operationId: deleteRuntimeRoutingCombo
-      summary: Delete model combo
-      responses:
-        "204":
-          description: Deleted
-        "401": *a1
-        "403": *a2
-        "404": *a3
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}/publish:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: combo
-        in: path
-        required: true
-        schema:
-          type: string
-    post:
-      tags:
-        - LLM Runtime
-      operationId: publishRuntimeRoutingCombo
-      summary: Publish runtime combo after release checks
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimeRoutePublishRequest"
-      responses:
-        "200":
-          description: Combo published
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimeRoutePublishComboResponse"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-        "409":
-          description: Publish blocked by approvals or guardrails
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    get:
-      tags:
-        - LLM Runtime
-      operationId: getRuntimePricing
-      summary: Get effective runtime pricing
+      operationId: getProjectPricing
+      summary: Get effective project pricing
       responses:
         "200":
           description: Pricing map
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RuntimePricingMap"
+                $ref: "#/components/schemas/ProjectPricingMap"
         "401": *a1
         "403": *a2
     patch:
       tags:
         - LLM Runtime
-      operationId: patchRuntimePricing
-      summary: Upsert runtime pricing overrides
+      operationId: patchProjectPricing
+      summary: Upsert project pricing overrides
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/RuntimePricingMap"
+              $ref: "#/components/schemas/ProjectPricingMap"
       responses:
         "200":
           description: Updated pricing map
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RuntimePricingMap"
+                $ref: "#/components/schemas/ProjectPricingMap"
         "400":
           description: Bad Request
           content:
@@ -5300,111 +4777,117 @@ paths:
                 $ref: "#/components/schemas/ApiError"
         "401": *a1
         "403": *a2
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions:
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/providers:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
       - $ref: "#/components/parameters/projectId"
     get:
       tags:
         - LLM Runtime
-      operationId: listRuntimePricingVersions
-      summary: List runtime pricing versions in scope
+      operationId: listModelCatalogProviders
+      summary: List model catalog providers
       responses:
         "200":
-          description: Pricing versions
+          description: Model catalog providers
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RuntimePricingVersionsResponse"
+                type: object
+                required:
+                  - version
+                  - items
+                properties:
+                  version:
+                    $ref: "#/components/schemas/ModelCatalogVersion"
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ModelCatalogProvider"
         "401": *a1
         "403": *a2
+        "503":
+          description: Catalog not initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/models:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
+    get:
+      tags:
+        - LLM Runtime
+      operationId: listModelCatalogModels
+      summary: List model catalog models
+      parameters:
+        - name: provider
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: capability
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Model catalog models
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - version
+                  - items
+                  - total
+                properties:
+                  version:
+                    $ref: "#/components/schemas/ModelCatalogVersion"
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/ModelCatalogModel"
+                  total:
+                    type: integer
+                    minimum: 0
+        "401": *a1
+        "403": *a2
+        "503":
+          description: Catalog not initialized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+  /api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/sync:
+    parameters:
+      - $ref: "#/components/parameters/workspaceId"
+      - $ref: "#/components/parameters/projectId"
     post:
       tags:
         - LLM Runtime
-      operationId: createRuntimePricingVersion
-      summary: Create runtime pricing version
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimePricingVersionCreate"
+      operationId: syncModelCatalog
+      summary: Sync model catalog
       responses:
         "201":
-          description: Created pricing version
+          description: Model catalog synced
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/RuntimePricingVersion"
-        "400":
-          description: Bad Request
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
+                type: object
+                required:
+                  - version
+                properties:
+                  version:
+                    $ref: "#/components/schemas/ModelCatalogVersion"
         "401": *a1
         "403": *a2
-        "409":
-          description: Activation blocked by missing pricing
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/versions/{versionId}/activate:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-      - name: versionId
-        in: path
-        required: true
-        schema:
-          type: string
-    post:
-      tags:
-        - LLM Runtime
-      operationId: activateRuntimePricingVersion
-      summary: Activate runtime pricing version
-      responses:
-        "200":
-          description: Activated pricing version
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimePricingActivationResponse"
-        "401": *a1
-        "403": *a2
-        "404": *a3
-        "409":
-          description: Activation blocked by missing pricing
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ApiError"
-  /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/pricing/compare:
-    parameters:
-      - $ref: "#/components/parameters/workspaceId"
-      - $ref: "#/components/parameters/projectId"
-    post:
-      tags:
-        - LLM Runtime
-      operationId: compareRuntimePricingVersions
-      summary: Compare runtime pricing versions
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/RuntimePricingVersionCompareRequest"
-      responses:
-        "200":
-          description: Pricing version comparison
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/RuntimePricingCompareResponse"
-        "401": *a1
-        "403": *a2
-        "404": *a3
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -5414,8 +4897,10 @@ paths:
         - Operations
       operationId: listAlertRules
       summary: List alert rules
-      description: |
-        Returns all alert rules for the project. Rules can be filtered by enabled status,
+      description: >
+        Returns all alert rules for the project. Rules can be filtered by
+        enabled status,
+
         severity, and alert type.
       parameters:
         - name: enabled
@@ -5430,7 +4915,11 @@ paths:
           required: false
           schema:
             type: string
-            enum: [info, warning, error, critical]
+            enum:
+              - info
+              - warning
+              - error
+              - critical
         - name: type
           in: query
           description: Filter by alert type
@@ -5453,8 +4942,10 @@ paths:
         - Operations
       operationId: createAlertRule
       summary: Create alert rule
-      description: |
-        Creates a new alert rule for the project. The rule defines trigger conditions,
+      description: >
+        Creates a new alert rule for the project. The rule defines trigger
+        conditions,
+
         notification channels, and behavior settings.
       security:
         - BearerAuth: []
@@ -5471,14 +4962,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AlertRule"
-        "401": *a1
-        "403": *a2
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/alert-rules/{ruleId}:
     parameters:
       - $ref: "#/components/parameters/workspaceId"
@@ -5510,8 +5001,9 @@ paths:
         - Operations
       operationId: updateAlertRule
       summary: Update alert rule
-      description: |
-        Updates an existing alert rule. Only provide fields that should be changed.
+      description: >
+        Updates an existing alert rule. Only provide fields that should be
+        changed.
       security:
         - BearerAuth: []
       requestBody:
@@ -5527,15 +5019,15 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AlertRule"
-        "401": *a1
-        "403": *a2
-        "404": *a3
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ApiError"
+        "401": *a1
+        "403": *a2
+        "404": *a3
     delete:
       tags:
         - Operations
@@ -5565,8 +5057,10 @@ paths:
         - Operations
       operationId: testAlertRule
       summary: Test alert rule
-      description: |
-        Evaluates the alert rule against current data to check if it would trigger.
+      description: >
+        Evaluates the alert rule against current data to check if it would
+        trigger.
+
         Returns the test result without actually sending any notifications.
       security:
         - BearerAuth: []
@@ -5599,7 +5093,10 @@ paths:
           required: false
           schema:
             type: string
-            enum: [firing, resolved, silenced]
+            enum:
+              - firing
+              - resolved
+              - silenced
         - name: rule_id
           in: query
           description: Filter by alert rule
@@ -5661,8 +5158,9 @@ paths:
         - Operations
       operationId: updateAlertNotification
       summary: Update alert notification status
-      description: |
-        Updates the status of an alert notification (e.g., mark as resolved or silenced).
+      description: >
+        Updates the status of an alert notification (e.g., mark as resolved or
+        silenced).
       security:
         - BearerAuth: []
       requestBody:
@@ -5739,8 +5237,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "UNAUTHORIZED"
-            message: "Missing or invalid authorization token"
+            error_code: UNAUTHORIZED
+            message: Missing or invalid authorization token
     Forbidden:
       description: Forbidden - Valid token but insufficient permissions
       content:
@@ -5748,8 +5246,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "PERMISSION_DENIED"
-            message: "You do not have permission to perform this action"
+            error_code: PERMISSION_DENIED
+            message: You do not have permission to perform this action
     NotFound:
       description: Resource not found
       content:
@@ -5757,8 +5255,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "RESOURCE_NOT_FOUND"
-            message: "The requested resource does not exist"
+            error_code: RESOURCE_NOT_FOUND
+            message: The requested resource does not exist
     BadRequest:
       description: Bad Request - Invalid request parameters
       content:
@@ -5766,8 +5264,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "VALIDATION_ERROR"
-            message: "Invalid request parameters"
+            error_code: VALIDATION_ERROR
+            message: Invalid request parameters
     Conflict:
       description: Conflict - Resource already exists or state conflict
       content:
@@ -5775,8 +5273,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "RESOURCE_ALREADY_EXISTS"
-            message: "A resource with this identifier already exists"
+            error_code: RESOURCE_ALREADY_EXISTS
+            message: A resource with this identifier already exists
     RateLimited:
       description: Too Many Requests - Rate limit exceeded
       content:
@@ -5784,8 +5282,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "RATE_LIMIT_EXCEEDED"
-            message: "Rate limit exceeded. Please retry after a few seconds"
+            error_code: RATE_LIMIT_EXCEEDED
+            message: Rate limit exceeded. Please retry after a few seconds
     LimitExceeded:
       description: Limit Exceeded - Resource limit exceeded
       content:
@@ -5793,8 +5291,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "SPENDING_LIMIT_EXCEEDED"
-            message: "Resource limit exceeded"
+            error_code: SPENDING_LIMIT_EXCEEDED
+            message: Resource limit exceeded
     InternalError:
       description: Internal Server Error - Unexpected server error
       content:
@@ -5802,8 +5300,8 @@ components:
           schema:
             $ref: "#/components/schemas/ApiError"
           example:
-            error_code: "INTERNAL_ERROR"
-            message: "An unexpected error occurred. Please try again later"
+            error_code: INTERNAL_ERROR
+            message: An unexpected error occurred. Please try again later
   schemas:
     Workspace:
       type: object
@@ -6014,7 +5512,7 @@ components:
             - external
         description:
           type: string
-        runtime_preferences:
+        execution_preferences:
           type: object
           additionalProperties: true
     UpdateAgentRequest:
@@ -6024,7 +5522,7 @@ components:
           type: string
         description:
           type: string
-        runtime_preferences:
+        execution_preferences:
           type: object
           additionalProperties: true
     AgentKey:
@@ -6067,7 +5565,7 @@ components:
         - capability
         - provider
         - base_url
-        - openai_model
+        - model
       properties:
         id:
           type: string
@@ -6079,7 +5577,7 @@ components:
           type: string
         base_url:
           type: string
-        openai_model:
+        model:
           type: string
     CreateEndpointRequest:
       type: object
@@ -6088,7 +5586,7 @@ components:
         - capability
         - provider
         - base_url
-        - openai_model
+        - model
         - credential_id
       properties:
         name:
@@ -6101,7 +5599,7 @@ components:
           type: string
         base_url:
           type: string
-        openai_model:
+        model:
           type: string
         credential_id:
           type: string
@@ -6249,9 +5747,6 @@ components:
           type: string
           nullable: true
           description: Cursor for loading an earlier slice using `before_id`.
-    # ============================================================================
-    # M1: Architecture & Contract Freeze - New Schemas
-    # ============================================================================
     AuthorizationRequest:
       type: object
       required:
@@ -6267,7 +5762,10 @@ components:
           properties:
             type:
               type: string
-              enum: [user, group, agent]
+              enum:
+                - user
+                - group
+                - agent
             id:
               type: string
         action:
@@ -6285,7 +5783,11 @@ components:
           properties:
             type:
               type: string
-              enum: [project, endpoint, source_library, agent]
+              enum:
+                - project
+                - endpoint
+                - source_library
+                - agent
             id:
               type: string
         context:
@@ -6312,7 +5814,10 @@ components:
           properties:
             source:
               type: string
-              enum: [permission, resource_policy, project_default]
+              enum:
+                - permission
+                - resource_policy
+                - project_default
             rule_id:
               type: string
             reason:
@@ -6328,13 +5833,17 @@ components:
               type: string
             access_mode:
               type: string
-              enum: [allow_all_members, allow_list]
+              enum:
+                - allow_all_members
+                - allow_list
             matched_subject:
               type: object
               properties:
                 type:
                   type: string
-                  enum: [user, group]
+                  enum:
+                    - user
+                    - group
                 id:
                   type: string
     LimitCheckRequest:
@@ -6350,12 +5859,18 @@ components:
           description: User ID, group ID, or agent ID
         resource_type:
           type: string
-          enum: [endpoint, source_library, agent]
+          enum:
+            - endpoint
+            - source_library
+            - agent
         resource_id:
           type: string
         operation:
           type: string
-          enum: [invoke, upload, create]
+          enum:
+            - invoke
+            - upload
+            - create
         estimated_cost:
           type: number
           description: Estimated tokens/bytes for the operation
@@ -6441,7 +5956,10 @@ components:
                 type: string
               actor_type:
                 type: string
-                enum: [user, agent, plugin]
+                enum:
+                  - user
+                  - agent
+                  - plugin
               actor_id:
                 type: string
               action:
@@ -6454,7 +5972,9 @@ components:
                 type: string
               result:
                 type: string
-                enum: [ok, error]
+                enum:
+                  - ok
+                  - error
               error_code:
                 type: string
               error_message:
@@ -6464,13 +5984,15 @@ components:
               metadata_json:
                 type: object
                 additionalProperties: true
-              # Authorization-specific fields (for authorization.* actions)
               authz_subject:
                 type: object
                 properties:
                   type:
                     type: string
-                    enum: [user, group, agent]
+                    enum:
+                      - user
+                      - group
+                      - agent
                   id:
                     type: string
               authz_action:
@@ -6489,12 +6011,15 @@ components:
                     type: boolean
                   source:
                     type: string
-                    enum: [permission, resource_policy, project_default, allow_list]
+                    enum:
+                      - permission
+                      - resource_policy
+                      - project_default
+                      - allow_list
                   reason:
                     type: string
                   policy_id:
                     type: string
-              # Usage-specific fields (for limit.* actions)
               usage_metrics:
                 type: object
                 properties:
@@ -6502,7 +6027,11 @@ components:
                     type: number
                   unit:
                     type: string
-                    enum: [tokens, bytes, requests, seconds]
+                    enum:
+                      - tokens
+                      - bytes
+                      - requests
+                      - seconds
               used:
                 type: number
               remaining:
@@ -6526,7 +6055,10 @@ components:
           type: string
         intended_use:
           type: string
-          enum: [task_events, chat_stream, other]
+          enum:
+            - task_events
+            - chat_stream
+            - other
     SSETicketResponse:
       type: object
       required:
@@ -6548,10 +6080,8 @@ components:
         max_connections:
           type: integer
           description: Single-use enforcement
-          enum: [1]
-    # ============================================================
-    # Epic C1: Cost & Limit Dashboard Schemas
-    # ============================================================
+          enum:
+            - 1
     LimitOverview:
       type: object
       description: Endpoint-scoped limit summary for Usage page
@@ -6559,9 +6089,9 @@ components:
         endpoints:
           type: array
           items:
-            $ref: '#/components/schemas/EndpointLimitSummary'
+            $ref: "#/components/schemas/EndpointLimitSummary"
         project_summary:
-          $ref: '#/components/schemas/ProjectLimitSummary'
+          $ref: "#/components/schemas/ProjectLimitSummary"
     EndpointLimitSummary:
       type: object
       description: Endpoint-level grouped limits for Usage view
@@ -6577,7 +6107,7 @@ components:
         limits:
           type: array
           items:
-            $ref: '#/components/schemas/LimitRuleSnapshot'
+            $ref: "#/components/schemas/LimitRuleSnapshot"
     LimitRuleSnapshot:
       type: object
       description: Single windowed rate/spending rule snapshot
@@ -6594,13 +6124,21 @@ components:
       properties:
         kind:
           type: string
-          enum: [rate_limit, spending_limit]
+          enum:
+            - rate_limit
+            - spending_limit
         window:
           type: string
-          enum: [minute, 5h, day, current]
+          enum:
+            - minute
+            - 5h
+            - day
+            - current
         metric:
           type: string
-          enum: [requests, usd]
+          enum:
+            - requests
+            - usd
         policy_key:
           type: string
         used:
@@ -6657,7 +6195,9 @@ components:
           description: End of time range (ISO 8601)
         granularity:
           type: string
-          enum: [hour, day]
+          enum:
+            - hour
+            - day
           default: hour
           description: Time granularity for aggregation
         resource_type:
@@ -6690,34 +6230,36 @@ components:
               format: date-time
             granularity:
               type: string
-              enum: [hour, day]
+              enum:
+                - hour
+                - day
         data_points:
           type: array
           items:
-            $ref: '#/components/schemas/UsageDataPoint'
+            $ref: "#/components/schemas/UsageDataPoint"
         resource_breakdown:
           type: array
           items:
-            $ref: '#/components/schemas/ResourceCostBreakdown'
+            $ref: "#/components/schemas/ResourceCostBreakdown"
         total_cost:
           type: number
           description: Total estimated cost in USD
-    RuntimeObservabilityResponse:
+    UsageRecordsSummaryResponse:
       type: object
-      description: Runtime routing observability summary for a time range
+      description: Usage records summary for a time range
       required:
         - total_requests
         - total_errors
         - error_rate
-        - fallback_hops_histogram
+        - reroute_hops_histogram
         - error_class_counts
         - avg_estimated_cost
         - p95_estimated_cost
-        - health_summary
+        - records_health
         - request_trend
         - latency_distribution_ms
         - cost_distribution_usd
-        - degradation_signals
+        - issue_signals
         - provider_breakdown
         - model_breakdown
         - time_range
@@ -6732,12 +6274,12 @@ components:
           type: number
           minimum: 0
           maximum: 1
-        fallback_hops_histogram:
+        reroute_hops_histogram:
           type: object
           additionalProperties:
             type: number
             minimum: 0
-          description: Keyed by fallback hops (for example "0", "1", "2")
+          description: Keyed by reroute hops (for example "0", "1", "2")
         error_class_counts:
           type: object
           required:
@@ -6762,22 +6304,22 @@ components:
           type: number
           minimum: 0
           description: P95 estimated cost in USD
-        health_summary:
+        records_health:
           type: object
           required:
-            - recovered_requests
+            - rerouted_requests
             - terminal_error_requests
-            - missing_price_facts
+            - missing_price_records
             - provider_count
             - model_count
           properties:
-            recovered_requests:
+            rerouted_requests:
               type: number
               minimum: 0
             terminal_error_requests:
               type: number
               minimum: 0
-            missing_price_facts:
+            missing_price_records:
               type: number
               minimum: 0
             provider_count:
@@ -6789,23 +6331,23 @@ components:
         request_trend:
           type: array
           items:
-            $ref: "#/components/schemas/RuntimeObservabilityTrendPoint"
+            $ref: "#/components/schemas/UsageRecordsSummaryTrendPoint"
         latency_distribution_ms:
-          $ref: "#/components/schemas/RuntimeObservabilityDistribution"
+          $ref: "#/components/schemas/UsageRecordsSummaryDistribution"
         cost_distribution_usd:
-          $ref: "#/components/schemas/RuntimeObservabilityDistribution"
-        degradation_signals:
+          $ref: "#/components/schemas/UsageRecordsSummaryDistribution"
+        issue_signals:
           type: array
           items:
-            $ref: "#/components/schemas/RuntimeObservabilitySignal"
+            $ref: "#/components/schemas/UsageRecordsSummarySignal"
         provider_breakdown:
           type: array
           items:
-            $ref: "#/components/schemas/RuntimeObservabilityProviderBreakdown"
+            $ref: "#/components/schemas/UsageRecordsSummaryProviderBreakdown"
         model_breakdown:
           type: array
           items:
-            $ref: "#/components/schemas/RuntimeObservabilityModelBreakdown"
+            $ref: "#/components/schemas/UsageRecordsSummaryModelBreakdown"
         time_range:
           type: object
           required:
@@ -6818,13 +6360,13 @@ components:
             end:
               type: string
               format: date-time
-    RuntimeObservabilityTrendPoint:
+    UsageRecordsSummaryTrendPoint:
       type: object
       required:
         - time_bucket
         - requests
         - errors
-        - recovered_requests
+        - rerouted_requests
         - avg_estimated_cost
       properties:
         time_bucket:
@@ -6835,7 +6377,7 @@ components:
         errors:
           type: number
           minimum: 0
-        recovered_requests:
+        rerouted_requests:
           type: number
           minimum: 0
         avg_estimated_cost:
@@ -6844,7 +6386,7 @@ components:
         duration_p95_ms:
           type: number
           minimum: 0
-    RuntimeObservabilityDistribution:
+    UsageRecordsSummaryDistribution:
       type: object
       properties:
         p50:
@@ -6856,7 +6398,7 @@ components:
         p99:
           type: number
           minimum: 0
-    RuntimeObservabilitySignal:
+    UsageRecordsSummarySignal:
       type: object
       required:
         - id
@@ -6869,25 +6411,32 @@ components:
           type: string
         severity:
           type: string
-          enum: [low, medium, high]
+          enum:
+            - low
+            - medium
+            - high
         kind:
           type: string
-          enum: [fallback_spike, error_rate_spike, missing_price, latency_spike]
+          enum:
+            - fallback_spike
+            - error_rate_spike
+            - missing_price
+            - latency_spike
         title:
           type: string
         message:
           type: string
-    RuntimeObservabilityProviderBreakdown:
+    UsageRecordsSummaryProviderBreakdown:
       type: object
       required:
         - provider
         - requests
         - errors
         - error_rate
-        - fallback_rate
+        - reroute_rate
         - avg_estimated_cost
         - p95_estimated_cost
-        - missing_price_facts
+        - missing_price_records
       properties:
         provider:
           type: string
@@ -6901,7 +6450,7 @@ components:
           type: number
           minimum: 0
           maximum: 1
-        fallback_rate:
+        reroute_rate:
           type: number
           minimum: 0
           maximum: 1
@@ -6911,10 +6460,10 @@ components:
         p95_estimated_cost:
           type: number
           minimum: 0
-        missing_price_facts:
+        missing_price_records:
           type: number
           minimum: 0
-    RuntimeObservabilityModelBreakdown:
+    UsageRecordsSummaryModelBreakdown:
       type: object
       required:
         - provider
@@ -6922,10 +6471,10 @@ components:
         - requests
         - errors
         - error_rate
-        - fallback_rate
+        - reroute_rate
         - avg_estimated_cost
         - p95_estimated_cost
-        - missing_price_facts
+        - missing_price_records
       properties:
         provider:
           type: string
@@ -6941,7 +6490,7 @@ components:
           type: number
           minimum: 0
           maximum: 1
-        fallback_rate:
+        reroute_rate:
           type: number
           minimum: 0
           maximum: 1
@@ -6951,7 +6500,7 @@ components:
         p95_estimated_cost:
           type: number
           minimum: 0
-        missing_price_facts:
+        missing_price_records:
           type: number
           minimum: 0
     UsageDataPoint:
@@ -6985,7 +6534,7 @@ components:
         bytes_out:
           type: number
           minimum: 0
-    UsageFactRuntimeMetadata:
+    UsageFactRequestDetails:
       type: object
       properties:
         provider:
@@ -6994,10 +6543,13 @@ components:
           type: string
         error_class:
           type: string
-          enum: [provider_retryable, provider_non_retryable, system_error]
+          enum:
+            - provider_retryable
+            - provider_non_retryable
+            - system_error
         fallback_hops:
           type: number
-        pricing_version:
+        pricing_source:
           type: string
           nullable: true
         estimated_cost:
@@ -7060,11 +6612,13 @@ components:
           minimum: 0
         result:
           type: string
-          enum: [ok, error]
+          enum:
+            - ok
+            - error
         error_code:
           type: string
-        runtime:
-          $ref: "#/components/schemas/UsageFactRuntimeMetadata"
+        request_details:
+          $ref: "#/components/schemas/UsageFactRequestDetails"
         metadata_json:
           type: object
           additionalProperties: true
@@ -7104,7 +6658,11 @@ components:
             $ref: "#/components/schemas/UsageOperationsWebhookDestination"
     UsageOperationsProviderSummary:
       type: object
-      required: [provider, requests, errors, estimated_cost]
+      required:
+        - provider
+        - requests
+        - errors
+        - estimated_cost
       properties:
         provider:
           type: string
@@ -7119,7 +6677,12 @@ components:
           minimum: 0
     UsageOperationsModelSummary:
       type: object
-      required: [provider, model, requests, errors, estimated_cost]
+      required:
+        - provider
+        - model
+        - requests
+        - errors
+        - estimated_cost
       properties:
         provider:
           type: string
@@ -7136,7 +6699,11 @@ components:
           minimum: 0
     UsageOperationsEndUserSummary:
       type: object
-      required: [end_user_id, requests, errors, estimated_cost]
+      required:
+        - end_user_id
+        - requests
+        - errors
+        - estimated_cost
       properties:
         end_user_id:
           type: string
@@ -7151,7 +6718,13 @@ components:
           minimum: 0
     UsageOperationsAnomalyPeak:
       type: object
-      required: [id, time_bucket, metric, value, baseline, severity]
+      required:
+        - id
+        - time_bucket
+        - metric
+        - value
+        - baseline
+        - severity
       properties:
         id:
           type: string
@@ -7159,17 +6732,25 @@ components:
           type: string
         metric:
           type: string
-          enum: [requests, errors, cost]
+          enum:
+            - requests
+            - errors
+            - cost
         value:
           type: number
         baseline:
           type: number
         severity:
           type: string
-          enum: [medium, high]
+          enum:
+            - medium
+            - high
     UsageOperationsRecentRequest:
       type: object
-      required: [id, timestamp, result]
+      required:
+        - id
+        - timestamp
+        - result
       properties:
         id:
           type: string
@@ -7186,10 +6767,15 @@ components:
           type: string
         result:
           type: string
-          enum: [ok, error]
+          enum:
+            - ok
+            - error
         error_class:
           type: string
-          enum: [provider_retryable, provider_non_retryable, system_error]
+          enum:
+            - provider_retryable
+            - provider_non_retryable
+            - system_error
         estimated_cost:
           type: number
           minimum: 0
@@ -7251,7 +6837,9 @@ components:
           minimum: 0
         last_status:
           type: string
-          enum: [success, failed]
+          enum:
+            - success
+            - failed
         last_delivery_at:
           type: string
           format: date-time
@@ -7281,19 +6869,31 @@ components:
           type: string
         cadence:
           type: string
-          enum: [daily, weekly, monthly]
+          enum:
+            - daily
+            - weekly
+            - monthly
         status:
           type: string
-          enum: [active, paused]
+          enum:
+            - active
+            - paused
         format:
           type: string
-          enum: [csv, json]
+          enum:
+            - csv
+            - json
         time_window:
           type: string
-          enum: [last_24h, last_7d, last_30d]
+          enum:
+            - last_24h
+            - last_7d
+            - last_30d
         delivery_channel:
           type: string
-          enum: [in_app, webhook]
+          enum:
+            - in_app
+            - webhook
         delivery_config:
           type: object
           properties:
@@ -7319,11 +6919,13 @@ components:
               maximum: 5000
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
-        release_evidence_required:
+        governance_evidence_required:
           type: boolean
         empty_result_policy:
           type: string
-          enum: [deliver, fail]
+          enum:
+            - deliver
+            - fail
         created_at:
           type: string
           format: date-time
@@ -7338,7 +6940,10 @@ components:
           format: date-time
         last_delivery_status:
           type: string
-          enum: [idle, success, failed]
+          enum:
+            - idle
+            - success
+            - failed
         last_delivery_at:
           type: string
           format: date-time
@@ -7363,31 +6968,54 @@ components:
           type: string
         result:
           type: string
-          enum: [ok, error]
+          enum:
+            - ok
+            - error
         error_class:
           type: string
-          enum: [provider_retryable, provider_non_retryable, system_error]
+          enum:
+            - provider_retryable
+            - provider_non_retryable
+            - system_error
     CreateUsageReportScheduleRequest:
       type: object
-      required: [name, cadence, status, format, time_window, delivery_channel]
+      required:
+        - name
+        - cadence
+        - status
+        - format
+        - time_window
+        - delivery_channel
       properties:
         name:
           type: string
         cadence:
           type: string
-          enum: [daily, weekly, monthly]
+          enum:
+            - daily
+            - weekly
+            - monthly
         status:
           type: string
-          enum: [active, paused]
+          enum:
+            - active
+            - paused
         format:
           type: string
-          enum: [csv, json]
+          enum:
+            - csv
+            - json
         time_window:
           type: string
-          enum: [last_24h, last_7d, last_30d]
+          enum:
+            - last_24h
+            - last_7d
+            - last_30d
         delivery_channel:
           type: string
-          enum: [in_app, webhook]
+          enum:
+            - in_app
+            - webhook
         delivery_config:
           type: object
           properties:
@@ -7413,11 +7041,13 @@ components:
               maximum: 5000
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
-        release_evidence_required:
+        governance_evidence_required:
           type: boolean
         empty_result_policy:
           type: string
-          enum: [deliver, fail]
+          enum:
+            - deliver
+            - fail
     UpdateUsageReportScheduleRequest:
       type: object
       properties:
@@ -7425,19 +7055,31 @@ components:
           type: string
         cadence:
           type: string
-          enum: [daily, weekly, monthly]
+          enum:
+            - daily
+            - weekly
+            - monthly
         status:
           type: string
-          enum: [active, paused]
+          enum:
+            - active
+            - paused
         format:
           type: string
-          enum: [csv, json]
+          enum:
+            - csv
+            - json
         time_window:
           type: string
-          enum: [last_24h, last_7d, last_30d]
+          enum:
+            - last_24h
+            - last_7d
+            - last_30d
         delivery_channel:
           type: string
-          enum: [in_app, webhook]
+          enum:
+            - in_app
+            - webhook
         delivery_config:
           type: object
           properties:
@@ -7463,14 +7105,28 @@ components:
               maximum: 5000
         filters:
           $ref: "#/components/schemas/UsageReportScheduleFilters"
-        release_evidence_required:
+        governance_evidence_required:
           type: boolean
         empty_result_policy:
           type: string
-          enum: [deliver, fail]
+          enum:
+            - deliver
+            - fail
     UsageReportDelivery:
       type: object
-      required: [id, workspace_id, project_id, schedule_id, trigger, status, attempt_count, report_period_start, report_period_end, created_at, completed_at, summary]
+      required:
+        - id
+        - workspace_id
+        - project_id
+        - schedule_id
+        - trigger
+        - status
+        - attempt_count
+        - report_period_start
+        - report_period_end
+        - created_at
+        - completed_at
+        - summary
       properties:
         id:
           type: string
@@ -7482,10 +7138,16 @@ components:
           type: string
         trigger:
           type: string
-          enum: [scheduled, manual, retry, test]
+          enum:
+            - scheduled
+            - manual
+            - retry
+            - test
         status:
           type: string
-          enum: [success, failed]
+          enum:
+            - success
+            - failed
         attempt_count:
           type: integer
           minimum: 1
@@ -7507,7 +7169,9 @@ components:
           type: string
         summary:
           type: object
-          required: [requests, errors]
+          required:
+            - requests
+            - errors
           properties:
             requests:
               type: number
@@ -7524,7 +7188,14 @@ components:
           type: string
         error_class:
           type: string
-          enum: [empty_result, delivery_channel_timeout, delivery_channel_network, delivery_channel_auth, delivery_channel_4xx, delivery_channel_5xx, system_error]
+          enum:
+            - empty_result
+            - delivery_channel_timeout
+            - delivery_channel_network
+            - delivery_channel_auth
+            - delivery_channel_4xx
+            - delivery_channel_5xx
+            - system_error
         acknowledged_at:
           type: string
           format: date-time
@@ -7537,7 +7208,15 @@ components:
           additionalProperties: true
     UsageReportScheduleDeliveryResult:
       type: object
-      required: [delivery_id, schedule_id, delivery_channel, generated_at, preview_filename, content_type, status, summary]
+      required:
+        - delivery_id
+        - schedule_id
+        - delivery_channel
+        - generated_at
+        - preview_filename
+        - content_type
+        - status
+        - summary
       properties:
         delivery_id:
           type: string
@@ -7545,7 +7224,9 @@ components:
           type: string
         delivery_channel:
           type: string
-          enum: [in_app, webhook]
+          enum:
+            - in_app
+            - webhook
         generated_at:
           type: string
           format: date-time
@@ -7555,10 +7236,14 @@ components:
           type: string
         status:
           type: string
-          enum: [success, failed]
+          enum:
+            - success
+            - failed
         summary:
           type: object
-          required: [requests, errors]
+          required:
+            - requests
+            - errors
           properties:
             requests:
               type: number
@@ -7575,13 +7260,22 @@ components:
           type: string
         error_class:
           type: string
-          enum: [empty_result, delivery_channel_timeout, delivery_channel_network, delivery_channel_auth, delivery_channel_4xx, delivery_channel_5xx, system_error]
+          enum:
+            - empty_result
+            - delivery_channel_timeout
+            - delivery_channel_network
+            - delivery_channel_auth
+            - delivery_channel_4xx
+            - delivery_channel_5xx
+            - system_error
         delivery_metadata:
           type: object
           additionalProperties: true
     UsageReportRunDueResult:
       type: object
-      required: [processed, deliveries]
+      required:
+        - processed
+        - deliveries
       properties:
         processed:
           type: integer
@@ -7592,17 +7286,31 @@ components:
             $ref: "#/components/schemas/UsageReportScheduleDeliveryResult"
     UsageReportEvidence:
       type: object
-      required: [source, generated_at, release_readiness, blockers, warnings, active_schedules, required_schedules, successful_deliveries_last_7d, failed_deliveries_last_7d, unacknowledged_required_deliveries]
+      required:
+        - source
+        - generated_at
+        - review_status
+        - blockers
+        - warnings
+        - active_schedules
+        - required_schedules
+        - successful_deliveries_last_7d
+        - failed_deliveries_last_7d
+        - unacknowledged_required_deliveries
       properties:
         source:
           type: string
-          enum: [artifact, dry_run]
+          enum:
+            - artifact
+            - dry_run
         generated_at:
           type: string
           format: date-time
-        release_readiness:
+        review_status:
           type: string
-          enum: [ready, blocked]
+          enum:
+            - ready
+            - blocked
         blockers:
           type: array
           items:
@@ -7628,7 +7336,12 @@ components:
           minimum: 0
         runner_health:
           type: object
-          required: [enabled, interval_ms, running, run_count, last_status]
+          required:
+            - enabled
+            - interval_ms
+            - running
+            - run_count
+            - last_status
           properties:
             enabled:
               type: boolean
@@ -7642,7 +7355,10 @@ components:
               minimum: 0
             last_status:
               type: string
-              enum: [idle, success, failed]
+              enum:
+                - idle
+                - success
+                - failed
             last_started_at:
               type: string
               format: date-time
@@ -7653,7 +7369,11 @@ components:
               type: string
             last_result:
               type: object
-              required: [generated_at, processed_schedules, successful_deliveries, failed_deliveries]
+              required:
+                - generated_at
+                - processed_schedules
+                - successful_deliveries
+                - failed_deliveries
               properties:
                 generated_at:
                   type: string
@@ -7698,9 +7418,6 @@ components:
           type: number
           minimum: 0
           maximum: 100
-    # ============================================================
-    # Epic C2: Alert Center Schemas
-    # ============================================================
     AlertRule:
       type: object
       description: Alert rule configuration
@@ -7731,11 +7448,11 @@ components:
         enabled:
           type: boolean
         trigger:
-          $ref: '#/components/schemas/AlertTrigger'
+          $ref: "#/components/schemas/AlertTrigger"
         channels:
-          $ref: '#/components/schemas/AlertChannels'
+          $ref: "#/components/schemas/AlertChannels"
         behavior:
-          $ref: '#/components/schemas/AlertBehavior'
+          $ref: "#/components/schemas/AlertBehavior"
         created_at:
           type: string
           format: date-time
@@ -7758,14 +7475,14 @@ components:
         - threshold
       properties:
         metric:
-          $ref: '#/components/schemas/AlertMetric'
+          $ref: "#/components/schemas/AlertMetric"
         operator:
-          $ref: '#/components/schemas/AlertOperator'
+          $ref: "#/components/schemas/AlertOperator"
         threshold:
           type: number
           description: Threshold value for comparison
         window:
-          $ref: '#/components/schemas/AlertWindow'
+          $ref: "#/components/schemas/AlertWindow"
           description: Time window for aggregation (for time-aggregated metrics)
     AlertMetric:
       type: string
@@ -7780,11 +7497,21 @@ components:
     AlertOperator:
       type: string
       description: Alert comparison operators
-      enum: [gt, gte, lt, lte, eq]
+      enum:
+        - gt
+        - gte
+        - lt
+        - lte
+        - eq
     AlertWindow:
       type: string
       description: Time windows for aggregation
-      enum: [5m, 15m, 1h, 24h, 7d]
+      enum:
+        - 5m
+        - 15m
+        - 1h
+        - 24h
+        - 7d
     AlertChannels:
       type: object
       description: Alert notification channels
@@ -7795,7 +7522,7 @@ components:
           type: boolean
           description: Show in UI notification center
         webhook:
-          $ref: '#/components/schemas/WebhookConfig'
+          $ref: "#/components/schemas/WebhookConfig"
     WebhookConfig:
       type: object
       description: Webhook configuration for alert notifications
@@ -7841,11 +7568,11 @@ components:
         enabled:
           type: boolean
         trigger:
-          $ref: '#/components/schemas/AlertTrigger'
+          $ref: "#/components/schemas/AlertTrigger"
         channels:
-          $ref: '#/components/schemas/AlertChannels'
+          $ref: "#/components/schemas/AlertChannels"
         behavior:
-          $ref: '#/components/schemas/AlertBehavior'
+          $ref: "#/components/schemas/AlertBehavior"
     AlertRuleUpdateRequest:
       type: object
       description: Update alert rule request (all fields optional)
@@ -7857,11 +7584,11 @@ components:
         enabled:
           type: boolean
         trigger:
-          $ref: '#/components/schemas/AlertTrigger'
+          $ref: "#/components/schemas/AlertTrigger"
         channels:
-          $ref: '#/components/schemas/AlertChannels'
+          $ref: "#/components/schemas/AlertChannels"
         behavior:
-          $ref: '#/components/schemas/AlertBehavior'
+          $ref: "#/components/schemas/AlertBehavior"
     AlertRuleTestResponse:
       type: object
       description: Alert rule test response
@@ -7887,7 +7614,7 @@ components:
       properties:
         model:
           type: string
-          description: provider/model, alias, or combo:<name>
+          description: provider/model
         messages:
           type: array
           items:
@@ -7917,9 +7644,9 @@ components:
         usage:
           type: object
           additionalProperties: true
-        runtime:
-          $ref: "#/components/schemas/UnifiedChatRuntimeMetadata"
-    RuntimeProviderConnection:
+        request_details:
+          $ref: "#/components/schemas/ModelRequestDetails"
+    ModelCatalogProviderConnection:
       type: object
       required:
         - id
@@ -7934,7 +7661,11 @@ components:
           type: string
         auth_mode:
           type: string
-          enum: [api_key, oauth, aws_sdk, token]
+          enum:
+            - api_key
+            - oauth
+            - aws_sdk
+            - token
         base_url:
           type: string
           format: uri
@@ -7944,8 +7675,10 @@ components:
           type: integer
         status:
           type: string
-          enum: [active, disabled]
-    RuntimeProviderConnectionCreate:
+          enum:
+            - active
+            - disabled
+    ModelCatalogProviderConnectionCreate:
       type: object
       required:
         - provider
@@ -7956,7 +7689,11 @@ components:
           type: string
         auth_mode:
           type: string
-          enum: [api_key, oauth, aws_sdk, token]
+          enum:
+            - api_key
+            - oauth
+            - aws_sdk
+            - token
         base_url:
           type: string
           format: uri
@@ -7964,7 +7701,7 @@ components:
           type: string
         priority:
           type: integer
-    RuntimeProviderConnectionUpdate:
+    ModelCatalogProviderConnectionUpdate:
       type: object
       properties:
         base_url:
@@ -7976,8 +7713,10 @@ components:
           type: integer
         status:
           type: string
-          enum: [active, disabled]
-    RuntimeModelPricing:
+          enum:
+            - active
+            - disabled
+    ModelCatalogPricing:
       type: object
       required:
         - input
@@ -7993,7 +7732,7 @@ components:
           type: number
         cache_creation:
           type: number
-    RuntimeModelCatalogEntry:
+    ModelCatalogEntry:
       type: object
       required:
         - id
@@ -8018,8 +7757,8 @@ components:
         max_tokens:
           type: integer
         pricing:
-          $ref: "#/components/schemas/RuntimeModelPricing"
-    RuntimeModelCatalogEntryCreate:
+          $ref: "#/components/schemas/ModelCatalogPricing"
+    ModelCatalogEntryCreate:
       type: object
       required:
         - provider
@@ -8041,8 +7780,8 @@ components:
         max_tokens:
           type: integer
         pricing:
-          $ref: "#/components/schemas/RuntimeModelPricing"
-    RuntimeModelCatalogEntryUpdate:
+          $ref: "#/components/schemas/ModelCatalogPricing"
+    ModelCatalogEntryUpdate:
       type: object
       properties:
         provider:
@@ -8058,42 +7797,8 @@ components:
         max_tokens:
           type: integer
         pricing:
-          $ref: "#/components/schemas/RuntimeModelPricing"
-    RuntimeModelAlias:
-      type: object
-      required:
-        - alias
-        - target_provider
-        - target_model
-      properties:
-        alias:
-          type: string
-        target_provider:
-          type: string
-        target_model:
-          type: string
-        release:
-          $ref: "#/components/schemas/RuntimeRouteRelease"
-    RuntimeModelAliasCreate:
-      $ref: "#/components/schemas/RuntimeModelAlias"
-    RuntimeModelAliasUpdate:
-      type: object
-      properties:
-        target_provider:
-          type: string
-        target_model:
-          type: string
-    RuntimeModelComboTarget:
-      type: object
-      required:
-        - provider
-        - model
-      properties:
-        provider:
-          type: string
-        model:
-          type: string
-    RuntimeFallbackPolicy:
+          $ref: "#/components/schemas/ModelCatalogPricing"
+    ModelSelectionPolicy:
       type: object
       required:
         - max_hops
@@ -8106,198 +7811,7 @@ components:
           type: array
           items:
             type: string
-    RuntimeRoutingDryRunRequest:
-      type: object
-      required:
-        - model
-      properties:
-        model:
-          type: string
-          description: provider/model, alias, or combo:<name>
-    RuntimeRoutingDryRunAttempt:
-      type: object
-      required:
-        - index
-        - provider
-        - model
-        - provider_connection_status
-        - pricing_source
-      properties:
-        index:
-          type: integer
-          minimum: 0
-        provider:
-          type: string
-        model:
-          type: string
-        provider_connection_id:
-          type: string
-        provider_connection_status:
-          type: string
-          enum: [active, disabled, missing]
-        provider_connection_has_credential:
-          type: boolean
-        connection_priority:
-          type: integer
-        connection_base_url:
-          type: string
-        pricing_source:
-          type: string
-          enum: [project_override, workspace_default, global_default, model_catalog, missing]
-        pricing:
-          $ref: "#/components/schemas/RuntimeModelPricing"
-    RuntimeReleaseGuardrails:
-      type: object
-      required:
-        - release_readiness
-        - blockers
-        - warnings
-      properties:
-        release_readiness:
-          type: string
-          enum: [ready, blocked]
-        blockers:
-          type: array
-          items:
-            type: string
-        warnings:
-          type: array
-          items:
-            type: string
-    RuntimeRoutingDryRunResponse:
-      type: object
-      required:
-        - model
-        - routed_by
-        - attempts
-        - issues
-        - guardrails
-      properties:
-        model:
-          type: string
-        routed_by:
-          type: string
-          enum: [direct, alias, combo]
-        alias:
-          type: string
-        combo_name:
-          type: string
-        fallback_policy:
-          $ref: "#/components/schemas/RuntimeFallbackPolicy"
-        attempts:
-          type: array
-          items:
-            $ref: "#/components/schemas/RuntimeRoutingDryRunAttempt"
-        issues:
-          type: array
-          items:
-            type: string
-        guardrails:
-          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
-    RuntimeImpactPreviewRequest:
-      type: object
-      required:
-        - model
-      properties:
-        model:
-          type: string
-        lookback_hours:
-          type: integer
-          minimum: 1
-        resource_id:
-          type: string
-    RuntimeImpactPreviewSample:
-      type: object
-      required:
-        - request_count
-        - total_estimated_cost
-      properties:
-        request_count:
-          type: integer
-          minimum: 0
-        total_estimated_cost:
-          type: number
-        avg_estimated_cost:
-          type: number
-          nullable: true
-        avg_tokens_in:
-          type: number
-          nullable: true
-        avg_tokens_out:
-          type: number
-          nullable: true
-        avg_tokens_total:
-          type: number
-          nullable: true
-    RuntimeImpactPreviewCostRange:
-      type: object
-      properties:
-        low:
-          type: number
-          nullable: true
-        high:
-          type: number
-          nullable: true
-    RuntimeImpactPreviewProjectedCost:
-      type: object
-      required:
-        - range_avg_cost
-        - range_total_cost
-      properties:
-        primary_avg_cost:
-          type: number
-          nullable: true
-        primary_total_cost:
-          type: number
-          nullable: true
-        range_avg_cost:
-          $ref: "#/components/schemas/RuntimeImpactPreviewCostRange"
-        range_total_cost:
-          $ref: "#/components/schemas/RuntimeImpactPreviewCostRange"
-    RuntimeImpactPreviewWindow:
-      type: object
-      required:
-        - start
-        - end
-        - lookback_hours
-      properties:
-        start:
-          type: string
-          format: date-time
-        end:
-          type: string
-          format: date-time
-        lookback_hours:
-          type: integer
-          minimum: 1
-    RuntimeImpactPreviewResponse:
-      type: object
-      required:
-        - model
-        - lookback_window
-        - sample
-        - planned_route
-        - projected_cost
-        - assumptions
-        - guardrails
-      properties:
-        model:
-          type: string
-        lookback_window:
-          $ref: "#/components/schemas/RuntimeImpactPreviewWindow"
-        sample:
-          $ref: "#/components/schemas/RuntimeImpactPreviewSample"
-        planned_route:
-          $ref: "#/components/schemas/RuntimeRoutingDryRunResponse"
-        projected_cost:
-          $ref: "#/components/schemas/RuntimeImpactPreviewProjectedCost"
-        assumptions:
-          type: array
-          items:
-            type: string
-        guardrails:
-          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
-    RuntimeAttemptTrace:
+    ModelRequestTrace:
       type: object
       required:
         - index
@@ -8335,7 +7849,7 @@ components:
         durationMs:
           type: integer
           minimum: 0
-    UnifiedChatRuntimeMetadata:
+    ModelRequestDetails:
       type: object
       properties:
         provider:
@@ -8345,7 +7859,7 @@ components:
         fallback_hops:
           type: integer
           minimum: 0
-        pricing_version:
+        pricing_source:
           type: string
           nullable: true
         estimated_cost:
@@ -8354,335 +7868,153 @@ components:
         attempts:
           type: array
           items:
-            $ref: "#/components/schemas/RuntimeAttemptTrace"
-    RuntimeModelComboFallbackPolicy:
-      type: object
-      required:
-        - max_hops
-        - retryable_error_classes
-      properties:
-        max_hops:
-          type: integer
-          minimum: 1
-        retryable_error_classes:
-          type: array
-          items:
-            type: string
-    RuntimeModelCombo:
-      type: object
-      required:
-        - name
-        - targets
-        - fallback_policy
-      properties:
-        name:
-          type: string
-        targets:
-          type: array
-          items:
-            $ref: "#/components/schemas/RuntimeModelComboTarget"
-        fallback_policy:
-          $ref: "#/components/schemas/RuntimeModelComboFallbackPolicy"
-        release:
-          $ref: "#/components/schemas/RuntimeRouteRelease"
-    RuntimeModelComboCreate:
-      $ref: "#/components/schemas/RuntimeModelCombo"
-    RuntimeModelComboUpdate:
-      type: object
-      properties:
-        targets:
-          type: array
-          items:
-            $ref: "#/components/schemas/RuntimeModelComboTarget"
-        fallback_policy:
-          $ref: "#/components/schemas/RuntimeModelComboFallbackPolicy"
-    RuntimePricingMap:
+            $ref: "#/components/schemas/ModelRequestTrace"
+    ProjectPricingMap:
       type: object
       additionalProperties:
         type: object
         additionalProperties:
-          $ref: "#/components/schemas/RuntimeModelPricing"
-    RuntimeRouteApprovalChecklist:
-      type: object
-      required:
-        - owner_verified
-        - observability_verified
-        - rollback_verified
-      properties:
-        owner_verified:
-          type: boolean
-        observability_verified:
-          type: boolean
-        rollback_verified:
-          type: boolean
-    RuntimeRouteRolloutPolicy:
-      type: object
-      required:
-        - mode
-      properties:
-        mode:
-          type: string
-          enum: [full, canary]
-        canary_percent:
-          type: integer
-          minimum: 1
-          maximum: 100
-    RuntimeRouteRelease:
-      type: object
-      required:
-        - status
-      properties:
-        status:
-          type: string
-          enum: [draft, published, archived]
-        approval_checklist:
-          $ref: "#/components/schemas/RuntimeRouteApprovalChecklist"
-        rollout_policy:
-          $ref: "#/components/schemas/RuntimeRouteRolloutPolicy"
-        published_at:
-          type: string
-          format: date-time
-        archived_at:
-          type: string
-          format: date-time
-    RuntimeRoutePublishRequest:
-      type: object
-      required:
-        - approval_checklist
-        - rollout_policy
-      properties:
-        approval_checklist:
-          $ref: "#/components/schemas/RuntimeRouteApprovalChecklist"
-        rollout_policy:
-          $ref: "#/components/schemas/RuntimeRouteRolloutPolicy"
-    RuntimeRoutePublishAliasResponse:
-      type: object
-      required:
-        - item
-        - guardrails
-      properties:
-        item:
-          $ref: "#/components/schemas/RuntimeModelAlias"
-        guardrails:
-          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
-    RuntimeRoutePublishComboResponse:
-      type: object
-      required:
-        - item
-        - guardrails
-      properties:
-        item:
-          $ref: "#/components/schemas/RuntimeModelCombo"
-        guardrails:
-          $ref: "#/components/schemas/RuntimeReleaseGuardrails"
-    RuntimePricingScopeType:
-      type: string
-      enum: [global, workspace, project]
-    RuntimePricingVersionStatus:
-      type: string
-      enum: [draft, active, archived]
-    RuntimePricingVersion:
+          $ref: "#/components/schemas/ModelCatalogPricing"
+    ModelCatalogVersion:
       type: object
       required:
         - id
-        - scope_type
-        - version_name
-        - pricing_map
+        - source
+        - source_hash
+        - schema_kind
+        - provider_count
+        - model_count
         - status
+        - created_by
         - created_at
-        - updated_at
       properties:
         id:
           type: string
-        scope_type:
-          $ref: "#/components/schemas/RuntimePricingScopeType"
-        workspace_id:
+        source:
           type: string
-        project_id:
+        source_etag:
           type: string
-        version_name:
+        source_hash:
           type: string
-        description:
+        schema_kind:
           type: string
-        pricing_map:
-          $ref: "#/components/schemas/RuntimePricingMap"
+          enum:
+            - models.dev.raw
+            - models.dev.normalized
+        provider_count:
+          type: integer
+          minimum: 0
+        model_count:
+          type: integer
+          minimum: 0
         status:
-          $ref: "#/components/schemas/RuntimePricingVersionStatus"
-        created_at:
           type: string
-          format: date-time
-        updated_at:
+          enum:
+            - staged
+            - active
+            - archived
+            - failed
+        created_by:
+          type: string
+        created_at:
           type: string
           format: date-time
         activated_at:
           type: string
           format: date-time
-    RuntimePricingVersionCreate:
-      type: object
-      required:
-        - scope_type
-        - version_name
-        - pricing_map
-      properties:
-        scope_type:
-          $ref: "#/components/schemas/RuntimePricingScopeType"
-        version_name:
-          type: string
-        description:
-          type: string
-        pricing_map:
-          $ref: "#/components/schemas/RuntimePricingMap"
-        activate:
-          type: boolean
-    RuntimePricingActivationReadiness:
-      type: object
-      required:
-        - release_readiness
-        - missing_targets
-        - blockers
-      properties:
-        release_readiness:
-          type: string
-          enum: [ready, blocked]
-        missing_targets:
-          type: array
-          items:
-            type: object
-            required:
-              - provider
-              - model
-            properties:
-              provider:
-                type: string
-              model:
-                type: string
-        blockers:
-          type: array
-          items:
-            type: string
-    RuntimePricingActivationResponse:
-      type: object
-      required:
-        - version
-        - readiness
-      properties:
-        version:
-          $ref: "#/components/schemas/RuntimePricingVersion"
-        readiness:
-          $ref: "#/components/schemas/RuntimePricingActivationReadiness"
-    RuntimePricingVersionsResponse:
-      type: object
-      required:
-        - items
-        - active_versions
-      properties:
-        items:
-          type: array
-          items:
-            $ref: "#/components/schemas/RuntimePricingVersion"
-        active_versions:
-          type: object
-          properties:
-            global:
-              type: string
-              nullable: true
-            workspace:
-              type: string
-              nullable: true
-            project:
-              type: string
-              nullable: true
-        effective_version:
-          type: object
-          nullable: true
-          properties:
-            id:
-              type: string
-            version_name:
-              type: string
-            scope_type:
-              $ref: "#/components/schemas/RuntimePricingScopeType"
-    RuntimePricingVersionCompareRequest:
-      type: object
-      required:
-        - baseline_version_id
-        - candidate_version_id
-      properties:
-        baseline_version_id:
-          type: string
-        candidate_version_id:
-          type: string
-    RuntimePricingCompareItem:
-      type: object
-      required:
-        - provider
-        - model
-        - change_type
-      properties:
-        provider:
-          type: string
-        model:
-          type: string
-        change_type:
-          type: string
-          enum: [added, removed, changed, unchanged]
-        baseline:
-          allOf:
-            - $ref: "#/components/schemas/RuntimeModelPricing"
-          nullable: true
-        candidate:
-          allOf:
-            - $ref: "#/components/schemas/RuntimeModelPricing"
-          nullable: true
-    RuntimePricingCompareVersionRef:
+    ModelCatalogProvider:
       type: object
       required:
         - id
-        - version_name
-        - scope_type
+        - version_id
+        - provider_key
+        - provider_id
+        - name
+        - env
+        - model_count
       properties:
         id:
           type: string
-        version_name:
+        version_id:
           type: string
-        scope_type:
-          $ref: "#/components/schemas/RuntimePricingScopeType"
-    RuntimePricingCompareResponse:
-      type: object
-      required:
-        - baseline_version
-        - candidate_version
-        - summary
-        - items
-      properties:
-        baseline_version:
-          $ref: "#/components/schemas/RuntimePricingCompareVersionRef"
-        candidate_version:
-          $ref: "#/components/schemas/RuntimePricingCompareVersionRef"
-        summary:
-          type: object
-          required:
-            - added
-            - removed
-            - changed
-            - unchanged
-          properties:
-            added:
-              type: integer
-              minimum: 0
-            removed:
-              type: integer
-              minimum: 0
-            changed:
-              type: integer
-              minimum: 0
-            unchanged:
-              type: integer
-              minimum: 0
-        items:
+        provider_key:
+          type: string
+        provider_id:
+          type: string
+        name:
+          type: string
+        api:
+          type: string
+        doc:
+          type: string
+        npm:
+          type: string
+        env:
           type: array
           items:
-            $ref: "#/components/schemas/RuntimePricingCompareItem"
+            type: string
+        model_count:
+          type: integer
+          minimum: 0
+    ModelCatalogModel:
+      type: object
+      required:
+        - id
+        - version_id
+        - provider_key
+        - provider_id
+        - provider_name
+        - model_id
+        - name
+        - capabilities
+      properties:
+        id:
+          type: string
+        version_id:
+          type: string
+        provider_key:
+          type: string
+        provider_id:
+          type: string
+        provider_name:
+          type: string
+        model_id:
+          type: string
+        name:
+          type: string
+        family:
+          type: string
+        reasoning:
+          type: boolean
+        tool_call:
+          type: boolean
+        capabilities:
+          type: array
+          items:
+            type: string
+        modalities:
+          type: object
+          properties:
+            input:
+              type: array
+              items:
+                type: string
+            output:
+              type: array
+              items:
+                type: string
+        limit:
+          type: object
+          properties:
+            context:
+              type: integer
+            input:
+              type: integer
+            output:
+              type: integer
+        cost:
+          type: object
+          additionalProperties: true
     AlertNotificationsListResponse:
       type: object
       description: Paginated list of alert notifications
@@ -8696,7 +8028,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/AlertNotification'
+            $ref: "#/components/schemas/AlertNotification"
         total:
           type: integer
           minimum: 0
@@ -8731,7 +8063,7 @@ components:
         rule_name:
           type: string
         status:
-          $ref: '#/components/schemas/AlertStatus'
+          $ref: "#/components/schemas/AlertStatus"
         triggered_at:
           type: string
           format: date-time
@@ -8739,21 +8071,24 @@ components:
           type: string
           format: date-time
         metric:
-          $ref: '#/components/schemas/AlertMetric'
+          $ref: "#/components/schemas/AlertMetric"
         operator:
-          $ref: '#/components/schemas/AlertOperator'
+          $ref: "#/components/schemas/AlertOperator"
         threshold:
           type: number
         actual_value:
           type: number
         context:
-          $ref: '#/components/schemas/AlertContext'
+          $ref: "#/components/schemas/AlertContext"
         delivery:
-          $ref: '#/components/schemas/AlertDelivery'
+          $ref: "#/components/schemas/AlertDelivery"
     AlertStatus:
       type: string
       description: Alert notification status
-      enum: [firing, resolved, silenced]
+      enum:
+        - firing
+        - resolved
+        - silenced
     AlertContext:
       type: object
       description: Alert context information
@@ -8807,7 +8142,7 @@ components:
         items:
           type: array
           items:
-            $ref: '#/components/schemas/AlertRule'
+            $ref: "#/components/schemas/AlertRule"
         total:
           type: integer
           minimum: 0

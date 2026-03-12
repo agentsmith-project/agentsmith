@@ -2,28 +2,28 @@
 	check-api-port api-dev api-dev-min web web-msw \
 	demo-full-up demo-full-down \
 	e2e e2e-local \
-	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-runtime-proxy-billing e2e-int-local \
-	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api e2e-int-runtime-proxy-billing-local-api \
-	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto e2e-int-runtime-proxy-billing-auto \
-	e2e-int-core-local-api e2e-int-core-auto release-core-smoke \
+	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
+	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
+	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
+	e2e-int-core-local-api e2e-int-core-auto governance-core-smoke \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
 	notebook-agent-source-read-mount-smoke notebook-agent-inputrefs-loop-smoke \
-	notebook-agent-release-smoke notebook-agent-release-smoke-full governance-release-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
+	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
-	build-reliability-release-smoke workspace-governance-release-smoke organization-governance-release-smoke \
+	build-reliability-smoke workspace-governance-smoke organization-governance-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
-	runtime-proxy-stream-bench runtime-proxy-stream-bench-gate usage-report-runner-status usage-report-run-due \
+	model-request-stream-bench model-request-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
-	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-release \
+	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-governance \
 	mvp-freeze-check preprod-acceptance-check \
 	preprod-ensure-pgvector preprod-capture-baseline \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
-	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-release \
+	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-governance \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
 
 NPM ?= npm
@@ -77,19 +77,19 @@ help-extended:
 	@echo ""
 	@echo "Recommended (Low Cognitive Load):"
 	@echo "  make quick-help     # show only the recommended day-to-day commands"
-	@echo "  make help-glossary  # explain common testing/release terms in plain language"
+	@echo "  make help-glossary  # explain common testing/engineering terms in plain language"
 	@echo "  make dev-up         # start/recover demo API+Web+Runner and refresh/init if needed"
 	@echo "  make dev-down       # stop demo API+Web+Runner"
 	@echo "  make demo-full-up   # kill leftovers + start deps + init deps + recover full demo(API/Web/Runner/resources)"
 	@echo "  make demo-full-down # stop demo(API/Web/Runner) and integration deps"
-	@echo "  make smoke-main     # mainline release smoke (auto demo-check + token fallback)"
+	@echo "  make smoke-main     # mainline engineering smoke (auto demo-check + token fallback)"
 	@echo "  make smoke-governance # optional governance smoke (legacy/extended)"
 	@echo "  make smoke-all      # run mainline + governance smokes (extended)"
-	@echo "  make verify-release # release gate (L0 + L2 + L3 mainline)"
+	@echo "  make verify-governance # engineering gate (L0 + L2 + L3 mainline)"
 	@echo "  make mvp-freeze-check # freeze-oriented MVP check bundle (contracts + core smoke + demo readiness)"
 	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
 	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock functional matrix)"
-	@echo "  make gate-release  # L0+L2+L3 (default MVP release gate: mock functional matrix + mainline real smoke)"
+	@echo "  make gate-governance  # L0+L2+L3 (default MVP engineering gate: mock functional matrix + mainline real smoke)"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -120,21 +120,18 @@ help-extended:
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
 	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
 	@echo "  make e2e-int-chat-real # run real GLM-5 (Anthropic-compatible) chat integration e2e (real upstream)"
-	@echo "  make e2e-int-runtime-proxy-billing # run runtime proxy/billing integration e2e (real backend)"
 	@echo "  make e2e-int-local     # run integration e2e against a manually started web server (BASE_URL)"
 	@echo "  make e2e-int-minimal-local-api  # run minimal integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-chat-local-api     # run chat integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-agent-local-api    # run external-agent integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-chat-real-local-api # run real GLM-5 (Anthropic-compatible) chat e2e with current node api (requires frontend already running)"
-	@echo "  make e2e-int-runtime-proxy-billing-local-api # run runtime proxy/billing integration e2e with current node api (requires frontend already running)"
 	@echo "  make e2e-int-chat-auto      # auto start deps+api+web and run integration-chat spec"
 	@echo "  make e2e-int-agent-auto     # auto start deps+api+web and run integration-agent spec"
 	@echo "  make e2e-int-notebook-agent-auto # auto start deps+api+web and run notebook external-agent integration spec"
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
-	@echo "  make e2e-int-runtime-proxy-billing-auto # auto start deps+api+web and run runtime proxy/billing integration spec"
 	@echo "  make e2e-int-core-local-api # run MVP real-backend core smoke against already-running API/Web"
 	@echo "  make e2e-int-core-auto      # auto start deps+api+web and run MVP real-backend core smoke"
-	@echo "  make release-core-smoke     # MVP release baseline: core real-lane smoke + endpoint rate/spending policy smoke + release report"
+	@echo "  make governance-core-smoke     # MVP engineering baseline: core real-lane smoke + endpoint rate/spending policy smoke + governance report"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
@@ -147,12 +144,12 @@ help-extended:
 	@echo "  make notebook-agent-no-sandbox-smoke # verify AgentSmith works without sandbox deployment (mainline + fail-fast internal paths)"
 	@echo "  make notebook-agent-demo-restart-runner # restart only the managed demo runner"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
-	@echo "  make notebook-agent-credential-sync-smoke # verify runtime_context credential files are written under .codex/credential/"
+	@echo "  make notebook-agent-credential-sync-smoke # verify execution_context credential files are written under .codex/credential/"
 	@echo "  make notebook-agent-source-read-mount-smoke # verify source-read skill mounted under task workspace (.codex/skills/source-read)"
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
-	@echo "  make notebook-agent-release-smoke # run release smoke set (basic + inputrefs loop; optional matplotlib)"
-	@echo "  make notebook-agent-release-smoke-full # refresh token (if needed) + demo-check + release-smoke"
-	@echo "  make governance-release-smoke # run governance real-backend page open + interaction smoke set"
+	@echo "  make notebook-agent-engineering-smoke # run engineering smoke set (basic + inputrefs loop; optional matplotlib)"
+	@echo "  make notebook-agent-engineering-smoke-full # refresh token (if needed) + demo-check + engineering-smoke"
+	@echo "  make governance-smoke # run governance real-backend page open + interaction smoke set"
 	@echo "  make governance-pages-real-backend-smoke # alias of tolerant mode for governance page-open smoke"
 	@echo "  make governance-pages-real-backend-smoke-strict # strict gate: governance page-open smoke fails on product error states"
 	@echo "  make governance-pages-real-backend-smoke-tolerant # tolerant triage mode for governance page-open smoke"
@@ -165,12 +162,12 @@ help-extended:
 	@echo "  make governance-policy-update-audit-smoke # real-backend endpoint policy update -> audit event smoke"
 	@echo "  make governance-policy-spending-effect-smoke # real-backend endpoint policy spending-limit effect smoke (block -> audit/usage evidence)"
 	@echo "  make governance-policy-requests-rate-effect-smoke # real-backend endpoint policy requests/day rate effect smoke (block -> audit/usage evidence)"
-	@echo "  make governance-member-permission-effect-smoke # legacy optional smoke (not part of default MVP release gate)"
+	@echo "  make governance-member-permission-effect-smoke # legacy optional smoke (not part of default MVP engineering gate)"
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
-	@echo "  make build-reliability-release-smoke # build reliability release smoke (chat recovery + notebook runtime + contract suite)"
-	@echo "  make workspace-governance-release-smoke # workspace governance release smoke (overview + member admin + cross-project actions + explainability)"
-	@echo "  make organization-governance-release-smoke # organization governance release smoke (org overview + actions queue + drilldown chain)"
+	@echo "  make build-reliability-smoke # build reliability smoke (chat recovery + notebook runtime + contract suite)"
+	@echo "  make workspace-governance-smoke # workspace governance smoke (overview + member admin + cross-project actions + explainability)"
+	@echo "  make organization-governance-smoke # organization governance smoke (org overview + actions queue + drilldown chain)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
 	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
 	@echo "  make usage-report-runner-status   # query internal usage report runner status (auth required)"
@@ -183,8 +180,8 @@ help-extended:
 	@echo "  make notebook-agent-traces-query-bench # benchmark /tasks/:id/traces?message_id=... query path"
 	@echo "  make notebook-agent-traces-query-sweep # compare message-scoped traces query latency across page sizes"
 	@echo "  make notebook-agent-traces-query-sweep-compare # compare two traces-query-sweep dirs by page_size"
-	@echo "  make runtime-proxy-stream-bench # benchmark unified /llm/chat/completions stream path"
-	@echo "  make runtime-proxy-stream-bench-gate # run stream benchmark with p95/error-rate thresholds"
+	@echo "  make model-request-stream-bench # benchmark unified /llm/chat/completions stream path"
+	@echo "  make model-request-stream-bench-gate # run stream benchmark with p95/error-rate thresholds"
 	@echo "  make openapi-generate   # generate frontend API types from docs/contracts/specs/openapi.yaml"
 	@echo "  make openapi-check-generated # verify generated API types are in sync"
 	@echo "  make openapi-changelog  # generate OpenAPI diff changelog vs origin/main"
@@ -200,34 +197,34 @@ quick-help:
 	@echo "    Start/recover demo environment (API/Web/Runner + token/resource init)."
 	@echo ""
 	@echo "  make smoke-main"
-	@echo "    Run notebook mainline release smoke."
+	@echo "    Run notebook mainline engineering smoke."
 	@echo ""
 	@echo "  make notebook-agent-no-sandbox-smoke"
 	@echo "    Validate no-sandbox deployment baseline (services + endpoint proxy + internal fail-fast)."
 	@echo ""
 	@echo "  make smoke-governance"
-	@echo "    Run governance release smoke with strict page gate."
+	@echo "    Run governance smoke with strict page checks."
 	@echo ""
 	@echo "  make smoke-all"
-	@echo "    Run mainline + governance release smokes."
+	@echo "    Run mainline + governance smokes."
 	@echo ""
 	@echo "  make e2e-int-core-local-api"
 	@echo "    Run MVP core real-backend smoke against existing API/Web."
 	@echo ""
-	@echo "  make release-core-smoke"
-	@echo "    Run MVP release baseline (core real-lane + endpoint rate/spending policy + archived report)."
+	@echo "  make governance-core-smoke"
+	@echo "    Run MVP engineering baseline (core real-lane + endpoint rate/spending policy + archived report)."
 	@echo ""
 	@echo "  make verify-contracts"
 	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
 	@echo ""
-	@echo "  make verify-release"
-	@echo "    Run gate-release (L0 + mock functional matrix + real smoke)."
+	@echo "  make verify-governance"
+	@echo "    Run gate-governance (L0 + mock functional matrix + real smoke)."
 	@echo ""
 	@echo "  make lane-mock-visual"
 	@echo "    Run visual lane only (manual baseline workflow, non-blocking)."
 	@echo ""
 	@echo "  make mvp-freeze-check"
-	@echo "    Run verify-contracts + release-core-smoke + notebook-agent-demo-check."
+	@echo "    Run verify-contracts + governance-core-smoke + notebook-agent-demo-check."
 	@echo ""
 	@echo "  make preprod-acceptance-check"
 	@echo "    Run minimal preprod readiness checks (openapi/web-login/cancel-route)."
@@ -244,14 +241,14 @@ quick-help:
 	@echo "  make gate-premerge"
 	@echo "    L0 + L2 gate. Recommended merge-to-main baseline."
 	@echo ""
-	@echo "  make gate-release"
-	@echo "    L0 + L2 + L3 gate. Recommended release baseline."
+	@echo "  make gate-governance"
+	@echo "    L0 + L2 + L3 gate. Recommended governance baseline."
 	@echo ""
-	@echo "  make release-report"
-	@echo "    Generate release verification report (JSON + Markdown)."
+	@echo "  make governance-report"
+	@echo "    Generate governance verification report (JSON + Markdown)."
 	@echo ""
-	@echo "  make verify-release-with-report"
-	@echo "    Run verify-release and generate report with archive."
+	@echo "  make verify-governance-with-report"
+	@echo "    Run verify-governance and generate report with archive."
 	@echo ""
 	@echo "  make usage-report-runner-status"
 	@echo "    Query the in-process usage report runner using /tmp/agentsmith_user_token.txt."
@@ -281,7 +278,7 @@ help-glossary:
 	@echo "    Visual is a separate manual baseline workflow."
 	@echo ""
 	@echo "  strict vs tolerant smoke"
-	@echo "    strict: fail on product error states (release gate)."
+	@echo "    strict: fail on product error states (engineering gate)."
 	@echo "    tolerant: allow temporary error states for troubleshooting only."
 	@echo ""
 	@echo "  demo-check"
@@ -290,7 +287,7 @@ help-glossary:
 	@echo "  mainline"
 	@echo "    Core notebook/agent/files/inputrefs business path."
 	@echo ""
-	@echo "  release gate"
+	@echo "  engineering gate"
 	@echo "    The must-pass checks before saying a build is releasable."
 
 dev-up:
@@ -311,24 +308,24 @@ demo-full-down:
 smoke-main:
 	@set -e; \
 	$(MAKE) notebook-agent-no-sandbox-assert; \
-	$(MAKE) notebook-agent-release-smoke-full
+	$(MAKE) notebook-agent-engineering-smoke-full
 
 smoke-governance:
-	$(MAKE) governance-release-smoke
+	$(MAKE) governance-smoke
 
 smoke-all:
 	@set -e; \
 	$(MAKE) smoke-main; \
 	$(MAKE) smoke-governance
 
-build-reliability-release-smoke:
-	./scripts/build-reliability-release-smoke.sh
+build-reliability-smoke:
+	./scripts/build-reliability-smoke.sh
 
-workspace-governance-release-smoke:
-	./scripts/workspace-governance-release-smoke.sh
+workspace-governance-smoke:
+	./scripts/workspace-governance-smoke.sh
 
-organization-governance-release-smoke:
-	./scripts/organization-governance-release-smoke.sh
+organization-governance-smoke:
+	./scripts/organization-governance-smoke.sh
 
 verify-contracts:
 	$(NPM) run ws:typecheck
@@ -336,14 +333,14 @@ verify-contracts:
 	$(NPM) run openapi:check-generated
 	$(NPM) run contracts:check-openapi
 
-verify-release:
+verify-governance:
 	@set -e; \
-	$(MAKE) gate-release
+	$(MAKE) gate-governance
 
 mvp-freeze-check:
 	@set -e; \
 	$(MAKE) verify-contracts; \
-	$(MAKE) release-core-smoke; \
+	$(MAKE) governance-core-smoke; \
 	$(MAKE) notebook-agent-demo-check
 
 preprod-acceptance-check:
@@ -421,45 +418,45 @@ gate-premerge:
 	@set -e; \
 	$(MAKE) gate-l2
 
-gate-release:
+gate-governance:
 	@set -e; \
 	$(MAKE) gate-l0; \
 	$(MAKE) lane-mock-full; \
 	$(MAKE) lane-real-smoke
 
-# Generate release report (JSON + Markdown) after verify-release
+# Generate governance report (JSON + Markdown) after verify-governance
 # Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits
 # Use REPORT_ARCHIVE=1 to create timestamped archive
-# Use REPORT_CHECKS=check1,check2 to run a subset of release checks
-# Use REPORT_RUNTIME_EVIDENCE=/abs/path/runtime-release-evidence.json to reuse an existing runtime evidence artifact
-# Use REPORT_WORKSPACE_GOVERNANCE_EVIDENCE=/abs/path/workspace-governance-release-evidence.json to reuse an existing workspace governance evidence artifact
-# Use REPORT_ORGANIZATION_GOVERNANCE_EVIDENCE=/abs/path/organization-governance-release-evidence.json to reuse an existing organization governance evidence artifact
-release-report:
+# Use REPORT_CHECKS=check1,check2 to run a subset of engineering checks
+# Use REPORT_EXECUTION_EVIDENCE=/abs/path/execution-review-evidence.json to reuse an existing execution evidence artifact
+# Use REPORT_WORKSPACE_GOVERNANCE_EVIDENCE=/abs/path/workspace-governance-evidence.json to reuse an existing workspace governance evidence artifact
+# Use REPORT_ORGANIZATION_GOVERNANCE_EVIDENCE=/abs/path/organization-governance-evidence.json to reuse an existing organization governance evidence artifact
+governance-report:
 	@set -e; \
 	NAME=$${REPORT_NAME:-}; \
 	RANGE=$${REPORT_COMMIT_RANGE:-}; \
 	ARCHIVE=$${REPORT_ARCHIVE:-}; \
 	CHECKS=$${REPORT_CHECKS:-}; \
-	RUNTIME_EVIDENCE=$${REPORT_RUNTIME_EVIDENCE:-}; \
+	EXECUTION_EVIDENCE=$${REPORT_EXECUTION_EVIDENCE:-}; \
 	WORKSPACE_GOVERNANCE_EVIDENCE=$${REPORT_WORKSPACE_GOVERNANCE_EVIDENCE:-}; \
 	ORGANIZATION_GOVERNANCE_EVIDENCE=$${REPORT_ORGANIZATION_GOVERNANCE_EVIDENCE:-}; \
 	EXTRA_ARGS=""; \
 	[ -n "$$NAME" ] && EXTRA_ARGS="$$EXTRA_ARGS --name $$NAME"; \
 	[ -n "$$RANGE" ] && EXTRA_ARGS="$$EXTRA_ARGS --commit-range $$RANGE"; \
 	[ -n "$$CHECKS" ] && EXTRA_ARGS="$$EXTRA_ARGS --checks $$CHECKS"; \
-	[ -n "$$RUNTIME_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --runtime-evidence $$RUNTIME_EVIDENCE"; \
+	[ -n "$$EXECUTION_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --execution-evidence $$EXECUTION_EVIDENCE"; \
 	[ -n "$$WORKSPACE_GOVERNANCE_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --workspace-governance-evidence $$WORKSPACE_GOVERNANCE_EVIDENCE"; \
 	[ -n "$$ORGANIZATION_GOVERNANCE_EVIDENCE" ] && EXTRA_ARGS="$$EXTRA_ARGS --organization-governance-evidence $$ORGANIZATION_GOVERNANCE_EVIDENCE"; \
 	[ "$$ARCHIVE" = "1" ] && EXTRA_ARGS="$$EXTRA_ARGS --archive"; \
-	$(NPM) run release:report -- $$EXTRA_ARGS
+	$(NPM) run governance:report -- $$EXTRA_ARGS
 
-# Run verify-release and generate report in one command
-verify-release-with-report:
+# Run verify-governance and generate report in one command
+verify-governance-with-report:
 	@set -e; \
-	echo "[make] Running verify-release..."; \
-	$(MAKE) verify-release; \
-	echo "[make] Generating release report..."; \
-	$(MAKE) release-report REPORT_ARCHIVE=1
+	echo "[make] Running verify-governance..."; \
+	$(MAKE) verify-governance; \
+	echo "[make] Generating governance report..."; \
+	$(MAKE) governance-report REPORT_ARCHIVE=1
 
 deps-up:
 	$(NPM) run integration:deps:up
@@ -582,9 +579,6 @@ e2e-int-agent:
 e2e-int-chat-real:
 	$(NPM) run test:e2e:integration:chat:real
 
-e2e-int-runtime-proxy-billing:
-	$(NPM) run test:e2e:integration:runtime-proxy-billing
-
 e2e-int-local:
 	BASE_URL=$(BASE_URL) \
 	$(NPM) run test:e2e:integration:minimal
@@ -612,12 +606,6 @@ e2e-int-chat-real-local-api:
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	$(NPM) run test:e2e:integration:chat:real:with-api
-
-e2e-int-runtime-proxy-billing-local-api:
-	INTEGRATION_API_PORT=$(PORT_API) \
-	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
-	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
-	$(NPM) run test:e2e:integration:runtime-proxy-billing:with-api
 
 e2e-int-chat-auto:
 	INTEGRATION_API_PORT=$(PORT_API) \
@@ -655,15 +643,6 @@ e2e-int-chat-ux-auto:
 	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts --grep "deleting the only thread shows clear empty-state actions and disabled composer|text-only endpoint hides attachment actions in composer"
 
-e2e-int-runtime-proxy-billing-auto:
-	INTEGRATION_API_PORT=$(PORT_API) \
-	INTEGRATION_WEB_PORT=$(PORT_WEB) \
-	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
-	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
-	KEYCLOAK_URL=$(KEYCLOAK_URL) \
-	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
-	./scripts/run-integration-e2e-full.sh e2e/integration-runtime-proxy-billing.spec.ts
-
 e2e-int-core-local-api:
 	@set -e; \
 	echo "[make] running integration-minimal..."; \
@@ -698,12 +677,12 @@ e2e-int-core-auto:
 	./scripts/run-integration-e2e-full.sh e2e/integration-chat.spec.ts \
 	--grep "chat surfaces upstream 429 message and can recover|chat surfaces upstream 401 message and can recover|chat surfaces upstream 403 message and can recover"
 
-release-core-smoke:
+governance-core-smoke:
 	@set -e; \
 	$(MAKE) e2e-int-core-local-api; \
 	BASE_URL=$${BASE_URL:-http://localhost:3001} $(MAKE) notebook-agent-refresh-token; \
 	$(MAKE) governance-policy-requests-rate-effect-smoke; \
-	$(MAKE) release-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
+	$(MAKE) governance-report REPORT_ARCHIVE=1 REPORT_CHECKS=typecheck,openapi-check,contracts-check
 
 agent-test-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
@@ -821,11 +800,11 @@ notebook-agent-inputrefs-loop-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	node ./scripts/notebook-agent-inputrefs-loop-smoke.js
 
-notebook-agent-release-smoke:
+notebook-agent-engineering-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-release-smoke.sh
+	./scripts/notebook-agent-engineering-smoke.sh
 
-notebook-agent-release-smoke-full:
+notebook-agent-engineering-smoke-full:
 	@set -e; \
 	echo "[make] running demo readiness check..."; \
 	set +e; \
@@ -837,8 +816,8 @@ notebook-agent-release-smoke-full:
 		DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
 		$(MAKE) notebook-agent-demo-check; \
 	fi; \
-	echo "[make] running release smoke bundle..."; \
-	$(MAKE) notebook-agent-release-smoke
+	echo "[make] running engineering smoke bundle..."; \
+	$(MAKE) notebook-agent-engineering-smoke
 
 governance-pages-real-backend-smoke:
 	$(MAKE) governance-pages-real-backend-smoke-tolerant
@@ -902,7 +881,7 @@ governance-sse-ticket-effect-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/governance-sse-ticket-effect-smoke.sh
 
-governance-release-smoke:
+governance-smoke:
 	@set -e; \
 	echo "[make] governance smoke preflight: restart managed API/Web in real-backend mode (MSW off)..."; \
 	$(MAKE) notebook-agent-demo-down >/dev/null 2>&1 || true; \
@@ -931,7 +910,7 @@ governance-release-smoke:
 	}; \
 	$(MAKE) governance-pages-real-backend-smoke-strict; \
 	$(MAKE) governance-pages-real-backend-interaction-smoke-strict; \
-	$(MAKE) organization-governance-release-smoke; \
+	$(MAKE) organization-governance-smoke; \
 	run_with_token_retry governance-policy-access-effect-smoke; \
 	run_with_token_retry governance-policy-group-access-effect-smoke; \
 	run_with_token_retry governance-policy-update-audit-smoke; \
@@ -940,8 +919,8 @@ governance-release-smoke:
 	run_with_token_retry governance-policy-requests-rate-effect-smoke; \
 	run_with_token_retry governance-member-lifecycle-effect-smoke; \
 	run_with_token_retry governance-sse-ticket-effect-smoke; \
-	if [ -n "$${GOVERNANCE_RELEASE_EVIDENCE_PATH:-}" ]; then \
-		node ./scripts/write-governance-release-evidence.js "$${GOVERNANCE_RELEASE_EVIDENCE_PATH}"; \
+	if [ -n "$${GOVERNANCE_EVIDENCE_PATH:-}" ]; then \
+		node ./scripts/write-governance-evidence.js "$${GOVERNANCE_EVIDENCE_PATH}"; \
 	fi
 
 notebook-agent-smoke-full:
@@ -1067,16 +1046,16 @@ notebook-agent-traces-query-sweep-compare:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	node ./scripts/notebook-agent-traces-query-sweep-compare.js
 
-runtime-proxy-stream-bench:
+model-request-stream-bench:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	BASE_URL=http://localhost:$(PORT_API) \
-	./scripts/runtime-proxy-streaming-benchmark.sh
+	./scripts/model-request-streaming-benchmark.sh
 
-runtime-proxy-stream-bench-gate:
+model-request-stream-bench-gate:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	BASE_URL=http://localhost:$(PORT_API) \
 	STRICT_GATE=1 \
-	./scripts/runtime-proxy-streaming-benchmark.sh
+	./scripts/model-request-streaming-benchmark.sh
 
 openapi-generate:
 	$(NPM) run openapi:generate

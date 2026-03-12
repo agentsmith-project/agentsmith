@@ -3,7 +3,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { AuditDetailDrawer } from '../AuditDetailDrawer';
 
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
+  useTranslations: () => (key: string, values?: Record<string, string>) => {
+    if (key === 'summary.user_actor') return 'User';
+    if (key === 'summary.agent_actor') return 'Agent';
+    if (key === 'summary.plugin_actor') return 'Plugin';
+    if (key === 'summary.result_ok') return 'succeeded';
+    if (key === 'summary.result_error') return 'failed';
+    if (key === 'summary.line' && values) {
+      return `${values.actor} ${values.action} on ${values.resource} and ${values.result}`;
+    }
+    return key;
+  },
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -49,11 +59,19 @@ describe('AuditDetailDrawer', () => {
     );
 
     const governance = screen.getByTestId('audit__detail-governance');
+    const summary = screen.getByTestId('audit__detail-summary');
+    expect(summary).toHaveTextContent('User Hit Spending Limit on lib_1 and failed');
+    expect(summary).toHaveTextContent('resource_policy_spending_limit_exceeded');
     expect(governance).toHaveTextContent('detail.governance_title');
     expect(governance).toHaveTextContent('source_library.max_file_size_bytes');
     expect(governance).toHaveTextContent('1048576');
     expect(governance).toHaveTextContent('1048577');
     expect(governance).toHaveTextContent('spending_limit_exceeded');
+    expect(governance).not.toHaveTextContent('detail.governance_kind');
+    expect(governance).not.toHaveTextContent('detail.enforcement_kind');
+    expect(governance).not.toHaveTextContent('detail.scope');
+    expect(governance).not.toHaveTextContent('detail.usage_unit');
+    expect(screen.getByText('Spending Limit Exceeded')).toBeInTheDocument();
     expect(screen.getByText('gdec_1')).toBeInTheDocument();
     expect(screen.getByTestId('audit__detail-open-resource-policy')).toHaveAttribute(
       'href',
@@ -101,8 +119,13 @@ describe('AuditDetailDrawer', () => {
     );
 
     const governance = screen.getByTestId('audit__detail-governance');
+    const summary = screen.getByTestId('audit__detail-summary');
+    expect(summary).toHaveTextContent('User Updated Member Access on proj_1 and failed');
+    expect(summary).toHaveTextContent('forbidden');
+    expect(screen.getByText('Permission Denied')).toBeInTheDocument();
     expect(governance).toHaveTextContent('project:manage');
     expect(governance).toHaveTextContent('suspended');
+    expect(governance).not.toHaveTextContent('detail.governance_kind');
     expect(screen.getByText('gdec_2')).toBeInTheDocument();
     expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();
   });

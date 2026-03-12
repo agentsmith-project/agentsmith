@@ -10,8 +10,6 @@ const USAGE_LIMITS_FILES = [
   'src/components/audit-usage/UsagePage.tsx',
   'src/components/audit-usage/UsageView.tsx',
   'src/mocks/handlers/usage.ts',
-  'e2e/runtime-proxy-billing.spec.ts',
-  'e2e/integration-runtime-proxy-billing.spec.ts',
 ];
 
 function fileContainsForbidden(content: string): string[] {

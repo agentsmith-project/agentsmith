@@ -16,44 +16,6 @@ const intlMiddleware = createMiddleware(routing);
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // WP-03: Legacy route redirects for navigation restructure
-  // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/{legacy-route}
-  // Note: Must match exact route only, not /alerts-xxx or /alerts/child
-  // Uses negative lookahead (?![^/]) to ensure route name is complete
-  const legacyRouteMatch = pathname.match(
-    /\/([^/]+)\/workspaces\/([^/]+)\/projects\/([^/]+)\/(runtime-control-plane|runtime-observability|release-ops|alerts)(?![^/])(?:\?.*)?$/,
-  );
-
-  if (legacyRouteMatch) {
-    const [, locale, workspace, project, legacyRoute] = legacyRouteMatch;
-
-    // Map legacy routes to new routes with appropriate tab parameters
-    const tabMapping: Record<string, string> = {
-      'runtime-observability': 'monitoring',
-      'release-ops': 'control',
-      'alerts': 'alerts',
-    };
-
-    // Build redirect URL preserving all original query parameters
-    const redirectUrl = new URL(
-      `/${locale}/workspaces/${workspace}/projects/${project}/runtime-console`,
-      request.url,
-    );
-
-    // Copy all original query parameters
-    request.nextUrl.searchParams.forEach((value, key) => {
-      redirectUrl.searchParams.set(key, value);
-    });
-
-    // Set tab parameter if mapped
-    const tab = tabMapping[legacyRoute];
-    if (tab) {
-      redirectUrl.searchParams.set('tab', tab);
-    }
-
-    return NextResponse.redirect(redirectUrl);
-  }
-
   // Custom: invalid task ID -> redirect to notebook list
   // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/notebook/tasks/[taskId]
   const taskMatch = pathname.match(

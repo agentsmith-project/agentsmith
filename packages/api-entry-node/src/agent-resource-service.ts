@@ -2,7 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 
-interface RuntimeConnectionState {
+interface AgentConnectionState {
   connected_at: string;
   remote_ip?: string;
   last_pong_at?: string;
@@ -19,7 +19,7 @@ export interface AgentConnectionInfo {
 export class AgentResourceService {
   private static readonly agentsCollection = 'agents';
   private static readonly agentKeysCollection = 'agent_service_keys';
-  private readonly runtimeConnectionState = new Map<string, RuntimeConnectionState>();
+  private readonly agentConnectionState = new Map<string, AgentConnectionState>();
 
   constructor(private readonly docStore: JsonDocStorePort) {}
 
@@ -82,7 +82,7 @@ export class AgentResourceService {
       presence: input.mode === 'internal' ? 'managed' : 'offline',
       status: input.status ?? 'enabled',
       config: input.config,
-      runtime_preferences_json: input.runtime_preferences_json,
+      execution_preferences_json: input.execution_preferences_json,
       owner_id: input.owner_id,
       admin_id: input.admin_id,
       visibility: input.visibility === 'public' ? 'public' : 'private',
@@ -138,7 +138,7 @@ export class AgentResourceService {
     for (const key of keys) {
       await this.docStore.delete(AgentResourceService.agentKeysCollection, key.id);
     }
-    this.runtimeConnectionState.delete(agentId);
+    this.agentConnectionState.delete(agentId);
     return true;
   }
 
@@ -217,15 +217,15 @@ export class AgentResourceService {
     return touched;
   }
 
-  markAgentConnected(agentId: string, meta: Omit<RuntimeConnectionState, 'connected_at'>): void {
-    this.runtimeConnectionState.set(agentId, {
+  markAgentConnected(agentId: string, meta: Omit<AgentConnectionState, 'connected_at'>): void {
+    this.agentConnectionState.set(agentId, {
       connected_at: new Date().toISOString(),
       ...meta,
     });
   }
 
   markAgentDisconnected(agentId: string): void {
-    this.runtimeConnectionState.delete(agentId);
+    this.agentConnectionState.delete(agentId);
   }
 
   async touchAgentPresence(
@@ -242,14 +242,14 @@ export class AgentResourceService {
     });
   }
 
-  getConnectionInfo(agentId: string): RuntimeConnectionState | null {
-    return this.runtimeConnectionState.get(agentId) ?? null;
+  getConnectionInfo(agentId: string): AgentConnectionState | null {
+    return this.agentConnectionState.get(agentId) ?? null;
   }
 
   buildConnectionInfo(agentId: string): AgentConnectionInfo {
-    const wsBase = process.env.AGENT_RUNTIME_WS_BASE_URL?.trim() || 'ws://localhost:20000';
+    const wsBase = process.env.AGENT_EXECUTION_WS_BASE_URL?.trim() || 'ws://localhost:20000';
     return {
-      ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-runtime/ws?agent_id=${encodeURIComponent(agentId)}`,
+      ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agentId)}`,
       agent_id: agentId,
       protocol_version: '1.0',
       heartbeat_interval_sec: 15,

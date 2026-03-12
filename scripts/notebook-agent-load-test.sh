@@ -173,13 +173,13 @@ NODE
 )"
 printf '%s\n' "${summary_json}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>console.log(JSON.stringify(JSON.parse(s),null,2)))'
 
-METRICS_URL="${API_BASE%/}/api/v1/internal/notebook-runtime-metrics"
+METRICS_URL="${API_BASE%/}/api/v1/internal/notebook-task-metrics"
 metrics_code="$(
   curl -sS -o "${TMP_DIR}/metrics.json" -w '%{http_code}' "${METRICS_URL}" \
     -H "Authorization: Bearer ${TOKEN}" || true
 )"
 if [[ "${metrics_code}" == "200" ]]; then
-  echo "[load] notebook-runtime-metrics snapshot:"
+  echo "[load] notebook-task-metrics snapshot:"
   cat "${TMP_DIR}/metrics.json"
   echo
 else

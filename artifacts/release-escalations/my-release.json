@@ -1,0 +1,23 @@
+{
+  "id": "my-release",
+  "incident_id": "incident-my-release",
+  "report_name": "my-release",
+  "run_id": "my-release",
+  "created_at": "2026-03-11T07:46:09.231Z",
+  "event_type": "gate_warning",
+  "severity": "warning",
+  "status": "open",
+  "title": "Governance run completed with warning state",
+  "body": "Latest governance run completed with 2 warning issues.",
+  "artifact_name": "my-release",
+  "trigger": "manual",
+  "governance_policy_decision": "warning",
+  "runtime_activation_readiness": "ready",
+  "usage_activation_readiness": "ready",
+  "governance_blockers": [],
+  "governance_warnings": [],
+  "failure_categories": [],
+  "webhook_delivery": {
+    "status": "skipped"
+  }
+}

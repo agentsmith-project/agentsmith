@@ -1,0 +1,172 @@
+# External Agent Execution Channel Protocol (WS, v1)
+
+Last updated: 2026-02-22
+Owner: Backend + Frontend
+
+## 1. Scope
+
+This contract defines the runtime protocol between MBOS server and external agents over WebSocket.
+
+- Transport: WebSocket
+- Auth: `Authorization: Bearer ask_*` (agent service key)
+- Endpoint: `GET /api/v1/agent-execution/ws?agent_id={agentId}`
+- Protocol version: `1.0`
+
+## 2. Envelope
+
+All frames are JSON objects:
+
+```json
+{
+  "type": "string",
+  "request_id": "optional-string",
+  "session_id": "optional-string",
+  "timestamp": "ISO-8601",
+  "payload": {}
+}
+```
+
+## 3. Server -> Agent Events
+
+- `server.hello`
+  - payload: `{ "protocol_version": "1.0", "heartbeat_interval_sec": 15, "resource_proxy"?: { "base_url": "https://.../endpoints/{endpointId}/proxy" } }`
+  - `resource_proxy.base_url` is static per agent connection and is derived from agent execution preferences (`execution_preferences_json.notebook.endpoint_id`).
+- `server.request.start`
+  - payload:
+    - `model: string`
+    - `stream: true`
+    - `messages: OpenAI-compatible message array` (supports multimodal content parts and data URLs)
+    - `execution_context?: object` (optional notebook execution metadata)
+      - `workspace_id: string`
+      - `project_id: string`
+      - `task_id: string`
+      - `run_id: string`
+      - `username: string`
+      - `endpoint_id: string`
+      - `api_base?: string` (for notebook helper scripts / file download access)
+      - `user_bearer_token: string`
+      - `wire_api: \"chat\" | \"responses\"`
+      - `model: string`
+      - `notebook_mode?: boolean`
+      - `task_inputs?: Array<{ source_id?: string; filename?: string; file_type?: string; file_size?: number; ai_ready_status?: string }>`
+      - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
+        - Backend provides user third-party credential files per request.
+        - Runner writes these files under workspace-relative paths before executing the turn.
+- `server.request.cancel`
+  - payload: `{ "reason": "client_cancelled" }`
+- `server.ping`
+  - payload: `{}`
+  - note: optional/reserved heartbeat frame; current server implementation may not emit it in all deployments.
+
+## 4. Agent -> Server Events
+
+- `agent.ready`
+  - payload: runtime metadata/capabilities
+- `agent.pong`
+  - payload: `{}`
+- `agent.response.delta`
+  - required: `request_id`
+  - payload: `{ "delta": "text token chunk" }`
+- `agent.response.event`
+  - required: `request_id`
+  - payload: structured execution telemetry event for notebook/chat UX diagnostics and expandable trace UI
+  - shape (v1 additive extension):
+    - `sequence: number`
+    - `at: ISO-8601`
+    - `category: "lifecycle" | "progress" | "tool" | "artifact" | "warning" | "error" | "debug"`
+    - `phase?: "start" | "update" | "end"`
+    - `status?: "running" | "success" | "error" | "cancelled"`
+    - `name: string`
+    - `summary: string`
+    - `details?: object` (must be sanitized; no secrets/tokens)
+      - normalized run lifecycle events use:
+        - `name = "run.lifecycle"` with `details.run_phase` in:
+          `queued|dispatching|running|streaming|completed|failed|cancelled`
+        - `name = "run.summary"` with final run metrics (for example `final_status`, `duration_ms`, `artifacts_count`)
+      - recommended for trace fidelity UX:
+        - preserve sanitized provider/codex event metadata (e.g. original event type/source labels)
+        - avoid semantic rewrites; frontend may render `Raw` view directly from `details`
+    - `raw?: string` (sanitized raw snippet/source text for fidelity-oriented UI/debug views)
+- `agent.response.artifact`
+  - required: `request_id`
+  - payload: structured artifact emitted by the runner for notebook task outputs
+  - shape:
+    - `filename: string`
+    - `task_relative_path: string` (for example `artifacts/plot.png`)
+    - `artifact_type: "text" | "image" | "file" | "other"`
+    - `mime_type?: string`
+    - `file_size?: number`
+    - `title?: string`
+    - `content?: string` (text preview or inline data URL; size-limited)
+    - `thumbnail_url?: string` (usually for image artifact previews)
+- `agent.response.done`
+  - required: `request_id`
+  - payload: `{ "finish_reason": "stop|length|cancelled|...", "usage_tokens": number }`
+- `agent.response.error`
+  - required: `request_id`
+  - payload: `{ "error_code": "string", "error_message": "string" }`
+
+## 5. Chat Mapping Semantics
+
+When a chat session is bound to `external_agent_id`, server maps runtime events to chat SSE:
+
+- `agent.response.delta` -> SSE `delta`
+- `agent.response.done` -> SSE `done`
+- `agent.response.error` -> SSE `error`
+
+The frontend keeps the same chat SSE consumption model used by endpoint streaming.
+
+## 6. Runtime Constraints (v1)
+
+- One active connection per `agent_id` (new connection replaces old one).
+- No offline queue (fail-fast if agent is offline).
+- Attachments are passed as data URLs in multimodal messages.
+- Strict protocol validation:
+  - `agent.response.delta.payload.delta` must be `string`; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
+  - `agent.response.event.payload` must match the structured event schema above; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
+  - `agent.response.artifact.payload` must match the artifact schema above; otherwise request fails with `AGENT_PROTOCOL_ERROR`.
+  - Unsupported `agent.response.*` types with a valid `request_id` fail that request with `AGENT_PROTOCOL_ERROR`.
+  - Invalid JSON frame closes socket with close code `1003` (`invalid_json`).
+
+## 7. Chat Stream Error Mapping
+
+When chat session is bound to `external_agent_id`, server returns explicit API error codes for stream bootstrap failures:
+
+- `AGENT_OFFLINE`: no active runtime WS connection for the selected agent
+- `AGENT_PROTOCOL_ERROR`: invalid runtime frame format/content
+- `AGENT_UPSTREAM_ERROR`: agent reported upstream error
+
+Frontend maps these codes to explicit user-facing error banners.
+## 8. Related REST APIs
+
+- `GET /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/connection-info`
+- `GET/POST /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/keys`
+- `DELETE /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/keys/{keyId}`
+- `GET /api/v1/workspaces/{ws}/projects/{project}/agents/{agentId}/execution-config`
+
+## 9. Echo Example
+
+Reference implementation:
+
+- `packages/api-entry-node/examples/external-agent-echo.ts`
+- `packages/api-entry-node/examples/external-agent-test-runner.ts` (used by integration E2E)
+
+Run with:
+
+```bash
+MBOS_AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' \
+MBOS_AGENT_KEY='ask_xxx' \
+tsx packages/api-entry-node/examples/external-agent-echo.ts
+```
+
+## 10. Risk Register (Notebook Codex v1)
+
+- `R1` user token forwarding to runner:
+  - MBOS forwards user bearer token in execution context for project proxy auth/audit.
+  - This token must stay in-memory only and must never be logged/persisted.
+  - Follow-up hardening: replace with short-lived ticket exchange.
+
+- `R3` workspace isolation level:
+  - Current v1 runner isolation is directory-level only (`/tmp/<username>/<task_id>`).
+  - No automatic cleanup and no process/container sandbox in v1.
+  - Ops must enforce periodic cleanup and disk monitoring.

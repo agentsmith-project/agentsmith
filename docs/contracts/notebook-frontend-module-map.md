@@ -53,7 +53,7 @@ Terminology note:
   - current task SSE replay and active-run guards are server-instance local in `api-entry-node`
   - multi-instance deployments should use sticky routing (or future shared coordination primitives)
 - Terminal fallback note:
-  - if runtime dispatch/stream fails before any trace frame arrives, backend must synthesize one terminal trace event (`name=runtime.terminal`, `phase=end`, `status=error|success`) so frontend/ops never observe a forever-empty trace timeline.
+  - if execution dispatch/stream fails before any trace frame arrives, backend must synthesize one terminal trace event (`name=execution.terminal`, `phase=end`, `status=error|success`) so frontend/ops never observe a forever-empty trace timeline.
   - task remains a reusable conversation container; terminal trace marks run completion/failure, not task closure.
 - Frontend keeps display strategy local (timeline/raw/filtering) and must not depend on backend-generated UI formatting strings.
 

@@ -47,7 +47,7 @@ Legacy aliases accepted by frontend permission-gate compatibility layer:
 | `use` | End-user daily AI tools | Chat, Notebook, Files |
 | `develop` | Developer agent building | Agents |
 | `govern` | Configuration and policy | Endpoints, Resource Policy, Credentials, Members, Usage, Audit, Settings |
-| `operate` | Runtime operations | Runtime Console |
+| `operate` | Runtime-related backend operations | Internal/runtime routes only; user-facing review goes through Audit |
 
 ## Contract Guidance
 

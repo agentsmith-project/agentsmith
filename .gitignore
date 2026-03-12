@@ -56,29 +56,29 @@ secrets/*
 !secrets/e2e-openai-compatible.demo.json
 
 # Generated release failure artifacts (local triage outputs)
-artifacts/release-reports/failed/
+artifacts/governance-reports/failed/
 
 # Generated local release verification snapshots / debug captures
-artifacts/release-reports/report-*.json
-artifacts/release-reports/report-*.md
-artifacts/release-reports/closure-*.json
-artifacts/release-reports/closure-*.md
-artifacts/release-reports/runtime-evidence-*.json
-artifacts/release-reports/runtime-evidence-*.md
-artifacts/release-reports/runtime-release-evidence.json
-artifacts/release-reports/governance-release-evidence.json
-artifacts/release-reports/usage-report-evidence.json
-artifacts/release-reports/build-reliability-release-evidence.json
-artifacts/release-reports/workspace-governance-release-evidence.json
-artifacts/release-reports/build-reliability-*.json
-artifacts/release-reports/build-reliability-*.md
-artifacts/release-reports/workspace-governance-*.json
-artifacts/release-reports/workspace-governance-*.md
-artifacts/release-reports/governance-execution-closure-*.json
-artifacts/release-reports/governance-execution-closure-*.md
-artifacts/release-reports/wp11-release-controls-*.json
-artifacts/release-reports/wp11-release-controls-*.md
-artifacts/release-reports/gov-smoke-login-failure-*.png
-artifacts/release-reports/gov-smoke-login-failure-*.html
-artifacts/release-runs/*.json
-artifacts/release-escalations/*.json
+artifacts/governance-reports/report-*.json
+artifacts/governance-reports/report-*.md
+artifacts/governance-reports/closure-*.json
+artifacts/governance-reports/closure-*.md
+artifacts/governance-reports/execution-evidence-*.json
+artifacts/governance-reports/execution-evidence-*.md
+artifacts/governance-reports/runtime-release-evidence.json
+artifacts/governance-reports/governance-release-evidence.json
+artifacts/governance-reports/usage-report-evidence.json
+artifacts/governance-reports/build-reliability-release-evidence.json
+artifacts/governance-reports/workspace-governance-release-evidence.json
+artifacts/governance-reports/build-reliability-*.json
+artifacts/governance-reports/build-reliability-*.md
+artifacts/governance-reports/workspace-governance-*.json
+artifacts/governance-reports/workspace-governance-*.md
+artifacts/governance-reports/governance-execution-closure-*.json
+artifacts/governance-reports/governance-execution-closure-*.md
+artifacts/governance-reports/wp11-release-controls-*.json
+artifacts/governance-reports/wp11-release-controls-*.md
+artifacts/governance-reports/gov-smoke-login-failure-*.png
+artifacts/governance-reports/gov-smoke-login-failure-*.html
+artifacts/governance-runs/*.json
+artifacts/governance-incidents/*.json

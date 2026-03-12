@@ -78,7 +78,7 @@ init_demo_resources() {
   )
 }
 
-has_demo_runtime_metadata() {
+has_demo_execution_metadata() {
   [[ -s "/tmp/agentsmith_project_id.txt" ]] \
     && [[ -s "/tmp/agentsmith_endpoint_id.txt" ]] \
     && [[ -s "/tmp/agentsmith_agent_id.txt" ]] \
@@ -295,9 +295,9 @@ start_api_if_needed() {
       MINIO_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
       MINIO_SECRET_KEY='${MINIO_SECRET_KEY}' \
       MINIO_BUCKET='${MINIO_BUCKET}' \
-      DEBUG_AGENT_RUNTIME='${DEBUG_AGENT_RUNTIME:-1}' \
+      DEBUG_AGENT_EXECUTION='${DEBUG_AGENT_EXECUTION:-1}' \
       DEBUG_ENDPOINT_PROXY='${DEBUG_ENDPOINT_PROXY:-0}' \
-      DEBUG_NOTEBOOK_RUNTIME='${DEBUG_NOTEBOOK_RUNTIME:-0}' \
+      DEBUG_NOTEBOOK_EXECUTION='${DEBUG_NOTEBOOK_EXECUTION:-0}' \
       npm run api:node:dev
   "
   post_start_validate_or_reuse_external "${API_PID_FILE}" "${PORT_API}" "API" "${API_LOG}"
@@ -470,8 +470,8 @@ main() {
 
   if [[ "${DEMO_INIT_RESOURCES}" == "1" ]]; then
     init_demo_resources || exit 1
-  elif ! has_demo_runtime_metadata; then
-    info "runtime metadata missing; forcing one-time resource init even though DEMO_INIT_RESOURCES=0"
+  elif ! has_demo_execution_metadata; then
+    info "execution metadata missing; forcing one-time resource init even though DEMO_INIT_RESOURCES=0"
     init_demo_resources || exit 1
   fi
 

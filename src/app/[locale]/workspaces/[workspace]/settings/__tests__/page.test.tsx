@@ -40,7 +40,7 @@ const STABLE_PROJECTS = [
         },
       },
     },
-    runtime_preferences_json: {},
+    execution_preferences_json: {},
     limits_json: {},
     created_at: '2026-03-01T00:00:00Z',
     updated_at: '2026-03-01T00:00:00Z',
@@ -62,7 +62,7 @@ const STABLE_PROJECTS = [
         },
       },
     },
-    runtime_preferences_json: {},
+    execution_preferences_json: {},
     limits_json: {},
     created_at: '2026-03-01T00:00:00Z',
     updated_at: '2026-03-01T00:00:00Z',
@@ -133,9 +133,9 @@ describe('WorkspaceSettingsPage', () => {
     expect(screen.getByTestId('ws-settings__project-posture--proj_1')).toBeInTheDocument();
     expect(screen.getByText('workspace_projects_risk_public_open_access')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-open-settings--proj_1')).toHaveAttribute('href', '/en/workspaces/ws_1/projects/proj_1/settings');
-    expect(screen.getByTestId('ws-settings__project-open-runtime-console--proj_1')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__project-open-audit-secondary--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/runtime-console?tab=control'),
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit'),
     );
   });
 
@@ -162,9 +162,9 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit?'),
     );
-    expect(screen.getByTestId('ws-settings__attention-open-runtime-console--project--proj_1')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__attention-open-audit-secondary--project--proj_1')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/runtime-console?tab=control'),
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit'),
     );
     expect(screen.getByTestId('ws-settings__attention-open-audit--project--proj_1')).toHaveAttribute(
       'href',
@@ -185,9 +185,9 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       expect.stringContaining('gov_reason=blocked_projects'),
     );
-    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-runtime-console')).toHaveAttribute(
+    expect(screen.getByTestId('ws-settings__explain-open-blocked-project-audit-secondary')).toHaveAttribute(
       'href',
-      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/runtime-console?tab=control'),
+      expect.stringContaining('/en/workspaces/ws_1/projects/proj_1/audit'),
     );
   });
 

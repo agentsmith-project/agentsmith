@@ -10,6 +10,10 @@ Current commit:
 
 ## Context
 
+> Review note (2026-03-10): this handoff records the implementation state around commit `3d52893`, but it should not be treated as the final product direction. In particular, `Usage` should remain a low-cognitive per-endpoint consumption view, `GET /limits/summary` should stay the primary source of truth, and any resource-policy fallback should be considered temporary diagnostic/configuration projection only.
+
+> Status note (2026-03-10): the current product baseline is `Usage / Audit / Runtime`. `release-ops` has been removed as an independent surface and should not be referenced as an active destination in follow-up work.
+
 This handoff covers the ongoing work on the project `Usage` page for AgentSmith:
 
 - page route: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/usage/page.tsx`

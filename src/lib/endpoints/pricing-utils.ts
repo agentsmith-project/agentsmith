@@ -2,15 +2,15 @@
  * Pricing Utility Functions
  *
  * Helper functions for working with pricing data across different formats:
- * - RuntimePricingMap (API format)
+ * - ProjectPricingMap (API format)
  * - Models catalog pricing data
  * - Default pricing constants
  */
 
-import type { RuntimePricingMap } from '@/lib/api';
+import type { ProjectPricingMap } from '@/lib/api';
 
 // Re-export for convenience
-export type { RuntimePricingMap } from '@/lib/api';
+export type { ProjectPricingMap } from '@/lib/api';
 
 export type PricingField = 'input' | 'output' | 'cached' | 'reasoning' | 'cache_creation';
 
@@ -72,7 +72,7 @@ export function isValidPricingValue(value: number): boolean {
  * @param pricingMap - The pricing map to extract providers from
  * @returns Sorted array of provider keys
  */
-export function getProviders(pricingMap: RuntimePricingMap): string[] {
+export function getProviders(pricingMap: ProjectPricingMap): string[] {
   return Object.keys(pricingMap).sort();
 }
 
@@ -83,7 +83,7 @@ export function getProviders(pricingMap: RuntimePricingMap): string[] {
  * @returns Sorted array of model IDs
  */
 export function getModelsForProvider(
-  pricingMap: RuntimePricingMap,
+  pricingMap: ProjectPricingMap,
   provider: string
 ): string[] {
   return Object.keys(pricingMap[provider] || {}).sort();
@@ -97,7 +97,7 @@ export function getModelsForProvider(
  * @returns Pricing object with all fields defaulted to 0
  */
 export function getModelPricing(
-  pricingMap: RuntimePricingMap,
+  pricingMap: ProjectPricingMap,
   provider: string,
   model: string
 ): Record<PricingField, number> {
@@ -121,12 +121,12 @@ export function getModelPricing(
  * @returns Updated pricing map (immutable)
  */
 export function updateModelPricing(
-  pricingMap: RuntimePricingMap,
+  pricingMap: ProjectPricingMap,
   provider: string,
   model: string,
   field: PricingField,
   value: number
-): RuntimePricingMap {
+): ProjectPricingMap {
   return {
     ...pricingMap,
     [provider]: {
@@ -144,7 +144,7 @@ export function updateModelPricing(
  * @param pricingMap - The pricing map to count
  * @returns Total number of provider-model combinations
  */
-export function countPricingEntries(pricingMap: RuntimePricingMap): number {
+export function countPricingEntries(pricingMap: ProjectPricingMap): number {
   let count = 0;
   for (const provider of Object.keys(pricingMap)) {
     for (const _model of Object.keys(pricingMap[provider] || {})) {
@@ -159,7 +159,7 @@ export function countPricingEntries(pricingMap: RuntimePricingMap): number {
  * @param pricingMap - The pricing map to check
  * @returns True if empty or undefined
  */
-export function isEmptyPricingMap(pricingMap: RuntimePricingMap | undefined): boolean {
+export function isEmptyPricingMap(pricingMap: ProjectPricingMap | undefined): boolean {
   if (!pricingMap) return true;
   return countPricingEntries(pricingMap) === 0;
 }
@@ -183,8 +183,8 @@ export function getPricingFieldLabel(
  * @param pricingMap - The pricing map to copy
  * @returns New pricing map with same structure
  */
-export function clonePricingMap(pricingMap: RuntimePricingMap): RuntimePricingMap {
-  return JSON.parse(JSON.stringify(pricingMap)) as RuntimePricingMap;
+export function clonePricingMap(pricingMap: ProjectPricingMap): ProjectPricingMap {
+  return JSON.parse(JSON.stringify(pricingMap)) as ProjectPricingMap;
 }
 
 /**
@@ -192,8 +192,8 @@ export function clonePricingMap(pricingMap: RuntimePricingMap): RuntimePricingMa
  * @param maps - Array of pricing maps to merge
  * @returns Merged pricing map
  */
-export function mergePricingMaps(...maps: (RuntimePricingMap | undefined)[]): RuntimePricingMap {
-  const result: RuntimePricingMap = {};
+export function mergePricingMaps(...maps: (ProjectPricingMap | undefined)[]): ProjectPricingMap {
+  const result: ProjectPricingMap = {};
   for (const map of maps) {
     if (!map) continue;
     for (const provider of Object.keys(map)) {

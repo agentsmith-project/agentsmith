@@ -226,7 +226,7 @@ function summarizeTraceEvents(traceEvents: TaskTraceEvent[]): TraceSummary {
   };
   const runSummaryStatus = mapFinalStatus(runSummaryEvent?.details?.final_status);
   const hasFinalizedMarker = !!runSummaryEvent || sorted.some((evt) => (
-    evt.name === 'run.user_cancel' || evt.name === 'runtime.terminal'
+    evt.name === 'run.user_cancel' || evt.name === 'execution.terminal'
   ));
   const hasCancelledLifecycle = sorted.some((evt) => (
     evt.name === 'run.lifecycle'

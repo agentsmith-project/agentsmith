@@ -205,13 +205,9 @@ async function exchangeSSETicket(
         error: mapTicketResponseError(res.status),
       };
     }
-    const data = (await res.json()) as { ticket?: string; ticket_id?: string };
-    // Contract field is `ticket`; keep `ticket_id` for backward compatibility.
+    const data = (await res.json()) as { ticket?: string };
     if (typeof data?.ticket === 'string' && data.ticket.length > 0) {
       return { ticket: data.ticket };
-    }
-    if (typeof data?.ticket_id === 'string' && data.ticket_id.length > 0) {
-      return { ticket: data.ticket_id };
     }
     if (!SSE_ALLOW_JWT_FALLBACK) {
       return {

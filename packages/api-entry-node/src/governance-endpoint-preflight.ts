@@ -34,7 +34,7 @@ export type EndpointGovernancePreflightDecision =
   | EndpointGovernancePreflightDenied;
 
 function computeEstimatedCostPerTokenUsd(endpoint: EndpointRecord): number | undefined {
-  const profile = endpoint.runtime_profile;
+  const profile = endpoint.model_profile;
   if (!profile) return undefined;
   const inputPrice = typeof profile.price_input_per_1m === 'number' ? profile.price_input_per_1m : undefined;
   const outputPrice = typeof profile.price_output_per_1m === 'number' ? profile.price_output_per_1m : undefined;

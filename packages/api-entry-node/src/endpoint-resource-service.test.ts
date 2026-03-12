@@ -13,7 +13,7 @@ describe('endpoint-resource-service', () => {
 
     const endpoint = await service.createEndpoint('ws_1', 'proj_1', {
       name: 'anthropic-endpoint',
-      openai_model: 'claude-sonnet-4-5',
+      model: 'claude-sonnet-4-5',
       type: 'anthropic',
       base_url: 'https://api.anthropic.com/v1/messages',
       credential_ref: credential.id,
@@ -43,7 +43,7 @@ describe('endpoint-resource-service', () => {
 
     const endpoint = await service.createEndpoint('ws_1', 'proj_1', {
       name: 'glm-anthropic',
-      openai_model: 'glm-4.7',
+      model: 'glm-4.7',
       type: 'custom',
       base_url: 'https://open.bigmodel.cn/api/anthropic/messages',
       credential_ref: credential.id,
@@ -52,7 +52,7 @@ describe('endpoint-resource-service', () => {
 
     expect(endpoint.protocol).toBe('anthropic_compatible');
     expect(endpoint.meta?.compatibility_interface).toBe('anthropic_compatible');
-    expect(endpoint.runtime_profile?.max_context_tokens).toBeGreaterThan(0);
-    expect(endpoint.runtime_profile?.price_input_per_1m).toBe(0);
+    expect(endpoint.model_profile?.max_context_tokens).toBeGreaterThan(0);
+    expect(endpoint.model_profile?.price_input_per_1m).toBe(0);
   });
 });

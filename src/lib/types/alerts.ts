@@ -84,7 +84,7 @@ export interface WebhookConfig {
 export type AlertMetric =
   | 'requests_per_day' // Total requests in 24h
   | 'requests_per_hour' // Requests in last hour
-  | 'spending_limit_percent' // Limit usage percentage (legacy metric key)
+  | 'spending_limit_percent' // Limit usage percentage (historical metric key)
   | 'error_rate' // Error rate (errors/total * 100)
   | 'token_usage' // Token usage in window
   | 'response_time_p95'; // P95 response time

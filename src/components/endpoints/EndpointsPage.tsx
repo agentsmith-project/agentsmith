@@ -31,7 +31,7 @@ import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 import { useEndpointsMutations } from '@/lib/endpoints/use-endpoints-mutations';
 import type { ImportOpenAICompatiblePayload } from '@/lib/endpoints/types';
 import { useEndpointsTableColumns } from '@/lib/endpoints/use-endpoints-table-columns';
-import { RuntimeAPI, getApiClient } from '@/lib/api';
+import { ModelConfigAPI, getApiClient } from '@/lib/api';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -109,9 +109,9 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     },
   });
 
-  const runtimeAPI = new RuntimeAPI(getApiClient());
+  const modelConfigAPI = new ModelConfigAPI(getApiClient());
   const syncCatalogMutation = useMutation({
-    mutationFn: () => runtimeAPI.syncCatalog(workspaceId, projectId),
+    mutationFn: () => modelConfigAPI.syncModelCatalog(workspaceId, projectId),
     onSuccess: () => {
       toast.success(t('catalog_sync_success'));
     },
@@ -151,7 +151,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
       endpoints: endpoints.map((endpoint) => ({
         name: endpoint.name,
         description: endpoint.description,
-        model: endpoint.openai_model,
+        model: endpoint.model,
         type: endpoint.type,
         provider_family: endpoint.provider_family,
         protocol: endpoint.protocol,

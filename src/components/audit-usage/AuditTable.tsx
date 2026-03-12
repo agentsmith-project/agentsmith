@@ -7,7 +7,6 @@ import {
   getSortedRowModel,
   createColumnHelper,
   type SortingState,
-  type VisibilityState,
 } from '@tanstack/react-table';
 import { DataTable } from '@/components/ui/data-table';
 import {
@@ -18,7 +17,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { MoreHorizontal, Copy, Eye, Columns3 } from 'lucide-react';
+import { MoreHorizontal, Eye } from 'lucide-react';
 import { EmptyState } from './EmptyState';
 import { FilesTableSkeleton } from '@/components/files/FilesTableSkeleton';
 import {
@@ -27,33 +26,16 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { toast } from '@/components/ui/toast';
 import type { AuditEvent } from '@/lib/api/types';
+import {
+  getAuditActionLabel,
+  getAuditEventCategory,
+  getAuditResourceTypeLabel,
+  getAuditSummary,
+  type AuditEventCategory,
+} from './audit-event-presenter';
 
 const columnHelper = createColumnHelper<AuditEvent>();
-const AUDIT_COLUMN_VISIBILITY_KEY = 'agentsmith.audit.table.anchor_columns.v1';
-
-function loadAuditColumnVisibility(): VisibilityState {
-  if (typeof window === 'undefined') return {};
-  try {
-    const raw = window.localStorage.getItem(AUDIT_COLUMN_VISIBILITY_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== 'object') return {};
-    return parsed as VisibilityState;
-  } catch {
-    return {};
-  }
-}
-
-function persistAuditColumnVisibility(state: VisibilityState) {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(AUDIT_COLUMN_VISIBILITY_KEY, JSON.stringify(state));
-  } catch {
-    // Ignore persistence errors, table remains functional.
-  }
-}
 
 function formatTimestamp(timestamp: string): string {
   const date = new Date(timestamp);
@@ -90,19 +72,23 @@ export function AuditTable({
 }: AuditTableProps) {
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
-  const toastT = useTranslations('common.toast');
   const [sorting, setSorting] = React.useState<SortingState>([
     { id: 'timestamp', desc: true },
   ]);
-  const [columnVisibility, setColumnVisibility] = React.useState<VisibilityState>({});
 
-  React.useEffect(() => {
-    setColumnVisibility(loadAuditColumnVisibility());
-  }, []);
+  const categorySummary = React.useMemo(() => {
+    const summary: Record<AuditEventCategory, number> = {
+      change: 0,
+      event: 0,
+      anomaly: 0,
+    };
 
-  React.useEffect(() => {
-    persistAuditColumnVisibility(columnVisibility);
-  }, [columnVisibility]);
+    for (const event of data) {
+      summary[getAuditEventCategory(event)] += 1;
+    }
+
+    return summary;
+  }, [data]);
 
   const columns = React.useMemo(
     () => [
@@ -129,11 +115,39 @@ export function AuditTable({
       }),
       columnHelper.accessor('action', {
         header: t('table.action'),
-        cell: (info) => (
-          <Badge variant="outline" className="text-xs">
-            {info.getValue()}
-          </Badge>
-        ),
+        cell: (info) => {
+          const event = info.row.original;
+          const category = getAuditEventCategory(event);
+          const categoryVariant =
+            category === 'anomaly' ? 'destructive' : category === 'change' ? 'secondary' : 'outline';
+
+          return (
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={categoryVariant} className="text-xs" data-testid={`audit__category-badge--${category}`}>
+                {t(`category.${category}`)}
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {getAuditActionLabel(String(info.getValue()))}
+              </Badge>
+            </div>
+          );
+        },
+      }),
+      columnHelper.display({
+        id: 'summary',
+        header: t('table.summary'),
+        cell: (info) => {
+          const event = info.row.original;
+          return (
+            <div className="min-w-[280px]">
+              <p className="text-sm text-foreground">{getAuditSummary(event, t)}</p>
+              {event.error_message ? (
+                <p className="mt-1 line-clamp-1 text-xs text-tertiary">{event.error_message}</p>
+              ) : null}
+            </div>
+          );
+        },
+        size: 320,
       }),
       columnHelper.accessor('actor_type', {
         id: 'actor',
@@ -154,27 +168,6 @@ export function AuditTable({
           );
         },
       }),
-      columnHelper.accessor('end_user_id', {
-        header: t('table.end_user'),
-        cell: (info) => {
-          const endUserId = info.getValue();
-          if (!endUserId) return <span className="text-tertiary">—</span>;
-          return (
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span className="text-sm text-foreground cursor-help">
-                    {truncateId(endUserId, 8)}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent>
-                  <p>{endUserId}</p>
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          );
-        },
-      }),
       columnHelper.accessor('resource_type', {
         id: 'resource',
         header: t('table.resource'),
@@ -187,7 +180,7 @@ export function AuditTable({
             <div className="flex items-center gap-2">
               {resourceType && (
                 <Badge variant="outline" className="text-xs">
-                  {resourceType}
+                  {getAuditResourceTypeLabel(resourceType)}
                 </Badge>
               )}
               {resourceId && (
@@ -221,129 +214,6 @@ export function AuditTable({
         },
         size: 100,
       }),
-      columnHelper.accessor('request_id', {
-        header: t('table.request_id'),
-        cell: (info) => {
-          const requestId = info.getValue();
-          if (!requestId) return <span className="text-tertiary">—</span>;
-          const displayId = truncateId(requestId, 12);
-          return (
-            <div className="flex items-center gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-sm text-foreground cursor-help font-mono">
-                      {displayId}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="font-mono">{requestId}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => {
-                  navigator.clipboard.writeText(requestId);
-                  toast.success(toastT('copied'));
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
-          );
-        },
-        size: 200,
-      }),
-      columnHelper.accessor('decision_id', {
-        header: t('table.decision_id'),
-        cell: (info) => {
-          const decisionId = info.getValue();
-          if (!decisionId) return <span className="text-tertiary">—</span>;
-          const displayId = truncateId(decisionId, 12);
-          return (
-            <div className="flex items-center gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-sm text-foreground cursor-help font-mono">
-                      {displayId}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="font-mono">{decisionId}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => {
-                  navigator.clipboard.writeText(decisionId);
-                  toast.success(toastT('copied'));
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
-          );
-        },
-        size: 200,
-      }),
-      columnHelper.accessor('trace_ref', {
-        header: t('table.trace_ref'),
-        cell: (info) => {
-          const traceRef = info.getValue();
-          if (!traceRef) return <span className="text-tertiary">—</span>;
-          const displayId = truncateId(traceRef, 12);
-          return (
-            <div className="flex items-center gap-2">
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <span className="text-sm text-foreground cursor-help font-mono">
-                      {displayId}
-                    </span>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p className="font-mono">{traceRef}</p>
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => {
-                  navigator.clipboard.writeText(traceRef);
-                  toast.success(toastT('copied'));
-                }}
-              >
-                <Copy className="h-3 w-3" />
-              </Button>
-            </div>
-          );
-        },
-        size: 200,
-      }),
-      columnHelper.accessor('error_code', {
-        header: t('table.error_code'),
-        cell: (info) => {
-          const event = info.row.original;
-          if (event.result !== 'error' || !event.error_code) {
-            return <span className="text-tertiary">—</span>;
-          }
-          return (
-            <Badge variant="destructive" className="text-xs">
-              {event.error_code}
-            </Badge>
-          );
-        },
-        size: 150,
-      }),
       columnHelper.display({
         id: 'actions',
         header: '',
@@ -373,7 +243,7 @@ export function AuditTable({
         size: 80,
       }),
     ],
-    [onViewDetails, t, commonT, toastT],
+    [onViewDetails, t, commonT],
   );
 
   const table = useReactTable({
@@ -382,10 +252,8 @@ export function AuditTable({
     getCoreRowModel: getCoreRowModel(),
     getSortedRowModel: getSortedRowModel(),
     onSortingChange: setSorting,
-    onColumnVisibilityChange: setColumnVisibility,
     state: {
       sorting,
-      columnVisibility,
     },
   });
 
@@ -412,33 +280,19 @@ export function AuditTable({
 
   return (
     <div className="space-y-2">
-      <div className="flex justify-end">
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" data-testid="audit__column-settings">
-              <Columns3 className="mr-2 h-4 w-4" />
-              {t('table.column_settings')}
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            {anchorColumns.map((column) => {
-              const visible = table.getColumn(column.id)?.getIsVisible() ?? true;
-              return (
-                <DropdownMenuItem
-                  key={column.id}
-                  onSelect={(event) => {
-                    event.preventDefault();
-                    table.getColumn(column.id)?.toggleVisibility(!visible);
-                  }}
-                  data-testid={`audit__column-toggle-${column.id}`}
-                >
-                  <span className="inline-block w-4 text-xs">{visible ? '✓' : ''}</span>
-                  <span>{column.label}</span>
-                </DropdownMenuItem>
-              );
-            })}
-          </DropdownMenuContent>
-        </DropdownMenu>
+      <div className="grid gap-2 sm:grid-cols-3" data-testid="audit__category-summary">
+        <div className="rounded-lg border border-subtle bg-surface px-3 py-2" data-testid="audit__category-summary--change">
+          <p className="text-xs text-tertiary">{t('category.change')}</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{categorySummary.change}</p>
+        </div>
+        <div className="rounded-lg border border-subtle bg-surface px-3 py-2" data-testid="audit__category-summary--event">
+          <p className="text-xs text-tertiary">{t('category.event')}</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{categorySummary.event}</p>
+        </div>
+        <div className="rounded-lg border border-subtle bg-surface px-3 py-2" data-testid="audit__category-summary--anomaly">
+          <p className="text-xs text-tertiary">{t('category.anomaly')}</p>
+          <p className="mt-1 text-lg font-semibold text-foreground">{categorySummary.anomaly}</p>
+        </div>
       </div>
       <DataTable table={table} testId="audit__table" />
     </div>

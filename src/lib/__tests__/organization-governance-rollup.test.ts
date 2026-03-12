@@ -131,7 +131,7 @@ describe('buildOrganizationGovernanceRollup', () => {
       });
 
       const projectAttention = result.attention.find((item) => item.projectId === projId);
-      expect(projectAttention?.drillDownUrl).toBe('/en-US/workspaces/ws_1/projects/proj_risk/runtime-console?tab=control');
+      expect(projectAttention?.drillDownUrl).toBe('/en-US/workspaces/ws_1/projects/proj_risk/audit');
     });
 
     it('generates drill-down URLs for member-level attention items', () => {
@@ -152,7 +152,7 @@ describe('buildOrganizationGovernanceRollup', () => {
 
       const memberAttention = result.attention.find((item) => item.memberId);
       // Member attention with a projectId drills down to that specific project
-      expect(memberAttention?.drillDownUrl).toBe('/en-US/workspaces/ws_1/projects/proj_owned/runtime-console?tab=control');
+      expect(memberAttention?.drillDownUrl).toBe('/en-US/workspaces/ws_1/projects/proj_owned/audit');
     });
 
     it('includes drill-down URLs in action queue', () => {
@@ -444,4 +444,3 @@ describe('buildOrganizationGovernanceRollup', () => {
     });
   });
 });
-

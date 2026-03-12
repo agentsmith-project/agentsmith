@@ -37,7 +37,7 @@ const BANNED_RULES: Array<{ rule: string; regex: RegExp; detail: string }> = [
       'Use explicit terminology: `release`/`engineering gate` for engineering workflow, and `permission gate` for product access control.',
   },
   {
-    rule: 'legacy-formal-gate-wording',
+    rule: 'removed-formal-gate-wording',
     regex: /\bformal gate\b/i,
     detail: 'Use `engineering gate` wording instead of `formal gate`.',
   },

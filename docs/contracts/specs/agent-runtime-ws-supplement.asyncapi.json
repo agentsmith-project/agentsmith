@@ -1,13 +1,13 @@
 {
   "asyncapi": "3.0.0",
   "info": {
-    "title": "MBOS External Agent Runtime WS Supplement",
+    "title": "MBOS External Agent Execution Channel WS Supplement",
     "version": "1.0.0",
     "description": "Additive contract supplement for runtime frames currently implemented in code but not yet merged into generated `specs/asyncapi.*`.\n"
   },
   "channels": {
     "agentRuntime": {
-      "address": "/api/v1/agent-runtime/ws?agent_id={agentId}",
+      "address": "/api/v1/agent-execution/ws?agent_id={agentId}",
       "messages": {
         "agentResponseEvent": {
           "$ref": "#/components/messages/agentResponseEvent"

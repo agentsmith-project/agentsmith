@@ -142,7 +142,7 @@ export function ChatHeader({
                 <>
                   {currentEndpoint?.name || session.endpoint_id}
                   <span className="text-tertiary/70"> · </span>
-                  {currentEndpoint?.openai_model || session.model}
+                  {currentEndpoint?.model || session.model}
                 </>
               )}
             </div>
@@ -183,7 +183,7 @@ export function ChatHeader({
                           <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
                             {e.name}
                           </div>
-                          <div className="text-xs text-tertiary truncate">{e.openai_model}</div>
+                          <div className="text-xs text-tertiary truncate">{e.model}</div>
                         </div>
                         {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
                       </DropdownMenuItem>
@@ -243,7 +243,7 @@ export function ChatHeader({
                           <div className={cn('text-sm truncate', disabled ? 'text-tertiary' : 'text-primary')}>
                             {e.name}
                           </div>
-                          <div className="text-xs text-tertiary truncate">{e.openai_model}</div>
+                          <div className="text-xs text-tertiary truncate">{e.model}</div>
                         </div>
                         {disabled && <span className="text-xs text-tertiary">{t('header.disabled')}</span>}
                       </DropdownMenuItem>

@@ -11,7 +11,7 @@ function buildEndpoint(protocol: EndpointRecord['protocol']): EndpointRecord {
     workspace_id: 'ws_1',
     project_id: 'proj_1',
     name: 'endpoint',
-    openai_model: 'gpt-4o-mini',
+    model: 'gpt-4o-mini',
     type: 'openai',
     base_url: 'https://api.example.com/v1',
     status: 'active',

@@ -101,7 +101,7 @@ async function exchangeAuthCodeForToken(args) {
 
 async function captureLoginDebugArtifacts(page, reason) {
   try {
-    const outDir = path.join(process.cwd(), 'artifacts', 'release-reports');
+    const outDir = path.join(process.cwd(), 'artifacts', 'governance-reports');
     fs.mkdirSync(outDir, { recursive: true });
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
     const safeReason = String(reason || 'unknown').replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);

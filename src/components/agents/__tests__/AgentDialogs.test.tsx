@@ -33,7 +33,7 @@ const mockMessages = {
       memory_limit: 'Memory Limit',
       idle_timeout_sec: 'Idle Timeout (sec)',
       max_lifetime_sec: 'Max Lifetime (sec)',
-      capabilities_title: 'External Runtime Capabilities',
+      capabilities_title: 'Execution Capabilities',
       notebook_endpoint_id: 'Notebook Endpoint ID',
       notebook_endpoint_required: 'Notebook endpoint required',
       notebook_endpoint_empty: 'No active endpoints available',
@@ -98,8 +98,8 @@ vi.mock('@/components/ui/toast', () => ({
   },
 }));
 
-vi.mock('@/components/settings/RuntimePreferencesEditor', () => ({
-  RuntimePreferencesEditor: () => <div data-testid="runtime-preferences-editor" />,
+vi.mock('@/components/settings/ExecutionPreferencesEditor', () => ({
+  ExecutionPreferencesEditor: () => <div data-testid="execution-preferences-editor" />,
 }));
 
 function renderWithProviders(node: React.ReactNode) {
@@ -128,14 +128,14 @@ describe('Agent dialogs', () => {
         {
           id: 'ep_active_1',
           name: 'OpenAI Main',
-          openai_model: 'gpt-4.1',
+          model: 'gpt-4.1',
           provider_family: 'openai',
           status: 'active',
         },
         {
           id: 'ep_disabled',
           name: 'Disabled',
-          openai_model: 'gpt-4o-mini',
+          model: 'gpt-4o-mini',
           provider_family: 'openai',
           status: 'disabled',
         },
@@ -170,7 +170,7 @@ describe('Agent dialogs', () => {
       expect(mockCreate).toHaveBeenCalled();
     });
     const payload = mockCreate.mock.calls[0][2];
-    expect(payload.runtime_preferences?.notebook?.endpoint_id).toBe('ep_active_1');
+    expect(payload.execution_preferences?.notebook?.endpoint_id).toBe('ep_active_1');
   });
 
   it('EditAgentDialog submits updated internal env and endpoint selection', async () => {
@@ -181,7 +181,7 @@ describe('Agent dialogs', () => {
       mode: 'internal',
       status: 'enabled',
       interaction_mode: 'notebook',
-      runtime_preferences_json: {
+      execution_preferences_json: {
         notebook: {
           endpoint_id: 'ep_active_1',
         },
@@ -228,6 +228,6 @@ describe('Agent dialogs', () => {
     });
     const payload = mockUpdate.mock.calls[0][3];
     expect(payload.config.env).toEqual({ FOO: 'baz' });
-    expect(payload.runtime_preferences.notebook.endpoint_id).toBe('ep_active_1');
+    expect(payload.execution_preferences.notebook.endpoint_id).toBe('ep_active_1');
   });
 });

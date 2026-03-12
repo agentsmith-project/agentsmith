@@ -22,7 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Loader2, Sparkles } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
-import { EndpointAPI, CredentialsAPI, RuntimeAPI, getApiClient } from '@/lib/api';
+import { EndpointAPI, CredentialsAPI, ModelConfigAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
 import type { EndpointCapabilityType } from '@/lib/api/types';
 import {
@@ -31,9 +31,9 @@ import {
   resolveErrorMessageByCode,
 } from '@/lib/api/errors';
 import {
-  buildRuntimeProviderOptions,
-  CUSTOM_RUNTIME_PROVIDER_OPTION,
-} from '@/lib/endpoints/runtime-provider-options';
+  buildModelCatalogProviderOptions,
+  CUSTOM_MODEL_CATALOG_PROVIDER_OPTION,
+} from '@/lib/endpoints/model-catalog-provider-options';
 import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 import { toast } from '@/components/ui/toast';
 import { CustomEndpointWizard } from './CustomEndpointWizard';
@@ -71,7 +71,7 @@ export function CreateEndpointDialog({
 
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
-  const [openaiModel, setOpenaiModel] = React.useState('');
+  const [selectedModel, setSelectedModel] = React.useState('');
   const [provider, setProvider] = React.useState<string>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
   const [credentialRef, setCredentialRef] = React.useState<string>('');
@@ -82,25 +82,26 @@ export function CreateEndpointDialog({
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
   const credentialsAPI = React.useMemo(() => new CredentialsAPI(getApiClient()), []);
-  const runtimeAPI = React.useMemo(() => new RuntimeAPI(getApiClient()), []);
-  const { data: runtimeCatalogProvidersData } = useQuery({
-    queryKey: ['runtime-catalog-providers', workspaceId, projectId],
-    queryFn: () => runtimeAPI.listCatalogProviders(workspaceId, projectId),
+  const modelConfigAPI = React.useMemo(() => new ModelConfigAPI(getApiClient()), []);
+  const { data: modelCatalogProvidersData } = useQuery({
+    queryKey: ['model-catalog-providers', workspaceId, projectId],
+    queryFn: () => modelConfigAPI.listModelCatalogProviders(workspaceId, projectId),
     enabled: open && !!workspaceId && !!projectId,
   });
   const providerOptions = React.useMemo(
-    () => buildRuntimeProviderOptions(runtimeCatalogProvidersData?.items ?? []),
-    [runtimeCatalogProvidersData?.items],
+    () => buildModelCatalogProviderOptions(modelCatalogProvidersData?.items ?? []),
+    [modelCatalogProvidersData?.items],
   );
-  const selectedProvider = React.useMemo(
-    () => providerOptions.find((item) => item.key === provider) ?? CUSTOM_RUNTIME_PROVIDER_OPTION,
+  const matchedProvider = React.useMemo(
+    () => providerOptions.find((item) => item.key === provider) ?? null,
     [providerOptions, provider],
   );
+  const selectedProvider = matchedProvider ?? CUSTOM_MODEL_CATALOG_PROVIDER_OPTION;
 
-  const { data: runtimeCatalogModelsData } = useQuery({
-    queryKey: ['runtime-catalog-models', workspaceId, projectId, provider, capability],
+  const { data: modelCatalogModelsData } = useQuery({
+    queryKey: ['model-catalog-models', workspaceId, projectId, provider, capability],
     queryFn: () =>
-      runtimeAPI.listCatalogModels(workspaceId, projectId, {
+      modelConfigAPI.listModelCatalogModels(workspaceId, projectId, {
         provider,
         capability,
       }),
@@ -108,20 +109,20 @@ export function CreateEndpointDialog({
   });
 
   const providerModels = React.useMemo<CatalogModelOption[]>(() => {
-    const runtimeItems = runtimeCatalogModelsData?.items ?? [];
-    if (runtimeItems.length === 0) return [];
-    return runtimeItems.map((item) => ({
+    const catalogItems = modelCatalogModelsData?.items ?? [];
+    if (catalogItems.length === 0) return [];
+    return catalogItems.map((item) => ({
       model_id: item.model_id,
       name: item.name || item.model_id,
       capabilities: item.capabilities as EndpointCapabilityType[],
       limit: item.limit,
       cost: item.cost,
     }));
-  }, [runtimeCatalogModelsData?.items]);
+  }, [modelCatalogModelsData?.items]);
 
   const selectedCatalogModel = React.useMemo(
-    () => providerModels.find((item) => item.model_id === openaiModel),
-    [providerModels, openaiModel],
+    () => providerModels.find((item) => item.model_id === selectedModel),
+    [providerModels, selectedModel],
   );
 
   const { data: credentials = [] } = useQuery({
@@ -185,7 +186,7 @@ export function CreateEndpointDialog({
   const resetForm = () => {
     setName('');
     setDescription('');
-    setOpenaiModel('');
+    setSelectedModel('');
     setProvider('openai');
     setCapability('chat_completion');
     setCredentialRef('');
@@ -200,32 +201,34 @@ export function CreateEndpointDialog({
 
   React.useEffect(() => {
     if (!open || providerOptions.length === 0) return;
-    if (providerOptions.some((item) => item.key === provider)) return;
-    const preferred = providerOptions.find((item) => item.key === 'openai')?.key ?? providerOptions[0]?.key ?? 'openai';
-    setProvider(preferred);
-  }, [open, provider, providerOptions]);
+    const preferredProvider =
+      matchedProvider
+      ?? providerOptions.find((item) => item.key === 'openai')
+      ?? providerOptions[0]
+      ?? null;
+    if (!preferredProvider) return;
 
-  React.useEffect(() => {
-    if (!open) return;
-    // Keep base URL synced with selected provider preset.
-    // When provider has no preset, leave it empty for manual input.
-    setBaseUrl(selectedProvider.default_base_url.trim());
-  }, [open, provider, selectedProvider.default_base_url]);
+    if (provider !== preferredProvider.key) {
+      setProvider(preferredProvider.key);
+    }
+
+    setBaseUrl(preferredProvider.default_base_url.trim());
+  }, [open, providerOptions, matchedProvider, provider]);
 
   React.useEffect(() => {
     if (!open) return;
     if (providerModels.length === 0) {
-      setOpenaiModel('');
+      setSelectedModel('');
       return;
     }
-    if (!providerModels.some((item) => item.model_id === openaiModel)) {
-      setOpenaiModel(providerModels[0]?.model_id ?? '');
+    if (!providerModels.some((item) => item.model_id === selectedModel)) {
+      setSelectedModel(providerModels[0]?.model_id ?? '');
     }
-  }, [open, providerModels, openaiModel]);
+  }, [open, providerModels, selectedModel]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!name.trim() || !openaiModel.trim() || !credentialRef) {
+    if (!name.trim() || !selectedModel.trim() || !credentialRef) {
       if (!credentialRef) {
         toast.error(t('create_dialog.credential_required'));
       }
@@ -245,7 +248,7 @@ export function CreateEndpointDialog({
     const data: CreateEndpointRequest = {
       name: name.trim(),
       description: description.trim() || undefined,
-      openai_model: openaiModel.trim(),
+      model: selectedModel.trim(),
       type: provider === 'openai' ? 'openai' : 'custom',
       base_url: url,
       credential_ref: credentialRef,
@@ -255,20 +258,20 @@ export function CreateEndpointDialog({
         compatibility_interface: selectedProvider.compatibility_interface,
         catalog_provider_key: provider,
       },
-      capabilities: [{ type: capability, enabled: true, default_model_id: openaiModel.trim() }],
-      models: [{ capability, model_id: openaiModel.trim(), display_name: openaiModel.trim() }],
+      capabilities: [{ type: capability, enabled: true, default_model_id: selectedModel.trim() }],
+      models: [{ capability, model_id: selectedModel.trim(), display_name: selectedModel.trim() }],
       defaults: capability === 'chat_completion'
-        ? { chat_model_id: openaiModel.trim() }
+        ? { chat_model_id: selectedModel.trim() }
         : capability === 'multimodal_completion'
-          ? { multimodal_model_id: openaiModel.trim() }
+          ? { multimodal_model_id: selectedModel.trim() }
         : capability === 'embedding'
-          ? { embedding_model_id: openaiModel.trim() }
+          ? { embedding_model_id: selectedModel.trim() }
           : capability === 'rerank'
-            ? { rerank_model_id: openaiModel.trim() }
+            ? { rerank_model_id: selectedModel.trim() }
             : capability === 'image_generation'
-              ? { image_model_id: openaiModel.trim() }
-              : { video_model_id: openaiModel.trim() },
-      runtime_profile: undefined,
+              ? { image_model_id: selectedModel.trim() }
+              : { video_model_id: selectedModel.trim() },
+      model_profile: undefined,
     };
 
     createMutation.mutate(data);
@@ -283,7 +286,7 @@ export function CreateEndpointDialog({
   const canSubmit =
     name.trim().length > 0 &&
     !duplicateNameExists &&
-    openaiModel.trim().length > 0 &&
+    selectedModel.trim().length > 0 &&
     credentialRef.length > 0 &&
     baseUrl.trim().length > 0 &&
     !createMutation.isPending;
@@ -409,8 +412,8 @@ export function CreateEndpointDialog({
               <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
               <p className="text-xs text-tertiary">{t('create_dialog.model_id_hint')}</p>
               <Select
-                value={openaiModel}
-                onValueChange={setOpenaiModel}
+                value={selectedModel}
+                onValueChange={setSelectedModel}
                 disabled={createMutation.isPending}
               >
                 <SelectTrigger>

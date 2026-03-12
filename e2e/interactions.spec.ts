@@ -44,11 +44,11 @@ test.describe('Notification Center', () => {
     await expect(heading).toBeVisible({ timeout: 5000 });
   });
 
-  test('notification dropdown includes release escalation notifications', async ({ authedPage }) => {
+  test('notification dropdown includes governance incident notifications', async ({ authedPage }) => {
     const notificationBtn = authedPage.getByTestId('topbar__notifications');
     await expect(notificationBtn).toBeVisible({ timeout: 10000 });
     await notificationBtn.click();
-    await expect(authedPage.getByText(/Release gate/i).first()).toBeVisible({ timeout: 5000 });
+    await expect(authedPage.getByText(/Governance run/i).first()).toBeVisible({ timeout: 5000 });
   });
 });
 
@@ -94,7 +94,7 @@ test.describe('Settings Form Interaction', () => {
   test('general tab form shows project name pre-filled', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
 
-    const generalTab = authedPage.getByTestId('settings__tab--general');
+    const generalTab = authedPage.getByTestId('settings__general-section');
     await expect(generalTab).toBeVisible({ timeout: 10000 });
 
     // Project name input should be pre-filled with mock project name
@@ -108,7 +108,7 @@ test.describe('Settings Form Interaction', () => {
   test('save button becomes active after form change', async ({ authedPage }) => {
     await goToProject(authedPage, 'settings');
 
-    const generalTab = authedPage.getByTestId('settings__tab--general');
+    const generalTab = authedPage.getByTestId('settings__general-section');
     await expect(generalTab).toBeVisible({ timeout: 10000 });
 
     // Modify the description field

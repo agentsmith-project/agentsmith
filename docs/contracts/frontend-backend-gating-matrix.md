@@ -33,7 +33,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
 | files | view/use personal file libraries | `project:endpoint:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
 | files | create/update/delete file or library | `project:manage` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
-| agents | view/use visible agents | `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/runtime-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
+| agents | view/use visible agents | `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/execution-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
 | agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |

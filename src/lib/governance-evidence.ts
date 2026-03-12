@@ -3,7 +3,7 @@ import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-cont
 export type GovernanceEvidenceFocus = 'limit' | 'deny' | 'cost' | 'exposure' | 'membership' | 'other';
 export type GovernanceEvidenceFocusInput = GovernanceEvidenceFocus;
 
-export type EvidenceTargetPage = 'audit' | 'usage' | 'members' | 'settings' | 'runtime-console';
+export type EvidenceTargetPage = 'audit' | 'usage' | 'members' | 'settings';
 
 export interface EvidenceFilterContext extends GovernanceDrilldownContext {
   gov_focus?: GovernanceEvidenceFocus;
@@ -233,10 +233,6 @@ export function buildEvidenceHref(
 
   if (targetPage === 'settings' && workspaceId && projectId) {
     return `/${locale}/workspaces/${workspaceId}/projects/${projectId}/settings${queryString ? `?${queryString}` : ''}`;
-  }
-
-  if (targetPage === 'runtime-console' && workspaceId && projectId) {
-    return `/${locale}/workspaces/${workspaceId}/projects/${projectId}/runtime-console?tab=control${queryString ? `&${queryString}` : ''}`;
   }
 
   // Default to audit page

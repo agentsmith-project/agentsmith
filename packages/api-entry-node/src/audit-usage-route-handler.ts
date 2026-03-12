@@ -10,7 +10,7 @@ import {
   exportUsageData,
   getLimitsSummary,
   getUsageReportEvidence,
-  getRuntimeObservability,
+  getUsageRecordsSummary,
   getUsageOperationsSummary,
   getUsageKpi,
   getUsageTimeseries,
@@ -38,7 +38,7 @@ type HandlerArgs = {
   user?: AuthenticatedUser;
 };
 
-function parseRuntimeErrorClass(value: string | null): 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null {
+function parseProviderErrorClass(value: string | null): 'provider_retryable' | 'provider_non_retryable' | 'system_error' | null {
   if (value === 'provider_retryable' || value === 'provider_non_retryable' || value === 'system_error') {
     return value;
   }
@@ -241,7 +241,7 @@ export async function handleAuditUsageRoute({
       delivery_channel: delivery.deliveryChannel,
       delivery_config: delivery.deliveryConfig,
       filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
-      release_evidence_required: body.release_evidence_required !== false,
+      governance_evidence_required: body.governance_evidence_required !== false,
       empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
     });
     json(res, 201, payload);
@@ -291,7 +291,7 @@ export async function handleAuditUsageRoute({
         delivery_channel: delivery?.ok ? delivery.deliveryChannel : undefined,
         delivery_config: delivery?.ok ? delivery.deliveryConfig : undefined,
         filters: typeof body.filters === 'object' && body.filters ? body.filters as Record<string, unknown> : undefined,
-        release_evidence_required: typeof body.release_evidence_required === 'boolean' ? body.release_evidence_required : undefined,
+        governance_evidence_required: typeof body.governance_evidence_required === 'boolean' ? body.governance_evidence_required : undefined,
         empty_result_policy: body.empty_result_policy === 'deliver' || body.empty_result_policy === 'fail' ? body.empty_result_policy : undefined,
       },
     });
@@ -421,7 +421,7 @@ export async function handleAuditUsageRoute({
         : requestUrl.searchParams.get('result') === 'ok'
           ? 'ok'
           : null,
-      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
+      errorClass: parseProviderErrorClass(requestUrl.searchParams.get('error_class')),
     });
     res.statusCode = 200;
     res.setHeader('Content-Type', result.contentType);
@@ -445,7 +445,7 @@ export async function handleAuditUsageRoute({
       : requestUrl.searchParams.get('result') === 'ok'
         ? 'ok'
         : null;
-    const errorClass = parseRuntimeErrorClass(requestUrl.searchParams.get('error_class'));
+    const errorClass = parseProviderErrorClass(requestUrl.searchParams.get('error_class'));
     const groupByRaw = requestUrl.searchParams.get('group_by');
     const groupBy = groupByRaw === 'hour' || groupByRaw === 'minute' ? groupByRaw : 'day';
     const sortByRaw = requestUrl.searchParams.get('sort_by');
@@ -496,7 +496,7 @@ export async function handleAuditUsageRoute({
         : requestUrl.searchParams.get('result') === 'ok'
           ? 'ok'
           : null,
-      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
+      errorClass: parseProviderErrorClass(requestUrl.searchParams.get('error_class')),
       sortOrder: requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc',
       page,
       pageSize,
@@ -550,10 +550,10 @@ export async function handleAuditUsageRoute({
     return true;
   }
 
-  if (route.kind === 'usageRuntimeObservability' && method === 'GET') {
+  if (route.kind === 'usageRecordsSummary' && method === 'GET') {
     const range = requireTimeRange(requestUrl, json, res);
     if (range === true) return true;
-    const payload = await getRuntimeObservability(deps.docStore, {
+    const payload = await getUsageRecordsSummary(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
       startTime: range.start.toISOString(),
@@ -565,7 +565,7 @@ export async function handleAuditUsageRoute({
         : requestUrl.searchParams.get('result') === 'ok'
           ? 'ok'
           : null,
-      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
+      errorClass: parseProviderErrorClass(requestUrl.searchParams.get('error_class')),
     });
     json(res, 200, payload);
     return true;
@@ -589,7 +589,7 @@ export async function handleAuditUsageRoute({
         : requestUrl.searchParams.get('result') === 'ok'
           ? 'ok'
           : null,
-      errorClass: parseRuntimeErrorClass(requestUrl.searchParams.get('error_class')),
+      errorClass: parseProviderErrorClass(requestUrl.searchParams.get('error_class')),
     });
     json(res, 200, payload);
     return true;

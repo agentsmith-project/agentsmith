@@ -112,10 +112,10 @@
 ✅ Browser back/forward - URL and state synced correctly
 ```
 
-#### 4.2.3 Runtime Console 证据（如涉及）
+#### 4.2.3 Audit 证据（如涉及）
 
 ```txt
-# 粘贴 npm run test:e2e -- --project=chromium e2e/legacy/runtime-console.spec.ts 输出
+# 粘贴 npm run test:e2e -- --project=chromium e2e/audit.spec.ts 输出
 ✅ X passed (Y)
 ```
 
@@ -137,7 +137,7 @@
 
 # 验证下钻功能
 ✅ Governance drilldown links work correctly
-✅ Runtime Console trace from organization overview works
+✅ Audit drilldown from organization overview works
 ```
 
 ### 4.4 Visual Baseline（手动、非阻断）

@@ -60,8 +60,6 @@ Owner: Frontend + Backend
    - `src/mocks/handlers/usage.ts`
    - `src/lib/api/__tests__/audit-usage-api.test.ts`
    - `src/components/audit-usage/__tests__/UsagePage.test.tsx`
-   - `e2e/runtime-proxy-billing.spec.ts`
-   - `e2e/integration-runtime-proxy-billing.spec.ts`
 5. 用户文档：
    - `docs/user-guides/cost-limits-dashboard.md`
    - `docs/user-guides/audit-usage-reports.md`

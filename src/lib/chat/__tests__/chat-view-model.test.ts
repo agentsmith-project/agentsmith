@@ -21,7 +21,7 @@ function makeSession(partial: Partial<ChatSession>): ChatSession {
 
 describe('buildChatViewModel', () => {
   it('uses local stream state first when present', () => {
-    const session = makeSession({ runtime_status: 'failed' });
+    const session = makeSession({ execution_status: 'failed' });
     const model = buildChatViewModel({
       currentSessionId: session.id,
       activeSession: session,
@@ -47,7 +47,7 @@ describe('buildChatViewModel', () => {
   });
 
   it('falls back to runtime status when local state is idle', () => {
-    const session = makeSession({ runtime_status: 'running' });
+    const session = makeSession({ execution_status: 'running' });
     const model = buildChatViewModel({
       currentSessionId: session.id,
       activeSession: session,

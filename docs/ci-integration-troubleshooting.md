@@ -47,7 +47,7 @@
 - Symptom:
   - Runtime route reports `AGENT_OFFLINE`.
 - Check:
-  - External runtime websocket agent actually connected.
+  - External execution websocket agent actually connected.
   - Agent key is valid and belongs to target agent.
   - Agent status is enabled.
 - Fix:
@@ -55,11 +55,11 @@
   - Confirm connection-info WS URL points to current API base.
   - Restart runtime process and re-run.
 
-### `INT-NOTEBOOK-RUNTIME`
+### `INT-NOTEBOOK-EXECUTION`
 - Symptom:
   - `TASK_STREAM_CONFLICT`, `AGENT_OFFLINE`, `AGENT_PROTOCOL_ERROR`, notebook stream failures.
 - Check:
-  - `runtime_preferences.notebook.endpoint_id` exists.
+  - `execution_preferences.notebook.endpoint_id` exists.
   - Endpoint is active and reachable.
   - `server.hello.resource_proxy.base_url` matches current API host/port.
   - Runner emits valid frame schema (`delta` string, done/error shape).

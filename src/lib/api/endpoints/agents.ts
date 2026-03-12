@@ -24,7 +24,7 @@ export interface CreateAgentRequest {
     max_lifetime_sec?: number;
     max_concurrent_sessions_override?: number;
   };
-  runtime_preferences?: Record<string, unknown>;
+  execution_preferences?: Record<string, unknown>;
   capabilities?: {
     streaming_completion?: boolean;
     multimodal_completion?: boolean;
@@ -55,7 +55,7 @@ export interface UpdateAgentRequest {
     max_lifetime_sec?: number;
     max_concurrent_sessions_override?: number;
   };
-  runtime_preferences?: Record<string, unknown>;
+  execution_preferences?: Record<string, unknown>;
   capabilities?: {
     streaming_completion?: boolean;
     multimodal_completion?: boolean;
@@ -107,16 +107,16 @@ export class AgentAPI {
   }
 
   /**
-   * Get merged runtime config for an agent (requires agent key auth)
+   * Get merged execution config for an agent (requires agent key auth)
    */
-  async getRuntimeConfig(
+  async getExecutionConfig(
     workspaceId: string,
     projectId: string,
     agentId: string,
     agentKey: string
-  ): Promise<{ project_id: string; agent_id: string; runtime_preferences: Record<string, unknown>; schema_version: number }> {
+  ): Promise<{ project_id: string; agent_id: string; execution_preferences: Record<string, unknown>; schema_version: number }> {
     return this.client.get(
-      `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/runtime-config`,
+      `/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/execution-config`,
       { headers: { Authorization: `Bearer ${agentKey}` } }
     );
   }

@@ -11,11 +11,10 @@
 | Guide | Description |
 |-------|-------------|
 | [MVP Core Smoke Runbook](./mvp-core-smoke-runbook.md) | Real-backend MVP core regression path (chat/notebook/endpoint policy). |
-| [Audit & Usage Reports](./audit-usage-reports.md) | Audit and usage query workflows. |
+| [Audit & Usage Reports](./audit-usage-reports.md) | Audit and usage query workflows under the current Usage/Audit MVP baseline. |
 | [Cost & Limits Dashboard](./cost-limits-dashboard.md) | Usage/cost and rate/spending dashboard operations. |
 | [Alert Center](./alert-center.md) | Alert rules and notification operations. |
 | [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |
-| [Usage Limits Naming Refactor Task](./usage-limits-naming-refactor-task.md) | Zero-compatibility task sheet for final limits naming and data model migration. |
 | [Third-Party Accounts & Feishu OAuth](./third-party-accounts-feishu.md) | User third-party account binding and Feishu OAuth callback flow. |
 
 Quick links:

@@ -76,11 +76,11 @@ export interface LimitsOverview {
   };
 }
 
-export interface RuntimeObservabilityResponse {
+export interface UsageRecordsSummaryResponse {
   total_requests: number;
   total_errors: number;
   error_rate: number;
-  fallback_hops_histogram: Record<string, number>;
+  reroute_hops_histogram: Record<string, number>;
   error_class_counts: {
     provider_retryable: number;
     provider_non_retryable: number;
@@ -88,10 +88,10 @@ export interface RuntimeObservabilityResponse {
   };
   avg_estimated_cost: number;
   p95_estimated_cost: number;
-  health_summary: {
-    recovered_requests: number;
+  records_health: {
+    rerouted_requests: number;
     terminal_error_requests: number;
-    missing_price_facts: number;
+    missing_price_records: number;
     provider_count: number;
     model_count: number;
   };
@@ -99,7 +99,7 @@ export interface RuntimeObservabilityResponse {
     time_bucket: string;
     requests: number;
     errors: number;
-    recovered_requests: number;
+    rerouted_requests: number;
     avg_estimated_cost: number;
     duration_p95_ms?: number;
   }>;
@@ -113,7 +113,7 @@ export interface RuntimeObservabilityResponse {
     p95?: number;
     p99?: number;
   };
-  degradation_signals: Array<{
+  issue_signals: Array<{
     id: string;
     severity: 'low' | 'medium' | 'high';
     kind: 'fallback_spike' | 'error_rate_spike' | 'missing_price' | 'latency_spike';
@@ -125,10 +125,10 @@ export interface RuntimeObservabilityResponse {
     requests: number;
     errors: number;
     error_rate: number;
-    fallback_rate: number;
+    reroute_rate: number;
     avg_estimated_cost: number;
     p95_estimated_cost: number;
-    missing_price_facts: number;
+    missing_price_records: number;
   }>;
   model_breakdown: Array<{
     provider: string;
@@ -136,10 +136,10 @@ export interface RuntimeObservabilityResponse {
     requests: number;
     errors: number;
     error_rate: number;
-    fallback_rate: number;
+    reroute_rate: number;
     avg_estimated_cost: number;
     p95_estimated_cost: number;
-    missing_price_facts: number;
+    missing_price_records: number;
   }>;
   time_range: {
     start: string;
@@ -234,7 +234,7 @@ export interface UsageReportSchedule {
     result?: 'ok' | 'error';
     error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
   };
-  release_evidence_required: boolean;
+  governance_evidence_required: boolean;
   empty_result_policy: 'deliver' | 'fail';
   created_at: string;
   updated_at: string;
@@ -310,7 +310,7 @@ export interface UsageReportScheduleDeliveryResult {
 export interface UsageReportEvidence {
   source: 'artifact' | 'dry_run';
   generated_at: string;
-  release_readiness: 'ready' | 'blocked';
+  review_status: 'ready' | 'blocked';
   blockers: string[];
   warnings: string[];
   active_schedules: number;
@@ -335,6 +335,10 @@ export interface UsageReportEvidence {
     };
   };
 }
+
+type UsageReportEvidenceWire = Omit<UsageReportEvidence, 'review_status'> & {
+  review_status?: 'ready' | 'blocked';
+};
 
 export class AuditAPI {
   constructor(private client: ApiClient) {}
@@ -756,7 +760,7 @@ export class UsageAPI {
     return UsageAPI.normalizeLimitsOverview(response);
   }
 
-  async getRuntimeObservability(
+  async getUsageRecordsSummary(
     workspaceId: string,
     projectId: string,
     params: {
@@ -767,7 +771,7 @@ export class UsageAPI {
       result?: 'ok' | 'error';
       error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
     },
-  ): Promise<RuntimeObservabilityResponse> {
+  ): Promise<UsageRecordsSummaryResponse> {
     const searchParams = new URLSearchParams();
     searchParams.set('start_time', params.start_time);
     searchParams.set('end_time', params.end_time);
@@ -775,8 +779,8 @@ export class UsageAPI {
     if (params.model) searchParams.set('model', params.model);
     if (params.result) searchParams.set('result', params.result);
     if (params.error_class) searchParams.set('error_class', params.error_class);
-    return this.client.get<RuntimeObservabilityResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/usage/runtime-observability?${searchParams.toString()}`,
+    return this.client.get<UsageRecordsSummaryResponse>(
+      `/workspaces/${workspaceId}/projects/${projectId}/usage/records-summary?${searchParams.toString()}`,
     );
   }
 
@@ -890,7 +894,7 @@ export class UsageAPI {
     workspaceId: string,
     projectId: string,
     scheduleId: string,
-    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'delivery_config' | 'filters' | 'release_evidence_required' | 'empty_result_policy'>>,
+    patch: Partial<Pick<UsageReportSchedule, 'name' | 'cadence' | 'status' | 'format' | 'time_window' | 'delivery_channel' | 'delivery_config' | 'filters' | 'governance_evidence_required' | 'empty_result_policy'>>,
   ): Promise<UsageReportSchedule> {
     return this.client.patch<UsageReportSchedule>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-schedules/${scheduleId}`,
@@ -963,8 +967,12 @@ export class UsageAPI {
     workspaceId: string,
     projectId: string,
   ): Promise<UsageReportEvidence> {
-    return this.client.get<UsageReportEvidence>(
+    const response = await this.client.get<UsageReportEvidenceWire>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/report-evidence`,
     );
+    return {
+      ...response,
+      review_status: response.review_status ?? 'ready',
+    };
   }
 }

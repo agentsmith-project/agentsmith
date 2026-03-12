@@ -108,7 +108,7 @@ main() {
   fi
 
   info "checking agent websocket metadata"
-  if [[ "${ws_url}" != ws://localhost:${PORT_API}/api/v1/agent-runtime/ws\?agent_id=* ]]; then
+  if [[ "${ws_url}" != ws://localhost:${PORT_API}/api/v1/agent-execution/ws\?agent_id=* ]]; then
     err "unexpected ws_url format: ${ws_url}"
     exit 1
   fi

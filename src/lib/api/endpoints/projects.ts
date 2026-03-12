@@ -21,7 +21,7 @@ export interface UpdateProjectRequest {
   visibility?: 'public' | 'private';
   join_policy?: 'approval_required' | 'open';
   governance_json?: Record<string, unknown>;
-  runtime_preferences_json?: Record<string, unknown>;
+  execution_preferences_json?: Record<string, unknown>;
   limits_json?: Record<string, unknown>;
 }
 

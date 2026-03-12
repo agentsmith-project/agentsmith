@@ -1,4 +1,4 @@
-import runtimeCatalog from './models-catalog.runtime.json';
+import modelCatalog from './models-catalog.config.json';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
 import type { EndpointCapabilityType, EndpointProviderFamily, CustomEndpointProtocol } from '@/lib/api/types';
 
@@ -105,7 +105,7 @@ const PROVIDER_CONFIG: Record<
   },
 };
 
-const catalogProviders = runtimeCatalog.providers as Array<{
+const catalogProviders = modelCatalog.providers as Array<{
   key: Exclude<ProviderOption, 'custom'>;
   display_name: string;
   logo_path?: string;

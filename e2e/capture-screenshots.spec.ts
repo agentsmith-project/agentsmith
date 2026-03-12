@@ -187,12 +187,12 @@ test.describe('Screenshot Capture', () => {
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/settings`);
     await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-general.png'), fullPage: true });
 
-    const runtimeTab = page.getByRole('tab', { name: /运行偏好|Runtime Preferences/i });
-    if (await runtimeTab.isVisible()) {
-      await runtimeTab.click();
+    const executionTab = page.getByRole('tab', { name: /执行偏好|Execution Preferences/i });
+    if (await executionTab.isVisible()) {
+      await executionTab.click();
       await page.waitForTimeout(500);
       await expandTokenReference(page);
-      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-runtime-with-tokens.png'), fullPage: true });
+      await page.screenshot({ path: path.join(BASE, '11-settings', 'settings-execution-with-tokens.png'), fullPage: true });
     }
 
     // === 12-files ===

@@ -83,13 +83,13 @@ This validates the required behavior for MVP deployment without sandbox:
 ```bash
 make gate-pr
 make gate-premerge
-make gate-release
-make smoke-governance   # optional extended/legacy smoke, not part of default release gate
-make release-core-smoke
+make gate-governance
+make smoke-governance   # optional extended/legacy smoke, not part of default engineering gate
+make engineering-core-smoke
 make mvp-freeze-check
 ```
-Note: `release`/`engineering gate` command names above are repository engineering workflow terms, not product DevOps capabilities.
-`release-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives an engineering verification report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
+Note: `engineering`/`engineering gate` command names above are repository workflow terms, not product DevOps capabilities.
+`engineering-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives an engineering verification report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
 `mvp-freeze-check` is the freeze-oriented bundle: contracts + core smoke + demo readiness check.
 
 ### Dependency Recovery (only when environment is broken)

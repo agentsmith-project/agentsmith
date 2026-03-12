@@ -14,12 +14,16 @@ import {
 } from './filter-options';
 import { useTranslations } from 'next-intl';
 
+export type AuditEventCategoryFilter = 'all' | 'change' | 'event' | 'anomaly';
+
 export interface AuditFiltersProps {
   filters: AuditListParams;
   onChange: (filters: AuditListParams) => void;
   onClear: () => void;
   className?: string;
   defaultEndUserId?: string;
+  categoryFilter?: AuditEventCategoryFilter;
+  onCategoryFilterChange?: (category: AuditEventCategoryFilter) => void;
 }
 
 export function AuditFilters({
@@ -28,12 +32,25 @@ export function AuditFilters({
   onClear,
   className,
   defaultEndUserId,
+  categoryFilter = 'all',
+  onCategoryFilterChange,
 }: AuditFiltersProps) {
   const t = useTranslations('audit');
   const commonT = useTranslations('common');
   const debounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [investigationExpanded, setInvestigationExpanded] = React.useState(() =>
-    Boolean(filters.request_id || filters.decision_id || filters.trace_ref || filters.trace_incident_id || filters.trace_escalation_id || filters.trace_run_id),
+    Boolean(
+      filters.action
+      || filters.actor_type
+      || filters.actor_id
+      || filters.end_user_id
+      || filters.request_id
+      || filters.decision_id
+      || filters.trace_ref
+      || filters.trace_incident_id
+      || filters.trace_escalation_id
+      || filters.trace_run_id,
+    ),
   );
   // Use a ref to always read the latest filters in debounced callbacks
   const filtersRef = React.useRef(filters);
@@ -79,10 +96,32 @@ export function AuditFilters({
   }, []);
 
   React.useEffect(() => {
-    if (filters.request_id || filters.decision_id || filters.trace_ref || filters.trace_incident_id || filters.trace_escalation_id || filters.trace_run_id) {
+    if (
+      filters.action
+      || filters.actor_type
+      || filters.actor_id
+      || filters.end_user_id
+      || filters.request_id
+      || filters.decision_id
+      || filters.trace_ref
+      || filters.trace_incident_id
+      || filters.trace_escalation_id
+      || filters.trace_run_id
+    ) {
       setInvestigationExpanded(true);
     }
-  }, [filters.decision_id, filters.request_id, filters.trace_escalation_id, filters.trace_incident_id, filters.trace_ref, filters.trace_run_id]);
+  }, [
+    filters.action,
+    filters.actor_id,
+    filters.actor_type,
+    filters.decision_id,
+    filters.end_user_id,
+    filters.request_id,
+    filters.trace_escalation_id,
+    filters.trace_incident_id,
+    filters.trace_ref,
+    filters.trace_run_id,
+  ]);
 
   const hasActiveFilters = React.useMemo(() => {
     return !!(
@@ -95,9 +134,10 @@ export function AuditFilters({
       filters.request_id ||
       filters.decision_id ||
       filters.trace_ref ||
-      filters.result
+      filters.result ||
+      categoryFilter !== 'all'
     );
-  }, [filters]);
+  }, [categoryFilter, filters]);
 
   return (
     <div className={cn('bg-surface border border-border rounded-md p-4 space-y-4', className)}>
@@ -124,62 +164,21 @@ export function AuditFilters({
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           <div>
-            <label htmlFor="audit-filter-action" className="text-xs text-tertiary mb-1 block">{t('filters.action')}</label>
+            <label htmlFor="audit-filter-category" className="text-xs text-tertiary mb-1 block">{t('filters.category')}</label>
             <Select
-              value={filters.action || 'all'}
-              onValueChange={(value) => handleSelectFilterChange('action', value === 'all' ? undefined : value)}
+              value={categoryFilter}
+              onValueChange={(value) => onCategoryFilterChange?.(value as AuditEventCategoryFilter)}
             >
-              <SelectTrigger id="audit-filter-action">
-                <SelectValue placeholder={commonT('all_actions')} />
+              <SelectTrigger id="audit-filter-category" data-testid="audit-filter-category">
+                <SelectValue placeholder={commonT('all')} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">{commonT('all')}</SelectItem>
-                {AUDIT_ACTION_OPTIONS.map((action) => (
-                  <SelectItem key={action} value={action}>
-                    {formatFilterToken(action)}
-                  </SelectItem>
-                ))}
+                <SelectItem value="change">{t('category.change')}</SelectItem>
+                <SelectItem value="event">{t('category.event')}</SelectItem>
+                <SelectItem value="anomaly">{t('category.anomaly')}</SelectItem>
               </SelectContent>
             </Select>
-          </div>
-
-          <div>
-            <label htmlFor="audit-filter-actor-type" className="text-xs text-tertiary mb-1 block">{t('filters.actor_type')}</label>
-            <Select
-              value={filters.actor_type || 'all'}
-              onValueChange={(value) => handleSelectFilterChange('actor_type', value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin')}
-            >
-              <SelectTrigger id="audit-filter-actor-type">
-                <SelectValue placeholder={commonT('all_types')} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">{commonT('all')}</SelectItem>
-                <SelectItem value="user">{commonT('user')}</SelectItem>
-                <SelectItem value="agent">{commonT('agent')}</SelectItem>
-                <SelectItem value="plugin">{commonT('plugin')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <label htmlFor="audit-filter-actor-id" className="text-xs text-tertiary mb-1 block">{t('filters.actor_id')}</label>
-            <Input
-              id="audit-filter-actor-id"
-              placeholder={commonT('filter_by_actor_id')}
-              value={filters.actor_id || ''}
-              onChange={(e) => handleTextFilterChange('actor_id', e.target.value || undefined)}
-            />
-          </div>
-
-          <div>
-            <label htmlFor="audit-filter-end-user-id" className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
-            <Input
-              id="audit-filter-end-user-id"
-              placeholder={commonT('filter_by_end_user_id')}
-              value={filters.end_user_id || defaultEndUserId || ''}
-              onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
-              disabled={!!defaultEndUserId}
-            />
           </div>
 
           <div>
@@ -246,6 +245,65 @@ export function AuditFilters({
           </div>
           {investigationExpanded ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              <div>
+                <label htmlFor="audit-filter-action" className="text-xs text-tertiary mb-1 block">{t('filters.action')}</label>
+                <Select
+                  value={filters.action || 'all'}
+                  onValueChange={(value) => handleSelectFilterChange('action', value === 'all' ? undefined : value)}
+                >
+                  <SelectTrigger id="audit-filter-action">
+                    <SelectValue placeholder={commonT('all_actions')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{commonT('all')}</SelectItem>
+                    {AUDIT_ACTION_OPTIONS.map((action) => (
+                      <SelectItem key={action} value={action}>
+                        {formatFilterToken(action)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-actor-type" className="text-xs text-tertiary mb-1 block">{t('filters.actor_type')}</label>
+                <Select
+                  value={filters.actor_type || 'all'}
+                  onValueChange={(value) => handleSelectFilterChange('actor_type', value === 'all' ? undefined : value as 'user' | 'agent' | 'plugin')}
+                >
+                  <SelectTrigger id="audit-filter-actor-type">
+                    <SelectValue placeholder={commonT('all_types')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">{commonT('all')}</SelectItem>
+                    <SelectItem value="user">{commonT('user')}</SelectItem>
+                    <SelectItem value="agent">{commonT('agent')}</SelectItem>
+                    <SelectItem value="plugin">{commonT('plugin')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-actor-id" className="text-xs text-tertiary mb-1 block">{t('filters.actor_id')}</label>
+                <Input
+                  id="audit-filter-actor-id"
+                  placeholder={commonT('filter_by_actor_id')}
+                  value={filters.actor_id || ''}
+                  onChange={(e) => handleTextFilterChange('actor_id', e.target.value || undefined)}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="audit-filter-end-user-id" className="text-xs text-tertiary mb-1 block">{t('filters.end_user_id')}</label>
+                <Input
+                  id="audit-filter-end-user-id"
+                  placeholder={commonT('filter_by_end_user_id')}
+                  value={filters.end_user_id || defaultEndUserId || ''}
+                  onChange={(e) => handleTextFilterChange('end_user_id', e.target.value || defaultEndUserId || undefined)}
+                  disabled={!!defaultEndUserId}
+                />
+              </div>
+
               <div>
                 <label htmlFor="audit-filter-request-id" className="text-xs text-tertiary mb-1 block">{t('filters.request_id')}</label>
                 <Input

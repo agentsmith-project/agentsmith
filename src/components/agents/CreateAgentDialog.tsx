@@ -184,7 +184,7 @@ export function CreateAgentDialog({
           ? parseInt(maxConcurrentSessions, 10)
           : undefined,
       };
-      data.runtime_preferences = {
+      data.execution_preferences = {
         notebook: {
           executor: 'codex_cli',
           endpoint_id: notebookEndpointId.trim(),
@@ -199,7 +199,7 @@ export function CreateAgentDialog({
         toast.error(t('create_dialog.notebook_endpoint_required'));
         return;
       }
-      data.runtime_preferences = {
+      data.execution_preferences = {
         notebook: {
           executor: 'codex_cli',
           endpoint_id: notebookEndpointId.trim(),
@@ -228,7 +228,7 @@ export function CreateAgentDialog({
 
   const canSubmit = name.trim().length > 0 && !createMutation.isPending;
   const endpointLabel = (endpoint: Endpoint) => {
-    const model = endpoint.openai_model?.trim() || 'n/a';
+    const model = endpoint.model?.trim() || 'n/a';
     const family = endpoint.provider_family ?? 'custom';
     return `${endpoint.name} (${family}/${model})`;
   };

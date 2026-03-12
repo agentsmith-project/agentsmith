@@ -20,7 +20,7 @@ const mockEndpoints: Endpoint[] = [
     id: 'endpoint-1',
     project_id: 'project-1',
     name: 'Primary Endpoint',
-    openai_model: 'gpt-4',
+    model: 'gpt-4',
     type: 'openai',
     base_url: 'https://api.openai.com/v1',
     status: 'active',
@@ -31,7 +31,7 @@ const mockEndpoints: Endpoint[] = [
     id: 'endpoint-2',
     project_id: 'project-1',
     name: 'Secondary Endpoint',
-    openai_model: 'gpt-3.5-turbo',
+    model: 'gpt-3.5-turbo',
     type: 'openai',
     base_url: 'https://api.openai.com/v1',
     status: 'active',
@@ -42,7 +42,7 @@ const mockEndpoints: Endpoint[] = [
     id: 'endpoint-3',
     project_id: 'project-1',
     name: 'Disabled Endpoint',
-    openai_model: 'claude-3',
+    model: 'claude-3',
     type: 'anthropic',
     base_url: 'https://api.anthropic.com/v1',
     status: 'disabled',
@@ -417,7 +417,7 @@ describe('ChatHeader', () => {
       expect(separator).toBeInTheDocument();
     });
 
-    it('should show openai_model from session if endpoint not found', () => {
+    it('should show model from session if endpoint not found', () => {
       const unknownEndpointSession = {
         ...mockSession,
         endpoint_id: 'unknown-endpoint',

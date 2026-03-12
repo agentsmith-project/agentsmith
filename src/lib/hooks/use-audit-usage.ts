@@ -155,38 +155,6 @@ export function useLimitsSummary(
   });
 }
 
-/**
- * Hook to query runtime observability summary (fallback/error/cost distribution)
- */
-export function useRuntimeObservability(
-  workspaceId: string,
-  projectId: string,
-  params: {
-    start_time: string;
-    end_time: string;
-    provider?: string;
-    model?: string;
-    result?: 'ok' | 'error';
-    error_class?: 'provider_retryable' | 'provider_non_retryable' | 'system_error';
-  },
-  options?: { enabled?: boolean },
-) {
-  const usageAPI = new UsageAPI(getApiClient());
-  const enabled =
-    (options?.enabled ?? true) &&
-    !!workspaceId &&
-    !!projectId &&
-    !!params.start_time &&
-    !!params.end_time;
-
-  return useQuery({
-    queryKey: queryKeys.usage.runtimeObservability(workspaceId, projectId, params),
-    queryFn: () => usageAPI.getRuntimeObservability(workspaceId, projectId, params),
-    enabled,
-    staleTime: 10000,
-  });
-}
-
 export function useUsageOperationsSummary(
   workspaceId: string,
   projectId: string,

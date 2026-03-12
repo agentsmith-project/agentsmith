@@ -22,7 +22,7 @@ interface AnyRoute {
 
 type EndpointRecordInput = Partial<EndpointRecord>;
 
-function hasValidRuntimeProfile(value: unknown): boolean {
+function hasValidModelProfile(value: unknown): boolean {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
   const profile = value as Record<string, unknown>;
   const positiveNumber = (field: string) => typeof profile[field] === 'number' && Number.isFinite(profile[field]) && (profile[field] as number) > 0;
@@ -114,7 +114,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     return trimmed.length > 0 ? trimmed : undefined;
   };
   const endpointMatchesModel = (endpoint: EndpointRecord, model: string): boolean => {
-    if (endpoint.openai_model === model) return true;
+    if (endpoint.model === model) return true;
     if (Array.isArray(endpoint.models) && endpoint.models.some((item) => item.model_id === model)) return true;
     const defaults = endpoint.defaults;
     if (!defaults) return false;
@@ -221,7 +221,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       (isChatRoute
         ? endpoint.models?.find((item) => item.capability === 'multimodal_completion')?.model_id
         : undefined) ??
-      endpoint.openai_model;
+      endpoint.model;
     if (!resolvedModel) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_required' });
       return true;
@@ -365,12 +365,12 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   if (route.kind === 'endpoints' && method === 'POST' && route.workspaceId && route.projectId) {
     const raw = (await readBody(req)) as EndpointRecordInput;
     const hasModels = Array.isArray(raw.models) && raw.models.length > 0;
-    if (!raw.name?.trim() || !raw.base_url?.trim() || (!raw.openai_model?.trim() && !hasModels)) {
+    if (!raw.name?.trim() || !raw.base_url?.trim() || (!raw.model?.trim() && !hasModels)) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_required_fields_missing' });
       return true;
     }
-    if (raw.runtime_profile !== undefined && !hasValidRuntimeProfile(raw.runtime_profile)) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_runtime_profile_invalid' });
+    if (raw.model_profile !== undefined && !hasValidModelProfile(raw.model_profile)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_profile_invalid' });
       return true;
     }
     try {
@@ -410,8 +410,8 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
   if (route.kind === 'endpointItem' && method === 'PUT' && route.workspaceId && route.projectId && route.endpointId) {
     const raw = (await readBody(req)) as EndpointRecordInput;
-    if (raw.runtime_profile !== undefined && !hasValidRuntimeProfile(raw.runtime_profile)) {
-      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_runtime_profile_invalid' });
+    if (raw.model_profile !== undefined && !hasValidModelProfile(raw.model_profile)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'endpoint_model_profile_invalid' });
       return true;
     }
     const updated = await deps.endpointResourceService.updateEndpoint(

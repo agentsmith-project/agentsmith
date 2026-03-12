@@ -18,7 +18,7 @@ export type NotebookTaskInput = {
   ai_ready_status?: string;
 };
 
-export type NotebookRuntimeContext = {
+export type NotebookExecutionContext = {
   task_id?: string;
   run_id?: string;
 };
@@ -73,13 +73,13 @@ function buildNotebookAgentsMd(): string {
 
 export async function prepareNotebookWorkspaceAssets(args: {
   cwd: string;
-  runtimeContext: NotebookRuntimeContext;
+  executionContext: NotebookExecutionContext;
   taskInputs: NotebookTaskInput[];
 }): Promise<{
   artifactsDir: string;
   taskInputsManifestPath: string;
 }> {
-  const { cwd, runtimeContext, taskInputs } = args;
+  const { cwd, executionContext, taskInputs } = args;
   const artifactsDir = join(cwd, 'artifacts');
   const mbosDir = join(cwd, '.mbos');
   await mkdir(artifactsDir, { recursive: true });
@@ -89,8 +89,8 @@ export async function prepareNotebookWorkspaceAssets(args: {
     taskInputsManifestPath,
     JSON.stringify(
       {
-        task_id: runtimeContext.task_id ?? null,
-        run_id: runtimeContext.run_id ?? null,
+        task_id: executionContext.task_id ?? null,
+        run_id: executionContext.run_id ?? null,
         generated_at: new Date().toISOString(),
         task_inputs: taskInputs.map((item) => ({
           kind:

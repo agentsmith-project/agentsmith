@@ -129,6 +129,7 @@ The Usage page displays:
 - **Cost Trend**: Spending patterns
 - **Limit Utilization**: Endpoint matrix (`rate limit` + `spending limit` by window)
 - **Error Rates**: Failed request percentage
+- **Personal Visibility**: What I have consumed on a specific endpoint and window, without requiring project-wide aggregate interpretation
 
 ### Usage Time Series
 
@@ -145,7 +146,7 @@ View metrics over time:
 See usage by resource type:
 
 - **Endpoints**: Per-endpoint request/cost and limit windows
-- **Total**: Project summary aggregate
+- **No forced overall total**: The page should not require a single project-wide aggregate across mixed limit metrics
 
 ## Exporting Data
 

@@ -33,13 +33,13 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).
-- Runtime path: AgentSmith task message -> MBOS external-agent runtime websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
+- Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
 - Workdir rule: `/tmp/<username>/<task_id>`.
 
 ## 2. Current Delivery Status
 - Implemented:
   - Notebook task message streaming execution in API node backend.
-  - `runtime_context` protocol extension for external runtime.
+  - `execution_context` protocol extension for external execution service.
   - External runner package `@mbos/agent-codex-runner`.
   - Agent config UI (`Notebook Endpoint ID`) and backend validation.
   - OpenAPI/AsyncAPI/Protocol docs updates.
@@ -55,9 +55,9 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 1. User creates Notebook task with notebook-capable external agent.
 2. User posts task message (`role=user`).
 3. Backend creates assistant placeholder, marks task run active.
-4. Backend dispatches `server.request.start` to external runtime with:
+4. Backend dispatches `server.request.start` to external execution service with:
    - normal chat payload (`messages`, `model`, etc.)
-   - `runtime_context` (`workspace_id/project_id/task_id/run_id/username/user_bearer_token/wire_api/model`)
+   - `execution_context` (`workspace_id/project_id/task_id/run_id/username/user_bearer_token/wire_api/model`)
    - static proxy config comes from `server.hello.resource_proxy.base_url`
 5. `agent-codex-runner`:
    - creates `/tmp/<username>/<task_id>`;
@@ -69,14 +69,14 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 7. Run finalized, active lock released.
 
 ## 4. Component Ownership (Parallel Work)
-### Track A: Backend Runtime/Task
+### Track A: Backend Execution/Task
 - Files:
   - `packages/api-entry-node/src/task-route-handler.ts`
-  - `packages/api-entry-node/src/agent-runtime-service.ts`
+  - `packages/api-entry-node/src/agent-execution-service.ts`
   - `packages/api-entry-node/src/request-handler.ts`
 - Responsibilities:
   - task run lifecycle, conflict control (`TASK_STREAM_CONFLICT`), SSE fanout.
-  - protocol mapping, runtime_context assembly, auth token forwarding.
+  - protocol mapping, execution_context assembly, auth token forwarding.
   - route permission gates.
 
 ### Track B: External Runner
@@ -96,14 +96,14 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - `src/messages/en-US.json`, `src/messages/zh-CN.json`
 - Responsibilities:
   - notebook endpoint configuration UX.
-  - payload contract (`runtime_preferences.notebook`).
+  - payload contract (`execution_preferences.notebook`).
   - validation/error copy/i18n.
 
 ### Track D: Contracts + QA
 - Files:
   - `docs/contracts/specs/openapi.yaml|json`
   - `docs/contracts/specs/asyncapi.yaml|json`
-  - `docs/contracts/agent-runtime-protocol.md`
+  - `docs/contracts/agent-execution-protocol.md`
   - `packages/api-entry-node/src/index.test.ts`
   - `e2e/integration-agents-external.spec.ts`
 - Responsibilities:
@@ -114,13 +114,13 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 ### 5.1 Agent config
 - Agent mode: `external`
 - Interaction mode: `notebook` or `both`
-- Runtime preferences:
-  - `runtime_preferences.notebook.endpoint_id` (required)
+- Execution preferences:
+  - `execution_preferences.notebook.endpoint_id` (required)
   - optional: `wire_api` (`chat` or `responses`)
   - optional: `model`
 
 ### 5.2 Runner env vars
-- `MBOS_AGENT_WS_URL` (runtime websocket URL from agent connection info)
+- `MBOS_AGENT_WS_URL` (execution websocket URL from agent connection info)
 - `MBOS_AGENT_KEY` (agent service key `ask_...`)
 - `CODEX_BIN` (optional; default `codex`)
 - `MBOS_AGENT_TASK_TIMEOUT_SEC` (optional; task watchdog, default currently 55s in code)
@@ -131,9 +131,9 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 
 ### 5.3 API debug env vars (recommended for troubleshooting)
-- `DEBUG_AGENT_RUNTIME=1` (runtime websocket accept/reject logs)
+- `DEBUG_AGENT_EXECUTION=1` (execution websocket accept/reject logs)
 - `DEBUG_ENDPOINT_PROXY=1` (proxy request summaries + SSE translation counters)
-- `DEBUG_NOTEBOOK_RUNTIME=1` (task/run/request_id level dispatch + terminal events)
+- `DEBUG_NOTEBOOK_EXECUTION=1` (task/run/request_id level dispatch + terminal events)
 
 ### 5.3.1 Builtin Skills Mount Policy (MVP)
 - Every new task auto-mounts builtin skills into task workspace: `.codex/skills/.system`, `.codex/skills/feishu-docs`, `.codex/skills/jira-ops`, `.codex/skills/source-read`.
@@ -148,7 +148,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - `MBOS_AGENT_CODEX_YOLO`
   - `MBOS_AGENT_BUILTIN_SKILLS_DIR`, `MBOS_AGENT_BUILTIN_SKILLS`, `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED`
 - API (`@mbos/api-entry-node`)
-  - `DEBUG_AGENT_RUNTIME`, `DEBUG_ENDPOINT_PROXY`, `DEBUG_NOTEBOOK_RUNTIME`
+  - `DEBUG_AGENT_EXECUTION`, `DEBUG_ENDPOINT_PROXY`, `DEBUG_NOTEBOOK_EXECUTION`
   - `NOTEBOOK_TRACE_MAX_EVENTS`, `NOTEBOOK_TRACE_DETAILS_MAX_BYTES`, `NOTEBOOK_SSE_HISTORY_MAX_EVENTS`
 - Web / frontend (`next dev`)
   - `NEXT_PUBLIC_API_BASE`
@@ -162,7 +162,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - `PORT_API`, `PORT_WEB`, `WORKSPACE_ID`, `LOCALE`
   - `GLM_API_KEY`, `GLM_BASE_URL`, `GLM_MODEL`
 - Note:
-  - This runbook is the current **single place** for notebook/external-agent runtime switches.
+  - This runbook is the current **single place** for notebook/external-agent execution switches.
   - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
 
 ### 5.3.3 Default Personal Upload Library (Chat object-first attachments)
@@ -199,18 +199,18 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 PORT=20000 \
 KEYCLOAK_BASE_URL=http://localhost:18080 \
 KEYCLOAK_REALM=mbos \
-DEBUG_AGENT_RUNTIME=1 \
+DEBUG_AGENT_EXECUTION=1 \
 DEBUG_ENDPOINT_PROXY=1 \
-DEBUG_NOTEBOOK_RUNTIME=1 \
+DEBUG_NOTEBOOK_EXECUTION=1 \
 npm run dev -w @mbos/api-entry-node
 
 # Start external codex runner (default full-auto)
-make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
+make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
 
 # Start external codex runner in YOLO mode
 MBOS_AGENT_CODEX_YOLO=1 \
 MBOS_AGENT_TASK_TIMEOUT_SEC=120 \
-make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
+make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'
 
 # External agent integration e2e (auto deps + api + web)
 make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
@@ -230,9 +230,9 @@ env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u AL
 PORT=20000 \
 KEYCLOAK_BASE_URL=http://localhost:18080 \
 KEYCLOAK_REALM=mbos \
-DEBUG_AGENT_RUNTIME=1 \
+DEBUG_AGENT_EXECUTION=1 \
 DEBUG_ENDPOINT_PROXY=1 \
-DEBUG_NOTEBOOK_RUNTIME=1 \
+DEBUG_NOTEBOOK_EXECUTION=1 \
 npm run dev -w @mbos/api-entry-node
 ```
 
@@ -331,7 +331,7 @@ make notebook-agent-demo-restart-runner
     - otherwise fails fast with a clear error and remediation steps (free `3001`, add Keycloak redirect URI, or provide a valid token)
 - Recommended smoke bundle (before demos and internal validation):
 ```bash
-make notebook-agent-release-smoke
+make notebook-agent-engineering-smoke
 ```
 - Default bundle includes:
   - `make notebook-agent-smoke-task`
@@ -342,11 +342,11 @@ make notebook-agent-release-smoke
   - if refresh still fails or retry remains `401`, smoke fails fast with the concrete HTTP error body.
 - Optional matplotlib image-artifact smoke:
 ```bash
-RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-release-smoke
+RUN_MATPLOTLIB_SMOKE=1 make notebook-agent-engineering-smoke
 ```
 - One-command smoke readiness check (refreshes token if needed, runs `demo-check`, then runs smoke bundle):
 ```bash
-make notebook-agent-release-smoke-full
+make notebook-agent-engineering-smoke-full
 ```
 - Governance pages (real backend mode) smoke check (Audit / Usage / Members / Resource Policy):
 ```bash
@@ -358,7 +358,7 @@ make governance-pages-real-backend-interaction-smoke
 ```
 - Governance pages (real backend mode) bundled smoke (open + interaction):
 ```bash
-make governance-release-smoke
+make governance-smoke
 ```
 - Governance policy effect smoke (real backend endpoint rate limit -> audit/usage evidence):
 ```bash
@@ -376,12 +376,12 @@ make governance-policy-effect-smoke
 export SANDBOX_MANAGER_URL=http://<sandbox-manager-host>:8080
 export SANDBOX_SERVICE_KEY=<sandbox-service-key>
 ```
-- Optional (recommended explicit runtime ws base):
+- Optional (recommended explicit execution ws base):
 ```bash
-export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
+export AGENT_EXECUTION_WS_BASE_URL=ws://localhost:20000
 ```
 - Smoke checklist:
-  - Create internal agent with `config.image` and notebook `runtime_preferences.notebook.endpoint_id`.
+  - Create internal agent with `config.image` and notebook `execution_preferences.notebook.endpoint_id`.
   - Confirm create/list/get agent responses do not contain `_internal_raw_key`.
   - Create chat session with `external_agent_id=<internal_agent_id>`, send a stream request.
   - Expected fail-fast when env missing: `422 AGENT_SANDBOX_NOT_CONFIGURED`.
@@ -389,7 +389,7 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
   - Close/delete notebook task: pod cleanup/reclaim should be triggered by API.
 - Contract notes:
   - Runner static proxy source is only `server.hello.resource_proxy.base_url`.
-  - Per-request auth token remains in `runtime_context.user_bearer_token` (no proxy-base fallback).
+  - Per-request auth token remains in `execution_context.user_bearer_token` (no proxy-base fallback).
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.
@@ -400,25 +400,25 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
   - `-c 'projects."<cwd>".trust_level="trusted"'`
 
 ## 6. Acceptance Checklist
-- Task message POST triggers external runtime request.
+- Task message POST triggers external execution service request.
 - Concurrent second POST while active run returns `409 TASK_STREAM_CONFLICT`.
 - Assistant message receives streamed deltas and final content.
 - Runner creates `/tmp/<username>/<task_id>`.
 - Proxy auth uses user bearer token; endpoint request succeeds.
-- Cancel request terminates codex process and runtime stream exits.
+- Cancel request terminates codex process and execution stream exits.
 
 ## 7. Error Codes / Operational Signals
 - `TASK_STREAM_CONFLICT`: active run already exists for task.
 - `TASK_AGENT_ENDPOINT_NOT_CONFIGURED`: missing notebook endpoint binding.
-- `AGENT_OFFLINE`: no active runtime websocket for selected agent.
-- `AGENT_PROTOCOL_ERROR`: invalid runtime response frame shape.
-- `runtime.terminal` (trace event name): synthesized backend terminal trace used when runtime fails before any trace frame is emitted.
+- `AGENT_OFFLINE`: no active execution websocket for selected agent.
+- `AGENT_PROTOCOL_ERROR`: invalid execution response frame shape.
+- `execution.terminal` (trace event name): synthesized backend terminal trace used when execution fails before any trace frame is emitted.
 
 ## 7.1 Terminal Fallback Semantics
 - For notebook runs, backend must not leave tasks in an indeterminate "no traces forever" state.
-- If dispatch/stream fails before any runtime trace arrives:
+- If dispatch/stream fails before any execution trace arrives:
   - backend emits synthesized terminal trace event:
-    - `name=runtime.terminal`
+    - `name=execution.terminal`
     - `phase=end`
     - `status=error`
     - `details.synthesized=true`
@@ -429,13 +429,13 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
   - only `run.lifecycle` with `phase=end` or `run.summary` with `phase=end` may clear the active-run busy state.
 
 ## 7.2 Debug Log Correlation (Recommended)
-- `notebook-runtime` logs (`DEBUG_NOTEBOOK_RUNTIME=1`)
+- `notebook-execution` logs (`DEBUG_NOTEBOOK_EXECUTION=1`)
   - carries `task_id`, `run_id`, `request_id`, `agent_id`, `endpoint_id`
 - `agent-codex-runner` debug logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
   - carries same `request_id`, codex argv, cancellation signal, exit code
 - `endpoint-proxy` logs (`DEBUG_ENDPOINT_PROXY=1`)
   - request summary, upstream response mode, SSE translation counters/terminal reason
-- `agent-runtime` logs (`DEBUG_AGENT_RUNTIME=1`)
+- `agent-execution` logs (`DEBUG_AGENT_EXECUTION=1`)
   - websocket accept/reject, request dispatch/cancel signals
 
 ## 7.3 Frontend Notebook SSE Debug Panel (Development Only)
@@ -507,9 +507,9 @@ export AGENT_RUNTIME_WS_BASE_URL=ws://localhost:20000
     - `/tasks/:taskId/traces?message_id=<msg>` returns items for that message
 
 ## 7.4 Notebook Runtime Metrics (Internal, Authenticated)
-- API exposes a lightweight process-local metrics snapshot for notebook runtime/task execution:
-  - `GET /api/v1/internal/notebook-runtime-metrics`
-  - `GET /api/v1/internal/notebook-runtime-metrics/prometheus` (Prometheus text format)
+- API exposes a lightweight process-local metrics snapshot for notebook execution/task execution:
+  - `GET /api/v1/internal/notebook-task-metrics`
+  - `GET /api/v1/internal/notebook-task-metrics/prometheus` (Prometheus text format)
 - Authentication:
   - requires a valid bearer token (same user token used for notebook APIs).
 - Purpose:
@@ -564,8 +564,8 @@ API_BASE=http://localhost:20000 TOKEN_FILE=/tmp/agentsmith_user_token.txt make n
 - If auth is handled upstream (e.g. reverse proxy / sidecar), Prometheus can scrape:
 ```yaml
 scrape_configs:
-  - job_name: agentsmith_notebook_runtime
-    metrics_path: /api/v1/internal/notebook-runtime-metrics/prometheus
+  - job_name: agentsmith_notebook_execution
+    metrics_path: /api/v1/internal/notebook-task-metrics/prometheus
     static_configs:
       - targets: ['127.0.0.1:20000']
 ```
@@ -581,7 +581,7 @@ scrape_configs:
 - Example alerts (tune after baseline data is collected):
 ```yaml
 groups:
-  - name: agentsmith_notebook_runtime
+  - name: agentsmith_notebook_execution
     rules:
       - alert: AgentSmithNotebookRuntimeTerminalWithoutDone
         expr: increase(notebook_task_runs_terminal_without_done_total[10m]) > 0
@@ -589,7 +589,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Notebook runtime stream finalized without terminal event"
+          summary: "Notebook execution stream finalized without terminal event"
 
       - alert: AgentSmithNotebookRuntimeFailuresHigh
         expr: increase(notebook_task_runs_failed_total[15m]) >= 3
@@ -654,10 +654,10 @@ REQUESTS=30 CONCURRENCY=5 POLL_MAX=120 POLL_INTERVAL_SEC=2 make notebook-agent-l
   - aggregate result summary (`success/failed/success_rate`)
   - latency stats (`avg/p50/p95/p99/max`)
   - sample failures (first 10)
-  - final `notebook-runtime-metrics` snapshot
+  - final `notebook-task-metrics` snapshot
 - Use together with:
   - `make notebook-agent-monitor`
-  - API logs (`DEBUG_NOTEBOOK_RUNTIME=1`, `DEBUG_AGENT_RUNTIME=1`, `DEBUG_ENDPOINT_PROXY=1`)
+  - API logs (`DEBUG_NOTEBOOK_EXECUTION=1`, `DEBUG_AGENT_EXECUTION=1`, `DEBUG_ENDPOINT_PROXY=1`)
   - runner logs (`MBOS_AGENT_RUNNER_DEBUG=1`)
 
 ### 7.5.3 Minimum Acceptance (Suggested)
@@ -780,7 +780,7 @@ PAGE_SIZE=50 make notebook-agent-traces-query-bench
 - Output includes:
   - request latency stats (`avg/p50/p95/p99/max`)
   - failure codes
-  - notebook runtime metrics snapshot (JSON)
+  - notebook task metrics snapshot (JSON)
   - Prometheus histogram lines for `scope="message"`
 - Recommendation:
   - run this after a baseline task run in both memory and Mongo modes
@@ -864,7 +864,7 @@ make notebook-agent-benchmark-archive
   - `/tasks/:id/events` replay continuity may be incomplete after reconnects that land on another instance
   - live SSE subscriptions are instance-local (expected)
 - Recommended current deployment pattern:
-  - single API instance for notebook external-agent runtime, or
+  - single API instance for notebook external-agent execution, or
   - sticky routing by task/session when using multiple API instances
 - Future hardening path (not implemented in v1):
   - distributed task-run lock (e.g. Redis)
@@ -879,10 +879,10 @@ Notebook tasks executed by `@mbos/agent-codex-runner` use a runner-enforced head
 - save generated charts/files into the task artifact directory:
   - `<task_cwd>/artifacts/`
 
-Runner runtime-context/task-input behavior:
+Runner execution-context/task-input behavior:
 
-- notebook attached inputs are passed in `runtime_context.task_inputs`
-- runner also receives `runtime_context.api_base` for notebook helper tooling (source downloads)
+- notebook attached inputs are passed in `execution_context.task_inputs`
+- runner also receives `execution_context.api_base` for notebook helper tooling (source downloads)
 - runner writes a task input manifest to:
   - `<task_cwd>/.mbos/task-inputs.json`
 - runner writes a task-local `AGENTS.md` with mandatory notebook rules (headless/artifacts/input helper)
@@ -909,7 +909,7 @@ Notes:
 
 - image artifacts may be inlined as data URLs (size-limited) for local notebook preview
 - text artifacts may include truncated preview content (size-limited)
-- task artifact records returned by `/tasks/{taskId}/artifacts` may include `task_relative_path` for runtime-originated outputs (relative path inside task cwd)
+- task artifact records returned by `/tasks/{taskId}/artifacts` may include `task_relative_path` for execution-originated outputs (relative path inside task cwd)
 - notebook Attached Inputs panel fetches attached input details from task-scoped route `GET /tasks/{taskId}/inputs` (avoids loading the full Files list for display)
 
 ## 9. Next Hardening Items
@@ -919,10 +919,10 @@ Notes:
 
 ## 10. Team Task Breakdown (Parallel)
 ### Sprint A (Backend/API, 2-3 days)
-- A1: runtime_context correctness and request-host derived proxy base.
+- A1: execution_context correctness and request-host derived proxy base.
 - A2: task run lifecycle guards (`TASK_STREAM_CONFLICT`, finalize cleanup).
 - A3: notebook endpoint binding validation (`interaction_mode=notebook|both`).
-- A4: API tests for notebook run + conflict + runtime context.
+- A4: API tests for notebook run + conflict + execution context.
 
 Dependencies:
 - A2 depends on A1.
@@ -938,7 +938,7 @@ Dependencies:
 
 ### Sprint C (Frontend, 1 day)
 - C1: agent create/edit notebook endpoint input + validation.
-- C2: request payload alignment (`runtime_preferences.notebook.*`).
+- C2: request payload alignment (`execution_preferences.notebook.*`).
 - C3: i18n copy and error messaging.
 
 Dependencies:
@@ -946,7 +946,7 @@ Dependencies:
 
 ### Sprint D (QA/Integration, 1-2 days)
 - D1: external-agent chat integration regression.
-- D2: notebook integration spec (task->runtime->proxy->stream).
+- D2: notebook integration spec (task->execution->proxy->stream).
 - D3: environment bootstrap checks (Keycloak redirect URI consistency).
 
 Dependencies:
@@ -961,6 +961,6 @@ Dependencies:
   - `pull_request` on integration/runtime related paths.
   - manual `workflow_dispatch` with `suite=all|agent|notebook-agent`.
 - Failure attribution:
-  - summary tags such as `INT-KEYCLOAK-REDIRECT`, `INT-INFRA-BOOT`, `INT-AGENT-OFFLINE`, `INT-NOTEBOOK-RUNTIME`.
+  - summary tags such as `INT-KEYCLOAK-REDIRECT`, `INT-INFRA-BOOT`, `INT-AGENT-OFFLINE`, `INT-NOTEBOOK-EXECUTION`.
 - Troubleshooting:
   - `docs/ci-integration-troubleshooting.md`

@@ -32,7 +32,7 @@ jobs:
           grep -q 'GLM_MODEL="${GLM_MODEL:-glm-5}"' scripts/notebook-agent-demo-up.sh
           grep -q 'GLM_MODEL="${GLM_MODEL:-glm-5}"' scripts/notebook-agent-init-resources.sh
           grep -q '"model":"glm-5"' scripts/notebook-agent-demo-check.sh
-          grep -q '"model":"glm-5"' scripts/notebook-agent-release-smoke.sh
+          grep -q '"model":"glm-5"' scripts/notebook-agent-engineering-smoke.sh
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -49,5 +49,5 @@ jobs:
       - name: Run permission contract drift check
         run: npm run contracts:check
 
-      - name: Run release baseline sync check
-        run: npm run contracts:check-release-sync
+      - name: Run engineering baseline sync check
+        run: npm run contracts:check-engineering-sync

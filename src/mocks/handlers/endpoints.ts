@@ -20,7 +20,7 @@ export const endpointHandlers = [
       name: (body.name as string) ?? 'New Endpoint',
       description: (body.description as string) ?? '',
       type: (body.type as string) ?? 'openai',
-      openai_model: (body.openai_model as string) ?? '',
+      model: (body.model as string) ?? '',
       base_url: (body.base_url as string) ?? 'https://api.openai.com/v1',
       credential_ref: (body.credential_ref as string) ?? '',
       provider_family: (body.provider_family as string) ?? 'custom',

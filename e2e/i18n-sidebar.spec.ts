@@ -1,7 +1,7 @@
 /**
  * i18n Sidebar Tests - WP-04
  *
- * Verifies new i18n keys for Use/Develop sections and Runtime Console
+ * Verifies new i18n keys for Use/Develop sections
  */
 
 import { test, expect, goToProject, projectUrl, goTo } from './fixtures/test-base';
@@ -9,7 +9,6 @@ import { test, expect, goToProject, projectUrl, goTo } from './fixtures/test-bas
 const NEW_I18N_KEYS = [
   { key: 'sidebar.use', enValue: 'Use', zhValue: '使用' },
   { key: 'sidebar.develop', enValue: 'Develop', zhValue: '开发' },
-  { key: 'nav.runtime_console', enValue: 'Runtime Console', zhValue: '运行时控制台' },
 ] as const;
 
 test.describe('i18n Sidebar Section Labels - WP-04', () => {
@@ -63,36 +62,6 @@ test.describe('i18n Sidebar Section Labels - WP-04', () => {
 
     const developLabel = developSection.locator('text=开发');
     await expect(developLabel, 'Develop label should display "开发" text').toBeVisible();
-  });
-});
-
-test.describe('i18n Runtime Console Navigation - WP-04', () => {
-  test('shows "Runtime Console" nav item in English', async ({ authedPage }) => {
-    await goToProject(authedPage, 'overview');
-
-    // Ensure we're in English locale
-    if (!authedPage.url().includes('/en-US/')) {
-      await authedPage.goto(authedPage.url().replace('/zh-CN/', '/en-US/'));
-    }
-
-    const runtimeConsoleItem = authedPage.getByTestId('sidebar__nav-item--runtime_console');
-    await expect(runtimeConsoleItem, 'Runtime Console nav item should be visible').toBeVisible();
-
-    // Verify the text content contains "Runtime Console"
-    const itemText = await runtimeConsoleItem.textContent();
-    expect(itemText).toContain('Runtime Console');
-  });
-
-  test('shows "运行时控制台" nav item in Chinese', async ({ authedPage }) => {
-    // Switch to Chinese locale
-    await goTo(authedPage, projectUrl('overview', 'zh-CN', 'ws_default', 'proj_001'));
-
-    const runtimeConsoleItem = authedPage.getByTestId('sidebar__nav-item--runtime_console');
-    await expect(runtimeConsoleItem, 'Runtime Console nav item should be visible').toBeVisible();
-
-    // Verify the text content contains "运行时控制台"
-    const itemText = await runtimeConsoleItem.textContent();
-    expect(itemText).toContain('运行时控制台');
   });
 });
 

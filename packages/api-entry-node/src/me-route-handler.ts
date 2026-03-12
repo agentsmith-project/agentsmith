@@ -9,7 +9,7 @@ import {
   syncUserNotification,
   unreadNotificationsCount,
 } from './me-notifications-store.js';
-import { listReleaseEscalations } from './release-escalation-store.js';
+import { listGovernanceIncidents } from './governance-incident-store.js';
 import {
   completeFeishuOAuth,
   getFeishuOAuthConfig,
@@ -92,9 +92,9 @@ export async function handleMeRoute(args: {
   requestUrl: URL;
   user: AuthenticatedUser;
   docStore: JsonDocStorePort;
-  releaseEscalationsDir?: string;
+  governanceIncidentsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user, docStore, releaseEscalationsDir } = args;
+  const { req, res, method, requestUrl, user, docStore, governanceIncidentsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;
@@ -125,11 +125,11 @@ export async function handleMeRoute(args: {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
     }
-    if (releaseEscalationsDir) {
-      for (const event of listReleaseEscalations(releaseEscalationsDir).slice(0, 20)) {
+    if (governanceIncidentsDir) {
+      for (const event of listGovernanceIncidents(governanceIncidentsDir).slice(0, 20)) {
         syncUserNotification(user.id, {
-          id: `release_escalation_${event.id}`,
-          type: 'release_escalation',
+          id: `governance_incident_${event.id}`,
+          type: 'governance_incident',
           title: event.title,
           body: event.body,
           link_url: null,

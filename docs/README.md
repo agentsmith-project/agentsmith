@@ -11,8 +11,9 @@
 ## 核心
 
 - [项目宪法](./项目宪法.md)
-- [Usage / Audit / Runtime 职责边界](./UXUI/01-通用规范/usage-audit-runtime-职责边界-v1.md)
-- [Usage / Audit / Runtime MVP Release Checklist](./user-guides/usage-audit-runtime-release-checklist.md)
+- [Usage / Audit MVP 职责边界](./UXUI/01-通用规范/usage-audit-职责边界-v1.md)
+- [Usage / Audit MVP 功能与 UX 定义](./UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md)
+- [Usage / Audit MVP Engineering Checklist](./user-guides/usage-audit-engineering-checklist.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)

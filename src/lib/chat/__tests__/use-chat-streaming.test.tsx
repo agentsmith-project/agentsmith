@@ -167,7 +167,7 @@ describe('useChatStreaming attach recovery', () => {
         updated_at: new Date().toISOString(),
         message_count: 0,
         total_tokens: 0,
-        runtime_status: 'running',
+        execution_status: 'running',
       },
     ];
 
@@ -235,7 +235,7 @@ describe('useChatStreaming attach recovery', () => {
         updated_at: new Date().toISOString(),
         message_count: 0,
         total_tokens: 0,
-        runtime_status: 'running',
+        execution_status: 'running',
       },
     ];
 

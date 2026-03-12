@@ -13,7 +13,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
-import { useRuntimePricing, usePatchRuntimePricing } from '@/lib/hooks/use-runtime';
+import { useProjectPricing, usePatchProjectPricing } from '@/lib/hooks/use-project-pricing';
 import { toast } from '@/components/ui/toast';
 import {
   type PricingField,
@@ -27,7 +27,7 @@ import {
   isEmptyPricingMap,
   clonePricingMap,
   getPricingFieldLabel,
-  type RuntimePricingMap,
+  type ProjectPricingMap,
 } from '@/lib/endpoints/pricing-utils';
 import { cn } from '@/lib/utils';
 
@@ -49,11 +49,11 @@ export function PricingConfigDialog({
   const t = useTranslations('pricing');
   const tCommon = useTranslations('common');
 
-  const { data: pricingData, isLoading, error } = useRuntimePricing(workspaceId, projectId);
-  const patchPricing = usePatchRuntimePricing(workspaceId, projectId);
+  const { data: pricingData, isLoading, error } = useProjectPricing(workspaceId, projectId);
+  const patchPricing = usePatchProjectPricing(workspaceId, projectId);
 
   // Local state for edited pricing
-  const [localPricing, setLocalPricing] = useState<RuntimePricingMap>({});
+  const [localPricing, setLocalPricing] = useState<ProjectPricingMap>({});
   const [hasChanges, setHasChanges] = useState(false);
   const [changedFields, setChangedFields] = useState<Set<string>>(new Set());
 

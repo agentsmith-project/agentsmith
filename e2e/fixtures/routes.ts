@@ -16,7 +16,7 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/settings', testId: 'ws-settings__members' },
   ],
   project: [
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'overview__ai-ops-home' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/overview', testId: 'project-hub__page' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/chat', testId: 'chat__main-pane' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook', testId: 'notebook__task-list' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/notebook/tasks/task_001', testId: 'notebook__task-header' },
@@ -25,9 +25,9 @@ export const ROUTES = {
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/resource-policy', testId: 'resource-policy__editor' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/members', testId: 'members__table' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/audit', testId: 'audit__table' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/usage', testId: 'usage__table' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/usage', testId: 'usage__view' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/files', testId: 'files__library-list' },
     { path: '/zh-CN/workspaces/ws_default/projects/proj_001/credentials', testId: 'credentials__table' },
-    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/settings', testId: 'settings__tab--general' },
+    { path: '/zh-CN/workspaces/ws_default/projects/proj_001/settings', testId: 'settings__general-section' },
   ],
 };

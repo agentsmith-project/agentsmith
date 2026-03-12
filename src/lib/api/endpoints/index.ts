@@ -18,7 +18,7 @@ export { ChatAPI } from './chat';
 export { FilesAPI } from './files';
 export { TaskAPI } from './tasks';
 export { AlertAPI } from './alerts';
-export { RuntimeAPI } from './runtime';
+export { ModelConfigAPI } from './model-config';
 export { GovernanceExplainabilityAPI } from './governance-explainability';
 export { OrganizationActionsAPI } from './organization-actions';
 
@@ -62,36 +62,14 @@ export type {
   TaskListResponse,
 } from './tasks';
 export type {
-  RuntimeProviderConnection,
-  CreateRuntimeProviderConnectionRequest,
-  UpdateRuntimeProviderConnectionRequest,
-  RuntimeModelCatalogEntry,
-  CreateRuntimeModelCatalogEntryRequest,
-  UpdateRuntimeModelCatalogEntryRequest,
-  RuntimeModelAlias,
-  CreateRuntimeModelAliasRequest,
-  UpdateRuntimeModelAliasRequest,
-  RuntimeModelCombo,
-  CreateRuntimeModelComboRequest,
-  UpdateRuntimeModelComboRequest,
-  RuntimePricingMap,
-  RuntimeAttemptTrace,
-  RuntimeAttemptOutcome,
-  RuntimeRoutingDryRunAttempt,
-  RuntimeRoutingDryRunRequest,
-  RuntimeRoutingDryRunResponse,
-  RuntimeImpactPreviewRequest,
-  RuntimeImpactPreviewResponse,
-  PublishRuntimeRouteRequest,
-  CreateRuntimePricingVersionRequest,
-  RuntimePricingCompareResponse,
-  RuntimeReleaseGuardrails,
-  UnifiedChatRuntimeMetadata,
-  RuntimeUnifiedChatRequest,
-  RuntimeUnifiedChatResponse,
-  RuntimeUnifiedChatErrorResponse,
-  RuntimeUnifiedChatResult,
-} from './runtime';
+  ProjectPricingMap,
+  ModelRequestTrace,
+  ModelRequestDetails,
+  ModelRequestPayload,
+  ModelRequestResponse,
+  ModelRequestErrorResponse,
+  ModelRequestExecutionResult,
+} from './model-config';
 export type {
   GovernanceAuthorizationRequest,
   GovernanceAuthorizationResponse,

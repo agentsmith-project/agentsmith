@@ -56,7 +56,7 @@ export const agentHandlers = [
   ),
   http.get('/api/v1/workspaces/:ws/projects/:prj/agents/:id/connection-info', ({ params }) =>
     HttpResponse.json({
-      ws_url: `ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=${encodeURIComponent(String(params.id ?? ''))}`,
+      ws_url: `ws://localhost:20000/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(String(params.id ?? ''))}`,
       agent_id: String(params.id ?? ''),
       protocol_version: '1.0',
       heartbeat_interval_sec: 15,

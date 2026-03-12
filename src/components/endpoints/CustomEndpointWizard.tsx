@@ -354,7 +354,7 @@ export function CustomEndpointWizard({
               : capability === 'image_generation'
               ? { image_model_id: modelId.trim() }
               : { video_model_id: modelId.trim() },
-      runtime_profile: {
+      model_profile: {
         max_context_tokens: Number(maxContextTokens),
         max_output_tokens: Number(maxOutputTokens),
         supports_file: supportsFile,
@@ -667,12 +667,12 @@ export function CustomEndpointWizard({
 
               <div className="space-y-3 rounded-sm border border-subtle p-3">
                 <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">{t('runtime_profile.title')}</p>
+                  <p className="text-sm font-medium text-foreground">{t('model_profile.title')}</p>
                   <button
                     type="button"
                     className="text-xs text-accent hover:underline"
                     onClick={applyRecommendedDefaults}
-                    data-testid="wizard-runtime-profile-defaults"
+                    data-testid="wizard-model-profile-defaults"
                   >
                     {t('use_default')}
                   </button>
@@ -680,32 +680,32 @@ export function CustomEndpointWizard({
 
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.max_context_tokens')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.max_context_tokens')}</label>
                     <Input value={maxContextTokens} onChange={(e) => setMaxContextTokens(e.target.value)} />
                     {getErrorForField('maxContextTokens') && <p className="text-xs text-error">{getErrorForField('maxContextTokens')}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.max_output_tokens')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.max_output_tokens')}</label>
                     <Input value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(e.target.value)} />
                     {getErrorForField('maxOutputTokens') && <p className="text-xs text-error">{getErrorForField('maxOutputTokens')}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.price_input_per_1m')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.price_input_per_1m')}</label>
                     <Input value={priceInputPer1m} onChange={(e) => setPriceInputPer1m(e.target.value)} />
                     {getErrorForField('priceInputPer1m') && <p className="text-xs text-error">{getErrorForField('priceInputPer1m')}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.price_output_per_1m')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.price_output_per_1m')}</label>
                     <Input value={priceOutputPer1m} onChange={(e) => setPriceOutputPer1m(e.target.value)} />
                     {getErrorForField('priceOutputPer1m') && <p className="text-xs text-error">{getErrorForField('priceOutputPer1m')}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.cache_read_discount_ratio')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.cache_read_discount_ratio')}</label>
                     <Input value={cacheReadDiscountRatio} onChange={(e) => setCacheReadDiscountRatio(e.target.value)} />
                     {getErrorForField('cacheReadDiscountRatio') && <p className="text-xs text-error">{getErrorForField('cacheReadDiscountRatio')}</p>}
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.cache_write_discount_ratio')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.cache_write_discount_ratio')}</label>
                     <Input
                       value={cacheWriteDiscountRatio}
                       onChange={(e) => setCacheWriteDiscountRatio(e.target.value)}
@@ -717,32 +717,32 @@ export function CustomEndpointWizard({
 
                 <div className="grid grid-cols-3 gap-3">
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.supports_file')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.supports_file')}</label>
                     <Select value={String(supportsFile)} onValueChange={(v) => setSupportsFile(v === 'true')}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="true">{t('runtime_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('runtime_profile.no')}</SelectItem>
+                        <SelectItem value="true">{t('model_profile.yes')}</SelectItem>
+                        <SelectItem value="false">{t('model_profile.no')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.supports_tool_call')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.supports_tool_call')}</label>
                     <Select value={String(supportsToolCall)} onValueChange={(v) => setSupportsToolCall(v === 'true')}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="true">{t('runtime_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('runtime_profile.no')}</SelectItem>
+                        <SelectItem value="true">{t('model_profile.yes')}</SelectItem>
+                        <SelectItem value="false">{t('model_profile.no')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
                   <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('runtime_profile.supports_reasoning')}</label>
+                    <label className="text-xs text-secondary">{t('model_profile.supports_reasoning')}</label>
                     <Select value={String(supportsReasoning)} onValueChange={(v) => setSupportsReasoning(v === 'true')}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="true">{t('runtime_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('runtime_profile.no')}</SelectItem>
+                        <SelectItem value="true">{t('model_profile.yes')}</SelectItem>
+                        <SelectItem value="false">{t('model_profile.no')}</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

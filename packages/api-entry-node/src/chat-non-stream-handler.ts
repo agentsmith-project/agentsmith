@@ -137,7 +137,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     });
     const items = await deps.chatResourceService.listSessions(route.workspaceId, route.projectId);
     const pageItems = items.slice(offset, offset + pageSize);
-    const itemsWithRuntime = await Promise.all(
+    const itemsWithRequestDetails = await Promise.all(
       pageItems.map(async (item) => ({
         ...item,
         execution_status: await readSessionStreamState(
@@ -149,11 +149,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       })),
     );
     json(res, 200, {
-      items: itemsWithRuntime,
+      items: itemsWithRequestDetails,
       total: items.length,
       page,
       page_size: pageSize,
-      has_more: offset + itemsWithRuntime.length < items.length,
+      has_more: offset + itemsWithRequestDetails.length < items.length,
     });
     return true;
   }

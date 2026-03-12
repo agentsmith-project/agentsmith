@@ -1,14 +1,14 @@
-# Models Catalog Runtime Governance Contract
+# Model Catalog and Project Pricing Contract
 
 ## Purpose
 
-Define the authoritative runtime contract for model/provider catalog lifecycle in AgentSmith.
+Define the authoritative contract for model/provider catalog lifecycle in AgentSmith.
 
 This contract replaces development-time-only sync as the primary operating mode.
 
 ## Scope
 
-- Runtime model/provider catalog ingestion from `https://models.dev/api.json`
+- Model/provider catalog ingestion from `https://models.dev/api.json`
 - Cold-start initialization from in-repo seed snapshot when catalog storage is empty
 - Catalog versioning, activation, rollback, and auditability
 - Endpoint CRUD dependency on catalog data for provider/model selection
@@ -21,9 +21,9 @@ This contract replaces development-time-only sync as the primary operating mode.
 
 ## Source of Truth
 
-1. Active catalog version in Mongo is runtime truth.
+1. Active catalog version in Mongo is the source of truth.
 2. Seed snapshot in repo is bootstrap-only truth when DB is empty.
-3. Frontend must not directly consume `models.dev` or local generated runtime JSON as authority.
+3. Frontend must not directly consume `models.dev` or local generated catalog JSON as authority.
 
 ## External Schema Baseline
 
@@ -69,7 +69,7 @@ Failure behavior:
 - Admin surfaces must expose `catalog_uninitialized` status.
 - Endpoint provider/model panel must be blocked with actionable error until catalog becomes available.
 
-## Runtime Sync Contract
+## Model Catalog Sync Contract
 
 Admin-triggered sync workflow:
 
@@ -78,7 +78,7 @@ Admin-triggered sync workflow:
 3. Normalize records (provider/model flattening, capability derivation, pricing normalization).
 4. Persist as staged version.
 5. Produce diff summary against active version.
-6. Activate explicitly (or keep staged pending activation by policy).
+6. Activate explicitly (or keep staged pending review by policy).
 
 Hard requirements:
 
@@ -101,7 +101,7 @@ Custom endpoint rules:
 - Custom endpoint must declare compatibility interface explicitly.
 - If custom endpoint model matches catalog entry, system may auto-hydrate metadata but must keep provenance.
 
-## Runtime API Contract (Required)
+## Model Config API Contract (Required)
 
 - `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/providers`
 - `GET /api/v1/workspaces/{workspaceId}/projects/{projectId}/model-catalog/models`
@@ -144,4 +144,4 @@ Minimum required checks:
 
 ## Migration Rule
 
-Legacy workflow (`npm run models:sync-catalog` + static runtime JSON) is transitional and must not be treated as runtime authority once model catalog APIs are enabled.
+Legacy workflow (`npm run models:sync-catalog` + static catalog JSON) is transitional and must not be treated as runtime authority once model catalog APIs are enabled.

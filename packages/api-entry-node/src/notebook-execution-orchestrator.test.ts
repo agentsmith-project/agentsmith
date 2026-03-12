@@ -87,7 +87,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       publicBaseUrl: 'http://localhost:20000',
       buildRunId: () => 'run_1',
       buildProxyUsername: () => 'user_1',
-      mapTaskMessagesForRuntime: () => [],
+      mapTaskMessagesForExecution: () => [],
       updateTaskActivity: () => undefined,
       emitTaskEvent: (_taskId, payload) => {
         emitted.push(payload as { type: string; data: unknown });

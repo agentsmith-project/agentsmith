@@ -21,7 +21,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `Members`
   - real backend coverage for reads/writes, effective access explain, membership lifecycle cleanup, and permission/limit visibility
   - backend route authz reflects unified backend authorization decisions
-  - member limit overrides/templates provide enforced runtime limit effects within the documented scope
+  - member limit overrides/templates provide enforced request limit effects within the documented scope
 - `Resource Policy`
   - real backend coverage for reads/writes, matched policy explain, and enforced governance paths in the current internal baseline
   - current enforcement scope covers allow-all / allow-list checks for `endpoint` and notebook/chat `agent` paths
@@ -195,7 +195,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 
 ### 5.4 Local commands
 ```bash
-# Start API with debugging for notebook/runtime/proxy troubleshooting
+# Start API with debugging for notebook execution/proxy troubleshooting
 PORT=20000 \
 KEYCLOAK_BASE_URL=http://localhost:18080 \
 KEYCLOAK_REALM=mbos \
@@ -445,7 +445,7 @@ export AGENT_EXECUTION_WS_BASE_URL=ws://localhost:20000
   - `NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL=1 npm run dev -- --port 3001`
 - Purpose:
   - quickly verify whether browser SSE is connected and receiving events without opening DevTools Network every time.
-  - distinguish UI rendering issues vs backend/runtime event delivery issues.
+  - distinguish UI rendering issues vs backend execution event delivery issues.
 - Typical readings:
   - repeated `message type=message` and `message type=task_update`:
     - SSE is healthy and backend is emitting task updates.
@@ -506,14 +506,14 @@ export AGENT_EXECUTION_WS_BASE_URL=ws://localhost:20000
     - runner/API versions are up to date
     - `/tasks/:taskId/traces?message_id=<msg>` returns items for that message
 
-## 7.4 Notebook Runtime Metrics (Internal, Authenticated)
+## 7.4 Notebook Task Metrics (Internal, Authenticated)
 - API exposes a lightweight process-local metrics snapshot for notebook execution/task execution:
   - `GET /api/v1/internal/notebook-task-metrics`
   - `GET /api/v1/internal/notebook-task-metrics/prometheus` (Prometheus text format)
 - Authentication:
   - requires a valid bearer token (same user token used for notebook APIs).
 - Purpose:
-  - quick runtime health checks during real-environment validation/load tests
+  - quick execution health checks during real-environment validation/load tests
   - observe run outcomes and trace truncation behavior without scraping logs
 - Example fields:
   - counters:
@@ -597,7 +597,7 @@ groups:
         labels:
           severity: warning
         annotations:
-          summary: "Notebook runtime task failures increased"
+          summary: "Notebook task failures increased"
 
       - alert: AgentSmithNotebookTraceDetailsTruncationSpike
         expr: increase(notebook_trace_details_truncated_total[15m]) > 10
@@ -621,7 +621,7 @@ groups:
 
 ## 7.5 Real-Environment Load Test (Notebook + External Agent)
 - Purpose:
-  - validate runtime stability under concurrent notebook task submissions
+  - validate execution stability under concurrent notebook task submissions
   - confirm trace retention/limits behave as expected
   - capture latency distribution (`avg/p50/p95/p99`) and failure samples
 - Preconditions:
@@ -754,7 +754,7 @@ make notebook-agent-benchmark-compare
   - monitor output `traces_q_msg_max_ms`
 - Interpretation guidance:
   - if end-to-end latency increases but `traces` query histogram is stable:
-    - bottleneck is likely upstream model/runtime, not notebook traces API
+    - bottleneck is likely upstream model execution, not notebook traces API
   - if `traces_q_msg_max_ms` / histogram shifts significantly:
     - inspect Mongo indexes and query filters for `notebook_task_trace_events`
 
@@ -762,7 +762,7 @@ make notebook-agent-benchmark-compare
 - Purpose:
   - benchmark the notebook execution-details lazy-load query path directly:
     - `GET /tasks/:taskId/traces?message_id=<messageId>`
-  - isolate `/traces` query latency from upstream model/runtime variability
+  - isolate `/traces` query latency from upstream model execution variability
 - Command:
 ```bash
 make notebook-agent-traces-query-bench
@@ -854,7 +854,7 @@ make notebook-agent-benchmark-archive
 - R3: Workdir is namespace isolation only (`/tmp/<username>/<task_id>`), not full sandbox.
 
 ## 8.1 Deployment Model and Runtime Coordination Limits
-- Current notebook runtime coordination is optimized for a single API instance (or sticky-session routing to one API instance).
+- Current notebook execution coordination is optimized for a single API instance (or sticky-session routing to one API instance).
 - The following coordination state is in-process memory in `api-entry-node`:
   - active task run guard (`ACTIVE_RUNS_BY_TASK`)
   - notebook task SSE client subscriptions
@@ -903,7 +903,7 @@ Runner artifact reporting behavior:
 - for each discovered output, runner emits:
   - `agent.response.artifact` (structured artifact payload)
   - `agent.response.event` with `category=artifact` (diagnostic trace)
-- backend notebook task artifact storage applies idempotency for repeated runtime artifact frames using the runtime path metadata (for example `task_relative_path`), reducing duplicate artifacts after repeated scans in the same task
+- backend notebook task artifact storage applies idempotency for repeated execution artifact frames using the runtime path metadata (for example `task_relative_path`), reducing duplicate artifacts after repeated scans in the same task
 
 Notes:
 
@@ -914,7 +914,7 @@ Notes:
 
 ## 9. Next Hardening Items
 1. Replace direct bearer forwarding with short-lived ticket exchange.
-2. Add stronger runtime isolation (container/jail/seccomp profile).
+2. Add stronger execution isolation (container/jail/seccomp profile).
 3. Add notebook-specific integration spec for full task->runner->proxy stream assertions.
 
 ## 10. Team Task Breakdown (Parallel)
@@ -958,7 +958,7 @@ Dependencies:
   - `integration-agent` -> `make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011`
   - `integration-notebook-agent` -> `make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013`
 - Trigger:
-  - `pull_request` on integration/runtime related paths.
+  - `pull_request` on integration/execution related paths.
   - manual `workflow_dispatch` with `suite=all|agent|notebook-agent`.
 - Failure attribution:
   - summary tags such as `INT-KEYCLOAK-REDIRECT`, `INT-INFRA-BOOT`, `INT-AGENT-OFFLINE`, `INT-NOTEBOOK-EXECUTION`.

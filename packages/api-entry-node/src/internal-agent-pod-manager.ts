@@ -21,7 +21,7 @@ interface SandboxManagerClientLike {
   checkReady(): Promise<void>;
 }
 
-interface AgentRuntimeLike {
+interface AgentExecutionLike {
   getAgentOnlineState(agentId: string): boolean;
 }
 
@@ -131,7 +131,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
   constructor(
     private readonly sandboxClient: SandboxManagerClientLike,
-    private readonly agentRuntime: AgentRuntimeLike,
+    private readonly agentExecution: AgentExecutionLike,
     private readonly wsBaseUrl: string,
     options?: InternalAgentPodManagerOptions,
   ) {
@@ -157,10 +157,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       const existing = this.locks.get(lockKey);
       if (!existing) break;
       await existing;
-      if (this.agentRuntime.getAgentOnlineState(agent.id)) return;
+      if (this.agentExecution.getAgentOnlineState(agent.id)) return;
     }
 
-    if (this.agentRuntime.getAgentOnlineState(agent.id)) return;
+    if (this.agentExecution.getAgentOnlineState(agent.id)) return;
 
     let releaseLock!: () => void;
     const lock = new Promise<void>((resolve) => {
@@ -210,7 +210,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
   private async waitForAgentOnline(agentId: string, deadline: number): Promise<void> {
     while (Date.now() < deadline) {
-      if (this.agentRuntime.getAgentOnlineState(agentId)) return;
+      if (this.agentExecution.getAgentOnlineState(agentId)) return;
       await this.sleep(this.onlinePollIntervalMs);
     }
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
@@ -222,7 +222,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     workloadId: string,
     agent: AgentRecord,
   ): Promise<void> {
-    if (this.agentRuntime.getAgentOnlineState(agent.id)) return;
+    if (this.agentExecution.getAgentOnlineState(agent.id)) return;
 
     const config = readInternalConfig(agent);
     const deadline = Date.now() + this.startupTimeoutMs;

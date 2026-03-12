@@ -175,7 +175,7 @@ function readAgentNotebookEndpointId(agent: { execution_preferences_json?: unkno
   return trimmed.length > 0 ? trimmed : null;
 }
 
-function debugRuntime(message: string): void {
+function debugExecution(message: string): void {
   if (process.env.DEBUG_AGENT_EXECUTION !== '1') return;
   process.stdout.write(`[agent-execution] ${message}\n`);
 }
@@ -332,14 +332,14 @@ export class AgentExecutionService {
   handleUpgrade(req: http.IncomingMessage, socket: Duplex, head: Buffer): void {
     const url = new URL(req.url ?? '', 'http://localhost');
     if (url.pathname !== '/api/v1/agent-execution/ws') {
-      debugRuntime(`reject path=${url.pathname}`);
+      debugExecution(`reject path=${url.pathname}`);
       socket.destroy();
       return;
     }
 
     const agentId = url.searchParams.get('agent_id') || '';
     if (!agentId) {
-      debugRuntime('reject missing_agent_id');
+      debugExecution('reject missing_agent_id');
       socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
       socket.destroy();
       return;
@@ -347,7 +347,7 @@ export class AgentExecutionService {
 
     const token = parseBearerToken(req);
     if (!token) {
-      debugRuntime(`reject missing_token agent_id=${agentId}`);
+      debugExecution(`reject missing_token agent_id=${agentId}`);
       socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
       socket.destroy();
       return;
@@ -355,7 +355,7 @@ export class AgentExecutionService {
 
     void this.agentResourceService.verifyAgentKey(agentId, token).then(async (keyRecord) => {
       if (!keyRecord) {
-        debugRuntime(`reject invalid_key agent_id=${agentId}`);
+        debugExecution(`reject invalid_key agent_id=${agentId}`);
         socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
         socket.destroy();
         return;
@@ -366,14 +366,14 @@ export class AgentExecutionService {
         agentId,
       );
       if (!agent || agent.status !== 'enabled') {
-        debugRuntime(
+        debugExecution(
           `reject agent_not_enabled_or_missing agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id} has_agent=${agent ? '1' : '0'} status=${agent?.status ?? 'null'}`,
         );
         socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
         socket.destroy();
         return;
       }
-      debugRuntime(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
+      debugExecution(`accept agent_id=${agentId} ws=${keyRecord.workspace_id} proj=${keyRecord.project_id}`);
       const notebookEndpointId = readAgentNotebookEndpointId(agent);
       const origin = inferRequestOrigin(req);
       const resourceProxyBaseUrl = notebookEndpointId && origin
@@ -418,7 +418,7 @@ export class AgentExecutionService {
         this.wsServer.emit('connection', ws, req);
       });
     }).catch(() => {
-      debugRuntime(`reject internal_error agent_id=${agentId}`);
+      debugExecution(`reject internal_error agent_id=${agentId}`);
       socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n');
       socket.destroy();
     });

@@ -5,7 +5,7 @@ Owner: Backend + Frontend
 
 ## 1. Scope
 
-This contract defines the runtime protocol between MBOS server and external agents over WebSocket.
+This contract defines the execution protocol between MBOS server and external agents over WebSocket.
 
 - Transport: WebSocket
 - Auth: `Authorization: Bearer ask_*` (agent service key)
@@ -61,7 +61,7 @@ All frames are JSON objects:
 ## 4. Agent -> Server Events
 
 - `agent.ready`
-  - payload: runtime metadata/capabilities
+  - payload: execution metadata/capabilities
 - `agent.pong`
   - payload: `{}`
 - `agent.response.delta`
@@ -108,7 +108,7 @@ All frames are JSON objects:
 
 ## 5. Chat Mapping Semantics
 
-When a chat session is bound to `external_agent_id`, server maps runtime events to chat SSE:
+When a chat session is bound to `external_agent_id`, server maps execution events to chat SSE:
 
 - `agent.response.delta` -> SSE `delta`
 - `agent.response.done` -> SSE `done`
@@ -116,7 +116,7 @@ When a chat session is bound to `external_agent_id`, server maps runtime events 
 
 The frontend keeps the same chat SSE consumption model used by endpoint streaming.
 
-## 6. Runtime Constraints (v1)
+## 6. Execution Constraints (v1)
 
 - One active connection per `agent_id` (new connection replaces old one).
 - No offline queue (fail-fast if agent is offline).
@@ -132,8 +132,8 @@ The frontend keeps the same chat SSE consumption model used by endpoint streamin
 
 When chat session is bound to `external_agent_id`, server returns explicit API error codes for stream bootstrap failures:
 
-- `AGENT_OFFLINE`: no active runtime WS connection for the selected agent
-- `AGENT_PROTOCOL_ERROR`: invalid runtime frame format/content
+- `AGENT_OFFLINE`: no active execution WS connection for the selected agent
+- `AGENT_PROTOCOL_ERROR`: invalid execution frame format/content
 - `AGENT_UPSTREAM_ERROR`: agent reported upstream error
 
 Frontend maps these codes to explicit user-facing error banners.

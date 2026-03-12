@@ -47,7 +47,7 @@ make e2e-int-minimal    # 最小集成测试
 make e2e-int-chat       # chat 集成测试
 make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
 make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
-make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
+make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
 make deps-down     # 关闭依赖
 make deps-reset    # 关闭并清空依赖数据卷
 make openapi-generate # 基于 OpenAPI contract 生成前端类型
@@ -183,9 +183,9 @@ Before merge/engineering acceptance: ensure `npm run contracts:check`, `npm run 
 后端提供统一文档入口：
 
 - `http://localhost:20000/docs`：Scalar API Reference（HTTP API）
-- `http://localhost:20000/docs/asyncapi`：AsyncAPI 可视化页面（Agent Runtime WS）
+- `http://localhost:20000/docs/asyncapi`：AsyncAPI 可视化页面（Agent Execution WS）
 - `http://localhost:20000/api/v1/openapi.json`：OpenAPI JSON
-- `http://localhost:20000/api/v1/asyncapi.json`：AsyncAPI JSON（Agent Runtime WS）
+- `http://localhost:20000/api/v1/asyncapi.json`：AsyncAPI JSON（Agent Execution WS）
 
 本地治理命令：
 
@@ -299,11 +299,11 @@ See also:
 
 ### Scope (What this workline covered)
 
-- Notebook task execution via external agent runtime (`agent-codex-runner`, Codex script mode)
+- Notebook task execution via external agent execution (`agent-codex-runner`, Codex script mode)
 - Endpoint proxy compatibility for OpenAI Responses -> chat/completions fallback and streaming translation
 - Notebook message bubble execution details UI (expandable trace panel)
 - Trace storage/query/replay path (`trace_event` SSE + `/tasks/:taskId/traces`)
-- Production-readiness for notebook runtime:
+- Production-readiness for notebook task execution:
   - persistence (docStore-backed)
   - retention/payload limits
   - metrics/monitoring
@@ -320,7 +320,7 @@ See also:
 Primary files (implemented across this workline):
 - `packages/agent-codex-runner/src/index.ts`
 - `packages/api-entry-node/src/task-route-handler.ts`
-- `packages/api-entry-node/src/agent-runtime-service.ts`
+- `packages/api-entry-node/src/agent-execution-service.ts`
 
 #### 2) Execution Trace UI (Notebook Message Bubble)
 - Agent message bubbles support expandable execution details (default collapsed).
@@ -344,7 +344,7 @@ Primary files:
 - `src/lib/api/endpoints/tasks.ts`
 
 #### 3) Trace Transport / Contracts
-- Runtime protocol extended with `agent.response.event`.
+- Execution protocol extended with `agent.response.event`.
 - Notebook task SSE extended with `trace_event`.
 - `/tasks/:taskId/traces` query endpoint added and evolved:
   - filters: `message_id`, `run_id`, `after_id`, `before_id`, `page_size`
@@ -367,9 +367,9 @@ Primary files:
 
 #### 6) Monitoring / Metrics
 - Internal metrics JSON endpoint (auth required):
-  - `/api/v1/internal/notebook-runtime-metrics`
+  - `/api/v1/internal/notebook-task-metrics`
 - Prometheus text export endpoint (auth required):
-  - `/api/v1/internal/notebook-runtime-metrics/prometheus`
+  - `/api/v1/internal/notebook-task-metrics/prometheus`
 - Metrics include:
   - task run lifecycle counters
   - active runs / SSE clients
@@ -393,11 +393,11 @@ Added tooling and Make targets for:
 
 - Runbook (authoritative operational workflow for this workline):
   - `docs/agent-codex-notebook-runbook.md`
-- Runtime protocol contract:
+- Execution protocol contract:
   - `docs/contracts/agent-runtime-protocol.md`
 - Notebook module/contract mapping docs updated:
   - `docs/contracts/notebook-frontend-module-map.md`
-- Main generated specs updated to include notebook traces + runtime event coverage:
+- Main generated specs updated to include notebook traces + execution event coverage:
   - `docs/contracts/specs/openapi.yaml`
   - `docs/contracts/specs/openapi.json`
   - `docs/contracts/specs/asyncapi.yaml`
@@ -417,8 +417,8 @@ Added tooling and Make targets for:
 - unit tests for notebook trace panel interactions (expand/filter/raw/copy/stats/pagination)
 - page-level Playwright coverage for notebook trace panel interactions (MSW/mock)
 
-#### Backend / Runtime
-- notebook runtime/API targeted tests:
+#### Backend / Execution
+- notebook task execution/API targeted tests:
   - `trace_event` handling
   - `/traces` paging and replay paths
   - retention + details truncation behavior
@@ -434,7 +434,7 @@ Added tooling and Make targets for:
 
 ### Known Boundaries / Open Items (Not blockers for current stage)
 
-1. Notebook runtime persistence relies on docStore backend for restart durability
+1. Notebook task execution persistence relies on docStore backend for restart durability
 - Memory mode remains ephemeral by design.
 
 2. Benchmark variance is heavily influenced by upstream model/runtime
@@ -474,7 +474,7 @@ Added tooling and Make targets for:
 If this workline is resumed later, start from:
 1. `docs/agent-codex-notebook-runbook.md` (current operational truth)
 2. benchmark/compare/archive scripts in `scripts/`
-3. notebook trace runtime implementation in:
+3. notebook trace execution implementation in:
    - `packages/api-entry-node/src/task-route-handler.ts`
    - `packages/agent-codex-runner/src/index.ts`
    - `src/components/notebook/TaskPage.tsx`
@@ -697,7 +697,7 @@ npx tsc --noEmit
 
 ## Notebook Codex v1 Follow-up (Inputs / Artifacts / Headless Workflow)
 
-This follow-up extends the external notebook-agent runtime line toward a NotebookLM-like workflow:
+This follow-up extends the external notebook-agent execution line toward a NotebookLM-like workflow:
 
 - notebook task attached sources are injected to external execution context as `task_inputs`
 - runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
@@ -729,21 +729,21 @@ Current known boundary:
 - Notebook file picker now supports direct `library_object` refs (no source-only model requirement).
 - Chat file attachments started migrating toward object-first flow:
   - local file uploads are first written into a deterministic default upload library (`My Uploads`) as library objects,
-  - then converted into chat attachments via the existing chat attachment runtime path.
+  - then converted into chat attachments via the existing chat attachment request path.
 - Backend now enforces a system-managed default personal library (`system_managed_kind=default_personal_uploads`) with ensure route semantics and rename/delete protections.
 - Notebook "Add URL" follows object-first flow while attaching a first-class `url` input ref (with imported object provenance).
 - Notebook artifacts can now be attached back into task inputs as first-class `artifact` input refs (output-to-input loop).
 - Notebook local file uploads also follow object-first flow (default personal library object + `library_object` input ref), removing the last raw local-upload -> `source` shortcut in notebook task inputs.
 - Current architectural rule: `source` remains a derived/processed input type (AI-ready/indexed workflows), not the default raw-file ingestion path for Chat or Notebook.
 - Backend `POST /projects/:projectId/sources` creation now requires `library_id` and is treated as object-backed source creation only.
-- Chat message `inputs` and attachment provenance now support first-class `url` input refs (with optional imported object provenance), while runtime consumption still resolves through attachment snapshots.
+- Chat message `inputs` and attachment provenance now support first-class `url` input refs (with optional imported object provenance), while request execution consumption still resolves through attachment snapshots.
 - Chat composer now exposes a URL input entry in the UI and imports URLs object-first into the default personal library before attaching a `url` input ref.
-- Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/runtime mapping is centralized in `notebook-input-refs.ts`.
+- Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/execution mapping is centralized in `notebook-input-refs.ts`.
 - Shared backend resolver layering is now in place:
   - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)
-  - `input-ref-input-resolver.ts` (object/url/artifact runtime metadata resolution + fallback rules)
-  - runtime-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)
-- Chat `attachments/init` now normalizes `library_object` / `url` attachment metadata via the shared runtime metadata resolver (avoids handler-local drift in filename/type/size fallback rules).
+  - `input-ref-input-resolver.ts` (object/url/artifact request metadata resolution + fallback rules)
+  - request-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)
+- Chat `attachments/init` now normalizes `library_object` / `url` attachment metadata via the shared request metadata resolver (avoids handler-local drift in filename/type/size fallback rules).
 
 ## Governance Backend (Audit / Usage) — Product-Grade v1 (Internal)
 

@@ -32,7 +32,7 @@ export const ACTIVE_CHAT_STREAMS = new Map<string, ActiveChatStreamRecord>();
 export const STREAM_REGISTRY_TTL_SECONDS = 30 * 60;
 export const STREAM_REGISTRY_FINAL_TTL_SECONDS = 5 * 60;
 
-type SessionStreamRuntimeStatus = 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
+type SessionStreamStatus = 'running' | 'stopping' | 'completed' | 'stopped' | 'failed';
 
 function streamRegistryKey(streamId: string): string {
   return `chat:stream:${streamId}`;
@@ -51,7 +51,7 @@ export async function readSessionStreamState(
   workspaceId: string,
   projectId: string,
   sessionId: string,
-): Promise<SessionStreamRuntimeStatus | null> {
+): Promise<SessionStreamStatus | null> {
   const raw = await cache.get(sessionStreamStateKey(workspaceId, projectId, sessionId));
   if (
     raw === 'running' ||
@@ -70,7 +70,7 @@ export async function writeSessionStreamState(
   workspaceId: string,
   projectId: string,
   sessionId: string,
-  status: SessionStreamRuntimeStatus,
+  status: SessionStreamStatus,
   ttlSeconds: number,
 ): Promise<void> {
   await cache.set(sessionStreamStateKey(workspaceId, projectId, sessionId), status, ttlSeconds);

@@ -165,11 +165,11 @@ help-extended:
 	@echo "  make governance-member-permission-effect-smoke # legacy optional smoke (not part of default MVP engineering gate)"
 	@echo "  make governance-member-lifecycle-effect-smoke # real-backend member lifecycle smoke (active->suspended->removed->restore)"
 	@echo "  make governance-sse-ticket-effect-smoke # real-backend SSE ticket hardening smoke (opaque ticket + no query fallback)"
-	@echo "  make build-reliability-smoke # build reliability smoke (chat recovery + notebook runtime + contract suite)"
+	@echo "  make build-reliability-smoke # build reliability smoke (chat recovery + notebook task execution + contract suite)"
 	@echo "  make workspace-governance-smoke # workspace governance smoke (overview + member admin + cross-project actions + explainability)"
 	@echo "  make organization-governance-smoke # organization governance smoke (org overview + actions queue + drilldown chain)"
 	@echo "  make notebook-agent-smoke-full    # refresh token + start runner + run notebook smoke task"
-	@echo "  make notebook-agent-monitor       # poll notebook runtime internal metrics (auth required)"
+	@echo "  make notebook-agent-monitor       # poll notebook task execution internal metrics (auth required)"
 	@echo "  make usage-report-runner-status   # query internal usage report runner status (auth required)"
 	@echo "  make usage-report-run-due         # trigger a usage report runner sweep (auth required)"
 	@echo "  make notebook-agent-load-test     # concurrent notebook task load test + summary + metrics snapshot"
@@ -688,7 +688,7 @@ agent-test-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
 		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
 		echo "[make] Example:"; \
-		echo "  make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		echo "  make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -701,7 +701,7 @@ agent-codex-runner:
 	@if [ -z "$(AGENT_WS_URL)" ] || [ -z "$(AGENT_KEY)" ]; then \
 		echo "[make] Missing AGENT_WS_URL or AGENT_KEY."; \
 		echo "[make] Example:"; \
-		echo "  make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-runtime/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
+		echo "  make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx'"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

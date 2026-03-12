@@ -42,7 +42,7 @@ export type NotebookTaskInputRefRecord =
   | ArtifactInputRefRecord
   | UrlInputRefRecord;
 
-export type NotebookRuntimeTaskInput =
+export type NotebookTaskInput =
   | {
       kind: 'source';
       source_id: string;
@@ -151,14 +151,14 @@ function readNumber(input: unknown): number | undefined {
   return typeof input === 'number' && Number.isFinite(input) ? input : undefined;
 }
 
-export async function buildNotebookRuntimeTaskInputs(args: {
+export async function buildNotebookTaskInputs(args: {
   deps: SourceLookupDeps;
   workspaceId: string;
   projectId: string;
   taskId: string;
   attachedInputs: NotebookTaskInputRefRecord[];
   debugLog?: (message: string, extra?: Record<string, unknown>) => void;
-}): Promise<NotebookRuntimeTaskInput[]> {
+}): Promise<NotebookTaskInput[]> {
   const { deps, workspaceId, projectId, taskId, attachedInputs, debugLog } = args;
   if (attachedInputs.length === 0) return [];
   return Promise.all(attachedInputs.map(async (inputRef) => {
@@ -174,7 +174,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
         return buildResolvedLibraryObjectInput({
           input: inputRef,
           meta: resolved.meta,
-        }) satisfies NotebookRuntimeTaskInput;
+        }) satisfies NotebookTaskInput;
       }
       debugLog?.('task_input_library_object_lookup_failed', {
         task_id: taskId,
@@ -185,7 +185,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
       return buildResolvedLibraryObjectInput({
         input: inputRef,
         meta: resolved.meta,
-      }) satisfies NotebookRuntimeTaskInput;
+      }) satisfies NotebookTaskInput;
     }
     if (inputRef.kind === 'url') {
       const resolved = await resolveInputRef({
@@ -198,7 +198,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
       return buildResolvedUrlInput({
         input: inputRef,
         meta: resolved.meta,
-      }) satisfies NotebookRuntimeTaskInput;
+      }) satisfies NotebookTaskInput;
     }
     if (inputRef.kind === 'artifact') {
       const resolved = await resolveInputRef({
@@ -208,7 +208,7 @@ export async function buildNotebookRuntimeTaskInputs(args: {
       return buildResolvedArtifactInput({
         input: inputRef,
         meta: resolved.meta,
-      }) satisfies NotebookRuntimeTaskInput;
+      }) satisfies NotebookTaskInput;
     }
     try {
       const source = await deps.getSourceUseCase.execute({
@@ -227,14 +227,14 @@ export async function buildNotebookRuntimeTaskInputs(args: {
           : {}),
         ...(readNumber(src.file_size) !== undefined ? { file_size: readNumber(src.file_size) } : {}),
         ...(readString(aiReady.status) ? { ai_ready_status: readString(aiReady.status) } : {}),
-      } satisfies NotebookRuntimeTaskInput;
+      } satisfies NotebookTaskInput;
     } catch (error) {
       debugLog?.('task_input_source_lookup_failed', {
         task_id: taskId,
         source_id: inputRef.source_id,
         error: error instanceof Error ? error.message : 'source_lookup_failed',
       });
-      return { kind: 'source', source_id: inputRef.source_id, filename: inputRef.source_id } satisfies NotebookRuntimeTaskInput;
+      return { kind: 'source', source_id: inputRef.source_id, filename: inputRef.source_id } satisfies NotebookTaskInput;
     }
   }));
 }

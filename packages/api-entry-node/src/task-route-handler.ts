@@ -495,7 +495,7 @@ async function deleteTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<v
   await Promise.all(existing.map((item) => deps.docStore.delete(TASK_ARTIFACTS_COLLECTION, item.id)));
 }
 
-function mapTaskMessagesForRuntime(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
+function mapTaskMessagesForExecution(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
   return getTaskMessages(taskId)
     .filter((item) => item.id !== assistantMessageId)
     .filter((item) => item.role === 'user' || (item.role === 'agent' && item.content.trim().length > 0))
@@ -912,7 +912,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         publicBaseUrl: resolvePublicBaseUrl(req),
         buildRunId: () => buildId('run'),
         buildProxyUsername: (u) => sanitizePathPart(u.email || u.name || u.id),
-        mapTaskMessagesForRuntime,
+        mapTaskMessagesForExecution,
         updateTaskActivity,
         emitTaskEvent: (taskId, payload) => {
           if (payload.type !== 'task_update') {

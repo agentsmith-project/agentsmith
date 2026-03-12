@@ -8,7 +8,7 @@ import {
   recordNotebookTaskRunTerminalWithoutDone,
 } from './notebook-task-metrics.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
-import { buildNotebookRuntimeTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
+import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
@@ -73,7 +73,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   publicBaseUrl: string;
   buildRunId: () => string;
   buildProxyUsername: (user: AuthenticatedUser) => string;
-  mapTaskMessagesForRuntime: (taskId: string, assistantMessageId: string) => Array<Record<string, unknown>>;
+  mapTaskMessagesForExecution: (taskId: string, assistantMessageId: string) => Array<Record<string, unknown>>;
   updateTaskActivity: (task: NotebookTaskRecord) => void;
   emitTaskEvent: (taskId: string, payload: ExecutionEventPayload) => void;
   onDispatched?: (args: { taskId: string; runId: string; requestId: string; cancel: () => void }) => void;
@@ -100,7 +100,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     publicBaseUrl,
     buildRunId,
     buildProxyUsername,
-    mapTaskMessagesForRuntime,
+    mapTaskMessagesForExecution,
     updateTaskActivity,
     emitTaskEvent,
     onDispatched,
@@ -210,7 +210,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     }
     const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
     const userHandle = buildProxyUsername(user);
-    const taskInputs = await buildNotebookRuntimeTaskInputs({
+    const taskInputs = await buildNotebookTaskInputs({
       deps,
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -228,7 +228,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       sessionId: task.id,
       agentId,
       model,
-      messages: mapTaskMessagesForRuntime(taskId, assistantMessage.id),
+      messages: mapTaskMessagesForExecution(taskId, assistantMessage.id),
       executionContext: {
         workspace_id: task.workspace_id,
         project_id: task.project_id,

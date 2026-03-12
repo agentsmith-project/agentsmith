@@ -2,7 +2,7 @@
 
 This directory contains shared backend architecture packages for dual deployment:
 
-- Cloudflare runtime path (`@mbos/api-entry-cf`, `@mbos/adapters-cf`)
+- Cloudflare deployment path (`@mbos/api-entry-cf`, `@mbos/adapters-cf`)
 - Private deployment path (`@mbos/api-entry-node`, `@mbos/adapters-private`)
 - Shared core (`@mbos/contracts`, `@mbos/domain`, `@mbos/ports`, `@mbos/application`)
 

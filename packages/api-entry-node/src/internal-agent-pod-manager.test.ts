@@ -64,7 +64,7 @@ describe('internal-agent-pod-manager', () => {
 
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
     expect(exec).toHaveBeenCalledTimes(1);
-    expect(executionConnection.getAgentOnlineState).toHaveBeenCalled();
+    expect(runtime.getAgentOnlineState).toHaveBeenCalled();
   });
 
   it('fails fast when internal key is missing', async () => {

@@ -90,7 +90,7 @@ function readInternalConfig(agent: AgentRecord): {
   const image = typeof cfg.image === 'string' ? cfg.image.trim() : '';
   const rawKey = typeof cfg._internal_raw_key === 'string' ? cfg._internal_raw_key.trim() : '';
   if (!image || !rawKey) {
-    throw Object.assign(new Error('internal_agent_runtime_not_configured'), {
+    throw Object.assign(new Error('internal_agent_execution_not_configured'), {
       code: 'AGENT_SANDBOX_NOT_CONFIGURED',
     });
   }

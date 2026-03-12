@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import type { SessionStreamState } from '@/lib/chat/stream-state';
 
-interface ChatRuntimeState {
+interface ChatStreamStoreState {
   streamIdBySession: Record<string, string>;
   streamStateBySession: Record<string, SessionStreamState>;
   setStreamId: (sessionId: string, streamId: string | null) => void;
@@ -12,7 +12,7 @@ interface ChatRuntimeState {
   clearStreamState: (sessionId: string) => void;
 }
 
-export const useChatRuntimeStore = create<ChatRuntimeState>((set) => ({
+export const useChatStreamStore = create<ChatStreamStoreState>((set) => ({
   streamIdBySession: {},
   streamStateBySession: {},
   setStreamId: (sessionId, streamId) => {

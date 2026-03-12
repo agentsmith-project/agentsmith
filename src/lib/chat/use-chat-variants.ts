@@ -52,7 +52,7 @@ export function useChatVariants(args: UseChatVariantsArgs): UseChatVariantsResul
         const groupId = assistant.variantGroupId as string;
         const nextIndex = assistant.variantIndex as number;
         // Avoid infinite update loops while streaming:
-        // the runtime state can update frequently (tokens), but the variant index usually doesn't.
+        // the stream state can update frequently (tokens), but the variant index usually doesn't.
         setActiveVariantIndexByGroup((prev) => (prev[groupId] === nextIndex ? prev : { ...prev, [groupId]: nextIndex }));
       }
       return;

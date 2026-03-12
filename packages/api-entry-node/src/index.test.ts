@@ -4976,7 +4976,7 @@ describe('api-entry-node projects routes', () => {
     expect(body.limits.max_trace_details_bytes).toBeGreaterThan(0);
   });
 
-  it('exposes authenticated notebook runtime metrics in prometheus text format', async () => {
+  it('exposes authenticated notebook task metrics in prometheus text format', async () => {
     const { baseUrl } = startServer();
 
     const res = await apiFetch(baseUrl, '/api/v1/internal/notebook-task-metrics/prometheus');

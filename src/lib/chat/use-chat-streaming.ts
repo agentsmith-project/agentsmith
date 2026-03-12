@@ -8,7 +8,7 @@ import { getChatStreamAttach, postChatStream, streamSseJson } from '@/lib/chat/s
 import { createThrottle } from '@/lib/chat/throttle';
 import { chatMessagesKey, chatSessionsKey } from '@/lib/chat/query-keys';
 import type { SessionStreamState } from '@/lib/chat/stream-state';
-import { useChatRuntimeStore } from '@/lib/chat/runtime-store';
+import { useChatStreamStore } from '@/lib/chat/stream-store';
 import { toast } from '@/components/ui/toast';
 import type { ChatMessageInputRef } from '@/lib/types/input-ref';
 
@@ -112,11 +112,11 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
   const streamControllersRef = useRef<Map<string, AbortController>>(new Map());
   const streamIdsRef = useRef<Map<string, string>>(new Map());
   const streamCleanupTimersRef = useRef<Map<string, number>>(new Map());
-  const streamStateBySession = useChatRuntimeStore((s) => s.streamStateBySession);
-  const streamIdBySession = useChatRuntimeStore((s) => s.streamIdBySession);
-  const setStreamState = useChatRuntimeStore((s) => s.setStreamState);
-  const clearStreamState = useChatRuntimeStore((s) => s.clearStreamState);
-  const setStreamId = useChatRuntimeStore((s) => s.setStreamId);
+  const streamStateBySession = useChatStreamStore((s) => s.streamStateBySession);
+  const streamIdBySession = useChatStreamStore((s) => s.streamIdBySession);
+  const setStreamState = useChatStreamStore((s) => s.setStreamState);
+  const clearStreamState = useChatStreamStore((s) => s.clearStreamState);
+  const setStreamId = useChatStreamStore((s) => s.setStreamId);
 
   const setStreamIdForSession = useCallback((sessionId: string, streamIdValue: string | null) => {
     if (streamIdValue) {
@@ -148,7 +148,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         : { ...next, errorCode: null, errorMessage: null };
       if ((normalized.status === 'stopped' || normalized.status === 'error') && !normalized.assistant) {
         const timer = window.setTimeout(() => {
-          const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
+          const currentState = useChatStreamStore.getState().streamStateBySession[sessionId];
           if (!currentState) return;
           if (
             currentState.status === 'connecting' ||
@@ -161,12 +161,12 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
         cleanupTimers.set(sessionId, timer);
       }
       if (normalized.status === 'idle' && !normalized.assistant) {
-        // Keep the runtime store minimal; remove idle empty states.
+        // Keep the stream state store minimal; remove idle empty states.
         const schedule = typeof queueMicrotask === 'function'
           ? queueMicrotask
           : (cb: () => void) => window.setTimeout(cb, 0);
         schedule(() => {
-          const currentState = useChatRuntimeStore.getState().streamStateBySession[sessionId];
+          const currentState = useChatStreamStore.getState().streamStateBySession[sessionId];
           if (currentState && currentState.status === 'idle' && !currentState.assistant) {
             clearStreamState(sessionId);
           }
@@ -197,7 +197,7 @@ export function useChatStreaming(args: UseChatStreamingArgs): UseChatStreamingRe
               setStreamIdForSession(session.id, active.stream_id);
             }
           } catch {
-            // Keep UI resilient when runtime state is stale.
+            // Keep UI resilient when stream state is stale.
           }
         }),
       );

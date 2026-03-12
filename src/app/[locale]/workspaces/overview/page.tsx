@@ -346,7 +346,7 @@ export default function WorkspacesOverviewPage() {
                         ) : (
                           <span
                             className="inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs text-tertiary"
-                            data-testid={`workspace-overview__open-runtime-activation-disabled--${workspace.workspaceId}`}
+                            data-testid={`workspace-overview__open-audit-disabled--${workspace.workspaceId}`}
                           >
                             {t('org_overview_open_audit')}
                           </span>

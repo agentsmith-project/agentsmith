@@ -699,7 +699,7 @@ npx tsc --noEmit
 
 This follow-up extends the external notebook-agent runtime line toward a NotebookLM-like workflow:
 
-- notebook task attached sources are injected to external runtime context as `task_inputs`
+- notebook task attached sources are injected to external execution context as `task_inputs`
 - runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
 - runner writes task-local `AGENTS.md` (headless rules, artifact dir rules, input helper guidance)
 - runner installs task-local Codex skill:
@@ -741,7 +741,7 @@ Current known boundary:
 - Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/runtime mapping is centralized in `notebook-input-refs.ts`.
 - Shared backend resolver layering is now in place:
   - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)
-  - `input-ref-runtime-resolver.ts` (object/url/artifact runtime metadata resolution + fallback rules)
+  - `input-ref-input-resolver.ts` (object/url/artifact runtime metadata resolution + fallback rules)
   - runtime-specific adapters build on top (`chat-input-refs.ts`, `notebook-input-refs.ts`)
 - Chat `attachments/init` now normalizes `library_object` / `url` attachment metadata via the shared runtime metadata resolver (avoids handler-local drift in filename/type/size fallback rules).
 

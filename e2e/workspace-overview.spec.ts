@@ -29,3 +29,19 @@ test.describe('Workspace Overview', () => {
     await expect(authedPage.getByTestId('workspace-overview__empty-filtered')).toBeVisible();
   });
 });
+
+test.describe('Workspace Business Entry', () => {
+  test('workspace home opens projects and projects can return to workspace home', async ({ authedPage }) => {
+    await goTo(authedPage, '/en-US/workspaces/ws_default');
+
+    await expect(authedPage.getByTestId('workspace-home__page')).toBeVisible();
+    await authedPage.getByTestId('workspace-home__open-projects').click();
+
+    await authedPage.waitForURL(/\/en-US\/workspaces\/ws_default\/projects$/, { timeout: 10_000 });
+    await expect(authedPage.getByTestId('projects__back-to-workspace')).toBeVisible();
+
+    await authedPage.getByTestId('projects__back-to-workspace').click();
+    await authedPage.waitForURL(/\/en-US\/workspaces\/ws_default$/, { timeout: 10_000 });
+    await expect(authedPage.getByTestId('workspace-home__page')).toBeVisible();
+  });
+});

@@ -1318,6 +1318,7 @@
   "workspace_projects_count": "Projects",
   "workspace_active_projects_count": "Active projects",
   "workspace_open_projects": "Open projects",
+  "workspace_create_project": "New Project",
   "workspace_can_create_projects": "Can create projects",
   "workspace_cannot_create_projects": "Read-only project access",
   "workspace_governance_eyebrow": "Review",

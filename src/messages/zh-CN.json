@@ -1320,6 +1320,7 @@
   "workspace_projects_count": "项目数",
   "workspace_active_projects_count": "活跃项目",
   "workspace_open_projects": "打开项目列表",
+  "workspace_create_project": "新建项目",
   "workspace_can_create_projects": "可创建项目",
   "workspace_cannot_create_projects": "仅可读取项目",
   "workspace_governance_eyebrow": "审查",

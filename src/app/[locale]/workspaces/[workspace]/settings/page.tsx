@@ -4,10 +4,11 @@ import Link from 'next/link';
 import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderOpen, Loader2, Settings as SettingsIcon, Users } from 'lucide-react';
+import { FolderOpen, Loader2, Plus, Settings as SettingsIcon, Users } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
+import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { Button, buttonVariants } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -45,6 +46,7 @@ export default function WorkspaceSettingsPage() {
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
   const { data: projects = [] } = useProjects(workspaceId ?? '');
   const projectApi = React.useMemo(() => new ProjectAPI(getApiClient()), []);
+  const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
   const [adminDialogProjectId, setAdminDialogProjectId] = React.useState<string | null>(null);
   const [selectedProjectAdmins, setSelectedProjectAdmins] = React.useState<string[]>([]);
   const [isSavingProjectAdmins, setIsSavingProjectAdmins] = React.useState(false);
@@ -108,6 +110,12 @@ export default function WorkspaceSettingsPage() {
       setIsSavingProjectAdmins(false);
     }
   }, [adminDialogProject, projectApi, queryClient, selectedProjectAdmins, workspaceId]);
+
+  const handleCreateProjectSuccess = React.useCallback(async () => {
+    await queryClient.invalidateQueries({
+      queryKey: ['workspaces', workspaceId, 'projects'],
+    });
+  }, [queryClient, workspaceId]);
 
   if (!workspaceId) {
     return (
@@ -181,11 +189,23 @@ export default function WorkspaceSettingsPage() {
             </section>
 
             <section className="rounded-xl border border-border bg-surface p-5" data-testid="ws-settings__projects">
-              <SectionHeading
-                eyebrow={t('workspace_projects_eyebrow')}
-                title={t('workspace_projects_title')}
-                subtitle={t('workspace_projects_admin_subtitle')}
-              />
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <SectionHeading
+                  eyebrow={t('workspace_projects_eyebrow')}
+                  title={t('workspace_projects_title')}
+                  subtitle={t('workspace_projects_admin_subtitle')}
+                />
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  data-testid="ws-settings__create-project"
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {t('workspace_create_project')}
+                </Button>
+              </div>
 
               {projects.length === 0 ? (
                 <p className="mt-4 text-sm text-tertiary">{t('workspace_projects_empty')}</p>
@@ -314,6 +334,13 @@ export default function WorkspaceSettingsPage() {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+
+            <CreateProjectDialog
+              open={createProjectOpen}
+              onOpenChange={setCreateProjectOpen}
+              workspaceId={workspaceId}
+              onSuccess={handleCreateProjectSuccess}
+            />
           </main>
         </div>
       </PageLayout>

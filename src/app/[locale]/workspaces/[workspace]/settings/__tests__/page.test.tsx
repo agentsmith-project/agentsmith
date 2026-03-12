@@ -59,6 +59,7 @@ const STABLE_PROJECTS = [
 ];
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
+const mockProjectCreate = vi.fn();
 const mockProjectUpdate = vi.fn();
 
 vi.mock('next/navigation', () => ({
@@ -96,6 +97,7 @@ vi.mock('@/lib/api', () => ({
   getApiClient: () => ({}),
   handleErrorForToast: vi.fn(),
   ProjectAPI: class {
+    create = mockProjectCreate;
     update = mockProjectUpdate;
   },
 }));
@@ -125,6 +127,9 @@ describe('WorkspaceSettingsPage', () => {
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
     );
+    mockProjectCreate.mockResolvedValue({
+      id: 'proj_created',
+    });
     mockProjectUpdate.mockResolvedValue({
       id: 'proj_1',
     });
@@ -169,6 +174,30 @@ describe('WorkspaceSettingsPage', () => {
       '/en/workspaces/ws_1/projects/proj_1/settings',
     );
     expect(screen.getByTestId('ws-settings__project-edit-admins--proj_1')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
+  });
+
+  it('opens create project dialog and creates a project', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('ws-settings__create-project'));
+    await user.type(screen.getByLabelText('name'), 'New Admin Project');
+    await user.click(screen.getByRole('button', { name: 'create' }));
+
+    await waitFor(() => {
+      expect(mockProjectCreate).toHaveBeenCalledWith('ws_1', {
+        workspace_id: 'ws_1',
+        name: 'New Admin Project',
+        description: undefined,
+        visibility: 'private',
+        join_policy: 'approval_required',
+      });
+    });
   });
 
   it('opens project admin dialog and saves selected admins', async () => {

@@ -212,6 +212,50 @@ describe('audit-usage-store usage records summary', () => {
     expect(usageRows.items[0]?.decision_id).toBe(decisionId);
   });
 
+  it('preserves unknown actor and resource shapes in audit event records', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_1';
+    const projectId = 'proj_1';
+    const now = new Date().toISOString();
+
+    await recordAuditEvent(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      actor_type: 'service_account',
+      actor_id: 'svc_1',
+      action: 'usage_report_delivery_failed',
+      result: 'error',
+      error_code: 'UPSTREAM_429',
+      request_id: 'req_unknown_shape',
+      resource_type: 'governance_incident',
+      resource_id: 'incident_1',
+      metadata_json: {},
+    });
+
+    const rows = await listAuditEvents(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      action: null,
+      actorType: null,
+      actorId: null,
+      endUserId: null,
+      resourceType: null,
+      resourceId: null,
+      result: null,
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(rows.items[0]?.actor_type).toBe('service_account');
+    expect(rows.items[0]?.resource_type).toBe('governance_incident');
+    expect(rows.items[0]?.error_code).toBe('UPSTREAM_429');
+    expect(rows.items[0]?.action).toBe('usage_report_delivery_failed');
+  });
+
   it('filters usage facts by request provider, model, and error class', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';

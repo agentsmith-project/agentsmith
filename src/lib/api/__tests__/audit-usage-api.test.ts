@@ -343,4 +343,41 @@ describe('AuditAPI list normalization', () => {
     expect(first?.trace_run_id).toBe('run_1');
     expect(first?.trace_ref).toBe('esc_1');
   });
+
+  it('preserves unknown actor and resource types from wire response', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      items: [
+        {
+          id: 'audit_2',
+          timestamp: '2026-03-02T00:00:00.000Z',
+          actor_type: 'service_account',
+          actor_id: 'svc_1',
+          action: 'usage_report_delivery_failed',
+          resource_type: 'governance_incident',
+          resource_id: 'incident_2',
+          result: 'error',
+          error_code: 'UPSTREAM_429',
+          request_id: 'req_2',
+          metadata_json: {},
+        },
+      ],
+      total: 1,
+      page: 1,
+      page_size: 25,
+      has_more: false,
+    });
+    const api = new AuditAPI({
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof AuditAPI>[0]);
+
+    const result = await api.list('ws_1', 'proj_1', {
+      start_time: '2026-03-01T00:00:00.000Z',
+      end_time: '2026-03-02T00:00:00.000Z',
+    });
+
+    const first = result.items[0];
+    expect(first?.actor_type).toBe('service_account');
+    expect(first?.resource_type).toBe('governance_incident');
+    expect(first?.error_code).toBe('UPSTREAM_429');
+  });
 });

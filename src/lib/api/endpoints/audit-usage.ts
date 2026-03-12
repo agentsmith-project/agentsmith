@@ -353,11 +353,9 @@ export class AuditAPI {
     return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
   }
 
-  private static normalizeActorType(value: unknown): 'user' | 'agent' | 'plugin' {
-    if (value === 'agent' || value === 'plugin') {
-      return value;
-    }
-    return 'user';
+  private static normalizeActorType(value: unknown): string {
+    const actorType = AuditAPI.asString(value);
+    return actorType ?? 'user';
   }
 
   private static normalizeResult(value: unknown): 'ok' | 'error' {

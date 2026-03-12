@@ -42,7 +42,7 @@ export default function WorkspaceLoginPage() {
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;
-    router.replace(`/workspaces/${workspaceId}/projects`);
+    router.replace(`/workspaces/${workspaceId}`);
   }, [hydrated, isAuthenticated, locale, router, workspaceId]);
 
   useEffect(() => {
@@ -89,7 +89,7 @@ export default function WorkspaceLoginPage() {
         },
         `mock_token_${workspaceId}_${Date.now()}`,
       );
-      router.push(`/workspaces/${workspaceId}/projects`);
+      router.push(`/workspaces/${workspaceId}`);
     } catch (error) {
       console.error('Workspace login failed:', error);
       setIsLoggingIn(false);

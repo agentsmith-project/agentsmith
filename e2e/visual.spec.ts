@@ -90,6 +90,12 @@ test.describe('Visual - Workspace Pages', () => {
     await expect(authedPage).toHaveScreenshot('workspace-overview.png', { fullPage: true });
   });
 
+  test('workspace home', async ({ authedPage }) => {
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}`);
+    await expect(authedPage.getByTestId('workspace-home__heading')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-home.png', { fullPage: true });
+  });
+
   test('workspace selection', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/login/workspace');
     await expect(authedPage).toHaveScreenshot('workspace-select.png', { fullPage: true });

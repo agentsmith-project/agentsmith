@@ -271,7 +271,12 @@
     "overview_empty_filtered": "No workspaces match your search.",
     "overview_projects_entry": "Project entry",
     "overview_updated_at": "Updated: {value}",
-    "overview_open_projects": "Open projects"
+    "overview_open_workspace": "Open workspace",
+    "workspace_home_eyebrow": "Workspace business area",
+    "workspace_home_subtitle": "Use this workspace to open projects and continue into the business surfaces you need.",
+    "workspace_home_open_settings": "Open workspace settings",
+    "workspace_home_denied_title": "Workspace access denied",
+    "workspace_home_denied_description": "Your current account cannot open this workspace."
   },
   "project": {
     "select": "Select Project",

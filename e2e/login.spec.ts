@@ -81,14 +81,8 @@ test.describe('Workspace Login Journey', () => {
     await page.getByTestId('workspace-login__email-input').fill('user@test.com');
     await page.getByTestId('workspace-login__submit').click();
 
-    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/projects/, { timeout: 15_000 });
-    const projectTable = page.getByTestId('projects__table');
-    const permissionDenied = page.getByText('Permission Denied');
-
-    await expect(async () => {
-      const tableVisible = await projectTable.isVisible().catch(() => false);
-      const deniedVisible = await permissionDenied.isVisible().catch(() => false);
-      expect(tableVisible || deniedVisible).toBe(true);
-    }).toPass({ timeout: 15_000 });
+    await page.waitForURL(/\/en-US\/workspaces\/ws_default$/, { timeout: 15_000 });
+    await expect(page.getByTestId('workspace-home__page')).toBeVisible();
+    await expect(page.getByTestId('workspace-home__open-projects')).toBeVisible();
   });
 });

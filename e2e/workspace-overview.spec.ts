@@ -14,13 +14,13 @@ test.describe('Workspace Overview', () => {
     await expect(authedPage.getByTestId('workspace-overview__search')).toBeVisible();
   });
 
-  test('shows workspace cards and project entry links', async ({ authedPage }) => {
+  test('shows workspace cards and business entry links', async ({ authedPage }) => {
     const firstCard = authedPage.getByTestId(/workspace-overview__card--/).first();
     await expect(firstCard).toBeVisible();
 
-    const firstOpenProjects = authedPage.getByTestId(/workspace-overview__open-projects--/).first();
-    await expect(firstOpenProjects).toBeVisible();
-    await expect(firstOpenProjects).toHaveAttribute('href', /\/workspaces\/[^/]+\/projects$/);
+    const firstOpenWorkspace = authedPage.getByTestId(/workspace-overview__open-workspace--/).first();
+    await expect(firstOpenWorkspace).toBeVisible();
+    await expect(firstOpenWorkspace).toHaveAttribute('href', /\/workspaces\/[^/]+$/);
   });
 
   test('supports workspace search', async ({ authedPage }) => {

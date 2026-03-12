@@ -273,7 +273,12 @@
     "overview_empty_filtered": "没有匹配当前搜索的工作空间。",
     "overview_projects_entry": "项目入口",
     "overview_updated_at": "最近更新：{value}",
-    "overview_open_projects": "进入项目"
+    "overview_open_workspace": "进入工作区",
+    "workspace_home_eyebrow": "工作区业务入口",
+    "workspace_home_subtitle": "从这里进入当前工作区的项目，并继续打开需要的业务功能。",
+    "workspace_home_open_settings": "打开工作区设置",
+    "workspace_home_denied_title": "无权访问工作区",
+    "workspace_home_denied_description": "当前账号无法打开此工作区。"
   },
   "project": {
     "select": "选择项目",

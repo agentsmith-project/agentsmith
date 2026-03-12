@@ -165,7 +165,7 @@ export default function WorkspaceLoginCallbackPage() {
       getApiClient().setToken(token.access_token);
       sessionStorage.removeItem('mbos:keycloak:pkce');
       if (!cancelled) {
-        router.replace(`/workspaces/${workspaceId}/projects`);
+        router.replace(`/workspaces/${workspaceId}`);
       }
     };
 

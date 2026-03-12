@@ -86,7 +86,7 @@ describe('WorkspaceLoginPage', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/public/workspaces/ws_alpha', { cache: 'no-store' });
   });
 
-  it('redirects to workspace projects after mock quick login', async () => {
+  it('redirects to workspace home after mock quick login', async () => {
     render(<WorkspaceLoginPage />);
 
     expect(await screen.findByTestId('workspace-login__submit')).toBeInTheDocument();
@@ -96,7 +96,7 @@ describe('WorkspaceLoginPage', () => {
     fireEvent.click(screen.getByTestId('workspace-login__submit'));
 
     expect(mockSetAuth).toHaveBeenCalled();
-    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha/projects');
+    expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha');
   });
 
   it('starts keycloak login with workspace-specific callback', async () => {

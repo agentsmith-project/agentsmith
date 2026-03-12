@@ -36,9 +36,9 @@ describe('WorkspacesOverviewPage', () => {
     expect(screen.getByTestId('workspace-overview__search')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__list')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-overview__card--ws_1')).toBeInTheDocument();
-    expect(screen.getByTestId('workspace-overview__open-projects--ws_1')).toHaveAttribute(
+    expect(screen.getByTestId('workspace-overview__open-workspace--ws_1')).toHaveAttribute(
       'href',
-      '/en-US/workspaces/ws_1/projects',
+      '/en-US/workspaces/ws_1',
     );
   });
 

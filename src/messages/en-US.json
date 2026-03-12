@@ -1233,13 +1233,10 @@
       "panel_title": "Usage Panel",
       "limits_section_title": "Remaining Capacity",
       "trend_section_title": "Usage Trend",
-      "trend_section_subtitle": "A simple request trend view for your current time range.",
-      "endpoint_tabs_label": "Resources",
       "limit_mode_label": "Limit Metric",
       "limit_mode_all": "All",
       "limit_mode_rate": "Rate",
       "limit_mode_spending": "Spending",
-      "limits_title": "Endpoint Limit Usage",
       "limits_empty": "No endpoint limit data available.",
       "rate_limit_title": "Rate Limit",
       "spending_limit_title": "Spending Limit",
@@ -1253,7 +1250,6 @@
         "day": "Per Day",
         "current": "Current"
       },
-      "trend_focus_note": "Use the bars to spot recent activity changes.",
       "no_data": "No usage trend data available.",
       "no_data_hint": "This view will populate after requests are recorded for the selected time range.",
       "period": {

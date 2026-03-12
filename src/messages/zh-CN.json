@@ -1235,13 +1235,10 @@
       "panel_title": "使用情况面板",
       "limits_section_title": "剩余额度",
       "trend_section_title": "使用趋势",
-      "trend_section_subtitle": "按当前时间范围查看简洁的请求趋势。",
-      "endpoint_tabs_label": "资源",
       "limit_mode_label": "限制统计",
       "limit_mode_all": "全部",
       "limit_mode_rate": "速率",
       "limit_mode_spending": "支出",
-      "limits_title": "Endpoint 限制消耗",
       "limits_empty": "暂无 endpoint 限制数据。",
       "rate_limit_title": "速率限制",
       "spending_limit_title": "支出限制",
@@ -1255,7 +1252,6 @@
         "day": "每天",
         "current": "当前"
       },
-      "trend_focus_note": "通过柱状变化快速感知最近的使用变化。",
       "no_data": "暂无用量趋势数据。",
       "no_data_hint": "在当前时间范围内产生请求后，这里会显示趋势。",
       "period": {

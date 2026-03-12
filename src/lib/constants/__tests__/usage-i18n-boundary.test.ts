@@ -13,7 +13,6 @@ const EXPECTED_USAGE_TOP_LEVEL_KEYS = [
 ];
 
 const EXPECTED_USAGE_VIEW_KEYS = [
-  'endpoint_tabs_label',
   'limit_mode_all',
   'limit_mode_label',
   'limit_mode_rate',
@@ -23,15 +22,12 @@ const EXPECTED_USAGE_VIEW_KEYS = [
   'limit_group_empty',
   'window',
   'limits_section_title',
-  'limits_title',
   'limit_reset_at',
   'limits_empty',
   'panel_title',
   'remaining_suffix',
   'status_badge',
   'trend_section_title',
-  'trend_section_subtitle',
-  'trend_focus_note',
   'no_data',
   'no_data_hint',
   'period',

@@ -207,6 +207,18 @@ test.describe('Visual - User Pages', () => {
 // ─── Dialog / Drawer Screenshots ────────────────────────────────────────────
 
 test.describe('Visual - Overlays', () => {
+  test('audit detail drawer', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('audit'));
+    const table = authedPage.getByTestId('audit__table');
+    await expect(table).toBeVisible();
+    const firstRow = table.getByTestId('audit__table__row').first();
+    await firstRow.getByRole('button').last().click();
+    await authedPage.getByRole('menuitem', { name: /view details/i }).click();
+    await expect(authedPage.getByTestId('audit__detail-summary')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('drawer-audit-detail.png');
+  });
+
   test('create agent dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('agents'));
     await authedPage.getByTestId('agents__create-btn').click();
@@ -253,6 +265,17 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('dialog-files-rename.png');
   });
 
+  test('files - selection with details panel', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    const row = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
+    await expect(row).toBeVisible();
+    await row.click();
+    await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible();
+    await expect(authedPage.getByTestId('files__details-panel')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('files-selection-details.png', { fullPage: true });
+  });
+
   test('create API key dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/user/api-keys');
     await authedPage.getByTestId('api-keys__create-btn').click();
@@ -273,6 +296,36 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByRole('tab', { name: /groups/i }).first().click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('members-project-groups.png', { fullPage: true });
+  });
+
+  test('members - change history dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('members'));
+    const firstRow = authedPage.getByTestId('members__table__row').first();
+    await expect(firstRow).toBeVisible();
+    await firstRow.getByRole('button').click();
+    await authedPage.getByRole('menuitem', { name: /view change history/i }).click();
+    await expect(authedPage.getByRole('dialog')).toBeVisible();
+    await expect(authedPage.getByText(/no change history available/i)).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('members-change-history-dialog.png');
+  });
+
+  test('endpoints - edit dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('endpoints'));
+    const firstRow = authedPage.getByTestId('endpoints__table__row').first();
+    await expect(firstRow).toBeVisible();
+    await firstRow.getByRole('button', { name: /edit/i }).click();
+    await expect(authedPage.getByTestId('endpoints__edit-dialog')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('dialog-edit-endpoint.png');
+  });
+
+  test('usage - rate limit focus', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('usage'));
+    await authedPage.getByTestId('usage__limit-mode-rate').click();
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('usage-rate-focus.png', { fullPage: true });
   });
 
 });

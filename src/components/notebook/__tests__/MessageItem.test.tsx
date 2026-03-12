@@ -121,7 +121,7 @@ describe('MessageItem', () => {
       expect(messageBubble).toBeInTheDocument();
     });
 
-    it('does not render raw tool/runtime error text as assistant bubble content', () => {
+    it('does not render raw tool/execution error text as assistant bubble content', () => {
       const errorOnlyMessage: TaskMessage = {
         ...mockAgentMessage,
         content: '{"type":"error","message":"工具调用错误"}{"type":"turn.failed","error":{"message":"upstream error"}}',

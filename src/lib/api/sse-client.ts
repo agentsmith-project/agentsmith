@@ -27,7 +27,7 @@ const SSE_ALLOW_JWT_FALLBACK =
  * Configuration for SSE ticket migration
  */
 export interface SSETicketConfig {
-  /** Whether ticket mode is enabled via runtime switch */
+  /** Whether ticket mode is enabled via environment switch */
   enabled: boolean;
   /** Grayscale rollout percentage (0-100) */
   percentage: number;

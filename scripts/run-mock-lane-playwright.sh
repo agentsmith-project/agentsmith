@@ -204,7 +204,7 @@ while [[ "${attempt}" -le "${MAX_ATTEMPTS}" ]]; do
   fi
 
   if is_transient_playwright_failure || ! is_server_alive; then
-    info "detected transient web/runtime failure; restarting mock lane and retrying (${attempt}/${MAX_ATTEMPTS})"
+    info "detected transient web/execution-service failure; restarting mock lane and retrying (${attempt}/${MAX_ATTEMPTS})"
     kill_port_listeners
     start_mock_server
     attempt=$((attempt + 1))

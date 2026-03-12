@@ -7,7 +7,7 @@ PORT_API="${PORT_API:-20000}"
 OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 ticket_file=""
 probe_file=""
-legacy_probe_file=""
+query_token_probe_file=""
 
 info() { echo "[gov-sse-ticket-smoke] $*"; }
 err() { echo "[gov-sse-ticket-smoke] ERROR: $*" >&2; }
@@ -35,8 +35,8 @@ main() {
   local base="http://localhost:${PORT_API}/api/v1"
   ticket_file="$(mktemp)"
   probe_file="$(mktemp)"
-  legacy_probe_file="$(mktemp)"
-  trap 'rm -f "${ticket_file:-}" "${probe_file:-}" "${legacy_probe_file:-}"' EXIT
+  query_token_probe_file="$(mktemp)"
+  trap 'rm -f "${ticket_file:-}" "${probe_file:-}" "${query_token_probe_file:-}"' EXIT
 
   info "requesting opaque sse ticket"
   local ticket_code
@@ -86,14 +86,14 @@ main() {
   fi
 
   info "verifying query-token fallback is disabled"
-  local legacy_code
-  legacy_code="$(
-    curl -sS -o "${legacy_probe_file}" -w '%{http_code}' \
+  local query_token_code
+  query_token_code="$(
+    curl -sS -o "${query_token_probe_file}" -w '%{http_code}' \
       "${base}/me/notifications?token=${token}" || true
   )"
-  if [[ "${legacy_code}" != "401" ]]; then
-    err "expected 401 for query-token fallback, got HTTP ${legacy_code}"
-    cat "${legacy_probe_file}" >&2 || true
+  if [[ "${query_token_code}" != "401" ]]; then
+    err "expected 401 for query-token fallback, got HTTP ${query_token_code}"
+    cat "${query_token_probe_file}" >&2 || true
     exit 1
   fi
 

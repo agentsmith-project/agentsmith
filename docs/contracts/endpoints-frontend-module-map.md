@@ -33,7 +33,7 @@ Applies to route:
 
 - Endpoint payload follows `docs/contracts/endpoints-capability-contract.md`.
 - When model catalog capability is enabled, catalog metadata and sync flow follow `docs/contracts/model-catalog-project-pricing-contract.md`.
-- Frontend must not call remote provider catalogs at runtime.
+- Frontend must not call remote provider catalogs during request handling.
 - Create/update/import/export must preserve capability semantics:
   - `chat_completion`
   - `multimodal_completion`

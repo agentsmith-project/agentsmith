@@ -45,7 +45,6 @@ const CHECK_ID_BY_NAME: Record<string, string> = {
   'OpenAPI contract checks': 'contracts-check',
   'Mainline governance smoke': 'smoke-main',
   'Governance smoke': 'smoke-governance',
-  'Runtime proxy billing governance workflow': 'runtime-governance-evidence',
 };
 
 function timestampSuffix(now = new Date()): string {

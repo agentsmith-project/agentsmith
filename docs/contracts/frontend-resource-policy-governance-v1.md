@@ -53,7 +53,7 @@ Conflict rule:
 - spending: `endpoint.spending_usd_per_minute`, `endpoint.spending_usd_per_5_hours`, `endpoint.spending_usd_per_day`
 
 2. `agent`
-- out of scope in MVP (no policy management and no runtime enforcement)
+- out of scope in MVP (no policy management and no execution-path enforcement)
 
 ## Runtime Enforcement Flow
 

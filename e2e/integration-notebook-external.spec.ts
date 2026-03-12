@@ -144,7 +144,7 @@ type ExecutionWsMessage = {
 };
 
 test.describe('@lane-real integration notebook external execution service', () => {
-  test('task message streams through runtime->endpoint proxy chain', async ({ page }) => {
+  test('task message streams through execution->endpoint proxy chain', async ({ page }) => {
     test.setTimeout(180_000);
 
     const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -226,7 +226,7 @@ test.describe('@lane-real integration notebook external execution service', () =
       const connInfo = (await connInfoRes.json()) as { ws_url: string };
       const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', apiBase.replace('http://', 'ws://'));
 
-      const runtimeSeen = new Promise<{
+      const executionSeen = new Promise<{
         endpointProxyBase: string;
         userToken: string;
         taskId: string;
@@ -322,13 +322,13 @@ test.describe('@lane-real integration notebook external execution service', () =
       );
       expect(postMessageRes.ok()).toBeTruthy();
 
-      const runtime = await runtimeSeen;
-      expect(runtime.taskId).toBe(task.id);
-      expect(runtime.runId.length).toBeGreaterThan(0);
-      expect(runtime.endpointProxyBase).toBe(
+      const execution = await executionSeen;
+      expect(execution.taskId).toBe(task.id);
+      expect(execution.runId.length).toBeGreaterThan(0);
+      expect(execution.endpointProxyBase).toBe(
         `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpoint.id}/proxy`,
       );
-      expect(runtime.userToken.length).toBeGreaterThan(0);
+      expect(execution.userToken.length).toBeGreaterThan(0);
 
       await expect
         .poll(async () => {

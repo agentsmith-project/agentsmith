@@ -29,7 +29,7 @@ describe('internal-agent-pod-manager', () => {
       .mockResolvedValueOnce({ phase: 'Running' });
     const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
     const exec = vi.fn().mockResolvedValue({ exit_code: 0, stdout: '123', stderr: '', duration_ms: 10 });
-    const runtime = {
+    const onlineStateStore = {
       getAgentOnlineState: vi.fn()
         .mockReturnValueOnce(false)
         .mockReturnValueOnce(false)
@@ -44,7 +44,7 @@ describe('internal-agent-pod-manager', () => {
         keepalive: vi.fn().mockResolvedValue(null),
         exec,
       },
-      runtime,
+      onlineStateStore,
       'ws://api:20000',
       {
         phasePollIntervalMs: 1,
@@ -64,7 +64,7 @@ describe('internal-agent-pod-manager', () => {
 
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
     expect(exec).toHaveBeenCalledTimes(1);
-    expect(runtime.getAgentOnlineState).toHaveBeenCalled();
+    expect(onlineStateStore.getAgentOnlineState).toHaveBeenCalled();
   });
 
   it('fails fast when internal key is missing', async () => {

@@ -342,6 +342,13 @@ async function waitForAny(page, testIds, timeoutMs, recover) {
 async function main() {
   const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
   const strictMode = smokeMode === 'strict';
+  const pageFilter = new Set(
+    String(process.env.GOV_PAGE_FILTER || '')
+      .split(',')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  );
+  const shouldRun = (name) => pageFilter.size === 0 || pageFilter.has(name);
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
   const apiBase = process.env.API_BASE || 'http://localhost:20000';
   const locale = process.env.LOCALE || 'zh-CN';
@@ -386,119 +393,127 @@ async function main() {
     const overviewPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/overview`;
     await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: overviewPath, locale, workspaceId }).catch(() => {});
 
-    // Members: basic filter interactions and invite dialog UX (safe interaction).
-    const membersPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/members`;
-    console.log(`[gov-interact] members ${membersPath}`);
-    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: membersPath, locale, workspaceId });
-    const membersReady = await waitForAny(page, [
-      'members__search-input',
-      'members__table',
-      'members__groups-section',
-      ...(strictMode ? [] : ['page-state__error']),
-    ], 30_000, async () => {
-      const currentPath = new URL(page.url()).pathname;
-      if (page.url().includes(`/${locale}/login/workspace`) || currentPath !== membersPath) {
-        await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: membersPath, locale, workspaceId });
-      }
-    });
-    if (membersReady === 'page-state__error') {
-      console.log('[gov-interact] members page in product error state; continue');
-    } else if (membersReady === 'members__search-input') {
-      await page.getByTestId('members__search-input').fill('dev');
-      await page.getByTestId('members__role-filter').selectOption({ index: 0 });
-      await page.getByTestId('members__status-filter').selectOption({ index: 0 });
-      await page.getByTestId('members__filtered-count').waitFor({ state: 'visible', timeout: 10_000 });
-    } else {
-      console.log(`[gov-interact] members ready via ${membersReady}; skip people-tab filters`);
-    }
-    const inviteBtn = page.getByTestId('members__invite-btn');
-    if (await isVisible(inviteBtn, 3_000)) {
-      await inviteBtn.click();
-      await page.getByTestId('members__invite-dialog').waitFor({ state: 'visible', timeout: 10_000 });
-      await page.keyboard.press('Escape');
-    } else {
-      console.log('[gov-interact] members invite button not visible; continue with read-only interactions');
-    }
-
-    // Resource policy: open rows and check key governance inputs are present.
-    const rpPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`;
-    console.log(`[gov-interact] resource-policy ${rpPath}`);
-    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
-    const rpReady = await waitForAny(page, [
-      'resource-policy__table',
-      'resource-policy__editor',
-      ...(strictMode ? [] : ['page-state__error']),
-      ...(strictMode ? ['page-state__error'] : []),
-    ], 45_000, async () => {
-      const currentPath = new URL(page.url()).pathname;
-      if (page.url().includes(`/${locale}/login/workspace`) || currentPath !== rpPath) {
-        await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
-      }
-    });
-    if (rpReady === 'page-state__error') {
-      if (strictMode) {
-        throw new Error('resource-policy_error_state');
-      }
-      console.log('[gov-interact] resource-policy page in product error state; skip policy interactions');
-    } else {
-      const endpointRow = page.locator('[data-testid^="resource-policy__row--endpoint--"]').first();
-      if (await isVisible(endpointRow, 5_000)) {
-        await endpointRow.click();
-        await page.getByTestId('resource-policy__editor').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__save').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__endpoint-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
-        await page.getByTestId('resource-policy__endpoint-spending-usd-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-
-        const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
-        if (await isVisible(agentRow, 3_000)) {
-          await agentRow.click();
-          await page.getByTestId('resource-policy__agent-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
-        } else {
-          console.log('[gov-interact] no agent row found; skip agent rule checks');
+    if (shouldRun('members')) {
+      // Members: basic filter interactions and invite dialog UX (safe interaction).
+      const membersPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/members`;
+      console.log(`[gov-interact] members ${membersPath}`);
+      await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: membersPath, locale, workspaceId });
+      const membersReady = await waitForAny(page, [
+        'members__search-input',
+        'members__table',
+        'members__groups-section',
+        ...(strictMode ? [] : ['page-state__error']),
+      ], 30_000, async () => {
+        const currentPath = new URL(page.url()).pathname;
+        if (page.url().includes(`/${locale}/login/workspace`) || currentPath !== membersPath) {
+          await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: membersPath, locale, workspaceId });
         }
+      });
+      if (membersReady === 'page-state__error') {
+        console.log('[gov-interact] members page in product error state; continue');
+      } else if (membersReady === 'members__search-input') {
+        await page.getByTestId('members__search-input').fill('dev');
+        await page.getByTestId('members__role-filter').selectOption({ index: 0 });
+        await page.getByTestId('members__status-filter').selectOption({ index: 0 });
+        await page.getByTestId('members__filtered-count').waitFor({ state: 'visible', timeout: 10_000 });
       } else {
+        console.log(`[gov-interact] members ready via ${membersReady}; skip people-tab filters`);
+      }
+      const inviteBtn = page.getByTestId('members__invite-btn');
+      if (await isVisible(inviteBtn, 3_000)) {
+        await inviteBtn.click();
+        await page.getByTestId('members__invite-dialog').waitFor({ state: 'visible', timeout: 10_000 });
+        await page.keyboard.press('Escape');
+      } else {
+        console.log('[gov-interact] members invite button not visible; continue with read-only interactions');
+      }
+    }
+
+    if (shouldRun('resource-policy')) {
+      // Resource policy: open rows and check key governance inputs are present.
+      const rpPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`;
+      console.log(`[gov-interact] resource-policy ${rpPath}`);
+      await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
+      const rpReady = await waitForAny(page, [
+        'resource-policy__table',
+        'resource-policy__editor',
+        ...(strictMode ? [] : ['page-state__error']),
+        ...(strictMode ? ['page-state__error'] : []),
+      ], 45_000, async () => {
+        const currentPath = new URL(page.url()).pathname;
+        if (page.url().includes(`/${locale}/login/workspace`) || currentPath !== rpPath) {
+          await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: rpPath, locale, workspaceId });
+        }
+      });
+      if (rpReady === 'page-state__error') {
         if (strictMode) {
-          throw new Error('resource-policy_missing_endpoint_row');
+          throw new Error('resource-policy_error_state');
         }
-        console.log('[gov-interact] no endpoint row found; skip resource-policy rule checks');
+        console.log('[gov-interact] resource-policy page in product error state; skip policy interactions');
+      } else {
+        const endpointRow = page.locator('[data-testid^="resource-policy__row--endpoint--"]').first();
+        if (await isVisible(endpointRow, 5_000)) {
+          await endpointRow.click();
+          await page.getByTestId('resource-policy__editor').waitFor({ state: 'visible', timeout: 10_000 });
+          await page.getByTestId('resource-policy__save').waitFor({ state: 'visible', timeout: 10_000 });
+          await page.getByTestId('resource-policy__endpoint-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+          await page.getByTestId('resource-policy__endpoint-requests-per-day').waitFor({ state: 'visible', timeout: 10_000 });
+          await page.getByTestId('resource-policy__endpoint-spending-usd-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+
+          const agentRow = page.locator('[data-testid^="resource-policy__row--agent--"]').first();
+          if (await isVisible(agentRow, 3_000)) {
+            await agentRow.click();
+            await page.getByTestId('resource-policy__agent-requests-per-minute').waitFor({ state: 'visible', timeout: 10_000 });
+          } else {
+            console.log('[gov-interact] no agent row found; skip agent rule checks');
+          }
+        } else {
+          if (strictMode) {
+            throw new Error('resource-policy_missing_endpoint_row');
+          }
+          console.log('[gov-interact] no endpoint row found; skip resource-policy rule checks');
+        }
       }
     }
 
-    // Audit: filters and table visible.
-    const auditPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`;
-    console.log(`[gov-interact] audit ${auditPath}`);
-    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: auditPath, locale, workspaceId });
-    if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
-      if (strictMode) {
-        throw new Error('audit_error_state');
-      }
-      console.log('[gov-interact] audit page in product error state; skip audit interactions');
-    } else {
-      await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
-      await waitForAny(page, ['audit__table', 'audit-usage__empty-state'], 30_000, async () => {
-        if (page.url().includes(`/${locale}/login/workspace`)) {
-          await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: auditPath, locale, workspaceId });
+    if (shouldRun('audit')) {
+      // Audit: filters and table visible.
+      const auditPath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/audit`;
+      console.log(`[gov-interact] audit ${auditPath}`);
+      await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: auditPath, locale, workspaceId });
+      if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+        if (strictMode) {
+          throw new Error('audit_error_state');
         }
-      });
+        console.log('[gov-interact] audit page in product error state; skip audit interactions');
+      } else {
+        await page.getByTestId('audit__filters').waitFor({ state: 'visible', timeout: 10_000 });
+        await waitForAny(page, ['audit__table', 'audit-usage__empty-state'], 30_000, async () => {
+          if (page.url().includes(`/${locale}/login/workspace`)) {
+            await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: auditPath, locale, workspaceId });
+          }
+        });
+      }
     }
 
-    // Usage: filters and table visible.
-    const usagePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`;
-    console.log(`[gov-interact] usage ${usagePath}`);
-    await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: usagePath, locale, workspaceId });
-    if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
-      if (strictMode) {
-        throw new Error('usage_error_state');
-      }
-      console.log('[gov-interact] usage page in product error state; skip usage interactions');
-    } else {
-      await page.getByTestId('usage__filters').waitFor({ state: 'visible', timeout: 10_000 });
-      await waitForAny(page, ['usage__table', 'audit-usage__empty-state'], 30_000, async () => {
-        if (page.url().includes(`/${locale}/login/workspace`)) {
-          await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: usagePath, locale, workspaceId });
+    if (shouldRun('usage')) {
+      // Usage: filters and table visible.
+      const usagePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`;
+      console.log(`[gov-interact] usage ${usagePath}`);
+      await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: usagePath, locale, workspaceId });
+      if (await isVisible(page.getByTestId('page-state__error'), 3_000)) {
+        if (strictMode) {
+          throw new Error('usage_error_state');
         }
-      });
+        console.log('[gov-interact] usage page in product error state; skip usage interactions');
+      } else {
+        await page.getByTestId('usage__view').waitFor({ state: 'visible', timeout: 10_000 });
+        await waitForAny(page, ['usage__planning-controls', 'usage__limits', 'audit-usage__empty-state'], 30_000, async () => {
+          if (page.url().includes(`/${locale}/login/workspace`)) {
+            await gotoProjectRouteWithWorkspaceRecovery(page, { baseUrl, path: usagePath, locale, workspaceId });
+          }
+        });
+      }
     }
 
     console.log('[gov-interact] OK');

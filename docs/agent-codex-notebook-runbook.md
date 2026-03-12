@@ -903,7 +903,7 @@ Runner artifact reporting behavior:
 - for each discovered output, runner emits:
   - `agent.response.artifact` (structured artifact payload)
   - `agent.response.event` with `category=artifact` (diagnostic trace)
-- backend notebook task artifact storage applies idempotency for repeated execution artifact frames using the runtime path metadata (for example `task_relative_path`), reducing duplicate artifacts after repeated scans in the same task
+- backend notebook task artifact storage applies idempotency for repeated execution artifact frames using the execution path metadata (for example `task_relative_path`), reducing duplicate artifacts after repeated scans in the same task
 
 Notes:
 

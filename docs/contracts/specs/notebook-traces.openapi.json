@@ -42,7 +42,7 @@
             "schema": {
               "type": "string"
             },
-            "description": "Limit traces to a specific runtime execution."
+            "description": "Limit traces to a specific task execution."
           },
           {
             "in": "query",

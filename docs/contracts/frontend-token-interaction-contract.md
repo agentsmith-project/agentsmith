@@ -9,9 +9,9 @@ Audience: Frontend, Backend Auth, QA
 Define the single-source token contract used by frontend route permission gates and interaction controls for MVP.
 
 This document is token-only:
-- runtime authorization depends on permission tokens only
+- backend operation authorization depends on permission tokens only
 - role/group names are governance labels only
-- no runtime auth decision should depend on role names
+- no backend-operation auth decision should depend on role names
 
 Related docs:
 - `docs/contracts/auth-permission-model.md`

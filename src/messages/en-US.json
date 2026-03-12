@@ -165,7 +165,7 @@
   },
   "nav": {
     "overview": "Project Hub",
-    "runtime": "Execution",
+    "execution": "Execution",
     "chat": "Chat",
     "notebook": "Notebook",
     "files": "Files",
@@ -480,7 +480,7 @@
     "open_notebook": "Open Notebook",
     "open_endpoints": "Open Endpoints",
     "open_files": "Open Files",
-    "stream_diagnostics_runtime": "Open Audit",
+    "stream_diagnostics_audit": "Open Audit",
     "stream_diagnostics_agent": "Open Agent Diagnostics",
     "library_picker": {
       "title": "Select file from library",
@@ -2097,7 +2097,7 @@
       "last_7d": "Last 7 days"
     },
     "status": {
-      "runtime": "Request activity",
+      "request_activity": "Request activity",
       "cost": "Cost health",
       "cost_body": "{avg_cost} avg cost, {anomalies} anomaly peaks",
       "activation": "Configuration checks",

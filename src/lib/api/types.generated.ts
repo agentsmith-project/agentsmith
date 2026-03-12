@@ -2056,7 +2056,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description Server-Sent Events stream for notebook task runtime updates (message/task_update/error/ping). */
+        /** @description Server-Sent Events stream for notebook task execution updates (message/task_update/error/ping). */
         get: operations["listTaskEvents"];
         put?: never;
         post?: never;
@@ -2138,7 +2138,7 @@ export interface paths {
                     message_id?: string;
                     /** @description Maximum number of events to return. */
                     page_size?: number;
-                    /** @description Limit traces to a specific runtime execution. */
+                    /** @description Limit traces to a specific task execution. */
                     run_id?: string;
                 };
                 header?: never;

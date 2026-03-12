@@ -45,7 +45,7 @@ function readSchema(
   return typeof schema === 'object' && schema !== null ? (schema as Record<string, unknown>) : null;
 }
 
-describe('Agent runtime contract sync', () => {
+describe('Agent execution contract sync', () => {
   it('keeps AgentResponseEventPayload enums and raw field aligned with AsyncAPI', async () => {
     const asyncApiPath = await resolveAsyncApiSpecPath();
     const raw = await fs.readFile(asyncApiPath, 'utf-8');

@@ -11,7 +11,7 @@ Define a single extensible endpoint contract that supports:
 - `image_generation`
 - `video_generation`
 
-without adding runtime feature switches.
+without adding execution-path feature switches.
 
 ## Endpoint Entity
 
@@ -81,7 +81,7 @@ Output:
 - `assets/models-catalog/catalog.normalized.json`
 - `assets/models-catalog/logos/*.svg`
 - `src/lib/endpoints/models-catalog.config.json` (UI-consumable subset)
-- `public/models-catalog/logos/*.svg` (runtime logo assets)
+- `public/models-catalog/logos/*.svg` (request-time logo assets)
 
 ## Verification
 

@@ -157,7 +157,7 @@ describe('Failure Classifier: TDD Suite (Epic D2)', () => {
       expect(result.category).toBe('backend');
     });
 
-    it('should classify agent runtime protocol errors', () => {
+    it('should classify agent execution protocol errors', () => {
       const error = 'AGENT_PROTOCOL_ERROR: invalid execution response frame';
       const result = classifyFailure(error);
       expect(result.category).toBe('backend');

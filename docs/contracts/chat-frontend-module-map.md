@@ -28,8 +28,8 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
   - Show no-active-thread hint when sessions exist but none selected
 
 ## 3. Attachment and Capability Contract
-- Attachment send requires multimodal capability from the active runtime binding.
-- On non-multimodal runtime (endpoint or external agent):
+- Attachment send requires multimodal capability from the active execution binding.
+- On non-multimodal execution binding (endpoint or external agent):
   - Hide attachment actions in composer
   - Keep text send available
   - Frontend must pre-block attachment input attempts with explicit message
@@ -50,7 +50,7 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
 ## 5. Testing Contract
 - Hook/view-model tests: `src/lib/chat/__tests__`
 - Component tests: `src/components/chat/__tests__`
-- Integration/runtime behavior: `e2e/integration-chat.spec.ts`
+- Integration/execution behavior: `e2e/integration-chat.spec.ts`
 - External agent integration behavior: `e2e/integration-agents-external.spec.ts`
 - Any change to invariants in sections 2-4 must update tests in all three layers.
 

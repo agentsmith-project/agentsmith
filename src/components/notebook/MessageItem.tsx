@@ -185,7 +185,7 @@ function decodeCodexEventText(raw: string): string {
   if (agentDeltas.length > 0) {
     return agentDeltas.join('');
   }
-  // Tool/runtime error events can be transient and auto-recovered by subsequent retries.
+  // Tool/execution error events can be transient and auto-recovered by subsequent retries.
   // Keep bubble content neutral instead of surfacing raw error text as assistant output.
   if (errors.length > 0) {
     return '';

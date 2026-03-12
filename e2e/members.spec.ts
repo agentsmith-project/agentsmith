@@ -12,7 +12,7 @@ test.describe('Members Page', () => {
     await goToProject(authedPage, 'members');
   });
 
-  test('does not render runtime error state on initial load', async ({ authedPage }) => {
+  test('does not render execution error state on initial load', async ({ authedPage }) => {
     const pageErrors: string[] = [];
     authedPage.on('pageerror', (error) => pageErrors.push(error.message));
     await authedPage.reload({ waitUntil: 'domcontentloaded' });

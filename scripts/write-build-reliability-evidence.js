@@ -25,7 +25,7 @@ const evidence = {
     build_failure_explainability: true,
     cross_surface_diagnostics: true,
     chat_recovery_integration: true,
-    notebook_external_runtime: true,
+    notebook_external_execution: true,
   },
   note: 'Generated after build-reliability-smoke completed successfully.',
 };

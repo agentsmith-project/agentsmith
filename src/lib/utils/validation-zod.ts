@@ -1,7 +1,7 @@
 /**
  * Zod-based Validation Utilities
  *
- * Runtime validation using Zod schemas.
+ * Schema validation using Zod schemas.
  * This file is separate from validation.ts because zod is not compatible
  * with Next.js Edge Runtime (used by middleware).
  */
@@ -9,7 +9,7 @@
 import { z } from 'zod';
 
 // ============================================================
-// Zod Runtime Validation for ProjectWithMembership
+// Zod Schema Validation for ProjectWithMembership
 // ============================================================
 
 /**
@@ -49,7 +49,7 @@ export type ProjectWithMembership = z.infer<typeof ProjectWithMembershipSchema>;
 /**
  * Validate and cast unknown data to ProjectWithMembership
  *
- * This function performs runtime validation using Zod schema.
+ * This function performs schema validation using a Zod schema.
  * Returns null if validation fails, preventing type assertions.
  *
  * @param data - Unknown data to validate

@@ -3355,7 +3355,7 @@ describe('api-entry-node projects routes', () => {
     expect(postResetProxy.status).toBe(200);
   });
 
-  it('streams chat via external agent websocket runtime', async () => {
+  it('streams chat via external agent websocket execution channel', async () => {
     const { baseUrl } = startServer();
 
     const createAgentRes = await apiFetch(
@@ -4038,7 +4038,7 @@ describe('api-entry-node projects routes', () => {
     const connInfo = (await connInfoRes.json()) as { ws_url: string };
     const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
 
-    const runtimeReceived = new Promise<{
+    const executionReceived = new Promise<{
       requestId: string;
       helloProxyBase: string;
       endpointProxyBase: string | null;
@@ -4164,8 +4164,8 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           provider: 'jira',
           kind: 'secret_bundle',
-          display_name: 'runtime-jira',
-          note: 'runtime sync test',
+          display_name: 'execution-jira',
+          note: 'execution sync test',
           fields: [
             { key: 'base_url', value: 'https://jira.example.com', secret: false },
             { key: 'api_token', value: 'jira-test-token', secret: true },
@@ -4203,18 +4203,18 @@ describe('api-entry-node projects routes', () => {
     );
     expect(conflictRes.status).toBe(409);
 
-    const runtime = await runtimeReceived;
-    expect(runtime.requestId).toBeTruthy();
-    expect(runtime.userToken).toBe('test-token');
-    expect(runtime.apiBase).toBe(baseUrl);
-    expect(runtime.notebookMode).toBe(true);
-    expect(runtime.taskInputsCount).toBe(0);
-    expect(runtime.credentialFilesCount).toBeGreaterThan(0);
-    expect(runtime.hasCredentialIndexFile).toBe(true);
-    expect(runtime.helloProxyBase).toBe(
+    const execution = await executionReceived;
+    expect(execution.requestId).toBeTruthy();
+    expect(execution.userToken).toBe('test-token');
+    expect(execution.apiBase).toBe(baseUrl);
+    expect(execution.notebookMode).toBe(true);
+    expect(execution.taskInputsCount).toBe(0);
+    expect(execution.credentialFilesCount).toBeGreaterThan(0);
+    expect(execution.hasCredentialIndexFile).toBe(true);
+    expect(execution.helloProxyBase).toBe(
       `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy`,
     );
-    expect(runtime.endpointProxyBase).toBeNull();
+    expect(execution.endpointProxyBase).toBeNull();
 
     let messagesBody: Array<{ role: string; content: string }> = [];
     for (let attempt = 0; attempt < 20; attempt += 1) {
@@ -4304,7 +4304,7 @@ describe('api-entry-node projects routes', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     expect(secondTurnStatus).toBe(200);
-    runtime.close();
+    executionSocket.close();
   });
 
   it('synthesizes terminal trace and closes task when notebook execution dispatch fails', async () => {
@@ -4818,14 +4818,14 @@ describe('api-entry-node projects routes', () => {
     expect(runtimeInfoRes.status).toBe(200);
     const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
 
-    const runtime = new WebSocket(
+    const executionSocket = new WebSocket(
       runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
 
     const runtimeReady = new Promise<void>((resolve) => {
-      runtime.on('open', () => {
-        runtime.send(
+      executionSocket.on('open', () => {
+        executionSocket.send(
           JSON.stringify({
             type: 'agent.ready',
             payload: {
@@ -4837,10 +4837,10 @@ describe('api-entry-node projects routes', () => {
       });
     });
 
-    runtime.on('message', (raw) => {
+    executionSocket.on('message', (raw) => {
       const msg = JSON.parse(raw.toString('utf-8')) as { type: string; request_id?: string };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
-      runtime.send(
+      executionSocket.send(
         JSON.stringify({
           type: 'agent.response.event',
           request_id: msg.request_id,
@@ -4855,7 +4855,7 @@ describe('api-entry-node projects routes', () => {
           },
         }),
       );
-      runtime.send(
+      executionSocket.send(
         JSON.stringify({
           type: 'agent.response.event',
           request_id: msg.request_id,
@@ -4870,7 +4870,7 @@ describe('api-entry-node projects routes', () => {
           },
         }),
       );
-      runtime.send(
+      executionSocket.send(
         JSON.stringify({
           type: 'agent.response.done',
           request_id: msg.request_id,
@@ -4943,7 +4943,7 @@ describe('api-entry-node projects routes', () => {
     expect(replayAfterFirstBlocks.length).toBeGreaterThan(0);
     expect(replayAfterFirstBlocks.some((item) => item.id === firstReplayId)).toBe(false);
 
-    runtime.close();
+    executionSocket.close();
   });
 
   it('exposes authenticated notebook task metrics snapshot', async () => {
@@ -5780,16 +5780,16 @@ describe('api-entry-node projects routes', () => {
     expect(runtimeInfoRes.status).toBe(200);
     const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
 
-    const runtime = new WebSocket(
+    const executionSocket = new WebSocket(
       runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
 
     const huge = 'x'.repeat(40_000);
-    runtime.on('message', (raw) => {
+    executionSocket.on('message', (raw) => {
       const msg = JSON.parse(raw.toString('utf-8')) as { type: string; request_id?: string };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
-      runtime.send(JSON.stringify({
+      executionSocket.send(JSON.stringify({
         type: 'agent.response.event',
         request_id: msg.request_id,
         payload: {
@@ -5802,14 +5802,14 @@ describe('api-entry-node projects routes', () => {
           details: { stderr: huge },
         },
       }));
-      runtime.send(JSON.stringify({
+      executionSocket.send(JSON.stringify({
         type: 'agent.response.done',
         request_id: msg.request_id,
         payload: { finish_reason: 'stop', usage_tokens: 1 },
       }));
     });
-    await new Promise<void>((resolve) => runtime.on('open', () => {
-      runtime.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
+    await new Promise<void>((resolve) => executionSocket.on('open', () => {
+      executionSocket.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
       resolve();
     }));
 
@@ -5843,7 +5843,7 @@ describe('api-entry-node projects routes', () => {
     expect(detailEvent!.details?._reason).toBe('trace_details_too_large');
     expect(typeof detailEvent!.details?._preview).toBe('string');
 
-    runtime.close();
+    executionSocket.close();
   });
 
   it('writes notebook task data to docStore (tasks/messages/traces)', async () => {
@@ -5915,14 +5915,14 @@ describe('api-entry-node projects routes', () => {
     expect(runtimeInfoRes.status).toBe(200);
     const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
 
-    const runtime = new WebSocket(
+    const executionSocket = new WebSocket(
       runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
-    runtime.on('message', (raw) => {
+    executionSocket.on('message', (raw) => {
       const msg = JSON.parse(raw.toString('utf-8')) as { type: string; request_id?: string };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
-      runtime.send(JSON.stringify({
+      executionSocket.send(JSON.stringify({
         type: 'agent.response.event',
         request_id: msg.request_id,
         payload: {
@@ -5935,19 +5935,19 @@ describe('api-entry-node projects routes', () => {
           summary: 'Starting Codex execution',
         },
       }));
-      runtime.send(JSON.stringify({
+      executionSocket.send(JSON.stringify({
         type: 'agent.response.delta',
         request_id: msg.request_id,
         payload: { delta: 'persisted-output' },
       }));
-      runtime.send(JSON.stringify({
+      executionSocket.send(JSON.stringify({
         type: 'agent.response.done',
         request_id: msg.request_id,
         payload: { finish_reason: 'stop', usage_tokens: 3 },
       }));
     });
-    await new Promise<void>((resolve) => runtime.on('open', () => {
-      runtime.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
+    await new Promise<void>((resolve) => executionSocket.on('open', () => {
+      executionSocket.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
       resolve();
     }));
 
@@ -5984,7 +5984,7 @@ describe('api-entry-node projects routes', () => {
     expect(storedMessages.some((m) => m.role === 'agent' && m.content.includes('persisted-output'))).toBe(true);
     expect(storedTraces.some((t) => t.category === 'progress')).toBe(true);
 
-    runtime.close();
+    executionSocket.close();
   });
 
   it('keeps docStore traces bounded when retention truncation is triggered', async () => {
@@ -6056,15 +6056,15 @@ describe('api-entry-node projects routes', () => {
     expect(runtimeInfoRes.status).toBe(200);
     const runtimeInfo = (await runtimeInfoRes.json()) as { ws_url: string };
 
-    const runtime = new WebSocket(
+    const executionSocket = new WebSocket(
       runtimeInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://')),
       { headers: { Authorization: `Bearer ${agentKey.key}` } },
     );
-    runtime.on('message', (raw) => {
+    executionSocket.on('message', (raw) => {
       const msg = JSON.parse(raw.toString('utf-8')) as { type: string; request_id?: string };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
       for (let i = 0; i < 1010; i += 1) {
-        runtime.send(JSON.stringify({
+        executionSocket.send(JSON.stringify({
           type: 'agent.response.event',
           request_id: msg.request_id,
           payload: {
@@ -6077,14 +6077,14 @@ describe('api-entry-node projects routes', () => {
           },
         }));
       }
-      runtime.send(JSON.stringify({
+      executionSocket.send(JSON.stringify({
         type: 'agent.response.done',
         request_id: msg.request_id,
         payload: { finish_reason: 'stop', usage_tokens: 1 },
       }));
     });
-    await new Promise<void>((resolve) => runtime.on('open', () => {
-      runtime.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
+    await new Promise<void>((resolve) => executionSocket.on('open', () => {
+      executionSocket.send(JSON.stringify({ type: 'agent.ready', payload: { capabilities: { wire_api: 'responses' } } }));
       resolve();
     }));
 
@@ -6118,7 +6118,7 @@ describe('api-entry-node projects routes', () => {
     expect(storedTraces.some((t) => t.summary === 'evt-0')).toBe(false);
     expect(storedTraces.some((t) => t.summary === 'evt-1009')).toBe(true);
 
-    runtime.close();
+    executionSocket.close();
   });
 
   it('sends image attachments to upstream multimodal chat payload', async () => {

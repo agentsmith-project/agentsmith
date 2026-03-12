@@ -53,7 +53,7 @@
 - Fix:
   - Recreate agent key.
   - Confirm connection-info WS URL points to current API base.
-  - Restart runtime process and re-run.
+  - Restart the execution service and re-run.
 
 ### `INT-NOTEBOOK-EXECUTION`
 - Symptom:

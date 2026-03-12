@@ -167,7 +167,7 @@
   },
   "nav": {
     "overview": "项目入口",
-    "runtime": "执行",
+    "execution": "执行",
     "chat": "聊天",
     "notebook": "Notebook",
     "files": "文件",
@@ -482,7 +482,7 @@
     "open_notebook": "打开 Notebook",
     "open_endpoints": "打开 Endpoints",
     "open_files": "打开文件",
-    "stream_diagnostics_runtime": "打开审计",
+    "stream_diagnostics_audit": "打开审计",
     "stream_diagnostics_agent": "打开 Agent 诊断",
     "library_picker": {
       "title": "从文件库选择文件",
@@ -2099,7 +2099,7 @@
       "last_7d": "最近 7 天"
     },
     "status": {
-      "runtime": "请求活动",
+      "request_activity": "请求活动",
       "cost": "成本健康",
       "cost_body": "平均成本 {avg_cost}，{anomalies} 个异常峰值",
       "activation": "配置检查",

@@ -347,7 +347,7 @@ export interface BuildReliabilityReviewEvidence {
   source: 'dry_run' | 'artifact';
   /** ISO timestamp when build reliability evidence was generated */
   generated_at: string;
-  /** Release readiness derived from build reliability checks */
+  /** Review status derived from build reliability checks */
   review_status: 'ready' | 'blocked';
   /** Blocking build reliability failures */
   blockers: string[];
@@ -360,7 +360,7 @@ export interface BuildReliabilityReviewEvidence {
     build_failure_explainability: boolean;
     cross_surface_diagnostics: boolean;
     chat_recovery_integration: boolean;
-    notebook_external_runtime: boolean;
+    notebook_external_execution: boolean;
   };
   /** Optional reviewer note */
   note?: string;

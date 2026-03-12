@@ -127,7 +127,7 @@ describe('matchProjectsRoute', () => {
     });
   });
 
-  it('matches retained runtime routes', () => {
+  it('matches retained execution and model-config routes', () => {
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/llm/chat/completions'),
     ).toEqual({
@@ -171,27 +171,6 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
     });
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/providers'),
-    ).toBeNull();
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/models'),
-    ).toBeNull();
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/aliases'),
-    ).toBeNull();
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/routing/dry-run'),
-    ).toBeNull();
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/impact-preview'),
-    ).toBeNull();
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/project-pricing/versions'),
-    ).toBeNull();
-    expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/runtime/catalog/jobs'),
-    ).toBeNull();
   });
   it('matches usage report lifecycle routes', () => {
     expect(

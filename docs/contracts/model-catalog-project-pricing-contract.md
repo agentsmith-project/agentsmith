@@ -144,4 +144,4 @@ Minimum required checks:
 
 ## Migration Rule
 
-Legacy workflow (`npm run models:sync-catalog` + static catalog JSON) is transitional and must not be treated as runtime authority once model catalog APIs are enabled.
+Temporary workflow (`npm run models:sync-catalog` + static catalog JSON) is transitional and must not be treated as authoritative once model catalog APIs are enabled.

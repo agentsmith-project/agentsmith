@@ -171,7 +171,7 @@ describe('SSE Ticket Migration - Feature Flag', () => {
     vi.restoreAllMocks();
   });
 
-  it('respects SSE_TICKET_ENABLED environment variable for runtime switch', async () => {
+  it('respects SSE_TICKET_ENABLED environment variable for environment switch', async () => {
     // Enable ticket mode via env var
     process.env.NEXT_PUBLIC_SSE_TICKET_ENABLED = 'true';
 

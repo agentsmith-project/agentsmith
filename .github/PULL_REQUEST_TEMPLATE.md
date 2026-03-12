@@ -1,7 +1,7 @@
 # PR Title
 
 <!-- 格式建议：type(scope): summary -->
-<!-- Examples: feat(runtime): add observability metrics, fix(auth): resolve permission gate race, refactor(chat): extract hook -->
+<!-- Examples: feat(audit): add review metrics, fix(auth): resolve permission gate race, refactor(chat): extract hook -->
 
 ## 1) 变更意图（What / Why）
 
@@ -9,7 +9,7 @@
 - **业务/治理目标**：
 - **不在本次范围**：
 
-## 2) 合约与运行时真相（Contract / Runtime Truth）
+## 2) 合约与系统真相（Contract / System Truth）
 
 > 本节确保代码变更与系统契约保持一致
 

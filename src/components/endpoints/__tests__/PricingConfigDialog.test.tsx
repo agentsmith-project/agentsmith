@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { PricingConfigDialog } from '../PricingConfigDialog';
 
-// Mock the runtime hooks
+// Mock the project pricing hooks
 const mockPatchPricing = vi.fn();
 const mockUseProjectPricing = vi.fn();
 const mockUsePatchProjectPricing = vi.fn(() => ({

@@ -6,7 +6,7 @@ import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestr
 import type { NodeApiDeps } from './node-api-deps.js';
 
 describe('notebook-execution-orchestrator governance preflight', () => {
-  it('emits RESOURCE_POLICY_DENIED and does not dispatch runtime when endpoint access is denied', async () => {
+  it('emits RESOURCE_POLICY_DENIED and does not dispatch execution when endpoint access is denied', async () => {
     const docStore = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';
     const projectId = 'proj_1';

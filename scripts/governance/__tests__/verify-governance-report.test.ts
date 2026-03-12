@@ -579,7 +579,7 @@ describe('verify-governance-report: TDD Suite', () => {
           build_failure_explainability: true,
           cross_surface_diagnostics: true,
           chat_recovery_integration: false,
-          notebook_external_runtime: true,
+          notebook_external_execution: true,
         },
       };
       mkdirSync(OUTPUT_DIR, { recursive: true });

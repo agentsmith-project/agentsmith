@@ -150,10 +150,10 @@ help-extended:
 	@echo "  make notebook-agent-engineering-smoke # run engineering smoke set (basic + inputrefs loop; optional matplotlib)"
 	@echo "  make notebook-agent-engineering-smoke-full # refresh token (if needed) + demo-check + engineering-smoke"
 	@echo "  make governance-smoke # run governance real-backend page open + interaction smoke set"
-	@echo "  make governance-pages-real-backend-smoke # alias of tolerant mode for governance page-open smoke"
+	@echo "  make governance-pages-real-backend-smoke # default tolerant mode for governance page-open smoke"
 	@echo "  make governance-pages-real-backend-smoke-strict # strict gate: governance page-open smoke fails on product error states"
 	@echo "  make governance-pages-real-backend-smoke-tolerant # tolerant triage mode for governance page-open smoke"
-	@echo "  make governance-pages-real-backend-interaction-smoke # alias of tolerant mode for governance interaction smoke"
+	@echo "  make governance-pages-real-backend-interaction-smoke # default tolerant mode for governance interaction smoke"
 	@echo "  make governance-pages-real-backend-interaction-smoke-strict # strict gate: governance interaction smoke fails on product error states"
 	@echo "  make governance-pages-real-backend-interaction-smoke-tolerant # tolerant triage mode for governance interaction smoke"
 	@echo "  make governance-policy-effect-smoke # real-backend endpoint policy effect smoke (rate limit -> audit/usage evidence)"
@@ -843,6 +843,16 @@ governance-pages-real-backend-interaction-smoke-strict:
 governance-pages-real-backend-interaction-smoke-tolerant:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	GOVERNANCE_SMOKE_MODE=tolerant \
+	node ./scripts/governance-pages-real-backend-interaction-smoke.js
+
+governance-audit-real-backend-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GOVERNANCE_SMOKE_MODE=strict GOV_PAGE_FILTER=audit \
+	node ./scripts/governance-pages-real-backend-interaction-smoke.js
+
+governance-usage-real-backend-smoke:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	GOVERNANCE_SMOKE_MODE=strict GOV_PAGE_FILTER=usage \
 	node ./scripts/governance-pages-real-backend-interaction-smoke.js
 
 governance-policy-effect-smoke:

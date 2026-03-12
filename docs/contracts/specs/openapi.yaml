@@ -2350,7 +2350,7 @@ paths:
       tags:
         - Notebook
       operationId: listTaskEvents
-      description: Server-Sent Events stream for notebook task runtime updates
+      description: Server-Sent Events stream for notebook task execution updates
         (message/task_update/error/ping).
       responses:
         "200":
@@ -2398,7 +2398,7 @@ paths:
           name: run_id
           schema:
             type: string
-          description: Limit traces to a specific runtime execution.
+          description: Limit traces to a specific task execution.
         - in: query
           name: after_id
           schema:

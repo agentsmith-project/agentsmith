@@ -1212,7 +1212,7 @@ function loadBuildReliabilityReviewEvidence(options: VerifyReleaseOptions): Buil
           build_failure_explainability: false,
           cross_surface_diagnostics: false,
           chat_recovery_integration: false,
-          notebook_external_runtime: false,
+          notebook_external_execution: false,
         },
         note: `Failed to parse build reliability evidence: ${message}`,
       };
@@ -1232,7 +1232,7 @@ function loadBuildReliabilityReviewEvidence(options: VerifyReleaseOptions): Buil
         build_failure_explainability: true,
         cross_surface_diagnostics: true,
         chat_recovery_integration: true,
-        notebook_external_runtime: true,
+        notebook_external_execution: true,
       },
       note: 'Dry-run evidence uses deterministic fixture data and does not call live build reliability lanes.',
     };

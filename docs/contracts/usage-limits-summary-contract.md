@@ -75,7 +75,7 @@ Usage limits area must render:
    - `spending limit`
 3. per-group window rows (`minute`/`5h`/`day`/`current`);
 4. direct consumption signals for the current user (`used` / `max` / `remaining` / `usage_pct`);
-5. no admin-only audit/runtime troubleshooting controls.
+5. no admin-only audit or execution troubleshooting controls.
 6. no frontend-generated cross-endpoint aggregate progress bar as a required element.
 
 ## Source of Truth

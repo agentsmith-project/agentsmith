@@ -3,10 +3,10 @@
   "info": {
     "title": "MBOS External Agent Execution Channel WS Supplement",
     "version": "1.0.0",
-    "description": "Additive contract supplement for runtime frames currently implemented in code but not yet merged into generated `specs/asyncapi.*`.\n"
+    "description": "Additive contract supplement for execution-channel frames currently implemented in code but not yet merged into generated `specs/asyncapi.*`.\n"
   },
   "channels": {
-    "agentRuntime": {
+    "agentExecution": {
       "address": "/api/v1/agent-execution/ws?agent_id={agentId}",
       "messages": {
         "agentResponseEvent": {
@@ -19,11 +19,11 @@
     "sendToServerSupplement": {
       "action": "send",
       "channel": {
-        "$ref": "#/channels/agentRuntime"
+        "$ref": "#/channels/agentExecution"
       },
       "messages": [
         {
-          "$ref": "#/channels/agentRuntime/messages/agentResponseEvent"
+          "$ref": "#/channels/agentExecution/messages/agentResponseEvent"
         }
       ]
     }

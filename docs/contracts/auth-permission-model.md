@@ -42,7 +42,7 @@ Clarify the boundary between authentication data and authorization enforcement t
 | `use` | End-user daily AI tools | Chat, Notebook, Files |
 | `develop` | Developer agent building | Agents |
 | `govern` | Configuration and policy | Endpoints, Resource Policy, Credentials, Members, Usage, Audit, Settings |
-| `operate` | Runtime-related backend operations | Internal/runtime routes only; user-facing review goes through Audit |
+| `operate` | Execution-related backend operations | Internal execution/configuration routes only; user-facing review goes through Audit |
 
 ## Contract Guidance
 

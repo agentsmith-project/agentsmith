@@ -49,7 +49,7 @@ Terminology note:
 - Trace REST route (`/tasks/{taskId}/traces`) returns persisted/in-memory trace slices with pagination hints:
   - `has_more`
   - `next_after_id`
-- Deployment/runtime coordination note:
+- Deployment/execution coordination note:
   - current task SSE replay and active-run guards are server-instance local in `api-entry-node`
   - multi-instance deployments should use sticky routing (or future shared coordination primitives)
 - Terminal fallback note:

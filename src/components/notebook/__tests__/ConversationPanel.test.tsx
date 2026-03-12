@@ -354,7 +354,7 @@ describe('ConversationPanel', () => {
       expect(status).toHaveTextContent('This environment is not exposing the SSE ticket endpoint for notebook runs.');
     });
 
-    it('shows reconcile-failed explanation with runtime message', () => {
+    it('shows reconcile-failed explanation with execution message', () => {
       render(
         <ConversationPanel
           messages={mockMessages}

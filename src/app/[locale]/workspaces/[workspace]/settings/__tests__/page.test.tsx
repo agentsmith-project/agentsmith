@@ -1,5 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 
 const STABLE_WORKSPACE = { id: 'ws_1', name: 'Corp Workspace' };
@@ -57,6 +59,7 @@ const STABLE_PROJECTS = [
 ];
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
+const mockProjectUpdate = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -89,9 +92,32 @@ vi.mock('@/components/app-shell/Topbar', () => ({
   Topbar: () => <div data-testid="topbar" />,
 }));
 
+vi.mock('@/lib/api', () => ({
+  getApiClient: () => ({}),
+  handleErrorForToast: vi.fn(),
+  ProjectAPI: class {
+    update = mockProjectUpdate;
+  },
+}));
+
 import WorkspaceSettingsPage from '../page';
 
 const mockUseHasWorkspacePermission = vi.mocked(useHasWorkspacePermission);
+
+function renderPage() {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+
+  return render(
+    <QueryClientProvider client={queryClient}>
+      <WorkspaceSettingsPage />
+    </QueryClientProvider>,
+  );
+}
 
 describe('WorkspaceSettingsPage', () => {
   beforeEach(() => {
@@ -99,10 +125,13 @@ describe('WorkspaceSettingsPage', () => {
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
     );
+    mockProjectUpdate.mockResolvedValue({
+      id: 'proj_1',
+    });
   });
 
   it('renders workspace administration summary', async () => {
-    render(<WorkspaceSettingsPage />);
+    renderPage();
 
     await waitFor(() => {
       expect(screen.getByTestId('ws-settings__workspace')).toBeInTheDocument();
@@ -118,7 +147,7 @@ describe('WorkspaceSettingsPage', () => {
   });
 
   it('renders project administration list', async () => {
-    render(<WorkspaceSettingsPage />);
+    renderPage();
 
     await waitFor(() => {
       expect(screen.getByTestId('ws-settings__projects')).toBeInTheDocument();
@@ -139,11 +168,39 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       '/en/workspaces/ws_1/projects/proj_1/settings',
     );
+    expect(screen.getByTestId('ws-settings__project-edit-admins--proj_1')).toBeInTheDocument();
+  });
+
+  it('opens project admin dialog and saves selected admins', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-edit-admins--proj_1')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('ws-settings__project-edit-admins--proj_1'));
+
+    const dialog = await screen.findByTestId('ws-settings__project-admin-dialog');
+    expect(within(dialog).getByText('workspace_edit_project_admins_description')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-admin-option--u_1')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-admin-option--u_2')).toBeInTheDocument();
+
+    await user.click(screen.getByTestId('ws-settings__project-admin-option--u_1'));
+    await user.click(screen.getByTestId('ws-settings__project-admin-save'));
+
+    await waitFor(() => {
+      expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', {
+        governance_json: {
+          project_admins: ['u_2', 'u_1'],
+        },
+      });
+    });
   });
 
   it('shows validation_error for invalid workspace param', async () => {
     mockUseParams.mockReturnValue({ workspace: '<script>', locale: 'en' });
-    render(<WorkspaceSettingsPage />);
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('validation_error')).toBeInTheDocument();
     });
@@ -151,7 +208,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it('shows permission denied when user lacks workspace:read', async () => {
     mockUseHasWorkspacePermission.mockReturnValue(false);
-    render(<WorkspaceSettingsPage />);
+    renderPage();
     await waitFor(() => {
       expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     });
@@ -159,7 +216,7 @@ describe('WorkspaceSettingsPage', () => {
 
   it('shows permission denied when user lacks workspace:project:create', async () => {
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
-    render(<WorkspaceSettingsPage />);
+    renderPage();
 
     await waitFor(() => {
       expect(screen.getByText('permission_denied_title')).toBeInTheDocument();

@@ -653,6 +653,47 @@ describe('api-entry-node projects routes', () => {
     expect(got.permissions).not.toContain('project:manage');
   });
 
+  it('returns admin permissions for configured project admins', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const created = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_external',
+      input: {
+        name: 'Admin Shared Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    await deps.updateProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      projectId: created.id,
+      input: {
+        governance_json: {
+          project_admins: ['user_test'],
+        },
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
+    expect(getRes.status).toBe(200);
+    const got = (await getRes.json()) as { owner_id: string; role: string; permissions: string[] };
+    expect(got.owner_id).toBe('user_external');
+    expect(got.role).toBe('admin');
+    expect(got.permissions).toContain('project:endpoint:use');
+    expect(got.permissions).toContain('project:agent:manage');
+    expect(got.permissions).toContain('project:manage');
+
+    const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as {
+      items: Array<{ id: string; role: string; permissions: string[] }>;
+    };
+    const listed = listBody.items.find((item) => item.id === created.id);
+    expect(listed?.role).toBe('admin');
+    expect(listed?.permissions).toContain('project:manage');
+  });
+
   it('returns validation error for invalid payload', async () => {
     const { baseUrl } = startServer();
 

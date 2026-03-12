@@ -49,6 +49,24 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:endpoint:use')).toBe(true);
   });
 
+  it('grants project admin permissions from project governance', () => {
+    const workspaceId = `ws_${Date.now()}`;
+    const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
+
+    const permissions = new Set(resolveProjectPermissionsForActor({
+      workspaceId,
+      projectId,
+      projectOwnerId: 'user_owner',
+      projectGovernance: { project_admins: ['user_test'] },
+      actorUserId: 'user_test',
+    }));
+
+    expect(permissions.has('project:endpoint:use')).toBe(true);
+    expect(permissions.has('project:agent:manage')).toBe(true);
+    expect(permissions.has('project:agent:public')).toBe(true);
+    expect(permissions.has('project:manage')).toBe(true);
+  });
+
   it('denies all required permissions when membership is suspended', () => {
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;

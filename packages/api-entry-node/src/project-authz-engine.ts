@@ -12,7 +12,12 @@ import {
 import {
   getProjectResourcePolicy,
 } from './project-resource-policy-store.js';
-import { resolveProjectPermissions, OWNER_PROJECT_PERMISSIONS } from './workspace-permissions.js';
+import {
+  resolveProjectPermissions,
+  OWNER_PROJECT_PERMISSIONS,
+  PROJECT_ADMIN_PROJECT_PERMISSIONS,
+  isProjectAdmin,
+} from './workspace-permissions.js';
 
 type ResourceType = 'project' | 'endpoint' | 'source_library' | 'agent';
 type SubjectType = 'user' | 'group' | 'agent';
@@ -24,6 +29,10 @@ export type ProjectAuthzPermissionSource =
   }
   | {
     type: 'project_default';
+    permission: string;
+  }
+  | {
+    type: 'project_admin';
     permission: string;
   }
   | {
@@ -110,9 +119,10 @@ function collectPermissionSources(args: {
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
+  projectGovernance?: unknown;
   actorUserId: string;
 }): ProjectAuthorizationSnapshot {
-  const { workspaceId, projectId, projectOwnerId, actorUserId } = args;
+  const { workspaceId, projectId, projectOwnerId, projectGovernance, actorUserId } = args;
   const membershipStatus = getMembershipStatus(workspaceId, projectId, actorUserId);
   const byPermission = new Map<string, ProjectAuthzPermissionSource>();
 
@@ -125,6 +135,12 @@ function collectPermissionSources(args: {
       effective_permissions: [...byPermission.keys()],
       permission_sources: [...byPermission.values()],
     };
+  }
+
+  if (isProjectAdmin(projectGovernance, actorUserId)) {
+    for (const permission of PROJECT_ADMIN_PROJECT_PERMISSIONS) {
+      addPermissionSource(byPermission, { type: 'project_admin', permission });
+    }
   }
 
   // Keep current compatibility baseline until lifecycle closure fully hardens all flows.
@@ -186,6 +202,7 @@ export function evaluateProjectPermissions(args: {
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
+  projectGovernance?: unknown;
   actorUserId: string;
   requiredPermissions: readonly string[];
 }): ProjectAuthorizationEvaluation {
@@ -213,14 +230,14 @@ export function evaluateProjectPermissions(args: {
     const sourceDetail = sourceByPermission.get(permission);
     if (sourceDetail) {
       const source: ProjectPermissionDecision['source'] =
-        sourceDetail.type === 'project_default' || sourceDetail.type === 'owner'
+        sourceDetail.type === 'project_default' || sourceDetail.type === 'owner' || sourceDetail.type === 'project_admin'
           ? 'project_default'
           : 'permission';
       return {
         permission,
         granted: true,
         reason:
-          sourceDetail.type === 'project_default' || sourceDetail.type === 'owner'
+          sourceDetail.type === 'project_default' || sourceDetail.type === 'owner' || sourceDetail.type === 'project_admin'
             ? 'granted_by_project_default'
             : 'granted_by_member_governance',
         source,
@@ -247,6 +264,7 @@ export function resolveVisibleProjectPermissionsForActor(args: {
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
+  projectGovernance?: unknown;
   actorUserId: string;
 }): readonly string[] {
   const snapshot = collectPermissionSources(args);

@@ -1018,6 +1018,7 @@ export async function handleRequest(
             workspaceId: route.workspaceId,
             projectId: route.projectId,
             projectOwnerId: project.owner_id,
+            projectGovernance: project.governance_json,
             actorUserId: user.id,
             requiredPermissions: required,
           });
@@ -1066,6 +1067,7 @@ export async function handleRequest(
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         projectOwnerId: project.owner_id,
+        projectGovernance: project.governance_json,
         actorUserId: user.id,
         requiredPermissions:
           body.subject.type === 'user' && body.subject.id === user.id
@@ -1090,6 +1092,7 @@ export async function handleRequest(
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         projectOwnerId: project.owner_id,
+        projectGovernance: project.governance_json,
         actorUserId: body.subject.id,
         requiredPermissions: [permission],
       });

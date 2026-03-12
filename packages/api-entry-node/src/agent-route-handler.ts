@@ -27,6 +27,7 @@ async function resolveActorPermissions(
       workspaceId,
       projectId,
       projectOwnerId: project.owner_id,
+      projectGovernance: project.governance_json,
       actorUserId,
     });
     return new Set(perms);

@@ -21,6 +21,7 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
+import { isProjectAdmin } from './workspace-permissions.js';
 import {
   getProjectResourcePolicyOrDefault,
   isProjectResourceAccessAllowedForUser,
@@ -700,12 +701,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     json(res, 200, {
       items: listed.items.map((item) => ({
         ...item,
-        role: item.owner_id === user.id ? 'owner' : 'developer',
+        role: item.owner_id === user.id ? 'owner' : (isProjectAdmin(item.governance_json, user.id) ? 'admin' : 'developer'),
         permissions: [
           ...resolveVisibleProjectPermissionsForActor({
             workspaceId,
             projectId: item.id,
             projectOwnerId: item.owner_id,
+            projectGovernance: item.governance_json,
             actorUserId: user.id,
           }),
         ],
@@ -748,12 +750,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     });
     json(res, 200, {
       ...found,
-      role: found.owner_id === user.id ? 'owner' : 'developer',
+      role: found.owner_id === user.id ? 'owner' : (isProjectAdmin(found.governance_json, user.id) ? 'admin' : 'developer'),
       permissions: [
         ...resolveVisibleProjectPermissionsForActor({
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           projectOwnerId: found.owner_id,
+          projectGovernance: found.governance_json,
           actorUserId: user.id,
         }),
       ],
@@ -865,6 +868,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const projectId = route.projectId;
     let projectOwnerId: string | null = null;
     let projectCreatedAt: string | null = null;
+    let projectGovernance: unknown = undefined;
     try {
       const project = await deps.getProjectUseCase.execute({
         workspaceId,
@@ -872,6 +876,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       });
       projectOwnerId = project.owner_id;
       projectCreatedAt = project.created_at;
+      projectGovernance = project.governance_json;
     } catch {
       // Keep minimal members read endpoint usable in local/dev environments even
       // when membership/governance backend is not fully wired to project repo fixtures.
@@ -888,6 +893,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
             workspaceId,
             projectId,
             projectOwnerId: projectOwnerId ?? user.id,
+            projectGovernance,
             actorUserId: user.id,
           }),
         ]
@@ -908,6 +914,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
               workspaceId,
               projectId,
               projectOwnerId: ownerId,
+              projectGovernance,
               actorUserId: user.id,
             }),
           ]
@@ -1230,6 +1237,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     }
     let projectOwnerId: string | null = null;
     let projectCreatedAt: string | null = null;
+    let projectGovernance: unknown = undefined;
     try {
       const project = await deps.getProjectUseCase.execute({
         workspaceId: membershipRoute.workspaceId,
@@ -1237,22 +1245,27 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       });
       projectOwnerId = project.owner_id;
       projectCreatedAt = project.created_at;
+      projectGovernance = project.governance_json;
     } catch {
       // Keep minimal membership read endpoint usable in local/dev fixtures.
     }
     const membership = getProjectMembershipsState(membershipRoute.workspaceId, membershipRoute.projectId).get(membershipRoute.userId);
     const isCurrentUser = membershipRoute.userId === user.id;
     const role = membership?.role ?? (projectOwnerId === membershipRoute.userId ? 'owner' : 'developer');
+    const effectiveRole = projectOwnerId === membershipRoute.userId
+      ? 'owner'
+      : (isProjectAdmin(projectGovernance, membershipRoute.userId) ? 'admin' : role);
     json(res, 200, {
       project_id: membershipRoute.projectId,
       user_id: membershipRoute.userId,
-      role,
+      role: effectiveRole,
       permissions: isCurrentUser
         ? [
           ...resolveVisibleProjectPermissionsForActor({
             workspaceId: membershipRoute.workspaceId,
             projectId: membershipRoute.projectId,
             projectOwnerId: projectOwnerId ?? user.id,
+            projectGovernance,
             actorUserId: user.id,
           }),
         ]

@@ -535,10 +535,13 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
           />
           <div className="mt-4 flex items-center justify-between">
             <p className="text-xs text-tertiary">
-              {t('overview.events')}: {overviewSummary.eventCount} ·{' '}
-              {commonT('page_of', { page: String(currentPage), total: String(totalPages) })} ·
-              {' '}
               {commonT('total_items', { count: String(totalItems) })}
+              {totalPages > 1 ? (
+                <>
+                  {' · '}
+                  {commonT('page_of', { page: String(currentPage), total: String(totalPages) })}
+                </>
+              ) : null}
             </p>
             <div className="flex items-center gap-2">
               <Button

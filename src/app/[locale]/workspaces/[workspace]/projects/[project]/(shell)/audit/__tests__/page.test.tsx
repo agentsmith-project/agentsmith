@@ -260,7 +260,7 @@ describe('AuditPage route', () => {
     expect(screen.getByTestId('audit__summary-card--changes')).toHaveTextContent('1');
     expect(screen.getByTestId('audit__summary-card--anomalies')).toHaveTextContent('1');
     expect(screen.getByTestId('audit__summary-card--resources')).toHaveTextContent('2');
-    expect(screen.getByText(/overview\.events: 2/)).toBeInTheDocument();
+    expect(screen.getByText('total_items')).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {

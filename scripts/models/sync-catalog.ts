@@ -169,7 +169,7 @@ async function run(): Promise<void> {
     'utf-8',
   );
 
-  const runtimeProviders = RUNTIME_PROVIDER_MAP.map((providerDef) => {
+  const catalogProviders = RUNTIME_PROVIDER_MAP.map((providerDef) => {
     const matchedProviders = byProviderAliases(providers, providerDef.aliases);
     const allModels = matchedProviders.flatMap((provider) => provider.models);
     const seen = new Set<string>();
@@ -200,7 +200,7 @@ async function run(): Promise<void> {
       {
         source: MODELS_DEV_API_URL,
         generated_at: new Date().toISOString(),
-        providers: runtimeProviders,
+        providers: catalogProviders,
       },
       null,
       2,

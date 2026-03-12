@@ -6,8 +6,8 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 PORT_API="${PORT_API:-20000}"
 OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 ticket_file=""
-probe_file=""
-query_token_probe_file=""
+request_check_file=""
+query_token_check_file=""
 
 info() { echo "[gov-sse-ticket-smoke] $*"; }
 err() { echo "[gov-sse-ticket-smoke] ERROR: $*" >&2; }
@@ -34,9 +34,9 @@ main() {
 
   local base="http://localhost:${PORT_API}/api/v1"
   ticket_file="$(mktemp)"
-  probe_file="$(mktemp)"
-  query_token_probe_file="$(mktemp)"
-  trap 'rm -f "${ticket_file:-}" "${probe_file:-}" "${query_token_probe_file:-}"' EXIT
+  request_check_file="$(mktemp)"
+  query_token_check_file="$(mktemp)"
+  trap 'rm -f "${ticket_file:-}" "${request_check_file:-}" "${query_token_check_file:-}"' EXIT
 
   info "requesting opaque sse ticket"
   local ticket_code
@@ -74,26 +74,26 @@ main() {
   }
 
   info "verifying ticket query is rejected on non-sse routes"
-  local probe_code
-  probe_code="$(
-    curl -sS -o "${probe_file}" -w '%{http_code}' \
+  local request_check_code
+  request_check_code="$(
+    curl -sS -o "${request_check_file}" -w '%{http_code}' \
       "${base}/me/notifications?ticket=${issued_ticket}" || true
   )"
-  if [[ "${probe_code}" != "401" ]]; then
-    err "expected 401 for non-sse ticket query, got HTTP ${probe_code}"
-    cat "${probe_file}" >&2 || true
+  if [[ "${request_check_code}" != "401" ]]; then
+    err "expected 401 for non-sse ticket query, got HTTP ${request_check_code}"
+    cat "${request_check_file}" >&2 || true
     exit 1
   fi
 
   info "verifying query-token fallback is disabled"
   local query_token_code
   query_token_code="$(
-    curl -sS -o "${query_token_probe_file}" -w '%{http_code}' \
+    curl -sS -o "${query_token_check_file}" -w '%{http_code}' \
       "${base}/me/notifications?token=${token}" || true
   )"
   if [[ "${query_token_code}" != "401" ]]; then
     err "expected 401 for query-token fallback, got HTTP ${query_token_code}"
-    cat "${query_token_probe_file}" >&2 || true
+    cat "${query_token_check_file}" >&2 || true
     exit 1
   fi
 

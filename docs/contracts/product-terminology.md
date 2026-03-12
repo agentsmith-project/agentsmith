@@ -27,5 +27,5 @@ This document defines canonical product-facing terminology.
 ## Rules
 
 1. Product-facing UI and route naming must use only `Notebook` and `Files`.
-2. Do not introduce removed aliases in routing, docs, or UI copy.
+2. Do not reintroduce removed names in routing, docs, or UI copy.
 3. Inputs/Artifacts terminology is scoped to Notebook execution interactions.

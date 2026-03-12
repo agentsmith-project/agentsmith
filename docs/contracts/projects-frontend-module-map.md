@@ -16,11 +16,11 @@ Target route:
 
 - `src/lib/projects/project-view.ts`
 - Owns pure project-view helpers:
-  - role alias formatting
+  - role name formatting
   - permission checks
   - admin summary formatting
 
-## Guardrails
+## Constraints
 
 - Keep route component focused on orchestration, not table/card markup internals.
 - Keep reusable project rendering concerns under `src/components/projects`.

@@ -90,12 +90,12 @@ test.describe('Notebook Page', () => {
     });
 
     test('should expose diagnostics links from realtime status when status is visible', async ({ authedPage }) => {
-      const runtimeLink = authedPage.getByTestId('notebook__sse-status-open-audit');
-      if (!(await runtimeLink.isVisible().catch(() => false))) {
+      const auditLink = authedPage.getByTestId('notebook__sse-status-open-audit');
+      if (!(await auditLink.isVisible().catch(() => false))) {
         test.skip(true, 'Current MSW notebook lane does not surface realtime status by default.');
       }
 
-      await expect(runtimeLink).toHaveAttribute('href', /\/audit(\?|$)/);
+      await expect(auditLink).toHaveAttribute('href', /\/audit(\?|$)/);
     });
 
     test('should display conversation input and send button', async ({ authedPage }) => {

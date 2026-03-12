@@ -42,10 +42,10 @@ export function buildChatViewModel(args: {
   const streamingSessionIds = Object.entries(streamStateBySession)
     .filter(([, state]) => state.status === 'connecting' || state.status === 'streaming')
     .map(([sessionId]) => sessionId);
-  const runtimeStreamingSessionIds = sessions
+  const executionStreamingSessionIds = sessions
     .filter((session) => session.execution_status === 'running' || session.execution_status === 'stopping')
     .map((session) => session.id);
-  const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...runtimeStreamingSessionIds]));
+  const mergedStreamingSessionIds = Array.from(new Set([...streamingSessionIds, ...executionStreamingSessionIds]));
   const disabled = activeStreamStatus === 'connecting' || activeStreamStatus === 'streaming';
 
   return {

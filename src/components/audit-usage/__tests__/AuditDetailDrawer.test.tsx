@@ -193,7 +193,7 @@ describe('AuditDetailDrawer', () => {
       'User Updated Resource Policy on Model Endpoint ep_1 and failed',
     );
     expect(screen.getAllByText('Resource Policy').length).toBeGreaterThan(0);
-    expect(screen.getByText('ep_1')).toBeInTheDocument();
+    expect(screen.getByText('Model Endpoint ep_1')).toBeInTheDocument();
     expect(screen.getByText('Validation Error')).toBeInTheDocument();
     expect(screen.getAllByText('Invalid rate limit rule').length).toBeGreaterThan(0);
   });
@@ -289,5 +289,36 @@ describe('AuditDetailDrawer', () => {
     );
     expect(screen.getByText('Validation Error')).toBeInTheDocument();
     expect(screen.getAllByText('Mode is required').length).toBeGreaterThan(0);
+  });
+
+  it('shows requested user context for join request events in detail view', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_8',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_alt',
+          action: 'member.join_request.approved',
+          resource_type: 'join_request',
+          resource_id: 'jr_123',
+          result: 'ok',
+          request_id: 'req_join_request_approved',
+          metadata_json: {
+            requested_user_id: 'user_alt',
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Approved Join Request on Join Request user_alt and succeeded',
+    );
+    expect(screen.getAllByText('Join Request').length).toBeGreaterThan(0);
+    expect(screen.getByText('Join Request user_alt')).toBeInTheDocument();
   });
 });

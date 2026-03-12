@@ -12,6 +12,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   credential: 'Credential',
   member: 'Member',
   membership: 'Membership',
+  join_request: 'Join Request',
   project: 'Project',
   agent: 'Agent',
   workspace: 'Workspace',
@@ -216,6 +217,18 @@ export function getAuditResourceTypeLabel(resourceType?: string): string | undef
 }
 
 export function getAuditResourceLabel(event: AuditEvent): string {
+  if (
+    event.resource_type === 'join_request'
+    && event.metadata_json
+    && typeof event.metadata_json === 'object'
+  ) {
+    const requestedUserId = typeof event.metadata_json.requested_user_id === 'string'
+      ? event.metadata_json.requested_user_id
+      : undefined;
+    if (requestedUserId) {
+      return `Join Request ${requestedUserId}`;
+    }
+  }
   if (
     event.resource_type === 'resource_policy'
     && event.metadata_json

@@ -266,4 +266,33 @@ describe('AuditTable', () => {
     expect(screen.getByText('Membership')).toBeInTheDocument();
     expect(screen.getByText('Suspended Membership')).toBeInTheDocument();
   });
+
+  it('prefers requested user context for join request events', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_10',
+            timestamp: '2026-03-01T09:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_alt',
+            action: 'member.join_request.created',
+            resource_type: 'join_request',
+            resource_id: 'jr_123',
+            result: 'ok',
+            request_id: 'req_join_request_created',
+            metadata_json: {
+              requested_user_id: 'user_alt',
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('User Created Join Request on Join Request user_alt and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Join Request')).toBeInTheDocument();
+    expect(screen.getByText('Join Request user_alt')).toBeInTheDocument();
+  });
 });

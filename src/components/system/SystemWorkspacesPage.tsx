@@ -20,6 +20,7 @@ export function SystemWorkspacesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [activeAction, setActiveAction] = useState<'create' | 'update' | 'delete' | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -86,7 +87,9 @@ export function SystemWorkspacesPage() {
   };
 
   const handleSubmit = async () => {
+    const action: 'create' | 'update' = selectedWorkspaceId ? 'update' : 'create';
     setIsSubmitting(true);
+    setActiveAction(action);
     setSaveError(null);
     setSaveNotice(null);
     try {
@@ -118,9 +121,10 @@ export function SystemWorkspacesPage() {
       } else {
         setDraftIdpClientSecret('');
       }
-      setSaveNotice(selectedWorkspaceId ? t('update_success') : t('create_success'));
+      setSaveNotice(action === 'update' ? t('update_success') : t('create_success'));
     } finally {
       setIsSubmitting(false);
+      setActiveAction(null);
     }
   };
 
@@ -130,6 +134,7 @@ export function SystemWorkspacesPage() {
     if (!confirmed) return;
 
     setIsSubmitting(true);
+    setActiveAction('delete');
     setSaveError(null);
     setSaveNotice(null);
     try {
@@ -146,6 +151,7 @@ export function SystemWorkspacesPage() {
       setSaveNotice(t('delete_success'));
     } finally {
       setIsSubmitting(false);
+      setActiveAction(null);
     }
   };
 
@@ -156,6 +162,21 @@ export function SystemWorkspacesPage() {
     draftIdpRealm.trim() &&
     draftIdpClientId.trim();
   const isEditingWorkspace = Boolean(selectedWorkspaceId);
+  const primaryActionLabel = isSubmitting
+    ? activeAction === 'update'
+      ? t('updating')
+      : activeAction === 'delete'
+        ? t('deleting')
+        : t('creating')
+    : selectedWorkspaceId
+      ? t('update_workspace')
+      : t('create_workspace');
+  const statusToneClass = saveError ? 'border-error/30 text-error' : saveNotice ? 'border-success/30 text-foreground' : 'border-subtle text-tertiary';
+  const statusPrefix = saveError
+    ? t('status_error')
+    : saveNotice
+      ? t('status_success')
+      : t('status_idle');
 
   return (
     <PageState state="success">
@@ -367,7 +388,13 @@ export function SystemWorkspacesPage() {
                   <PreviewRow label={t('preview_key_prefix')} value={preview.key_prefix} />
                 </div>
 
-                <div className="rounded-sm border border-dashed border-subtle bg-bg-base/20 p-4 text-sm text-tertiary" data-testid="system-workspaces__notice">
+                <div
+                  className={`rounded-sm border border-dashed bg-bg-base/20 p-4 text-sm ${statusToneClass}`}
+                  data-testid="system-workspaces__notice"
+                >
+                  <p className="mb-1 text-[11px] uppercase tracking-[0.08em]" data-testid="system-workspaces__notice-status">
+                    {statusPrefix}
+                  </p>
                   {saveError ? (
                     <p className="text-error" data-testid="system-workspaces__save-error">{saveError}</p>
                   ) : saveNotice ? (
@@ -384,7 +411,7 @@ export function SystemWorkspacesPage() {
                     disabled={!canSubmit || isSubmitting}
                     data-testid="system-workspaces__save"
                   >
-                    {isSubmitting ? t('saving') : selectedWorkspaceId ? t('update_workspace') : t('create_workspace')}
+                    {primaryActionLabel}
                   </Button>
                   {selectedWorkspaceId ? (
                     <Button type="button" variant="outline" onClick={resetDraft} data-testid="system-workspaces__reset">
@@ -399,7 +426,7 @@ export function SystemWorkspacesPage() {
                       disabled={isSubmitting}
                       data-testid="system-workspaces__delete"
                     >
-                      {t('delete_workspace')}
+                      {isSubmitting && activeAction === 'delete' ? t('deleting') : t('delete_workspace')}
                     </Button>
                   ) : null}
                 </div>

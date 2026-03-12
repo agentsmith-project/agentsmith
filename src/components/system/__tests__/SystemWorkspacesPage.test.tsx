@@ -94,6 +94,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_idle');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_admin_card_label');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
   });
@@ -214,6 +215,8 @@ describe('SystemWorkspacesPage', () => {
         expect.objectContaining({ method: 'PATCH' }),
       ),
     );
+    expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_success');
   });
 
   it('deletes selected workspace', async () => {
@@ -269,5 +272,45 @@ describe('SystemWorkspacesPage', () => {
       ),
     );
     expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_success');
+  });
+
+  it('shows validation failure feedback when saving fails', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        json: async () => ({ error_message: 'invalid_system_workspace_payload' }),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), {
+      target: { value: 'Ops Workspace' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-admin'), {
+      target: { value: 'ops@example.com' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
+      target: { value: 'https://login.example.com' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-realm'), {
+      target: { value: 'ops' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
+      target: { value: 'ops-client' },
+    });
+    fireEvent.click(screen.getByTestId('system-workspaces__save'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('system-workspaces__save-error')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_error');
   });
 });

@@ -240,7 +240,12 @@
     "workspace_retry": "重试",
     "workspace_empty_title": "暂无可用工作空间",
     "workspace_empty_description": "当前账号没有可访问的工作空间。",
-    "open_all_workspaces": "查看全部工作空间"
+    "open_all_workspaces": "查看全部工作空间",
+    "workspace_login_title": "工作空间登录",
+    "workspace_login_subtitle": "登录后继续进入这个工作空间。",
+    "workspace_not_found": "未找到工作空间",
+    "back_to_workspace_select": "返回工作空间选择",
+    "keycloak_not_configured": "当前工作空间未配置身份提供方"
   },
   "workspace": {
     "select": "选择工作空间",

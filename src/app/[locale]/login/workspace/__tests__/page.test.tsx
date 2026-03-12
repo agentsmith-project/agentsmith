@@ -44,7 +44,7 @@ describe('WorkspaceSelectPage', () => {
 
     expect(screen.getByTestId('workspace-select__card--ws_1')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('workspace-select__card--ws_1'));
-    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/projects');
+    expect(mockPush).toHaveBeenCalledWith('/en-US/workspaces/ws_1/login');
   });
 
   it('renders entry link to workspace overview page', () => {

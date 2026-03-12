@@ -238,7 +238,12 @@
     "workspace_retry": "Retry",
     "workspace_empty_title": "No available workspace",
     "workspace_empty_description": "Your account currently has no accessible workspace.",
-    "open_all_workspaces": "View all workspaces"
+    "open_all_workspaces": "View all workspaces",
+    "workspace_login_title": "Workspace login",
+    "workspace_login_subtitle": "Sign in to continue into this workspace.",
+    "workspace_not_found": "Workspace not found",
+    "back_to_workspace_select": "Back to workspace selection",
+    "keycloak_not_configured": "Workspace identity provider is not configured"
   },
   "workspace": {
     "select": "Select Workspace",

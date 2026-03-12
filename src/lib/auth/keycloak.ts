@@ -7,17 +7,21 @@ export function getKeycloakClientId(): string {
 }
 
 export function getKeycloakRealmBase(): string | null {
-  if (!keycloakRealmsBase || !keycloakRealm) {
+  return resolveKeycloakRealmBase(keycloakRealmsBase, keycloakRealm);
+}
+
+export function resolveKeycloakRealmBase(realmsBase: string, realm: string): string | null {
+  if (!realmsBase || !realm) {
     return null;
   }
 
-  if (keycloakRealmsBase.endsWith('/realms')) {
-    return `${keycloakRealmsBase}/${keycloakRealm}`;
+  if (realmsBase.endsWith('/realms')) {
+    return `${realmsBase}/${realm}`;
   }
 
-  if (keycloakRealmsBase.includes('/realms/')) {
-    return keycloakRealmsBase.replace(/\/$/, '');
+  if (realmsBase.includes('/realms/')) {
+    return realmsBase.replace(/\/$/, '');
   }
 
-  return `${keycloakRealmsBase.replace(/\/$/, '')}/realms/${keycloakRealm}`;
+  return `${realmsBase.replace(/\/$/, '')}/realms/${realm}`;
 }

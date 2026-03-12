@@ -30,7 +30,7 @@ export default function WorkspaceSelectPage() {
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
 
   const handleWorkspaceSelect = (workspaceId: string) => {
-    router.push(`/${locale}/workspaces/${workspaceId}/projects`);
+    router.push(`/${locale}/workspaces/${workspaceId}/login`);
   };
 
   const handleReLogin = useCallback(() => {

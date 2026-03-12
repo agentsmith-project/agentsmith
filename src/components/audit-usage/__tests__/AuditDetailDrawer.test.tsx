@@ -156,7 +156,7 @@ describe('AuditDetailDrawer', () => {
     );
 
     expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
-      'Service Account Failed Usage Report Delivery on incident_3 and failed',
+      'Service Account Request Delivery Failed on incident_3 and failed',
     );
     expect(screen.getByText('Upstream Rate Limited')).toBeInTheDocument();
     expect(screen.getAllByText('Governance Incident').length).toBeGreaterThan(0);

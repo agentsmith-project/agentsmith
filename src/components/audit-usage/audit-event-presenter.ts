@@ -16,7 +16,6 @@ const RESOURCE_LABELS: Record<string, string> = {
   workspace: 'Workspace',
   organization: 'Organization',
   request: 'Request',
-  usage_report: 'Usage Report',
   governance_incident: 'Governance Incident',
 };
 

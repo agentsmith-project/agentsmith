@@ -144,7 +144,7 @@ describe('AuditTable', () => {
 
     expect(screen.getByText('Service Account')).toBeInTheDocument();
     expect(screen.getByText('Governance Incident')).toBeInTheDocument();
-    expect(screen.getByText('Service Account Failed Usage Report Delivery on incident_1 and failed')).toBeInTheDocument();
+    expect(screen.getByText('Service Account Request Delivery Failed on incident_1 and failed')).toBeInTheDocument();
   });
 
   it('uses governed resource details for resource policy updates', () => {

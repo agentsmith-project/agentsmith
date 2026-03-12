@@ -1,20 +1,19 @@
-# Audit & Usage Reports User Guide
+# Audit & Usage User Guide
 
 Scope boundary (current MVP): this guide is constrained to project-scoped governance surfaces and endpoint-centric LLM usage evidence. Do not interpret it as organization-wide governance or DevOps release-management capability.
 
 ## Overview
 
-The Audit & Usage Reports provide comprehensive visibility into:
+The Audit and Usage surfaces provide focused project visibility into:
 
-- **Audit Logs**: Complete record of governance actions and system events
-- **Usage Metrics**: Resource consumption patterns and trends
-- **Export Capabilities**: Download data for external analysis
+- **Audit**: configuration changes, system events, anomalies, and governance evidence
+- **Usage**: endpoint-centric request and spending progress by window
 
 ## Accessing Audit & Usage
 
 1. Navigate to your project
 2. Click on **Audit** or **Usage** in the sidebar navigation
-3. View real-time data and historical reports
+3. Review current audit events or endpoint usage progress
 
 ## Audit Logs
 
@@ -119,9 +118,9 @@ Find specific events using the search bar:
 - **Request ID**: Trace related operations
 - **Text Search**: Search across all fields
 
-## Usage Reports
+## Usage
 
-### Usage Metrics Overview
+### Usage Overview
 
 The Usage page displays:
 
@@ -148,38 +147,6 @@ See usage by resource type:
 - **Endpoints**: Per-endpoint request/cost and limit windows
 - **No forced overall total**: The page should not require a single project-wide aggregate across mixed limit metrics
 
-## Exporting Data
-
-### Export Formats
-
-Audit and usage data can be exported in:
-
-- **JSON**: Structured data for programmatic use
-- **CSV**: Spreadsheet-compatible format
-
-### Exporting Audit Logs
-
-1. Apply filters to narrow data
-2. Click **Export** button
-3. Select format (JSON/CSV)
-4. File downloads with current filter results
-
-### Exporting Usage Reports
-
-1. Select time range and metrics
-2. Click **Export Report**
-3. Choose format:
-   - **CSV**: With chart data as columns
-   - **JSON**: Structured with metric breakdown
-4. File includes all selected time series data
-
-### Export Best Practices
-
-- **Narrow Filters**: Export only relevant data to reduce file size
-- **JSON for Automation**: Use JSON for scripts and integrations
-- **CSV for Analysis**: Use CSV for Excel/spreadsheet analysis
-- **Regular Exports**: Schedule exports for compliance reporting
-
 ## Use Cases
 
 ### Compliance Auditing
@@ -187,8 +154,6 @@ Audit and usage data can be exported in:
 Demonstrate compliance with internal policies:
 
 1. Filter by relevant action types
-2. Export to CSV/JSON for records
-3. Include in compliance reports
 
 Example: "Show all policy changes in last quarter"
 
@@ -228,7 +193,6 @@ Required permissions:
 
 - **View Audit**: `project:manage`
 - **View Usage**: `project:endpoint:use`
-- **Export Data**: `project:manage`
 - **View Details**: `project:manage` (audit detail) / `project:endpoint:use` (usage detail)
 
 ## Troubleshooting
@@ -245,11 +209,6 @@ Required permissions:
 - Clear filters
 - Check if project has recent activity
 
-### Export Failing
-
-- Reduce date range (large exports may timeout)
-- Clear browser cache
-- Check network connection
 
 ### Slow Performance
 
@@ -261,7 +220,6 @@ Required permissions:
 
 - **Audit Events**: Retained for 90 days
 - **Usage Metrics**: Aggregated daily, retained for 1 year
-- **Export Data**: No retention limit once downloaded
 
 ## Related Features
 

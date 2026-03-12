@@ -79,7 +79,7 @@ make governance-pages-real-backend-interaction-smoke-strict
 
 3. 如果怀疑是治理 effect 没真正生效  
 直接看：
-- [Audit & Usage Reports](./user-guides/audit-usage-reports.md)
+- [Audit & Usage](./user-guides/audit-usage-reports.md)
 
 ## 5. Audit / Usage / Governance 排障
 

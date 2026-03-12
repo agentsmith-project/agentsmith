@@ -131,7 +131,6 @@ describe('UsagePage', () => {
     expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
     expect(screen.getByTestId('usage__view')).toBeInTheDocument();
     expect(screen.queryByTestId('usage__open-audit')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__report-schedules')).not.toBeInTheDocument();
     expect(screen.getByTestId('usage__endpoint-tabs')).toBeInTheDocument();
     expect(screen.getAllByTestId('usage__endpoint-dimensions').length).toBeGreaterThan(0);
     expect(screen.getAllByTestId('usage__progress-card').length).toBeGreaterThan(0);

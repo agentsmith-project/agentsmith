@@ -8188,6 +8188,119 @@ describe('api-entry-node projects routes', () => {
     expect(audit.items.some((item) => item.action === 'endpoint.create' && item.resource_type === 'endpoint' && item.resource_id === endpoint.id && item.request_id === 'req_cfg_2')).toBe(true);
   });
 
+  it('records project lifecycle changes in audit events', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_project_create_audit',
+      },
+      body: JSON.stringify({
+        name: 'Audit Project',
+        description: 'project audit flow',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string; name: string };
+
+    const updateRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_project_update_audit',
+      },
+      body: JSON.stringify({
+        name: 'Audit Project Renamed',
+      }),
+    });
+    expect(updateRes.status).toBe(200);
+
+    const deleteRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'DELETE',
+      headers: {
+        'x-request-id': 'req_project_delete_audit',
+      },
+    });
+    expect(deleteRes.status).toBe(204);
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=20`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{ action: string; request_id: string; result: string; metadata_json?: { name?: string } }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.create'
+      && item.request_id === 'req_project_create_audit'
+      && item.result === 'ok'
+      && item.metadata_json?.name === 'Audit Project')).toBe(true);
+    expect(audit.items.some((item) =>
+      item.action === 'project.update'
+      && item.request_id === 'req_project_update_audit'
+      && item.result === 'ok'
+      && item.metadata_json?.name === 'Audit Project Renamed')).toBe(true);
+    expect(audit.items.some((item) =>
+      item.action === 'project.delete'
+      && item.request_id === 'req_project_delete_audit'
+      && item.result === 'ok')).toBe(true);
+  });
+
+  it('records failed project update and delete attempts in audit events', async () => {
+    const { baseUrl } = startServer();
+    const missingProjectId = 'proj_missing_audit';
+
+    const updateRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${missingProjectId}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_project_update_missing',
+      },
+      body: JSON.stringify({
+        name: 'Missing Project',
+      }),
+    });
+    expect(updateRes.status).toBe(404);
+
+    const deleteRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${missingProjectId}`, {
+      method: 'DELETE',
+      headers: {
+        'x-request-id': 'req_project_delete_missing',
+      },
+    });
+    expect(deleteRes.status).toBe(404);
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${missingProjectId}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=20&result=error`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{ action: string; request_id: string; result: string; error_code?: string; error_message?: string }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.update'
+      && item.request_id === 'req_project_update_missing'
+      && item.result === 'error'
+      && item.error_code === 'RESOURCE_NOT_FOUND'
+      && item.error_message === 'project_not_found')).toBe(true);
+    expect(audit.items.some((item) =>
+      item.action === 'project.delete'
+      && item.request_id === 'req_project_delete_missing'
+      && item.result === 'error'
+      && item.error_code === 'RESOURCE_NOT_FOUND'
+      && item.error_message === 'project_not_found')).toBe(true);
+  });
+
 
   it('records failed resource policy update attempts in audit events', async () => {
     const { baseUrl } = startServer();

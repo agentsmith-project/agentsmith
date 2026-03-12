@@ -715,12 +715,27 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'collection' && method === 'POST' && route.workspaceId) {
+    const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = CreateProjectRequestSchema.parse(raw);
     const created = await deps.createProjectUseCase.execute({
       workspaceId: route.workspaceId,
       actorId: user.id,
       input,
+    });
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: created.id,
+      actor: { type: 'user', id: user.id },
+      action: 'project.create',
+      requestId,
+      resourceType: 'project',
+      resourceId: created.id,
+      metadata: {
+        name: created.name,
+        visibility: created.visibility,
+        join_policy: created.join_policy,
+      },
     });
     json(res, 201, created);
     return true;
@@ -747,24 +762,101 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'item' && method === 'PATCH' && route.workspaceId && route.projectId) {
+    const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = UpdateProjectRequestSchema.parse(raw);
-    const updated = await deps.updateProjectUseCase.execute({
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      input,
-    });
-    json(res, 200, updated);
+    try {
+      const updated = await deps.updateProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        input,
+      });
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.update',
+        requestId,
+        resourceType: 'project',
+        resourceId: route.projectId,
+        metadata: {
+          name: updated.name,
+          visibility: updated.visibility,
+          join_policy: updated.join_policy,
+          updated_fields: Object.keys(input).sort(),
+        },
+      });
+      json(res, 200, updated);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'project_not_found') {
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'project.update',
+          result: 'error',
+          requestId,
+          resourceType: 'project',
+          resourceId: route.projectId,
+          errorCode: 'RESOURCE_NOT_FOUND',
+          errorMessage: 'project_not_found',
+          metadata: {
+            updated_fields: Object.keys(input).sort(),
+          },
+        });
+      }
+      throw error;
+    }
     return true;
   }
 
   if (route.kind === 'item' && method === 'DELETE' && route.workspaceId && route.projectId) {
-    await deps.deleteProjectUseCase.execute({
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-    });
-    res.statusCode = 204;
-    res.end();
+    const requestId = readRequestId(req);
+    let existingProjectName: string | undefined;
+    try {
+      const existing = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      existingProjectName = existing.name;
+    } catch {
+      // Best-effort project summary for audit metadata; delete flow still owns
+      // authoritative existence checks.
+    }
+    try {
+      await deps.deleteProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.delete',
+        requestId,
+        resourceType: 'project',
+        resourceId: route.projectId,
+        metadata: existingProjectName ? { name: existingProjectName } : undefined,
+      });
+      res.statusCode = 204;
+      res.end();
+    } catch (error) {
+      if (error instanceof Error && error.message === 'project_not_found') {
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'project.delete',
+          result: 'error',
+          requestId,
+          resourceType: 'project',
+          resourceId: route.projectId,
+          errorCode: 'RESOURCE_NOT_FOUND',
+          errorMessage: 'project_not_found',
+        });
+      }
+      throw error;
+    }
     return true;
   }
 

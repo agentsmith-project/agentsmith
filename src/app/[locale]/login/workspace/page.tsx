@@ -25,7 +25,7 @@ export default function WorkspaceSelectPage() {
     isError,
     error,
     refetch,
-  } = useWorkspaces();
+  } = useWorkspaces({ public: true });
 
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
 

@@ -1,0 +1,72 @@
+export interface WorkspaceTenantPreview {
+  workspace_id: string;
+  workspace_name: string;
+  substrate_label: string;
+  database_name: string;
+  collection_prefix: string;
+  key_prefix: string;
+}
+
+export interface SystemInfoSnapshot {
+  system_admin_username: string;
+  api_base_url: string;
+  substrate_label: string;
+  substrate_url: string;
+  database_prefix: string;
+  collection_prefix: string;
+  key_prefix: string;
+}
+
+const DEFAULT_SYSTEM_ADMIN_USERNAME = 'mbos-admin';
+const DEFAULT_SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
+const DEFAULT_SUBSTRATE_LABEL = 'primary';
+const DEFAULT_SUBSTRATE_URL = 'mongodb://localhost:27017';
+const DEFAULT_DATABASE_PREFIX = 'agentsmith_ws_';
+const DEFAULT_COLLECTION_PREFIX = 'ws_';
+const DEFAULT_KEY_PREFIX = 'ws:';
+
+export function getSystemAdminUsername(): string {
+  return process.env.SYSTEM_ADMIN_USERNAME || DEFAULT_SYSTEM_ADMIN_USERNAME;
+}
+
+export function getSystemAdminPassword(): string {
+  return process.env.SYSTEM_ADMIN_PASSWORD || DEFAULT_SYSTEM_ADMIN_PASSWORD;
+}
+
+export function slugifyWorkspaceId(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 48) || 'workspace';
+}
+
+export function buildWorkspaceTenantPreview(workspaceNameOrId: string): WorkspaceTenantPreview {
+  const workspaceId = slugifyWorkspaceId(workspaceNameOrId);
+  const substrateLabel = process.env.SYSTEM_SUBSTRATE_LABEL || DEFAULT_SUBSTRATE_LABEL;
+  const databasePrefix = process.env.SYSTEM_TENANT_DATABASE_PREFIX || DEFAULT_DATABASE_PREFIX;
+  const collectionPrefix = process.env.SYSTEM_TENANT_COLLECTION_PREFIX || DEFAULT_COLLECTION_PREFIX;
+  const keyPrefix = process.env.SYSTEM_TENANT_KEY_PREFIX || DEFAULT_KEY_PREFIX;
+
+  return {
+    workspace_id: workspaceId,
+    workspace_name: workspaceNameOrId.trim() || workspaceId,
+    substrate_label: substrateLabel,
+    database_name: `${databasePrefix}${workspaceId}`,
+    collection_prefix: `${collectionPrefix}${workspaceId}_`,
+    key_prefix: `${keyPrefix}${workspaceId}:`,
+  };
+}
+
+export function getSystemInfoSnapshot(): SystemInfoSnapshot {
+  return {
+    system_admin_username: getSystemAdminUsername(),
+    api_base_url: process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000',
+    substrate_label: process.env.SYSTEM_SUBSTRATE_LABEL || DEFAULT_SUBSTRATE_LABEL,
+    substrate_url: process.env.SYSTEM_SUBSTRATE_URL || DEFAULT_SUBSTRATE_URL,
+    database_prefix: process.env.SYSTEM_TENANT_DATABASE_PREFIX || DEFAULT_DATABASE_PREFIX,
+    collection_prefix: process.env.SYSTEM_TENANT_COLLECTION_PREFIX || DEFAULT_COLLECTION_PREFIX,
+    key_prefix: process.env.SYSTEM_TENANT_KEY_PREFIX || DEFAULT_KEY_PREFIX,
+  };
+}

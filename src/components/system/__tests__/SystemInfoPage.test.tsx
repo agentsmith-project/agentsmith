@@ -1,0 +1,39 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it, vi } from 'vitest';
+
+vi.mock('next/navigation', () => ({
+  useParams: () => ({ locale: 'en-US' }),
+}));
+
+vi.mock('next-intl', () => ({
+  useTranslations: () => (key: string) => key,
+}));
+
+vi.mock('../SystemLogoutButton', () => ({
+  SystemLogoutButton: () => <button type="button" data-testid="system__logout">logout</button>,
+}));
+
+import { SystemInfoPage } from '../SystemInfoPage';
+
+describe('SystemInfoPage', () => {
+  it('renders system info snapshot cards', () => {
+    render(
+      <SystemInfoPage
+        snapshot={{
+          system_admin_username: 'mbos-admin',
+          api_base_url: 'http://localhost:20000',
+          substrate_label: 'primary',
+          substrate_url: 'mongodb://localhost:27017',
+          database_prefix: 'agentsmith_ws_',
+          collection_prefix: 'ws_',
+          key_prefix: 'ws:',
+        }}
+      />,
+    );
+
+    expect(screen.getByTestId('system-info__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('system-info__back').closest('a')).toHaveAttribute('href', '/en-US/system/workspaces');
+    expect(screen.getByTestId('system-info__notice')).toBeInTheDocument();
+    expect(screen.getByText('mongodb://localhost:27017')).toBeInTheDocument();
+  });
+});

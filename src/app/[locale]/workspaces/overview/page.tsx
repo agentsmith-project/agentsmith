@@ -20,7 +20,7 @@ export default function WorkspacesOverviewPage() {
     isLoading,
     isError,
     refetch,
-  } = useWorkspaces();
+  } = useWorkspaces({ public: true });
   const [searchQuery, setSearchQuery] = useState('');
 
   const filteredWorkspaces = useMemo(() => {

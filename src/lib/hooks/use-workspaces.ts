@@ -16,10 +16,14 @@ export const workspaceKeys = {
   members: (id: string) => ['workspaces', id, 'members'] as const,
 };
 
+interface WorkspaceQueryOptions {
+  public?: boolean;
+}
+
 /**
  * Get all workspaces for current user
  */
-export function useWorkspaces() {
+export function useWorkspaces(options?: WorkspaceQueryOptions) {
   const token = useAuthStore((state) => state.token);
   return useQuery({
     queryKey: workspaceKeys.all,
@@ -28,7 +32,7 @@ export function useWorkspaces() {
       const api = new WorkspaceAPI(client);
       return api.list();
     },
-    enabled: Boolean(token),
+    enabled: options?.public ? true : Boolean(token),
     staleTime: 60_000, // 1 minute
   });
 }

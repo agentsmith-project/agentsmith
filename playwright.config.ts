@@ -31,6 +31,7 @@ const chromiumMvpSpecMatch = [
   /endpoints\.spec\.ts$/,
   /files\.spec\.ts$/,
   /organization-governance\.spec\.ts$/,
+  /usage\.spec\.ts$/,
 ];
 
 export default defineConfig({

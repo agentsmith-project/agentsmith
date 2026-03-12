@@ -123,6 +123,7 @@ describe('ProjectsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('projects__back-to-workspace')).toHaveAttribute('href', '/en/workspaces/ws_1');
     expect(screen.getByText('table.project_admin')).toBeInTheDocument();
   });
 
@@ -182,5 +183,30 @@ describe('ProjectsPage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+  });
+
+  it('shows a create-first empty state for workspace admins', async () => {
+    mockProjectsData = [];
+
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('empty.title')).toBeInTheDocument();
+    });
+    expect(screen.getByText('empty.description')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'empty.create_first' })).toBeInTheDocument();
+  });
+
+  it('shows a read-only empty state for non-admin workspace users', async () => {
+    mockProjectsData = [];
+    mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
+
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('empty.title')).toBeInTheDocument();
+    });
+    expect(screen.getByText('empty.read_only_description')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'empty.create_first' })).not.toBeInTheDocument();
   });
 });

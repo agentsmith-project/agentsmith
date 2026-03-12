@@ -2167,10 +2167,12 @@
   "projects": {
     "title": "Projects",
     "workspace_label": "Workspace:",
+    "back_to_workspace": "Back to workspace",
     "loading": "Loading...",
     "empty": {
       "title": "No projects yet",
       "description": "Create your first project to get started",
+      "read_only_description": "No projects are available in this workspace yet. Contact your workspace administrator if you need a project created.",
       "create_first": "New Project"
     },
     "pinned": {

@@ -11,7 +11,9 @@
 import { useEffect, useState, useMemo } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
+import Link from 'next/link';
 import {
+  ArrowLeft,
   FolderOpen,
   Plus,
   Pin,
@@ -200,6 +202,7 @@ export default function ProjectsPage() {
 
   const canReadProjects = canWorkspaceRead;
   const canCreateProject = canCreateProjectByWorkspacePermissions;
+  const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
 
   if (!canReadProjects) {
     return (
@@ -221,6 +224,14 @@ export default function ProjectsPage() {
           <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 py-4 md:px-5 md:py-5">
         {/* Header */}
         <div className="mb-6">
+          <Link
+            href={workspaceBasePath}
+            className="mb-3 inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
+            data-testid="projects__back-to-workspace"
+          >
+            <ArrowLeft className="h-4 w-4" />
+            {t('back_to_workspace')}
+          </Link>
           <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>
           <p className="text-tertiary">
             {t('workspace_label')} {currentWorkspace?.name || workspaceId}
@@ -231,15 +242,18 @@ export default function ProjectsPage() {
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
-            <p className="text-tertiary mb-6">{t('empty.description')}</p>
-            <Button
-              variant="action"
-              onClick={() => setCreateDialogOpen(true)}
-              disabled={!canCreateProject}
-            >
-              <Plus className="w-4 h-4" />
-              {t('empty.create_first')}
-            </Button>
+            <p className="text-tertiary mb-6">
+              {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
+            </p>
+            {canCreateProject ? (
+              <Button
+                variant="action"
+                onClick={() => setCreateDialogOpen(true)}
+              >
+                <Plus className="w-4 h-4" />
+                {t('empty.create_first')}
+              </Button>
+            ) : null}
           </div>
         ) : (
           <div className="space-y-6">

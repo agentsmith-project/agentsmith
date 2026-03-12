@@ -2,7 +2,6 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { usageRecordFixtures } from '../fixtures/usage';
 import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
-import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
 import type { OrganizationActionServerRecord, OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
 import { appendMockNotification } from '../state/me-notifications';
 
@@ -40,37 +39,6 @@ type RequestFactLike = {
   };
 };
 
-function computeNextRunAt(cadence: UsageReportSchedule['cadence'], nowIso = new Date().toISOString()) {
-  const date = new Date(nowIso);
-  if (cadence === 'daily') date.setUTCDate(date.getUTCDate() + 1);
-  if (cadence === 'weekly') date.setUTCDate(date.getUTCDate() + 7);
-  if (cadence === 'monthly') date.setUTCMonth(date.getUTCMonth() + 1);
-  return date.toISOString();
-}
-
-const usageReportSchedules: UsageReportSchedule[] = [{
-  id: 'usage_schedule_001',
-  workspace_id: 'ws_default',
-  project_id: 'proj_001',
-  name: 'Weekly Request Activity Snapshot',
-  cadence: 'weekly',
-  status: 'active',
-  format: 'json',
-  time_window: 'last_7d',
-  delivery_channel: 'in_app',
-  delivery_config: undefined,
-  filters: {
-    provider: 'secondaryok',
-  },
-  governance_evidence_required: true,
-  empty_result_policy: 'deliver',
-  created_at: '2026-02-27T00:00:00.000Z',
-  updated_at: '2026-02-27T00:00:00.000Z',
-  next_run_at: computeNextRunAt('weekly', '2026-02-27T00:00:00.000Z'),
-  last_delivery_status: 'idle',
-}];
-
-const usageReportDeliveries: UsageReportDelivery[] = [];
 const organizationActionRecords = new Map<string, OrganizationActionServerRecord>();
 
 function listOrganizationActionRecords(actionIds: string[]): OrganizationActionServerRecord[] {
@@ -96,15 +64,104 @@ function normalizeActionStatus(value: unknown): OrganizationActionStatus | null 
   }
   return null;
 }
+
+function buildUsageOperationsSummary(facts: RequestFactLike[]) {
+  const providerAgg = new Map<string, { provider: string; requests: number; errors: number; estimated_cost: number }>();
+  const modelAgg = new Map<string, { provider: string; model: string; requests: number; errors: number; estimated_cost: number }>();
+  const endUserAgg = new Map<string, { end_user_id: string; requests: number; errors: number; estimated_cost: number }>();
+  const trendBuckets = new Map<string, { requests: number; errors: number; cost: number }>();
+
+  for (const fact of facts) {
+    const requests = fact.requests ?? 1;
+    const provider = fact.request_details?.provider;
+    const model = fact.request_details?.resolved_model;
+    const endUserId = fact.end_user_id;
+    const estimatedCost = typeof fact.request_details?.estimated_cost === 'number' ? fact.request_details.estimated_cost : 0;
+    const bucket = (fact.timestamp ?? new Date().toISOString()).slice(0, 13) + ':00:00.000Z';
+    const trend = trendBuckets.get(bucket) ?? { requests: 0, errors: 0, cost: 0 };
+    trend.requests += requests;
+    if (fact.result === 'error') trend.errors += requests;
+    trend.cost += estimatedCost;
+    trendBuckets.set(bucket, trend);
+
+    if (provider) {
+      const item = providerAgg.get(provider) ?? { provider, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += requests;
+      if (fact.result === 'error') item.errors += requests;
+      item.estimated_cost += estimatedCost;
+      providerAgg.set(provider, item);
+    }
+
+    if (provider && model) {
+      const key = `${provider}:${model}`;
+      const item = modelAgg.get(key) ?? { provider, model, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += requests;
+      if (fact.result === 'error') item.errors += requests;
+      item.estimated_cost += estimatedCost;
+      modelAgg.set(key, item);
+    }
+
+    if (endUserId) {
+      const item = endUserAgg.get(endUserId) ?? { end_user_id: endUserId, requests: 0, errors: 0, estimated_cost: 0 };
+      item.requests += requests;
+      if (fact.result === 'error') item.errors += requests;
+      item.estimated_cost += estimatedCost;
+      endUserAgg.set(endUserId, item);
+    }
+  }
+
+  const trendItems = Array.from(trendBuckets.entries())
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([time_bucket, item]) => ({ time_bucket, ...item }));
+  const baselineRequests = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.requests, 0) / trendItems.length : 0;
+  const baselineErrors = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.errors, 0) / trendItems.length : 0;
+  const baselineCost = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.cost, 0) / trendItems.length : 0;
+
+  return {
+    top_providers: Array.from(providerAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
+    top_models: Array.from(modelAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
+    top_end_users: Array.from(endUserAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
+    anomaly_peaks: trendItems.flatMap((item) => {
+      const peaks: Array<{ id: string; time_bucket: string; metric: 'requests' | 'errors' | 'cost'; value: number; baseline: number; severity: 'medium' | 'high' }> = [];
+      if (baselineRequests > 0 && item.requests > baselineRequests * 1.5) {
+        peaks.push({ id: `requests-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'requests', value: item.requests, baseline: Number(baselineRequests.toFixed(2)), severity: item.requests > baselineRequests * 2 ? 'high' : 'medium' });
+      }
+      if (baselineErrors > 0 && item.errors > baselineErrors * 1.5) {
+        peaks.push({ id: `errors-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'errors', value: item.errors, baseline: Number(baselineErrors.toFixed(2)), severity: item.errors > baselineErrors * 2 ? 'high' : 'medium' });
+      }
+      if (baselineCost > 0 && item.cost > baselineCost * 1.5) {
+        peaks.push({ id: `cost-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'cost', value: Number(item.cost.toFixed(8)), baseline: Number(baselineCost.toFixed(8)), severity: item.cost > baselineCost * 2 ? 'high' : 'medium' });
+      }
+      return peaks;
+    }).slice(0, 6),
+    recent_requests: facts
+      .slice()
+      .sort((a, b) => Date.parse(b.timestamp ?? '') - Date.parse(a.timestamp ?? ''))
+      .slice(0, 12)
+      .map((fact, index) => ({
+        id: fact.request_id ?? `mock_request_${index}`,
+        timestamp: fact.timestamp ?? new Date().toISOString(),
+        request_id: fact.request_id,
+        provider: fact.request_details?.provider,
+        model: fact.request_details?.resolved_model,
+        end_user_id: fact.end_user_id,
+        result: fact.result,
+        error_class: fact.request_details?.error_class,
+        estimated_cost: fact.request_details?.estimated_cost ?? undefined,
+      })),
+    webhook_destinations: [],
+  };
+}
+
 const governancePolicyOverrides = [{
   id: 'rpo_001',
-  incident_id: 'incident-usage-webhook-signature-policy-check',
+  incident_id: 'incident-usage-request-review-warning',
   workspace_id: 'ws_default',
   project_id: 'proj_001',
-  report_name: 'usage-webhook-signature-policy-check',
-  issue_id: 'usage_usage_report_webhook_signature_recommended',
+  report_name: 'usage-request-review-warning',
+  issue_id: 'usage_request_review_recommended',
   issue_source: 'usage',
-  issue_message: 'usage_report_webhook_signature_recommended',
+  issue_message: 'usage_request_review_recommended',
   reason_category: 'approved_exception',
   reason: 'Accepted temporarily during the current governance review.',
   expires_at: '2026-03-07T22:20:00.000Z',
@@ -146,7 +203,6 @@ const governanceReports = [
     policy_blocker_count: 0,
     policy_warning_count: 0,
     execution_review_status: 'ready',
-    usage_review_status: 'ready',
     markdown_available: true,
     policy_enforcement: {
       decision: 'ready',
@@ -162,7 +218,7 @@ const governanceReports = [
     },
   },
   {
-    name: 'usage-webhook-signature-policy-check',
+    name: 'usage-request-review-warning',
     generated_at: '2026-02-28T22:10:00.000Z',
     status: 'pass',
     branch: 'main',
@@ -171,7 +227,6 @@ const governanceReports = [
     policy_blocker_count: 0,
     policy_warning_count: 1,
     execution_review_status: 'ready',
-    usage_review_status: 'ready',
     markdown_available: true,
     policy_enforcement: {
       decision: 'warning',
@@ -196,7 +251,6 @@ const governanceReports = [
     policy_blocker_count: 5,
     policy_warning_count: 2,
     execution_review_status: 'blocked',
-    usage_review_status: 'blocked',
     markdown_available: true,
     policy_enforcement: {
       decision: 'blocked',
@@ -245,16 +299,15 @@ const governanceRuns = [
     governance_decision: 'ready',
     policy_enforcement: governanceReports[0]?.policy_enforcement,
     execution_review_status: 'ready',
-    usage_review_status: 'ready',
     total_checks: 6,
     passed_checks: 6,
     failed_checks: 0,
   },
   {
-    id: 'usage-webhook-signature-policy-check',
-    incident_id: 'incident-usage-webhook-signature-policy-check',
-    report_name: 'usage-webhook-signature-policy-check',
-    artifact_name: 'usage-webhook-signature-policy-check',
+    id: 'usage-request-review-warning',
+    incident_id: 'incident-usage-request-review-warning',
+    report_name: 'usage-request-review-warning',
+    artifact_name: 'usage-request-review-warning',
     started_at: '2026-02-28T22:08:00.000Z',
     completed_at: '2026-02-28T22:10:00.000Z',
     duration_ms: 120000,
@@ -265,7 +318,6 @@ const governanceRuns = [
     governance_decision: 'warning',
     policy_enforcement: governanceReports[1]?.policy_enforcement,
     execution_review_status: 'ready',
-    usage_review_status: 'ready',
     total_checks: 6,
     passed_checks: 6,
     failed_checks: 0,
@@ -285,7 +337,6 @@ const governanceRuns = [
     governance_decision: 'blocked',
     policy_enforcement: governanceReports[2]?.policy_enforcement,
     execution_review_status: 'blocked',
-    usage_review_status: 'blocked',
     governance_blockers: [
       { source: 'organization_governance', message: 'organization_governance_drilldown_chain_missing' },
       { source: 'workspace_governance', message: 'workspace_governance_explainability_missing' },
@@ -307,7 +358,7 @@ const governanceRunDetails = new Map([
     failed_step_names: [],
     failure_categories: [],
   }],
-  ['usage-webhook-signature-policy-check', {
+  ['usage-request-review-warning', {
     ...governanceRuns[1],
     failed_step_names: [],
     failure_categories: [],
@@ -350,7 +401,6 @@ type GovernanceIncidentRecord = {
   trigger: string;
   governance_decision: string;
   execution_review_status: string;
-  usage_review_status: string;
   assignee_user_id?: string;
   assignee_name?: string;
   due_at?: string;
@@ -406,21 +456,20 @@ let governanceRunnerStatus = {
 
 const governanceIncidents: GovernanceIncidentRecord[] = [
   {
-    id: 'usage-webhook-signature-policy-check',
-    incident_id: 'incident-usage-webhook-signature-policy-check',
-    report_name: 'usage-webhook-signature-policy-check',
-    run_id: 'usage-webhook-signature-policy-check',
+    id: 'usage-request-review-warning',
+    incident_id: 'incident-usage-request-review-warning',
+    report_name: 'usage-request-review-warning',
+    run_id: 'usage-request-review-warning',
     created_at: '2026-02-28T22:10:00.000Z',
     event_type: 'governance_warning',
     severity: 'warning',
     status: 'open',
     title: 'Governance run completed with warning state',
     body: 'Latest governance run completed with 1 warning issues.',
-    artifact_name: 'usage-webhook-signature-policy-check',
+    artifact_name: 'usage-request-review-warning',
     trigger: 'scheduled',
     governance_decision: 'warning',
     execution_review_status: 'ready',
-    usage_review_status: 'ready',
     assignee_user_id: 'user_governance_owner',
     assignee_name: 'Governance Owner',
     due_at: '2026-03-02T12:00:00.000Z',
@@ -433,8 +482,8 @@ const governanceIncidents: GovernanceIncidentRecord[] = [
     incident_history: [
       {
         id: 'rih_usage_001',
-        incident_id: 'incident-usage-webhook-signature-policy-check',
-        escalation_id: 'usage-webhook-signature-policy-check',
+        incident_id: 'incident-usage-request-review-warning',
+        escalation_id: 'usage-request-review-warning',
         event_kind: 'escalation_assignment',
         created_at: '2026-02-28T22:15:00.000Z',
         actor_user_id: 'mock-user',
@@ -460,7 +509,6 @@ const governanceIncidents: GovernanceIncidentRecord[] = [
     trigger: 'ci',
     governance_decision: 'blocked',
     execution_review_status: 'blocked',
-    usage_review_status: 'blocked',
     governance_blockers: [
       { source: 'organization_governance', message: 'organization_governance_drilldown_chain_missing' },
       { source: 'workspace_governance', message: 'workspace_governance_explainability_missing' },
@@ -512,7 +560,6 @@ const governanceIncidents: GovernanceIncidentRecord[] = [
     trigger: 'manual',
     governance_decision: 'ready',
     execution_review_status: 'ready',
-    usage_review_status: 'ready',
     assignee_user_id: 'user_governance_mgr',
     assignee_name: 'Governance Manager',
     due_at: '2026-02-28T20:15:00.000Z',
@@ -563,16 +610,6 @@ const governanceReportDetails = new Map([
             coverage_ratio: 1,
           },
         },
-        usage_report_evidence: {
-          review_status: 'ready',
-          blockers: [],
-          warnings: [],
-          active_schedules: 1,
-          required_schedules: 1,
-          successful_deliveries_last_7d: 1,
-          failed_deliveries_last_7d: 0,
-          unacknowledged_required_deliveries: 0,
-        },
       },
       execution: {
         total_checks: 6,
@@ -587,8 +624,8 @@ const governanceReportDetails = new Map([
     },
     markdown: '# Governance Report\n\nStatus: PASS\n',
   }],
-  ['usage-webhook-signature-policy-check', {
-    name: 'usage-webhook-signature-policy-check',
+  ['usage-request-review-warning', {
+    name: 'usage-request-review-warning',
     policy_enforcement: governanceReports[1]?.policy_enforcement,
     report: {
       metadata: {
@@ -600,15 +637,7 @@ const governanceReportDetails = new Map([
         governance_policy: {
           decision: 'warning',
           blockers: [],
-          warnings: [
-            {
-              id: 'usage_usage_report_webhook_signature_recommended',
-              severity: 'warning',
-              source: 'usage',
-              message: 'usage_report_webhook_signature_recommended',
-              overridable: true,
-            },
-          ],
+          warnings: [          ],
           summary: {
             total_issues: 1,
             blocker_count: 0,
@@ -626,16 +655,6 @@ const governanceReportDetails = new Map([
             missing_price_facts: 0,
             coverage_ratio: 1,
           },
-        },
-        usage_report_evidence: {
-          review_status: 'ready',
-          blockers: [],
-          warnings: ['usage_report_webhook_signature_recommended'],
-          active_schedules: 2,
-          required_schedules: 1,
-          successful_deliveries_last_7d: 2,
-          failed_deliveries_last_7d: 0,
-          unacknowledged_required_deliveries: 0,
         },
       },
       execution: {
@@ -684,15 +703,7 @@ const governanceReportDetails = new Map([
               source: 'configuration',
               message: 'Configuration contains 1 missing-price facts.',
               overridable: false,
-            },
-            {
-              id: 'usage_usage_report_runner_not_yet_executed',
-              severity: 'blocker',
-              source: 'usage',
-              message: 'usage_report_runner_not_yet_executed',
-              overridable: false,
-            },
-          ],
+            },          ],
           warnings: [
             {
               id: 'configuration_check_reroute_pricing_missing',
@@ -700,20 +711,12 @@ const governanceReportDetails = new Map([
               source: 'configuration',
               message: 'configuration_check_reroute_pricing_missing',
               overridable: true,
-            },
-            {
-              id: 'usage_usage_report_webhook_signature_recommended',
-              severity: 'warning',
-              source: 'usage',
-              message: 'usage_report_webhook_signature_recommended',
-              overridable: true,
-            },
-          ],
+            },          ],
           summary: {
-            total_issues: 6,
-            blocker_count: 4,
-            warning_count: 2,
-            overridable_count: 2,
+            total_issues: 4,
+            blocker_count: 3,
+            warning_count: 1,
+            overridable_count: 1,
           },
         },
         execution_review_evidence: {
@@ -733,16 +736,6 @@ const governanceReportDetails = new Map([
             coverage_ratio: 0.67,
           },
         },
-        usage_report_evidence: {
-          review_status: 'blocked',
-          blockers: ['usage_report_runner_not_yet_executed'],
-          warnings: ['usage_report_webhook_signature_recommended'],
-          active_schedules: 1,
-          required_schedules: 1,
-          successful_deliveries_last_7d: 0,
-          failed_deliveries_last_7d: 1,
-          unacknowledged_required_deliveries: 1,
-        },
       },
       execution: {
         total_checks: 6,
@@ -761,1286 +754,7 @@ const governanceReportDetails = new Map([
   }],
 ]);
 
-function listScheduleDeliveries(scheduleId: string) {
-  return usageReportDeliveries
-    .filter((item) => item.schedule_id === scheduleId)
-    .slice()
-    .sort((a, b) => b.completed_at.localeCompare(a.completed_at));
-}
-
-function withRecentDeliveries(schedule: UsageReportSchedule): UsageReportSchedule {
-  return {
-    ...schedule,
-    recent_deliveries: listScheduleDeliveries(schedule.id).slice(0, 5),
-  };
-}
-
-function findSchedule(ws: string, prj: string, scheduleId: string) {
-  return usageReportSchedules.find((item) => item.id === scheduleId && item.workspace_id === ws && item.project_id === prj);
-}
-
-function buildDeliveryResult(item: UsageReportSchedule, status: 'success' | 'failed', trigger: UsageReportDelivery['trigger'], facts: ReturnType<typeof listRequestUsageFacts>, options?: { error?: string; attemptCount?: number; parentDeliveryId?: string }) {
-  const now = new Date().toISOString();
-  const deliveryId = `usage_delivery_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  const delivery: UsageReportDelivery = {
-    id: deliveryId,
-    workspace_id: item.workspace_id,
-    project_id: item.project_id,
-    schedule_id: item.id,
-    trigger,
-    status,
-    attempt_count: options?.attemptCount ?? 1,
-    report_period_start: new Date(Date.now() - (item.time_window === 'last_24h' ? 24 : item.time_window === 'last_30d' ? 30 * 24 : 7 * 24) * 60 * 60 * 1000).toISOString(),
-    report_period_end: now,
-    created_at: now,
-    completed_at: now,
-    preview_filename: status === 'success' ? `usage-report-${item.project_id}.${item.format}` : undefined,
-    content_type: item.format === 'csv' ? 'text/csv; charset=utf-8' : 'application/json; charset=utf-8',
-    summary: {
-      requests: facts.length,
-      errors: facts.filter((fact) => fact.result === 'error').length,
-      top_provider: facts[0]?.request_details?.provider,
-      estimated_cost: Number(facts.reduce((sum, fact) => sum + (fact.request_details?.estimated_cost ?? 0), 0).toFixed(8)),
-    },
-    error: options?.error,
-    parent_delivery_id: options?.parentDeliveryId,
-    delivery_metadata: item.delivery_channel === 'webhook'
-      ? { dispatch_mode: 'webhook', webhook_url: item.delivery_config?.webhook_url, response_status: 200 }
-      : { dispatch_mode: 'user_notification' },
-  };
-  usageReportDeliveries.unshift(delivery);
-  item.last_delivery_at = now;
-  item.last_run_at = now;
-  item.last_delivery_status = status;
-  item.last_delivery_error = options?.error;
-  item.updated_at = now;
-  item.next_run_at = item.status === 'active' ? computeNextRunAt(item.cadence, now) : item.next_run_at;
-  appendMockNotification({
-    id: `notif_usage_${delivery.id}`,
-    type: status === 'success' ? 'usage_report_delivery' : 'usage_report_delivery_failed',
-    title: status === 'success' ? 'Usage report delivered' : 'Usage report delivery failed',
-    body: status === 'success' ? `Generated ${delivery.preview_filename}` : options?.error ?? 'Usage report delivery failed',
-    link_url: `/workspaces/${item.workspace_id}/projects/${item.project_id}/usage`,
-    created_at: now,
-    read_at: null,
-  });
-  return {
-    delivery_id: delivery.id,
-    schedule_id: item.id,
-    delivery_channel: item.delivery_channel,
-    generated_at: now,
-    preview_filename: delivery.preview_filename ?? '',
-    content_type: delivery.content_type ?? 'application/json; charset=utf-8',
-    status,
-    summary: delivery.summary,
-    error: options?.error,
-    delivery_metadata: delivery.delivery_metadata,
-  };
-}
-
-function getScheduleFacts(item: UsageReportSchedule) {
-  return listRequestUsageFacts({
-    startTime: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString(),
-    endTime: new Date().toISOString(),
-    provider: item.filters?.provider ?? null,
-    model: item.filters?.model ?? null,
-    result: item.filters?.result ?? null,
-  });
-}
-
-function executeScheduleDelivery(item: UsageReportSchedule, trigger: UsageReportDelivery['trigger'], options?: { parentDeliveryId?: string; attemptCount?: number }) {
-  const facts = getScheduleFacts(item);
-  if (facts.length === 0 && item.empty_result_policy === 'fail') {
-    return buildDeliveryResult(item, 'failed', trigger, facts, {
-      error: 'usage_report_empty_result',
-      parentDeliveryId: options?.parentDeliveryId,
-      attemptCount: options?.attemptCount,
-    });
-  }
-  return buildDeliveryResult(item, 'success', trigger, facts, {
-    parentDeliveryId: options?.parentDeliveryId,
-    attemptCount: options?.attemptCount,
-  });
-}
-
-function buildUsageReportEvidence(ws: string, prj: string): UsageReportEvidence {
-  const activeSchedules = usageReportSchedules.filter((item) => item.workspace_id === ws && item.project_id === prj && item.status === 'active');
-  const requiredSchedules = activeSchedules.filter((item) => item.governance_evidence_required);
-  const blockers: string[] = [];
-  let successful = 0;
-  let failed = 0;
-  let unacknowledged = 0;
-
-  for (const schedule of requiredSchedules) {
-    const latest = listScheduleDeliveries(schedule.id)[0];
-    if (!latest) {
-      blockers.push(`usage_report_schedule_missing_delivery:${schedule.name}`);
-      continue;
-    }
-    if (latest.status === 'success') successful += 1;
-    if (latest.status === 'failed') {
-      failed += 1;
-      blockers.push(`usage_report_schedule_latest_delivery_failed:${schedule.name}`);
-    }
-    if (!latest.acknowledged_at) {
-      unacknowledged += 1;
-      blockers.push(`usage_report_schedule_unacknowledged:${schedule.name}`);
-    }
-  }
-
-  const warnings = activeSchedules.length === 0 ? ['usage_report_no_active_schedules'] : [];
-
-  return {
-    source: 'artifact',
-    generated_at: new Date().toISOString(),
-    review_status: blockers.length > 0 ? 'blocked' : 'ready',
-    blockers,
-    warnings,
-    active_schedules: activeSchedules.length,
-    required_schedules: requiredSchedules.length,
-    successful_deliveries_last_7d: successful,
-    failed_deliveries_last_7d: failed,
-    unacknowledged_required_deliveries: unacknowledged,
-  };
-}
-
-function resolveResourceMultiplier(resourceType?: string | null) {
-  if (resourceType === 'agent') return 0.65;
-  if (resourceType === 'source_library') return 0.35;
-  return 1;
-}
-
-function normalizeBucket(timeBucket: string, groupBy: 'day' | 'hour'): string {
-  if (groupBy === 'hour') return timeBucket;
-  return /^\d{4}-\d{2}-\d{2}/.test(timeBucket) ? timeBucket.slice(0, 10) : timeBucket;
-}
-
-function aggregateUsageRecords(records: UsageLikeRecord[], groupBy: 'day' | 'hour'): UsageLikeRecord[] {
-  const grouped = new Map<string, UsageLikeRecord>();
-
-  for (const record of records) {
-    const timeBucket = normalizeBucket(record.time_bucket, groupBy);
-    const key = [
-      timeBucket,
-      record.resource_type,
-      record.resource_id ?? '',
-      record.end_user_id ?? '',
-    ].join('|');
-    const current = grouped.get(key) ?? {
-      ...record,
-      id: `usage_agg_${key}`,
-      time_bucket: timeBucket,
-      requests: 0,
-      duration_p95_ms: 0,
-      bytes_in: 0,
-      bytes_out: 0,
-      tokens: 0,
-    };
-
-    current.requests += record.requests ?? 0;
-    current.duration_p95_ms = Math.max(current.duration_p95_ms ?? 0, record.duration_p95_ms ?? 0);
-    current.bytes_in = (current.bytes_in ?? 0) + (record.bytes_in ?? 0);
-    current.bytes_out = (current.bytes_out ?? 0) + (record.bytes_out ?? 0);
-    current.tokens = (current.tokens ?? 0) + (record.tokens ?? 0);
-    grouped.set(key, current);
-  }
-
-  return Array.from(grouped.values()).sort((a, b) => {
-    const bucketDiff = b.time_bucket.localeCompare(a.time_bucket);
-    if (bucketDiff !== 0) return bucketDiff;
-    return (b.requests ?? 0) - (a.requests ?? 0);
-  });
-}
-
-function classifyProviderErrorClass(errorCode?: string): 'provider_retryable' | 'provider_non_retryable' | 'system_error' {
-  if (!errorCode?.startsWith('UPSTREAM_')) return 'system_error';
-  const status = Number.parseInt(errorCode.replace('UPSTREAM_', ''), 10);
-  if (!Number.isFinite(status)) return 'system_error';
-  if (status === 429 || status >= 500) return 'provider_retryable';
-  if (status >= 400) return 'provider_non_retryable';
-  return 'system_error';
-}
-
-function toRequestFact(item: RequestFactLike | Record<string, unknown>): RequestFactLike {
-  const requestDetails = typeof item.request_details === 'object' && item.request_details
-    ? item.request_details as RequestFactLike['request_details']
-    : undefined;
-  return {
-    requests: typeof item.requests === 'number' ? item.requests : 1,
-    result: item.result === 'error' ? 'error' : 'ok',
-    error_code: typeof item.error_code === 'string' ? item.error_code : undefined,
-    request_details: {
-      provider: requestDetails?.provider,
-      resolved_model: requestDetails?.resolved_model,
-      error_class: requestDetails?.error_class ?? (item.result === 'error' ? classifyProviderErrorClass(typeof item.error_code === 'string' ? item.error_code : undefined) : undefined),
-      fallback_hops: typeof requestDetails?.fallback_hops === 'number' ? requestDetails.fallback_hops : 0,
-      estimated_cost: typeof requestDetails?.estimated_cost === 'number' ? requestDetails.estimated_cost : null,
-      missing_price: requestDetails?.missing_price === true,
-    },
-  };
-}
-
-function buildUsageRecordsSummary(records: Array<RequestFactLike | Record<string, unknown>>, start: string, end: string) {
-  const facts = records.map(toRequestFact);
-  const errorClassCounts = {
-    provider_retryable: 0,
-    provider_non_retryable: 0,
-    system_error: 0,
-  };
-  const fallbackHopsHistogram: Record<string, number> = {};
-  const providerBreakdown = new Map<string, {
-    provider: string;
-    requests: number;
-    errors: number;
-    fallbackRequests: number;
-    costs: number[];
-    missingPriceFacts: number;
-  }>();
-  const modelBreakdown = new Map<string, {
-    provider: string;
-    model: string;
-    requests: number;
-    errors: number;
-    fallbackRequests: number;
-    costs: number[];
-    missingPriceFacts: number;
-  }>();
-  const costs: number[] = [];
-  const durations: number[] = [];
-  const trend = new Map<string, {
-    requests: number;
-    errors: number;
-    recoveredRequests: number;
-    costs: number[];
-    durations: number[];
-  }>();
-  let totalRequests = 0;
-  let totalErrors = 0;
-  let recoveredRequests = 0;
-  let missingPriceFacts = 0;
-
-  for (const fact of facts) {
-    const reqs = fact.requests ?? 1;
-    totalRequests += reqs;
-    const fallbackHops = fact.request_details?.fallback_hops ?? 0;
-    fallbackHopsHistogram[String(fallbackHops)] = (fallbackHopsHistogram[String(fallbackHops)] ?? 0) + reqs;
-    if (fallbackHops > 0) recoveredRequests += reqs;
-    if (fact.result === 'error') {
-      totalErrors += reqs;
-      const errorClass = fact.request_details?.error_class ?? classifyProviderErrorClass(fact.error_code);
-      errorClassCounts[errorClass] += reqs;
-    }
-    const cost = typeof fact.request_details?.estimated_cost === 'number' ? fact.request_details.estimated_cost : 0;
-    if (cost > 0) costs.push(cost);
-    const durationMs = typeof (fact as { duration_ms?: number }).duration_ms === 'number' ? (fact as { duration_ms?: number }).duration_ms : undefined;
-    if (typeof durationMs === 'number') durations.push(durationMs);
-    if (fact.request_details?.missing_price) missingPriceFacts += reqs;
-    const bucketKey = typeof fact.timestamp === 'string' ? fact.timestamp.slice(0, 13).replace('T', ' ') + ':00' : 'unknown';
-    const trendItem = trend.get(bucketKey) ?? {
-      requests: 0,
-      errors: 0,
-      recoveredRequests: 0,
-      costs: [],
-      durations: [],
-    };
-    trendItem.requests += reqs;
-    if (fact.result === 'error') trendItem.errors += reqs;
-    if (fallbackHops > 0) trendItem.recoveredRequests += reqs;
-    if (cost > 0) trendItem.costs.push(cost);
-    if (typeof durationMs === 'number') trendItem.durations.push(durationMs);
-    trend.set(bucketKey, trendItem);
-
-    if (fact.request_details?.provider) {
-      const providerAgg = providerBreakdown.get(fact.request_details.provider) ?? {
-        provider: fact.request_details.provider,
-        requests: 0,
-        errors: 0,
-        fallbackRequests: 0,
-        costs: [],
-        missingPriceFacts: 0,
-      };
-      providerAgg.requests += reqs;
-      if (fact.result === 'error') providerAgg.errors += reqs;
-      if (fallbackHops > 0) providerAgg.fallbackRequests += reqs;
-      if (cost > 0) providerAgg.costs.push(cost);
-      if (fact.request_details?.missing_price) providerAgg.missingPriceFacts += reqs;
-      providerBreakdown.set(fact.request_details.provider, providerAgg);
-    }
-
-    if (fact.request_details?.provider && fact.request_details?.resolved_model) {
-      const key = `${fact.request_details.provider}:${fact.request_details.resolved_model}`;
-      const modelAgg = modelBreakdown.get(key) ?? {
-        provider: fact.request_details.provider,
-        model: fact.request_details.resolved_model,
-        requests: 0,
-        errors: 0,
-        fallbackRequests: 0,
-        costs: [],
-        missingPriceFacts: 0,
-      };
-      modelAgg.requests += reqs;
-      if (fact.result === 'error') modelAgg.errors += reqs;
-      if (fallbackHops > 0) modelAgg.fallbackRequests += reqs;
-      if (cost > 0) modelAgg.costs.push(cost);
-      if (fact.request_details?.missing_price) modelAgg.missingPriceFacts += reqs;
-      modelBreakdown.set(key, modelAgg);
-    }
-  }
-
-  const percentile95 = (values: number[]) => {
-    if (values.length === 0) return 0;
-    const sorted = [...values].sort((a, b) => a - b);
-    const idx = Math.min(sorted.length - 1, Math.ceil(sorted.length * 0.95) - 1);
-    return sorted[idx] ?? 0;
-  };
-  const percentile = (values: number[], ratio: number) => {
-    if (values.length === 0) return undefined;
-    const sorted = [...values].sort((a, b) => a - b);
-    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * ratio) - 1));
-    return sorted[idx];
-  };
-
-  const mapBreakdown = <
-    T extends {
-      requests: number;
-      errors: number;
-      fallbackRequests: number;
-      costs: number[];
-      missingPriceFacts: number;
-    },
-  >(items: T[]) =>
-    items.map((item) => ({
-      error_rate: item.requests > 0 ? Number((item.errors / item.requests).toFixed(4)) : 0,
-      reroute_rate: item.requests > 0 ? Number((item.fallbackRequests / item.requests).toFixed(4)) : 0,
-      avg_estimated_cost: item.costs.length > 0
-        ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
-        : 0,
-      p95_estimated_cost: Number(percentile95(item.costs).toFixed(8)),
-      missing_price_facts: item.missingPriceFacts,
-      ...(Object.fromEntries(
-        Object.entries(item).filter(([key]) => (
-          key !== 'fallbackRequests'
-          && key !== 'costs'
-          && key !== 'missingPriceFacts'
-        )),
-      ) as Omit<T, 'fallbackRequests' | 'costs' | 'missingPriceFacts'>),
-    }));
-
-  const totalCost = costs.reduce((sum, value) => sum + value, 0);
-  const requestTrend = Array.from(trend.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([time_bucket, item]) => ({
-    time_bucket,
-    requests: item.requests,
-    errors: item.errors,
-    rerouted_requests: item.recoveredRequests,
-    avg_estimated_cost: item.costs.length > 0
-      ? Number((item.costs.reduce((sum, value) => sum + value, 0) / item.costs.length).toFixed(8))
-      : 0,
-    duration_p95_ms: percentile(item.durations, 0.95),
-  }));
-  const latestTrend = requestTrend[requestTrend.length - 1];
-  const issueSignals = [];
-  if (latestTrend && latestTrend.rerouted_requests > Math.max(1, latestTrend.requests * 0.4)) {
-    issueSignals.push({
-      id: `fallback-${latestTrend.time_bucket}`,
-      severity: 'high',
-      kind: 'fallback_spike',
-      title: 'Reroute activity increased',
-      message: `${latestTrend.rerouted_requests} rerouted requests in ${latestTrend.time_bucket}`,
-    });
-  }
-  if (latestTrend && latestTrend.errors > Math.max(1, latestTrend.requests * 0.2)) {
-    issueSignals.push({
-      id: `errors-${latestTrend.time_bucket}`,
-      severity: 'high',
-      kind: 'error_rate_spike',
-      title: 'Request errors increased',
-      message: `${latestTrend.errors} failed requests in ${latestTrend.time_bucket}`,
-    });
-  }
-  if (missingPriceFacts > 0) {
-    issueSignals.push({
-      id: 'missing-price',
-      severity: missingPriceFacts > 1 ? 'high' : 'medium',
-      kind: 'missing_price',
-      title: 'Price data is incomplete',
-      message: `${missingPriceFacts} records are missing price attribution`,
-    });
-  }
-  const latencyP95 = percentile(durations, 0.95);
-  if (latestTrend?.duration_p95_ms && latencyP95 && latestTrend.duration_p95_ms > latencyP95 * 1.25) {
-    issueSignals.push({
-      id: `latency-${latestTrend.time_bucket}`,
-      severity: 'medium',
-      kind: 'latency_spike',
-      title: 'Latency increased',
-      message: `P95 latency reached ${Math.round(latestTrend.duration_p95_ms)}ms in ${latestTrend.time_bucket}`,
-    });
-  }
-
-  return {
-    total_requests: totalRequests,
-    total_errors: totalErrors,
-    error_rate: totalRequests > 0 ? Number((totalErrors / totalRequests).toFixed(4)) : 0,
-    reroute_hops_histogram: fallbackHopsHistogram,
-    error_class_counts: errorClassCounts,
-    avg_estimated_cost: costs.length > 0 ? Number((totalCost / costs.length).toFixed(8)) : 0,
-    p95_estimated_cost: Number(percentile95(costs).toFixed(8)),
-    records_health: {
-      rerouted_requests: recoveredRequests,
-      terminal_error_requests: totalErrors,
-      missing_price_facts: missingPriceFacts,
-      provider_count: providerBreakdown.size,
-      model_count: modelBreakdown.size,
-    },
-    request_trend: requestTrend,
-    latency_distribution_ms: {
-      p50: percentile(durations, 0.5),
-      p95: latencyP95,
-      p99: percentile(durations, 0.99),
-    },
-    cost_distribution_usd: {
-      p50: percentile(costs, 0.5),
-      p95: percentile(costs, 0.95),
-      p99: percentile(costs, 0.99),
-    },
-    issue_signals: issueSignals,
-    provider_breakdown: mapBreakdown(Array.from(providerBreakdown.values()).sort((a, b) => b.requests - a.requests)),
-    model_breakdown: mapBreakdown(Array.from(modelBreakdown.values()).sort((a, b) => b.requests - a.requests)),
-    time_range: {
-      start,
-      end,
-    },
-  };
-}
-
-function buildUsageOperationsSummary(records: Array<RequestFactLike | Record<string, unknown>>) {
-  const facts = records.map(toRequestFact);
-  const providerAgg = new Map<string, { provider: string; requests: number; errors: number; estimated_cost: number }>();
-  const modelAgg = new Map<string, { provider: string; model: string; requests: number; errors: number; estimated_cost: number }>();
-  const endUserAgg = new Map<string, { end_user_id: string; requests: number; errors: number; estimated_cost: number }>();
-  const trend = new Map<string, { requests: number; errors: number; cost: number }>();
-
-  for (const fact of facts) {
-    const reqs = fact.requests ?? 1;
-    const cost = typeof fact.request_details?.estimated_cost === 'number' ? fact.request_details.estimated_cost : 0;
-    const provider = fact.request_details?.provider;
-    const model = fact.request_details?.resolved_model;
-    const endUserId = fact.end_user_id;
-    const bucketKey = typeof fact.timestamp === 'string' ? fact.timestamp.slice(0, 13).replace('T', ' ') + ':00' : 'unknown';
-    const trendItem = trend.get(bucketKey) ?? { requests: 0, errors: 0, cost: 0 };
-    trendItem.requests += reqs;
-    if (fact.result === 'error') trendItem.errors += reqs;
-    trendItem.cost += cost;
-    trend.set(bucketKey, trendItem);
-
-    if (provider) {
-      const item = providerAgg.get(provider) ?? { provider, requests: 0, errors: 0, estimated_cost: 0 };
-      item.requests += reqs;
-      if (fact.result === 'error') item.errors += reqs;
-      item.estimated_cost += cost;
-      providerAgg.set(provider, item);
-    }
-    if (provider && model) {
-      const key = `${provider}:${model}`;
-      const item = modelAgg.get(key) ?? { provider, model, requests: 0, errors: 0, estimated_cost: 0 };
-      item.requests += reqs;
-      if (fact.result === 'error') item.errors += reqs;
-      item.estimated_cost += cost;
-      modelAgg.set(key, item);
-    }
-    if (endUserId) {
-      const item = endUserAgg.get(endUserId) ?? { end_user_id: endUserId, requests: 0, errors: 0, estimated_cost: 0 };
-      item.requests += reqs;
-      if (fact.result === 'error') item.errors += reqs;
-      item.estimated_cost += cost;
-      endUserAgg.set(endUserId, item);
-    }
-  }
-
-  const trendItems = Array.from(trend.entries()).sort(([a], [b]) => a.localeCompare(b)).map(([time_bucket, item]) => ({ time_bucket, ...item }));
-  const baselineRequests = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.requests, 0) / trendItems.length : 0;
-  const baselineErrors = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.errors, 0) / trendItems.length : 0;
-  const baselineCost = trendItems.length > 0 ? trendItems.reduce((sum, item) => sum + item.cost, 0) / trendItems.length : 0;
-  const anomalyPeaks = trendItems.slice(-12).flatMap((item) => {
-    const peaks: Array<{
-      id: string;
-      time_bucket: string;
-      metric: 'requests' | 'errors' | 'cost';
-      value: number;
-      baseline: number;
-      severity: 'medium' | 'high';
-    }> = [];
-    if (baselineRequests > 0 && item.requests > baselineRequests * 1.5) {
-      peaks.push({ id: `requests-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'requests', value: item.requests, baseline: Number(baselineRequests.toFixed(2)), severity: item.requests > baselineRequests * 2 ? 'high' : 'medium' });
-    }
-    if (baselineErrors > 0 && item.errors > baselineErrors * 1.5) {
-      peaks.push({ id: `errors-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'errors', value: item.errors, baseline: Number(baselineErrors.toFixed(2)), severity: item.errors > baselineErrors * 2 ? 'high' : 'medium' });
-    }
-    if (baselineCost > 0 && item.cost > baselineCost * 1.5) {
-      peaks.push({ id: `cost-${item.time_bucket}`, time_bucket: item.time_bucket, metric: 'cost', value: Number(item.cost.toFixed(8)), baseline: Number(baselineCost.toFixed(8)), severity: item.cost > baselineCost * 2 ? 'high' : 'medium' });
-    }
-    return peaks;
-  });
-
-  return {
-    top_providers: Array.from(providerAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
-    top_models: Array.from(modelAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
-    top_end_users: Array.from(endUserAgg.values()).sort((a, b) => b.estimated_cost - a.estimated_cost || b.requests - a.requests).slice(0, 5),
-    anomaly_peaks: anomalyPeaks.slice(0, 6),
-    recent_requests: facts
-      .slice()
-      .sort((a, b) => String(b.timestamp ?? '').localeCompare(String(a.timestamp ?? '')))
-      .slice(0, 12)
-      .map((fact) => ({
-        id: fact.request_id ?? `${fact.timestamp ?? 'unknown'}-${fact.request_details?.provider ?? 'unknown-provider'}`,
-        timestamp: fact.timestamp ?? new Date().toISOString(),
-        request_id: fact.request_id,
-        provider: fact.request_details?.provider,
-        model: fact.request_details?.resolved_model,
-        end_user_id: fact.end_user_id,
-        result: fact.result,
-        error_class: fact.request_details?.error_class ?? (fact.result === 'error' ? classifyProviderErrorClass(fact.error_code) : undefined),
-        estimated_cost: fact.request_details?.estimated_cost ?? undefined,
-      })),
-  };
-}
-
 export const usageHandlers = [
-  http.get('/api/v1/internal/organization-actions', ({ request }) => {
-    const url = new URL(request.url);
-    const rawActionIds = url.searchParams.get('action_ids') ?? '';
-    const actionIds = rawActionIds
-      .split(',')
-      .map((id) => id.trim())
-      .filter((id) => id.length > 0);
-    return HttpResponse.json({
-      items: listOrganizationActionRecords(actionIds),
-    });
-  }),
-  http.post('/api/v1/internal/organization-actions/:actionId/status', async ({ params, request }) => {
-    const actionId = String(params.actionId ?? '');
-    const body = await request.json() as {
-      status?: OrganizationActionStatus;
-      actor_user_id?: string;
-      actor_name?: string;
-      note?: string;
-    };
-    const normalizedStatus = normalizeActionStatus(body.status);
-    if (!actionId || !normalizedStatus || !body.actor_user_id || !body.actor_name) {
-      return HttpResponse.json(
-        { error_code: 'VALIDATION_ERROR', message: 'invalid organization action status payload' },
-        { status: 422 },
-      );
-    }
-    const record = organizationActionRecords.get(actionId) ?? {
-      action_id: actionId,
-      status: 'pending' as OrganizationActionStatus,
-      updated_at: new Date().toISOString(),
-      history: [],
-    };
-    const event = {
-      id: `org_action_audit_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-      action_id: actionId,
-      status: normalizedStatus,
-      actor_user_id: body.actor_user_id,
-      actor_name: body.actor_name,
-      note: body.note,
-      at: new Date().toISOString(),
-    };
-    const updated: OrganizationActionServerRecord = {
-      action_id: actionId,
-      status: normalizedStatus,
-      updated_at: event.at,
-      history: [...record.history, event].slice(-20),
-    };
-    organizationActionRecords.set(actionId, updated);
-    return HttpResponse.json(updated);
-  }),
-  http.get('/api/v1/internal/governance-reports', () => {
-    return HttpResponse.json({ items: governanceReports });
-  }),
-  http.get('/api/v1/internal/governance-reports/:name', ({ params }) => {
-    const detail = governanceReportDetails.get(String(params.name));
-    if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_report_not_found' }, { status: 404 });
-    }
-    return HttpResponse.json(detail);
-  }),
-  http.get('/api/v1/internal/governance-runs', () => {
-    return HttpResponse.json({ items: governanceRuns });
-  }),
-  http.get('/api/v1/internal/governance-runs/:id', ({ params }) => {
-    const detail = governanceRunDetails.get(String(params.id));
-    if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_run_not_found' }, { status: 404 });
-    }
-    return HttpResponse.json(detail);
-  }),
-  http.get('/api/v1/internal/governance-runner', () => {
-    return HttpResponse.json(governanceRunnerStatus);
-  }),
-  http.post('/api/v1/internal/governance-runner/trigger', async ({ request }) => {
-    const body = await request.json() as { mode?: 'full' | 'failed_only'; source_run_id?: string; notes?: string };
-    if (governanceRunnerStatus.running) {
-      return HttpResponse.json({ error_code: 'GOVERNANCE_RUNNER_ERROR', message: 'governance_runner_busy' }, { status: 409 });
-    }
-    if (body.mode !== 'full' && body.mode !== 'failed_only') {
-      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'mode is required' }, { status: 422 });
-    }
-    const operation = {
-      id: `runner_${Date.now()}`,
-      status: 'running' as const,
-      mode: body.mode,
-      started_at: new Date().toISOString(),
-      report_name: body.mode === 'failed_only' && body.source_run_id ? `governance-rerun-${body.source_run_id}` : `governance-manual-${Date.now()}`,
-      source_run_id: body.source_run_id,
-      notes: body.notes,
-    };
-    governanceRunnerStatus = {
-      running: true,
-      current_operation: operation,
-      recent_operations: [operation, ...governanceRunnerStatus.recent_operations].slice(0, 10),
-    };
-    return HttpResponse.json(operation, { status: 202 });
-  }),
-  http.get('/api/v1/internal/governance-incidents', () => {
-    return HttpResponse.json({ items: governanceIncidents });
-  }),
-  http.get('/api/v1/internal/governance-incidents/:id', ({ params }) => {
-    const detail = governanceIncidents.find((item) => item.id === String(params.id));
-    if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_incident_not_found' }, { status: 404 });
-    }
-    return HttpResponse.json(detail);
-  }),
-  http.post('/api/v1/internal/governance-incidents/:id/acknowledge', ({ params }) => {
-    const detail = governanceIncidents.find((item) => item.id === String(params.id));
-    if (!detail) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_incident_not_found' }, { status: 404 });
-    }
-    detail.acknowledged_at = new Date().toISOString();
-    detail.acknowledged_by_user_id = 'mock-user';
-    detail.acknowledged_by_name = 'Mock User';
-    appendMockNotification({
-      id: `notif_governance_incident_ack_${Date.now()}`,
-      type: 'governance_incident_acknowledged',
-      title: 'Governance incident acknowledged',
-      body: detail.title,
-      link_url: null,
-      read_at: null,
-      created_at: new Date().toISOString(),
-    });
-    return HttpResponse.json(detail);
-  }),
-  http.post('/api/v1/internal/governance-incidents/:id/assignment', async ({ params, request }) => {
-    const body = await request.json() as { assignee_user_id?: string; assignee_name?: string; due_at?: string };
-    const detail = governanceIncidents.find((item) => item.id === String(params.id));
-    if (!detail || !body.assignee_user_id?.trim()) {
-      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'assignee_user_id is required' }, { status: 422 });
-    }
-    const previousAssigneeUserId = detail.assignee_user_id;
-    const previousAssigneeName = detail.assignee_name;
-    const previousDueAt = detail.due_at;
-    detail.assignee_user_id = body.assignee_user_id.trim();
-    detail.assignee_name = body.assignee_name?.trim() || undefined;
-    detail.due_at = body.due_at?.trim() || undefined;
-    detail.sla_status = detail.status === 'resolved' ? 'resolved' : 'due_soon';
-    detail.incident_history = [
-      {
-        id: `rih_${Date.now()}`,
-        incident_id: detail.incident_id,
-        escalation_id: detail.id,
-        event_kind: 'escalation_assignment',
-        created_at: new Date().toISOString(),
-        actor_user_id: 'mock-user',
-        actor_name: 'Mock User',
-        previous_assignee_user_id: previousAssigneeUserId,
-        previous_assignee_name: previousAssigneeName,
-        previous_due_at: previousDueAt,
-        next_assignee_user_id: detail.assignee_user_id,
-        next_assignee_name: detail.assignee_name,
-        next_due_at: detail.due_at,
-      },
-      ...(detail.incident_history ?? []),
-    ];
-    appendMockNotification({
-      id: `notif_governance_incident_assignment_${Date.now()}`,
-      type: 'governance_incident_assigned',
-      title: 'Governance incident assigned',
-      body: detail.title,
-      link_url: null,
-      read_at: null,
-      created_at: new Date().toISOString(),
-    });
-    return HttpResponse.json(detail);
-  }),
-  http.post('/api/v1/internal/governance-incidents/:id/resolution', async ({ params, request }) => {
-    const body = await request.json() as {
-      status?: 'open' | 'resolved';
-      reason?: string;
-      category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
-    };
-    const detail = governanceIncidents.find((item) => item.id === String(params.id));
-    if (!detail || (body.status !== 'open' && body.status !== 'resolved')) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_incident_not_found' }, { status: 404 });
-    }
-    if (body.status === 'resolved' && !body.category) {
-      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'resolution category is required when resolving escalation' }, { status: 422 });
-    }
-    detail.status = body.status;
-    detail.resolution_reason = body.reason?.trim() || undefined;
-    detail.resolution_category = body.status === 'resolved' ? body.category : undefined;
-    detail.sla_status = body.status === 'resolved' ? 'resolved' : (detail.due_at ? 'due_soon' : 'on_track');
-    detail.resolved_at = body.status === 'resolved' ? new Date().toISOString() : undefined;
-    detail.resolved_by_user_id = body.status === 'resolved' ? 'mock-user' : undefined;
-    detail.resolved_by_name = body.status === 'resolved' ? 'Mock User' : undefined;
-    appendMockNotification({
-      id: `notif_governance_incident_resolution_${Date.now()}`,
-      type: body.status === 'resolved' ? 'governance_incident_resolved' : 'governance_incident_reopened',
-      title: body.status === 'resolved' ? 'Governance incident resolved' : 'Governance incident reopened',
-      body: detail.title,
-      link_url: null,
-      read_at: null,
-      created_at: new Date().toISOString(),
-    });
-    return HttpResponse.json(detail);
-  }),
-  http.get('/api/v1/internal/governance-policy-overrides', ({ request }) => {
-    const url = new URL(request.url);
-    const workspaceId = url.searchParams.get('workspace_id');
-    const projectId = url.searchParams.get('project_id');
-    const reportName = url.searchParams.get('report_name');
-    return HttpResponse.json({
-      items: governancePolicyOverrides.filter((item) =>
-        item.workspace_id === workspaceId && item.project_id === projectId && item.report_name === reportName),
-    });
-  }),
-  http.post('/api/v1/internal/governance-policy-overrides', async ({ request }) => {
-    const body = await request.json() as {
-      workspace_id: string;
-      project_id: string;
-      report_name: string;
-      incident_id: string;
-      issue_id: string;
-      issue_source: 'execution' | 'configuration' | 'usage';
-      issue_message: string;
-      reason_category: 'upstream_transient' | 'known_acceptable_risk' | 'approved_exception' | 'governance_window';
-      reason: string;
-      expires_at: string;
-    };
-    const existing = governancePolicyOverrides.find((item) =>
-      item.workspace_id === body.workspace_id
-      && item.project_id === body.project_id
-      && item.report_name === body.report_name
-      && item.issue_id === body.issue_id,
-    );
-    if (existing) {
-      return HttpResponse.json(existing, { status: 201 });
-    }
-    const created = {
-      id: `rpo_${Date.now()}`,
-      ...body,
-      status: 'pending' as const,
-      effective_status: 'pending' as const,
-      created_at: new Date().toISOString(),
-      created_by_user_id: 'mock-user',
-      created_by_name: 'Mock User',
-    };
-    governancePolicyOverrides.unshift(created);
-    return HttpResponse.json(created, { status: 201 });
-  }),
-  http.post('/api/v1/internal/governance-policy-overrides/:overrideId/decision', async ({ params, request }) => {
-    const body = await request.json() as { status?: 'approved' | 'rejected' };
-    const record = governancePolicyOverrides.find((item) => item.id === String(params.overrideId));
-    if (!record || (body.status !== 'approved' && body.status !== 'rejected')) {
-      return HttpResponse.json({ error_code: 'NOT_FOUND', message: 'governance_policy_override_not_found' }, { status: 404 });
-    }
-    record.status = body.status;
-    record.effective_status = body.status;
-    record.decided_at = new Date().toISOString();
-    record.decided_by_user_id = 'mock-approver';
-    record.decided_by_name = 'Mock Approver';
-    return HttpResponse.json(record);
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage', ({ request }) => {
-    const url = new URL(request.url);
-    const resourceType = url.searchParams.get('resource_type');
-    const resourceId = url.searchParams.get('resource_id');
-    const endUserId = url.searchParams.get('end_user_id');
-    const provider = url.searchParams.get('provider');
-    const model = url.searchParams.get('model');
-    const result = url.searchParams.get('result');
-    const errorClass = url.searchParams.get('error_class');
-    const groupBy = url.searchParams.get('group_by') === 'hour' ? 'hour' : 'day';
-    const usageItems = p0.usage as Array<{ resource_type?: string | null }> | undefined;
-    const hasStructuredUsage = Array.isArray(usageItems) && usageItems.some((item) => Boolean(item?.resource_type));
-    const baseItems = (hasStructuredUsage
-      ? (p0.usage as unknown as UsageLikeRecord[])
-      : (usageRecordFixtures as unknown as UsageLikeRecord[])).filter((item) => {
-      if (resourceType && item.resource_type !== resourceType) return false;
-      if (resourceId && item.resource_id !== resourceId) return false;
-      if (endUserId && item.end_user_id !== endUserId) return false;
-      return true;
-    });
-    const requestItems = buildRequestUsageRecords({
-      groupBy,
-      filters: {
-        startTime: url.searchParams.get('start_time'),
-        endTime: url.searchParams.get('end_time'),
-        resourceType,
-        resourceId,
-        endUserId,
-        provider,
-        model,
-        result: result === 'ok' || result === 'error' ? result : null,
-        errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
-      },
-    });
-    const aggregatedBaseItems = aggregateUsageRecords(baseItems as UsageLikeRecord[], groupBy);
-    const items = [...requestItems, ...aggregatedBaseItems];
-    return HttpResponse.json({
-      items,
-      total: items.length,
-      page: 1,
-      page_size: 25,
-      has_more: false,
-    });
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/facts', ({ request }) => {
-    const url = new URL(request.url);
-    const startTime = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const endTime = url.searchParams.get('end_time') ?? new Date().toISOString();
-    const resourceType = url.searchParams.get('resource_type');
-    const resourceId = url.searchParams.get('resource_id');
-    const endUserId = url.searchParams.get('end_user_id');
-    const provider = url.searchParams.get('provider');
-    const model = url.searchParams.get('model');
-    const result = url.searchParams.get('result');
-    const errorClass = url.searchParams.get('error_class');
-    const fixtureItems = [
-      {
-        id: 'usgf_001',
-        timestamp: endTime,
-        workspace_id: 'ws_default',
-        project_id: 'proj_001',
-        resource_type: 'endpoint',
-        resource_id: 'endpoint_001',
-        end_user_id: 'user_001',
-        request_id: 'req_model_001',
-        requests: 1,
-        duration_ms: 1840,
-        bytes_in: 2048,
-        bytes_out: 8192,
-        tokens_in: 540,
-        tokens_out: 210,
-        tokens_total: 750,
-        result: 'ok',
-        request_details: {
-          provider: 'secondaryok',
-          resolved_model: 'model-b',
-          error_class: undefined,
-          fallback_hops: 1,
-          pricing_source: 'project-pricing-v1',
-          estimated_cost: 0.0068,
-          missing_price: false,
-          attempts: [
-            {
-              index: 0,
-              provider: 'primaryfail',
-              model: 'model-a',
-              outcome: 'fallback_upstream_error',
-              statusCode: 429,
-              errorClass: 'provider_retryable',
-              reason: 'model_upstream_error_recovered',
-              durationMs: 821,
-            },
-            {
-              index: 1,
-              provider: 'secondaryok',
-              model: 'model-b',
-              outcome: 'success',
-              reason: 'model_upstream_ok',
-              durationMs: 1019,
-            },
-          ],
-        },
-        metadata_json: {
-          provider: 'secondaryok',
-          resolved_model: 'model-b',
-          fallback_hops: 1,
-          pricing_source: 'project-pricing-v1',
-          estimated_cost: 0.0068,
-        },
-      },
-      {
-        id: 'usgf_002',
-        timestamp: startTime,
-        workspace_id: 'ws_default',
-        project_id: 'proj_001',
-        resource_type: 'endpoint',
-        resource_id: 'endpoint_001',
-        end_user_id: 'user_001',
-        request_id: 'req_model_002',
-        requests: 1,
-        duration_ms: 932,
-        bytes_in: 1536,
-        bytes_out: 4096,
-        tokens_in: 320,
-        tokens_out: 120,
-        tokens_total: 440,
-        result: 'error',
-        error_code: 'UPSTREAM_429',
-        request_details: {
-          provider: 'primaryfail',
-          resolved_model: 'model-a',
-          error_class: 'provider_retryable',
-          fallback_hops: 0,
-          pricing_source: null,
-          estimated_cost: null,
-          missing_price: true,
-          attempts: [
-            {
-              index: 0,
-              provider: 'primaryfail',
-              model: 'model-a',
-              outcome: 'terminal_upstream_error',
-              statusCode: 429,
-              errorClass: 'provider_retryable',
-              reason: 'model_upstream_error',
-              durationMs: 932,
-            },
-          ],
-        },
-        metadata_json: {
-          provider: 'primaryfail',
-          resolved_model: 'model-a',
-          fallback_hops: 0,
-          missing_price: true,
-        },
-      },
-    ].filter((item) => {
-      if (resourceType && item.resource_type !== resourceType) return false;
-      if (resourceId && item.resource_id !== resourceId) return false;
-      if (endUserId && item.end_user_id !== endUserId) return false;
-      if (provider && item.request_details?.provider !== provider) return false;
-      if (model && item.request_details?.resolved_model !== model) return false;
-      if (result && item.result !== result) return false;
-      if (errorClass && item.request_details?.error_class !== errorClass) return false;
-      return true;
-    });
-    const requestItems = listRequestUsageFacts({
-      startTime,
-      endTime,
-      resourceType,
-      resourceId,
-      endUserId,
-      provider,
-      model,
-      result: result === 'ok' || result === 'error' ? result : null,
-      errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
-    });
-    const items = [...requestItems, ...fixtureItems];
-    return HttpResponse.json({
-      items,
-      total: items.length,
-      page: 1,
-      page_size: 20,
-      has_more: false,
-    });
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/timeseries', ({ request }) => {
-    const url = new URL(request.url);
-    const resourceType = url.searchParams.get('resource_type');
-    const multiplier = resolveResourceMultiplier(resourceType);
-    const trend = (p0.dashboard_trend as Array<{ timestamp: string; value: number }>)
-      .map((item) => {
-        const requests = Math.round(item.value * multiplier);
-        return {
-          time_bucket: item.timestamp,
-          requests,
-          errors: Math.max(0, Math.round(requests * 0.01)),
-          tokens: requests * 120,
-          estimated_cost: Number((requests * 0.0008).toFixed(4)),
-        };
-      });
-    const resourceBreakdown = (p0.top_resources as Array<{
-      resource_id: string;
-      resource_name: string;
-      resource_type: ResourceType;
-      requests: number;
-      tokens?: number;
-      cost_usd?: number;
-    }>)
-      .filter((item) => !resourceType || item.resource_type === resourceType)
-      .map((item) => ({
-        resource_id: item.resource_id,
-        resource_name: item.resource_name,
-        resource_type: item.resource_type,
-        requests: item.requests,
-        tokens: item.tokens,
-        estimated_cost: item.cost_usd ?? 0,
-        percentage_of_total: 0,
-      }));
-    const totalCost = resourceBreakdown.reduce((sum, item) => sum + item.estimated_cost, 0);
-    const normalizedResourceBreakdown = totalCost > 0
-      ? resourceBreakdown.map((item) => ({
-        ...item,
-        percentage_of_total: Number(((item.estimated_cost / totalCost) * 100).toFixed(2)),
-      }))
-      : resourceBreakdown;
-
-    return HttpResponse.json({
-      data_points: trend,
-      resource_breakdown: normalizedResourceBreakdown,
-      time_range: {
-        start: trend[0]?.time_bucket ?? new Date().toISOString(),
-        end: trend[trend.length - 1]?.time_bucket ?? new Date().toISOString(),
-        granularity: url.searchParams.get('granularity') ?? 'day',
-      },
-      total_cost: Number(totalCost.toFixed(2)),
-    });
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/records-summary', ({ request }) => {
-    const url = new URL(request.url);
-    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
-    const provider = url.searchParams.get('provider');
-    const model = url.searchParams.get('model');
-    const result = url.searchParams.get('result');
-    const errorClass = url.searchParams.get('error_class');
-    const factsResponse = listRequestUsageFacts({
-      startTime: start,
-      endTime: end,
-      resourceType: 'endpoint',
-      provider,
-      model,
-      errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
-    });
-    const fixtureFactsResponse = [
-      {
-        requests: 1,
-        result: 'ok',
-        request_details: {
-          provider: 'secondaryok',
-          resolved_model: 'model-b',
-          fallback_hops: 1,
-          estimated_cost: 0.0068,
-          missing_price: false,
-        },
-      },
-      {
-        requests: 1,
-        result: 'error',
-        error_code: 'UPSTREAM_429',
-        request_details: {
-          provider: 'primaryfail',
-          resolved_model: 'model-a',
-          error_class: 'provider_retryable',
-          fallback_hops: 0,
-          estimated_cost: null,
-          missing_price: true,
-        },
-      },
-    ].filter((item) => {
-      if (provider && item.request_details.provider !== provider) return false;
-      if (model && item.request_details.resolved_model !== model) return false;
-      if (result && item.result !== result) return false;
-      if (errorClass && item.request_details.error_class !== errorClass) return false;
-      return true;
-    });
-    return HttpResponse.json(buildUsageRecordsSummary([...factsResponse, ...fixtureFactsResponse], start, end));
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/export', ({ request, params }) => {
-    const url = new URL(request.url);
-    const format = url.searchParams.get('format') === 'json' ? 'json' : 'csv';
-    const startTime = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const endTime = url.searchParams.get('end_time') ?? new Date().toISOString();
-    const resourceType = url.searchParams.get('resource_type');
-    const resourceId = url.searchParams.get('resource_id');
-    const endUserId = url.searchParams.get('end_user_id');
-    const provider = url.searchParams.get('provider');
-    const model = url.searchParams.get('model');
-    const result = url.searchParams.get('result');
-    const errorClass = url.searchParams.get('error_class');
-    const items = listRequestUsageFacts({
-      startTime,
-      endTime,
-      resourceType,
-      resourceId,
-      endUserId,
-      provider,
-      model,
-      result: result === 'ok' || result === 'error' ? result : null,
-      errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
-    });
-    const projectId = typeof params.prj === 'string' ? params.prj : 'proj_001';
-    const filename = `usage-report-${projectId}.${format}`;
-
-    if (format === 'json') {
-      return new HttpResponse(JSON.stringify({
-        generated_at: new Date().toISOString(),
-        project_id: projectId,
-        filters: {
-          start_time: startTime,
-          end_time: endTime,
-          provider,
-          model,
-          result,
-        },
-        facts: items,
-      }, null, 2), {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-          'Content-Disposition': `attachment; filename="${filename}"`,
-        },
-      });
-    }
-
-    const csvHeaders = [
-      'timestamp',
-      'request_id',
-      'resource_type',
-      'resource_id',
-      'end_user_id',
-      'provider',
-      'resolved_model',
-      'result',
-      'error_code',
-      'error_class',
-      'fallback_hops',
-      'pricing_source',
-      'estimated_cost',
-      'missing_price',
-    ];
-    const rows = items.map((item) => [
-      item.timestamp,
-      item.request_id,
-      item.resource_type,
-      item.resource_id,
-      item.end_user_id,
-      item.request_details?.provider,
-      item.request_details?.resolved_model,
-      item.result,
-      item.error_code,
-      item.request_details?.error_class,
-      item.request_details?.fallback_hops,
-      item.request_details?.pricing_source,
-      item.request_details?.estimated_cost,
-      item.request_details?.missing_price,
-    ].map((cell) => {
-      const value = cell === null || cell === undefined ? '' : String(cell);
-      return /[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value;
-    }).join(','));
-
-    return new HttpResponse([csvHeaders.join(','), ...rows].join('\n'), {
-      headers: {
-        'Content-Type': 'text/csv; charset=utf-8',
-        'Content-Disposition': `attachment; filename="${filename}"`,
-      },
-    });
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules', ({ params }) => {
-    const items = usageReportSchedules
-      .filter((item) => item.workspace_id === params.ws && item.project_id === params.prj)
-      .map(withRecentDeliveries);
-    return HttpResponse.json({ items });
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules', async ({ params, request }) => {
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    const now = new Date().toISOString();
-    const item: UsageReportSchedule = {
-      id: `usage_schedule_${Date.now()}`,
-      workspace_id: String(params.ws),
-      project_id: String(params.prj),
-      name: typeof body.name === 'string' ? body.name : 'Scheduled Usage Report',
-      cadence: body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : 'daily',
-      status: body.status === 'paused' ? 'paused' : 'active',
-      format: body.format === 'csv' ? 'csv' : 'json',
-      time_window: body.time_window === 'last_24h' || body.time_window === 'last_30d' ? body.time_window : 'last_7d',
-      delivery_channel: body.delivery_channel === 'webhook' ? 'webhook' : 'in_app',
-      delivery_config: body.delivery_channel === 'webhook' && typeof body.delivery_config === 'object' && body.delivery_config
-        ? body.delivery_config as UsageReportSchedule['delivery_config']
-        : undefined,
-      filters: typeof body.filters === 'object' && body.filters ? body.filters as UsageReportSchedule['filters'] : undefined,
-      governance_evidence_required: body.governance_evidence_required !== false,
-      empty_result_policy: body.empty_result_policy === 'fail' ? 'fail' : 'deliver',
-      created_at: now,
-      updated_at: now,
-      next_run_at: computeNextRunAt(body.cadence === 'weekly' || body.cadence === 'monthly' ? body.cadence : 'daily', now),
-      last_delivery_status: 'idle',
-    };
-    usageReportSchedules.unshift(item);
-    return HttpResponse.json(item, { status: 201 });
-  }),
-  http.patch('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId', async ({ params, request }) => {
-    const idx = usageReportSchedules.findIndex((item) => item.id === params.scheduleId && item.workspace_id === params.ws && item.project_id === params.prj);
-    if (idx < 0) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    const body = await request.json().catch(() => ({})) as Record<string, unknown>;
-    const cadence = body.cadence === 'daily' || body.cadence === 'weekly' || body.cadence === 'monthly'
-      ? body.cadence
-      : usageReportSchedules[idx].cadence;
-    usageReportSchedules[idx] = {
-      ...usageReportSchedules[idx],
-      ...body,
-      cadence,
-      delivery_config: body.delivery_channel === 'webhook' && typeof body.delivery_config === 'object' && body.delivery_config
-        ? body.delivery_config as UsageReportSchedule['delivery_config']
-        : body.delivery_channel === 'in_app'
-          ? undefined
-          : usageReportSchedules[idx].delivery_config,
-      updated_at: new Date().toISOString(),
-      next_run_at: computeNextRunAt(cadence),
-    };
-    return HttpResponse.json(usageReportSchedules[idx]);
-  }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId', ({ params }) => {
-    const idx = usageReportSchedules.findIndex((item) => item.id === params.scheduleId && item.workspace_id === params.ws && item.project_id === params.prj);
-    if (idx < 0) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    usageReportSchedules.splice(idx, 1);
-    for (let index = usageReportDeliveries.length - 1; index >= 0; index -= 1) {
-      if (usageReportDeliveries[index]?.schedule_id === params.scheduleId) {
-        usageReportDeliveries.splice(index, 1);
-      }
-    }
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/run-due', ({ params }) => {
-    const now = new Date().toISOString();
-    const due = usageReportSchedules.filter((item) => item.workspace_id === params.ws && item.project_id === params.prj && item.status === 'active' && item.next_run_at <= now);
-    const deliveries = due.map((item) => executeScheduleDelivery(item, 'scheduled'));
-    return HttpResponse.json({ processed: due.length, deliveries });
-  }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/report-evidence', ({ params }) => {
-    return HttpResponse.json(buildUsageReportEvidence(String(params.ws), String(params.prj)));
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/test-delivery', ({ params }) => {
-    const item = findSchedule(String(params.ws), String(params.prj), String(params.scheduleId));
-    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    return HttpResponse.json(executeScheduleDelivery(item, 'test'));
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/run-now', ({ params }) => {
-    const item = findSchedule(String(params.ws), String(params.prj), String(params.scheduleId));
-    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    return HttpResponse.json(executeScheduleDelivery(item, 'manual'));
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/deliveries/:deliveryId/retry', ({ params }) => {
-    const item = findSchedule(String(params.ws), String(params.prj), String(params.scheduleId));
-    if (!item) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    const delivery = usageReportDeliveries.find((entry) => entry.id === params.deliveryId && entry.schedule_id === item.id);
-    if (!delivery) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    const siblingAttempts = usageReportDeliveries.filter((entry) => entry.schedule_id === item.id && (entry.parent_delivery_id === (delivery.parent_delivery_id ?? delivery.id) || entry.id === delivery.id));
-    return HttpResponse.json(executeScheduleDelivery(item, 'retry', {
-      parentDeliveryId: delivery.parent_delivery_id ?? delivery.id,
-      attemptCount: siblingAttempts.length + 1,
-    }));
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/usage/report-schedules/:scheduleId/deliveries/:deliveryId/acknowledge', ({ params }) => {
-    const delivery = usageReportDeliveries.find((entry) => entry.id === params.deliveryId && entry.schedule_id === params.scheduleId);
-    if (!delivery) return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND' }, { status: 404 });
-    delivery.acknowledged_at = new Date().toISOString();
-    delivery.acknowledged_by = 'mock-user';
-    return HttpResponse.json(delivery);
-  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
     const url = new URL(request.url);
     const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -2063,7 +777,7 @@ export const usageHandlers = [
       result: result === 'ok' || result === 'error' ? result : null,
       errorClass: errorClass === 'provider_retryable' || errorClass === 'provider_non_retryable' || errorClass === 'system_error' ? errorClass : null,
     });
-    const fixtureFacts = [
+    const fixtureFactsBase: RequestFactLike[] = [
       {
         timestamp: end,
         end_user_id: 'user_001',
@@ -2090,12 +804,13 @@ export const usageHandlers = [
           estimated_cost: null,
         },
       },
-    ].filter((item) => {
+    ];
+    const fixtureFacts = fixtureFactsBase.filter((item) => {
       if (endUserId && item.end_user_id !== endUserId) return false;
-      if (provider && item.request_details.provider !== provider) return false;
-      if (model && item.request_details.resolved_model !== model) return false;
+      if (provider && item.request_details?.provider !== provider) return false;
+      if (model && item.request_details?.resolved_model !== model) return false;
       if (result && item.result !== result) return false;
-      if (errorClass && item.request_details.error_class !== errorClass) return false;
+      if (errorClass && item.request_details?.error_class !== errorClass) return false;
       return true;
     });
     return HttpResponse.json(buildUsageOperationsSummary([...requestFacts, ...fixtureFacts]));

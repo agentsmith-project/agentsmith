@@ -69,8 +69,6 @@ export type {
   UpdateMemberGroupRequest,
   JoinRequest,
   Member,
-  UsageReportSchedule,
-  UsageReportScheduleDeliveryResult,
   CreateUserKeyRequest,
   UserExternalConnection,
   UserExternalConnectionProvider,

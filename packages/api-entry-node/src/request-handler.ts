@@ -196,20 +196,6 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
   }
 
   if (
-    route.kind === 'usageExport'
-    || route.kind === 'usageReportSchedules'
-    || route.kind === 'usageReportSchedulesRunDue'
-    || route.kind === 'usageReportEvidence'
-    || route.kind === 'usageReportScheduleItem'
-    || route.kind === 'usageReportScheduleTestDelivery'
-    || route.kind === 'usageReportScheduleRunNow'
-    || route.kind === 'usageReportScheduleDeliveryRetry'
-    || route.kind === 'usageReportScheduleDeliveryAcknowledge'
-  ) {
-    return ['project:manage'];
-  }
-
-  if (
     route.kind === 'projectMembers'
     || route.kind === 'projectJoinRequests'
     || route.kind === 'projectJoinRequestApprove'
@@ -542,42 +528,6 @@ export async function handleRequest(
       total: items.length,
       items,
     });
-    return;
-  }
-
-  if (requestUrl.pathname === '/api/v1/internal/usage-report-runner' && method === 'GET') {
-    const user = await verifyBearerToken(req);
-    if (!user) {
-      unauthorized(res);
-      return;
-    }
-    json(res, 200, deps.usageReportRunner?.getStatus() ?? {
-      enabled: false,
-      interval_ms: 60000,
-      running: false,
-      run_count: 0,
-      last_status: 'idle',
-    });
-    return;
-  }
-
-  if (requestUrl.pathname === '/api/v1/internal/usage-report-runner/run-due' && method === 'POST') {
-    const user = await verifyBearerToken(req);
-    if (!user) {
-      unauthorized(res);
-      return;
-    }
-    if (!deps.usageReportRunner) {
-      json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'usage_report_runner_unavailable' });
-      return;
-    }
-    try {
-      const result = await deps.usageReportRunner.runOnce('manual');
-      json(res, 200, result);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'usage_report_runner_failed';
-      json(res, 409, { error_code: 'RUNNER_BUSY', message });
-    }
     return;
   }
 

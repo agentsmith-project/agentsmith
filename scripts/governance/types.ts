@@ -139,8 +139,6 @@ export interface ReportSummary {
   upstream_transient?: UpstreamTransientSummary;
   /** Execution review evidence collected from the real-lane execution workflow */
   execution_review_evidence?: ExecutionReviewEvidence;
-  /** Usage report evidence collected from the scheduled-report workflow */
-  usage_report_evidence?: UsageReportEvidence;
   /** Governance execution evidence collected from governance smoke */
   governance_evidence?: GovernanceReviewEvidence;
   /** Build reliability evidence collected from build execution smoke lanes */
@@ -276,48 +274,6 @@ export interface ExecutionReviewTarget {
   activated_at?: string | null;
 }
 
-export interface UsageReportEvidence {
-  /** Source of the evidence document */
-  source: 'dry_run' | 'artifact';
-  /** ISO timestamp when usage report evidence was generated */
-  generated_at: string;
-  /** Review status derived from required schedules */
-  review_status: 'ready' | 'blocked';
-  /** Blocking evidence failures */
-  blockers: string[];
-  /** Warning-only evidence debt */
-  warnings: string[];
-  /** Active schedules in scope */
-  active_schedules: number;
-  /** Required schedules in scope */
-  required_schedules: number;
-  /** Recent successful required deliveries */
-  successful_deliveries_last_7d: number;
-  /** Recent failed required deliveries */
-  failed_deliveries_last_7d: number;
-  /** Required deliveries awaiting acknowledgement */
-  unacknowledged_required_deliveries: number;
-  /** Optional runner health snapshot from the API process */
-  runner_health?: {
-    enabled: boolean;
-    interval_ms: number;
-    running: boolean;
-    run_count: number;
-    last_status: 'idle' | 'success' | 'failed';
-    last_started_at?: string;
-    last_completed_at?: string;
-    last_error?: string;
-    last_result?: {
-      generated_at: string;
-      processed_schedules: number;
-      successful_deliveries: number;
-      failed_deliveries: number;
-    };
-  };
-  /** Optional reviewer note */
-  note?: string;
-}
-
 export interface GovernanceReviewEvidence {
   /** Source of the evidence document */
   source: 'dry_run' | 'artifact';
@@ -443,8 +399,6 @@ export interface GovernanceRunHistory {
   governance_policy_decision?: 'ready' | 'warning' | 'blocked';
   /** Execution review status captured for the run */
   execution_review_status?: 'ready' | 'blocked';
-  /** Usage review status captured for the run */
-  usage_review_status?: 'ready' | 'blocked';
   /** Structured governance blockers for run-level traceability */
   governance_blockers: GovernanceEvidenceIssue[];
   /** Structured governance warnings for run-level traceability */
@@ -488,7 +442,6 @@ export interface GovernanceIncidentEvent {
   trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
   governance_policy_decision?: 'ready' | 'warning' | 'blocked';
   execution_review_status?: 'ready' | 'blocked';
-  usage_review_status?: 'ready' | 'blocked';
   governance_blockers?: GovernanceEvidenceIssue[];
   governance_warnings?: GovernanceEvidenceIssue[];
   failed_step_name?: string;
@@ -527,8 +480,6 @@ export interface VerifyReleaseOptions {
   mockFailure?: FailureType;
   /** Path to execution review evidence artifact */
   executionEvidence?: string;
-  /** Path to usage report evidence artifact */
-  usageReportEvidence?: string;
   /** Path to governance evidence artifact */
   governanceEvidence?: string;
   /** Path to build reliability evidence artifact */

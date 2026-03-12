@@ -11,18 +11,6 @@ describe('evaluateGovernance', () => {
         missing_usage_facts: 0,
         missing_price_facts: 0,
       },
-      usage: {
-        review_status: 'ready',
-        blockers: [],
-        warnings: [],
-        required_schedules: 1,
-        unacknowledged_required_deliveries: 0,
-        runner_health: {
-          enabled: true,
-          last_status: 'success',
-          run_count: 2,
-        },
-      },
     });
 
     expect(result.decision).toBe('ready');
@@ -41,7 +29,7 @@ describe('evaluateGovernance', () => {
     expect(result.warnings[0]?.id).toBe('execution_transient_failures_present');
   });
 
-  it('returns blocked for configuration and usage blockers', () => {
+  it('returns blocked for configuration blockers', () => {
     const result = evaluateGovernance({
       configuration: {
         review_status: 'blocked',
@@ -52,18 +40,6 @@ describe('evaluateGovernance', () => {
         target: {
           status: 'draft',
           approvals_complete: false,
-        },
-      },
-      usage: {
-        review_status: 'blocked',
-        blockers: ['usage_report_runner_not_yet_executed'],
-        warnings: ['usage_report_webhook_signature_recommended'],
-        required_schedules: 0,
-        unacknowledged_required_deliveries: 1,
-        runner_health: {
-          enabled: false,
-          last_status: 'failed',
-          run_count: 0,
         },
       },
     });

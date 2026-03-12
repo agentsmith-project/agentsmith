@@ -130,7 +130,7 @@ describe('AuditTable', () => {
             project_id: 'proj_1',
             actor_type: 'service_account',
             actor_id: 'svc_1',
-            action: 'usage_report_delivery_failed',
+            action: 'request_delivery_failed',
             resource_type: 'governance_incident',
             resource_id: 'incident_1',
             result: 'error',

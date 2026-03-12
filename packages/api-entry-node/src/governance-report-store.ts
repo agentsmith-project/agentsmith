@@ -23,9 +23,6 @@ type GovernanceReportShape = {
         review_status?: 'ready' | 'blocked';
       };
     };
-    usage_report_evidence?: {
-      review_status?: 'ready' | 'blocked';
-    };
   };
 };
 
@@ -39,7 +36,6 @@ export type GovernanceReportListItem = {
   policy_blocker_count?: number;
   policy_warning_count?: number;
   execution_review_status?: 'ready' | 'blocked';
-  usage_review_status?: 'ready' | 'blocked';
   markdown_available: boolean;
 };
 
@@ -94,7 +90,6 @@ export function listGovernanceReports(dir: string): GovernanceReportListItem[] {
         policy_blocker_count: parsed?.summary?.governance_policy?.summary?.blocker_count,
         policy_warning_count: parsed?.summary?.governance_policy?.summary?.warning_count,
         execution_review_status: parsed?.summary?.execution_review_evidence?.checks?.review_status,
-        usage_review_status: parsed?.summary?.usage_report_evidence?.review_status,
         markdown_available: existsSync(getMarkdownPath(dir, base)),
       } satisfies GovernanceReportListItem;
     })

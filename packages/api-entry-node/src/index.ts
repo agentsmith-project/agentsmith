@@ -8,8 +8,6 @@ import {
   createNodeApiDepsFromEnv,
 } from './node-api-deps-factory.js';
 import { handleRequest } from './request-handler.js';
-import { createUsageReportRunner } from './usage-report-runner.js';
-import { createUsageReportDeliveryDispatcher } from './usage-report-delivery.js';
 import { createGovernanceRunner } from './governance-runner.js';
 import { ensureModelCatalogBootstrap } from './model-catalog-service.js';
 import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
@@ -17,34 +15,16 @@ import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
 
-type CreateNodeApiServerOptions = {
-  usageReportRunner?: {
-    enabled?: boolean;
-    intervalMs?: number;
-  };
-};
-
 export function createNodeApiServer(
   port = 3010,
   deps = createDefaultNodeApiDeps(),
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
-  options?: CreateNodeApiServerOptions,
 ): http.Server {
   void ensureModelCatalogBootstrap(deps.docStore).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'unknown_error';
     process.stderr.write(`[api-entry-node] model catalog bootstrap failed: ${message}\n`);
   });
 
-  const usageReportDeliveryDispatch = createUsageReportDeliveryDispatcher({
-    getCredentialSecret: (workspaceId, projectId, credentialId) =>
-      deps.endpointResourceService.getCredentialSecret(workspaceId, projectId, credentialId),
-  });
-  const usageReportRunner = createUsageReportRunner(deps.docStore, {
-    enabled: options?.usageReportRunner?.enabled ?? false,
-    intervalMs: options?.usageReportRunner?.intervalMs,
-    deliveryDispatch: usageReportDeliveryDispatch,
-  });
-  deps.usageReportRunner = usageReportRunner;
   deps.governanceRunner = createGovernanceRunner({
     governanceRunsDir: deps.governanceRunsDir ?? 'artifacts/governance-runs',
   });
@@ -82,7 +62,6 @@ export function createNodeApiServer(
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
       if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
-      usageReportRunner.stop();
       ACTIVE_CHAT_STREAMS.clear();
       void lifecycle.shutdown();
     });
@@ -90,7 +69,6 @@ export function createNodeApiServer(
     server.on('close', () => {
       clearInterval(jobWorkerInterval);
       if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
-      usageReportRunner.stop();
       ACTIVE_CHAT_STREAMS.clear();
     });
   }
@@ -108,12 +86,7 @@ function startFromCli(): void {
   }
 
   const { deps, lifecycle, repoMode } = createNodeApiDepsFromEnv(process.env);
-  createNodeApiServer(port, deps, lifecycle, {
-    usageReportRunner: {
-      enabled: process.env.USAGE_REPORT_RUNNER_ENABLED === 'true',
-      intervalMs: Number.parseInt(process.env.USAGE_REPORT_RUNNER_INTERVAL_MS ?? '60000', 10),
-    },
-  });
+  createNodeApiServer(port, deps, lifecycle);
   // Keep log compact and machine-readable for local integration.
   process.stdout.write(`[api-entry-node] listening on ${port} (repo=${repoMode})\n`);
 }

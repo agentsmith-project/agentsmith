@@ -61,19 +61,6 @@ export type ExecutionReviewInput = {
   };
 };
 
-export type UsageEvidenceInput = {
-  review_status?: 'ready' | 'blocked';
-  blockers?: string[];
-  warnings?: string[];
-  required_schedules?: number;
-  unacknowledged_required_deliveries?: number;
-  runner_health?: {
-    enabled?: boolean;
-    last_status?: 'idle' | 'success' | 'failed';
-    run_count?: number;
-  };
-};
-
 export type ExecutionEvidenceInput = {
   failed_count?: number;
   transient_acceptance?: 'acceptable_with_retry' | 'mixed_or_blocking';
@@ -130,7 +117,6 @@ export type BuildEvidenceInput = {
 export type EvaluateGovernanceInput = {
   execution?: ExecutionEvidenceInput;
   configuration?: ExecutionReviewInput;
-  usage?: UsageEvidenceInput;
   governance?: GovernanceEvidenceInput;
   organization?: OrganizationEvidenceInput;
   build?: BuildEvidenceInput;
@@ -232,85 +218,6 @@ export function evaluateGovernance(input: EvaluateGovernanceInput): GovernanceEv
       });
     }
   }
-
-  const usage = input.usage;
-  if (usage) {
-    if (usage.review_status === 'blocked') {
-      for (const blocker of dedupe(usage.blockers ?? [])) {
-        pushIssue(blockers, {
-          id: `usage_${blocker}`,
-          severity: 'blocker',
-          source: 'usage',
-          message: blocker,
-          overridable: false,
-        });
-      }
-      if ((usage.blockers?.length ?? 0) === 0) {
-        pushIssue(blockers, {
-          id: 'usage_review_status_blocked',
-          severity: 'blocker',
-          source: 'usage',
-          message: 'Usage report review status is blocked.',
-          overridable: false,
-        });
-      }
-    }
-    if ((usage.required_schedules ?? 0) === 0) {
-      pushIssue(blockers, {
-        id: 'usage_required_schedules_missing',
-        severity: 'blocker',
-        source: 'usage',
-        message: 'No required usage-report schedules are configured.',
-        overridable: false,
-      });
-    }
-    if ((usage.unacknowledged_required_deliveries ?? 0) > 0) {
-      pushIssue(blockers, {
-        id: 'usage_required_deliveries_unacknowledged',
-        severity: 'blocker',
-        source: 'usage',
-        message: `${usage.unacknowledged_required_deliveries} required usage-report deliveries are unacknowledged.`,
-        overridable: false,
-      });
-    }
-    if (usage.runner_health?.enabled === false) {
-      pushIssue(blockers, {
-        id: 'usage_runner_disabled',
-        severity: 'blocker',
-        source: 'usage',
-        message: 'Usage-report runner is disabled.',
-        overridable: false,
-      });
-    }
-    if (usage.runner_health?.last_status === 'failed') {
-      pushIssue(blockers, {
-        id: 'usage_runner_last_failed',
-        severity: 'blocker',
-        source: 'usage',
-        message: 'Usage-report runner last execution failed.',
-        overridable: false,
-      });
-    }
-    if ((usage.runner_health?.run_count ?? 0) === 0) {
-      pushIssue(blockers, {
-        id: 'usage_runner_never_executed',
-        severity: 'blocker',
-        source: 'usage',
-        message: 'Usage-report runner has not executed yet.',
-        overridable: false,
-      });
-    }
-    for (const warning of dedupe(usage.warnings ?? [])) {
-      pushIssue(warnings, {
-        id: `usage_${warning}`,
-        severity: 'warning',
-        source: 'usage',
-        message: warning,
-        overridable: true,
-      });
-    }
-  }
-
   const governance = input.governance;
   if (governance) {
     if (governance.review_status === 'blocked') {

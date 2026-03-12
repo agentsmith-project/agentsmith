@@ -38,7 +38,6 @@ import type {
   VerifyReleaseOptions,
   FailureCategory,
   ExecutionReviewEvidence,
-  UsageReportEvidence,
   GovernanceReviewEvidence,
   BuildReliabilityReviewEvidence,
   WorkspaceGovernanceReviewEvidence,
@@ -55,7 +54,6 @@ const DEFAULT_OUTPUT_DIR = join(process.cwd(), 'artifacts/governance-reports');
 const DEFAULT_RUNS_OUTPUT_DIR = join(process.cwd(), 'artifacts/governance-runs');
 const DEFAULT_ESCALATIONS_OUTPUT_DIR = join(process.cwd(), 'artifacts/governance-incidents');
 const DEFAULT_EXECUTION_EVIDENCE_FILE = 'execution-review-evidence.json';
-const DEFAULT_USAGE_REPORT_EVIDENCE_FILE = 'usage-report-evidence.json';
 const DEFAULT_GOVERNANCE_EVIDENCE_FILE = 'governance-evidence.json';
 const DEFAULT_BUILD_RELIABILITY_EVIDENCE_FILE = 'build-reliability-evidence.json';
 const DEFAULT_WORKSPACE_GOVERNANCE_EVIDENCE_FILE = 'workspace-governance-evidence.json';
@@ -212,9 +210,6 @@ function parseArgs(argv: string[]): VerifyReleaseOptions {
       case '--execution-evidence':
         options.executionEvidence = argv[++i];
         break;
-      case '--usage-report-evidence':
-        options.usageReportEvidence = argv[++i];
-        break;
       case '--governance-evidence':
         options.governanceEvidence = argv[++i];
         break;
@@ -290,7 +285,6 @@ OPTIONS:
   --dry-run            Skip actual check execution (for testing)
   --mock-failure <t>   Mock a failure type: token|network|backend|assertion|timeout|rate_limit
   --execution-evidence <path>  Read execution review evidence artifact from custom path
-  --usage-report-evidence <path>  Read usage report evidence artifact from custom path
   --governance-evidence <path>  Read governance evidence artifact from custom path
   --build-reliability-evidence <path>  Read build reliability evidence artifact from custom path
   --workspace-governance-evidence <path>  Read workspace governance evidence artifact from custom path
@@ -388,7 +382,6 @@ function buildGovernanceRunHistory(
     commit_short: report.metadata.git.commit_short,
     governance_policy_decision: report.summary.governance_policy?.decision,
     execution_review_status: report.summary.execution_review_evidence?.checks.review_status,
-    usage_review_status: report.summary.usage_report_evidence?.review_status,
     governance_blockers: governanceSignals.blockers,
     governance_warnings: governanceSignals.warnings,
     total_checks: report.execution.total_checks,
@@ -448,7 +441,6 @@ async function buildGovernanceIncidentEvent(
     trigger: run.trigger,
     governance_policy_decision: decision,
     execution_review_status: report.summary.execution_review_evidence?.checks.review_status,
-    usage_review_status: report.summary.usage_report_evidence?.review_status,
     governance_blockers: governanceSignals.blockers,
     governance_warnings: governanceSignals.warnings,
     failed_step_name: run.failed_step_name,
@@ -821,8 +813,7 @@ function buildCommand(
   if (def.id !== 'execution-review-evidence') return def.command;
 
   const executionEvidencePath = getExecutionEvidencePath(options);
-  const usageReportEvidencePath = getUsageReportEvidencePath(options);
-  return `EXECUTION_REVIEW_EVIDENCE_PATH=${shellQuote(executionEvidencePath)} USAGE_REPORT_EVIDENCE_PATH=${shellQuote(usageReportEvidencePath)} ${def.command}`;
+  return `EXECUTION_REVIEW_EVIDENCE_PATH=${shellQuote(executionEvidencePath)} ${def.command}`;
 }
 
 /**
@@ -830,20 +821,17 @@ function buildCommand(
  */
 function generateSummary(execution: ExecutionResults, options: VerifyReleaseOptions): ReportSummary {
   const executionEvidence = loadExecutionReviewEvidence(options);
-  const usageReportEvidence = loadUsageReportEvidence(options);
   const governanceEvidence = loadGovernanceReviewEvidence(options);
   const buildReliabilityEvidence = loadBuildReliabilityReviewEvidence(options);
   const workspaceGovernanceEvidence = loadWorkspaceGovernanceReviewEvidence(options);
   const organizationGovernanceEvidence = loadOrganizationGovernanceReviewEvidence(options);
   const executionBlockingReasons = getExecutionReviewBlockingReasons(executionEvidence);
-  const usageReportBlockingReasons = getUsageReportEvidenceBlockingReasons(usageReportEvidence);
   const governanceBlockingReasons = getGovernanceReviewEvidenceBlockingReasons(governanceEvidence);
   const buildReliabilityBlockingReasons = getBuildReliabilityEvidenceBlockingReasons(buildReliabilityEvidence);
   const workspaceGovernanceBlockingReasons = getWorkspaceGovernanceEvidenceBlockingReasons(workspaceGovernanceEvidence);
   const organizationGovernanceBlockingReasons = getOrganizationGovernanceEvidenceBlockingReasons(organizationGovernanceEvidence);
   const status = execution.failed === 0
     && executionBlockingReasons.length === 0
-    && usageReportBlockingReasons.length === 0
     && governanceBlockingReasons.length === 0
     && buildReliabilityBlockingReasons.length === 0
     && workspaceGovernanceBlockingReasons.length === 0
@@ -858,9 +846,6 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
 
   if (executionEvidence) {
     summary.execution_review_evidence = executionEvidence;
-  }
-  if (usageReportEvidence) {
-    summary.usage_report_evidence = usageReportEvidence;
   }
   if (governanceEvidence) {
     summary.governance_evidence = governanceEvidence;
@@ -897,18 +882,6 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
       target: executionEvidence.target ? {
         status: executionEvidence.target.status,
         approvals_complete: executionEvidence.target.approvals_complete,
-      } : undefined,
-    } : undefined,
-    usage: usageReportEvidence ? {
-      review_status: usageReportEvidence.review_status,
-      blockers: usageReportEvidence.blockers,
-      warnings: usageReportEvidence.warnings,
-      required_schedules: usageReportEvidence.required_schedules,
-      unacknowledged_required_deliveries: usageReportEvidence.unacknowledged_required_deliveries,
-      runner_health: usageReportEvidence.runner_health ? {
-        enabled: usageReportEvidence.runner_health.enabled,
-        last_status: usageReportEvidence.runner_health.last_status,
-        run_count: usageReportEvidence.runner_health.run_count,
       } : undefined,
     } : undefined,
     governance: governanceEvidence || workspaceGovernanceEvidence ? {
@@ -954,10 +927,6 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
     const executionRecommendations = executionBlockingReasons.map((reason) => `Execution review blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...executionRecommendations];
   }
-  if (usageReportBlockingReasons.length > 0) {
-    const usageRecommendations = usageReportBlockingReasons.map((reason) => `Usage report blocker: ${reason}`);
-    summary.recommendations = [...(summary.recommendations ?? []), ...usageRecommendations];
-  }
   if (governanceBlockingReasons.length > 0) {
     const governanceRecommendations = governanceBlockingReasons.map((reason) => `Governance blocker: ${reason}`);
     summary.recommendations = [...(summary.recommendations ?? []), ...governanceRecommendations];
@@ -985,11 +954,6 @@ function generateSummary(execution: ExecutionResults, options: VerifyReleaseOpti
 function getExecutionEvidencePath(options: VerifyReleaseOptions): string {
   if (options.executionEvidence) return options.executionEvidence;
   return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_EXECUTION_EVIDENCE_FILE);
-}
-
-function getUsageReportEvidencePath(options: VerifyReleaseOptions): string {
-  if (options.usageReportEvidence) return options.usageReportEvidence;
-  return join(options.output ?? DEFAULT_OUTPUT_DIR, DEFAULT_USAGE_REPORT_EVIDENCE_FILE);
 }
 
 function getGovernanceEvidencePath(options: VerifyReleaseOptions): string {
@@ -1078,71 +1042,6 @@ function createMockExecutionReviewEvidence(): ExecutionReviewEvidence {
     },
     note: 'Dry-run evidence uses deterministic fixture data and does not call live execution services.',
   };
-}
-
-function loadUsageReportEvidence(options: VerifyReleaseOptions): UsageReportEvidence | undefined {
-  const evidencePath = getUsageReportEvidencePath(options);
-  if (existsSync(evidencePath)) {
-    try {
-      return JSON.parse(readFileSync(evidencePath, 'utf-8')) as UsageReportEvidence;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'unknown_error';
-      return {
-        source: 'artifact',
-        generated_at: new Date().toISOString(),
-        review_status: 'blocked',
-        blockers: ['usage_report_evidence_unreadable'],
-        warnings: [],
-      active_schedules: 0,
-      required_schedules: 0,
-      successful_deliveries_last_7d: 0,
-      failed_deliveries_last_7d: 0,
-      unacknowledged_required_deliveries: 0,
-      runner_health: {
-        enabled: false,
-        interval_ms: 60000,
-        running: false,
-        run_count: 0,
-        last_status: 'failed',
-        last_error: message,
-      },
-      note: `Failed to parse usage report evidence: ${message}`,
-    };
-  }
-  }
-
-  if (options.dryRun) {
-    return {
-      source: 'dry_run',
-      generated_at: new Date().toISOString(),
-      review_status: 'ready',
-      blockers: [],
-      warnings: ['usage_report_no_active_schedules'],
-      active_schedules: 1,
-      required_schedules: 1,
-      successful_deliveries_last_7d: 1,
-      failed_deliveries_last_7d: 0,
-      unacknowledged_required_deliveries: 0,
-      runner_health: {
-        enabled: true,
-        interval_ms: 60000,
-        running: false,
-        run_count: 3,
-        last_status: 'success',
-        last_started_at: new Date(Date.now() - 90_000).toISOString(),
-        last_completed_at: new Date(Date.now() - 89_000).toISOString(),
-        last_result: {
-          generated_at: new Date(Date.now() - 89_000).toISOString(),
-          processed_schedules: 1,
-          successful_deliveries: 1,
-          failed_deliveries: 0,
-        },
-      },
-      note: 'Dry-run evidence uses deterministic fixture data and does not call live delivery channels.',
-    };
-  }
-
-  return undefined;
 }
 
 function loadGovernanceReviewEvidence(options: VerifyReleaseOptions): GovernanceReviewEvidence | undefined {
@@ -1359,26 +1258,6 @@ function getExecutionReviewBlockingReasons(executionEvidence?: ExecutionReviewEv
   }
   if (!executionEvidence.target.approvals_complete) {
     reasons.push('execution target approvals are incomplete');
-  }
-  return reasons;
-}
-
-function getUsageReportEvidenceBlockingReasons(usageReportEvidence?: UsageReportEvidence): string[] {
-  if (!usageReportEvidence) return [];
-
-  const reasons: string[] = [];
-  if (usageReportEvidence.review_status === 'blocked') {
-    reasons.push(
-      usageReportEvidence.blockers.length > 0
-        ? `usage report evidence blocked by ${usageReportEvidence.blockers.join(', ')}`
-        : 'usage report evidence reported blocked review status',
-    );
-  }
-  if (usageReportEvidence.required_schedules === 0) {
-    reasons.push('usage report evidence has no required schedules');
-  }
-  if (usageReportEvidence.unacknowledged_required_deliveries > 0) {
-    reasons.push(`usage report evidence has ${usageReportEvidence.unacknowledged_required_deliveries} unacknowledged required deliveries`);
   }
   return reasons;
 }
@@ -1696,46 +1575,6 @@ function generateMarkdown(report: GovernanceReport): string {
     }
   }
 
-  if (summary.usage_report_evidence) {
-    const usageEvidence = summary.usage_report_evidence;
-    md += `### Usage Report Evidence\n\n`;
-    md += `- **Source:** ${usageEvidence.source}\n`;
-    md += `- **Generated At:** ${usageEvidence.generated_at}\n`;
-    md += `- **Activation Readiness:** ${usageEvidence.review_status}\n`;
-    md += `- **Active Schedules:** ${usageEvidence.active_schedules}\n`;
-    md += `- **Required Schedules:** ${usageEvidence.required_schedules}\n`;
-    md += `- **Successful Deliveries (7d):** ${usageEvidence.successful_deliveries_last_7d}\n`;
-    md += `- **Failed Deliveries (7d):** ${usageEvidence.failed_deliveries_last_7d}\n`;
-    md += `- **Unacknowledged Required Deliveries:** ${usageEvidence.unacknowledged_required_deliveries}\n`;
-    if (usageEvidence.runner_health) {
-      md += `- **Runner Enabled:** ${usageEvidence.runner_health.enabled ? 'yes' : 'no'}\n`;
-      md += `- **Runner Status:** ${usageEvidence.runner_health.last_status}\n`;
-      md += `- **Runner Run Count:** ${usageEvidence.runner_health.run_count}\n`;
-      if (usageEvidence.runner_health.last_completed_at) {
-        md += `- **Runner Last Completed:** ${usageEvidence.runner_health.last_completed_at}\n`;
-      }
-      if (usageEvidence.runner_health.last_error) {
-        md += `- **Runner Last Error:** ${usageEvidence.runner_health.last_error}\n`;
-      }
-    }
-    if (usageEvidence.note) {
-      md += `- **Note:** ${usageEvidence.note}\n`;
-    }
-    md += `\n`;
-
-    md += `| Usage Report Signal | Count |\n`;
-    md += `|---------------------|-------|\n`;
-    md += `| Blockers | ${usageEvidence.blockers.length} |\n`;
-    md += `| Warnings | ${usageEvidence.warnings.length} |\n\n`;
-
-    if (usageEvidence.blockers.length > 0) {
-      md += `**Usage Report Blockers:** ${usageEvidence.blockers.join(', ')}\n\n`;
-    }
-
-    if (usageEvidence.warnings.length > 0) {
-      md += `**Usage Report Warnings:** ${usageEvidence.warnings.join(', ')}\n\n`;
-    }
-  }
 
   if (summary.governance_evidence) {
     const governanceEvidence = summary.governance_evidence;

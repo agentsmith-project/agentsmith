@@ -15,7 +15,6 @@ export type GovernanceRunListItem = {
   commit_short?: string;
   governance_decision?: 'ready' | 'warning' | 'blocked';
   execution_review_status?: 'ready' | 'blocked';
-  usage_review_status?: 'ready' | 'blocked';
   total_checks: number;
   passed_checks: number;
   failed_checks: number;
@@ -74,7 +73,6 @@ export function listGovernanceRuns(dir: string): GovernanceRunListItem[] {
       commit_short: item.commit_short,
       governance_decision: item.governance_decision,
       execution_review_status: item.execution_review_status,
-      usage_review_status: item.usage_review_status,
       total_checks: item.total_checks,
       passed_checks: item.passed_checks,
       failed_checks: item.failed_checks,

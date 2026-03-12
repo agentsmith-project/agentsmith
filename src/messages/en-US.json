@@ -2120,7 +2120,6 @@
       "missing_price_title": "{count} request facts are missing pricing",
       "missing_price_body": "Pricing coverage is incomplete and directly affects request and cost governance.",
       "usage_evidence_blocked_title": "Usage evidence is blocked",
-      "usage_evidence_blocked_body": "Scheduled report evidence is not currently releasable and needs review.",
       "cost_anomaly_title": "Cost anomalies need review",
       "cost_anomaly_body": "Recent usage shows abnormal cost movement and should be reviewed before it grows.",
       "handle_incident": "Handle incident",

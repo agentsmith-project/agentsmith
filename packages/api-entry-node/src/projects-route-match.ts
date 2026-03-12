@@ -59,15 +59,6 @@ export type ProjectsRoute =
   }
   | { kind: 'taskEvents'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'audit'; workspaceId: string; projectId: string }
-  | { kind: 'usageExport'; workspaceId: string; projectId: string }
-  | { kind: 'usageReportSchedules'; workspaceId: string; projectId: string }
-  | { kind: 'usageReportSchedulesRunDue'; workspaceId: string; projectId: string }
-  | { kind: 'usageReportEvidence'; workspaceId: string; projectId: string }
-  | { kind: 'usageReportScheduleItem'; workspaceId: string; projectId: string; scheduleId: string }
-  | { kind: 'usageReportScheduleTestDelivery'; workspaceId: string; projectId: string; scheduleId: string }
-  | { kind: 'usageReportScheduleRunNow'; workspaceId: string; projectId: string; scheduleId: string }
-  | { kind: 'usageReportScheduleDeliveryRetry'; workspaceId: string; projectId: string; scheduleId: string; deliveryId: string }
-  | { kind: 'usageReportScheduleDeliveryAcknowledge'; workspaceId: string; projectId: string; scheduleId: string; deliveryId: string }
   | { kind: 'usage'; workspaceId: string; projectId: string }
   | { kind: 'usageFacts'; workspaceId: string; projectId: string }
   | { kind: 'usageTimeseries'; workspaceId: string; projectId: string }
@@ -197,94 +188,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'audit',
       workspaceId: decodeURIComponent(auditMatched[1]),
       projectId: decodeURIComponent(auditMatched[2]),
-    };
-  }
-
-  const usageExportMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/export\/?$/);
-  if (usageExportMatched) {
-    return {
-      kind: 'usageExport',
-      workspaceId: decodeURIComponent(usageExportMatched[1]),
-      projectId: decodeURIComponent(usageExportMatched[2]),
-    };
-  }
-
-  const usageReportSchedulesMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/?$/);
-  if (usageReportSchedulesMatched) {
-    return {
-      kind: 'usageReportSchedules',
-      workspaceId: decodeURIComponent(usageReportSchedulesMatched[1]),
-      projectId: decodeURIComponent(usageReportSchedulesMatched[2]),
-    };
-  }
-
-  const usageReportSchedulesRunDueMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/run-due\/?$/);
-  if (usageReportSchedulesRunDueMatched) {
-    return {
-      kind: 'usageReportSchedulesRunDue',
-      workspaceId: decodeURIComponent(usageReportSchedulesRunDueMatched[1]),
-      projectId: decodeURIComponent(usageReportSchedulesRunDueMatched[2]),
-    };
-  }
-
-  const usageReportEvidenceMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-evidence\/?$/);
-  if (usageReportEvidenceMatched) {
-    return {
-      kind: 'usageReportEvidence',
-      workspaceId: decodeURIComponent(usageReportEvidenceMatched[1]),
-      projectId: decodeURIComponent(usageReportEvidenceMatched[2]),
-    };
-  }
-
-  const usageReportScheduleDeliveryRetryMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/deliveries\/([^/]+)\/retry\/?$/);
-  if (usageReportScheduleDeliveryRetryMatched) {
-    return {
-      kind: 'usageReportScheduleDeliveryRetry',
-      workspaceId: decodeURIComponent(usageReportScheduleDeliveryRetryMatched[1]),
-      projectId: decodeURIComponent(usageReportScheduleDeliveryRetryMatched[2]),
-      scheduleId: decodeURIComponent(usageReportScheduleDeliveryRetryMatched[3]),
-      deliveryId: decodeURIComponent(usageReportScheduleDeliveryRetryMatched[4]),
-    };
-  }
-
-  const usageReportScheduleDeliveryAcknowledgeMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/deliveries\/([^/]+)\/acknowledge\/?$/);
-  if (usageReportScheduleDeliveryAcknowledgeMatched) {
-    return {
-      kind: 'usageReportScheduleDeliveryAcknowledge',
-      workspaceId: decodeURIComponent(usageReportScheduleDeliveryAcknowledgeMatched[1]),
-      projectId: decodeURIComponent(usageReportScheduleDeliveryAcknowledgeMatched[2]),
-      scheduleId: decodeURIComponent(usageReportScheduleDeliveryAcknowledgeMatched[3]),
-      deliveryId: decodeURIComponent(usageReportScheduleDeliveryAcknowledgeMatched[4]),
-    };
-  }
-
-  const usageReportScheduleTestMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/test-delivery\/?$/);
-  if (usageReportScheduleTestMatched) {
-    return {
-      kind: 'usageReportScheduleTestDelivery',
-      workspaceId: decodeURIComponent(usageReportScheduleTestMatched[1]),
-      projectId: decodeURIComponent(usageReportScheduleTestMatched[2]),
-      scheduleId: decodeURIComponent(usageReportScheduleTestMatched[3]),
-    };
-  }
-
-  const usageReportScheduleRunNowMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/run-now\/?$/);
-  if (usageReportScheduleRunNowMatched) {
-    return {
-      kind: 'usageReportScheduleRunNow',
-      workspaceId: decodeURIComponent(usageReportScheduleRunNowMatched[1]),
-      projectId: decodeURIComponent(usageReportScheduleRunNowMatched[2]),
-      scheduleId: decodeURIComponent(usageReportScheduleRunNowMatched[3]),
-    };
-  }
-
-  const usageReportScheduleItemMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/usage\/report-schedules\/([^/]+)\/?$/);
-  if (usageReportScheduleItemMatched) {
-    return {
-      kind: 'usageReportScheduleItem',
-      workspaceId: decodeURIComponent(usageReportScheduleItemMatched[1]),
-      projectId: decodeURIComponent(usageReportScheduleItemMatched[2]),
-      scheduleId: decodeURIComponent(usageReportScheduleItemMatched[3]),
     };
   }
 

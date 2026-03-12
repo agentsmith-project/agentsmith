@@ -39,7 +39,6 @@ import type { EndpointResourceService } from './endpoint-resource-service.js';
 import type { AgentResourceService } from './agent-resource-service.js';
 import type { AgentExecutionService } from './agent-execution-service.js';
 import type { InternalAgentPodManager } from './internal-agent-pod-manager.js';
-import type { UsageReportRunnerController } from './usage-report-runner.js';
 import type { GovernanceRunnerController } from './governance-runner.js';
 
 export interface NodeApiDeps {
@@ -87,6 +86,5 @@ export interface NodeApiDeps {
   updateProjectUseCase: UpdateProjectUseCase;
   cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
   runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
-  usageReportRunner?: UsageReportRunnerController;
   governanceRunner?: GovernanceRunnerController;
 }

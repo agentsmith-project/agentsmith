@@ -16,7 +16,6 @@ export type GovernanceIncidentEvent = {
   trigger?: 'manual' | 'scheduled' | 'ci' | 'unknown';
   governance_decision?: 'ready' | 'warning' | 'blocked';
   execution_review_status?: 'ready' | 'blocked';
-  usage_review_status?: 'ready' | 'blocked';
   failed_step_name?: string;
   failure_categories?: string[];
   acknowledged_at?: string;

@@ -201,10 +201,6 @@ export const queryKeys = {
       ['usage-timeseries', workspaceId, projectId, params] as const,
     operationsSummary: (workspaceId: string, projectId: string, params?: object) =>
       ['usage-operations-summary', workspaceId, projectId, params] as const,
-    reportSchedules: (workspaceId: string, projectId: string) =>
-      ['usage-report-schedules', workspaceId, projectId] as const,
-    reportEvidence: (workspaceId: string, projectId: string) =>
-      ['usage-report-evidence', workspaceId, projectId] as const,
     limitsSummary: (workspaceId: string, projectId: string) =>
       ['usage-limits-summary', workspaceId, projectId] as const,
   },

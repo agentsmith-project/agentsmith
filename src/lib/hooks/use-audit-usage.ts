@@ -163,34 +163,3 @@ export function useUsageOperationsSummary(
   });
 }
 
-export function useUsageReportSchedules(
-  workspaceId: string,
-  projectId: string,
-  options?: { enabled?: boolean },
-) {
-  const usageAPI = new UsageAPI(getApiClient());
-  const enabled = (options?.enabled ?? true) && !!workspaceId && !!projectId;
-
-  return useQuery({
-    queryKey: queryKeys.usage.reportSchedules(workspaceId, projectId),
-    queryFn: () => usageAPI.listReportSchedules(workspaceId, projectId),
-    enabled,
-    staleTime: 10000,
-  });
-}
-
-export function useUsageReportEvidence(
-  workspaceId: string,
-  projectId: string,
-  options?: { enabled?: boolean },
-) {
-  const usageAPI = new UsageAPI(getApiClient());
-  const enabled = (options?.enabled ?? true) && !!workspaceId && !!projectId;
-
-  return useQuery({
-    queryKey: queryKeys.usage.reportEvidence(workspaceId, projectId),
-    queryFn: () => usageAPI.getReportEvidence(workspaceId, projectId),
-    enabled,
-    staleTime: 10000,
-  });
-}

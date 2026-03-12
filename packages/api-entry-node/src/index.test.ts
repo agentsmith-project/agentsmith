@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
-import { createUsageReportSchedule, recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
+import { recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
 import type { GovernanceRunnerController } from './governance-runner.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 
@@ -4983,62 +4983,6 @@ describe('api-entry-node projects routes', () => {
     expect(text).toContain('notebook_task_traces_query_duration_ms_bucket{scope="task",le="10"} ');
   });
 
-  it('runs usage report runner manually and exposes status', async () => {
-    const deps = createDefaultNodeApiDeps();
-    await recordUsageFact(deps.docStore, {
-      workspace_id: 'ws_1',
-      project_id: 'proj_1',
-      resource_type: 'endpoint',
-      requests: 1,
-      result: 'ok',
-      metadata_json: {
-        provider: 'secondaryok',
-        resolved_model: 'model-b',
-        estimated_cost: 0.0021,
-      },
-    });
-    const created = await createUsageReportSchedule(deps.docStore, {
-      workspace_id: 'ws_1',
-      project_id: 'proj_1',
-      name: 'Internal Runner Schedule',
-      cadence: 'daily',
-      status: 'active',
-      format: 'json',
-      time_window: 'last_7d',
-      delivery_channel: 'in_app',
-      governance_evidence_required: false,
-      empty_result_policy: 'deliver',
-    });
-    await deps.docStore.upsert('project_usage_report_schedules', created.id, {
-      ...created,
-      next_run_at: '2026-02-01T00:00:00.000Z',
-    });
-
-    const { baseUrl } = startServerWithDeps(deps);
-
-    const runRes = await apiFetch(baseUrl, '/api/v1/internal/usage-report-runner/run-due', {
-      method: 'POST',
-    });
-    expect(runRes.status).toBe(200);
-    const runPayload = (await runRes.json()) as {
-      processed_schedules?: number;
-      successful_deliveries?: number;
-    };
-    expect(runPayload.processed_schedules).toBe(1);
-    expect(runPayload.successful_deliveries).toBe(1);
-
-    const statusRes = await apiFetch(baseUrl, '/api/v1/internal/usage-report-runner');
-    expect(statusRes.status).toBe(200);
-    const statusPayload = (await statusRes.json()) as {
-      run_count?: number;
-      last_status?: string;
-      last_result?: { processed_schedules?: number };
-    };
-    expect(statusPayload.run_count).toBe(1);
-    expect(statusPayload.last_status).toBe('success');
-    expect(statusPayload.last_result?.processed_schedules).toBe(1);
-  });
-
   it('records task trace query metrics for message-scoped requests', async () => {
     const { baseUrl } = startServer();
 
@@ -5153,10 +5097,8 @@ describe('api-entry-node projects routes', () => {
           ],
           warnings: [
             {
-              id: 'usage_usage_report_webhook_signature_recommended',
               severity: 'warning',
               source: 'usage',
-              message: 'usage_report_webhook_signature_recommended',
               overridable: true,
             },
           ],
@@ -5171,9 +5113,6 @@ describe('api-entry-node projects routes', () => {
           checks: {
             review_status: 'ready',
           },
-        },
-        usage_report_evidence: {
-          review_status: 'blocked',
         },
       },
     }), 'utf-8');
@@ -5191,7 +5130,6 @@ describe('api-entry-node projects routes', () => {
       commit_short: 'abc1234',
       governance_decision: 'ready',
       execution_review_status: 'ready',
-      usage_review_status: 'blocked',
       total_checks: 6,
       passed_checks: 6,
       failed_checks: 0,
@@ -5212,7 +5150,6 @@ describe('api-entry-node projects routes', () => {
       trigger: 'manual',
       governance_decision: 'warning',
       execution_review_status: 'ready',
-      usage_review_status: 'blocked',
       failure_categories: [],
     }), 'utf-8');
 
@@ -5405,7 +5342,7 @@ describe('api-entry-node projects routes', () => {
         incident_id: 'incident-sample-governance',
         issue_id: 'usage_warning',
         issue_source: 'usage',
-        issue_message: 'usage_report_webhook_signature_recommended',
+        issue_message: 'usage_warning',
         reason_category: 'approved_exception',
         reason: 'Accepted exception for current governance review',
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
@@ -5568,7 +5505,7 @@ describe('api-entry-node projects routes', () => {
         incident_id: 'incident-sample-governance',
         issue_id: 'usage_warning',
         issue_source: 'usage',
-        issue_message: 'usage_report_webhook_signature_recommended',
+        issue_message: 'usage_warning',
         reason_category: 'approved_exception',
         reason: 'Accepted exception for current governance review',
         expires_at: new Date(Date.now() + 86_400_000).toISOString(),
@@ -8315,40 +8252,6 @@ describe('api-entry-node projects routes', () => {
     expect(filteredBody.items[0]?.result).toBe('error');
   });
 
-  it('rejects webhook usage report schedule creation without delivery_config.webhook_url', async () => {
-    const { baseUrl } = startServer();
-
-    const response = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'Webhook Ops',
-          cadence: 'daily',
-          status: 'active',
-          format: 'json',
-          time_window: 'last_7d',
-          delivery_channel: 'webhook',
-          delivery_config: {},
-          governance_evidence_required: true,
-          empty_result_policy: 'deliver',
-        }),
-      },
-    );
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual(
-      expect.objectContaining({
-        error_code: 'BAD_REQUEST',
-        message: 'delivery_config.webhook_url is required for webhook delivery',
-      }),
-    );
-  });
-
   it('bridges openai chat/completions requests to anthropic-compatible endpoint through unified proxy', async () => {
     const { baseUrl } = startServer();
     const upstream = startProtocolBridgeUpstreamServer();
@@ -8688,79 +8591,5 @@ describe('api-entry-node projects routes', () => {
     expect(upstream.lastHeaders()['anthropic-beta']).toBe('prompt-caching-2024-07-31');
   });
 
-  it('rejects webhook usage report schedule creation when credential_ref has no auth binding headers', async () => {
-    const { baseUrl } = startServer();
 
-    const response = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'Webhook Ops',
-          cadence: 'daily',
-          status: 'active',
-          format: 'json',
-          time_window: 'last_7d',
-          delivery_channel: 'webhook',
-          delivery_config: {
-            webhook_url: 'https://example.internal/report-hook',
-            credential_ref: 'cred_webhook',
-          },
-          governance_evidence_required: true,
-          empty_result_policy: 'deliver',
-        }),
-      },
-    );
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual(
-      expect.objectContaining({
-        error_code: 'BAD_REQUEST',
-        message: 'delivery_config.credential_ref requires secret_header_name or signature_header_name',
-      }),
-    );
-  });
-
-  it('rejects webhook usage report schedule creation when retry policy is out of range', async () => {
-    const { baseUrl } = startServer();
-
-    const response = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/usage/report-schedules',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'Webhook Ops',
-          cadence: 'daily',
-          status: 'active',
-          format: 'json',
-          time_window: 'last_7d',
-          delivery_channel: 'webhook',
-          delivery_config: {
-            webhook_url: 'https://example.internal/report-hook',
-            credential_ref: 'cred_webhook',
-            signature_header_name: 'x-agentsmith-signature',
-            retry_attempts: 9,
-          },
-          governance_evidence_required: true,
-          empty_result_policy: 'deliver',
-        }),
-      },
-    );
-
-    expect(response.status).toBe(400);
-    expect(await response.json()).toEqual(
-      expect.objectContaining({
-        error_code: 'BAD_REQUEST',
-        message: 'delivery_config.retry_attempts must be between 1 and 4',
-      }),
-    );
-  });
 });

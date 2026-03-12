@@ -354,28 +354,6 @@ describe('verify-governance-report: TDD Suite', () => {
       expect(report.summary?.execution_review_evidence?.target?.approvals_complete).toBe(true);
     });
 
-    it('should attach usage report evidence to the summary', () => {
-      runScript(['--output', OUTPUT_DIR, '--name', 'governance-report-test', '--dry-run']);
-      const report = readJsonReport(OUTPUT_DIR, 'governance-report-test') as {
-        summary?: {
-          usage_report_evidence?: {
-            source?: string;
-            review_status?: string;
-            active_schedules?: number;
-            required_schedules?: number;
-            warnings?: string[];
-          };
-        };
-      };
-
-      expect(report.summary?.usage_report_evidence).toBeDefined();
-      expect(report.summary?.usage_report_evidence?.source).toBe('dry_run');
-      expect(report.summary?.usage_report_evidence?.review_status).toBe('ready');
-      expect(report.summary?.usage_report_evidence?.active_schedules).toBeGreaterThan(0);
-      expect(report.summary?.usage_report_evidence?.required_schedules).toBeGreaterThan(0);
-      expect(report.summary?.usage_report_evidence?.warnings?.length).toBeGreaterThan(0);
-    });
-
     it('should attach governance evidence to the summary', () => {
       runScript(['--output', OUTPUT_DIR, '--name', 'governance-report-test', '--dry-run']);
       const report = readJsonReport(OUTPUT_DIR, 'governance-report-test') as {
@@ -496,38 +474,6 @@ describe('verify-governance-report: TDD Suite', () => {
 
       expect(report.summary?.status).toBe('fail');
       expect(report.summary?.recommendations?.some((item) => item.includes('configuration_check_primary_pricing_missing'))).toBe(true);
-    });
-
-    it('should fail when usage report evidence is blocked', () => {
-      const usageEvidencePath = join(OUTPUT_DIR, 'usage-evidence-blocked.json');
-      const usageEvidence = {
-        source: 'artifact',
-        generated_at: new Date().toISOString(),
-        review_status: 'blocked',
-        blockers: ['usage_report_schedule_unacknowledged:Release Evidence Digest'],
-        warnings: [],
-        active_schedules: 1,
-        required_schedules: 1,
-        successful_deliveries_last_7d: 0,
-        failed_deliveries_last_7d: 1,
-        unacknowledged_required_deliveries: 1,
-      };
-      mkdirSync(OUTPUT_DIR, { recursive: true });
-      writeFileSync(usageEvidencePath, JSON.stringify(usageEvidence), 'utf-8');
-
-      runScript([
-        '--output', OUTPUT_DIR,
-        '--name', 'governance-report-test',
-        '--dry-run',
-        '--usage-report-evidence', usageEvidencePath,
-      ]);
-
-      const report = readJsonReport(OUTPUT_DIR, 'governance-report-test') as {
-        summary?: { status?: string; recommendations?: string[] };
-      };
-
-      expect(report.summary?.status).toBe('fail');
-      expect(report.summary?.recommendations?.some((item) => item.includes('usage_report_schedule_unacknowledged'))).toBe(true);
     });
 
     it('should fail when governance evidence is blocked', () => {

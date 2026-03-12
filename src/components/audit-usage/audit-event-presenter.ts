@@ -60,8 +60,6 @@ const ACTION_LABELS: Record<string, string> = {
   endpoint_delete: 'Deleted Endpoint',
   member_create: 'Added Member',
   member_delete: 'Removed Member',
-  usage_report_delivery_failed: 'Failed Usage Report Delivery',
-  usage_report_delivery_succeeded: 'Delivered Usage Report',
   governance_blocked: 'Triggered Governance Block',
 };
 

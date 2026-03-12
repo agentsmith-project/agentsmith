@@ -2668,6 +2668,7 @@
     "default_workspace_title": "默认工作区身份配置",
     "default_workspace_id_label": "默认工作区 ID",
     "default_workspace_name_label": "默认工作区名称",
+    "default_idp_title": "默认身份提供方",
     "default_idp_url_label": "默认 IdP 地址",
     "default_idp_realm_label": "默认 IdP Realm",
     "default_idp_client_id_label": "默认 IdP Client ID",

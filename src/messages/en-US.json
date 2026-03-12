@@ -2665,6 +2665,7 @@
     "default_workspace_title": "Default Workspace Identity",
     "default_workspace_id_label": "Default workspace ID",
     "default_workspace_name_label": "Default workspace name",
+    "default_idp_title": "Default Identity Provider",
     "default_idp_url_label": "Default IdP URL",
     "default_idp_realm_label": "Default IdP realm",
     "default_idp_client_id_label": "Default IdP client ID",

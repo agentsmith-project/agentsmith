@@ -67,6 +67,12 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 rows={[
                   { label: t('default_workspace_id_label'), value: snapshot.default_workspace_id },
                   { label: t('default_workspace_name_label'), value: snapshot.default_workspace_name },
+                ]}
+              />
+              <InfoCard
+                icon={<ShieldCheck className="h-5 w-5" />}
+                title={t('default_idp_title')}
+                rows={[
                   { label: t('default_idp_url_label'), value: snapshot.default_idp_url || '-' },
                   { label: t('default_idp_realm_label'), value: snapshot.default_idp_realm || '-' },
                   { label: t('default_idp_client_id_label'), value: snapshot.default_idp_client_id || '-' },

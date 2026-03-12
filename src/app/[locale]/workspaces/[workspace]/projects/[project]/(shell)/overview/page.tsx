@@ -15,8 +15,11 @@ export default function OverviewPage() {
   const params = useParams();
   const tNav = useTranslations('nav');
   const tGuide = useTranslations('use_guide');
+  const tProject = useTranslations('project');
   const tErrors = useTranslations('errors');
   const canUseProject = useHasPermission('project:endpoint:use');
+  const canManageProject = useHasPermission('project:manage');
+  const canManageAgents = useHasPermission('project:agent:manage');
 
   const workspaceId = validateWorkspaceParam(params.workspace);
   const projectId = validateProjectParam(params.project);
@@ -46,15 +49,25 @@ export default function OverviewPage() {
 
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
-  const quickLinks = [
+  const workLinks = [
     { label: tNav('chat'), href: `${basePath}/chat` },
     { label: tNav('notebook'), href: `${basePath}/notebook` },
     { label: tNav('files'), href: `${basePath}/files` },
     { label: tNav('endpoints'), href: `${basePath}/endpoints` },
-    { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },
     { label: tNav('usage'), href: `${basePath}/usage` },
     { label: tNav('audit'), href: `${basePath}/audit` },
     { label: tNav('api_access_guide'), href: `${basePath}/use-guide` },
+  ];
+  const governanceLinks = [
+    ...(canManageAgents ? [{ label: tNav('agents'), href: `${basePath}/agents` }] : []),
+    ...(canManageProject
+      ? [
+          { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },
+          { label: tNav('credentials'), href: `${basePath}/credentials` },
+          { label: tNav('members'), href: `${basePath}/members` },
+          { label: tNav('settings'), href: `${basePath}/settings` },
+        ]
+      : []),
   ];
 
   return (
@@ -74,16 +87,38 @@ export default function OverviewPage() {
             <CardHeader>
               <CardTitle className="text-base">{tGuide('quick_links.title')}</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4" data-testid="project-hub__quick-links">
-              {quickLinks.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className="rounded-sm border border-subtle px-3 py-2 text-sm text-foreground transition-colors hover:bg-hover"
-                >
-                  {item.label}
-                </Link>
-              ))}
+            <CardContent className="space-y-4" data-testid="project-hub__quick-links">
+              <section className="space-y-2" data-testid="project-hub__work-links">
+                <h2 className="text-sm font-semibold text-foreground">{tProject('workspace_home_projects_title')}</h2>
+                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                  {workLinks.map((item) => (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      className="rounded-sm border border-subtle px-3 py-2 text-sm text-foreground transition-colors hover:bg-hover"
+                    >
+                      {item.label}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+
+              {governanceLinks.length > 0 ? (
+                <section className="space-y-2" data-testid="project-hub__governance-links">
+                  <h2 className="text-sm font-semibold text-foreground">{tProject('workspace_home_admin_title')}</h2>
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {governanceLinks.map((item) => (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="rounded-sm border border-subtle px-3 py-2 text-sm text-foreground transition-colors hover:bg-hover"
+                      >
+                        {item.label}
+                      </Link>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
             </CardContent>
           </Card>
         </div>

@@ -18,10 +18,15 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 describe('OverviewPage', () => {
-  const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
   beforeEach(() => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseHasPermission.mockImplementation((permission: string) => {
+      if (permission === 'project:endpoint:use') return true;
+      if (permission === 'project:agent:manage') return true;
+      if (permission === 'project:manage') return true;
+      return false;
+    });
     mockUseParams.mockReturnValue({
       workspace: 'ws_default',
       project: 'proj_001',
@@ -38,7 +43,18 @@ describe('OverviewPage', () => {
       '/en-US/workspaces/ws_default',
     );
     expect(screen.getByTestId('project-hub__quick-links')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__work-links')).toBeInTheDocument();
+    expect(screen.getByTestId('project-hub__governance-links')).toBeInTheDocument();
     expect(screen.queryByTestId('project-hub__getting-started')).not.toBeInTheDocument();
+  });
+
+  it('hides governance links that require project management permissions', () => {
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
+
+    render(<OverviewPage />);
+
+    expect(screen.getByTestId('project-hub__work-links')).toBeInTheDocument();
+    expect(screen.queryByTestId('project-hub__governance-links')).not.toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', () => {

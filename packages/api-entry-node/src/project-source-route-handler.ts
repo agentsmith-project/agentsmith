@@ -1315,6 +1315,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectMemberPermissions' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
+    const requestId = readRequestId(req);
     const body = await readBody(req) as {
       template?: string | null;
       permissions?: string[];
@@ -1355,6 +1356,28 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       },
     });
     historyState.set(route.userId, items);
+    await writeProjectAuditEvent(deps, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      actor: { type: 'user', id: user.id },
+      action: 'member.permissions.updated',
+      requestId,
+      resourceType: 'member',
+      resourceId: route.userId,
+      metadata: {
+        target_user_id: route.userId,
+        mode: {
+          from: prev.mode,
+          to: body.mode,
+        },
+        template: {
+          from: prev.template ?? null,
+          to: nextTemplate,
+        },
+        permissions_added: nextPermissions.filter((p) => !prev.permissions.includes(p)),
+        permissions_removed: prev.permissions.filter((p) => !nextPermissions.includes(p)),
+      },
+    });
     res.statusCode = 204;
     res.end();
     return true;

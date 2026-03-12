@@ -223,4 +223,47 @@ describe('AuditTable', () => {
     expect(screen.getByText('Denied Access')).toBeInTheDocument();
     expect(screen.getByText('Rate Limited')).toBeInTheDocument();
   });
+
+  it('humanizes membership and permission change actions', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_8',
+            timestamp: '2026-03-01T07:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_8',
+            action: 'member.permissions.updated',
+            resource_type: 'member',
+            resource_id: 'user_alt',
+            result: 'ok',
+            request_id: 'req_member_permissions',
+            metadata_json: {},
+          },
+          {
+            id: 'audit_9',
+            timestamp: '2026-03-01T08:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_9',
+            action: 'member.membership.suspended',
+            resource_type: 'membership',
+            resource_id: 'user_alt',
+            result: 'ok',
+            request_id: 'req_member_suspended',
+            metadata_json: {},
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('User Updated Member Permissions on user_alt and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Updated Member Permissions')).toBeInTheDocument();
+    expect(screen.getByText('User Suspended Membership on user_alt and succeeded')).toBeInTheDocument();
+    expect(screen.getByText('Membership')).toBeInTheDocument();
+    expect(screen.getByText('Suspended Membership')).toBeInTheDocument();
+  });
 });

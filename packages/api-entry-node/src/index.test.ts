@@ -1368,6 +1368,30 @@ describe('api-entry-node projects routes', () => {
     );
     expect(patchAltPermissionsRes.status).toBe(204);
 
+    const permissionsAuditStart = new Date(Date.now() - 60_000).toISOString();
+    const permissionsAuditEnd = new Date(Date.now() + 60_000).toISOString();
+    const memberPermissionsAuditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(permissionsAuditStart)}&end_time=${encodeURIComponent(permissionsAuditEnd)}&action=member.permissions.updated&resource_type=member&resource_id=user_alt&page=1&page_size=20`,
+    );
+    expect(memberPermissionsAuditRes.status).toBe(200);
+    const memberPermissionsAuditBody = (await memberPermissionsAuditRes.json()) as {
+      items: Array<{
+        action: string;
+        resource_id: string;
+        result: string;
+        metadata_json?: Record<string, unknown>;
+      }>;
+    };
+    expect(
+      memberPermissionsAuditBody.items.some((item) =>
+        item.action === 'member.permissions.updated'
+          && item.resource_id === 'user_alt'
+          && item.result === 'ok'
+          && Array.isArray(item.metadata_json?.permissions_added)
+          && (item.metadata_json?.permissions_added as unknown[]).includes('project:endpoint:use')),
+    ).toBe(true);
+
     const patchGroupForAltRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,

@@ -29,6 +29,7 @@ import {
 import type { AuditEvent } from '@/lib/api/types';
 import {
   getAuditActionLabel,
+  getAuditActorLabel,
   getAuditEventCategory,
   getAuditResourceTypeLabel,
   getAuditSummary,
@@ -161,7 +162,7 @@ export function AuditTable({
           return (
             <div className="flex items-center gap-2">
               <Badge variant={variant} className="text-xs">
-                {actorType}
+                {getAuditActorLabel(actorType, t)}
               </Badge>
               <span className="text-sm text-foreground">{actorId}</span>
             </div>

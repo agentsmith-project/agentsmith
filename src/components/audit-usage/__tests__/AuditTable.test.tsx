@@ -7,6 +7,7 @@ vi.mock('next-intl', () => ({
     if (key === 'summary.user_actor') return 'User';
     if (key === 'summary.agent_actor') return 'Agent';
     if (key === 'summary.plugin_actor') return 'Plugin';
+    if (key === 'summary.system_actor') return 'System';
     if (key === 'summary.result_ok') return 'succeeded';
     if (key === 'summary.result_error') return 'failed';
     if (key === 'summary.line' && values) {
@@ -116,5 +117,33 @@ describe('AuditTable', () => {
     expect(screen.getByText('User Created Credential on endpoint_1 and succeeded')).toBeInTheDocument();
     expect(screen.getByText('Agent Invoked on endpoint_1 and succeeded')).toBeInTheDocument();
     expect(screen.getByText('User Triggered Governance Block on endpoint_2 and failed')).toBeInTheDocument();
+  });
+
+  it('humanizes unknown actor, resource, action, and error shapes without breaking the review table', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_4',
+            timestamp: '2026-03-01T03:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'service_account',
+            actor_id: 'svc_1',
+            action: 'usage_report_delivery_failed',
+            resource_type: 'governance_incident',
+            resource_id: 'incident_1',
+            result: 'error',
+            error_code: 'UPSTREAM_429',
+            request_id: 'req_4',
+            metadata_json: {},
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Service Account')).toBeInTheDocument();
+    expect(screen.getByText('Governance Incident')).toBeInTheDocument();
+    expect(screen.getByText('Service Account Failed Usage Report Delivery on incident_1 and failed')).toBeInTheDocument();
   });
 });

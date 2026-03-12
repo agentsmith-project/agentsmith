@@ -446,7 +446,7 @@ export interface AuditEvent {
   timestamp: string; // ISO 8601
   workspace_id: string;
   project_id: string;
-  actor_type: 'user' | 'agent' | 'plugin';
+  actor_type: 'user' | 'agent' | 'plugin' | string;
   actor_id: string;
   action: string;
   resource_type?: string;

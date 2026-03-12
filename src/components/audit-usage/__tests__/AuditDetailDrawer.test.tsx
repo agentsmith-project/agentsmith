@@ -7,6 +7,7 @@ vi.mock('next-intl', () => ({
     if (key === 'summary.user_actor') return 'User';
     if (key === 'summary.agent_actor') return 'Agent';
     if (key === 'summary.plugin_actor') return 'Plugin';
+    if (key === 'summary.system_actor') return 'System';
     if (key === 'summary.result_ok') return 'succeeded';
     if (key === 'summary.result_error') return 'failed';
     if (key === 'summary.line' && values) {
@@ -128,5 +129,36 @@ describe('AuditDetailDrawer', () => {
     expect(governance).not.toHaveTextContent('detail.governance_kind');
     expect(screen.getByText('gdec_2')).toBeInTheDocument();
     expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();
+  });
+
+  it('renders readable fallback labels for unknown actors and upstream error codes', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_3',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'service_account',
+          actor_id: 'svc_1',
+          action: 'usage_report_delivery_failed',
+          resource_type: 'governance_incident',
+          resource_id: 'incident_3',
+          result: 'error',
+          error_code: 'UPSTREAM_429',
+          error_message: 'upstream throttled',
+          request_id: 'req_3',
+          metadata_json: {},
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'Service Account Failed Usage Report Delivery on incident_3 and failed',
+    );
+    expect(screen.getByText('Upstream Rate Limited')).toBeInTheDocument();
+    expect(screen.getAllByText('Governance Incident').length).toBeGreaterThan(0);
   });
 });

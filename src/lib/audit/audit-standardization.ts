@@ -20,8 +20,8 @@ import type { AuditEvent } from '@/lib/api/types';
  * Actor who performed the audit action
  */
 export interface AuditActor {
-  /** Actor type: user, agent, or plugin */
-  type: 'user' | 'agent' | 'plugin';
+  /** Actor type from audit records. Known values include user, agent, and plugin. */
+  type: string;
   /** Unique identifier for the actor */
   id: string;
   /** Optional human-readable name */

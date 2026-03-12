@@ -19,6 +19,7 @@ import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-exp
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 import {
   getAuditActionLabel,
+  getAuditActorLabel,
   getAuditEventCategory,
   getAuditErrorLabel,
   getAuditResourceTypeLabel,
@@ -181,7 +182,7 @@ export function AuditDetailDrawer({
                         : 'outline'
                   }
                 >
-                  {t(`summary.${event.actor_type}_actor`)}
+                  {getAuditActorLabel(event.actor_type, t)}
                 </Badge>
                 <span className="text-sm text-foreground font-mono">{event.actor_id}</span>
               </div>

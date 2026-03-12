@@ -1544,6 +1544,57 @@ describe('api-entry-node projects routes', () => {
     expect(listGroupsAfterDeleteRes.status).toBe(200);
     const groupsAfterDeleteList = (await listGroupsAfterDeleteRes.json()) as { items: Array<{ id: string }> };
     expect(groupsAfterDeleteList.items.map((g) => g.id)).not.toContain(createdGroup.id);
+
+    const suspendMissingMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_missing',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'suspended' }),
+      },
+    );
+    expect(suspendMissingMembershipRes.status).toBe(404);
+
+    const deleteMissingMembershipRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_missing',
+      { method: 'DELETE' },
+    );
+    expect(deleteMissingMembershipRes.status).toBe(404);
+
+    const failedMembershipAuditStart = new Date(Date.now() - 60_000).toISOString();
+    const failedMembershipAuditEnd = new Date(Date.now() + 60_000).toISOString();
+    const failedMembershipAuditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(failedMembershipAuditStart)}&end_time=${encodeURIComponent(failedMembershipAuditEnd)}&resource_type=membership&page=1&page_size=20`,
+    );
+    expect(failedMembershipAuditRes.status).toBe(200);
+    const failedMembershipAuditBody = (await failedMembershipAuditRes.json()) as {
+      items: Array<{
+        action: string;
+        resource_id?: string;
+        result: string;
+        error_code?: string;
+        error_message?: string;
+      }>;
+    };
+    expect(
+      failedMembershipAuditBody.items.some((item) =>
+        item.action === 'member.membership.suspended'
+          && item.resource_id === 'user_missing'
+          && item.result === 'error'
+          && item.error_code === 'NOT_FOUND'
+          && item.error_message === 'membership_not_found'),
+    ).toBe(true);
+    expect(
+      failedMembershipAuditBody.items.some((item) =>
+        item.action === 'member.membership.removed'
+          && item.resource_id === 'user_missing'
+          && item.result === 'error'
+          && item.error_code === 'NOT_FOUND'
+          && item.error_message === 'membership_not_found'),
+    ).toBe(true);
   });
 
   it('supports minimal permission template CRUD endpoints', async () => {

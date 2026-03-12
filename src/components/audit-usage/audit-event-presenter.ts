@@ -71,6 +71,8 @@ const ACTION_LABELS: Record<string, string> = {
 };
 
 const ERROR_CODE_LABELS: Record<string, string> = {
+  CONFLICT: 'Conflict',
+  NOT_FOUND: 'Not Found',
   FORBIDDEN: 'Permission Denied',
   VALIDATION_ERROR: 'Validation Error',
   RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED: 'Spending Limit Exceeded',
@@ -92,6 +94,9 @@ const ERROR_CODE_LABELS: Record<string, string> = {
 
 const ERROR_MESSAGE_LABELS: Record<string, string> = {
   forbidden: 'Permission denied',
+  project_owner_membership_cannot_be_modified: 'Project owner membership cannot be modified',
+  project_owner_membership_cannot_be_removed: 'Project owner membership cannot be removed',
+  membership_not_found: 'Membership not found',
   blocked: 'Blocked',
   endpoint_model_conflict: 'Endpoint model already exists',
   endpoint_not_found: 'Endpoint not found',

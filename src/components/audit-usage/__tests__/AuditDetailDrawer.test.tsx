@@ -228,4 +228,35 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('Access Denied')).toBeInTheDocument();
     expect(screen.getAllByText('Access denied by resource policy').length).toBeGreaterThan(0);
   });
+
+  it('humanizes membership failure errors in detail view', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_6',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'member.membership.removed',
+          resource_type: 'membership',
+          resource_id: 'user_test',
+          result: 'error',
+          error_code: 'CONFLICT',
+          error_message: 'project_owner_membership_cannot_be_removed',
+          request_id: 'req_membership_conflict',
+          metadata_json: {},
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Removed Membership on user_test and failed',
+    );
+    expect(screen.getByText('Conflict')).toBeInTheDocument();
+    expect(screen.getAllByText('Project owner membership cannot be removed').length).toBeGreaterThan(0);
+  });
 });

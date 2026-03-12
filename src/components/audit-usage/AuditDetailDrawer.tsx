@@ -23,6 +23,8 @@ import {
   getAuditEventCategory,
   getAuditErrorLabel,
   getAuditErrorMessageLabel,
+  getAuditGovernanceReasonLabel,
+  getAuditMembershipStatusLabel,
   getAuditResourceIdLabel,
   getAuditResourceTypeLabel,
   getAuditSummary,
@@ -307,7 +309,9 @@ export function AuditDetailDrawer({
                 </div>
                 <div>
                   <span className="text-sm text-tertiary">{t('detail.reason_label')}:</span>
-                  <p className="mt-1 text-sm text-foreground">{formatGovernanceValue(governance.reason)}</p>
+                  <p className="mt-1 text-sm text-foreground">
+                    {formatGovernanceValue(getAuditGovernanceReasonLabel(governance.reason) ?? governance.reason)}
+                  </p>
                 </div>
               </div>
               {governance.authz_decision?.membership_status || (governance.missing_permissions?.length ?? 0) > 0 ? (
@@ -315,7 +319,10 @@ export function AuditDetailDrawer({
                   <div>
                     <span className="text-sm text-tertiary">{t('detail.membership_status')}:</span>
                     <p className="mt-1 text-sm text-foreground">
-                      {formatGovernanceValue(governance.authz_decision?.membership_status)}
+                      {formatGovernanceValue(
+                        getAuditMembershipStatusLabel(governance.authz_decision?.membership_status)
+                        ?? governance.authz_decision?.membership_status,
+                      )}
                     </p>
                   </div>
                   <div>

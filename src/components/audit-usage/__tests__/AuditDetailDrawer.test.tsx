@@ -67,7 +67,7 @@ describe('AuditDetailDrawer', () => {
     expect(governance).toHaveTextContent('source_library.max_file_size_bytes');
     expect(governance).toHaveTextContent('1048576');
     expect(governance).toHaveTextContent('1048577');
-    expect(governance).toHaveTextContent('spending_limit_exceeded');
+    expect(governance).toHaveTextContent('Spending limit exceeded');
     expect(governance).not.toHaveTextContent('detail.governance_kind');
     expect(governance).not.toHaveTextContent('detail.enforcement_kind');
     expect(governance).not.toHaveTextContent('detail.scope');
@@ -125,7 +125,7 @@ describe('AuditDetailDrawer', () => {
     expect(summary).toHaveTextContent('Permission denied');
     expect(screen.getByText('Permission Denied')).toBeInTheDocument();
     expect(governance).toHaveTextContent('project:manage');
-    expect(governance).toHaveTextContent('suspended');
+    expect(governance).toHaveTextContent('Suspended');
     expect(governance).not.toHaveTextContent('detail.governance_kind');
     expect(screen.getByText('gdec_2')).toBeInTheDocument();
     expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();

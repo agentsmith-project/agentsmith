@@ -103,6 +103,20 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   resource_policy_spending_limit_exceeded: 'Spending limit exceeded',
 };
 
+const GOVERNANCE_REASON_LABELS: Record<string, string> = {
+  spending_limit_exceeded: 'Spending limit exceeded',
+  rate_limit_exceeded: 'Rate limit exceeded',
+  resource_policy_denied: 'Access denied by resource policy',
+  resource_policy_allowed: 'Allowed by resource policy',
+};
+
+const MEMBERSHIP_STATUS_LABELS: Record<string, string> = {
+  active: 'Active',
+  pending: 'Pending',
+  suspended: 'Suspended',
+  none: 'No membership',
+};
+
 const ACTOR_LABEL_KEYS: Record<string, string> = {
   user: 'summary.user_actor',
   agent: 'summary.agent_actor',
@@ -164,6 +178,22 @@ export function getAuditErrorMessageLabel(errorMessage?: string): string | undef
   }
   const normalized = errorMessage.trim();
   return ERROR_MESSAGE_LABELS[normalized] ?? humanizeAuditToken(errorMessage);
+}
+
+export function getAuditGovernanceReasonLabel(reason?: string): string | undefined {
+  if (!reason) {
+    return undefined;
+  }
+  const normalized = reason.trim();
+  return GOVERNANCE_REASON_LABELS[normalized] ?? humanizeAuditToken(reason);
+}
+
+export function getAuditMembershipStatusLabel(status?: string): string | undefined {
+  if (!status) {
+    return undefined;
+  }
+  const normalized = status.trim().toLowerCase();
+  return MEMBERSHIP_STATUS_LABELS[normalized] ?? humanizeAuditToken(status);
 }
 
 export function getAuditResourceTypeLabel(resourceType?: string): string | undefined {

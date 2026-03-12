@@ -334,7 +334,7 @@ export default function WorkspacesOverviewPage() {
                               gov_workspace_blocked_items: workspace.blockedItems,
                               gov_workspace_warning_items: workspace.warningItems,
                               gov_workspace_risky_projects: workspace.riskyProjects,
-                            }).replace('?', '&')}`}
+                            })}`}
                             className={cn(
                               'inline-flex h-8 items-center justify-center rounded-sm border border-subtle px-2.5 text-xs font-medium text-foreground transition-colors',
                               'hover:bg-hover',
@@ -511,7 +511,7 @@ export default function WorkspacesOverviewPage() {
                                   {t('org_overview_open_audit')}
                                 </Link>
                                 <Link
-                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit${drilldownQuery.replace('?', '&')}`}
+                                  href={`/${locale}/workspaces/${item.workspaceId}/projects/${item.projectId}/audit${drilldownQuery}`}
                                   className={cn(
                                     'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                     'hover:bg-hover',
@@ -645,7 +645,7 @@ export default function WorkspacesOverviewPage() {
                             </Link>
                             {action.projectId ? (
                               <Link
-                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/audit${actionDrilldownQuery.replace('?', '&')}`}
+                                href={`/${locale}/workspaces/${action.workspaceId}/projects/${action.projectId}/audit${actionDrilldownQuery}`}
                                 className={cn(
                                   'inline-flex h-7 items-center rounded-sm border border-subtle px-2 text-xs font-medium text-foreground transition-colors',
                                   'hover:bg-hover',

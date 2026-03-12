@@ -35,13 +35,21 @@ export default function UsagePage({ params }: UsagePageProps) {
   const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
 
   useEffect(() => {
-    params.then((p) =>
-      setResolvedParams({
+    params.then((p) => {
+      const nextParams = {
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
         locale: p.locale,
-      }),
-    );
+      };
+      setResolvedParams((previous) =>
+        previous &&
+        previous.workspace === nextParams.workspace &&
+        previous.project === nextParams.project &&
+        previous.locale === nextParams.locale
+          ? previous
+          : nextParams,
+      );
+    });
   }, [params]);
 
   if (!resolvedParams) {

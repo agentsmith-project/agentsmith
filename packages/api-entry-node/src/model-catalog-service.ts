@@ -102,6 +102,28 @@ function inferCapabilities(model: ModelsDevRawModel): string[] {
   return [...caps];
 }
 
+function inferProviderFamily(providerKey: string, providerName: string): string {
+  const composite = `${providerKey} ${providerName}`.toLowerCase();
+  if (composite.includes('anthropic')) return 'anthropic';
+  if (composite.includes('deepseek')) return 'deepseek';
+  if (composite.includes('google')) return 'google';
+  if (composite.includes('moonshot') || composite.includes('kimi')) return 'kimi';
+  if (composite.includes('zhipu') || composite.includes('glm')) return 'glm';
+  if (composite.includes('alibaba') || composite.includes('qwen') || composite.includes('dashscope')) return 'alibaba';
+  if (composite.includes('openai')) return 'openai';
+  if (composite.includes('minimax')) return 'minimax';
+  return 'custom';
+}
+
+function inferProviderProtocol(api?: string, providerKey?: string): string {
+  const value = `${providerKey ?? ''} ${api ?? ''}`.toLowerCase();
+  return value.includes('anthropic') ? 'anthropic_compatible' : 'openai_compatible';
+}
+
+function inferCompatibilityInterface(protocol: string): string {
+  return protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible';
+}
+
 function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
   const providers: ModelCatalogProviderProjectionRecord[] = [];
   const models: ModelCatalogModelProjectionRecord[] = [];
@@ -109,17 +131,23 @@ function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
     const providerId = (provider.id ?? providerKey).trim();
     const providerName = (provider.name ?? providerKey).trim();
     const providerModels = provider.models ?? {};
+    const protocol = inferProviderProtocol(provider.api, providerKey);
     providers.push({
       id: `catp_pending_${providerKey}`,
       version_id: '',
       provider_key: providerKey,
       provider_id: providerId,
+      provider: providerKey,
+      family: inferProviderFamily(providerKey, providerName),
       name: providerName,
       api: provider.api,
       doc: provider.doc,
       npm: provider.npm,
       env: provider.env ?? [],
       model_count: Object.keys(providerModels).length,
+      default_base_url: provider.api ?? '',
+      protocol,
+      compatibility_interface: inferCompatibilityInterface(protocol),
     });
     for (const [modelKey, model] of Object.entries(providerModels)) {
       const modelId = (model.id ?? modelKey).trim();
@@ -129,6 +157,7 @@ function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
         provider_key: providerKey,
         provider_id: providerId,
         provider_name: providerName,
+        provider: providerKey,
         model_id: modelId,
         name: (model.name ?? modelId).trim(),
         family: model.family,
@@ -168,17 +197,23 @@ function materializeNormalizedPayload(raw: NormalizedCatalogPayload): Materializ
     const providerId = (provider.provider_id ?? providerKey).trim();
     const providerName = (provider.name ?? providerKey).trim();
     const providerModels = provider.models ?? [];
+    const protocol = inferProviderProtocol(provider.api, providerKey);
     providers.push({
       id: `catp_pending_${providerKey}`,
       version_id: '',
       provider_key: providerKey,
       provider_id: providerId,
+      provider: providerKey,
+      family: inferProviderFamily(providerKey, providerName),
       name: providerName,
       api: provider.api,
       doc: provider.doc,
       npm: provider.npm,
       env: provider.env ?? [],
       model_count: providerModels.length,
+      default_base_url: provider.api ?? '',
+      protocol,
+      compatibility_interface: inferCompatibilityInterface(protocol),
     });
     for (const model of providerModels) {
       const modelId = (model.model_id ?? model.id ?? '').trim();
@@ -189,6 +224,7 @@ function materializeNormalizedPayload(raw: NormalizedCatalogPayload): Materializ
         provider_key: providerKey,
         provider_id: providerId,
         provider_name: providerName,
+        provider: providerKey,
         model_id: modelId,
         name: (model.name ?? modelId).trim(),
         family: model.family,

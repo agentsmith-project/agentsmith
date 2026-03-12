@@ -233,7 +233,7 @@ export default function WorkspaceSettingsPage() {
                           kind: 'project',
                           projectId: explainabilitySummary.primaryBlockedProjectId,
                           reason: 'blocked_projects_audit_review',
-                        }).replace('?', '&')}`}
+                        })}`}
                         className={cn(buttonVariants({ variant: 'ghost', size: 'sm' }), 'h-7 px-2')}
                         data-testid="ws-settings__explain-open-blocked-project-audit-secondary"
                       >
@@ -351,7 +351,7 @@ export default function WorkspaceSettingsPage() {
                             ) : null}
                             {item.projectId ? (
                               <Link
-                                href={`${workspaceBasePath}/projects/${item.projectId}/audit${attentionQuery.replace('?', '&')}`}
+                                href={`${workspaceBasePath}/projects/${item.projectId}/audit${attentionQuery}`}
                                 className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                                 data-testid={`ws-settings__attention-open-audit-secondary--${item.id.replace(':', '--')}`}
                               >
@@ -471,7 +471,7 @@ export default function WorkspaceSettingsPage() {
                             kind: 'project',
                             projectId: project.projectId,
                             reason: 'workspace_project_audit_review',
-                          }).replace('?', '&')}`}
+                          })}`}
                           className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
                           data-testid={`ws-settings__project-open-audit-secondary--${project.projectId}`}
                         >

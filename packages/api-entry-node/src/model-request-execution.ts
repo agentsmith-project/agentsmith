@@ -98,7 +98,7 @@ async function writeRequestUsageFact(params: {
   attempts: ModelRequestTrace[];
   resolvedProvider?: string;
   resolvedModel?: string;
-  pricingVersion?: string | null;
+  pricingSource?: string | null;
   estimatedCost?: number | null;
   usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number };
   result: 'ok' | 'error';
@@ -123,7 +123,7 @@ async function writeRequestUsageFact(params: {
       model: params.resolvedModel ?? null,
       routed_by: 'direct',
       fallback_hops: 0,
-      pricing_source: params.pricingVersion ?? null,
+      pricing_source: params.pricingSource ?? null,
       estimated_cost: params.estimatedCost ?? null,
       attempt_trace: params.attempts,
     },
@@ -153,12 +153,21 @@ export async function executeModelRequest(params: {
 
   const raw = asObject(rawBody);
   const parsedModel = parseModelRequestRef(rawBody);
-  if (!raw || !parsedModel.ok) {
+  if (!raw) {
     return {
       statusCode: 422,
       body: {
         error_code: 'VALIDATION_ERROR',
-        message: raw ? parsedModel.message : 'model_request_model_required',
+        message: 'model_request_model_required',
+      },
+    };
+  }
+  if (!parsedModel.ok) {
+    return {
+      statusCode: 422,
+      body: {
+        error_code: 'VALIDATION_ERROR',
+        message: parsedModel.message,
       },
     };
   }

@@ -38,14 +38,23 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
   const canAccessNotebook = useHasPermission('project:endpoint:use');
 
   useEffect(() => {
-    params.then((p) =>
-      setResolvedParams({
+    params.then((p) => {
+      const nextParams = {
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
         taskId: validateTaskId(p.taskId),
         locale: p.locale,
-      }),
-    );
+      };
+      setResolvedParams((previous) =>
+        previous &&
+        previous.workspace === nextParams.workspace &&
+        previous.project === nextParams.project &&
+        previous.taskId === nextParams.taskId &&
+        previous.locale === nextParams.locale
+          ? previous
+          : nextParams,
+      );
+    });
   }, [params]);
 
   if (!resolvedParams) {

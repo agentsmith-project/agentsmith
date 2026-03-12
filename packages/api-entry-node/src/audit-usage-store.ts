@@ -1382,10 +1382,3 @@ export async function getUsageOperationsSummary(
   };
 }
 
-function escapeCsvCell(value: unknown): string {
-  const normalized = value === null || value === undefined ? '' : String(value);
-  if (/[",\n]/.test(normalized)) {
-    return `"${normalized.replace(/"/g, '""')}"`;
-  }
-  return normalized;
-}

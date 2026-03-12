@@ -270,12 +270,6 @@ export function AuditTable({
     );
   }
 
-  const anchorColumns = [
-    { id: 'request_id', label: t('table.request_id') },
-    { id: 'decision_id', label: t('table.decision_id') },
-    { id: 'trace_ref', label: t('table.trace_ref') },
-  ];
-
   return (
     <div className="space-y-2">
       <div className="grid gap-2 sm:grid-cols-3" data-testid="audit__category-summary">

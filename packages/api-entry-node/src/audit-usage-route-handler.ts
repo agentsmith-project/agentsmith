@@ -3,7 +3,6 @@ import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import {
-  aggregateUsageRecords,
   getLimitsSummary,
   getUsageRecordsSummary,
   getUsageOperationsSummary,
@@ -17,7 +16,6 @@ type JsonResponder = (res: http.ServerResponse, status: number, payload: unknown
 type HandlerArgs = {
   route: ProjectsRoute;
   method: string;
-  req: http.IncomingMessage;
   requestUrl: URL;
   res: http.ServerResponse;
   json: JsonResponder;
@@ -37,16 +35,6 @@ function parsePositiveInt(value: string | null, fallback: number, max?: number):
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
   if (typeof max === 'number') return Math.min(parsed, max);
   return parsed;
-}
-
-async function readJsonBody<T>(req: http.IncomingMessage): Promise<T> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of req) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  const raw = Buffer.concat(chunks).toString('utf8').trim();
-  if (!raw) return {} as T;
-  return JSON.parse(raw) as T;
 }
 
 function badRequest(json: JsonResponder, res: http.ServerResponse, message: string): true {
@@ -82,7 +70,6 @@ function requireTimeRange(
 export async function handleAuditUsageRoute({
   route,
   method,
-  req,
   requestUrl,
   res,
   json,

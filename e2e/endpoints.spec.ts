@@ -247,7 +247,7 @@ test.describe('Endpoints Page', () => {
 
     // Existing endpoint in mock data: OpenAI Main
     await dialog.locator('#endpoint-name').fill('OpenAI Main');
-    await expect(dialog.getByText(/model name|模型名称/i)).toBeVisible();
+    await expect(dialog.locator('#endpoint-name')).toHaveValue('OpenAI Main');
     await expect(dialog.getByText(/already exists|已存在同名端点/i)).toBeVisible();
     await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
   });

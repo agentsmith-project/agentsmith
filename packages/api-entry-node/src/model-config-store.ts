@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { JsonDocStorePort } from '@mbos/adapters-private';
+import type { JsonDocStorePort } from '@mbos/ports';
 
 export type ProjectScope = {
   workspaceId: string;
@@ -38,6 +38,7 @@ export type ModelCatalogEntryRecord = {
 export type ModelCatalogVersionRecord = {
   id: string;
   source: string;
+  source_etag?: string;
   source_hash?: string;
   schema_kind?: 'models.dev.raw' | 'models.dev.normalized';
   provider_count: number;
@@ -84,6 +85,8 @@ export type ResolvedProjectPricing = {
   source: 'project' | 'missing';
 };
 
+export type ModelCatalogVersionStatus = ModelCatalogVersionRecord['status'];
+
 const PROVIDERS_COLLECTION = 'provider_connections';
 const MODELS_COLLECTION = 'project_model_entries';
 const PRICING_COLLECTION = 'project_pricing_maps';
@@ -111,6 +114,12 @@ export function createModelConfigStore(docStore: JsonDocStorePort) {
     scope: ProjectScope,
   ): Promise<T[]> {
     return docStore.list<T>(collection, scopeFilter(scope));
+  }
+
+  async function replaceAllRecords<T extends { id: string }>(collection: string, records: T[]): Promise<void> {
+    const existing = await docStore.list<{ id: string }>(collection, {});
+    await Promise.all(existing.map((item) => docStore.delete(collection, item.id)));
+    await Promise.all(records.map((record) => docStore.upsert(collection, record.id, record)));
   }
 
   return {
@@ -244,8 +253,8 @@ export function createModelConfigStore(docStore: JsonDocStorePort) {
     upsertCatalogProvider(record: ModelCatalogProviderProjectionRecord) {
       return docStore.upsert(CATALOG_PROVIDERS_COLLECTION, record.id, record);
     },
-    replaceCatalogProviderProjections(records: Array<Record<string, unknown>>) {
-      return docStore.replaceAll(CATALOG_PROVIDERS_COLLECTION, records as never[]);
+    replaceCatalogProviderProjections(records: ModelCatalogProviderProjectionRecord[]) {
+      return replaceAllRecords(CATALOG_PROVIDERS_COLLECTION, records);
     },
     listModelCatalogModels(versionId?: string) {
       return docStore.list<ModelCatalogModelProjectionRecord>(
@@ -256,8 +265,8 @@ export function createModelConfigStore(docStore: JsonDocStorePort) {
     upsertCatalogModel(record: ModelCatalogModelProjectionRecord) {
       return docStore.upsert(CATALOG_MODELS_COLLECTION, record.id, record);
     },
-    replaceCatalogModelProjections(records: Array<Record<string, unknown>>) {
-      return docStore.replaceAll(CATALOG_MODELS_COLLECTION, records as never[]);
+    replaceCatalogModelProjections(records: ModelCatalogModelProjectionRecord[]) {
+      return replaceAllRecords(CATALOG_MODELS_COLLECTION, records);
     },
     getCatalogRawDocument(key: string) {
       return docStore.get<Record<string, unknown>>(CATALOG_RAW_COLLECTION, key);
@@ -297,9 +306,18 @@ export type ModelCatalogModelProjectionRecord = {
   model_id: string;
   name: string;
   family?: string;
+  attachment?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;
+  structured_output?: boolean;
+  temperature?: boolean;
+  knowledge?: string;
+  release_date?: string;
+  last_updated?: string;
+  open_weights?: boolean;
+  status?: 'alpha' | 'beta' | 'deprecated';
   capabilities: string[];
+  meta_source?: string;
   modalities?: {
     input?: string[];
     output?: string[];

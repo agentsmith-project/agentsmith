@@ -137,13 +137,21 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   const locale = resolvedParams?.locale ?? 'en-US';
 
   useEffect(() => {
-    params.then((p) =>
-      setResolvedParams({
+    params.then((p) => {
+      const nextParams = {
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
         locale: p.locale,
-      }),
-    );
+      };
+      setResolvedParams((previous) =>
+        previous &&
+        previous.workspace === nextParams.workspace &&
+        previous.project === nextParams.project &&
+        previous.locale === nextParams.locale
+          ? previous
+          : nextParams,
+      );
+    });
   }, [params]);
 
   const { data: rules = [] } = useQuery({

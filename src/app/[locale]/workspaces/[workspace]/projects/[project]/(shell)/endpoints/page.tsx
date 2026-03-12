@@ -20,11 +20,19 @@ export default function EndpointsPage({ params }: EndpointsRouteProps) {
 
   useEffect(() => {
     params.then((p) => {
-      setResolved({
+      const nextParams = {
         workspace: validateWorkspaceParam(p.workspace) ?? null,
         project: validateProjectParam(p.project) ?? null,
         locale: p.locale ?? 'en-US',
-      });
+      };
+      setResolved((previous) =>
+        previous &&
+        previous.workspace === nextParams.workspace &&
+        previous.project === nextParams.project &&
+        previous.locale === nextParams.locale
+          ? previous
+          : nextParams,
+      );
     });
   }, [params]);
 

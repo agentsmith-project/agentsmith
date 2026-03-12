@@ -1175,7 +1175,6 @@ export async function handleRequest(
     const handledAuditUsageRoute = await handleAuditUsageRoute({
       route,
       method,
-      req,
       requestUrl,
       res,
       json,

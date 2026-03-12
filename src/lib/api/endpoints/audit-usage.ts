@@ -13,7 +13,6 @@ import type {
   PaginatedResponse,
 } from '../types';
 import type { ApiClient } from '../client';
-import { API_BASE } from '../client';
 
 export interface UsageDataPoint {
   time_bucket: string;

@@ -58,13 +58,21 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 
   useEffect(() => {
-    params.then((p) =>
-      setResolvedParams({
+    params.then((p) => {
+      const nextParams = {
         workspace: validateWorkspaceParam(p.workspace),
         project: validateProjectParam(p.project),
         locale: p.locale,
-      }),
-    );
+      };
+      setResolvedParams((previous) =>
+        previous &&
+        previous.workspace === nextParams.workspace &&
+        previous.project === nextParams.project &&
+        previous.locale === nextParams.locale
+          ? previous
+          : nextParams,
+      );
+    });
   }, [params]);
 
   // Fetch project data

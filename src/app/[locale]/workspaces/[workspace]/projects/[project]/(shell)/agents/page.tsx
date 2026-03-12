@@ -307,9 +307,19 @@ export default function AgentsPage({ params }: AgentsPageProps) {
 
   useEffect(() => {
     params.then((p) => {
-      const workspace = validateWorkspaceParam(p.workspace);
-      const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project, locale: p.locale });
+      const nextParams = {
+        workspace: validateWorkspaceParam(p.workspace),
+        project: validateProjectParam(p.project),
+        locale: p.locale,
+      };
+      setResolvedParams((previous) =>
+        previous &&
+        previous.workspace === nextParams.workspace &&
+        previous.project === nextParams.project &&
+        previous.locale === nextParams.locale
+          ? previous
+          : nextParams,
+      );
     });
   }, [params]);
 

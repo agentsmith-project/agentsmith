@@ -4409,7 +4409,6 @@ describe('api-entry-node projects routes', () => {
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
     expect(secondTurnStatus).toBe(200);
-    executionSocket.close();
   });
 
   it('synthesizes terminal trace and closes task when notebook execution dispatch fails', async () => {

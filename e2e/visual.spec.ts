@@ -112,6 +112,13 @@ test.describe('Visual - Workspace Pages', () => {
     await expect(authedPage).toHaveScreenshot('projects-list.png', { fullPage: true });
   });
 
+  test('projects empty state', async ({ page }) => {
+    await withAuth(page, 'ws_test', 'test@example.com');
+    await stableNavigate(page, '/en-US/workspaces/ws_test/projects');
+    await expect(page.getByText('No projects yet')).toBeVisible();
+    await expect(page).toHaveScreenshot('projects-empty.png', { fullPage: true });
+  });
+
   test('workspace settings', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
     await expect(authedPage).toHaveScreenshot('workspace-settings.png', { fullPage: true });

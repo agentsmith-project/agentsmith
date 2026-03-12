@@ -18,28 +18,32 @@ function getRequestUserId(request: Request): string {
 }
 
 export const projectHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects', ({ request }) => {
+  http.get('/api/v1/workspaces/:ws/projects', ({ params, request }) => {
     const userId = getRequestUserId(request);
-    const items = projects.map((project) => {
+    const workspaceId = params.ws as string;
+    const items = projects
+      .filter((project) => project.workspace_id === workspaceId)
+      .map((project) => {
       const membership =
         projectMembershipFixtures.find(
-        (m) => m.project_id === project.id && m.user_id === userId,
+          (m) => m.project_id === project.id && m.user_id === userId,
         ) ??
         projectMembershipFixtures.find(
           (m) => m.project_id === project.id && m.role === 'owner',
         );
-      return {
-        ...project,
-        role: membership?.role ?? 'owner',
-        permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
-      };
-    });
+        return {
+          ...project,
+          role: membership?.role ?? 'owner',
+          permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
+        };
+      });
     return HttpResponse.json({ items });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj', ({ params, request }) => {
     const userId = getRequestUserId(request);
+    const workspaceId = params.ws as string;
     const projectId = params.prj as string;
-    const project = projects.find((p) => p.id === projectId) || projectFixtures.find((p) => p.id === projectId);
+    const project = projects.find((p) => p.workspace_id === workspaceId && p.id === projectId);
     const membership =
       projectMembershipFixtures.find(
         (m) => m.project_id === projectId && m.user_id === userId,
@@ -87,13 +91,13 @@ export const projectHandlers = [
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const idx = projects.findIndex((p) => p.id === params.prj);
+    const idx = projects.findIndex((p) => p.workspace_id === params.ws && p.id === params.prj);
     if (idx < 0) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     projects[idx] = { ...projects[idx], ...body, updated_at: new Date().toISOString() };
     return HttpResponse.json(projects[idx]);
   }),
   http.delete('/api/v1/workspaces/:ws/projects/:prj', ({ params }) => {
-    const idx = projects.findIndex((p) => p.id === params.prj);
+    const idx = projects.findIndex((p) => p.workspace_id === params.ws && p.id === params.prj);
     if (idx >= 0) projects.splice(idx, 1);
     return HttpResponse.json({ ok: true });
   }),

@@ -99,10 +99,12 @@ src/
 
 ## Current Surface Baseline
 
-当前治理与可观测相关的产品基线固定为：
+当前系统与项目业务面的产品基线固定为：
 
-1. `Usage`：用户查看自己在各 endpoint 上的用量与限制消耗程度
-2. `Audit`：管理员查看资源、配置、状态与异常事件记录，并完成审查与追溯
+1. `System Admin`：系统超级管理员管理 workspace 生命周期、workspace 数据配置与 workspace IdP 配置
+2. `Workspace Entry`：普通业务用户选择 workspace 或直接进入 workspace URL，再完成 workspace 登录
+3. `Usage`：用户查看自己在各 endpoint 上的用量与限制消耗程度
+4. `Audit`：管理员查看资源、配置、状态与异常事件记录，并完成审查与追溯
 
 补充说明：
 
@@ -111,6 +113,9 @@ src/
 3. 若历史能力仍需保留，应并入 `Audit`
 4. `release` / `engineering gate` / `rollout` 等术语若出现在仓库内，默认指工程流程，不是平台对外能力名；产品内权限约束一律表述为 `permission gate`
 5. 以下对象不再作为前端产品对象继续扩张：`guardrails`、`probe`、`alias`、`combo`、`routing`、`activation`
+6. Authn 由 workspace 绑定的 IdP 提供；Authz 由 AgentSmith 执行
+7. 系统超级管理员入口必须与 workspace 业务登录入口完全分离
+8. workspace 生命周期与底层租户配置只归系统超级管理员管理
 
 ## Design System Reference
 

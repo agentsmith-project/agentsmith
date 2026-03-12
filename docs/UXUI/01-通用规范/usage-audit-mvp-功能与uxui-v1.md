@@ -9,6 +9,11 @@
 
 本文件只定义当前 MVP 对外功能与 UX/UI 原则，不讨论未来扩张形态。
 
+补充边界：
+
+1. 本文件只覆盖 workspace 业务面中的 `Usage` 与 `Audit`。
+2. 系统超级管理员入口、workspace 创建、workspace 配置、workspace 登录流，另见 `system-workspace-identity-entry-mvp-v1.md`。
+
 ## 2. 最小产品对象模型
 
 当前 MVP 只允许前端围绕以下 5 类对象组织功能：

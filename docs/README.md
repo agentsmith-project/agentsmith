@@ -13,6 +13,7 @@
 - [项目宪法](./项目宪法.md)
 - [Usage / Audit MVP 职责边界](./UXUI/01-通用规范/usage-audit-职责边界-v1.md)
 - [Usage / Audit MVP 功能与 UX 定义](./UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md)
+- [System / Workspace Identity & Entry MVP](./UXUI/01-通用规范/system-workspace-identity-entry-mvp-v1.md)
 - [Usage / Audit MVP Engineering Checklist](./user-guides/usage-audit-engineering-checklist.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)

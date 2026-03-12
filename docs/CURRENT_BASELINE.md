@@ -1,6 +1,6 @@
 # Current Baseline (Whitelist)
 
-更新时间：2026-03-11  
+更新时间：2026-03-12  
 状态：`authoritative`
 
 本文件是当前唯一白名单。新人入项、评审、实施、验收都以本清单为准。
@@ -21,17 +21,29 @@
 
 ## 2. 当前 MVP 对外产品面（唯一）
 
-1. `Usage`
+1. `System Admin`
+- 面向系统超级管理员。
+- 唯一目标是管理 workspace 生命周期、workspace 底层配置与 workspace 鉴权配置。
+- 系统超级管理员账户在系统启动前以配置方式注入；默认凭据为 `mbos-admin / mbos-admin`。
+
+2. `Workspace Entry`
+- 面向普通业务用户与 workspace 管理员。
+- 唯一目标是选择 workspace 或直接进入 workspace URL，再完成该 workspace 的登录。
+
+3. `Usage`
 - 面向普通用户。
 - 唯一目标是查看自己在各资源上的当前用量与限制消耗程度。
 
-2. `Audit`
+4. `Audit`
 - 面向管理员。
 - 唯一目标是查看资源、配置、状态与异常事件的记录，并完成审查、追溯与治理判断。
 
 补充约束：
 
+1. `Usage + Audit` 是项目业务面的治理主线，不等于整个系统只有这两个入口。
 2. 任何原本归入 `Runtime` 的用户可见能力，如仍然必要，必须并入 `Audit`。
+3. 系统超级管理员入口必须与 workspace 业务入口分离。
+4. workspace overview 不得继续作为无真实后台支撑的指标大盘。
 
 ## 3. 当前 MVP 最小产品对象模型（唯一）
 
@@ -61,15 +73,33 @@
 
 这些如仍存在，只能作为实现细节，不得继续主导页面结构、导航、文案与用户心智。
 
+系统级对象补充：
+
+1. `SystemAdmin`
+2. `Workspace`
+3. `WorkspaceAdmin`
+4. `IdentityProviderConfig`
+5. `WorkspaceDataConfig`
+
+身份边界补充：
+
+1. Authn 由 workspace 绑定的 IdP 提供；当前只支持 Keycloak。
+2. Authz 由 AgentSmith 执行。
+3. workspace 成员不在 AgentSmith 内独立管理；workspace IdP 中的用户视为合法认证用户。
+4. workspace 管理员只负责 workspace 下 project 创建与 project 管理员分配。
+5. workspace 生命周期与底层租户配置只归系统超级管理员管理。
+6. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
+
 ## 4. 必读文档（必须）
 
 1. [项目宪法](./项目宪法.md)
 2. [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
 3. [Usage / Audit MVP 职责边界](./UXUI/01-通用规范/usage-audit-职责边界-v1.md)
 4. [Usage / Audit MVP 功能与 UX 定义](./UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md)
-5. [Contracts Index](./contracts/README.md)
-6. [User Guides Index](./user-guides/README.md)
-7. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
+5. [System / Workspace Identity & Entry MVP](./UXUI/01-通用规范/system-workspace-identity-entry-mvp-v1.md)
+6. [Contracts Index](./contracts/README.md)
+7. [User Guides Index](./user-guides/README.md)
+8. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 
 ## 5. 设计与交互规范（必须遵循）
 

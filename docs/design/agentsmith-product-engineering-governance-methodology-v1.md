@@ -1,6 +1,6 @@
 # AgentSmith 产品研发与治理方法论 v1
 
-更新时间：2026-03-11  
+更新时间：2026-03-12  
 状态：`current-baseline`
 
 ## 1. 方法论目标
@@ -9,7 +9,7 @@
 
 核心目标：
 
-1. 先定义产品对象与运行时真相
+1. 先定义产品对象、租户边界与身份真相
 2. 再用合同和证据把系统收紧
 3. 最后用控制面把治理闭环落到日常运行
 
@@ -34,11 +34,15 @@ AgentSmith 当前只采用一条治理主线：
 2. 产品能力不提供 DevOps 发布编排、发布门禁或外部发布运营对象。
 3. 当前 MVP 对外产品面只有 `Usage` 与 `Audit`。
 4. 若必须描述底层技术职责，应使用更具体的词，例如 `agent execution`、`notebook execution`、`model request execution`、`model catalog sync`、`project pricing config`；不再用 `Runtime` 这种大词兜底，也不再把它扩张成独立产品面。
+5. 系统超级管理员入口与 workspace 业务入口必须分离。
+6. Authn 由 workspace 绑定的 IdP 提供；Authz 由 AgentSmith 执行。
+7. workspace 生命周期只归系统超级管理员管理。
 
 ## 3. 六层方法框架
 
 1. Product Model
 - 对象先行：`Resource`、`UsageRecord`、`LimitRecord`、`ConfigurationChange`、`SystemEvent`
+- 系统级对象补充：`SystemAdmin`、`Workspace`、`WorkspaceAdmin`、`IdentityProviderConfig`、`WorkspaceDataConfig`
 - 页面是对象的投影，不是系统真相
 - 不把实现细节对象抬升为产品对象
 
@@ -46,6 +50,11 @@ AgentSmith 当前只采用一条治理主线：
 - 只认运行时事实，不认配置想象
 - 关注“请求最终如何被允许/拒绝、为何触发限流/限额、证据是否完整”
 - 这里强调的是系统运行事实，不是独立产品模块；落到实现时应尽量拆成具体职责名，而不是继续使用模糊的 `runtime` 大词
+
+补充身份真相：
+- Authn 来源于 workspace IdP。
+- Authz 来源于 AgentSmith permission token 与授权关系。
+- workspace 成员来源不在 AgentSmith 内重复管理。
 
 3. Contract First
 - 先收紧 OpenAPI/AsyncAPI 与错误语义
@@ -58,6 +67,7 @@ AgentSmith 当前只采用一条治理主线：
 5. Governance by Control Plane
 - 治理是产品能力，不是文档注释
 - 当前 MVP 中治理能力落在 `Audit`，不是多控制台并存
+- 系统级 workspace 生命周期与配置管理落在独立系统管理面，不与项目业务治理面混杂
 
 6. Operational Closure
 - 每次问题必须进入 owner/SLA/处置闭环

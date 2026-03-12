@@ -4,6 +4,8 @@
 
 将当前 MVP 的对外产品面收敛为 `Usage` 与 `Audit` 两类，并明确其目标、角色、动作和禁止事项，防止未来功能蔓延与术语漂移。
 
+本文件只定义 workspace 业务面中的 `Usage` 与 `Audit`。系统超级管理员入口、workspace 登录入口和 workspace 配置模型，另见 `system-workspace-identity-entry-mvp-v1.md`。
+
 补充约束（2026-03-11）：
 
 2. 历史上归入 `Runtime` 的用户可见状态记录、配置记录与诊断信息，如仍然保留，必须并入 `Audit`。

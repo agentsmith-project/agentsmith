@@ -9,6 +9,8 @@ Clarify the boundary between authentication data and authorization enforcement t
 1. `Auth token`
 - Carries caller identity and claims.
 - Typical fields: subject/user id, expiration, optional permission claims.
+- In current MVP, Authn comes from the workspace-bound IdP.
+- Current supported workspace IdP: `Keycloak`.
 
 2. `Permission point`
 - Canonical action identifier.
@@ -26,6 +28,37 @@ Clarify the boundary between authentication data and authorization enforcement t
 4. `Backend enforcement`
 - Must independently validate token + permission policy.
 - Must return deterministic `401/403` and stable error code schema.
+
+## Authn / Authz Boundary
+
+1. Authn is provided by IdP.
+- System super admin uses a system-level login entry.
+- System super admin credentials are injected at system startup; default credentials are `mbos-admin / mbos-admin`.
+- All non-system users must first enter a workspace context, then authenticate with that workspace's IdP.
+
+2. Authz is provided by AgentSmith.
+- AgentSmith decides:
+  - system super admin privileges
+  - workspace admin privileges
+  - project admin privileges
+  - permission token checks
+
+3. Workspace membership source is external.
+- Users are sourced from the workspace-bound IdP.
+- AgentSmith does not manage workspace member lifecycle as a separate identity system.
+
+## System vs Workspace Roles
+
+1. `System super admin`
+- Only role allowed to manage workspace lifecycle.
+- Can create/configure/disable/delete workspace.
+- Can configure workspace data config and workspace IdP config.
+
+2. `Workspace admin`
+- Can create projects in that workspace.
+- Can assign project admins.
+- Cannot manage workspace lifecycle.
+- Cannot manage workspace IdP or tenant-isolation configuration.
 
 ## Decision Rule
 

@@ -32,6 +32,7 @@ import {
   getAuditActorLabel,
   getAuditErrorMessageLabel,
   getAuditEventCategory,
+  getAuditResourceLabel,
   getAuditResourceIdLabel,
   getAuditResourceTypeLabel,
   getAuditSummary,
@@ -51,11 +52,6 @@ function formatTimestamp(timestamp: string): string {
     second: '2-digit',
     hour12: false,
   }).replace(/(\d+)\/(\d+)\/(\d+), (\d+):(\d+):(\d+)/, '$3-$1-$2 $4:$5:$6');
-}
-
-function truncateId(id: string, length: number = 8): string {
-  if (id.length <= length) return id;
-  return `${id.substring(0, length)}...`;
 }
 
 export interface AuditTableProps {
@@ -158,7 +154,6 @@ export function AuditTable({
         cell: (info) => {
           const event = info.row.original;
           const actorType = event.actor_type;
-          const actorId = truncateId(event.actor_id, 8);
           const variant =
             actorType === 'user' ? 'default' : actorType === 'agent' ? 'secondary' : 'outline';
           return (
@@ -166,7 +161,6 @@ export function AuditTable({
               <Badge variant={variant} className="text-xs">
                 {getAuditActorLabel(actorType, t)}
               </Badge>
-              <span className="text-sm text-foreground">{actorId}</span>
             </div>
           );
         },
@@ -177,6 +171,7 @@ export function AuditTable({
         cell: (info) => {
           const event = info.row.original;
           const resourceType = event.resource_type;
+          const resourceLabel = getAuditResourceLabel(event);
           const resourceId = getAuditResourceIdLabel(event);
           if (!resourceType && !resourceId) return <span className="text-tertiary">—</span>;
           return (
@@ -186,16 +181,16 @@ export function AuditTable({
                   {getAuditResourceTypeLabel(resourceType)}
                 </Badge>
               )}
-              {resourceId && (
+              {resourceLabel && (
                 <TooltipProvider>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span className="text-sm text-foreground cursor-help">
-                        {truncateId(resourceId, 8)}
+                        {resourceLabel}
                       </span>
                     </TooltipTrigger>
                     <TooltipContent>
-                      <p>{resourceId}</p>
+                      <p>{resourceLabel}</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>

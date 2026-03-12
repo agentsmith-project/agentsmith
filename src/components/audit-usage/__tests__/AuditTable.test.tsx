@@ -176,7 +176,7 @@ describe('AuditTable', () => {
 
     expect(screen.getByText('User Updated Resource Policy on Model Endpoint ep_1 and failed')).toBeInTheDocument();
     expect(screen.getByText('Resource Policy')).toBeInTheDocument();
-    expect(screen.getByText('ep_1')).toBeInTheDocument();
+    expect(screen.getByText('Model Endpoint ep_1')).toBeInTheDocument();
     expect(screen.getByText('Invalid rate limit rule')).toBeInTheDocument();
   });
 

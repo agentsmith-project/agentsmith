@@ -27,6 +27,7 @@ const ACTION_LABELS: Record<string, string> = {
   members_update: 'Updated Member Access',
   'resource_policy.spending_limit_exceeded': 'Hit Spending Limit',
   'resource_policy.rate_limit_exceeded': 'Hit Rate Limit',
+  'resource_policy.updated': 'Updated Resource Policy',
   'resource_policy.update': 'Updated Resource Policy',
   resource_policy_update: 'Updated Resource Policy',
   credential_create: 'Created Credential',
@@ -60,6 +61,7 @@ const ACTION_LABELS: Record<string, string> = {
 
 const ERROR_CODE_LABELS: Record<string, string> = {
   FORBIDDEN: 'Permission Denied',
+  VALIDATION_ERROR: 'Validation Error',
   RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED: 'Spending Limit Exceeded',
   RESOURCE_POLICY_RATE_LIMIT_EXCEEDED: 'Rate Limit Exceeded',
   UPSTREAM_401: 'Upstream Authentication Failed',
@@ -135,10 +137,40 @@ export function getAuditResourceTypeLabel(resourceType?: string): string | undef
 }
 
 export function getAuditResourceLabel(event: AuditEvent): string {
+  if (
+    event.resource_type === 'resource_policy'
+    && event.metadata_json
+    && typeof event.metadata_json === 'object'
+  ) {
+    const governedResourceType = typeof event.metadata_json.governed_resource_type === 'string'
+      ? getAuditResourceTypeLabel(event.metadata_json.governed_resource_type)
+      : undefined;
+    const governedResourceId = typeof event.metadata_json.governed_resource_id === 'string'
+      ? event.metadata_json.governed_resource_id
+      : undefined;
+    if (governedResourceType && governedResourceId) {
+      return `${governedResourceType} ${governedResourceId}`;
+    }
+    if (governedResourceId) {
+      return governedResourceId;
+    }
+  }
   if (event.resource_id) {
     return event.resource_id;
   }
   return getAuditResourceTypeLabel(event.resource_type) ?? 'System';
+}
+
+export function getAuditResourceIdLabel(event: AuditEvent): string | undefined {
+  if (
+    event.resource_type === 'resource_policy'
+    && event.metadata_json
+    && typeof event.metadata_json === 'object'
+    && typeof event.metadata_json.governed_resource_id === 'string'
+  ) {
+    return event.metadata_json.governed_resource_id;
+  }
+  return event.resource_id;
 }
 
 export function getAuditActorLabel(actorType: string | undefined, t: AuditSummaryTranslator): string {

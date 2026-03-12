@@ -22,6 +22,7 @@ import {
   getAuditActorLabel,
   getAuditEventCategory,
   getAuditErrorLabel,
+  getAuditResourceIdLabel,
   getAuditResourceTypeLabel,
   getAuditSummary,
 } from './audit-event-presenter';
@@ -89,6 +90,7 @@ export function AuditDetailDrawer({
     error_code: event.error_code,
     ...(event.metadata_json ?? {}),
   });
+  const resourceIdLabel = getAuditResourceIdLabel(event);
   const membersHref = basePath && event.end_user_id
     ? `${basePath}/members${buildSharedOpsFilterQuery({}, {
       member_tab: 'people',
@@ -198,9 +200,9 @@ export function AuditDetailDrawer({
                 <span className="text-sm text-tertiary">{t('table.resource')}</span>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline">{getAuditResourceTypeLabel(event.resource_type)}</Badge>
-                  {event.resource_id && (
+                  {resourceIdLabel && (
                     <span className="text-sm text-foreground font-mono">
-                      {event.resource_id}
+                      {resourceIdLabel}
                     </span>
                   )}
                 </div>

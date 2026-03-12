@@ -31,6 +31,7 @@ import {
   getAuditActionLabel,
   getAuditActorLabel,
   getAuditEventCategory,
+  getAuditResourceIdLabel,
   getAuditResourceTypeLabel,
   getAuditSummary,
   type AuditEventCategory,
@@ -175,7 +176,7 @@ export function AuditTable({
         cell: (info) => {
           const event = info.row.original;
           const resourceType = event.resource_type;
-          const resourceId = event.resource_id;
+          const resourceId = getAuditResourceIdLabel(event);
           if (!resourceType && !resourceId) return <span className="text-tertiary">—</span>;
           return (
             <div className="flex items-center gap-2">

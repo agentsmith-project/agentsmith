@@ -146,4 +146,36 @@ describe('AuditTable', () => {
     expect(screen.getByText('Governance Incident')).toBeInTheDocument();
     expect(screen.getByText('Service Account Failed Usage Report Delivery on incident_1 and failed')).toBeInTheDocument();
   });
+
+  it('uses governed resource details for resource policy updates', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_5',
+            timestamp: '2026-03-01T04:00:00.000Z',
+            workspace_id: 'ws_1',
+            project_id: 'proj_1',
+            actor_type: 'user',
+            actor_id: 'user_5',
+            action: 'resource_policy.updated',
+            resource_type: 'resource_policy',
+            resource_id: 'endpoint:ep_1',
+            result: 'error',
+            request_id: 'req_policy_invalid',
+            error_code: 'VALIDATION_ERROR',
+            error_message: 'rate_limits_rule_key_invalid',
+            metadata_json: {
+              governed_resource_type: 'endpoint',
+              governed_resource_id: 'ep_1',
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('User Updated Resource Policy on Model Endpoint ep_1 and failed')).toBeInTheDocument();
+    expect(screen.getByText('Resource Policy')).toBeInTheDocument();
+    expect(screen.getByText('ep_1')).toBeInTheDocument();
+  });
 });

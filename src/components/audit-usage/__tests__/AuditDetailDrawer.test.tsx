@@ -161,4 +161,39 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('Upstream Rate Limited')).toBeInTheDocument();
     expect(screen.getAllByText('Governance Incident').length).toBeGreaterThan(0);
   });
+
+  it('shows governed resource labels for resource policy update failures', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_4',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'resource_policy.updated',
+          resource_type: 'resource_policy',
+          resource_id: 'endpoint:ep_1',
+          result: 'error',
+          error_code: 'VALIDATION_ERROR',
+          error_message: 'rate_limits_rule_key_invalid',
+          request_id: 'req_policy_invalid',
+          metadata_json: {
+            governed_resource_type: 'endpoint',
+            governed_resource_id: 'ep_1',
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Updated Resource Policy on Model Endpoint ep_1 and failed',
+    );
+    expect(screen.getAllByText('Resource Policy').length).toBeGreaterThan(0);
+    expect(screen.getByText('ep_1')).toBeInTheDocument();
+    expect(screen.getByText('Validation Error')).toBeInTheDocument();
+  });
 });

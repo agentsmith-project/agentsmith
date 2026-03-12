@@ -290,13 +290,11 @@ export function UsageView({
       <section className="space-y-3">
         <div>
           <p className="text-lg font-semibold text-foreground">{t('view.trend_section_title')}</p>
-          <p className="mt-1 text-sm text-tertiary">{t('view.trend_section_subtitle')}</p>
         </div>
         <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__trend">
           <div className="mb-4 flex items-center justify-between">
             <div>
               <p className="text-sm font-semibold text-foreground">{t('view.trend_title', { hours: periodHours })}</p>
-              <p className="mt-1 text-xs text-tertiary">{t('view.trend_focus_note')}</p>
             </div>
             <div className="flex items-center gap-2">
               <Button

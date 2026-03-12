@@ -513,15 +513,6 @@ export interface UsageFactRecord {
   metadata_json?: Record<string, unknown>;
 }
 
-export interface UsageKPI {
-  requests_today: number;
-  errors_today: number;
-  tokens_today?: number;
-  requests_yesterday?: number; // optional, for trend
-  errors_yesterday?: number;
-  tokens_yesterday?: number; // optional, for trend
-}
-
 export interface AuditListParams extends PaginationParams {
   start_time: string; // ISO 8601, 必选
   end_time: string; // ISO 8601, 必选

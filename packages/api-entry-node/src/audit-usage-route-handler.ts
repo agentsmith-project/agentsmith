@@ -387,20 +387,6 @@ export async function handleAuditUsageRoute({
     return true;
   }
 
-  if (route.kind === 'usageKpi' && method === 'GET') {
-    const range = requireTimeRange(requestUrl, json, res);
-    if (range === true) return true;
-    const payload = await getUsageKpi(deps.docStore, {
-      workspaceId: route.workspaceId,
-      projectId: route.projectId,
-      startTime: range.start.toISOString(),
-      endTime: range.end.toISOString(),
-      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
-    });
-    json(res, 200, payload);
-    return true;
-  }
-
   if (route.kind === 'usageExport' && method === 'GET') {
     const range = requireTimeRange(requestUrl, json, res);
     if (range === true) return true;

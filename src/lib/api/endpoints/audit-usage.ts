@@ -8,7 +8,6 @@ import type {
   AuditEvent,
   UsageFactRecord,
   UsageRecord,
-  UsageKPI,
   AuditListParams,
   UsageListParams,
   PaginatedResponse,
@@ -613,27 +612,6 @@ export class UsageAPI {
       endpoints,
       project_summary: projectSummary,
     };
-  }
-
-  /**
-   * Get usage KPI summary
-   */
-  async getKPI(
-    workspaceId: string,
-    projectId: string,
-    startTime?: string,
-    endTime?: string,
-    endUserId?: string,
-  ): Promise<UsageKPI> {
-    const searchParams = new URLSearchParams();
-    if (startTime) searchParams.set('start_time', startTime);
-    if (endTime) searchParams.set('end_time', endTime);
-    if (endUserId) searchParams.set('end_user_id', endUserId);
-
-    const query = searchParams.toString();
-    return this.client.get<UsageKPI>(
-      `/workspaces/${workspaceId}/projects/${projectId}/usage/kpi${query ? `?${query}` : ''}`,
-    );
   }
 
   /**

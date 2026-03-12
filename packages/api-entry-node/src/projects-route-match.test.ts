@@ -454,13 +454,6 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/kpi'),
-    ).toEqual({
-      kind: 'usageKpi',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/usage/export'),
     ).toEqual({
       kind: 'usageExport',

@@ -39,10 +39,6 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/facts",
     "method": "get"
   },
-  "usageKpi": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi",
-    "method": "get"
-  },
   "usageExport": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/export",
     "method": "get"

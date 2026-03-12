@@ -104,12 +104,3 @@ export const usageRecordFixtures: UsageRecord[] = [
     tokens: 156000,
   },
 ];
-
-// Aggregated KPI data for overview
-export const usageKPI = {
-  requests_today: 4523,
-  errors_today: 23,
-  tokens_today: 2456000,
-  requests_yesterday: 3890,
-  errors_yesterday: 18,
-};

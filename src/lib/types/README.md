@@ -13,7 +13,7 @@ This directory contains frontend-specific type definitions that are not part of 
 - Types that must match backend contracts exactly
 
 **Examples**:
-- `UsageKPI`, `UsageRecord`, `AuditEvent` (from backend API)
+- `UsageRecord`, `AuditEvent` (from backend API)
 - `FileItemWithAIReady` (matches backend schema)
 - `PaginationParams`, `PaginatedResponse` (API contract)
 

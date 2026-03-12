@@ -88,14 +88,6 @@ export type UsageFactsQuery = Pick<
   pageSize: number;
 };
 
-export type UsageKpiQuery = {
-  workspaceId: string;
-  projectId: string;
-  startTime: string;
-  endTime: string;
-  endUserId?: string | null;
-};
-
 export type UsageRecord = {
   id: string;
   time_bucket: string;
@@ -141,15 +133,6 @@ export type UsageFactListItem = {
     attempts?: Array<Record<string, unknown>>;
   };
   metadata_json?: Record<string, unknown>;
-};
-
-export type UsageKpi = {
-  requests_today: number;
-  errors_today: number;
-  tokens_today?: number;
-  requests_yesterday?: number;
-  errors_yesterday?: number;
-  tokens_yesterday?: number;
 };
 
 export type UsageTimeseriesPoint = {
@@ -848,54 +831,6 @@ export async function aggregateUsageRecords(
     page: query.page,
     page_size: query.pageSize,
     has_more: startIndex + query.pageSize < rows.length,
-  };
-}
-
-export async function getUsageKpi(
-  docStore: JsonDocStorePort,
-  query: UsageKpiQuery,
-): Promise<UsageKpi> {
-  const facts = await listUsageFacts(docStore, {
-    workspaceId: query.workspaceId,
-    projectId: query.projectId,
-    startTime: query.startTime,
-    endTime: query.endTime,
-    endUserId: query.endUserId,
-  });
-  const now = new Date();
-  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000);
-  const yesterdayStart = new Date(todayStart.getTime() - 24 * 60 * 60 * 1000);
-  let requestsToday = 0;
-  let errorsToday = 0;
-  let tokensToday = 0;
-  let requestsYesterday = 0;
-  let errorsYesterday = 0;
-  let tokensYesterday = 0;
-  for (const fact of facts) {
-    const ms = parseIsoMillis(fact.timestamp);
-    if (!Number.isFinite(ms)) continue;
-    const reqs = fact.requests ?? 1;
-    const tokens = isRequestsOnlyUsageResourceType(fact.resource_type) ? 0 : (fact.tokens_total ?? 0);
-    if (ms >= todayStart.getTime() && ms < tomorrowStart.getTime()) {
-      requestsToday += reqs;
-      if (fact.result === 'error') errorsToday += reqs;
-      tokensToday += tokens;
-      continue;
-    }
-    if (ms >= yesterdayStart.getTime() && ms < todayStart.getTime()) {
-      requestsYesterday += reqs;
-      if (fact.result === 'error') errorsYesterday += reqs;
-      tokensYesterday += tokens;
-    }
-  }
-  return {
-    requests_today: requestsToday,
-    errors_today: errorsToday,
-    tokens_today: tokensToday || undefined,
-    requests_yesterday: requestsYesterday,
-    errors_yesterday: errorsYesterday,
-    tokens_yesterday: tokensYesterday || undefined,
   };
 }
 
@@ -1844,14 +1779,7 @@ export async function exportUsageData(
     };
   }
 
-  const [kpi, records, runtimeObservability, operationsSummary] = await Promise.all([
-    getUsageKpi(docStore, {
-      workspaceId: query.workspaceId,
-      projectId: query.projectId,
-      startTime: query.startTime,
-      endTime: query.endTime,
-      endUserId: query.endUserId ?? null,
-    }),
+  const [records, runtimeObservability, operationsSummary] = await Promise.all([
     aggregateUsageRecords(docStore, {
       ...baseFactsQuery,
       groupBy: 'day',
@@ -1891,7 +1819,6 @@ export async function exportUsageData(
         result: query.result ?? null,
         error_class: query.errorClass ?? null,
       },
-      kpi,
       records: records.items,
       facts: usageFacts.items,
       records_summary: runtimeObservability,

@@ -4,10 +4,9 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { UsageKPI, UsageRecord } from '@/lib/api/types';
+import type { UsageRecord } from '@/lib/api/types';
 
 export interface UsageViewProps {
-  kpi?: UsageKPI | null;
   records: UsageRecord[];
   loading?: boolean;
   periodHours: 24 | 48;
@@ -83,7 +82,6 @@ function getProgressTone(remainingPct: number): {
 }
 
 export function UsageView({
-  kpi,
   records,
   loading = false,
   periodHours,

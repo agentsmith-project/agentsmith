@@ -43,7 +43,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | members | view/manage members/templates/groups | `project:manage` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/spending-limit-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view/update/delete project | `project:manage` | `GET/PATCH/DELETE /projects/{id}` | page-level permission denied or save/delete disabled |
 | audit | view audit data | `project:manage` | `GET /audit` | component-level permission denied |
-| usage | view own usage data (read-only) | `project:endpoint:use` | `GET /usage`, `GET /usage/kpi`, `GET /usage/facts` | component-level permission denied |
+| usage | view own usage data (read-only) | `project:endpoint:use` | `GET /usage`, `GET /usage/facts` | component-level permission denied |
 | use guide | view API access handbook | `project:endpoint:use` | N/A (static guidance page) | page-level permission denied |
 
 ## Notes for Backend Team

@@ -15,7 +15,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `Audit` (`/audit`)
   - persisted audit events with paging/filtering/sorting
   - first-stage coverage: notebook task lifecycle/input changes/artifacts, chat message/attachment/run lifecycle
-- `Usage` (`/usage`, `/usage/kpi`)
+- `Usage` (`/usage`)
   - persisted usage facts aggregated by `day|hour`
   - first-stage coverage: notebook task runs, chat runs, endpoint proxy requests
 - `Members`

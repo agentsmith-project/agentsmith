@@ -186,7 +186,6 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
 
   if (
     route.kind === 'usage'
-    || route.kind === 'usageKpi'
     || route.kind === 'usageTimeseries'
     || route.kind === 'usageFacts'
     || route.kind === 'usageRecordsSummary'

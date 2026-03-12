@@ -1,6 +1,6 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
-import { usageRecordFixtures, usageKPI } from '../fixtures/usage';
+import { usageRecordFixtures } from '../fixtures/usage';
 import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
 import type { UsageReportDelivery, UsageReportEvidence, UsageReportSchedule } from '@/lib/api/endpoints/audit-usage';
 import type { OrganizationActionServerRecord, OrganizationActionStatus } from '@/lib/stores/organization-actions-store';
@@ -1748,7 +1748,6 @@ export const usageHandlers = [
       has_more: false,
     });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/kpi', () => HttpResponse.json(usageKPI)),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/timeseries', ({ request }) => {
     const url = new URL(request.url);
     const resourceType = url.searchParams.get('resource_type');

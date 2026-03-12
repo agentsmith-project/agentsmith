@@ -2266,22 +2266,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/kpi": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_usageKpi"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/usage/operations-summary": {
         parameters: {
             query?: never;
@@ -8309,42 +8293,6 @@ export interface operations {
                         page: number;
                         page_size: number;
                         total: number;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    get_usageKpi: {
-        parameters: {
-            query: {
-                end_time: string;
-                end_user_id?: string;
-                start_time: string;
-            };
-            header?: never;
-            path: {
-                projectId: string;
-                workspaceId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        errors_today: number;
-                        errors_yesterday?: number;
-                        requests_today: number;
-                        requests_yesterday?: number;
-                        tokens_today?: number;
-                        tokens_yesterday?: number;
                     };
                 };
             };

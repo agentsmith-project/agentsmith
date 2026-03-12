@@ -5,7 +5,7 @@ import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { UsageView } from './UsageView';
-import { useLimitsSummary, useUsageKPI, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useLimitsSummary, useUsageRecords } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -49,15 +49,6 @@ export function UsagePage({
       end_time: end.toISOString(),
     };
   }, [periodHours]);
-
-  const { data: kpiData, isLoading: kpiLoading } = useUsageKPI(
-    workspaceId,
-    projectId,
-    usageRange.start_time,
-    usageRange.end_time,
-    effectiveEndUserId,
-    { enabled: canReadUsage },
-  );
 
   const usageParams = React.useMemo<UsageListParams>(
     () => ({
@@ -185,8 +176,8 @@ export function UsagePage({
           title={t('title')}
           subtitle={t('subtitle')}
           actions={(
-            <Button variant="outline" onClick={handleRefresh} disabled={usageLoading || kpiLoading}>
-              <RefreshCw className={`mr-2 h-4 w-4 ${usageLoading || kpiLoading ? 'animate-spin' : ''}`} />
+            <Button variant="outline" onClick={handleRefresh} disabled={usageLoading}>
+              <RefreshCw className={`mr-2 h-4 w-4 ${usageLoading ? 'animate-spin' : ''}`} />
               {commonT('refresh')}
             </Button>
           )}
@@ -201,9 +192,8 @@ export function UsagePage({
       )}
     >
       <UsageView
-        kpi={kpiData}
         records={usageData?.items ?? []}
-        loading={usageLoading || kpiLoading}
+        loading={usageLoading}
         periodHours={periodHours}
         onPeriodChange={setPeriodHours}
         endpointOptions={endpointOptions}

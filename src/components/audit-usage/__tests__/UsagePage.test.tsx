@@ -24,7 +24,6 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
-  useUsageKPI: () => ({ data: { requests_today: 10, errors_today: 1, tokens_today: 100 }, isLoading: false }),
   useUsageRecords: () => ({
     data: {
       items: [

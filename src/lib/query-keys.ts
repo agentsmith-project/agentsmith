@@ -193,13 +193,6 @@ export const queryKeys = {
   /** Usage stats */
   usage: {
     _def: ['usage'] as const,
-    kpi: (
-      workspaceId: string,
-      projectId: string,
-      startTime: string,
-      endTime: string,
-      endUserId?: string,
-    ) => ['usage-kpi', workspaceId, projectId, startTime, endTime, endUserId] as const,
     list: (workspaceId: string, projectId: string, params?: object) =>
       ['usage', workspaceId, projectId, params] as const,
     facts: (workspaceId: string, projectId: string, params?: object) =>

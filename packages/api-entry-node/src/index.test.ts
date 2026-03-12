@@ -3169,14 +3169,6 @@ describe('api-entry-node projects routes', () => {
     };
     expect(usageRateBody.items.some((item) => item.resource_type === 'endpoint' && item.requests >= 1)).toBe(true);
 
-    const usageKpiRateRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/usage/kpi?start_time=${encodeURIComponent(usageStart)}&end_time=${encodeURIComponent(usageEnd)}`,
-    );
-    expect(usageKpiRateRes.status).toBe(200);
-    const usageKpiRateBody = (await usageKpiRateRes.json()) as { errors_today: number };
-    expect(usageKpiRateBody.errors_today).toBeGreaterThanOrEqual(1);
-
     const resetPolicyRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/resources/endpoint/${endpoint.id}/policy`,
@@ -8028,7 +8020,7 @@ describe('api-entry-node projects routes', () => {
     expect(page2Body.items.map((item) => item.content)).toEqual(['m3']);
   });
 
-  it('serves aggregated usage and usage kpi endpoints from persisted usage facts', async () => {
+  it('serves aggregated usage endpoints from persisted usage facts', async () => {
     const deps = createDefaultNodeApiDeps();
     await recordUsageFact(deps.docStore, {
       workspace_id: 'ws_default',
@@ -8072,22 +8064,6 @@ describe('api-entry-node projects routes', () => {
     const { baseUrl } = startServerWithDeps(deps);
     const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-
-    const kpiRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/usage/kpi?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}`,
-    );
-    expect(kpiRes.status).toBe(200);
-    const kpi = (await kpiRes.json()) as {
-      requests_today: number;
-      errors_today: number;
-      tokens_today: number;
-    };
-    expect(typeof kpi.requests_today).toBe('number');
-    expect(typeof kpi.errors_today).toBe('number');
-    expect(kpi.requests_today).toBe(3);
-    expect(kpi.errors_today).toBe(1);
-    expect(kpi.tokens_today).toBe(54);
 
     const usageRes = await apiFetch(
       baseUrl,

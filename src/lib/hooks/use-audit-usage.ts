@@ -35,30 +35,6 @@ export function useAuditEvents(
 }
 
 /**
- * Hook to query usage KPI summary
- */
-export function useUsageKPI(
-  workspaceId: string,
-  projectId: string,
-  startTime?: string,
-  endTime?: string,
-  endUserId?: string,
-  options?: { enabled?: boolean }
-) {
-  const usageAPI = new UsageAPI(getApiClient());
-  const enabled =
-    (options?.enabled ?? true) && !!workspaceId && !!projectId;
-
-  return useQuery({
-    queryKey: queryKeys.usage.kpi(workspaceId, projectId, startTime || '', endTime || '', endUserId),
-    queryFn: () =>
-      usageAPI.getKPI(workspaceId, projectId, startTime, endTime, endUserId),
-    enabled,
-    staleTime: 30000, // 30 seconds
-  });
-}
-
-/**
  * Hook to query usage records
  */
 export function useUsageRecords(

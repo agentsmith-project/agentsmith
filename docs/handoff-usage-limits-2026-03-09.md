@@ -38,9 +38,9 @@ The user expectation is:
 The current `Usage` implementation now has three data layers:
 
 1. Usage facts for the current user
-   - Hook: `useUsageKPI`, `useUsageRecords`
+   - Hook: `useUsageRecords`
    - File: `src/lib/hooks/use-audit-usage.ts`
-   - Purpose: request counts, token counts, simple trend
+   - Purpose: simple request trend and per-resource usage history
 
 2. Limit summary projection from backend
    - Hook: `useLimitsSummary`

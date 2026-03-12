@@ -70,6 +70,12 @@ test.describe('Visual - Public Pages', () => {
 // ─── Workspace Pages ────────────────────────────────────────────────────────
 
 test.describe('Visual - Workspace Pages', () => {
+  test('workspace overview', async ({ authedPage }) => {
+    await stableNavigate(authedPage, '/en-US/workspaces/overview');
+    await expect(authedPage.getByTestId('workspace-overview__heading')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-overview.png', { fullPage: true });
+  });
+
   test('workspace selection', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/login/workspace');
     await expect(authedPage).toHaveScreenshot('workspace-select.png', { fullPage: true });
@@ -123,6 +129,12 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('agents.png', { fullPage: true });
   });
 
+  test('alerts', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('alerts'));
+    await expect(authedPage.getByTestId('alerts__open-audit')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('alerts.png', { fullPage: true });
+  });
+
   test('endpoints', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('endpoints'));
     await expect(authedPage).toHaveScreenshot('endpoints.png', { fullPage: true });
@@ -153,6 +165,12 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('usage.png', { fullPage: true });
   });
 
+  test('use guide', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('use-guide'));
+    await expect(authedPage.getByTestId('use-guide__page')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('use-guide.png', { fullPage: true });
+  });
+
   test('resource policy', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('resource-policy'));
     await expect(authedPage).toHaveScreenshot('resource-policy.png', { fullPage: true });
@@ -177,6 +195,12 @@ test.describe('Visual - User Pages', () => {
   test('api keys', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/user/api-keys');
     await expect(authedPage).toHaveScreenshot('api-keys.png', { fullPage: true });
+  });
+
+  test('third party accounts', async ({ authedPage }) => {
+    await stableNavigate(authedPage, '/en-US/user/third-party-accounts');
+    await expect(authedPage.getByTestId('third-party-accounts__create-btn')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('third-party-accounts.png', { fullPage: true });
   });
 });
 
@@ -234,6 +258,14 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByTestId('api-keys__create-btn').click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-create-api-key.png');
+  });
+
+  test('create third party account dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, '/en-US/user/third-party-accounts');
+    await authedPage.getByTestId('third-party-accounts__create-btn').click();
+    await expect(authedPage.getByTestId('third-party-accounts__dialog')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('dialog-create-third-party-account.png');
   });
 
   test('members templates - project groups tab', async ({ authedPage }) => {

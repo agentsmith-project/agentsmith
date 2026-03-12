@@ -95,6 +95,12 @@ test.describe('Visual - Workspace Pages', () => {
     await expect(authedPage).toHaveScreenshot('workspace-select.png', { fullPage: true });
   });
 
+  test('workspace login', async ({ page }) => {
+    await stableNavigate(page, `/en-US/workspaces/${WS_ID}/login`);
+    await expect(page.getByTestId('workspace-login__heading')).toBeVisible();
+    await expect(page).toHaveScreenshot('workspace-login.png', { fullPage: true });
+  });
+
   test('projects list', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/projects`);
     await expect(authedPage).toHaveScreenshot('projects-list.png', { fullPage: true });

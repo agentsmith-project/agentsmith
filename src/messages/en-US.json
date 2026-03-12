@@ -274,11 +274,8 @@
     "overview_updated_at": "Updated: {value}",
     "overview_open_workspace": "Open workspace",
     "workspace_home_eyebrow": "Workspace business area",
-    "workspace_home_subtitle": "Use this workspace to open projects and continue into the business surfaces you need.",
     "workspace_home_projects_title": "Projects",
-    "workspace_home_projects_description": "Open the project list and continue into the project business surfaces you need.",
     "workspace_home_admin_title": "Workspace administration",
-    "workspace_home_admin_description": "Create projects and assign project administrators for this workspace.",
     "workspace_home_open_settings": "Open workspace settings",
     "workspace_home_denied_title": "Workspace access denied",
     "workspace_home_denied_description": "Your current account cannot open this workspace."

@@ -66,7 +66,6 @@ export default function WorkspaceHomePage() {
                 <h1 className="text-2xl font-semibold text-foreground" data-testid="workspace-home__heading">
                   {workspaceName}
                 </h1>
-                <p className="text-sm text-tertiary">{t('workspace_home_subtitle')}</p>
               </div>
 
               <div className="rounded-lg border border-subtle bg-bg-base/20 p-4">
@@ -83,7 +82,6 @@ export default function WorkspaceHomePage() {
                 >
                   <div className="space-y-1">
                     <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_projects_title')}</h2>
-                    <p className="text-sm text-tertiary">{t('workspace_home_projects_description')}</p>
                   </div>
                   <Link
                     href={`${workspaceBasePath}/projects`}
@@ -102,7 +100,6 @@ export default function WorkspaceHomePage() {
                   >
                     <div className="space-y-1">
                       <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_admin_title')}</h2>
-                      <p className="text-sm text-tertiary">{t('workspace_home_admin_description')}</p>
                     </div>
                     <Link
                       href={`${workspaceBasePath}/settings`}

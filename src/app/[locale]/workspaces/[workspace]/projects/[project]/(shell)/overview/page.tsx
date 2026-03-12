@@ -59,7 +59,7 @@ export default function OverviewPage() {
 
   return (
     <PageState state="success">
-      <PageLayout header={<PageHeader title={tNav('overview')} subtitle={tGuide('subtitle')} />}>
+      <PageLayout header={<PageHeader title={tNav('overview')} />}>
         <div className="space-y-4" data-testid="project-hub__page">
           <Link
             href={workspaceBasePath}

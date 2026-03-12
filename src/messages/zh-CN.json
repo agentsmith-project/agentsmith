@@ -276,11 +276,8 @@
     "overview_updated_at": "最近更新：{value}",
     "overview_open_workspace": "进入工作区",
     "workspace_home_eyebrow": "工作区业务入口",
-    "workspace_home_subtitle": "从这里进入当前工作区的项目，并继续打开需要的业务功能。",
     "workspace_home_projects_title": "项目",
-    "workspace_home_projects_description": "打开项目列表，并继续进入需要的项目业务功能。",
     "workspace_home_admin_title": "工作区管理",
-    "workspace_home_admin_description": "为当前工作区创建项目并分配项目管理员。",
     "workspace_home_open_settings": "打开工作区设置",
     "workspace_home_denied_title": "无权访问工作区",
     "workspace_home_denied_description": "当前账号无法打开此工作区。"

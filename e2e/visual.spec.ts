@@ -49,6 +49,15 @@ async function stableNavigate(page: Page, path: string) {
   await page.waitForTimeout(500); // Let animations finish
 }
 
+async function loginAsSystemAdmin(page: Page) {
+  await stableNavigate(page, '/en-US/system/login');
+  await page.getByTestId('system-login__username').fill('mbos-admin');
+  await page.getByTestId('system-login__password').fill('mbos-admin');
+  await page.getByTestId('system-login__submit').click();
+  await page.waitForURL(/\/en-US\/system\/workspaces/, { timeout: 15_000 });
+  await waitForPageReady(page);
+}
+
 function projectPath(section: string) {
   return `/en-US/workspaces/${WS_ID}/projects/${PROJECT_ID}/${section}`;
 }
@@ -64,6 +73,11 @@ test.describe('Visual - Public Pages', () => {
   test('join page', async ({ page }) => {
     await stableNavigate(page, '/en-US/join');
     await expect(page).toHaveScreenshot('join.png', { fullPage: true });
+  });
+
+  test('system login page', async ({ page }) => {
+    await stableNavigate(page, '/en-US/system/login');
+    await expect(page).toHaveScreenshot('system-login.png', { fullPage: true });
   });
 });
 
@@ -89,6 +103,24 @@ test.describe('Visual - Workspace Pages', () => {
   test('workspace settings', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
     await expect(authedPage).toHaveScreenshot('workspace-settings.png', { fullPage: true });
+  });
+});
+
+// ─── System Pages ───────────────────────────────────────────────────────────
+
+test.describe('Visual - System Pages', () => {
+  test('system workspaces', async ({ page }) => {
+    await loginAsSystemAdmin(page);
+    await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+    await expect(page).toHaveScreenshot('system-workspaces.png', { fullPage: true });
+  });
+
+  test('system info', async ({ page }) => {
+    await loginAsSystemAdmin(page);
+    await page.getByTestId('system-workspaces__open-info').click();
+    await page.waitForURL(/\/en-US\/system\/info/, { timeout: 15_000 });
+    await expect(page.getByTestId('system-info__heading')).toBeVisible();
+    await expect(page).toHaveScreenshot('system-info.png', { fullPage: true });
   });
 });
 

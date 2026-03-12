@@ -1388,6 +1388,21 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       mode?: 'template' | 'custom';
     };
     if (!body || (body.mode !== 'template' && body.mode !== 'custom')) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'member.permissions.updated',
+        result: 'error',
+        requestId,
+        resourceType: 'member',
+        resourceId: route.userId,
+        errorCode: 'VALIDATION_ERROR',
+        errorMessage: 'mode is required',
+        metadata: {
+          target_user_id: route.userId,
+        },
+      });
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'mode is required' });
       return true;
     }

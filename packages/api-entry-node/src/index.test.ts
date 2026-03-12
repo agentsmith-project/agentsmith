@@ -1392,6 +1392,44 @@ describe('api-entry-node projects routes', () => {
           && (item.metadata_json?.permissions_added as unknown[]).includes('project:endpoint:use')),
     ).toBe(true);
 
+    const invalidPermissionsPatchRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          permissions: ['project:endpoint:use'],
+        }),
+      },
+    );
+    expect(invalidPermissionsPatchRes.status).toBe(422);
+
+    const invalidPermissionsAuditStart = new Date(Date.now() - 60_000).toISOString();
+    const invalidPermissionsAuditEnd = new Date(Date.now() + 60_000).toISOString();
+    const invalidPermissionsAuditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(invalidPermissionsAuditStart)}&end_time=${encodeURIComponent(invalidPermissionsAuditEnd)}&action=member.permissions.updated&resource_type=member&resource_id=user_alt&page=1&page_size=20`,
+    );
+    expect(invalidPermissionsAuditRes.status).toBe(200);
+    const invalidPermissionsAuditBody = (await invalidPermissionsAuditRes.json()) as {
+      items: Array<{
+        action: string;
+        resource_id?: string;
+        result: string;
+        error_code?: string;
+        error_message?: string;
+      }>;
+    };
+    expect(
+      invalidPermissionsAuditBody.items.some((item) =>
+        item.action === 'member.permissions.updated'
+          && item.resource_id === 'user_alt'
+          && item.result === 'error'
+          && item.error_code === 'VALIDATION_ERROR'
+          && item.error_message === 'mode is required'),
+    ).toBe(true);
+
     const patchGroupForAltRes = await apiFetch(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,

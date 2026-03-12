@@ -259,4 +259,35 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('Conflict')).toBeInTheDocument();
     expect(screen.getAllByText('Project owner membership cannot be removed').length).toBeGreaterThan(0);
   });
+
+  it('humanizes member permission validation failures in detail view', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_7',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_1',
+          project_id: 'proj_1',
+          actor_type: 'user',
+          actor_id: 'user_1',
+          action: 'member.permissions.updated',
+          resource_type: 'member',
+          resource_id: 'user_alt',
+          result: 'error',
+          error_code: 'VALIDATION_ERROR',
+          error_message: 'mode is required',
+          request_id: 'req_member_permissions_invalid',
+          metadata_json: {},
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Updated Member Permissions on user_alt and failed',
+    );
+    expect(screen.getByText('Validation Error')).toBeInTheDocument();
+    expect(screen.getAllByText('Mode is required').length).toBeGreaterThan(0);
+  });
 });

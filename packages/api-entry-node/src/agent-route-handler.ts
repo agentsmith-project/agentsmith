@@ -96,12 +96,12 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agents' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const items = await deps.agentResourceService.listVisibleAgents(
       route.workspaceId,
       route.projectId,
       user.id,
-      canManageProject,
+      canManageAgents,
     );
     json(res, 200, {
       items: items.map((item) => sanitizeAgentForApi(item)),
@@ -188,13 +188,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentItem' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
@@ -204,14 +204,14 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentItem' && method === 'PATCH') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
-    const canPublicAgent = canManageProject || actorPermissions.has('project:agent:public');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
+    const canPublicAgent = actorPermissions.has('project:agent:public');
     const existing = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!existing) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canManageAgent(existing, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canManageAgent(existing, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_manage_forbidden' });
       return true;
     }
@@ -289,7 +289,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
           ? raw.presence
           : undefined,
       status: raw.status === 'enabled' || raw.status === 'disabled' ? raw.status : undefined,
-      admin_id: canManageProject && typeof raw.admin_id === 'string' ? raw.admin_id : undefined,
+      admin_id: canManageAgents && typeof raw.admin_id === 'string' ? raw.admin_id : undefined,
       visibility:
         raw.visibility === 'public' || raw.visibility === 'private'
           ? raw.visibility
@@ -311,13 +311,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentItem' && method === 'DELETE') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const existing = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!existing) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canManageAgent(existing, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canManageAgent(existing, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_manage_forbidden' });
       return true;
     }
@@ -332,13 +332,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentDiagnostics' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
@@ -353,13 +353,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentExecutionConfig' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
@@ -374,13 +374,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentConnectionInfo' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canAccessAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
@@ -390,13 +390,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentKeys' && method === 'GET') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canManageAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canManageAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_manage_forbidden' });
       return true;
     }
@@ -407,13 +407,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentKeys' && method === 'POST') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canManageAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canManageAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_manage_forbidden' });
       return true;
     }
@@ -427,13 +427,13 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
 
   if (route.kind === 'agentKeyItem' && method === 'DELETE') {
     const actorPermissions = await resolveActorPermissions(deps, route.workspaceId, route.projectId, user.id);
-    const canManageProject = actorPermissions.has('project:manage');
+    const canManageAgents = actorPermissions.has('project:agent:manage');
     const item = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, route.agentId);
     if (!item) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    if (!deps.agentResourceService.canManageAgent(item, user.id, canManageProject)) {
+    if (!deps.agentResourceService.canManageAgent(item, user.id, canManageAgents)) {
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_manage_forbidden' });
       return true;
     }

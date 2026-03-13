@@ -299,8 +299,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const canAgentKeyIssue = useHasPermission('project:agent:manage');
   const canAgentKeyRevoke = useHasPermission('project:agent:manage');
   const canAgentPublicPermission = useHasPermission('project:agent:public');
-  const canProjectManagePermission = useHasPermission('project:manage');
-  const canAgentPublic = canAgentPublicPermission || canProjectManagePermission;
+  const canAgentPublic = canAgentPublicPermission;
   const canReadAgents = canAgentRead || canAgentCreate || canAgentUpdate || canAgentDelete;
   const canManageAgents = canAgentCreate || canAgentUpdate || canAgentDelete;
   const canIssueAgentKeys = canAgentKeyIssue || canAgentKeyRevoke;

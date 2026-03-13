@@ -21,10 +21,12 @@ import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import { useQueryClient } from '@tanstack/react-query';
 import { ProjectAPI, getApiClient } from '@/lib/api';
+import { APIError } from '@/lib/api/errors';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
   const t = useTranslations('settings');
+  const tProjects = useTranslations('projects');
   const tErrors = useTranslations('errors');
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
@@ -34,9 +36,16 @@ export default function WorkspaceSettingsPage() {
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
 
-  const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
+  const {
+    data: currentWorkspace,
+    isFetched: isWorkspaceFetched,
+  } = useWorkspace(workspaceId ?? '');
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
-  const { data: projects = [] } = useProjects(workspaceId ?? '');
+  const {
+    data: projects = [],
+    isError: isProjectsError,
+    error: projectsError,
+  } = useProjects(workspaceId ?? '');
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
   const [projectCreators, setProjectCreators] = React.useState<Array<{ id: string; user_id: string; name: string; email: string }>>([]);
   const [projectCreatorsDraft, setProjectCreatorsDraft] = React.useState('');
@@ -134,6 +143,20 @@ export default function WorkspaceSettingsPage() {
         <div className="max-w-md text-center space-y-2">
           <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  const isProjectsNotFound =
+    isProjectsError && projectsError instanceof APIError && projectsError.isNotFoundError();
+
+  if ((isWorkspaceFetched && !currentWorkspace) || isProjectsNotFound) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{tProjects('workspace_unavailable_title')}</h2>
+          <p className="text-sm text-tertiary">{tProjects('workspace_unavailable_description')}</p>
         </div>
       </PageState>
     );

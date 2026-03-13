@@ -75,7 +75,7 @@ describe('SystemWorkspacesPage', () => {
 
     expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__open-workspace-login--ws_alpha').closest('a')).toHaveAttribute(
+    expect(screen.getByTestId('system-workspaces__open-workspace-login--ws_alpha')).toHaveAttribute(
       'href',
       '/en-US/workspaces/ws_alpha/login',
     );

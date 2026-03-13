@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
+import { APIError } from '@/lib/api/errors';
 
 const STABLE_WORKSPACE = { id: 'ws_1', name: 'Corp Workspace' };
 const STABLE_MEMBERS = [
@@ -62,6 +63,26 @@ const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
 const mockProjectCreate = vi.fn();
 const mockProjectUpdate = vi.fn();
 const mockFetch = vi.fn<typeof fetch>();
+const mockUseWorkspace = vi.fn<
+  () => {
+    data: { id: string; name: string } | undefined;
+    isFetched: boolean;
+  }
+>(() => ({
+  data: STABLE_WORKSPACE,
+  isFetched: true,
+}));
+const mockUseProjects = vi.fn<
+  () => {
+    data: typeof STABLE_PROJECTS;
+    isError: boolean;
+    error: APIError | null;
+  }
+>(() => ({
+  data: STABLE_PROJECTS,
+  isError: false,
+  error: null,
+}));
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -76,18 +97,14 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
-  useWorkspace: () => ({
-    data: STABLE_WORKSPACE,
-  }),
+  useWorkspace: () => mockUseWorkspace(),
   useWorkspaceMembers: () => ({
     data: STABLE_MEMBERS,
   }),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
-  useProjects: () => ({
-    data: STABLE_PROJECTS,
-  }),
+  useProjects: () => mockUseProjects(),
 }));
 
 vi.mock('@/components/app-shell/Topbar', () => ({
@@ -143,6 +160,15 @@ describe('WorkspaceSettingsPage', () => {
       }),
     } as Response);
     vi.stubGlobal('fetch', mockFetch);
+    mockUseWorkspace.mockReturnValue({
+      data: STABLE_WORKSPACE,
+      isFetched: true,
+    });
+    mockUseProjects.mockReturnValue({
+      data: STABLE_PROJECTS,
+      isError: false,
+      error: null,
+    });
   });
 
   it('renders workspace administration summary', async () => {
@@ -233,6 +259,34 @@ describe('WorkspaceSettingsPage', () => {
 
     await waitFor(() => {
       expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    });
+  });
+
+  it('shows workspace unavailable state when workspace can no longer be loaded', async () => {
+    mockUseWorkspace.mockReturnValue({
+      data: undefined,
+      isFetched: true,
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('workspace_unavailable_title')).toBeInTheDocument();
+    });
+    expect(screen.getByText('workspace_unavailable_description')).toBeInTheDocument();
+  });
+
+  it('shows workspace unavailable state when project lookup returns not found', async () => {
+    mockUseProjects.mockReturnValue({
+      data: [],
+      isError: true,
+      error: new APIError('RESOURCE_NOT_FOUND', 'workspace_not_found', undefined, 404),
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByText('workspace_unavailable_title')).toBeInTheDocument();
     });
   });
 

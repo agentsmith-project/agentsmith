@@ -7,7 +7,7 @@ const apiEntryNodeModule = vi.hoisted(() => ({
   initializeWorkspaceFoundations: vi.fn(),
 }));
 
-vi.mock('@mbos/api-entry-node', () => apiEntryNodeModule);
+vi.mock('../../../../packages/api-entry-node/src/workspace-foundation-initializer', () => apiEntryNodeModule);
 
 import { initializeWorkspaceResources } from '../workspace-registry/provisioning';
 import type { SystemWorkspaceRecord } from '../workspace-registry/types';

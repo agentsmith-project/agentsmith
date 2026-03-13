@@ -2,23 +2,23 @@ import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { drainJobQueue } from '@mbos/application';
 import type { ProjectRepoFactoryResult } from '@mbos/adapters-private';
-import { ACTIVE_CHAT_STREAMS } from './chat-stream-state.js';
+import { ACTIVE_CHAT_STREAMS } from './chat-stream-state';
 import {
   createDefaultNodeApiDeps,
   createNodeApiDepsFromEnv,
-} from './node-api-deps-factory.js';
-import { handleRequest } from './request-handler.js';
-import { createGovernanceRunner } from './governance-runner.js';
-import { ensureModelCatalogBootstrap } from './model-catalog-service.js';
-import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
+} from './node-api-deps-factory';
+import { handleRequest } from './request-handler';
+import { createGovernanceRunner } from './governance-runner';
+import { ensureModelCatalogBootstrap } from './model-catalog-service';
+import { refreshExpiringFeishuConnections } from './feishu-oauth';
 export {
   createWorkspaceFoundationStoreResourceFromEnv,
   getWorkspaceFoundationBaseCollections,
   initializeWorkspaceFoundations,
-} from './workspace-foundation-initializer.js';
+} from './workspace-foundation-initializer';
 
-export type { NodeApiDeps } from './node-api-deps.js';
-export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';
+export type { NodeApiDeps } from './node-api-deps';
+export { createDefaultNodeApiDeps } from './node-api-deps-factory';
 
 export function createNodeApiServer(
   port = 3010,

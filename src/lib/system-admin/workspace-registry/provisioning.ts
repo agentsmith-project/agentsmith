@@ -1,6 +1,6 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { initializeWorkspaceFoundations } from '@mbos/api-entry-node';
+import { initializeWorkspaceFoundations } from '../../../../packages/api-entry-node/src/workspace-foundation-initializer';
 import type { WorkspaceFoundationInitializationResult } from '@mbos/contracts';
 import { ensureRegistryDir } from './storage';
 import type { PublishSystemWorkspaceResult, SystemWorkspaceRecord } from './types';

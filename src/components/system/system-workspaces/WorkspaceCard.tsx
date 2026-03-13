@@ -71,8 +71,11 @@ export function WorkspaceCard({ locale, t, workspace, onSelect }: WorkspaceCardP
           {t('configure_workspace')}
         </Button>
         {workspace.provisioning_status === 'ready' ? (
-          <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
-            <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
+          <Link
+            href={`/${locale}/workspaces/${workspace.id}/login`}
+            data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
+          >
+            <Button type="button" variant="outline">
               {t('open_workspace_login')}
             </Button>
           </Link>

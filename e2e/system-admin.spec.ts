@@ -48,7 +48,12 @@ test.describe('System Admin', () => {
     expect(createdWorkspaceId).toBeTruthy();
     const workspaceCard = page.getByTestId(`system-workspaces__card--${createdWorkspaceId}`);
     await expect(workspaceCard).toBeVisible();
-    await expect(page.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`).locator('..')).toHaveAttribute(
+    await expect(page.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`)).toBeDisabled();
+
+    await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
+    await page.getByTestId('system-workspaces__publish').click();
+    await expect(page.getByTestId('system-workspaces__save-notice')).toHaveText('Workspace published.');
+    await expect(page.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`)).toHaveAttribute(
       'href',
       new RegExp(`/en-US/workspaces/${createdWorkspaceId}/login$`),
     );
@@ -61,6 +66,12 @@ test.describe('System Admin', () => {
     await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible();
     await expect(page.getByTestId('system-workspaces__draft-admin')).toHaveValue(updatedAdmin);
     await expect(page.getByTestId('system-workspaces__draft-idp-realm')).toHaveValue(updatedRealm);
+
+    await page.getByTestId('system-workspaces__publish').click();
+    await expect(page.getByTestId('system-workspaces__save-notice')).toHaveText('Workspace published.');
+
+    await page.getByTestId('system-workspaces__disable').click();
+    await expect(page.getByTestId('system-workspaces__save-notice')).toHaveText('Workspace disabled.');
 
     page.once('dialog', (dialog) => dialog.accept());
     await page.getByTestId('system-workspaces__delete').click();

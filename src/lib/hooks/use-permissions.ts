@@ -100,9 +100,6 @@ export function useIsProjectAdmin(): boolean {
   return role === 'owner' || role === 'admin';
 }
 
-export function useCanManageProject(): boolean {
-  return useHasPermission('project:manage');
-}
 
 export function useCanReadProjectSettings(): boolean {
   return useHasAnyPermission([

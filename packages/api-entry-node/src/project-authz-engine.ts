@@ -287,7 +287,7 @@ function mapProjectActionToPermission(action: string): string | null {
   if (action.startsWith('project.member.')) return 'project:membership:update';
   if (action.startsWith('project.governance.')) return 'project:governance:update';
   if (action === 'project.update' || action.startsWith('project.settings.')) {
-    return 'project:manage';
+    return 'project:lifecycle:update';
   }
   return 'project:endpoint:use';
 }

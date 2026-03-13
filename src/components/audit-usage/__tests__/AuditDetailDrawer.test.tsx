@@ -110,7 +110,7 @@ describe('AuditDetailDrawer', () => {
           request_id: 'req_2',
           decision_id: 'gdec_2',
           metadata_json: {
-            missing_permissions: ['project:manage'],
+            missing_permissions: ['project:membership:update'],
             authz_decision: {
               membership_status: 'suspended',
             },
@@ -124,7 +124,7 @@ describe('AuditDetailDrawer', () => {
     expect(summary).toHaveTextContent('User Updated Member Access on proj_1 and failed');
     expect(summary).toHaveTextContent('Permission denied');
     expect(screen.getByText('Permission Denied')).toBeInTheDocument();
-    expect(governance).toHaveTextContent('project:manage');
+    expect(governance).toHaveTextContent('project:membership:update');
     expect(governance).toHaveTextContent('Suspended');
     expect(governance).not.toHaveTextContent('detail.governance_kind');
     expect(screen.getByText('gdec_2')).toBeInTheDocument();

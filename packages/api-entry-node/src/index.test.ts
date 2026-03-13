@@ -8396,6 +8396,154 @@ describe('api-entry-node projects routes', () => {
       && item.metadata_json?.updated_fields?.includes('governance_json'))).toBe(true);
   });
 
+  it('rejects project admin assignment changes from non-owners and records audit errors', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Owner Only Assignment',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const ownerAssignRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        governance_json: {
+          project_admins: ['user_alt'],
+        },
+      }),
+    });
+    expect(ownerAssignRes.status).toBe(200);
+
+    const forbiddenAssignRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}`,
+      'alt-token',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': 'req_project_admin_forbidden',
+        },
+        body: JSON.stringify({
+          governance_json: {
+            project_admins: ['user_alt', 'user_owner'],
+          },
+        }),
+      },
+    );
+    expect(forbiddenAssignRes.status).toBe(403);
+    await expect(forbiddenAssignRes.json()).resolves.toMatchObject({
+      error_code: 'PERMISSION_DENIED',
+      message: 'project_owner_required',
+    });
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=project.update&page=1&page_size=20&result=error`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        request_id: string;
+        result: string;
+        error_code?: string;
+        error_message?: string;
+      }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.update'
+      && item.request_id === 'req_project_admin_forbidden'
+      && item.result === 'error'
+      && item.error_code === 'PERMISSION_DENIED'
+      && item.error_message === 'project_owner_required')).toBe(true);
+  });
+
+  it('rejects project deletion from non-owners and records audit errors', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Owner Only Delete',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const ownerAssignRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        governance_json: {
+          project_admins: ['user_alt'],
+        },
+      }),
+    });
+    expect(ownerAssignRes.status).toBe(200);
+
+    const forbiddenDeleteRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}`,
+      'alt-token',
+      {
+        method: 'DELETE',
+        headers: {
+          'x-request-id': 'req_project_delete_forbidden',
+        },
+      },
+    );
+    expect(forbiddenDeleteRes.status).toBe(403);
+    await expect(forbiddenDeleteRes.json()).resolves.toMatchObject({
+      error_code: 'PERMISSION_DENIED',
+      message: 'project_owner_required',
+    });
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=project.delete&page=1&page_size=20&result=error`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        request_id: string;
+        result: string;
+        error_code?: string;
+        error_message?: string;
+      }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.delete'
+      && item.request_id === 'req_project_delete_forbidden'
+      && item.result === 'error'
+      && item.error_code === 'PERMISSION_DENIED'
+      && item.error_message === 'project_owner_required')).toBe(true);
+  });
+
 
   it('records failed resource policy update attempts in audit events', async () => {
     const { baseUrl } = startServer();

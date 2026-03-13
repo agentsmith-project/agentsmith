@@ -93,6 +93,7 @@ const ACTION_LABELS: Record<string, string> = {
 const ERROR_CODE_LABELS: Record<string, string> = {
   CONFLICT: 'Conflict',
   NOT_FOUND: 'Not Found',
+  PERMISSION_DENIED: 'Permission Denied',
   FORBIDDEN: 'Permission Denied',
   VALIDATION_ERROR: 'Validation Error',
   RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED: 'Spending Limit Exceeded',
@@ -124,6 +125,7 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   unsupported_resource_type: 'Unsupported resource type',
   'access_mode and allowed_subjects are required': 'Access mode and allowed subjects are required',
   'mode is required': 'Mode is required',
+  project_owner_required: 'Project owner required',
   rate_limits_rule_key_invalid: 'Invalid rate limit rule',
   rate_limits_rule_value_invalid: 'Invalid rate limit value',
   spending_limits_rule_key_invalid: 'Invalid spending limit rule',

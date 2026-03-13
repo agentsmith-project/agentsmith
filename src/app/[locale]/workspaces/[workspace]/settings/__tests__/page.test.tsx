@@ -60,7 +60,6 @@ const STABLE_PROJECTS = [
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
 const mockProjectCreate = vi.fn();
-const mockProjectUpdate = vi.fn();
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -98,7 +97,6 @@ vi.mock('@/lib/api', () => ({
   handleErrorForToast: vi.fn(),
   ProjectAPI: class {
     create = mockProjectCreate;
-    update = mockProjectUpdate;
   },
 }));
 
@@ -129,9 +127,6 @@ describe('WorkspaceSettingsPage', () => {
     );
     mockProjectCreate.mockResolvedValue({
       id: 'proj_created',
-    });
-    mockProjectUpdate.mockResolvedValue({
-      id: 'proj_1',
     });
   });
 
@@ -173,7 +168,6 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       '/en/workspaces/ws_1/projects/proj_1/settings',
     );
-    expect(screen.getByTestId('ws-settings__project-edit-admins--proj_1')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
   });
 
@@ -196,33 +190,6 @@ describe('WorkspaceSettingsPage', () => {
         description: undefined,
         visibility: 'private',
         join_policy: 'approval_required',
-      });
-    });
-  });
-
-  it('opens project admin dialog and saves selected admins', async () => {
-    const user = userEvent.setup();
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__project-edit-admins--proj_1')).toBeInTheDocument();
-    });
-
-    await user.click(screen.getByTestId('ws-settings__project-edit-admins--proj_1'));
-
-    const dialog = await screen.findByTestId('ws-settings__project-admin-dialog');
-    expect(within(dialog).getByText('workspace_edit_project_admins_description')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__project-admin-option--u_1')).toBeInTheDocument();
-    expect(screen.getByTestId('ws-settings__project-admin-option--u_2')).toBeInTheDocument();
-
-    await user.click(screen.getByTestId('ws-settings__project-admin-option--u_1'));
-    await user.click(screen.getByTestId('ws-settings__project-admin-save'));
-
-    await waitFor(() => {
-      expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', {
-        governance_json: {
-          project_admins: ['u_2', 'u_1'],
-        },
       });
     });
   });

@@ -768,6 +768,38 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = UpdateProjectRequestSchema.parse(raw);
+    let existingProject: Awaited<ReturnType<typeof deps.getProjectUseCase.execute>> | null = null;
+    try {
+      existingProject = await deps.getProjectUseCase.execute({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+      });
+    } catch {
+      existingProject = null;
+    }
+    const touchesProjectAdmins =
+      typeof input.governance_json === 'object' &&
+      input.governance_json !== null &&
+      Object.prototype.hasOwnProperty.call(input.governance_json, 'project_admins');
+    if (touchesProjectAdmins && existingProject && existingProject.owner_id !== user.id) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.update',
+        result: 'error',
+        requestId,
+        resourceType: 'project',
+        resourceId: route.projectId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'project_owner_required',
+        metadata: {
+          updated_fields: Object.keys(input).sort(),
+        },
+      });
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     try {
       const updated = await deps.updateProjectUseCase.execute({
         workspaceId: route.workspaceId,
@@ -816,15 +848,34 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'item' && method === 'DELETE' && route.workspaceId && route.projectId) {
     const requestId = readRequestId(req);
     let existingProjectName: string | undefined;
+    let existingProjectOwnerId: string | undefined;
     try {
       const existing = await deps.getProjectUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
       });
       existingProjectName = existing.name;
+      existingProjectOwnerId = existing.owner_id;
     } catch {
       // Best-effort project summary for audit metadata; delete flow still owns
       // authoritative existence checks.
+    }
+    if (existingProjectOwnerId && existingProjectOwnerId !== user.id) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.delete',
+        result: 'error',
+        requestId,
+        resourceType: 'project',
+        resourceId: route.projectId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'project_owner_required',
+        metadata: existingProjectName ? { name: existingProjectName } : undefined,
+      });
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
     }
     try {
       await deps.deleteProjectUseCase.execute({

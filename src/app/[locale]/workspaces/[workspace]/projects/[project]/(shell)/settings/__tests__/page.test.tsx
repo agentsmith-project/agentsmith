@@ -12,13 +12,17 @@ const STABLE_PROJECT = {
   visibility: 'private',
   join_policy: 'approval_required',
   execution_preferences_json: {},
-  governance_json: {},
+  governance_json: { project_admins: ['admin_1'] },
   limits_json: {},
   owner_id: 'owner_1',
   status: 'active',
   created_at: '2026-02-01T00:00:00Z',
   updated_at: '2026-02-01T00:00:00Z',
 };
+const STABLE_MEMBERS = [
+  { id: 'wm_owner', user_id: 'owner_1', name: 'Owner', email: 'owner@example.com' },
+  { id: 'wm_admin', user_id: 'admin_1', name: 'Project Admin', email: 'admin@example.com' },
+];
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -32,6 +36,19 @@ vi.mock('@/lib/hooks/use-projects-queries', () => ({
   useProject: vi.fn(() => ({
     data: STABLE_PROJECT,
   })),
+}));
+
+vi.mock('@/lib/hooks/use-workspaces', () => ({
+  useWorkspaceMembers: vi.fn(() => ({
+    data: STABLE_MEMBERS,
+  })),
+}));
+
+const mockAuthUser = vi.fn(() => ({ id: 'owner_1' }));
+
+vi.mock('@/lib/stores/authStore', () => ({
+  useAuthStore: (selector: (state: { user: { id: string } | null }) => unknown) =>
+    selector({ user: mockAuthUser() }),
 }));
 
 vi.mock('@tanstack/react-query', async () => {
@@ -83,6 +100,7 @@ describe('SettingsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
+    mockAuthUser.mockReturnValue({ id: 'owner_1' });
   });
 
   it('renders settings page when params and permission are valid', async () => {
@@ -100,13 +118,13 @@ describe('SettingsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('settings__tab--governance')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('settings__tab--limits')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
   });
 
   it('allows project admins with project manage permission to access settings', async () => {
     mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
+    mockAuthUser.mockReturnValue({ id: 'admin_1' });
 
     render(
       <SettingsPage
@@ -121,7 +139,9 @@ describe('SettingsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
+    expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings__delete-project-btn')).toBeDisabled();
   });
 
   it('shows permission denied when user lacks settings manage permission', async () => {

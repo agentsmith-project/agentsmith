@@ -80,6 +80,24 @@ const workspaceProjectCreators = workspaceMembers
     email: member.email,
   }));
 
+function withDerivedWorkspacePermissions() {
+  return workspaceMembers.map((member) => {
+    const shouldCreateProjects = workspaceProjectCreators.some(
+      (creator) => creator.user_id === member.user_id || creator.email === member.email,
+    );
+    const nextPermissions = new Set(member.permissions);
+    if (shouldCreateProjects) {
+      nextPermissions.add('workspace:project:create');
+    } else if (!member.permissions.includes('workspace:governance:update')) {
+      nextPermissions.delete('workspace:project:create');
+    }
+    return {
+      ...member,
+      permissions: [...nextPermissions],
+    };
+  });
+}
+
 export const workspaceHandlers = [
   http.get('/api/v1/workspaces', () => HttpResponse.json({ items: workspaceItems })),
   http.get('/api/public/workspaces/:id', ({ params }) => {
@@ -108,8 +126,10 @@ export const workspaceHandlers = [
     }
     return HttpResponse.json(workspace);
   }),
-  http.get('/api/v1/workspaces/:ws/members', () =>
-    HttpResponse.json({ items: workspaceMembers, total: workspaceMembers.length })),
+  http.get('/api/v1/workspaces/:ws/members', () => {
+    const members = withDerivedWorkspacePermissions();
+    return HttpResponse.json({ items: members, total: members.length });
+  }),
   http.get('/api/v1/workspaces/:ws/project-creators', () =>
     HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length })),
   http.patch('/api/v1/workspaces/:ws/project-creators', async ({ request }) => {

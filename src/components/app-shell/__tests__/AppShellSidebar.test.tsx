@@ -182,6 +182,23 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(sidebar.queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 
+  it('shows workspace projects but not workspace settings for project creators', () => {
+    const wrapper = createWrapper();
+    mockUseParams.mockReturnValue({
+      workspace: 'ws_default',
+      locale: 'en-US',
+    });
+    mockUseHasWorkspacePermission.mockImplementation(
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
+    );
+    render(<AppShellSidebar />, { wrapper });
+
+    const sidebar = within(screen.getByTestId('sidebar'));
+    expect(sidebar.getByTestId('sidebar__nav-item--workspace_home')).toBeInTheDocument();
+    expect(sidebar.getByTestId('sidebar__nav-item--projects')).toBeInTheDocument();
+    expect(sidebar.queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
+  });
+
   it('shows governance project links for project admins', () => {
     const wrapper = createWrapper();
     mockUseHasPermission.mockImplementation((permission: string) =>

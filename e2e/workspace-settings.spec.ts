@@ -1,4 +1,5 @@
 import { test, expect, goTo, LOCALE, WS_ID } from './fixtures/test-base';
+import { withAuth } from './fixtures/authenticated';
 
 const wsSettingsPath = `/${LOCALE}/workspaces/${WS_ID}/settings`;
 
@@ -51,5 +52,27 @@ test.describe('Workspace Settings Page', () => {
     await ownerSelect.selectOption(nextOwner!.value);
     await authedPage.getByTestId('ws-settings__project-owner-save--proj_001').click();
     await expect(projectCard.getByText(new RegExp(`Current owner:.*${nextOwner!.label.trim()}`, 'i'))).toBeVisible();
+  });
+
+  test('project creators can create projects without workspace administration access', async ({ page }) => {
+    await page.request.patch(`/api/v1/workspaces/${WS_ID}/project-creators`, {
+      data: { project_creators: ['u_2'] },
+    });
+
+    await withAuth(page, WS_ID, 'dev2@corp.com', 'u_2');
+    await goTo(page, wsSettingsPath);
+    await expect(page.getByRole('heading', { name: /Permission Denied/i })).toBeVisible();
+
+    await goTo(page, `/${LOCALE}/workspaces/${WS_ID}`);
+    await expect(page.getByTestId('workspace-home__page')).toBeVisible();
+    await expect(page.getByTestId('workspace-home__open-projects')).toBeVisible();
+    await expect(page.getByTestId('workspace-home__projects-section')).toBeVisible();
+    await expect(page.getByTestId('workspace-home__projects-section')).toContainText(/workspace_projects_title|Projects/i);
+    await expect(page.getByTestId('workspace-home__admin-section')).toHaveCount(0);
+
+    await page.getByTestId('workspace-home__open-projects').click();
+    await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects$`), { timeout: 10_000 });
+    await expect(page.getByTestId('projects__create-btn')).toBeVisible();
+    await expect(page.getByTestId('projects__back-to-workspace')).toBeVisible();
   });
 });

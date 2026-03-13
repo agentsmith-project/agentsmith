@@ -70,6 +70,21 @@ describe('WorkspaceHomePage', () => {
     expect(screen.queryByTestId('workspace-home__open-settings')).not.toBeInTheDocument();
   });
 
+  it('keeps project entry visible for project creators without workspace administration', async () => {
+    mockUseHasWorkspacePermission.mockImplementation(
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
+    );
+    render(<WorkspaceHomePage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('workspace-home__page')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('workspace-home__projects-section')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-home__open-projects')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/projects');
+    expect(screen.queryByTestId('workspace-home__admin-section')).not.toBeInTheDocument();
+  });
+
   it('shows permission denied when workspace read is missing', async () => {
     mockUseHasWorkspacePermission.mockReturnValue(false);
     render(<WorkspaceHomePage />);

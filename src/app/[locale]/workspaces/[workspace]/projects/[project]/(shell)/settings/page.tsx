@@ -35,7 +35,6 @@ import {
 } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
-import { useAuthStore } from '@/lib/stores/authStore';
 
 interface SettingsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -60,7 +59,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
-  const currentUser = useAuthStore((state) => state.user);
   const canReadSettings = useCanReadProjectSettings();
   const canReadAudit = useCanReadAudit();
   const canManageProjectLifecyclePermission = useCanManageProjectLifecycle();
@@ -113,11 +111,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     }
   }, [currentProject]);
 
-  const isProjectOwner = currentProject?.owner_id === currentUser?.id;
-  const canManageProjectLifecycle = canManageProjectLifecyclePermission && isProjectOwner;
-  const canDeleteProject = canManageProjectLifecyclePermission && isProjectOwner;
-  const canAssignProjectAdmins = canManageProjectAdminsPermission && isProjectOwner;
-  const canTransferProjectOwner = canManageProjectLifecyclePermission && isProjectOwner;
+  const canManageProjectLifecycle = canManageProjectLifecyclePermission;
+  const canDeleteProject = canManageProjectLifecyclePermission;
+  const canAssignProjectAdmins = canManageProjectAdminsPermission;
+  const canTransferProjectOwner = canManageProjectLifecyclePermission;
 
   const handleProjectAdminCheckedChange = (userId: string, checked: boolean) => {
     setSelectedProjectAdmins((current) => {
@@ -289,14 +286,14 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div>
               <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('ownership_lifecycle_title')}</h2>
               <p className="text-sm text-tertiary">
-                {isProjectOwner ? settingsT('ownership_lifecycle_help') : settingsT('ownership_lifecycle_read_only_help')}
+                {canManageProjectLifecycle ? settingsT('ownership_lifecycle_help') : settingsT('ownership_lifecycle_read_only_help')}
               </p>
             </div>
 
             <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__general-section">
               <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h3>
               <p className="text-sm text-tertiary mb-4">
-                {isProjectOwner ? settingsT('general_help') : settingsT('general_read_only_help')}
+                {canManageProjectLifecycle ? settingsT('general_help') : settingsT('general_read_only_help')}
               </p>
               <div className="grid gap-4 md:grid-cols-2">
                 <div className="md:col-span-1">
@@ -353,7 +350,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-admins-section">
               <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('project_admins_title')}</h3>
               <p className="text-sm text-tertiary mb-4">
-                {isProjectOwner ? settingsT('project_admins_owner_help') : settingsT('project_admins_read_only_help')}
+                {canAssignProjectAdmins ? settingsT('project_admins_owner_help') : settingsT('project_admins_read_only_help')}
               </p>
               <div className="space-y-3">
                 {workspaceMembers.map((member) => {
@@ -401,7 +398,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-owner-section">
               <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('project_owner_title')}</h3>
               <p className="text-sm text-tertiary mb-4">
-                {isProjectOwner ? settingsT('project_owner_help') : settingsT('project_owner_read_only_help')}
+                {canTransferProjectOwner ? settingsT('project_owner_help') : settingsT('project_owner_read_only_help')}
               </p>
               <div className="space-y-3">
                 <label className="block text-sm font-medium text-primary" htmlFor="project-owner-select">
@@ -442,7 +439,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
                 <div>
                   <div className="font-medium text-foreground">{settingsT('delete_project_title')}</div>
                   <div className="text-sm text-tertiary">
-                    {isProjectOwner ? settingsT('delete_project_help') : settingsT('delete_project_owner_only')}
+                    {canDeleteProject ? settingsT('delete_project_help') : settingsT('delete_project_owner_only')}
                   </div>
                 </div>
                 <Button

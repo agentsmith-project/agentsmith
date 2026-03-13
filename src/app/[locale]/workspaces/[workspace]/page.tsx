@@ -20,6 +20,7 @@ export default function WorkspaceHomePage() {
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
+  const canCreateProjects = useHasWorkspacePermission('workspace:project:create');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
 
@@ -91,6 +92,16 @@ export default function WorkspaceHomePage() {
                     <FolderKanban className="mr-2 h-4 w-4" />
                     {t('workspace_open_projects')}
                   </Link>
+                  {canCreateProjects ? (
+                    <Link
+                      href={`${workspaceBasePath}/projects?create=1`}
+                      className={cn(buttonVariants({ variant: 'outline' }))}
+                      data-testid="workspace-home__create-project"
+                    >
+                      <FolderKanban className="mr-2 h-4 w-4" />
+                      {t('workspace_create_project')}
+                    </Link>
+                  ) : null}
                 </section>
 
                 {canManageWorkspaceGovernance ? (

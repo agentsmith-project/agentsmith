@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_alpha', locale: 'en-US' }));
 const mockUseHasWorkspacePermission = vi.fn(
-  (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
+  (permission: string) =>
+    permission === 'workspace:read' ||
+    permission === 'workspace:governance:update' ||
+    permission === 'workspace:project:create',
 );
 
 vi.mock('next/navigation', () => ({
@@ -38,7 +41,10 @@ describe('WorkspaceHomePage', () => {
   beforeEach(() => {
     mockUseParams.mockReturnValue({ workspace: 'ws_alpha', locale: 'en-US' });
     mockUseHasWorkspacePermission.mockImplementation(
-      (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
+      (permission: string) =>
+        permission === 'workspace:read' ||
+        permission === 'workspace:governance:update' ||
+        permission === 'workspace:project:create',
     );
   });
 
@@ -54,6 +60,7 @@ describe('WorkspaceHomePage', () => {
     expect(screen.getByTestId('workspace-home__projects-section')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-home__admin-section')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-home__open-projects')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/projects');
+    expect(screen.getByTestId('workspace-home__create-project')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/projects?create=1');
     expect(screen.getByTestId('workspace-home__open-settings')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/settings');
   });
 
@@ -67,6 +74,7 @@ describe('WorkspaceHomePage', () => {
 
     expect(screen.getByTestId('workspace-home__projects-section')).toBeInTheDocument();
     expect(screen.queryByTestId('workspace-home__admin-section')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('workspace-home__create-project')).not.toBeInTheDocument();
     expect(screen.queryByTestId('workspace-home__open-settings')).not.toBeInTheDocument();
   });
 
@@ -82,6 +90,7 @@ describe('WorkspaceHomePage', () => {
 
     expect(screen.getByTestId('workspace-home__projects-section')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-home__open-projects')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/projects');
+    expect(screen.getByTestId('workspace-home__create-project')).toHaveAttribute('href', '/en-US/workspaces/ws_alpha/projects?create=1');
     expect(screen.queryByTestId('workspace-home__admin-section')).not.toBeInTheDocument();
   });
 

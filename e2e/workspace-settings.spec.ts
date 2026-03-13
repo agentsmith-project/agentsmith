@@ -22,7 +22,7 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
   });
 
-  test('workspace admin can open create project dialog and create a project', async ({ authedPage }) => {
+  test('workspace manager can open create project dialog and create a project', async ({ authedPage }) => {
     await authedPage.getByTestId('ws-settings__create-project').click();
     await expect(authedPage.getByRole('heading', { name: /Create Project/i })).toBeVisible();
 
@@ -32,13 +32,13 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByRole('heading', { name: /Create Project/i })).not.toBeVisible();
   });
 
-  test('workspace admin can save project creators', async ({ authedPage }) => {
+  test('workspace manager can save project creators', async ({ authedPage }) => {
     await authedPage.getByTestId('ws-settings__project-creators-input').fill('user_alt');
     await authedPage.getByTestId('ws-settings__project-creators-save').click();
     await expect(authedPage.getByTestId('ws-settings__project-creators-input')).toHaveValue('user_alt');
   });
 
-  test('workspace admin can transfer project ownership', async ({ authedPage }) => {
+  test('workspace manager can transfer project ownership', async ({ authedPage }) => {
     const projectCard = authedPage.getByTestId('ws-settings__project--proj_001');
     const ownerSelect = authedPage.getByTestId('ws-settings__project-owner-select--proj_001');
     const optionValues = await ownerSelect.locator('option').evaluateAll((options) =>

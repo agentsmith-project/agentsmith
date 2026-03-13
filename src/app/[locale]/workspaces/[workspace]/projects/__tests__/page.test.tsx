@@ -185,7 +185,7 @@ describe('ProjectsPage route', () => {
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
 
-  it('shows a create-first empty state for workspace admins', async () => {
+  it('shows a create-first empty state for users with project creation permission', async () => {
     mockProjectsData = [];
 
     render(<ProjectsPage />);
@@ -197,7 +197,7 @@ describe('ProjectsPage route', () => {
     expect(screen.getByRole('button', { name: 'empty.create_first' })).toBeInTheDocument();
   });
 
-  it('shows a read-only empty state for non-admin workspace users', async () => {
+  it('shows a read-only empty state for workspace users without project creation permission', async () => {
     mockProjectsData = [];
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
 

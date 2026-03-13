@@ -2117,7 +2117,7 @@
     "empty": {
       "title": "No projects yet",
       "description": "Create your first project to get started",
-      "read_only_description": "No projects are available in this workspace yet. Contact your workspace administrator if you need a project created.",
+      "read_only_description": "No projects are available in this workspace yet. Contact your workspace administrator if you need project creation access or a project created.",
       "create_first": "New Project"
     },
     "pinned": {

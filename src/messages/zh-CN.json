@@ -2120,7 +2120,7 @@
     "empty": {
       "title": "暂无项目",
       "description": "创建您的第一个项目以开始使用",
-      "read_only_description": "此工作区暂时还没有可用项目。如需创建项目，请联系工作区管理员。",
+      "read_only_description": "此工作区暂时还没有可用项目。如需项目创建权限或需要创建项目，请联系工作区管理员。",
       "create_first": "新建项目"
     },
     "pinned": {

@@ -19,7 +19,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const PAGE_SIZE = 20;
   const t = useTranslations('members');
   const context = useMembersContext();
-  const canReadMembers = useHasPermission('project:manage');
+  const canReadMembers = useHasPermission('project:membership:update');
   const canManageMembers = useCanManageMemberGovernance();
   const searchParams = useSearchParams();
   const [search, setSearch] = React.useState('');

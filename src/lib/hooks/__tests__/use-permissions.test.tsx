@@ -324,7 +324,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -347,7 +347,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -405,7 +405,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -453,7 +453,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -476,7 +476,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -501,7 +501,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -524,7 +524,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:manage'],
+        permissions: ['project:manage', 'project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });

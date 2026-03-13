@@ -72,4 +72,22 @@ describe('MembersRoute', () => {
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
   });
+
+  it('checks membership update permission for page access', async () => {
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:membership:update');
+
+    render(
+      <MembersRoute
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('members__route-page')).toBeInTheDocument();
+    });
+  });
 });

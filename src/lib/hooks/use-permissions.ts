@@ -105,7 +105,7 @@ export function useCanManageProject(): boolean {
 }
 
 export function useCanManageMemberGovernance(): boolean {
-  return useIsOwner();
+  return useHasPermission('project:membership:update') && useIsOwner();
 }
 
 export function useCanManageResourcePolicy(): boolean {

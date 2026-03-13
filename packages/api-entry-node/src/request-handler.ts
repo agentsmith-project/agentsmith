@@ -207,9 +207,12 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectMembershipItem'
     || route.kind === 'projectMemberPermissions'
     || route.kind === 'projectMemberChangeHistory'
-    || route.kind === 'projectResourcePolicy'
   ) {
-    return ['project:manage'];
+    return ['project:membership:update'];
+  }
+
+  if (route.kind === 'projectResourcePolicy') {
+    return ['project:governance:update'];
   }
 
   if (isAgentRoute(route)) {

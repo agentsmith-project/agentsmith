@@ -25,6 +25,7 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
       if (permission === 'project:endpoint:use') return true;
       if (permission === 'project:agent:manage') return true;
       if (permission === 'project:governance:update') return true;
+      if (permission === 'project:membership:update') return true;
       if (permission === 'project:manage') return true;
       return false;
     });
@@ -72,6 +73,23 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
     expect(screen.getByRole('link', { name: 'resource_policy' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'credentials' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'members' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
+  });
+
+  it('shows members link for membership managers without owner-only settings', () => {
+    mockUseHasPermission.mockImplementation((permission: string) => {
+      if (permission === 'project:endpoint:use') return true;
+      if (permission === 'project:membership:update') return true;
+      return false;
+    });
+
+    render(<OverviewPage />);
+
+    const governance = screen.getByTestId('project-hub__governance-links');
+    expect(governance).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'members' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'resource_policy' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'credentials' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
   });
 

@@ -26,7 +26,7 @@ export default function MembersRoute({ params }: MembersPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('members');
   const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canReadMembers = useHasPermission('project:manage');
+  const canReadMembers = useHasPermission('project:membership:update');
   const featureAvailability = getFeatureAvailability('members');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('members');
 

@@ -52,11 +52,9 @@ const mockUseHasWorkspacePermission = vi.fn(
   (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
 );
 const mockUseHasPermission = vi.fn((_: string) => true);
-const mockUseCanManageResourcePolicy = vi.fn(() => true);
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: (permission: string) => mockUseHasPermission(permission),
-  useCanManageResourcePolicy: () => mockUseCanManageResourcePolicy(),
   useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
 }));
 
@@ -112,7 +110,6 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       locale: 'en-US',
     });
     mockUseHasPermission.mockReturnValue(true);
-    mockUseCanManageResourcePolicy.mockReturnValue(true);
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
@@ -182,9 +179,11 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
   it('shows governance project links for project admins', () => {
     const wrapper = createWrapper();
     mockUseHasPermission.mockImplementation((permission: string) =>
-      permission === 'project:endpoint:use' || permission === 'project:governance:update' || permission === 'project:manage',
+      permission === 'project:endpoint:use'
+      || permission === 'project:governance:update'
+      || permission === 'project:membership:update'
+      || permission === 'project:manage',
     );
-    mockUseCanManageResourcePolicy.mockReturnValue(false);
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -200,7 +199,6 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     mockUseHasPermission.mockImplementation((permission: string) =>
       permission === 'project:endpoint:use' || permission === 'project:governance:update',
     );
-    mockUseCanManageResourcePolicy.mockReturnValue(true);
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -208,6 +206,21 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--members')).not.toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
+  });
+
+  it('shows members for membership managers without owner-only settings', () => {
+    const wrapper = createWrapper();
+    mockUseHasPermission.mockImplementation((permission: string) =>
+      permission === 'project:endpoint:use' || permission === 'project:membership:update',
+    );
+
+    render(<AppShellSidebar />, { wrapper });
+
+    const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
+    expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--resource_policy')).not.toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--credentials')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 });

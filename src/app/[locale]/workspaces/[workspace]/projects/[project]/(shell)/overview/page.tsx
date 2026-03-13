@@ -19,6 +19,7 @@ export default function OverviewPage() {
   const tErrors = useTranslations('errors');
   const canUseProject = useHasPermission('project:endpoint:use');
   const canManageGovernance = useHasPermission('project:governance:update');
+  const canManageMembership = useHasPermission('project:membership:update');
   const canManageProject = useHasPermission('project:manage');
   const canManageAgents = useHasPermission('project:agent:manage');
 
@@ -67,9 +68,13 @@ export default function OverviewPage() {
           { label: tNav('credentials'), href: `${basePath}/credentials` },
         ]
       : []),
-    ...(canManageProject
+    ...(canManageMembership
       ? [
           { label: tNav('members'), href: `${basePath}/members` },
+        ]
+      : []),
+    ...(canManageProject
+      ? [
           { label: tNav('settings'), href: `${basePath}/settings` },
         ]
       : []),

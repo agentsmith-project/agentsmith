@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -18,6 +18,7 @@ describe('system workspace registry', () => {
     process.env = { ...originalEnv };
     const dir = mkdtempSync(join(tmpdir(), 'agentsmith-system-ws-'));
     process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH = join(dir, 'provisioning');
   });
 
   afterEach(() => {
@@ -100,6 +101,55 @@ describe('system workspace registry', () => {
     const published = await publishSystemWorkspace('platform_ops');
     expect(published.provisioning_status).toBe('ready');
     expect(published.last_initialized_at).toBeTruthy();
+    const artifact = JSON.parse(
+      readFileSync(join(process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH!, 'platform_ops.json'), 'utf-8'),
+    ) as {
+      attempt_count: number;
+      latest_attempt: {
+        attempt_number: number;
+        status: string;
+        failed_domain: string | null;
+      };
+      attempts: Array<{
+        attempt_number: number;
+        status: string;
+      }>;
+      provisioning_result: { status: string };
+      foundation_result: {
+        tenant_materialized: boolean;
+        data_foundations: {
+          domains: Array<{
+            domain: string;
+            status: string;
+            collections: string[];
+          }>;
+          materialized_collections: string[];
+        };
+      } | null;
+    };
+    expect(artifact.attempt_count).toBe(1);
+    expect(artifact.latest_attempt).toEqual(
+      expect.objectContaining({
+        attempt_number: 1,
+        status: 'ready',
+        failed_domain: null,
+      }),
+    );
+    expect(artifact.attempts).toHaveLength(1);
+    expect(artifact.provisioning_result.status).toBe('ready');
+    expect(artifact.foundation_result?.tenant_materialized).toBe(true);
+    expect(artifact.foundation_result?.data_foundations.domains).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          domain: 'notebook',
+          status: 'ready',
+          collections: expect.arrayContaining(['ws_platform_ops_notebook_tasks']),
+        }),
+      ]),
+    );
+    expect(artifact.foundation_result?.data_foundations.materialized_collections).toContain(
+      'ws_platform_ops_notebook_tasks',
+    );
     await expect(getPublicSystemWorkspace('platform_ops')).resolves.toEqual(
       expect.objectContaining({ id: 'platform_ops', provisioning_status: 'ready' }),
     );
@@ -107,5 +157,115 @@ describe('system workspace registry', () => {
     const disabled = await disableSystemWorkspace('platform_ops');
     expect(disabled.provisioning_status).toBe('disabled');
     await expect(getPublicSystemWorkspace('platform_ops')).resolves.toBeNull();
+  });
+
+  it('marks workspace as failed when foundation initialization preconditions are incomplete', async () => {
+    await createSystemWorkspace({
+      name: 'Broken Workspace',
+      workspace_admin: 'admin@example.com',
+      idp_url: '',
+      idp_realm: 'broken',
+      idp_client_id: 'agentsmith-broken',
+      idp_client_secret: 'secret-1',
+    });
+
+    const published = await publishSystemWorkspace('broken_workspace');
+    expect(published.provisioning_status).toBe('failed');
+    expect(published.last_initialized_at).toBeNull();
+    expect(published.last_init_error).toBe('identity_provider_config_incomplete');
+
+    const artifact = JSON.parse(
+      readFileSync(join(process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH!, 'broken_workspace.json'), 'utf-8'),
+    ) as {
+      attempt_count: number;
+      latest_attempt: {
+        attempt_number: number;
+        status: string;
+        init_error: string | null;
+      };
+      attempts: Array<{
+        attempt_number: number;
+        status: string;
+      }>;
+      provisioning_result: { status: string; init_error: string | null };
+      foundation_result: unknown;
+    };
+    expect(artifact.attempt_count).toBe(1);
+    expect(artifact.latest_attempt).toEqual(
+      expect.objectContaining({
+        attempt_number: 1,
+        status: 'failed',
+        init_error: 'identity_provider_config_incomplete',
+      }),
+    );
+    expect(artifact.attempts).toHaveLength(1);
+    expect(artifact.provisioning_result).toEqual({
+      status: 'failed',
+      initialized_at: null,
+      init_error: 'identity_provider_config_incomplete',
+    });
+    expect(artifact.foundation_result).toBeNull();
+    await expect(getPublicSystemWorkspace('broken_workspace')).resolves.toBeNull();
+  });
+
+  it('appends provisioning attempt history across retries', async () => {
+    await createSystemWorkspace({
+      name: 'Retry Workspace',
+      workspace_admin: 'admin@example.com',
+      idp_url: '',
+      idp_realm: 'retry',
+      idp_client_id: 'agentsmith-retry',
+      idp_client_secret: 'secret-1',
+    });
+
+    const firstPublish = await publishSystemWorkspace('retry_workspace');
+    expect(firstPublish.provisioning_status).toBe('failed');
+
+    await updateSystemWorkspace('retry_workspace', {
+      name: 'Retry Workspace',
+      workspace_admin: 'admin@example.com',
+      idp_url: 'https://idp.example.com',
+      idp_realm: 'retry',
+      idp_client_id: 'agentsmith-retry',
+      idp_client_secret: 'secret-1',
+    });
+
+    const secondPublish = await publishSystemWorkspace('retry_workspace');
+    expect(secondPublish.provisioning_status).toBe('ready');
+
+    const artifact = JSON.parse(
+      readFileSync(join(process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH!, 'retry_workspace.json'), 'utf-8'),
+    ) as {
+      attempt_count: number;
+      latest_attempt: {
+        attempt_number: number;
+        status: string;
+      };
+      attempts: Array<{
+        attempt_number: number;
+        status: string;
+        init_error: string | null;
+      }>;
+    };
+
+    expect(artifact.attempt_count).toBe(2);
+    expect(artifact.latest_attempt).toEqual(
+      expect.objectContaining({
+        attempt_number: 2,
+        status: 'ready',
+      }),
+    );
+    expect(artifact.attempts).toEqual([
+      expect.objectContaining({
+        attempt_number: 1,
+        status: 'failed',
+        init_error: 'identity_provider_config_incomplete',
+      }),
+      expect.objectContaining({
+        attempt_number: 2,
+        status: 'ready',
+        init_error: null,
+      }),
+    ]);
   });
 });

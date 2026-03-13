@@ -11,6 +11,11 @@ import { handleRequest } from './request-handler.js';
 import { createGovernanceRunner } from './governance-runner.js';
 import { ensureModelCatalogBootstrap } from './model-catalog-service.js';
 import { refreshExpiringFeishuConnections } from './feishu-oauth.js';
+export {
+  createWorkspaceFoundationStoreResourceFromEnv,
+  getWorkspaceFoundationBaseCollections,
+  initializeWorkspaceFoundations,
+} from './workspace-foundation-initializer.js';
 
 export type { NodeApiDeps } from './node-api-deps.js';
 export { createDefaultNodeApiDeps } from './node-api-deps-factory.js';

@@ -112,6 +112,28 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   { label: t('workspace_failed_label'), value: String(snapshot.workspace_provisioning.failed) },
                   { label: t('workspace_draft_label'), value: String(snapshot.workspace_provisioning.draft) },
                   { label: t('workspace_disabled_label'), value: String(snapshot.workspace_provisioning.disabled) },
+                  {
+                    label: t('workspace_last_initialized_label'),
+                    value: snapshot.workspace_provisioning.last_initialized_at
+                      ? new Date(snapshot.workspace_provisioning.last_initialized_at).toLocaleString(locale)
+                      : '-',
+                  },
+                  {
+                    label: t('workspace_last_ready_label'),
+                    value: snapshot.workspace_provisioning.last_ready_at
+                      ? new Date(snapshot.workspace_provisioning.last_ready_at).toLocaleString(locale)
+                      : '-',
+                  },
+                  {
+                    label: t('workspace_last_failed_label'),
+                    value: snapshot.workspace_provisioning.last_failed_at
+                      ? new Date(snapshot.workspace_provisioning.last_failed_at).toLocaleString(locale)
+                      : '-',
+                  },
+                  {
+                    label: t('workspace_last_init_error_label'),
+                    value: snapshot.workspace_provisioning.last_init_error || '-',
+                  },
                 ]}
               />
             </div>

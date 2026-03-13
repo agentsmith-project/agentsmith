@@ -70,6 +70,9 @@ export async function publishSystemWorkspace(id: string): Promise<SystemWorkspac
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
+  if (existing.provisioning_status === 'provisioning') {
+    throw Object.assign(new Error('workspace_already_provisioning'), { code: 'WORKSPACE_ALREADY_PROVISIONING' });
+  }
 
   const provisioningRecord: SystemWorkspaceRecord = {
     ...existing,
@@ -83,7 +86,10 @@ export async function publishSystemWorkspace(id: string): Promise<SystemWorkspac
   const finalized: SystemWorkspaceRecord = {
     ...provisioningRecord,
     provisioning_status: result.status,
-    last_initialized_at: result.initialized_at,
+    last_initialized_at:
+      result.status === 'ready'
+        ? result.initialized_at
+        : (existing.last_initialized_at ?? null),
     last_init_error: result.init_error,
     updated_at: new Date().toISOString(),
   };

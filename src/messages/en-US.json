@@ -2737,6 +2737,10 @@
     "workspace_failed_label": "Failed",
     "workspace_draft_label": "Draft",
     "workspace_disabled_label": "Disabled",
+    "workspace_last_initialized_label": "Last initialized",
+    "workspace_last_ready_label": "Last ready",
+    "workspace_last_failed_label": "Last failed",
+    "workspace_last_init_error_label": "Last initialization error",
     "config_status": {
       "available": "Available",
       "unavailable": "Unavailable",

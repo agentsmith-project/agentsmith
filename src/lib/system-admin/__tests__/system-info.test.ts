@@ -17,11 +17,11 @@ describe('system info snapshot', () => {
 
   it('builds restrained provisioning and config status summary', async () => {
     vi.mocked(listSystemWorkspaces).mockResolvedValue([
-      { provisioning_status: 'draft' },
-      { provisioning_status: 'ready' },
-      { provisioning_status: 'ready' },
-      { provisioning_status: 'failed' },
-      { provisioning_status: 'disabled' },
+      { provisioning_status: 'draft', last_initialized_at: null, updated_at: '2026-03-10T00:00:00.000Z', last_init_error: null },
+      { provisioning_status: 'ready', last_initialized_at: '2026-03-11T01:00:00.000Z', updated_at: '2026-03-11T01:00:00.000Z', last_init_error: null },
+      { provisioning_status: 'ready', last_initialized_at: '2026-03-12T01:00:00.000Z', updated_at: '2026-03-12T01:00:00.000Z', last_init_error: null },
+      { provisioning_status: 'failed', last_initialized_at: null, updated_at: '2026-03-13T02:00:00.000Z', last_init_error: 'tenant_configuration_incomplete' },
+      { provisioning_status: 'disabled', last_initialized_at: '2026-03-09T01:00:00.000Z', updated_at: '2026-03-09T01:00:00.000Z', last_init_error: null },
     ] as never);
 
     process.env.SYSTEM_SUBSTRATE_URL = 'mongodb://db.internal:27017';
@@ -41,6 +41,10 @@ describe('system info snapshot', () => {
           ready: 2,
           failed: 1,
           disabled: 1,
+          last_initialized_at: '2026-03-12T01:00:00.000Z',
+          last_ready_at: '2026-03-12T01:00:00.000Z',
+          last_failed_at: '2026-03-13T02:00:00.000Z',
+          last_init_error: 'tenant_configuration_incomplete',
         },
       }),
     );
@@ -65,6 +69,10 @@ describe('system info snapshot', () => {
           ready: 0,
           failed: 0,
           disabled: 0,
+          last_initialized_at: null,
+          last_ready_at: null,
+          last_failed_at: null,
+          last_init_error: null,
         },
       }),
     );

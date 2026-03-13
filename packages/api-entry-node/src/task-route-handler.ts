@@ -859,6 +859,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       ? 'message_run'
       : (messageId ? 'message' : (runId ? 'run' : 'task'));
     let traces = await listTaskTraceEventsFiltered(deps, {
+      workspaceId: route.workspaceId,
       taskId: route.taskId,
       ...(messageId ? { messageId } : {}),
       ...(runId ? { runId } : {}),

@@ -31,6 +31,10 @@ export interface SystemInfoSnapshot {
     ready: number;
     failed: number;
     disabled: number;
+    last_initialized_at: string | null;
+    last_ready_at: string | null;
+    last_failed_at: string | null;
+    last_init_error: string | null;
   };
 }
 

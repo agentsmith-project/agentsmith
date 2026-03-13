@@ -24,6 +24,12 @@ export async function POST(
         { status: 404 },
       );
     }
+    if (code === 'WORKSPACE_ALREADY_PROVISIONING') {
+      return NextResponse.json(
+        { error_code: 'WORKSPACE_ALREADY_PROVISIONING', error_message: 'workspace_already_provisioning' },
+        { status: 409 },
+      );
+    }
     throw error;
   }
 }

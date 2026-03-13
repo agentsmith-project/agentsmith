@@ -88,6 +88,24 @@ describe('/api/system/workspaces/[id]', () => {
     expect(registryModule.publishSystemWorkspace).toHaveBeenCalledWith('ws_alpha');
   });
 
+  it('returns 409 when workspace publish is already in progress', async () => {
+    sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    registryModule.publishSystemWorkspace.mockRejectedValue(
+      Object.assign(new Error('workspace_already_provisioning'), { code: 'WORKSPACE_ALREADY_PROVISIONING' }),
+    );
+
+    const response = await PUBLISH(
+      new Request('http://localhost/api/system/workspaces/ws_alpha/publish', { method: 'POST' }),
+      { params: Promise.resolve({ id: 'ws_alpha' }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error_code: 'WORKSPACE_ALREADY_PROVISIONING',
+      error_message: 'workspace_already_provisioning',
+    });
+  });
+
   it('disables workspace config for authenticated system admin', async () => {
     sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
     registryModule.disableSystemWorkspace.mockResolvedValue({ id: 'ws_alpha', provisioning_status: 'disabled' });

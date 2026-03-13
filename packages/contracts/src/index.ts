@@ -260,6 +260,67 @@ export const CreateAIReadyJobRequestSchema = z.object({
   source_ids: z.array(z.string().min(1)).min(1),
 });
 
+export const WorkspaceFoundationInitializationRequestSchema = z.object({
+  workspace_id: z.string().min(1),
+  workspace_name: z.string().min(1),
+  workspace_admin: z.string().min(1),
+  project_creators: z.array(z.string().min(1)).default([]),
+  idp: z.object({
+    kind: z.literal('keycloak'),
+    url: z.string().url(),
+    realm: z.string().min(1),
+    client_id: z.string().min(1),
+  }),
+  tenant: z.object({
+    substrate_label: z.string().min(1).optional(),
+    database_name: z.string().min(1),
+    collection_prefix: z.string().min(1),
+    key_prefix: z.string().min(1),
+  }),
+});
+
+export const WorkspaceFoundationInitializationResultSchema = z.object({
+  status: z.enum(['ready', 'failed']),
+  initialized_at: z.string().datetime().nullable(),
+  init_error: z.string().nullable(),
+  failed_domain: z
+    .enum([
+      'model_config',
+      'endpoints',
+      'chat',
+      'agents',
+      'audit_usage',
+      'notebook',
+      'governance',
+    ])
+    .nullable(),
+  tenant_materialized: z.boolean(),
+  idp_config_applied: z.boolean(),
+  data_config_applied: z.boolean(),
+  data_foundations: z.object({
+    database_name: z.string().min(1),
+    collection_prefix: z.string().min(1),
+    key_prefix: z.string().min(1),
+    domains: z.array(
+      z.object({
+        domain: z.enum([
+          'model_config',
+          'endpoints',
+          'chat',
+          'agents',
+          'audit_usage',
+          'notebook',
+          'governance',
+        ]),
+        status: z.enum(['ready', 'failed', 'not_started']),
+        init_error: z.string().nullable(),
+        collections: z.array(z.string().min(1)).min(1),
+      }),
+    ),
+    materialized_collections: z.array(z.string().min(1)),
+  }),
+});
+
 export type ProjectDTO = z.infer<typeof ProjectSchema>;
 export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequestSchema>;
@@ -285,3 +346,5 @@ export type SourceObjectShareLinkCreateRequest = z.infer<typeof SourceObjectShar
 export type SourceObjectShareLinkResponse = z.infer<typeof SourceObjectShareLinkResponseSchema>;
 export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
 export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;
+export type WorkspaceFoundationInitializationRequest = z.infer<typeof WorkspaceFoundationInitializationRequestSchema>;
+export type WorkspaceFoundationInitializationResult = z.infer<typeof WorkspaceFoundationInitializationResultSchema>;

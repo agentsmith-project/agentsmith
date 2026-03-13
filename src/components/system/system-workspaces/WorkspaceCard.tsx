@@ -44,6 +44,17 @@ export function WorkspaceCard({ locale, t, workspace, onSelect }: WorkspaceCardP
               <p className="mt-1 truncate text-sm font-medium text-foreground">{workspace.tenant.substrate_label}</p>
               <p className="mt-1 truncate text-xs text-tertiary">{workspace.tenant.database_name}</p>
             </div>
+            <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
+              <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('initialized_at_label')}</p>
+              <p className="mt-1 truncate text-sm font-medium text-foreground">
+                {workspace.last_initialized_at
+                  ? new Date(workspace.last_initialized_at).toLocaleString(locale)
+                  : t('not_initialized')}
+              </p>
+              <p className="mt-1 truncate text-xs text-tertiary">
+                {workspace.last_init_error || t('none')}
+              </p>
+            </div>
           </div>
           <p className="mt-2 text-xs text-tertiary">
             {t('updated_at', { value: new Date(workspace.updated_at).toLocaleString(locale) })}

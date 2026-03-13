@@ -2740,6 +2740,10 @@
     "workspace_failed_label": "初始化失败",
     "workspace_draft_label": "草稿",
     "workspace_disabled_label": "已禁用",
+    "workspace_last_initialized_label": "最近初始化时间",
+    "workspace_last_ready_label": "最近成功初始化",
+    "workspace_last_failed_label": "最近失败时间",
+    "workspace_last_init_error_label": "最近初始化错误",
     "config_status": {
       "available": "可用",
       "unavailable": "不可用",

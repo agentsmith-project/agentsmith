@@ -43,6 +43,10 @@ describe('SystemInfoPage', () => {
             ready: 1,
             failed: 1,
             disabled: 0,
+            last_initialized_at: '2026-03-13T01:00:00.000Z',
+            last_ready_at: '2026-03-13T01:00:00.000Z',
+            last_failed_at: '2026-03-13T02:00:00.000Z',
+            last_init_error: 'tenant_configuration_incomplete',
           },
         }}
       />,
@@ -58,11 +62,14 @@ describe('SystemInfoPage', () => {
     expect(screen.getByText('default_idp_title')).toBeInTheDocument();
     expect(screen.getByText('data_service_title')).toBeInTheDocument();
     expect(screen.getByText('workspace_provisioning_title')).toBeInTheDocument();
+    expect(screen.getByText('workspace_last_initialized_label')).toBeInTheDocument();
+    expect(screen.getByText('workspace_last_init_error_label')).toBeInTheDocument();
     expect(screen.getByText('mongodb://localhost:27017')).toBeInTheDocument();
     expect(screen.getByText('artifacts/system-workspaces.json')).toBeInTheDocument();
     expect(screen.getByText('https://login.example.com')).toBeInTheDocument();
     expect(screen.getByText('config_status.available')).toBeInTheDocument();
     expect(screen.getAllByText('config_status.configured')).toHaveLength(2);
     expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getByText('tenant_configuration_incomplete')).toBeInTheDocument();
   });
 });

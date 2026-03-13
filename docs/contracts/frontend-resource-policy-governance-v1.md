@@ -12,7 +12,7 @@ Define the MVP model for resource access and consumption governance across manag
 
 1. Resource policy management scope includes:
 - `endpoint` (LLM endpoint only, MVP scope)
-2. Only users with `project:manage` can create/update/delete resource policy.
+2. Only users with `project:governance:update` can create/update/delete resource policy.
 3. Runtime use-path checks remain resource-driven and policy-driven.
 
 ## Core Principles

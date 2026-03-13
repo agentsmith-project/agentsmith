@@ -83,7 +83,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:endpoint:use', 'project:manage'],
+        permissions: ['project:endpoint:use', 'project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -92,7 +92,7 @@ describe('use-permissions hooks', () => {
         wrapper: createWrapper(),
       });
 
-      expect(result.current).toEqual(['project:endpoint:use', 'project:manage']);
+      expect(result.current).toEqual(['project:endpoint:use', 'project:governance:update']);
     });
 
     it('should return empty permissions for project without membership', () => {
@@ -161,7 +161,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:endpoint:use', 'project:manage'],
+        permissions: ['project:endpoint:use', 'project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -188,7 +188,7 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useHasPermission('project:manage'), {
+      const { result } = renderHook(() => useHasPermission('project:governance:update'), {
         wrapper: createWrapper(),
       });
 
@@ -328,7 +328,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage', 'project:membership:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -351,7 +351,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:manage', 'project:membership:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -409,7 +409,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage', 'project:membership:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -432,7 +432,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:endpoint:use', 'project:manage'],
+        permissions: ['project:endpoint:use', 'project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -457,7 +457,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage', 'project:membership:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -480,7 +480,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:manage', 'project:governance:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -505,7 +505,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'owner' as const,
-        permissions: ['project:manage', 'project:membership:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -528,7 +528,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:manage', 'project:governance:update'],
+        permissions: ['project:governance:update', 'project:membership:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
@@ -678,7 +678,7 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(
-        () => useHasAnyPermission(['project:endpoint:use', 'project:write', 'project:manage']),
+        () => useHasAnyPermission(['project:endpoint:use', 'project:write', 'project:governance:update']),
         { wrapper: createWrapper() }
       );
 
@@ -701,7 +701,7 @@ describe('use-permissions hooks', () => {
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(
-        () => useHasAnyPermission(['project:write', 'project:manage']),
+        () => useHasAnyPermission(['project:write', 'project:governance:update']),
         { wrapper: createWrapper() }
       );
 
@@ -753,7 +753,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:endpoint:use', 'project:write', 'project:manage'],
+        permissions: ['project:endpoint:use', 'project:write', 'project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });

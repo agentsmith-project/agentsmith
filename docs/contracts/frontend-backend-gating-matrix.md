@@ -26,7 +26,6 @@ Backend enforces `401/403`; frontend applies route/component gates.
 - `project:admins:update`
 - `project:lifecycle:update`
 - `project:files:update`
-- `project:manage`
 
 ## Matrix
 
@@ -34,7 +33,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 |---|---|---|---|---|
 | projects list | view projects | `workspace:read` | `/workspaces/{ws}/projects` | error state or empty permissions fallback |
 | projects list | create project | `workspace:project:create` | `POST /workspaces/{ws}/projects` | disable create button + toast/error |
-| projects list | delete project | `project:manage` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
+| projects list | delete project | `project:lifecycle:update` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
 | chat | access chat page and stream completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
 | notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
 | files | view/use personal file libraries | `project:endpoint:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
@@ -66,8 +65,6 @@ Backend enforces `401/403`; frontend applies route/component gates.
 
 ## Target Migration (Accepted)
 
-The current matrix still uses `project:manage` on several project governance surfaces. The accepted target split is:
-
 - `project:governance:update`
   - endpoints governance writes
   - credentials
@@ -86,4 +83,3 @@ The current matrix still uses `project:manage` on several project governance sur
   - owner transfer
   - other lifecycle settings
 
-`project:manage` remains temporarily in the matrix only for legacy checks that have not yet been moved to the split project permission model.

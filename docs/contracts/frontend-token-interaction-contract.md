@@ -41,7 +41,6 @@ Related docs:
 - `project:admins:update`
 - `project:lifecycle:update`
 - `project:files:update`
-- `project:manage`
 
 ## Route-Level Permission Gate Contract
 

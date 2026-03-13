@@ -14,6 +14,8 @@ import {
   useCanCreateTask,
   useCanUpdateTask,
   useCanDeleteTask,
+  useCanManageMemberGovernance,
+  useIsProjectAdmin,
 } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -307,7 +309,7 @@ describe('use-permissions hooks', () => {
   });
 
   describe('useIsOwnerOrAdmin', () => {
-    it('should return true for project-manage token', () => {
+    it('should return true for owner role', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -317,6 +319,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        role: 'owner' as const,
         permissions: ['project:manage'],
       };
 
@@ -329,7 +332,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return true for project-manage token (admin equivalent)', () => {
+    it('should return true for admin role', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -339,6 +342,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        role: 'admin' as const,
         permissions: ['project:manage'],
       };
 
@@ -351,7 +355,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return false without project-manage token', () => {
+    it('should return false without owner/admin role', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -361,6 +365,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        role: 'developer' as const,
         permissions: ['project:endpoint:use'],
       };
 
@@ -385,7 +390,7 @@ describe('use-permissions hooks', () => {
   });
 
   describe('useIsOwner', () => {
-    it('should return true for project-manage token', () => {
+    it('should return true when role is owner', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -395,6 +400,7 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
+        role: 'owner' as const,
         permissions: ['project:manage'],
       };
 
@@ -407,7 +413,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return false without project-manage token', () => {
+    it('should return false for project admin role', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -417,12 +423,109 @@ describe('use-permissions hooks', () => {
         visibility: 'public' as const,
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:endpoint:use'],
+        role: 'admin' as const,
+        permissions: ['project:endpoint:use', 'project:manage'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
       const { result } = renderHook(() => useIsOwner(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(false);
+    });
+  });
+
+  describe('useIsProjectAdmin', () => {
+    it('should return true for owner role', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        role: 'owner' as const,
+        permissions: ['project:manage'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useIsProjectAdmin(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('should return true for admin role', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        role: 'admin' as const,
+        permissions: ['project:manage'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useIsProjectAdmin(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+  });
+
+  describe('useCanManageMemberGovernance', () => {
+    it('should return true for owner role', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        role: 'owner' as const,
+        permissions: ['project:manage'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanManageMemberGovernance(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
+    });
+
+    it('should return false for project admin role', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        role: 'admin' as const,
+        permissions: ['project:manage'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanManageMemberGovernance(), {
         wrapper: createWrapper(),
       });
 

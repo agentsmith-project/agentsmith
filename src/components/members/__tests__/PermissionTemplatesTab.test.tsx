@@ -157,4 +157,14 @@ describe('PermissionTemplatesTab', () => {
     warnSpy.mockRestore();
     errorSpy.mockRestore();
   });
+
+  it('hides management actions for project admins without owner controls', () => {
+    mockUseCanManageMemberGovernance.mockReturnValue(false);
+
+    render(<PermissionTemplatesTab workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.queryByRole('button', { name: 'create_template' })).not.toBeInTheDocument();
+    expect(screen.queryByTestId('members__permission-template-delete-btn--tpl_custom')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /apply_to_member/i })).not.toBeInTheDocument();
+  });
 });

@@ -8664,6 +8664,84 @@ describe('api-entry-node projects routes', () => {
       && item.error_message === 'project_owner_required')).toBe(true);
   });
 
+  it('rejects member permission updates from project admins and records audit errors', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Owner Only Join Approval',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const assignAdminRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        governance_json: {
+          project_admins: ['user_alt'],
+        },
+      }),
+    });
+    expect(assignAdminRes.status).toBe(200);
+
+    const forbiddenPermissionsRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/members/user_owner/permissions`,
+      'alt-token',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': 'req_project_admin_join_approve_forbidden',
+        },
+        body: JSON.stringify({
+          template: 'admin',
+          permissions: ['project:manage'],
+        }),
+      },
+    );
+    expect(forbiddenPermissionsRes.status).toBe(403);
+    await expect(forbiddenPermissionsRes.json()).resolves.toMatchObject({
+      error_code: 'PERMISSION_DENIED',
+      message: 'project_owner_required',
+    });
+
+    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+    const auditRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=member.permissions.updated&page=1&page_size=20&result=error`,
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        request_id?: string;
+        result: string;
+        error_code?: string;
+        error_message?: string;
+        resource_id?: string;
+      }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'member.permissions.updated'
+      && item.request_id === 'req_project_admin_join_approve_forbidden'
+      && item.result === 'error'
+      && item.error_code === 'PERMISSION_DENIED'
+      && item.error_message === 'project_owner_required'
+      && item.resource_id === 'user_owner')).toBe(true);
+  });
+
   it('lets project owners transfer ownership and records audit events', async () => {
     const { baseUrl } = startServer();
 

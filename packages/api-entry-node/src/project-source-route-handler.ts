@@ -144,6 +144,22 @@ function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
 }
 
+async function readProjectOwner(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+}): Promise<string | null> {
+  try {
+    const project = await args.deps.getProjectUseCase.execute({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+    });
+    return project.owner_id;
+  } catch {
+    return null;
+  }
+}
+
 function validatePolicyRuleKeys(args: {
   resourceType: 'endpoint' | 'source_library' | 'agent';
   kind: 'rate_limits' | 'spending_limits';
@@ -1223,6 +1239,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectJoinRequestApprove' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const key = projectScopedKey(route.workspaceId, route.projectId);
     const items = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key) ?? [];
     const target = items.find((item) => item.id === route.joinId);
@@ -1259,6 +1284,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectJoinRequestReject' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req);
     const reason = typeof (body as { reason?: unknown } | null)?.reason === 'string'
       ? (body as { reason?: string }).reason
@@ -1297,6 +1331,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectPermissionTemplates' && method === 'POST' && route.workspaceId && route.projectId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req) as {
       name?: string;
       description?: string;
@@ -1332,6 +1375,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req) as {
       name?: string;
       description?: string;
@@ -1364,6 +1416,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const items = getProjectPermissionTemplatesState(route.workspaceId, route.projectId);
     const target = items.find((it) => it.id === route.templateId);
     if (!target) {
@@ -1390,6 +1451,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroups' && method === 'POST' && route.workspaceId && route.projectId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req) as {
       name?: string;
       description?: string;
@@ -1419,6 +1489,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.groupId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req) as {
       name?: string;
       description?: string;
@@ -1443,6 +1522,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.groupId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const next = groups.filter((g) => g.id !== route.groupId);
     setProjectGroupsState(route.workspaceId, route.projectId, next);
@@ -1452,6 +1540,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupApplyTemplate' && method === 'POST' && route.workspaceId && route.projectId && route.groupId) {
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req) as { member_ids?: string[] };
     const groups = getProjectGroupsState(route.workspaceId, route.projectId);
     const group = groups.find((g) => g.id === route.groupId);
@@ -1516,19 +1613,34 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'projectMembershipItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
     const requestId = readRequestId(req);
     const body = await readBody(req) as { status?: 'active' | 'suspended' };
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: body?.status === 'suspended' ? 'member.membership.suspended' : 'member.membership.activated',
+        result: 'error',
+        requestId,
+        resourceType: 'membership',
+        resourceId: route.userId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'project_owner_required',
+        metadata: {
+          target_user_id: route.userId,
+          next_status: body?.status,
+        },
+      });
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     if (!body || (body.status !== 'active' && body.status !== 'suspended')) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'status must be active or suspended' });
       return true;
-    }
-    let projectOwnerId: string | null = null;
-    try {
-      const project = await deps.getProjectUseCase.execute({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-      });
-      projectOwnerId = project.owner_id;
-    } catch {
-      // keep behavior minimal in local/dev fallback mode
     }
     if (projectOwnerId && route.userId === projectOwnerId) {
       await writeProjectAuditEvent(deps, {
@@ -1625,15 +1737,29 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectMembershipItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.userId) {
     const requestId = readRequestId(req);
-    let projectOwnerId: string | null = null;
-    try {
-      const project = await deps.getProjectUseCase.execute({
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'member.membership.removed',
+        result: 'error',
+        requestId,
+        resourceType: 'membership',
+        resourceId: route.userId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'project_owner_required',
+        metadata: {
+          target_user_id: route.userId,
+        },
       });
-      projectOwnerId = project.owner_id;
-    } catch {
-      // keep behavior minimal in local/dev fallback mode
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
     }
     if (projectOwnerId && route.userId === projectOwnerId) {
       await writeProjectAuditEvent(deps, {
@@ -1724,6 +1850,30 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectMemberPermissions' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
     const requestId = readRequestId(req);
+    const projectOwnerId = await readProjectOwner({
+      deps,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+    });
+    if (projectOwnerId && projectOwnerId !== user.id) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'member.permissions.updated',
+        result: 'error',
+        requestId,
+        resourceType: 'member',
+        resourceId: route.userId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'project_owner_required',
+        metadata: {
+          target_user_id: route.userId,
+        },
+      });
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
     const body = await readBody(req) as {
       template?: string | null;
       permissions?: string[];

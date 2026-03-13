@@ -2,6 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { ProjectGroupsSection } from '../ProjectGroupsSection';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 
 const mockCreateMutateAsync = vi.fn().mockResolvedValue({});
 const mockUpdateMutateAsync = vi.fn().mockResolvedValue({});
@@ -164,5 +165,17 @@ describe('ProjectGroupsSection', () => {
     await waitFor(() => {
       expect(mockDeleteMutateAsync).toHaveBeenCalledWith('grp_1');
     });
+  });
+
+  it('renders group management controls as read-only for project admins', () => {
+    vi.mocked(useCanManageMemberGovernance).mockReturnValue(false);
+
+    render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('members__group-name-input')).toBeDisabled();
+    expect(screen.getByTestId('members__group-save-btn')).toBeDisabled();
+    expect(screen.getByTestId('members__group-apply-btn--grp_1')).toBeDisabled();
+    expect(screen.getByTestId('members__group-edit-btn--grp_1')).toBeDisabled();
+    expect(screen.getByTestId('members__group-delete-btn--grp_1')).toBeDisabled();
   });
 });

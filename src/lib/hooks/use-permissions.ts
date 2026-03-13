@@ -37,6 +37,19 @@ export function useCurrentPermissions() {
   }, [currentProject, workspaceId, projectId]);
 }
 
+export function useCurrentProjectRole(): ProjectWithMembership['role'] | null {
+  const { workspace, project } = useParams();
+  const workspaceId = validateWorkspaceParam(workspace);
+  const projectId = validateProjectParam(project);
+  const { data: currentProject } = useProject(workspaceId ?? '', projectId ?? '');
+
+  return useMemo(() => {
+    if (!workspaceId || !projectId) return null;
+    const validated = currentProject ? validateProjectWithMembership(currentProject) : null;
+    return validated?.role ?? null;
+  }, [currentProject, projectId, workspaceId]);
+}
+
 export function useCurrentWorkspacePermissions() {
   const { workspace } = useParams();
   const workspaceId = validateWorkspaceParam(workspace);
@@ -74,15 +87,17 @@ export function useHasAllPermissions(permissions: string[]): boolean {
 
 // Semantic permission helpers mapped directly to token checks.
 export function useIsOwnerOrAdmin(): boolean {
-  return useHasPermission('project:manage');
+  const role = useCurrentProjectRole();
+  return role === 'owner' || role === 'admin';
 }
 
 export function useIsOwner(): boolean {
-  return useHasPermission('project:manage');
+  return useCurrentProjectRole() === 'owner';
 }
 
 export function useIsProjectAdmin(): boolean {
-  return useHasPermission('project:manage');
+  const role = useCurrentProjectRole();
+  return role === 'owner' || role === 'admin';
 }
 
 export function useCanManageProject(): boolean {
@@ -90,7 +105,7 @@ export function useCanManageProject(): boolean {
 }
 
 export function useCanManageMemberGovernance(): boolean {
-  return useHasPermission('project:manage');
+  return useIsOwner();
 }
 
 export function useCanManageResourcePolicy(): boolean {

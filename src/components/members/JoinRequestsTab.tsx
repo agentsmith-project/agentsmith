@@ -4,11 +4,11 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/loading';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { CheckCircle, XCircle, Clock, UserPlus } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils/formatters';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { useApproveJoinRequest, useRejectJoinRequest } from '@/lib/hooks/use-join-requests';
 import type { JoinRequest } from '@/lib/api/endpoints/members';
 
@@ -30,7 +30,7 @@ export function JoinRequestsTab({
   onReject,
 }: JoinRequestsTabProps) {
   const t = useTranslations('members.join_requests');
-  const canApprove = useHasPermission('project:manage');
+  const canApprove = useCanManageMemberGovernance();
   const approveMutation = useApproveJoinRequest(workspaceId, projectId);
   const rejectMutation = useRejectJoinRequest(workspaceId, projectId);
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);
@@ -131,11 +131,9 @@ export function JoinRequestsTab({
         <DialogContent className="sm:max-w-[420px]">
           <DialogHeader>
             <DialogTitle>{t('reject_title')}</DialogTitle>
+            <DialogDescription>{t('reject_description')}</DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
-            <p className="text-sm text-tertiary">
-              {t('reject_description')}
-            </p>
             <Input
               value={rejectReason}
               onChange={(e) => setRejectReason(e.target.value)}

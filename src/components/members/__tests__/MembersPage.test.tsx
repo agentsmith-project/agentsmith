@@ -128,4 +128,12 @@ describe('MembersPage', () => {
     const body = screen.getByTestId('page-layout__body');
     expect(body.classList.contains('p-6')).toBe(false);
   });
+
+  it('disables invite action for non-owners', () => {
+    mockUseCanManageMemberGovernance.mockReturnValue(false);
+
+    render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('members__invite-btn')).toBeDisabled();
+  });
 });

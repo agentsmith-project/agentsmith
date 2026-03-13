@@ -21,6 +21,10 @@ export function hasProjectPermission(project: Project, permission: string): bool
   return Array.isArray(project.permissions) && project.permissions.includes(permission);
 }
 
+export function hasAnyProjectPermission(project: Project, permissions: readonly string[]): boolean {
+  return permissions.some((permission) => hasProjectPermission(project, permission));
+}
+
 export function buildProjectAdminSummary(
   project: Pick<ProjectWithMembership, 'governance_json' | 'owner_id'>,
   memberNameById: Map<string, string>,

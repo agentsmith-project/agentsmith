@@ -6,7 +6,7 @@ import { FolderOpen, Globe, Lock, Pin, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { Project } from '@/lib/projects/project-view';
-import { hasProjectPermission } from '@/lib/projects/project-view';
+import { hasAnyProjectPermission } from '@/lib/projects/project-view';
 
 export function ProjectCard({
   project,
@@ -23,7 +23,11 @@ export function ProjectCard({
   adminSummary: string;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
-  const canManageSettings = hasProjectPermission(project, 'project:manage');
+  const canManageSettings = hasAnyProjectPermission(project, [
+    'project:governance:update',
+    'project:admins:update',
+    'project:lifecycle:update',
+  ]);
   return (
     <div
       onClick={onClick}

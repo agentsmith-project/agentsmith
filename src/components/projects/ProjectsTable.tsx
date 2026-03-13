@@ -19,7 +19,7 @@ import {
 } from '@tanstack/react-table';
 
 import type { Project } from '@/lib/projects/project-view';
-import { buildProjectAdminSummary, formatProjectGroupAlias, hasProjectPermission } from '@/lib/projects/project-view';
+import { buildProjectAdminSummary, formatProjectGroupAlias, hasAnyProjectPermission } from '@/lib/projects/project-view';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -137,7 +137,11 @@ export function ProjectsTable({
         header: '',
         cell: ({ row }) => {
           const canDeleteProject = canDeleteProjectByWorkspacePermission;
-          const canManageSettings = hasProjectPermission(row.original, 'project:manage');
+          const canManageSettings = hasAnyProjectPermission(row.original, [
+            'project:governance:update',
+            'project:admins:update',
+            'project:lifecycle:update',
+          ]);
           return (
             <div className="flex items-center gap-1">
               <Button

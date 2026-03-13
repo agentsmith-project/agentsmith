@@ -88,9 +88,6 @@ export function resolveWorkspacePermissions(args: {
     }
     return MEMBER_WORKSPACE_PERMISSIONS;
   }
-  if (defaultWorkspaceId && workspaceId === defaultWorkspaceId) {
-    return OWNER_WORKSPACE_PERMISSIONS;
-  }
   return MEMBER_WORKSPACE_PERMISSIONS;
 }
 

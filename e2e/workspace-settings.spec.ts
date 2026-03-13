@@ -37,4 +37,19 @@ test.describe('Workspace Settings Page', () => {
     await authedPage.getByTestId('ws-settings__project-creators-save').click();
     await expect(authedPage.getByTestId('ws-settings__project-creators-input')).toHaveValue('user_alt');
   });
+
+  test('workspace admin can transfer project ownership', async ({ authedPage }) => {
+    const projectCard = authedPage.getByTestId('ws-settings__project--proj_001');
+    const ownerSelect = authedPage.getByTestId('ws-settings__project-owner-select--proj_001');
+    const optionValues = await ownerSelect.locator('option').evaluateAll((options) =>
+      options.map((option) => ({ value: option.getAttribute('value') ?? '', label: option.textContent ?? '' })),
+    );
+    const currentValue = await ownerSelect.inputValue();
+    const nextOwner = optionValues.find((option) => option.value && option.value !== currentValue);
+    expect(nextOwner).toBeTruthy();
+
+    await ownerSelect.selectOption(nextOwner!.value);
+    await authedPage.getByTestId('ws-settings__project-owner-save--proj_001').click();
+    await expect(projectCard.getByText(new RegExp(`Current owner:.*${nextOwner!.label.trim()}`, 'i'))).toBeVisible();
+  });
 });

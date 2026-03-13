@@ -601,12 +601,14 @@ describe('Project use cases', () => {
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       input: {
+        owner_id: 'user_alt',
         governance_json: { project_admins: ['user_alt'] },
         execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
         limits_json: { requests_per_day: 1000 },
       },
     });
 
+    expect(updated.owner_id).toBe('user_alt');
     expect(updated.governance_json).toEqual({ project_admins: ['user_alt'] });
     expect(updated.execution_preferences_json).toEqual({ notebook_endpoint_id: 'ep_notebook' });
     expect(updated.limits_json).toEqual({ requests_per_day: 1000 });

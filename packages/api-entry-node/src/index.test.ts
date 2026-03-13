@@ -12,6 +12,7 @@ import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 
 const servers: Server[] = [];
 const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
+const originalSystemWorkspaceRegistryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
 const originalFeishuAppId = process.env.FEISHU_APP_ID;
 const originalFeishuAppSecret = process.env.FEISHU_APP_SECRET;
 const originalFeishuRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI;
@@ -32,6 +33,11 @@ afterEach(async () => {
     delete process.env.KEYCLOAK_ISSUER_URL;
   } else {
     process.env.KEYCLOAK_ISSUER_URL = originalKeycloakIssuer;
+  }
+  if (originalSystemWorkspaceRegistryPath === undefined) {
+    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+  } else {
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = originalSystemWorkspaceRegistryPath;
   }
   if (originalFeishuAppId === undefined) delete process.env.FEISHU_APP_ID;
   else process.env.FEISHU_APP_ID = originalFeishuAppId;
@@ -138,6 +144,31 @@ function startMockFeishuOAuthServer(): { server: Server; authorizeUrl: string; t
 function startServer(): { server: Server; baseUrl: string; deps: ReturnType<typeof createDefaultNodeApiDeps> } {
   const keycloak = startMockKeycloakServer();
   process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
+  const dir = mkdtempSync(join(tmpdir(), 'agentsmith-default-workspace-registry-'));
+  process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+  writeFileSync(
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+    JSON.stringify([
+      {
+        id: 'ws_default',
+        name: 'Default Workspace',
+        workspace_admin: 'owner@example.com',
+        project_creators: ['test@example.com'],
+        idp: {
+          kind: 'keycloak',
+          url: keycloak.issuerUrl,
+          realm: 'mbos',
+          client_id: 'agentsmith-web',
+        },
+        tenant: {
+          substrate: 'default',
+          database_name: 'agentsmith_ws_default',
+          collection_prefix: 'ws_default_',
+        },
+      },
+    ]),
+    'utf-8',
+  );
   const deps = createDefaultNodeApiDeps();
   const server = createNodeApiServer(0, deps);
   servers.push(server);
@@ -149,6 +180,31 @@ function startServer(): { server: Server; baseUrl: string; deps: ReturnType<type
 function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
   const keycloak = startMockKeycloakServer();
   process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
+  const dir = mkdtempSync(join(tmpdir(), 'agentsmith-default-workspace-registry-'));
+  process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+  writeFileSync(
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+    JSON.stringify([
+      {
+        id: 'ws_default',
+        name: 'Default Workspace',
+        workspace_admin: 'owner@example.com',
+        project_creators: ['test@example.com'],
+        idp: {
+          kind: 'keycloak',
+          url: keycloak.issuerUrl,
+          realm: 'mbos',
+          client_id: 'agentsmith-web',
+        },
+        tenant: {
+          substrate: 'default',
+          database_name: 'agentsmith_ws_default',
+          collection_prefix: 'ws_default_',
+        },
+      },
+    ]),
+    'utf-8',
+  );
   const server = createNodeApiServer(0, deps);
   servers.push(server);
 
@@ -8606,6 +8662,162 @@ describe('api-entry-node projects routes', () => {
       && item.result === 'error'
       && item.error_code === 'PERMISSION_DENIED'
       && item.error_message === 'project_owner_required')).toBe(true);
+  });
+
+  it('lets project owners transfer ownership and records audit events', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Owner Transfer Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string; owner_id: string };
+    expect(created.owner_id).toBe('user_test');
+
+    const transferRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+        'x-request-id': 'req_project_owner_transfer',
+      },
+      body: JSON.stringify({
+        owner_id: 'user_alt',
+      }),
+    });
+    expect(transferRes.status).toBe(200);
+    await expect(transferRes.json()).resolves.toMatchObject({
+      owner_id: 'user_alt',
+    });
+
+    const auditRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&end_time=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}&action=project.owner.transferred&page=1&page_size=20`,
+      'alt-token',
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        request_id?: string;
+        result: string;
+        metadata_json?: { previous_owner_id?: string; next_owner_id?: string };
+      }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.owner.transferred'
+      && item.request_id === 'req_project_owner_transfer'
+      && item.result === 'ok'
+      && item.metadata_json?.previous_owner_id === 'user_test'
+      && item.metadata_json?.next_owner_id === 'user_alt')).toBe(true);
+  });
+
+  it('lets workspace admins force ownership transfer and rejects project admins', async () => {
+    const { baseUrl } = startServer();
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Forced Owner Transfer Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string };
+
+    const assignAdminRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      method: 'PATCH',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        governance_json: {
+          project_admins: ['user_alt'],
+        },
+      }),
+    });
+    expect(assignAdminRes.status).toBe(200);
+
+    const forbiddenTransferRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}`,
+      'alt-token',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': 'req_project_owner_transfer_forbidden',
+        },
+        body: JSON.stringify({
+          owner_id: 'user_owner',
+        }),
+      },
+    );
+    expect(forbiddenTransferRes.status).toBe(403);
+    await expect(forbiddenTransferRes.json()).resolves.toMatchObject({
+      error_code: 'PERMISSION_DENIED',
+      message: 'project_owner_or_workspace_admin_required',
+    });
+
+    const forcedTransferRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: {
+          'content-type': 'application/json',
+          'x-request-id': 'req_project_owner_transfer_forced',
+        },
+        body: JSON.stringify({
+          owner_id: 'user_owner',
+        }),
+      },
+    );
+    expect(forcedTransferRes.status).toBe(200);
+    await expect(forcedTransferRes.json()).resolves.toMatchObject({
+      owner_id: 'user_owner',
+    });
+
+    const auditRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&end_time=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}&action=project.owner.transferred&page=1&page_size=20`,
+      'owner-token',
+    );
+    expect(auditRes.status).toBe(200);
+    const audit = (await auditRes.json()) as {
+      items: Array<{
+        action: string;
+        request_id?: string;
+        result: string;
+        error_code?: string;
+        error_message?: string;
+        metadata_json?: { previous_owner_id?: string; next_owner_id?: string };
+      }>;
+    };
+    expect(audit.items.some((item) =>
+      item.action === 'project.owner.transferred'
+      && item.request_id === 'req_project_owner_transfer_forbidden'
+      && item.result === 'error'
+      && item.error_code === 'PERMISSION_DENIED'
+      && item.error_message === 'project_owner_or_workspace_admin_required')).toBe(true);
+    expect(audit.items.some((item) =>
+      item.action === 'project.owner.transferred'
+      && item.request_id === 'req_project_owner_transfer_forced'
+      && item.result === 'ok'
+      && item.metadata_json?.previous_owner_id === 'user_test'
+      && item.metadata_json?.next_owner_id === 'user_owner')).toBe(true);
   });
 
   it('rejects project deletion from non-owners and records audit errors', async () => {

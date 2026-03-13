@@ -20,6 +20,7 @@ import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import { useQueryClient } from '@tanstack/react-query';
+import { ProjectAPI, getApiClient } from '@/lib/api';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
@@ -28,6 +29,7 @@ export default function WorkspaceSettingsPage() {
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const queryClient = useQueryClient();
+  const projectAPI = React.useMemo(() => new ProjectAPI(getApiClient()), []);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
@@ -40,6 +42,8 @@ export default function WorkspaceSettingsPage() {
   const [projectCreatorsDraft, setProjectCreatorsDraft] = React.useState('');
   const [projectCreatorsLoading, setProjectCreatorsLoading] = React.useState(false);
   const [projectCreatorsSaving, setProjectCreatorsSaving] = React.useState(false);
+  const [ownerDraftByProject, setOwnerDraftByProject] = React.useState<Record<string, string>>({});
+  const [ownerSavingByProject, setOwnerSavingByProject] = React.useState<Record<string, boolean>>({});
 
   const memberNameById = React.useMemo(
     () => new Map(members.map((member) => [member.user_id, member.name || member.email || member.user_id])),
@@ -51,6 +55,16 @@ export default function WorkspaceSettingsPage() {
   const workspaceDisplayId: string = workspace.id ?? workspaceId ?? '';
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
   const activeProjects = projects.filter((project) => project.status !== 'archived');
+
+  React.useEffect(() => {
+    setOwnerDraftByProject((current) => {
+      const next = { ...current };
+      for (const project of projects) {
+        next[project.id] = next[project.id] ?? project.owner_id;
+      }
+      return next;
+    });
+  }, [projects]);
 
   const handleCreateProjectSuccess = React.useCallback(async () => {
     await queryClient.invalidateQueries({
@@ -98,6 +112,21 @@ export default function WorkspaceSettingsPage() {
       setProjectCreatorsSaving(false);
     }
   }, [loadProjectCreators, projectCreatorsDraft, queryClient, workspaceId]);
+
+  const handleSaveProjectOwner = React.useCallback(async (projectId: string) => {
+    if (!workspaceId) return;
+    const project = projects.find((item) => item.id === projectId);
+    const nextOwnerId = ownerDraftByProject[projectId]?.trim();
+    if (!project || !nextOwnerId || nextOwnerId === project.owner_id) return;
+    setOwnerSavingByProject((current) => ({ ...current, [projectId]: true }));
+    try {
+      await projectAPI.update(workspaceId, projectId, { owner_id: nextOwnerId });
+      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects'] });
+      await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects', projectId] });
+    } finally {
+      setOwnerSavingByProject((current) => ({ ...current, [projectId]: false }));
+    }
+  }, [ownerDraftByProject, projectAPI, projects, queryClient, workspaceId]);
 
   if (!workspaceId) {
     return (
@@ -208,6 +237,45 @@ export default function WorkspaceSettingsPage() {
                           <p className="mt-1 text-sm text-foreground">
                             {buildProjectAdminSummary(project, memberNameById)}
                           </p>
+                          <div className="mt-3 space-y-2">
+                            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-tertiary">
+                              {t('workspace_project_owner_label')}
+                            </label>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <select
+                                value={ownerDraftByProject[project.id] ?? project.owner_id}
+                                onChange={(event) =>
+                                  setOwnerDraftByProject((current) => ({ ...current, [project.id]: event.target.value }))
+                                }
+                                className="min-w-[220px] rounded-sm border border-subtle bg-surface px-3 py-2 text-sm text-foreground"
+                                data-testid={`ws-settings__project-owner-select--${project.id}`}
+                              >
+                                {members.map((member) => (
+                                  <option key={member.id} value={member.user_id}>
+                                    {member.name || member.email || member.user_id}
+                                  </option>
+                                ))}
+                              </select>
+                              <Button
+                                type="button"
+                                size="sm"
+                                variant="outline"
+                                onClick={() => void handleSaveProjectOwner(project.id)}
+                                disabled={
+                                  ownerSavingByProject[project.id] === true ||
+                                  (ownerDraftByProject[project.id] ?? project.owner_id) === project.owner_id
+                                }
+                                data-testid={`ws-settings__project-owner-save--${project.id}`}
+                              >
+                                {ownerSavingByProject[project.id] ? t('workspace_project_owner_saving') : t('workspace_project_owner_save')}
+                              </Button>
+                            </div>
+                            <p className="text-xs text-tertiary">
+                              {t('workspace_project_owner_current', {
+                                owner: memberNameById.get(project.owner_id) || project.owner_id,
+                              })}
+                            </p>
+                          </div>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           <Link

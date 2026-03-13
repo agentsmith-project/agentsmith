@@ -903,6 +903,12 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = UpdateProjectRequestSchema.parse(raw);
+    const actorWorkspacePermissions = resolveWorkspacePermissions({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    });
     let existingProject: Awaited<ReturnType<typeof deps.getProjectUseCase.execute>> | null = null;
     try {
       existingProject = await deps.getProjectUseCase.execute({
@@ -916,6 +922,11 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       typeof input.governance_json === 'object' &&
       input.governance_json !== null &&
       Object.prototype.hasOwnProperty.call(input.governance_json, 'project_admins');
+    const touchesProjectOwner =
+      typeof input.owner_id === 'string' &&
+      input.owner_id.trim().length > 0 &&
+      existingProject !== null &&
+      input.owner_id.trim() !== existingProject.owner_id;
     if (touchesProjectAdmins && existingProject && existingProject.owner_id !== user.id) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
@@ -933,6 +944,31 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
         },
       });
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
+      return true;
+    }
+    if (
+      touchesProjectOwner &&
+      existingProject &&
+      existingProject.owner_id !== user.id &&
+      !actorWorkspacePermissions.includes('workspace:governance:update')
+    ) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'project.owner.transferred',
+        result: 'error',
+        requestId,
+        resourceType: 'project',
+        resourceId: route.projectId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'project_owner_or_workspace_admin_required',
+        metadata: {
+          previous_owner_id: existingProject.owner_id,
+          next_owner_id: input.owner_id?.trim(),
+        },
+      });
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_or_workspace_admin_required' });
       return true;
     }
     try {
@@ -956,6 +992,21 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
           updated_fields: Object.keys(input).sort(),
         },
       });
+      if (touchesProjectOwner && existingProject) {
+        await writeProjectAuditEvent(deps, {
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          actor: { type: 'user', id: user.id },
+          action: 'project.owner.transferred',
+          requestId,
+          resourceType: 'project',
+          resourceId: route.projectId,
+          metadata: {
+            previous_owner_id: existingProject.owner_id,
+            next_owner_id: updated.owner_id,
+          },
+        });
+      }
       json(res, 200, updated);
     } catch (error) {
       if (error instanceof Error && error.message === 'project_not_found') {

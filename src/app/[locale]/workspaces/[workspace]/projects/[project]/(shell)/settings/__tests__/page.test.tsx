@@ -1,8 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockPush = vi.fn();
+const mockProjectUpdate = vi.fn();
+const mockProjectDelete = vi.fn();
 
 const STABLE_PROJECT = {
   id: 'proj_1',
@@ -63,8 +66,8 @@ vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(() => ({})),
   ProjectAPI: vi.fn().mockImplementation(function () {
     return {
-      update: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
+      update: mockProjectUpdate,
+      delete: mockProjectDelete,
     };
   }),
 }));
@@ -101,6 +104,8 @@ describe('SettingsPage route', () => {
     vi.clearAllMocks();
     mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
     mockAuthUser.mockReturnValue({ id: 'owner_1' });
+    mockProjectUpdate.mockResolvedValue(undefined);
+    mockProjectDelete.mockResolvedValue(undefined);
   });
 
   it('renders settings page when params and permission are valid', async () => {
@@ -119,6 +124,7 @@ describe('SettingsPage route', () => {
       expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     });
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
   });
 
@@ -140,8 +146,34 @@ describe('SettingsPage route', () => {
       expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     });
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeDisabled();
+  });
+
+  it('lets project owners transfer ownership', async () => {
+    const user = userEvent.setup();
+    render(
+      <SettingsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings__project-owner-select')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByTestId('settings__project-owner-select'), 'admin_1');
+    await user.click(screen.getByTestId('settings__project-owner-save'));
+
+    await waitFor(() => {
+      expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', { owner_id: 'admin_1' });
+    });
   });
 
   it('shows permission denied when user lacks settings manage permission', async () => {

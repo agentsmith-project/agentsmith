@@ -86,6 +86,8 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const { data: workspaceMembers = [] } = useWorkspaceMembers(resolvedParams?.workspace ?? '');
   const [selectedProjectAdmins, setSelectedProjectAdmins] = useState<string[]>([]);
   const [savingProjectAdmins, setSavingProjectAdmins] = useState(false);
+  const [selectedProjectOwner, setSelectedProjectOwner] = useState('');
+  const [savingProjectOwner, setSavingProjectOwner] = useState(false);
 
   useEffect(() => {
     if (currentProject) {
@@ -97,12 +99,14 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       setSelectedProjectAdmins(
         Array.isArray(rawAdmins) ? rawAdmins.filter((value): value is string => typeof value === 'string') : [],
       );
+      setSelectedProjectOwner(currentProject.owner_id);
     }
   }, [currentProject]);
 
   const isProjectOwner = currentProject?.owner_id === currentUser?.id;
   const canDeleteProject = canManageSettings && isProjectOwner;
   const canAssignProjectAdmins = canManageSettings && isProjectOwner;
+  const canTransferProjectOwner = canManageSettings && isProjectOwner;
 
   const handleProjectAdminCheckedChange = (userId: string, checked: boolean) => {
     setSelectedProjectAdmins((current) => {
@@ -132,6 +136,30 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       handleError(error, { context: settingsT('project_admins_title') });
     } finally {
       setSavingProjectAdmins(false);
+    }
+  };
+
+  const handleSaveProjectOwner = async () => {
+    if (!resolvedParams || !currentProject || !canTransferProjectOwner) return;
+    const nextOwnerId = selectedProjectOwner.trim();
+    if (!nextOwnerId || nextOwnerId === currentProject.owner_id) return;
+    setSavingProjectOwner(true);
+    try {
+      await projectAPI.update(resolvedParams.workspace!, resolvedParams.project!, {
+        owner_id: nextOwnerId,
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['workspaces', resolvedParams.workspace, 'projects', resolvedParams.project],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['workspaces', resolvedParams.workspace, 'projects'],
+      });
+      toast.success(commonT('refreshed_data'));
+      router.push(`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/overview`);
+    } catch (error) {
+      handleError(error, { context: settingsT('project_owner_title') });
+    } finally {
+      setSavingProjectOwner(false);
     }
   };
 
@@ -331,6 +359,44 @@ export default function SettingsPage({ params }: SettingsPageProps) {
                   data-testid="settings__project-admins-save"
                 >
                   {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_admins_save')}
+                </Button>
+              </div>
+            ) : null}
+          </div>
+
+          <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__project-owner-section">
+            <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('project_owner_title')}</h2>
+            <p className="text-sm text-tertiary mb-4">
+              {isProjectOwner ? settingsT('project_owner_help') : settingsT('project_owner_read_only_help')}
+            </p>
+            <div className="space-y-3">
+              <label className="block text-sm font-medium text-primary" htmlFor="project-owner-select">
+                {settingsT('project_owner_field')}
+              </label>
+              <select
+                id="project-owner-select"
+                value={selectedProjectOwner}
+                onChange={(event) => setSelectedProjectOwner(event.target.value)}
+                disabled={!canTransferProjectOwner || savingProjectOwner}
+                className="w-full rounded-sm border border-subtle bg-surface px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                data-testid="settings__project-owner-select"
+              >
+                {workspaceMembers.map((member) => (
+                  <option key={member.id} value={member.user_id}>
+                    {member.name || member.email || member.user_id}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {canTransferProjectOwner ? (
+              <div className="mt-6 flex justify-end">
+                <Button
+                  onClick={handleSaveProjectOwner}
+                  disabled={savingProjectOwner || selectedProjectOwner === currentProject.owner_id}
+                  variant="primary"
+                  data-testid="settings__project-owner-save"
+                >
+                  {savingProjectOwner ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_owner_save')}
                 </Button>
               </div>
             ) : null}

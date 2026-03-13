@@ -18,6 +18,7 @@ export interface CreateProjectRequest {
 export interface UpdateProjectRequest {
   name?: string;
   description?: string;
+  owner_id?: string;
   visibility?: 'public' | 'private';
   join_policy?: 'approval_required' | 'open';
   governance_json?: Record<string, unknown>;

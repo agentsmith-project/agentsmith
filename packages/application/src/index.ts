@@ -262,6 +262,14 @@ export class UpdateProjectUseCase {
       patch.description = input.description.trim();
     }
 
+    if (input.owner_id !== undefined) {
+      const normalizedOwnerId = input.owner_id.trim();
+      if (!normalizedOwnerId) {
+        throw new Error('project_owner_required');
+      }
+      patch.owner_id = normalizedOwnerId;
+    }
+
     if (input.visibility !== undefined) {
       patch.visibility = input.visibility;
     }

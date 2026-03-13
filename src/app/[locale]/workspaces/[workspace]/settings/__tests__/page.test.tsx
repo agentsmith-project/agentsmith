@@ -60,6 +60,7 @@ const STABLE_PROJECTS = [
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
 const mockProjectCreate = vi.fn();
+const mockProjectUpdate = vi.fn();
 const mockFetch = vi.fn<typeof fetch>();
 
 vi.mock('next/navigation', () => ({
@@ -98,6 +99,7 @@ vi.mock('@/lib/api', () => ({
   handleErrorForToast: vi.fn(),
   ProjectAPI: class {
     create = mockProjectCreate;
+    update = mockProjectUpdate;
   },
 }));
 
@@ -133,6 +135,7 @@ describe('WorkspaceSettingsPage', () => {
     mockProjectCreate.mockResolvedValue({
       id: 'proj_created',
     });
+    mockProjectUpdate.mockResolvedValue(undefined);
     mockFetch.mockResolvedValue({
       ok: true,
       json: async () => ({
@@ -182,6 +185,7 @@ describe('WorkspaceSettingsPage', () => {
     );
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
     expect(screen.getByTestId('ws-settings__project-creators')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
   });
 
   it('opens create project dialog and creates a project', async () => {
@@ -253,5 +257,21 @@ describe('WorkspaceSettingsPage', () => {
     const patchCall = mockFetch.mock.calls.find((call) => call[0] === '/api/v1/workspaces/ws_1/project-creators' && (call[1] as RequestInit | undefined)?.method === 'PATCH');
     expect(patchCall).toBeTruthy();
     expect((patchCall?.[1] as RequestInit).body).toBe(JSON.stringify({ project_creators: ['u_2', 'dev3@example.com'] }));
+  });
+
+  it('lets workspace admins transfer project ownership', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-owner-select--proj_1')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByTestId('ws-settings__project-owner-select--proj_1'), 'u_2');
+    await user.click(screen.getByTestId('ws-settings__project-owner-save--proj_1'));
+
+    await waitFor(() => {
+      expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', { owner_id: 'u_2' });
+    });
   });
 });

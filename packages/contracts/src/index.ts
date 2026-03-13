@@ -31,6 +31,7 @@ export const UpdateProjectRequestSchema = z
   .object({
     name: z.string().min(1).max(120).optional(),
     description: z.string().max(1000).optional(),
+    owner_id: z.string().min(1).optional(),
     visibility: ProjectVisibilitySchema.optional(),
     join_policy: ProjectJoinPolicySchema.optional(),
     status: ProjectStatusSchema.optional(),

@@ -29,6 +29,25 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Must independently validate token + permission policy.
 - Must return deterministic `401/403` and stable error code schema.
 
+## Authorization Truth
+
+1. Permission is the only runtime authorization truth.
+- Route guards, page guards, mutation guards, and backend enforcement must ultimately resolve to permission checks in scope.
+- The permission token set remains the final authority for allow/deny decisions.
+
+2. Role names are not first-class authorization primitives.
+- `WorkspaceAdmin`, `ProjectCreator`, `ProjectOwner`, and `ProjectAdmin` are product/model labels.
+- They exist to describe:
+  - default permission bundles
+  - resource relationships
+  - management UI concepts
+- They must not become an alternate runtime authorization system beside permission checks.
+
+3. Resource relationship is allowed as a permission source, not as permission truth.
+- Example: `owner_id` may be used to derive owner-only permissions.
+- Example: `governance_json.project_admins` may be used to derive project governance permissions.
+- But allow/deny still resolves through permissions, not through scattered role-name branching.
+
 ## Authn / Authz Boundary
 
 1. Authn is provided by IdP.
@@ -44,6 +63,7 @@ Clarify the boundary between authentication data and authorization enforcement t
   - project owner privileges
   - project admin privileges
   - permission token checks
+- These privileges should be implemented as permission mappings, not as a second role-only gate system.
 
 3. Workspace membership source is external.
 - Users are sourced from the workspace-bound IdP.
@@ -57,6 +77,7 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Can configure workspace data config and workspace IdP config.
 
 2. `Workspace admin`
+- Is a workspace-scoped governance label that maps to workspace permissions.
 - Can create projects in that workspace.
 - Can grant or revoke workspace-scoped project creation ability.
 - Can force-transfer project ownership inside that workspace.
@@ -64,17 +85,20 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Cannot manage workspace IdP or tenant-isolation configuration.
 
 3. `Project creator`
+- Is a delegated project-creation label, not a separate authorization system.
 - Is granted workspace-scoped project creation ability by a workspace admin.
 - Automatically becomes `project owner` for projects they create.
 - Does not become workspace admin.
 
 4. `Project owner`
+- Is a project relationship label that maps to owner-only project permissions.
 - Owns project lifecycle and final project authority.
 - Can transfer ownership.
 - Can assign or revoke `project admin`.
 - Can manage project lifecycle actions such as delete.
 
 5. `Project admin`
+- Is a project governance label that maps to project governance permissions.
 - Is assigned by the `project owner`.
 - Can govern project resources, credentials, policy, audit, and project-scope settings.
 - Cannot delete the project.
@@ -109,7 +133,7 @@ Practical effect:
 - manage project governance surfaces
 - but cannot manage lifecycle or delegate management
 
-This section is authoritative for upcoming refactor work even where current code still temporarily treats `project admin` and `owner` as equivalent.
+This section is authoritative for upcoming refactor work even where current code still temporarily treats `project admin` and `owner` as equivalent or still relies on role labels too directly.
 
 ## Capability Boundary (Accepted Target)
 
@@ -129,6 +153,7 @@ This section is authoritative for upcoming refactor work even where current code
 
 - If frontend permission gate says "allow" but backend says "deny", backend result is authoritative.
 - Frontend must treat `403` as final and non-retryable for same request payload.
+- When role or relationship data exists, it must first be normalized into permission-bearing decisions before UI and backend mutation flow rely on it.
 
 ## Frontend Navigation Sections
 

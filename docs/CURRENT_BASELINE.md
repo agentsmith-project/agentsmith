@@ -88,13 +88,16 @@
 
 1. Authn 由 workspace 绑定的 IdP 提供；当前只支持 Keycloak。
 2. Authz 由 AgentSmith 执行。
-3. workspace 成员不在 AgentSmith 内独立管理；workspace IdP 中的用户视为合法认证用户。
-4. workspace 管理员负责 workspace 下 project 创建能力的授予、project owner 的强制转让，以及 project 管理角色的上层治理。
-5. 具备 workspace 级 project 创建权限的用户，在创建 project 后自动成为该 project 的 `ProjectOwner`。
-6. `ProjectOwner` 负责 project 生命周期、owner 转让和 `ProjectAdmin` 指定。
-7. `ProjectAdmin` 只负责 project scope 内治理，不负责删除 project、owner 转让或继续授予管理权限。
-8. workspace 生命周期与底层租户配置只归系统超级管理员管理。
-9. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
+3. 权限系统的一等公民是 permission token 与 scope，不是角色名。
+4. `WorkspaceAdmin`、`ProjectCreator`、`ProjectOwner`、`ProjectAdmin` 只作为默认组、资源关系标签和管理界面对象存在。
+5. 如需基于 owner / admin / creator 做判断，必须先映射成权限结果，而不是在页面和接口里散落地直接以角色名做最终门禁。
+6. workspace 成员不在 AgentSmith 内独立管理；workspace IdP 中的用户视为合法认证用户。
+7. workspace 管理员负责 workspace 下 project 创建能力的授予、project owner 的强制转让，以及 project 管理角色的上层治理。
+8. 具备 workspace 级 project 创建权限的用户，在创建 project 后自动成为该 project 的 `ProjectOwner`。
+9. `ProjectOwner` 负责 project 生命周期、owner 转让和 `ProjectAdmin` 指定。
+10. `ProjectAdmin` 只负责 project scope 内治理，不负责删除 project、owner 转让或继续授予管理权限。
+11. workspace 生命周期与底层租户配置只归系统超级管理员管理。
+12. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
 
 ## 4. 必读文档（必须）
 

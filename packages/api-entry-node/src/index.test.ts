@@ -873,7 +873,7 @@ describe('api-entry-node projects routes', () => {
     expect(got.role).toBe('admin');
     expect(got.permissions).toContain('project:endpoint:use');
     expect(got.permissions).toContain('project:agent:manage');
-    expect(got.permissions).toContain('project:manage');
+    expect(got.permissions).toContain('project:governance:update');
 
     const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
     expect(listRes.status).toBe(200);
@@ -882,7 +882,7 @@ describe('api-entry-node projects routes', () => {
     };
     const listed = listBody.items.find((item) => item.id === created.id);
     expect(listed?.role).toBe('admin');
-    expect(listed?.permissions).toContain('project:manage');
+    expect(listed?.permissions).toContain('project:governance:update');
   });
 
   it('returns validation error for invalid payload', async () => {
@@ -1400,7 +1400,7 @@ describe('api-entry-node projects routes', () => {
     };
     expect(members.total).toBe(1);
     expect(members.items[0]?.id).toBe('user_test');
-    expect(members.items[0]?.permissions).toContain('project:manage');
+    expect(members.items[0]?.permissions).toContain('project:membership:update');
 
     const joinRequestsRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/join-requests');
     expect(joinRequestsRes.status).toBe(200);
@@ -1431,7 +1431,7 @@ describe('api-entry-node projects routes', () => {
     };
     expect(membership.user_id).toBe('user_test');
     expect(membership.project_id).toBe('proj_1');
-    expect(membership.permissions).toContain('project:manage');
+    expect(membership.permissions).toContain('project:membership:update');
   });
 
   it('supports minimal project members governance write endpoints', async () => {
@@ -1886,7 +1886,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'Analyst',
           description: 'Read and operate',
-          permissions: ['project:endpoint:use', 'project:manage'],
+          permissions: ['project:endpoint:use', 'project:governance:update'],
         }),
       },
     );
@@ -1900,7 +1900,7 @@ describe('api-entry-node projects routes', () => {
     };
     expect(created.project_id).toBe('proj_1');
     expect(created.name).toBe('Analyst');
-    expect(created.permissions).toContain('project:manage');
+    expect(created.permissions).toContain('project:governance:update');
     expect(created.built_in).toBe(false);
 
     const patchRes = await apiFetch(
@@ -8787,7 +8787,7 @@ describe('api-entry-node projects routes', () => {
     await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
       owner_id: 'user_alt',
       role: 'admin',
-      permissions: expect.arrayContaining(['project:manage']),
+      permissions: expect.arrayContaining(['project:governance:update']),
       governance_json: {
         project_admins: ['user_test'],
       },
@@ -8903,7 +8903,7 @@ describe('api-entry-node projects routes', () => {
     await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
       owner_id: 'user_owner',
       role: 'admin',
-      permissions: expect.arrayContaining(['project:manage']),
+      permissions: expect.arrayContaining(['project:governance:update']),
       governance_json: {
         project_admins: ['user_alt', 'user_test'],
       },
@@ -8912,7 +8912,7 @@ describe('api-entry-node projects routes', () => {
     const auditRes = await apiFetchWithToken(
       baseUrl,
       `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(new Date(Date.now() - 60 * 60 * 1000).toISOString())}&end_time=${encodeURIComponent(new Date(Date.now() + 60 * 60 * 1000).toISOString())}&action=project.owner.transferred&page=1&page_size=20`,
-      'owner-token',
+      'test-token',
     );
     expect(auditRes.status).toBe(200);
     const audit = (await auditRes.json()) as {

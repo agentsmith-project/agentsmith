@@ -20,7 +20,7 @@ describe('project-authz-engine', () => {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
-      permissions: ['project:manage'],
+      permissions: ['project:governance:update'],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -44,7 +44,7 @@ describe('project-authz-engine', () => {
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
     }));
-    expect(permissions.has('project:manage')).toBe(true);
+    expect(permissions.has('project:governance:update')).toBe(true);
     expect(permissions.has('project:endpoint:use')).toBe(true);
     expect(permissions.has('project:endpoint:use')).toBe(true);
   });
@@ -65,7 +65,7 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:agent:manage')).toBe(true);
     expect(permissions.has('project:agent:public')).toBe(true);
     expect(permissions.has('project:governance:update')).toBe(true);
-    expect(permissions.has('project:manage')).toBe(true);
+    expect(permissions.has('project:governance:update')).toBe(true);
   });
 
   it('denies all required permissions when membership is suspended', () => {

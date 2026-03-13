@@ -26,7 +26,6 @@ export const PLATFORM_PERMISSIONS = {
     'project:membership:update',
     'project:admins:update',
     'project:lifecycle:update',
-    'project:manage',
   ] as const,
 } as const;
 
@@ -77,7 +76,6 @@ export const GROUP_TEMPLATES = {
     'project:membership:update',
     'project:admins:update',
     'project:lifecycle:update',
-    'project:manage',
   ],
   admin: [
     'project:endpoint:use',
@@ -85,7 +83,6 @@ export const GROUP_TEMPLATES = {
     'project:audit:read',
     'project:files:update',
     'project:governance:update',
-    'project:manage',
   ],
   developer: ['project:endpoint:use', 'project:agent:manage'],
   user: ['project:endpoint:use'],

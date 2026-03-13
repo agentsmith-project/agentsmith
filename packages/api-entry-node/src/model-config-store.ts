@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export type ProjectScope = {
   workspaceId: string;
@@ -104,16 +105,20 @@ function scopeFilter(scope: ProjectScope) {
   };
 }
 
+function scopedCollection(baseCollection: string, scope: ProjectScope): string {
+  return resolveWorkspaceScopedCollection(baseCollection, scope.workspaceId);
+}
+
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 export function createModelConfigStore(docStore: JsonDocStorePort) {
   async function listScoped<T extends { workspace_id: string; project_id: string }>(
-    collection: string,
+    baseCollection: string,
     scope: ProjectScope,
   ): Promise<T[]> {
-    return docStore.list<T>(collection, scopeFilter(scope));
+    return docStore.list<T>(scopedCollection(baseCollection, scope), scopeFilter(scope));
   }
 
   async function replaceAllRecords<T extends { id: string }>(collection: string, records: T[]): Promise<void> {
@@ -133,14 +138,21 @@ export function createModelConfigStore(docStore: JsonDocStorePort) {
     listProviders(scope: ProjectScope) {
       return listScoped<ProviderConnectionRecord>(PROVIDERS_COLLECTION, scope);
     },
-    getProvider(providerConnectionId: string) {
-      return docStore.get<ProviderConnectionRecord>(PROVIDERS_COLLECTION, providerConnectionId);
+    getProvider(scope: ProjectScope, providerConnectionId: string) {
+      return docStore.get<ProviderConnectionRecord>(scopedCollection(PROVIDERS_COLLECTION, scope), providerConnectionId);
     },
     upsertProvider(record: ProviderConnectionRecord) {
-      return docStore.upsert(PROVIDERS_COLLECTION, record.id, record);
+      return docStore.upsert(
+        scopedCollection(PROVIDERS_COLLECTION, { workspaceId: record.workspace_id, projectId: record.project_id }),
+        record.id,
+        record,
+      );
     },
-    deleteProvider(providerConnectionId: string) {
-      return docStore.delete(PROVIDERS_COLLECTION, providerConnectionId);
+    deleteProvider(record: Pick<ProviderConnectionRecord, 'id' | 'workspace_id' | 'project_id'>) {
+      return docStore.delete(
+        scopedCollection(PROVIDERS_COLLECTION, { workspaceId: record.workspace_id, projectId: record.project_id }),
+        record.id,
+      );
     },
     listModels(scope: ProjectScope) {
       return listScoped<ModelCatalogEntryRecord>(MODELS_COLLECTION, scope);
@@ -150,16 +162,30 @@ export function createModelConfigStore(docStore: JsonDocStorePort) {
       return items.find((item) => item.provider === provider && item.model_id === modelId);
     },
     upsertModel(record: ModelCatalogEntryRecord) {
-      return docStore.upsert(MODELS_COLLECTION, record.id, record);
+      return docStore.upsert(
+        scopedCollection(MODELS_COLLECTION, { workspaceId: record.workspace_id, projectId: record.project_id }),
+        record.id,
+        record,
+      );
     },
-    deleteModel(recordId: string) {
-      return docStore.delete(MODELS_COLLECTION, recordId);
+    deleteModel(record: Pick<ModelCatalogEntryRecord, 'id' | 'workspace_id' | 'project_id'>) {
+      return docStore.delete(
+        scopedCollection(MODELS_COLLECTION, { workspaceId: record.workspace_id, projectId: record.project_id }),
+        record.id,
+      );
     },
     getProjectPricing(scope: ProjectScope) {
-      return docStore.get<ProjectPricingRecord>(PRICING_COLLECTION, `project_pricing_${scope.workspaceId}_${scope.projectId}`);
+      return docStore.get<ProjectPricingRecord>(
+        scopedCollection(PRICING_COLLECTION, scope),
+        `project_pricing_${scope.workspaceId}_${scope.projectId}`,
+      );
     },
     upsertPricing(record: ProjectPricingRecord) {
-      return docStore.upsert(PRICING_COLLECTION, record.id, record);
+      return docStore.upsert(
+        scopedCollection(PRICING_COLLECTION, { workspaceId: record.workspace_id, projectId: record.project_id }),
+        record.id,
+        record,
+      );
     },
     async resolvePricing(scope: ProjectScope): Promise<ResolvedProjectPricing> {
       const record = await this.getProjectPricing(scope);

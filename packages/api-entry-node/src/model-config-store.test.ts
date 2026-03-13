@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, afterEach } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { createModelConfigStore } from './model-config-store.js';
 
 describe('model-config-store', () => {
+  afterEach(() => {
+    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+  });
+
   it('scopes provider and model records by workspace and project', async () => {
     const store = createModelConfigStore(new InMemoryJsonDocStore());
     const scopeA = { workspaceId: 'ws_a', projectId: 'proj_a' };
@@ -97,5 +104,58 @@ describe('model-config-store', () => {
 
     const metadata = await store.getCatalogMetadata();
     expect(metadata?.active_version_id).toBe('catver_b');
+  });
+
+  it('uses tenant-prefixed collections for workspace-scoped model config records', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-tenant-registry-'));
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          workspace_admin: 'owner@example.com',
+          tenant: {
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+            key_prefix: 'ws_default:',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    const docStore = new InMemoryJsonDocStore();
+    const store = createModelConfigStore(docStore);
+    const scope = { workspaceId: 'ws_default', projectId: 'proj_1' };
+
+    await store.upsertProvider({
+      id: 'rpc_1',
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      provider: 'openai',
+      auth_mode: 'api_key',
+      base_url: 'https://api.openai.com/v1',
+      status: 'active',
+      created_at: store.nowIso(),
+      updated_at: store.nowIso(),
+    });
+    await store.upsertPricing({
+      id: store.pricingRecordId(scope),
+      workspace_id: scope.workspaceId,
+      project_id: scope.projectId,
+      pricing_map: { openai: { 'gpt-4o': { input: 2, output: 10 } } },
+      updated_at: store.nowIso(),
+    });
+
+    expect(await docStore.list('provider_connections', {})).toHaveLength(0);
+    expect(await docStore.list('project_pricing_maps', {})).toHaveLength(0);
+    expect(await docStore.list('ws_default_provider_connections', {})).toHaveLength(1);
+    expect(await docStore.list('ws_default_project_pricing_maps', {})).toHaveLength(1);
+    expect(await store.listProviders(scope)).toHaveLength(1);
+    expect((await store.resolvePricing(scope)).source).toBe('project');
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

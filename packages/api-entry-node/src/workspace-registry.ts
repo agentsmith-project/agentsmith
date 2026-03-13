@@ -7,6 +7,12 @@ type RegistryRecord = {
   name: string;
   workspace_admin?: string;
   project_creators?: string[];
+  tenant?: {
+    substrate_label?: string;
+    database_name?: string;
+    collection_prefix?: string;
+    key_prefix?: string;
+  };
   created_at?: string;
   updated_at?: string;
 };
@@ -41,6 +47,12 @@ export type RegisteredWorkspaceConfig = RegistryRecord & {
   name: string;
   workspace_admin?: string;
   project_creators?: string[];
+  tenant?: {
+    substrate_label?: string;
+    database_name?: string;
+    collection_prefix?: string;
+    key_prefix?: string;
+  };
   created_at: string;
   updated_at: string;
 };
@@ -68,6 +80,21 @@ function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
               ),
             )
           : [],
+        tenant:
+          typeof item.tenant === 'object' && item.tenant !== null
+            ? {
+                substrate_label:
+                  typeof item.tenant.substrate_label === 'string' ? item.tenant.substrate_label.trim() : undefined,
+                database_name:
+                  typeof item.tenant.database_name === 'string' ? item.tenant.database_name.trim() : undefined,
+                collection_prefix:
+                  typeof item.tenant.collection_prefix === 'string'
+                    ? item.tenant.collection_prefix.trim()
+                    : undefined,
+                key_prefix:
+                  typeof item.tenant.key_prefix === 'string' ? item.tenant.key_prefix.trim() : undefined,
+              }
+            : undefined,
         created_at: typeof item.created_at === 'string' ? item.created_at : now,
         updated_at: typeof item.updated_at === 'string' ? item.updated_at : now,
       }))
@@ -85,6 +112,25 @@ function writeRegisteredWorkspaceConfigs(records: RegisteredWorkspaceConfig[]): 
 
 export function getRegisteredWorkspaceConfig(workspaceId: string): RegisteredWorkspaceConfig | null {
   return readRegisteredWorkspaceConfigs().find((record) => record.id === workspaceId) ?? null;
+}
+
+export type RegisteredWorkspaceTenantConfig = NonNullable<RegisteredWorkspaceConfig['tenant']>;
+
+export function getRegisteredWorkspaceTenantConfig(workspaceId: string): RegisteredWorkspaceTenantConfig | null {
+  const record = getRegisteredWorkspaceConfig(workspaceId);
+  if (!record?.tenant) return null;
+  const collectionPrefix = record.tenant.collection_prefix?.trim();
+  const keyPrefix = record.tenant.key_prefix?.trim();
+  const databaseName = record.tenant.database_name?.trim();
+  if (!collectionPrefix || !keyPrefix || !databaseName) {
+    return null;
+  }
+  return {
+    substrate_label: record.tenant.substrate_label,
+    database_name: databaseName,
+    collection_prefix: collectionPrefix,
+    key_prefix: keyPrefix,
+  };
 }
 
 export function updateRegisteredWorkspaceProjectCreators(workspaceId: string, identifiers: string[]): RegisteredWorkspaceConfig {

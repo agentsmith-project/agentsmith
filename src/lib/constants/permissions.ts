@@ -46,6 +46,8 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
 ] as const;
 
 export const GROUP_TEMPLATES = {
+  // In current MVP, project admins intentionally share the same project-scope
+  // governance permissions as owners. Differences only exist outside project scope.
   owner: ['project:endpoint:use', 'project:agent:manage', 'project:manage'],
   admin: ['project:endpoint:use', 'project:agent:manage', 'project:manage'],
   developer: ['project:endpoint:use', 'project:agent:manage'],

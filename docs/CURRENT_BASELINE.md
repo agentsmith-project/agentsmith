@@ -78,8 +78,9 @@
 1. `SystemAdmin`
 2. `Workspace`
 3. `WorkspaceAdmin`
-4. `IdentityProviderConfig`
-5. `WorkspaceDataConfig`
+4. `ProjectAdmin`
+5. `IdentityProviderConfig`
+6. `WorkspaceDataConfig`
 
 身份边界补充：
 
@@ -89,6 +90,8 @@
 4. workspace 管理员只负责 workspace 下 project 创建与 project 管理员分配。
 5. workspace 生命周期与底层租户配置只归系统超级管理员管理。
 6. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
+7. 当前 MVP 中，`ProjectAdmin` 在 project scope 内与 `owner` 共享同一组治理入口与 `project:manage` 权限。
+8. 这种等价只存在于 project scope，不外溢到 workspace 或 system scope。
 
 ## 4. 必读文档（必须）
 

@@ -60,6 +60,12 @@ Clarify the boundary between authentication data and authorization enforcement t
 - Cannot manage workspace lifecycle.
 - Cannot manage workspace IdP or tenant-isolation configuration.
 
+3. `Project admin`
+- Is assigned by a workspace admin.
+- In current MVP, `project admin` and `owner` share the same project-scope governance surfaces.
+- This means `project admin` can use the same `project:manage`-gated pages and actions inside the project shell.
+- This equivalence does not extend to workspace lifecycle or system-level administration.
+
 ## Decision Rule
 
 - If frontend permission gate says "allow" but backend says "deny", backend result is authoritative.

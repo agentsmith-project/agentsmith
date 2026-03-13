@@ -58,6 +58,13 @@ workspace 内部业务管理角色。
 允许：
 
 1. 管理 project 内资源、凭据、策略与审计相关业务
+2. 在当前 MVP 中，与 `owner` 共享同一组 project-scope 治理入口与 `project:manage` 权限
+
+不允许：
+
+1. 管理 workspace 生命周期
+2. 管理 workspace 绑定的 IdP
+3. 管理 system 级配置
 
 ### 3.4 Member
 

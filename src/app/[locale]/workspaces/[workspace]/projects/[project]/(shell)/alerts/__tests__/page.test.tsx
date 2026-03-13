@@ -14,7 +14,7 @@ vi.mock('@/components/alerts/AlertCenterPage', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) => mockHasPermission(permission),
+  useHasPermission: (permission?: string) => mockHasPermission(permission),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -56,7 +56,9 @@ vi.mock('@tanstack/react-query', async () => {
 describe('AlertsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockHasPermission.mockReturnValue(true);
+    mockHasPermission.mockImplementation((permission?: string) =>
+      permission === 'project:audit:read' || permission === 'project:governance:update',
+    );
   });
 
   it('renders alert center when params and permission are valid', async () => {
@@ -93,6 +95,23 @@ describe('AlertsPage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+  });
+
+  it('allows audit readers to access alerts without governance update', async () => {
+    mockHasPermission.mockImplementation((permission?: string) => permission === 'project:audit:read');
+    render(
+      <AlertsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('alerts__center')).toBeInTheDocument();
+    });
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {

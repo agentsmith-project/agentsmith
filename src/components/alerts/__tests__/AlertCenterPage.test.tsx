@@ -16,8 +16,10 @@ vi.mock('next-intl', () => ({
 }));
 
 // Mock use-permissions hook
+const mockHasPermission = vi.fn<(permission?: string) => boolean>(() => true);
+
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
+  useHasPermission: (permission?: string) => mockHasPermission(permission),
 }));
 
 // Mock child components
@@ -96,6 +98,10 @@ const _mockAlerts: Alert[] = [
 ];
 
 describe('AlertCenterPage', () => {
+  beforeEach(() => {
+    mockHasPermission.mockReturnValue(true);
+  });
+
   it('renders tabs for rules and notifications', () => {
     render(
       <AlertCenterPage
@@ -161,5 +167,18 @@ describe('AlertCenterPage', () => {
     );
 
     expect(screen.getByRole('button', { name: /create/i })).toBeInTheDocument();
+  });
+
+  it('hides create button for audit readers without governance update', () => {
+    mockHasPermission.mockImplementation((permission?: string) => permission === 'project:audit:read');
+
+    render(
+      <AlertCenterPage
+        workspaceId="ws_1"
+        projectId="proj_1"
+      />
+    );
+
+    expect(screen.queryByRole('button', { name: /create/i })).not.toBeInTheDocument();
   });
 });

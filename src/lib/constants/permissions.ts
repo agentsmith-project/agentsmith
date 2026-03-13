@@ -94,6 +94,7 @@ export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
 } as const;
 
 export const HIGH_RISK_PERMISSIONS = [
+  'project:governance:update',
   'project:agent:public',
   'project:membership:update',
   'project:admins:update',

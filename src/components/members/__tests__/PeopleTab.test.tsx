@@ -29,6 +29,12 @@ const members = Array.from({ length: 25 }).map((_, index) => ({
   name: `Member ${index + 1}`,
   email: `member${index + 1}@example.com`,
   role: 'user' as const,
+  permissions:
+    index === 0
+      ? ['project:membership:update']
+      : index === 1
+        ? ['project:files:update']
+        : [],
   status: 'active' as const,
   joined_at: '2026-02-01T00:00:00Z',
 }));
@@ -103,5 +109,18 @@ describe('PeopleTab', () => {
     expect(screen.getByTestId('members__page-info')).toHaveTextContent('2/2');
     expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 21');
     expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 25');
+  });
+
+  it('filters access profile from permissions instead of role labels', async () => {
+    const user = userEvent.setup();
+    render(<PeopleTab workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.selectOptions(screen.getByTestId('members__role-filter'), 'governance');
+    expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 1');
+    expect(screen.getByTestId('members-table-data')).not.toHaveTextContent('Member 2');
+
+    await user.selectOptions(screen.getByTestId('members__role-filter'), 'resource_manage');
+    expect(screen.getByTestId('members-table-data')).toHaveTextContent('Member 2');
+    expect(screen.getByTestId('members-table-data')).not.toHaveTextContent('Member 1');
   });
 });

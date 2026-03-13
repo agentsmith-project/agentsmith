@@ -15,6 +15,27 @@ export interface PeopleTabProps {
   projectId: string;
 }
 
+function getMemberAccessProfile(member: { permissions?: string[] }) {
+  const permissions = Array.isArray(member.permissions) ? member.permissions : [];
+  if (
+    permissions.includes('project:governance:update')
+    || permissions.includes('project:membership:update')
+    || permissions.includes('project:admins:update')
+    || permissions.includes('project:lifecycle:update')
+    || permissions.includes('project:audit:read')
+  ) {
+    return 'governance';
+  }
+  if (
+    permissions.includes('project:files:update')
+    || permissions.includes('project:agent:manage')
+    || permissions.includes('project:agent:public')
+  ) {
+    return 'resource_manage';
+  }
+  return 'access_only';
+}
+
 export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
   const PAGE_SIZE = 20;
   const t = useTranslations('members');
@@ -44,23 +65,17 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
     } as const;
   }, [searchParams]);
 
-  const getAccessProfile = React.useCallback((member: { role: string }) => {
-    if (member.role === 'owner' || member.role === 'admin') return 'governance';
-    if (member.role === 'developer') return 'resource_manage';
-    return 'access_only';
-  }, []);
-
   const filteredMembers = React.useMemo(() => {
     const keyword = search.trim().toLowerCase();
     return context.members.filter((member) => {
       const matchesSearch = keyword.length === 0
         || member.name?.toLowerCase().includes(keyword)
         || member.email.toLowerCase().includes(keyword);
-      const matchesAccess = accessFilter === 'all' || getAccessProfile(member) === accessFilter;
+      const matchesAccess = accessFilter === 'all' || getMemberAccessProfile(member) === accessFilter;
       const matchesStatus = statusFilter === 'all' || member.status === statusFilter;
       return matchesSearch && matchesAccess && matchesStatus;
     });
-  }, [context.members, accessFilter, getAccessProfile, search, statusFilter]);
+  }, [context.members, accessFilter, search, statusFilter]);
 
   const pageCount = Math.max(1, Math.ceil(filteredMembers.length / PAGE_SIZE));
 

@@ -121,8 +121,10 @@ describe('SettingsPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
+      expect(screen.getByTestId('settings__governance-section')).toBeInTheDocument();
+      expect(screen.getByTestId('settings__ownership-section')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
@@ -143,8 +145,10 @@ describe('SettingsPage route', () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
+      expect(screen.getByTestId('settings__governance-section')).toBeInTheDocument();
+      expect(screen.getByTestId('settings__ownership-section')).toBeInTheDocument();
     });
+    expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__save-btn')).toBeDisabled();

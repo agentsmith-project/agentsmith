@@ -262,168 +262,184 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         )}
       >
         <div className="w-full space-y-6">
-          <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__general-section">
-            <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h2>
-            <p className="text-sm text-tertiary mb-4">
-              {isProjectOwner ? settingsT('general_help') : settingsT('general_read_only_help')}
+          <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__governance-section">
+            <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('governance_title')}</h2>
+            <p className="text-sm text-tertiary">
+              {settingsT('governance_help')}
             </p>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="md:col-span-1">
-                <label className="block text-sm font-medium text-primary mb-2">{settingsT('project_name')}</label>
-                <Input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  disabled={!canManageProjectLifecycle}
-                />
-              </div>
-              <div className="md:col-span-1">
-                <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
-                <Select value={visibility} onValueChange={(value) => setVisibility(value as 'public' | 'private')} disabled={!canManageProjectLifecycle}>
-                  <SelectTrigger data-testid="settings__visibility-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="public">{projectT('public')}</SelectItem>
-                    <SelectItem value="private">{projectT('private')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-primary mb-2">{settingsT('description')}</label>
-                <Textarea
-                  placeholder="Add a description..."
-                  rows={3}
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  disabled={!canManageProjectLifecycle}
-                />
-              </div>
-              <div className="md:col-span-1">
-                <label className="block text-sm font-medium text-primary mb-2">{settingsT('join_policy')}</label>
-                <Select value={joinPolicy} onValueChange={(value) => setJoinPolicy(value as 'approval_required' | 'open')} disabled={!canManageProjectLifecycle}>
-                  <SelectTrigger data-testid="settings__join-policy-select">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="approval_required">{projectT('approval_required')}</SelectItem>
-                    <SelectItem value="open">{projectT('open')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="mt-6 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={!canManageProjectLifecycle || savingGeneral} variant="primary" data-testid="settings__save-btn">
-                <Save className="w-4 h-4" />
-                {savingGeneral ? 'Saving...' : commonT('save')}
-              </Button>
-            </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__project-admins-section">
-            <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('project_admins_title')}</h2>
-            <p className="text-sm text-tertiary mb-4">
-              {isProjectOwner ? settingsT('project_admins_owner_help') : settingsT('project_admins_read_only_help')}
-            </p>
-            <div className="space-y-3">
-              {workspaceMembers.map((member) => {
-                const label = member.name || member.email || member.user_id;
-                const description = member.email || member.user_id;
-                const checked = selectedProjectAdmins.includes(member.user_id);
-                return (
-                  <label
-                    key={member.id}
-                    htmlFor={`project-admin-${member.user_id}`}
-                    className="flex items-start gap-3 rounded-lg border border-subtle bg-bg-base/20 p-3"
-                    data-testid={`settings__project-admin-option--${member.user_id}`}
-                  >
-                    <Checkbox
-                      id={`project-admin-${member.user_id}`}
-                      checked={checked}
-                      onCheckedChange={(value) => handleProjectAdminCheckedChange(member.user_id, value === true)}
-                      disabled={!canAssignProjectAdmins || savingProjectAdmins}
-                    />
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-                        <Users className="h-4 w-4 text-icon-default" />
-                        {label}
+          <div className="rounded-xl border border-border bg-surface p-5 md:p-6 space-y-6" data-testid="settings__ownership-section">
+            <div>
+              <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('ownership_lifecycle_title')}</h2>
+              <p className="text-sm text-tertiary">
+                {isProjectOwner ? settingsT('ownership_lifecycle_help') : settingsT('ownership_lifecycle_read_only_help')}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__general-section">
+              <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h3>
+              <p className="text-sm text-tertiary mb-4">
+                {isProjectOwner ? settingsT('general_help') : settingsT('general_read_only_help')}
+              </p>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="md:col-span-1">
+                  <label className="block text-sm font-medium text-primary mb-2">{settingsT('project_name')}</label>
+                  <Input
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    disabled={!canManageProjectLifecycle}
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
+                  <Select value={visibility} onValueChange={(value) => setVisibility(value as 'public' | 'private')} disabled={!canManageProjectLifecycle}>
+                    <SelectTrigger data-testid="settings__visibility-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="public">{projectT('public')}</SelectItem>
+                      <SelectItem value="private">{projectT('private')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-primary mb-2">{settingsT('description')}</label>
+                  <Textarea
+                    placeholder="Add a description..."
+                    rows={3}
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    disabled={!canManageProjectLifecycle}
+                  />
+                </div>
+                <div className="md:col-span-1">
+                  <label className="block text-sm font-medium text-primary mb-2">{settingsT('join_policy')}</label>
+                  <Select value={joinPolicy} onValueChange={(value) => setJoinPolicy(value as 'approval_required' | 'open')} disabled={!canManageProjectLifecycle}>
+                    <SelectTrigger data-testid="settings__join-policy-select">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="approval_required">{projectT('approval_required')}</SelectItem>
+                      <SelectItem value="open">{projectT('open')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="mt-6 flex justify-end">
+                <Button onClick={handleSaveGeneral} disabled={!canManageProjectLifecycle || savingGeneral} variant="primary" data-testid="settings__save-btn">
+                  <Save className="w-4 h-4" />
+                  {savingGeneral ? 'Saving...' : commonT('save')}
+                </Button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-admins-section">
+              <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('project_admins_title')}</h3>
+              <p className="text-sm text-tertiary mb-4">
+                {isProjectOwner ? settingsT('project_admins_owner_help') : settingsT('project_admins_read_only_help')}
+              </p>
+              <div className="space-y-3">
+                {workspaceMembers.map((member) => {
+                  const label = member.name || member.email || member.user_id;
+                  const description = member.email || member.user_id;
+                  const checked = selectedProjectAdmins.includes(member.user_id);
+                  return (
+                    <label
+                      key={member.id}
+                      htmlFor={`project-admin-${member.user_id}`}
+                      className="flex items-start gap-3 rounded-lg border border-subtle bg-bg-base/20 p-3"
+                      data-testid={`settings__project-admin-option--${member.user_id}`}
+                    >
+                      <Checkbox
+                        id={`project-admin-${member.user_id}`}
+                        checked={checked}
+                        onCheckedChange={(value) => handleProjectAdminCheckedChange(member.user_id, value === true)}
+                        disabled={!canAssignProjectAdmins || savingProjectAdmins}
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                          <Users className="h-4 w-4 text-icon-default" />
+                          {label}
+                        </div>
+                        <div className="text-xs text-tertiary">{description}</div>
                       </div>
-                      <div className="text-xs text-tertiary">{description}</div>
-                    </div>
-                  </label>
-                );
-              })}
+                    </label>
+                  );
+                })}
+              </div>
+              {canAssignProjectAdmins ? (
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    onClick={handleSaveProjectAdmins}
+                    disabled={savingProjectAdmins}
+                    variant="primary"
+                    data-testid="settings__project-admins-save"
+                  >
+                    {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_admins_save')}
+                  </Button>
+                </div>
+              ) : null}
             </div>
-            {canAssignProjectAdmins ? (
-              <div className="mt-6 flex justify-end">
-                <Button
-                  onClick={handleSaveProjectAdmins}
-                  disabled={savingProjectAdmins}
-                  variant="primary"
-                  data-testid="settings__project-admins-save"
+
+            <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-owner-section">
+              <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('project_owner_title')}</h3>
+              <p className="text-sm text-tertiary mb-4">
+                {isProjectOwner ? settingsT('project_owner_help') : settingsT('project_owner_read_only_help')}
+              </p>
+              <div className="space-y-3">
+                <label className="block text-sm font-medium text-primary" htmlFor="project-owner-select">
+                  {settingsT('project_owner_field')}
+                </label>
+                <select
+                  id="project-owner-select"
+                  value={selectedProjectOwner}
+                  onChange={(event) => setSelectedProjectOwner(event.target.value)}
+                  disabled={!canTransferProjectOwner || savingProjectOwner}
+                  className="w-full rounded-sm border border-subtle bg-surface px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+                  data-testid="settings__project-owner-select"
                 >
-                  {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_admins_save')}
+                  {workspaceMembers.map((member) => (
+                    <option key={member.id} value={member.user_id}>
+                      {member.name || member.email || member.user_id}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {canTransferProjectOwner ? (
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    onClick={handleSaveProjectOwner}
+                    disabled={savingProjectOwner || selectedProjectOwner === currentProject.owner_id}
+                    variant="primary"
+                    data-testid="settings__project-owner-save"
+                  >
+                    {savingProjectOwner ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_owner_save')}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="rounded-lg border border-subtle bg-surface-high border-l-2 border-l-error/70 p-4">
+              <h3 className="text-sm font-semibold text-error mb-3">{settingsT('danger_zone_title')}</h3>
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <div className="font-medium text-foreground">{settingsT('delete_project_title')}</div>
+                  <div className="text-sm text-tertiary">
+                    {isProjectOwner ? settingsT('delete_project_help') : settingsT('delete_project_owner_only')}
+                  </div>
+                </div>
+                <Button
+                  variant="destructive"
+                  onClick={() => setDeleteDialogOpen(true)}
+                  disabled={!canDeleteProject}
+                  data-testid="settings__delete-project-btn"
+                >
+                  {settingsT('delete_project_action')}
                 </Button>
               </div>
-            ) : null}
-          </div>
-
-          <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__project-owner-section">
-            <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('project_owner_title')}</h2>
-            <p className="text-sm text-tertiary mb-4">
-              {isProjectOwner ? settingsT('project_owner_help') : settingsT('project_owner_read_only_help')}
-            </p>
-            <div className="space-y-3">
-              <label className="block text-sm font-medium text-primary" htmlFor="project-owner-select">
-                {settingsT('project_owner_field')}
-              </label>
-              <select
-                id="project-owner-select"
-                value={selectedProjectOwner}
-                onChange={(event) => setSelectedProjectOwner(event.target.value)}
-                disabled={!canTransferProjectOwner || savingProjectOwner}
-                className="w-full rounded-sm border border-subtle bg-surface px-3 py-2 text-sm text-foreground disabled:cursor-not-allowed disabled:opacity-60"
-                data-testid="settings__project-owner-select"
-              >
-                {workspaceMembers.map((member) => (
-                  <option key={member.id} value={member.user_id}>
-                    {member.name || member.email || member.user_id}
-                  </option>
-                ))}
-              </select>
-            </div>
-            {canTransferProjectOwner ? (
-              <div className="mt-6 flex justify-end">
-                <Button
-                  onClick={handleSaveProjectOwner}
-                  disabled={savingProjectOwner || selectedProjectOwner === currentProject.owner_id}
-                  variant="primary"
-                  data-testid="settings__project-owner-save"
-                >
-                  {savingProjectOwner ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_owner_save')}
-                </Button>
-              </div>
-            ) : null}
-          </div>
-
-      <div className="mt-2 rounded-xl border border-subtle bg-surface-high border-l-2 border-l-error/70 p-6">
-        <h2 className="font-semibold text-error mb-4">Danger Zone</h2>
-        <div className="flex items-center justify-between">
-          <div>
-            <div className="font-medium text-foreground">Delete Project</div>
-            <div className="text-sm text-tertiary">
-              {isProjectOwner ? 'Permanently delete this project and all data' : settingsT('delete_project_owner_only')}
             </div>
           </div>
-          <Button
-            variant="destructive"
-            onClick={() => setDeleteDialogOpen(true)}
-            disabled={!canDeleteProject}
-            data-testid="settings__delete-project-btn"
-          >
-            Delete Project
-          </Button>
-        </div>
-      </div>
 
       <DeleteProjectDialog
         open={deleteDialogOpen}

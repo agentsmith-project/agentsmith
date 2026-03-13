@@ -4,8 +4,8 @@ import React from 'react';
 import {
   useHasPermission,
   useCurrentPermissions,
-  useIsOwnerOrAdmin,
-  useIsOwner,
+  useHasProjectAdminRelation,
+  useHasProjectOwnerRelation,
   useIsAuthenticated,
   useHasAnyPermission,
   useHasAllPermissions,
@@ -23,7 +23,6 @@ import {
   useCanReadProjectPolicy,
   useCanUpdateProjectPolicy,
   useCanAccessCredentials,
-  useIsProjectAdmin,
 } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -316,8 +315,8 @@ describe('use-permissions hooks', () => {
     });
   });
 
-  describe('useIsOwnerOrAdmin', () => {
-    it('should return true for owner role', () => {
+  describe('useHasProjectAdminRelation', () => {
+    it('should return true when owner relation is present', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -333,14 +332,14 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsOwnerOrAdmin(), {
+      const { result } = renderHook(() => useHasProjectAdminRelation(), {
         wrapper: createWrapper(),
       });
 
       expect(result.current).toBe(true);
     });
 
-    it('should return true for admin role', () => {
+    it('should return true when project admin relation is present', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -356,14 +355,14 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsOwnerOrAdmin(), {
+      const { result } = renderHook(() => useHasProjectAdminRelation(), {
         wrapper: createWrapper(),
       });
 
       expect(result.current).toBe(true);
     });
 
-    it('should return false without owner/admin role', () => {
+    it('should return false without owner or admin relation', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -379,17 +378,17 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsOwnerOrAdmin(), {
+      const { result } = renderHook(() => useHasProjectAdminRelation(), {
         wrapper: createWrapper(),
       });
 
       expect(result.current).toBe(false);
     });
 
-    it('should return false when project is undefined', () => {
+    it('should return false when project relation is undefined', () => {
       mockUseProject.mockReturnValue({ data: undefined, isLoading: false });
 
-      const { result } = renderHook(() => useIsOwnerOrAdmin(), {
+      const { result } = renderHook(() => useHasProjectAdminRelation(), {
         wrapper: createWrapper(),
       });
 
@@ -397,8 +396,8 @@ describe('use-permissions hooks', () => {
     });
   });
 
-  describe('useIsOwner', () => {
-    it('should return true when role is owner', () => {
+  describe('useHasProjectOwnerRelation', () => {
+    it('should return true when owner relation is present', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -414,14 +413,14 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsOwner(), {
+      const { result } = renderHook(() => useHasProjectOwnerRelation(), {
         wrapper: createWrapper(),
       });
 
       expect(result.current).toBe(true);
     });
 
-    it('should return false for project admin role', () => {
+    it('should return false for project admin relation', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -437,7 +436,7 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsOwner(), {
+      const { result } = renderHook(() => useHasProjectOwnerRelation(), {
         wrapper: createWrapper(),
       });
 
@@ -445,8 +444,8 @@ describe('use-permissions hooks', () => {
     });
   });
 
-  describe('useIsProjectAdmin', () => {
-    it('should return true for owner role', () => {
+  describe('project admin relation coverage', () => {
+    it('treats owner relation as project admin-capable relation source', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -462,14 +461,14 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsProjectAdmin(), {
+      const { result } = renderHook(() => useHasProjectAdminRelation(), {
         wrapper: createWrapper(),
       });
 
       expect(result.current).toBe(true);
     });
 
-    it('should return true for admin role', () => {
+    it('treats project admin relation as project admin-capable relation source', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -485,7 +484,7 @@ describe('use-permissions hooks', () => {
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
 
-      const { result } = renderHook(() => useIsProjectAdmin(), {
+      const { result } = renderHook(() => useHasProjectAdminRelation(), {
         wrapper: createWrapper(),
       });
 

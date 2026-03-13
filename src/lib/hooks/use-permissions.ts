@@ -85,17 +85,13 @@ export function useHasAllPermissions(permissions: string[]): boolean {
   return useMemo(() => permissions.every((p) => permissionMatches(currentPermissions, p)), [currentPermissions, permissions]);
 }
 
-// Semantic permission helpers mapped directly to token checks.
-export function useIsOwnerOrAdmin(): boolean {
-  const role = useCurrentProjectRole();
-  return role === 'owner' || role === 'admin';
-}
-
-export function useIsOwner(): boolean {
+// These helpers expose project relationship labels used to derive permissions.
+// They are not the authorization source of truth; permission checks remain primary.
+export function useHasProjectOwnerRelation(): boolean {
   return useCurrentProjectRole() === 'owner';
 }
 
-export function useIsProjectAdmin(): boolean {
+export function useHasProjectAdminRelation(): boolean {
   const role = useCurrentProjectRole();
   return role === 'owner' || role === 'admin';
 }
@@ -122,7 +118,7 @@ export function useCanManageProjectLifecycle(): boolean {
 }
 
 export function useCanManageMemberGovernance(): boolean {
-  return useHasPermission('project:membership:update') && useIsOwner();
+  return useHasPermission('project:membership:update') && useHasProjectOwnerRelation();
 }
 
 export function useCanManageResourcePolicy(): boolean {

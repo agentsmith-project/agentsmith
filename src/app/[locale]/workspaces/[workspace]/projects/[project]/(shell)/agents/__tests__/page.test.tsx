@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as nextNavigation from 'next/navigation';
-import { useHasPermission, useIsProjectAdmin } from '@/lib/hooks/use-permissions';
+import { useHasPermission } from '@/lib/hooks/use-permissions';
 
 const mockList = vi.fn().mockResolvedValue({ items: [] });
 const mockUpdate = vi.fn().mockResolvedValue({});
@@ -44,13 +44,11 @@ vi.mock('@/components/agents/AgentDiagnosticsPanel', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
-  useIsProjectAdmin: vi.fn(() => true),
 }));
 
 import AgentsPage from '../page';
 
 const mockUseHasPermission = vi.mocked(useHasPermission);
-const mockUseIsProjectAdmin = vi.mocked(useIsProjectAdmin);
 const mockUseSearchParams = vi.spyOn(nextNavigation, 'useSearchParams');
 
 function createWrapper() {
@@ -72,7 +70,6 @@ describe('AgentsPage', () => {
   it('renders header and toolbar layout', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
-    mockUseIsProjectAdmin.mockReturnValue(true);
     render(
       <AgentsPage
         params={Promise.resolve({
@@ -97,7 +94,6 @@ describe('AgentsPage', () => {
   it('opens delete confirmation and deletes an agent', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
-    mockUseIsProjectAdmin.mockReturnValue(true);
     const user = userEvent.setup();
     mockList.mockResolvedValueOnce({
       items: [
@@ -141,7 +137,6 @@ describe('AgentsPage', () => {
   it('shows invalid parameter error state for unsafe route params', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
-    mockUseIsProjectAdmin.mockReturnValue(true);
     render(
       <AgentsPage
         params={Promise.resolve({
@@ -163,7 +158,6 @@ describe('AgentsPage', () => {
   it('shows permission denied when user lacks read access', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(false);
-    mockUseIsProjectAdmin.mockReturnValue(false);
     render(
       <AgentsPage
         params={Promise.resolve({
@@ -185,7 +179,6 @@ describe('AgentsPage', () => {
   it('opens agent diagnostics panel from query parameter context', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams('agent=agent_1'));
     mockUseHasPermission.mockReturnValue(true);
-    mockUseIsProjectAdmin.mockReturnValue(true);
     mockList.mockResolvedValueOnce({
       items: [
         {
@@ -222,7 +215,6 @@ describe('AgentsPage', () => {
   it('renders owner/admin fallback ids when name fields are missing', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
-    mockUseIsProjectAdmin.mockReturnValue(true);
     mockList.mockResolvedValueOnce({
       items: [
         {
@@ -260,7 +252,6 @@ describe('AgentsPage', () => {
   it('renders internal online presence as running badge label', async () => {
     mockUseSearchParams.mockReturnValue(mockReadonlySearchParams());
     mockUseHasPermission.mockReturnValue(true);
-    mockUseIsProjectAdmin.mockReturnValue(true);
     mockList.mockResolvedValueOnce({
       items: [
         {

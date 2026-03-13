@@ -12,6 +12,7 @@ import type {
   EndpointModelProfile,
   EndpointRecord,
 } from './resource-models.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export class EndpointResourceService {
   private static readonly credentialsCollection = 'credentials';
@@ -19,6 +20,18 @@ export class EndpointResourceService {
   private static readonly endpointsCollection = 'endpoints';
 
   constructor(private readonly docStore: JsonDocStorePort) {}
+
+  private credentialsCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(EndpointResourceService.credentialsCollection, workspaceId);
+  }
+
+  private credentialSecretsCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(EndpointResourceService.credentialSecretsCollection, workspaceId);
+  }
+
+  private endpointsCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(EndpointResourceService.endpointsCollection, workspaceId);
+  }
 
   private hashFingerprint(secret: string): string {
     return createHash('sha256').update(secret).digest('hex').slice(0, 12);
@@ -206,7 +219,7 @@ export class EndpointResourceService {
   }
 
   async listCredentials(workspaceId: string, projectId: string): Promise<CredentialRecord[]> {
-    return this.docStore.list<CredentialRecord>(EndpointResourceService.credentialsCollection, {
+    return this.docStore.list<CredentialRecord>(this.credentialsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -236,8 +249,8 @@ export class EndpointResourceService {
       value: input.value,
       updated_at: now,
     };
-    await this.docStore.upsert(EndpointResourceService.credentialsCollection, id, credential);
-    await this.docStore.upsert(EndpointResourceService.credentialSecretsCollection, id, secret);
+    await this.docStore.upsert(this.credentialsCollection(workspaceId), id, credential);
+    await this.docStore.upsert(this.credentialSecretsCollection(workspaceId), id, secret);
     return credential;
   }
 
@@ -248,7 +261,7 @@ export class EndpointResourceService {
     value: string,
   ): Promise<CredentialRecord | null> {
     const credential = await this.docStore.get<CredentialRecord>(
-      EndpointResourceService.credentialsCollection,
+      this.credentialsCollection(workspaceId),
       credentialId,
     );
     if (!credential) {
@@ -270,14 +283,14 @@ export class EndpointResourceService {
       value,
       updated_at: now,
     };
-    await this.docStore.upsert(EndpointResourceService.credentialsCollection, credentialId, updated);
-    await this.docStore.upsert(EndpointResourceService.credentialSecretsCollection, credentialId, secret);
+    await this.docStore.upsert(this.credentialsCollection(workspaceId), credentialId, updated);
+    await this.docStore.upsert(this.credentialSecretsCollection(workspaceId), credentialId, secret);
     return updated;
   }
 
   async deleteCredential(workspaceId: string, projectId: string, credentialId: string): Promise<boolean> {
     const existing = await this.docStore.get<CredentialRecord>(
-      EndpointResourceService.credentialsCollection,
+      this.credentialsCollection(workspaceId),
       credentialId,
     );
     if (!existing) {
@@ -286,8 +299,8 @@ export class EndpointResourceService {
     if (existing.workspace_id !== workspaceId || existing.project_id !== projectId) {
       return false;
     }
-    await this.docStore.delete(EndpointResourceService.credentialsCollection, credentialId);
-    await this.docStore.delete(EndpointResourceService.credentialSecretsCollection, credentialId);
+    await this.docStore.delete(this.credentialsCollection(workspaceId), credentialId);
+    await this.docStore.delete(this.credentialSecretsCollection(workspaceId), credentialId);
     return true;
   }
 
@@ -297,7 +310,7 @@ export class EndpointResourceService {
     credentialId: string,
   ): Promise<string | null> {
     const secret = await this.docStore.get<CredentialSecretRecord>(
-      EndpointResourceService.credentialSecretsCollection,
+      this.credentialSecretsCollection(workspaceId),
       credentialId,
     );
     if (!secret) {
@@ -310,7 +323,7 @@ export class EndpointResourceService {
   }
 
   async listEndpoints(workspaceId: string, projectId: string): Promise<EndpointRecord[]> {
-    return this.docStore.list<EndpointRecord>(EndpointResourceService.endpointsCollection, {
+    return this.docStore.list<EndpointRecord>(this.endpointsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -322,7 +335,7 @@ export class EndpointResourceService {
     endpointId: string,
   ): Promise<EndpointRecord | null> {
     const endpoint = await this.docStore.get<EndpointRecord>(
-      EndpointResourceService.endpointsCollection,
+      this.endpointsCollection(workspaceId),
       endpointId,
     );
     if (!endpoint) {
@@ -380,7 +393,7 @@ export class EndpointResourceService {
       ...(endpoint.meta ?? {}),
       compatibility_interface: this.inferCompatibilityInterface(protocol),
     };
-    await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpoint.id, endpoint);
+    await this.docStore.upsert(this.endpointsCollection(workspaceId), endpoint.id, endpoint);
     return endpoint;
   }
 
@@ -429,7 +442,7 @@ export class EndpointResourceService {
       ...(updated.meta ?? {}),
       compatibility_interface: this.inferCompatibilityInterface(protocol),
     };
-    await this.docStore.upsert(EndpointResourceService.endpointsCollection, endpointId, updated);
+    await this.docStore.upsert(this.endpointsCollection(workspaceId), endpointId, updated);
     return updated;
   }
 
@@ -438,7 +451,7 @@ export class EndpointResourceService {
     if (!existing) {
       return false;
     }
-    await this.docStore.delete(EndpointResourceService.endpointsCollection, endpointId);
+    await this.docStore.delete(this.endpointsCollection(workspaceId), endpointId);
     return true;
   }
 

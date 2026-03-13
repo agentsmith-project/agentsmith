@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import type { JsonDocStorePort } from '@mbos/ports';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export type AuditEventRecord = {
   id: string;
@@ -318,6 +319,14 @@ export type UsageOperationsSummaryResponse = {
 export const AUDIT_EVENTS_COLLECTION = 'project_audit_events';
 export const USAGE_FACTS_COLLECTION = 'project_usage_facts';
 
+function auditEventsCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(AUDIT_EVENTS_COLLECTION, workspaceId);
+}
+
+function usageFactsCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(USAGE_FACTS_COLLECTION, workspaceId);
+}
+
 function isRequestsOnlyUsageResourceType(resourceType: string): boolean {
   return resourceType === 'agent';
 }
@@ -424,7 +433,7 @@ export async function recordAuditEvent(
     decision_id: extractDecisionIdFromMetadata(input.metadata_json),
     metadata_json: input.metadata_json ?? {},
   };
-  await docStore.upsert(AUDIT_EVENTS_COLLECTION, record.id, record);
+  await docStore.upsert(auditEventsCollection(record.workspace_id), record.id, record);
   return record;
 }
 
@@ -453,7 +462,7 @@ export async function recordUsageFact(
     decision_id: extractDecisionIdFromMetadata(input.metadata_json),
     metadata_json: input.metadata_json && typeof input.metadata_json === 'object' ? input.metadata_json : undefined,
   };
-  await docStore.upsert(USAGE_FACTS_COLLECTION, record.id, record);
+  await docStore.upsert(usageFactsCollection(record.workspace_id), record.id, record);
   return record;
 }
 
@@ -461,7 +470,7 @@ export async function listAuditEvents(
   docStore: JsonDocStorePort,
   query: AuditQuery,
 ): Promise<{ items: AuditEventRecord[]; total: number; page: number; page_size: number; has_more: boolean }> {
-  const rows = (await docStore.list(AUDIT_EVENTS_COLLECTION, {
+  const rows = (await docStore.list(auditEventsCollection(query.workspaceId), {
     workspace_id: query.workspaceId,
     project_id: query.projectId,
   })) as AuditEventRecord[];
@@ -500,7 +509,7 @@ export async function listUsageFacts(
   docStore: JsonDocStorePort,
   query: Pick<UsageQuery, 'workspaceId' | 'projectId' | 'startTime' | 'endTime' | 'resourceType' | 'resourceId' | 'endUserId' | 'provider' | 'model' | 'result' | 'errorClass'>,
 ): Promise<UsageFactRecord[]> {
-  const rows = (await docStore.list(USAGE_FACTS_COLLECTION, {
+  const rows = (await docStore.list(usageFactsCollection(query.workspaceId), {
     workspace_id: query.workspaceId,
     project_id: query.projectId,
   })) as UsageFactRecord[];
@@ -1381,4 +1390,3 @@ export async function getUsageOperationsSummary(
     webhook_destinations: webhookDestinations,
   };
 }
-

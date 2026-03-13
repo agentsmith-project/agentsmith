@@ -31,6 +31,7 @@ import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestr
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 interface TaskRecord {
   id: string;
@@ -139,6 +140,18 @@ const NOTEBOOK_TRACE_STORE_LIMITS = getNotebookTraceStoreLimits();
 const TASKS_COLLECTION = 'notebook_tasks';
 const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
 const TASK_ARTIFACTS_COLLECTION = 'notebook_task_artifacts';
+
+function notebookTasksCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(TASKS_COLLECTION, workspaceId);
+}
+
+function notebookTaskMessagesCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(TASK_MESSAGES_COLLECTION, workspaceId);
+}
+
+function notebookTaskArtifactsCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(TASK_ARTIFACTS_COLLECTION, workspaceId);
+}
 
 function debugNotebookExecution(message: string, extra?: Record<string, unknown>): void {
   if (process.env.DEBUG_NOTEBOOK_EXECUTION !== '1') return;
@@ -331,7 +344,7 @@ async function loadProjectTasks(deps: NodeApiDeps, workspaceId: string, projectI
   const key = projectKey(workspaceId, projectId);
   const cached = TASKS_BY_PROJECT.get(key);
   if (cached) return cached;
-  const listed = await deps.docStore.list<TaskRecord>(TASKS_COLLECTION, {
+  const listed = await deps.docStore.list<TaskRecord>(notebookTasksCollection(workspaceId), {
     workspace_id: workspaceId,
     project_id: projectId,
   });
@@ -352,7 +365,9 @@ function getTaskMessages(taskId: string): TaskMessageRecord[] {
 async function loadTaskMessages(deps: NodeApiDeps, taskId: string): Promise<TaskMessageRecord[]> {
   const cached = MESSAGES_BY_TASK.get(taskId);
   if (cached) return cached;
-  const listed = await deps.docStore.list<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, { task_id: taskId });
+  const task = findTaskById(taskId);
+  if (!task) return [];
+  const listed = await deps.docStore.list<TaskMessageRecord>(notebookTaskMessagesCollection(task.workspace_id), { task_id: taskId });
   const sorted = listed.sort((a, b) => a.created_at.localeCompare(b.created_at));
   MESSAGES_BY_TASK.set(taskId, sorted);
   return sorted;
@@ -402,6 +417,10 @@ async function createTaskArtifactRecord(
   },
 ): Promise<TaskArtifactRecord> {
   const { taskId, payload } = args;
+  const task = findTaskById(taskId);
+  if (!task) {
+    throw new Error('task_not_found');
+  }
   const normalizedTitle = payload.title?.trim() || payload.filename?.trim() || undefined;
   const normalizedPath = payload.task_relative_path.trim();
   const items = getTaskArtifacts(taskId);
@@ -432,14 +451,16 @@ async function createTaskArtifactRecord(
     created_at: nowIso(),
   };
   items.push(artifact);
-  await deps.docStore.upsert<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, artifact.id, artifact);
+  await deps.docStore.upsert<TaskArtifactRecord>(notebookTaskArtifactsCollection(task.workspace_id), artifact.id, artifact);
   return artifact;
 }
 
 async function loadTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<TaskArtifactRecord[]> {
   const cached = ARTIFACTS_BY_TASK.get(taskId);
   if (cached) return cached;
-  const listed = await deps.docStore.list<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, { task_id: taskId });
+  const task = findTaskById(taskId);
+  if (!task) return [];
+  const listed = await deps.docStore.list<TaskArtifactRecord>(notebookTaskArtifactsCollection(task.workspace_id), { task_id: taskId });
   const sorted = listed.sort((a, b) => a.created_at.localeCompare(b.created_at));
   ARTIFACTS_BY_TASK.set(taskId, sorted);
   return sorted;
@@ -481,18 +502,32 @@ function findTask(workspaceId: string, projectId: string, taskId: string): TaskR
   return getTasks(workspaceId, projectId).find((item) => item.id === taskId);
 }
 
+function findTaskById(taskId: string): TaskRecord | undefined {
+  for (const tasks of TASKS_BY_PROJECT.values()) {
+    const found = tasks.find((item) => item.id === taskId);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 function sanitizePathPart(input: string): string {
   return input.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'unknown';
 }
 
 async function deleteTaskMessages(deps: NodeApiDeps, taskId: string): Promise<void> {
-  const existing = await deps.docStore.list<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, { task_id: taskId });
-  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_MESSAGES_COLLECTION, item.id)));
+  const task = findTaskById(taskId);
+  if (!task) return;
+  const collection = notebookTaskMessagesCollection(task.workspace_id);
+  const existing = await deps.docStore.list<TaskMessageRecord>(collection, { task_id: taskId });
+  await Promise.all(existing.map((item) => deps.docStore.delete(collection, item.id)));
 }
 
 async function deleteTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<void> {
-  const existing = await deps.docStore.list<TaskArtifactRecord>(TASK_ARTIFACTS_COLLECTION, { task_id: taskId });
-  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_ARTIFACTS_COLLECTION, item.id)));
+  const task = findTaskById(taskId);
+  if (!task) return;
+  const collection = notebookTaskArtifactsCollection(task.workspace_id);
+  const existing = await deps.docStore.list<TaskArtifactRecord>(collection, { task_id: taskId });
+  await Promise.all(existing.map((item) => deps.docStore.delete(collection, item.id)));
 }
 
 function mapTaskMessagesForExecution(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
@@ -606,7 +641,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       last_activity_at: createdAt,
     };
     getTasks(route.workspaceId, route.projectId).unshift(task);
-    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
     await writeProjectAuditEvent(deps, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
@@ -648,7 +683,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task.status = body.status;
     }
     task.updated_at = nowIso();
-    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
     if (
       previousStatus === 'active'
       && task.status === 'archived'
@@ -675,10 +710,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     MESSAGES_BY_TASK.delete(route.taskId);
     ARTIFACTS_BY_TASK.delete(route.taskId);
     removeTaskTraceEventsFromMemory(route.taskId);
-    await deps.docStore.delete(TASKS_COLLECTION, route.taskId);
+    await deps.docStore.delete(notebookTasksCollection(route.workspaceId), route.taskId);
     await deleteTaskMessages(deps, route.taskId);
     await deleteTaskArtifacts(deps, route.taskId);
-    await deleteTaskTraceEvents(deps, route.taskId);
+    await deleteTaskTraceEvents(deps, route.workspaceId, route.taskId);
     if (removedTask) {
       await maybeReleaseInternalAgentWorkload(deps, route.workspaceId, route.projectId, removedTask);
     }
@@ -741,7 +776,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       task.attached_inputs.push(inputRef);
     }
     task.updated_at = nowIso();
-    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
     json(res, 200, task);
     return true;
   }
@@ -783,7 +818,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const beforeCount = task.attached_inputs.length;
     task.attached_inputs = task.attached_inputs.filter((item) => item.id !== route.inputId);
     task.updated_at = nowIso();
-    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
     if (task.attached_inputs.length !== beforeCount) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
@@ -884,9 +919,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       created_at: nowIso(),
     };
     getTaskMessages(route.taskId).push(message);
-    await deps.docStore.upsert<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, message.id, message);
+    await deps.docStore.upsert<TaskMessageRecord>(notebookTaskMessagesCollection(route.workspaceId), message.id, message);
     updateTaskActivity(task);
-    await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
 
     if (role === 'user') {
       const assistantMessage: TaskMessageRecord = {
@@ -897,9 +932,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         created_at: nowIso(),
       };
       getTaskMessages(route.taskId).push(assistantMessage);
-      await deps.docStore.upsert<TaskMessageRecord>(TASK_MESSAGES_COLLECTION, assistantMessage.id, assistantMessage);
+      await deps.docStore.upsert<TaskMessageRecord>(notebookTaskMessagesCollection(route.workspaceId), assistantMessage.id, assistantMessage);
       updateTaskActivity(task);
-      await deps.docStore.upsert<TaskRecord>(TASKS_COLLECTION, task.id, task);
+      await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
       ACTIVE_RUNS_BY_TASK.add(route.taskId);
 
       void runNotebookTaskWithExecutionAgent({
@@ -954,8 +989,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         },
         debugLog: debugNotebookExecution,
         taskCollections: {
-          tasks: TASKS_COLLECTION,
-          messages: TASK_MESSAGES_COLLECTION,
+          tasks: notebookTasksCollection(route.workspaceId),
+          messages: notebookTaskMessagesCollection(route.workspaceId),
         },
         createTaskArtifact: async ({ taskId, payload }) => createTaskArtifactRecord(deps, {
           taskId,
@@ -1116,7 +1151,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
           data: await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, currentTask),
         });
       }
-      for (const traceEvent of await loadTaskTraceEvents(deps, route.taskId)) {
+      for (const traceEvent of await loadTaskTraceEvents(deps, route.workspaceId, route.taskId)) {
         writeNotebookTaskSseEvent(res, { type: 'trace_event', data: traceEvent });
       }
     }

@@ -5,6 +5,7 @@ import type {
   ChatMessageRecord,
   ChatSessionRecord,
 } from './resource-models.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export class ChatResourceService {
   private static readonly sessionsCollection = 'chat_sessions';
@@ -12,6 +13,18 @@ export class ChatResourceService {
   private static readonly attachmentsCollection = 'chat_attachments';
 
   constructor(private readonly docStore: JsonDocStorePort) {}
+
+  private sessionsCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(ChatResourceService.sessionsCollection, workspaceId);
+  }
+
+  private messagesCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(ChatResourceService.messagesCollection, workspaceId);
+  }
+
+  private attachmentsCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(ChatResourceService.attachmentsCollection, workspaceId);
+  }
 
   private sessionId(): string {
     return `chat_sess_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
@@ -26,7 +39,7 @@ export class ChatResourceService {
   }
 
   async listSessions(workspaceId: string, projectId: string): Promise<ChatSessionRecord[]> {
-    const items = await this.docStore.list<ChatSessionRecord>(ChatResourceService.sessionsCollection, {
+    const items = await this.docStore.list<ChatSessionRecord>(this.sessionsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -38,7 +51,7 @@ export class ChatResourceService {
     projectId: string,
     sessionId: string,
   ): Promise<ChatSessionRecord | null> {
-    const session = await this.docStore.get<ChatSessionRecord>(ChatResourceService.sessionsCollection, sessionId);
+    const session = await this.docStore.get<ChatSessionRecord>(this.sessionsCollection(workspaceId), sessionId);
     if (!session) {
       return null;
     }
@@ -72,7 +85,7 @@ export class ChatResourceService {
       message_count: 0,
       total_tokens: 0,
     };
-    await this.docStore.upsert(ChatResourceService.sessionsCollection, session.id, session);
+    await this.docStore.upsert(this.sessionsCollection(input.workspaceId), session.id, session);
     return session;
   }
 
@@ -89,21 +102,21 @@ export class ChatResourceService {
       ...patch,
       updated_at: new Date().toISOString(),
     };
-    await this.docStore.upsert(ChatResourceService.sessionsCollection, sessionId, next);
+    await this.docStore.upsert(this.sessionsCollection(workspaceId), sessionId, next);
     return next;
   }
 
   async deleteSession(workspaceId: string, projectId: string, sessionId: string): Promise<boolean> {
     const existing = await this.getSession(workspaceId, projectId, sessionId);
     if (!existing) return false;
-    await this.docStore.delete(ChatResourceService.sessionsCollection, sessionId);
+    await this.docStore.delete(this.sessionsCollection(workspaceId), sessionId);
     const messages = await this.listMessages(workspaceId, projectId, sessionId);
     for (const message of messages) {
-      await this.docStore.delete(ChatResourceService.messagesCollection, message.id);
+      await this.docStore.delete(this.messagesCollection(workspaceId), message.id);
     }
     const attachments = await this.listAttachments(workspaceId, projectId, sessionId);
     for (const attachment of attachments) {
-      await this.docStore.delete(ChatResourceService.attachmentsCollection, attachment.id);
+      await this.docStore.delete(this.attachmentsCollection(workspaceId), attachment.id);
     }
     return true;
   }
@@ -113,7 +126,7 @@ export class ChatResourceService {
     projectId: string,
     sessionId: string,
   ): Promise<ChatMessageRecord[]> {
-    const items = await this.docStore.list<ChatMessageRecord>(ChatResourceService.messagesCollection, {
+    const items = await this.docStore.list<ChatMessageRecord>(this.messagesCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
       session_id: sessionId,
@@ -171,7 +184,7 @@ export class ChatResourceService {
       is_stale: input.isStale ?? false,
       attachment_snapshots: input.attachmentSnapshots,
     };
-    await this.docStore.upsert(ChatResourceService.messagesCollection, message.id, message);
+    await this.docStore.upsert(this.messagesCollection(input.workspaceId), message.id, message);
     const session = await this.getSession(input.workspaceId, input.projectId, input.sessionId);
     if (session) {
       await this.updateSession(input.workspaceId, input.projectId, input.sessionId, {
@@ -186,7 +199,7 @@ export class ChatResourceService {
   }
 
   async listAllProjectMessages(workspaceId: string, projectId: string): Promise<ChatMessageRecord[]> {
-    return this.docStore.list<ChatMessageRecord>(ChatResourceService.messagesCollection, {
+    return this.docStore.list<ChatMessageRecord>(this.messagesCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -198,7 +211,7 @@ export class ChatResourceService {
     sessionId: string,
     messageId: string,
   ): Promise<ChatMessageRecord | null> {
-    const message = await this.docStore.get<ChatMessageRecord>(ChatResourceService.messagesCollection, messageId);
+    const message = await this.docStore.get<ChatMessageRecord>(this.messagesCollection(workspaceId), messageId);
     if (!message) {
       return null;
     }
@@ -282,7 +295,7 @@ export class ChatResourceService {
       error_code: patch.errorCode === undefined ? existing.error_code : patch.errorCode,
       error_message: patch.errorMessage === undefined ? existing.error_message : patch.errorMessage,
     };
-    await this.docStore.upsert(ChatResourceService.messagesCollection, messageId, next);
+    await this.docStore.upsert(this.messagesCollection(workspaceId), messageId, next);
     return next;
   }
 
@@ -317,7 +330,7 @@ export class ChatResourceService {
     projectId: string,
     sessionId: string,
   ): Promise<ChatAttachmentRecord[]> {
-    const items = await this.docStore.list<ChatAttachmentRecord>(ChatResourceService.attachmentsCollection, {
+    const items = await this.docStore.list<ChatAttachmentRecord>(this.attachmentsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
       session_id: sessionId,
@@ -367,7 +380,7 @@ export class ChatResourceService {
       content_base64: input.contentBase64,
       preview_url: input.previewUrl,
     };
-    await this.docStore.upsert(ChatResourceService.attachmentsCollection, attachment.id, attachment);
+    await this.docStore.upsert(this.attachmentsCollection(input.workspaceId), attachment.id, attachment);
     return attachment;
   }
 
@@ -378,7 +391,7 @@ export class ChatResourceService {
     attachmentId: string,
   ): Promise<ChatAttachmentRecord | null> {
     const attachment = await this.docStore.get<ChatAttachmentRecord>(
-      ChatResourceService.attachmentsCollection,
+      this.attachmentsCollection(workspaceId),
       attachmentId,
     );
     if (!attachment) return null;
@@ -393,7 +406,7 @@ export class ChatResourceService {
       ...attachment,
       upload_status: 'ready',
     };
-    await this.docStore.upsert(ChatResourceService.attachmentsCollection, attachmentId, updated);
+    await this.docStore.upsert(this.attachmentsCollection(workspaceId), attachmentId, updated);
     return updated;
   }
 
@@ -404,7 +417,7 @@ export class ChatResourceService {
     attachmentId: string,
   ): Promise<ChatAttachmentRecord | null> {
     const attachment = await this.docStore.get<ChatAttachmentRecord>(
-      ChatResourceService.attachmentsCollection,
+      this.attachmentsCollection(workspaceId),
       attachmentId,
     );
     if (!attachment) return null;
@@ -442,7 +455,7 @@ export class ChatResourceService {
     attachmentId: string,
   ): Promise<boolean> {
     const attachment = await this.docStore.get<ChatAttachmentRecord>(
-      ChatResourceService.attachmentsCollection,
+      this.attachmentsCollection(workspaceId),
       attachmentId,
     );
     if (!attachment) return false;
@@ -453,7 +466,7 @@ export class ChatResourceService {
     ) {
       return false;
     }
-    await this.docStore.delete(ChatResourceService.attachmentsCollection, attachmentId);
+    await this.docStore.delete(this.attachmentsCollection(workspaceId), attachmentId);
     return true;
   }
 }

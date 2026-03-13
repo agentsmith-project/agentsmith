@@ -1,5 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import {
   getUsageRecordsSummary,
   getUsageOperationsSummary,
@@ -10,6 +13,10 @@ import {
 } from './audit-usage-store.js';
 
 describe('audit-usage-store usage records summary', () => {
+  afterEach(() => {
+    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+  });
+
   it('aggregates fallback hops and error classes from usage facts', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';
@@ -359,6 +366,94 @@ describe('audit-usage-store usage records summary', () => {
       expect.arrayContaining([expect.objectContaining({ request_id: 'req_b', result: 'error', error_class: 'provider_retryable' })]),
     );
     expect(summary.webhook_destinations).toEqual([]);
+  });
+
+  it('uses tenant-prefixed collections for audit events and usage facts', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-audit-tenant-registry-'));
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          workspace_admin: 'owner@example.com',
+          tenant: {
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+            key_prefix: 'ws_default:',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_default';
+    const projectId = 'proj_1';
+    const now = new Date().toISOString();
+
+    await recordAuditEvent(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      actor_type: 'user',
+      actor_id: 'user_1',
+      action: 'endpoint.create',
+      result: 'ok',
+      request_id: 'req_audit_tenant',
+      resource_type: 'endpoint',
+      resource_id: 'ep_1',
+      metadata_json: {},
+    });
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'ep_1',
+      requests: 1,
+      result: 'ok',
+      request_id: 'req_usage_tenant',
+      metadata_json: { provider: 'openai', resolved_model: 'gpt-4o' },
+    });
+
+    expect(await store.list('project_audit_events', {})).toHaveLength(0);
+    expect(await store.list('project_usage_facts', {})).toHaveLength(0);
+    expect(await store.list('ws_default_project_audit_events', {})).toHaveLength(1);
+    expect(await store.list('ws_default_project_usage_facts', {})).toHaveLength(1);
+
+    const auditRows = await listAuditEvents(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      action: null,
+      actorType: null,
+      actorId: null,
+      endUserId: null,
+      resourceType: null,
+      resourceId: null,
+      result: null,
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 20,
+    });
+    const usageRows = await listUsageFactRecords(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      resourceType: 'endpoint',
+      sortOrder: 'desc',
+      page: 1,
+      pageSize: 20,
+    });
+
+    expect(auditRows.total).toBe(1);
+    expect(usageRows.total).toBe(1);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 
 });

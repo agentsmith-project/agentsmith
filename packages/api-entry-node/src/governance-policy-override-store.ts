@@ -1,7 +1,12 @@
 import { randomUUID } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 const COLLECTION = 'governance_policy_overrides';
+
+function overridesCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(COLLECTION, workspaceId);
+}
 
 export type GovernancePolicyOverrideReasonCategory =
   | 'upstream_transient'
@@ -46,7 +51,7 @@ export async function listGovernancePolicyOverrides(
     reportName: string;
   },
 ): Promise<GovernancePolicyOverrideRecord[]> {
-  const items = await docStore.list<GovernancePolicyOverrideRecord>(COLLECTION, {
+  const items = await docStore.list<GovernancePolicyOverrideRecord>(overridesCollection(params.workspaceId), {
     workspace_id: params.workspaceId,
     project_id: params.projectId,
     report_name: params.reportName,
@@ -72,7 +77,8 @@ export async function createGovernancePolicyOverride(
   },
 ): Promise<GovernancePolicyOverrideRecord> {
   const now = new Date().toISOString();
-  const existing = await docStore.list<GovernancePolicyOverrideRecord>(COLLECTION, {
+  const collection = overridesCollection(params.workspaceId);
+  const existing = await docStore.list<GovernancePolicyOverrideRecord>(collection, {
     workspace_id: params.workspaceId,
     project_id: params.projectId,
     report_name: params.reportName,
@@ -99,7 +105,7 @@ export async function createGovernancePolicyOverride(
     created_by_user_id: params.createdByUserId,
     created_by_name: params.createdByName,
   };
-  await docStore.upsert(COLLECTION, record.id, record);
+  await docStore.upsert(collection, record.id, record);
   return record;
 }
 
@@ -112,7 +118,31 @@ export async function updateGovernancePolicyOverrideDecision(
     decidedByName?: string;
   },
 ): Promise<GovernancePolicyOverrideRecord | null> {
-  const existing = await docStore.get<GovernancePolicyOverrideRecord>(COLLECTION, params.overrideId);
+  let existing: GovernancePolicyOverrideRecord | null = null;
+  let collection = COLLECTION;
+  try {
+    const registryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim();
+    if (registryPath) {
+      const { readFileSync } = await import('node:fs');
+      const raw = readFileSync(registryPath, 'utf-8');
+      const parsed = JSON.parse(raw) as Array<{ id?: unknown }>;
+      for (const item of Array.isArray(parsed) ? parsed : []) {
+        const workspaceId = typeof item?.id === 'string' ? item.id.trim() : '';
+        if (!workspaceId) continue;
+        const scopedCollection = overridesCollection(workspaceId);
+        existing = await docStore.get<GovernancePolicyOverrideRecord>(scopedCollection, params.overrideId);
+        if (existing) {
+          collection = scopedCollection;
+          break;
+        }
+      }
+    }
+  } catch {
+    existing = null;
+  }
+  if (!existing) {
+    existing = await docStore.get<GovernancePolicyOverrideRecord>(COLLECTION, params.overrideId);
+  }
   if (!existing) return null;
   const next: GovernancePolicyOverrideRecord = {
     ...existing,
@@ -121,6 +151,6 @@ export async function updateGovernancePolicyOverrideDecision(
     decided_by_user_id: params.decidedByUserId,
     decided_by_name: params.decidedByName,
   };
-  await docStore.upsert(COLLECTION, next.id, next);
+  await docStore.upsert(collection, next.id, next);
   return next;
 }

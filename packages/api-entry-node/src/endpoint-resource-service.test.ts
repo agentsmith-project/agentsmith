@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { EndpointResourceService } from './endpoint-resource-service.js';
 
 describe('endpoint-resource-service', () => {
+  afterEach(() => {
+    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+  });
+
   it('persists anthropic compatibility interface when protocol is anthropic compatible', async () => {
     const service = new EndpointResourceService(new InMemoryJsonDocStore());
 
@@ -54,5 +61,55 @@ describe('endpoint-resource-service', () => {
     expect(endpoint.meta?.compatibility_interface).toBe('anthropic_compatible');
     expect(endpoint.model_profile?.max_context_tokens).toBeGreaterThan(0);
     expect(endpoint.model_profile?.price_input_per_1m).toBe(0);
+  });
+
+  it('uses tenant-prefixed collections for credentials, secrets, and endpoints', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-endpoint-tenant-registry-'));
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          workspace_admin: 'owner@example.com',
+          tenant: {
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+            key_prefix: 'ws_default:',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    const docStore = new InMemoryJsonDocStore();
+    const service = new EndpointResourceService(docStore);
+
+    const credential = await service.createCredential('ws_default', 'proj_1', {
+      name: 'tenant-key',
+      value: 'sk-tenant',
+    });
+    const endpoint = await service.createEndpoint('ws_default', 'proj_1', {
+      name: 'tenant-endpoint',
+      model: 'gpt-4o',
+      type: 'openai',
+      base_url: 'https://api.openai.com/v1/chat/completions',
+      credential_ref: credential.id,
+      protocol: 'openai_compatible',
+      provider_family: 'custom',
+    });
+
+    expect(await docStore.list('credentials', {})).toHaveLength(0);
+    expect(await docStore.list('credential_secrets', {})).toHaveLength(0);
+    expect(await docStore.list('endpoints', {})).toHaveLength(0);
+    expect(await docStore.list('ws_default_credentials', {})).toHaveLength(1);
+    expect(await docStore.list('ws_default_credential_secrets', {})).toHaveLength(1);
+    expect(await docStore.list('ws_default_endpoints', {})).toHaveLength(1);
+    expect((await service.listCredentials('ws_default', 'proj_1')).map((item) => item.id)).toContain(credential.id);
+    expect((await service.listEndpoints('ws_default', 'proj_1')).map((item) => item.id)).toContain(endpoint.id);
+    expect(await service.getCredentialSecret('ws_default', 'proj_1', credential.id)).toBe('sk-tenant');
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

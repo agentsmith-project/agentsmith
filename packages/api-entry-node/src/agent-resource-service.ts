@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 interface AgentConnectionState {
   connected_at: string;
@@ -23,6 +25,14 @@ export class AgentResourceService {
 
   constructor(private readonly docStore: JsonDocStorePort) {}
 
+  private agentsCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(AgentResourceService.agentsCollection, workspaceId);
+  }
+
+  private agentKeysCollection(workspaceId: string): string {
+    return resolveWorkspaceScopedCollection(AgentResourceService.agentKeysCollection, workspaceId);
+  }
+
   private agentId(): string {
     return `ag_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
   }
@@ -40,7 +50,7 @@ export class AgentResourceService {
   }
 
   async listAgents(workspaceId: string, projectId: string): Promise<AgentRecord[]> {
-    const items = await this.docStore.list<AgentRecord>(AgentResourceService.agentsCollection, {
+    const items = await this.docStore.list<AgentRecord>(this.agentsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -59,7 +69,7 @@ export class AgentResourceService {
   }
 
   async getAgent(workspaceId: string, projectId: string, agentId: string): Promise<AgentRecord | null> {
-    const item = await this.docStore.get<AgentRecord>(AgentResourceService.agentsCollection, agentId);
+    const item = await this.docStore.get<AgentRecord>(this.agentsCollection(workspaceId), agentId);
     if (!item) return null;
     if (item.workspace_id !== workspaceId || item.project_id !== projectId) return null;
     return item;
@@ -97,7 +107,7 @@ export class AgentResourceService {
       updated_at: now,
       last_seen_at: undefined,
     };
-    await this.docStore.upsert(AgentResourceService.agentsCollection, agent.id, agent);
+    await this.docStore.upsert(this.agentsCollection(workspaceId), agent.id, agent);
     return agent;
   }
 
@@ -126,17 +136,17 @@ export class AgentResourceService {
       description: patch.description !== undefined ? patch.description?.trim() || undefined : existing.description,
       updated_at: new Date().toISOString(),
     };
-    await this.docStore.upsert(AgentResourceService.agentsCollection, agentId, updated);
+    await this.docStore.upsert(this.agentsCollection(workspaceId), agentId, updated);
     return updated;
   }
 
   async deleteAgent(workspaceId: string, projectId: string, agentId: string): Promise<boolean> {
     const existing = await this.getAgent(workspaceId, projectId, agentId);
     if (!existing) return false;
-    await this.docStore.delete(AgentResourceService.agentsCollection, agentId);
+    await this.docStore.delete(this.agentsCollection(workspaceId), agentId);
     const keys = await this.listAgentKeys(workspaceId, projectId, agentId);
     for (const key of keys) {
-      await this.docStore.delete(AgentResourceService.agentKeysCollection, key.id);
+      await this.docStore.delete(this.agentKeysCollection(workspaceId), key.id);
     }
     this.agentConnectionState.delete(agentId);
     return true;
@@ -147,7 +157,7 @@ export class AgentResourceService {
     projectId: string,
     agentId: string,
   ): Promise<AgentServiceKeyRecord[]> {
-    const items = await this.docStore.list<AgentServiceKeyRecord>(AgentResourceService.agentKeysCollection, {
+    const items = await this.docStore.list<AgentServiceKeyRecord>(this.agentKeysCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
       agent_id: agentId,
@@ -171,7 +181,7 @@ export class AgentResourceService {
       status: 'active',
       created_at: new Date().toISOString(),
     };
-    await this.docStore.upsert(AgentResourceService.agentKeysCollection, record.id, record);
+    await this.docStore.upsert(this.agentKeysCollection(workspaceId), record.id, record);
     return { record, key };
   }
 
@@ -182,7 +192,7 @@ export class AgentResourceService {
     keyId: string,
   ): Promise<boolean> {
     const existing = await this.docStore.get<AgentServiceKeyRecord>(
-      AgentResourceService.agentKeysCollection,
+      this.agentKeysCollection(workspaceId),
       keyId,
     );
     if (!existing) return false;
@@ -197,24 +207,48 @@ export class AgentResourceService {
       ...existing,
       status: 'revoked',
     };
-    await this.docStore.upsert(AgentResourceService.agentKeysCollection, keyId, revoked);
+    await this.docStore.upsert(this.agentKeysCollection(workspaceId), keyId, revoked);
     return true;
   }
 
   async verifyAgentKey(agentId: string, token: string): Promise<AgentServiceKeyRecord | null> {
     const hash = this.hashKey(token);
-    const all = await this.docStore.list<AgentServiceKeyRecord>(AgentResourceService.agentKeysCollection, {
-      agent_id: agentId,
-      status: 'active',
-    });
-    const matched = all.find((item) => item.key_hash === hash) ?? null;
+    const allActiveKeys = await Promise.all(
+      this.listRegisteredWorkspaceCollections(AgentResourceService.agentKeysCollection).map((collection) =>
+        this.docStore.list<AgentServiceKeyRecord>(collection, {
+          agent_id: agentId,
+          status: 'active',
+        }),
+      ),
+    );
+    const matched = allActiveKeys.flat().find((item) => item.key_hash === hash) ?? null;
     if (!matched) return null;
     const touched: AgentServiceKeyRecord = {
       ...matched,
       last_used_at: new Date().toISOString(),
     };
-    await this.docStore.upsert(AgentResourceService.agentKeysCollection, touched.id, touched);
+    await this.docStore.upsert(this.agentKeysCollection(matched.workspace_id), touched.id, touched);
     return touched;
+  }
+
+  private listRegisteredWorkspaceCollections(baseCollection: string): string[] {
+    const collections = new Set<string>([baseCollection]);
+    const registryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim();
+    if (!registryPath) {
+      return [...collections];
+    }
+    try {
+      const raw = readFileSync(registryPath, 'utf-8');
+      const parsed = JSON.parse(raw) as Array<{ id?: unknown }>;
+      for (const item of Array.isArray(parsed) ? parsed : []) {
+        const workspaceId = typeof item?.id === 'string' ? item.id.trim() : '';
+        if (!workspaceId) continue;
+        collections.add(resolveWorkspaceScopedCollection(baseCollection, workspaceId));
+      }
+    } catch {
+      // Ignore registry read failures and fall back to the base collection.
+    }
+    return [...collections];
   }
 
   markAgentConnected(agentId: string, meta: Omit<AgentConnectionState, 'connected_at'>): void {

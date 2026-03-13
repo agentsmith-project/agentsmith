@@ -284,7 +284,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           runId,
           payload: event.event as AgentExecutionTraceEventPayload,
         });
-        await storeTaskTraceEvent(deps, task.id, traceEvent);
+        await storeTaskTraceEvent(deps, task.workspace_id, task.id, traceEvent);
         traceEventCount += 1;
         maxTraceSequence = Math.max(maxTraceSequence, traceEvent.seq);
         emitTaskEvent(taskId, { type: 'trace_event', data: traceEvent });
@@ -438,7 +438,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           },
         },
       });
-      await storeTaskTraceEvent(deps, task.id, fallbackTrace);
+      await storeTaskTraceEvent(deps, task.workspace_id, task.id, fallbackTrace);
       traceEventCount += 1;
       maxTraceSequence = Math.max(maxTraceSequence, fallbackTrace.seq);
       emitTaskEvent(taskId, { type: 'trace_event', data: fallbackTrace });
@@ -472,7 +472,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           },
         },
       });
-      await storeTaskTraceEvent(deps, task.id, userCancelledTrace);
+      await storeTaskTraceEvent(deps, task.workspace_id, task.id, userCancelledTrace);
       traceEventCount += 1;
       maxTraceSequence = Math.max(maxTraceSequence, userCancelledTrace.seq);
       emitTaskEvent(taskId, { type: 'trace_event', data: userCancelledTrace });

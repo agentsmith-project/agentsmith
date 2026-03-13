@@ -1,8 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AgentResourceService } from './agent-resource-service.js';
 
 describe('AgentResourceService', () => {
+  afterEach(() => {
+    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+  });
+
   it('creates external agent with expected defaults', async () => {
     const service = new AgentResourceService(new InMemoryJsonDocStore());
     const created = await service.createAgent('ws_default', 'proj_1', {
@@ -53,5 +60,43 @@ describe('AgentResourceService', () => {
     expect(await service.getAgent('ws_default', 'proj_1', agent.id)).toBeNull();
     expect(await service.listAgentKeys('ws_default', 'proj_1', agent.id)).toEqual([]);
     expect(service.getConnectionInfo(agent.id)).toBeNull();
+  });
+
+  it('uses tenant-prefixed collections for agents and service keys', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-agent-tenant-registry-'));
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          workspace_admin: 'owner@example.com',
+          tenant: {
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+            key_prefix: 'ws_default:',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    const docStore = new InMemoryJsonDocStore();
+    const service = new AgentResourceService(docStore);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'tenant-agent',
+      mode: 'external',
+    });
+    const { record } = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    expect(await docStore.list('agents', {})).toHaveLength(0);
+    expect(await docStore.list('agent_service_keys', {})).toHaveLength(0);
+    expect(await docStore.list('ws_default_agents', {})).toHaveLength(1);
+    expect(await docStore.list('ws_default_agent_service_keys', {})).toHaveLength(1);
+    expect((await service.listAgents('ws_default', 'proj_1')).map((item) => item.id)).toContain(agent.id);
+    expect((await service.listAgentKeys('ws_default', 'proj_1', agent.id)).map((item) => item.id)).toContain(record.id);
+
+    rmSync(dir, { recursive: true, force: true });
   });
 });

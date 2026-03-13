@@ -6,6 +6,7 @@ import {
   recordNotebookTraceEventStored,
   recordNotebookTraceEventsTruncated,
 } from './notebook-task-metrics.js';
+import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export interface TaskTraceEventRecord {
   id: string;
@@ -35,6 +36,10 @@ function nowIso(): string {
   return new Date().toISOString();
 }
 
+function taskTraceEventsCollection(workspaceId: string): string {
+  return resolveWorkspaceScopedCollection(TASK_TRACE_EVENTS_COLLECTION, workspaceId);
+}
+
 export function getNotebookTraceStoreLimits(): {
   maxTraceEventsPerTask: number;
   maxTraceDetailsBytes: number;
@@ -62,10 +67,14 @@ export function countInMemoryTraceRecords(): number {
   return [...TRACE_EVENTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
 }
 
-export async function loadTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<TaskTraceEventRecord[]> {
+export async function loadTaskTraceEvents(
+  deps: NodeApiDeps,
+  workspaceId: string,
+  taskId: string,
+): Promise<TaskTraceEventRecord[]> {
   const cached = TRACE_EVENTS_BY_TASK.get(taskId);
   if (cached && cached.length > 0) return cached;
-  const listed = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
+  const listed = await deps.docStore.list<TaskTraceEventRecord>(taskTraceEventsCollection(workspaceId), { task_id: taskId });
   const sorted = listed.sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
   TRACE_EVENTS_BY_TASK.set(taskId, sorted);
   return sorted;
@@ -74,39 +83,45 @@ export async function loadTaskTraceEvents(deps: NodeApiDeps, taskId: string): Pr
 export async function listTaskTraceEventsFiltered(
   deps: NodeApiDeps,
   args: {
+    workspaceId: string;
     taskId: string;
     messageId?: string;
     runId?: string;
   },
 ): Promise<TaskTraceEventRecord[]> {
-  const { taskId, messageId, runId } = args;
+  const { workspaceId, taskId, messageId, runId } = args;
   if (!messageId && !runId) {
-    return loadTaskTraceEvents(deps, taskId);
+    return loadTaskTraceEvents(deps, workspaceId, taskId);
   }
   const filter: Record<string, string> = { task_id: taskId };
   if (messageId) filter.message_id = messageId;
   if (runId) filter.run_id = runId;
-  const listed = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, filter);
+  const listed = await deps.docStore.list<TaskTraceEventRecord>(taskTraceEventsCollection(workspaceId), filter);
   return listed.sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at)));
 }
 
-export async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, event: TaskTraceEventRecord): Promise<void> {
+export async function storeTaskTraceEvent(
+  deps: NodeApiDeps,
+  workspaceId: string,
+  taskId: string,
+  event: TaskTraceEventRecord,
+): Promise<void> {
   const items = getTaskTraceEvents(taskId);
   items.push(event);
   recordNotebookTraceEventStored();
-  await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, event.id, event);
+  await deps.docStore.upsert<TaskTraceEventRecord>(taskTraceEventsCollection(workspaceId), event.id, event);
   if (items.length <= MAX_TRACE_EVENTS_PER_TASK) return;
 
   let overflow = items.length - MAX_TRACE_EVENTS_PER_TASK;
   recordNotebookTraceEventsTruncated(overflow);
   const removed = items.splice(0, overflow);
-  await Promise.all(removed.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
+  await Promise.all(removed.map((item) => deps.docStore.delete(taskTraceEventsCollection(workspaceId), item.id)));
   if (items.length >= MAX_TRACE_EVENTS_PER_TASK) {
     const evicted = items.shift();
     if (evicted) {
       overflow += 1;
       recordNotebookTraceEventsTruncated(1);
-      await deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, evicted.id);
+      await deps.docStore.delete(taskTraceEventsCollection(workspaceId), evicted.id);
     }
   }
   const truncatedNotice: TaskTraceEventRecord = {
@@ -123,12 +138,12 @@ export async function storeTaskTraceEvent(deps: NodeApiDeps, taskId: string, eve
     phase: 'update',
   };
   items.push(truncatedNotice);
-  await deps.docStore.upsert<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, truncatedNotice.id, truncatedNotice);
+  await deps.docStore.upsert<TaskTraceEventRecord>(taskTraceEventsCollection(workspaceId), truncatedNotice.id, truncatedNotice);
 }
 
-export async function deleteTaskTraceEvents(deps: NodeApiDeps, taskId: string): Promise<void> {
-  const existing = await deps.docStore.list<TaskTraceEventRecord>(TASK_TRACE_EVENTS_COLLECTION, { task_id: taskId });
-  await Promise.all(existing.map((item) => deps.docStore.delete(TASK_TRACE_EVENTS_COLLECTION, item.id)));
+export async function deleteTaskTraceEvents(deps: NodeApiDeps, workspaceId: string, taskId: string): Promise<void> {
+  const existing = await deps.docStore.list<TaskTraceEventRecord>(taskTraceEventsCollection(workspaceId), { task_id: taskId });
+  await Promise.all(existing.map((item) => deps.docStore.delete(taskTraceEventsCollection(workspaceId), item.id)));
 }
 
 export function buildTaskTraceEvent(args: {
@@ -175,4 +190,3 @@ export function buildTaskTraceEvent(args: {
     ...(details ? { details } : {}),
   };
 }
-

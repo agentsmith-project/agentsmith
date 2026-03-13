@@ -15,7 +15,7 @@ Clarify the boundary between authentication data and authorization enforcement t
 2. `Permission point`
 - Canonical action identifier.
 - Source of truth: `src/lib/constants/permissions.ts`.
-- Project-level permissions in MVP are intentionally reduced to four:
+- Current implemented project-level permissions in MVP are intentionally reduced to four:
   - `project:endpoint:use`
   - `project:manage`
   - `project:agent:manage`
@@ -40,6 +40,8 @@ Clarify the boundary between authentication data and authorization enforcement t
 - AgentSmith decides:
   - system super admin privileges
   - workspace admin privileges
+  - workspace project-creation privileges
+  - project owner privileges
   - project admin privileges
   - permission token checks
 
@@ -56,15 +58,72 @@ Clarify the boundary between authentication data and authorization enforcement t
 
 2. `Workspace admin`
 - Can create projects in that workspace.
-- Can assign project admins.
+- Can grant or revoke workspace-scoped project creation ability.
+- Can force-transfer project ownership inside that workspace.
 - Cannot manage workspace lifecycle.
 - Cannot manage workspace IdP or tenant-isolation configuration.
 
-3. `Project admin`
-- Is assigned by a workspace admin.
-- In current MVP, `project admin` and `owner` share the same project-scope governance surfaces.
-- This means `project admin` can use the same `project:manage`-gated pages and actions inside the project shell.
-- This equivalence does not extend to workspace lifecycle or system-level administration.
+3. `Project creator`
+- Is granted workspace-scoped project creation ability by a workspace admin.
+- Automatically becomes `project owner` for projects they create.
+- Does not become workspace admin.
+
+4. `Project owner`
+- Owns project lifecycle and final project authority.
+- Can transfer ownership.
+- Can assign or revoke `project admin`.
+- Can manage project lifecycle actions such as delete.
+
+5. `Project admin`
+- Is assigned by the `project owner`.
+- Can govern project resources, credentials, policy, audit, and project-scope settings.
+- Cannot delete the project.
+- Cannot assign other project admins.
+- Cannot transfer ownership.
+- Does not gain workspace or system authority.
+
+## Target Permission Refactor (Accepted, Implementation Pending)
+
+The current implementation still uses a simplified `project:manage` model for most project-scope governance surfaces.
+
+The accepted target model is:
+
+1. `workspace:project:create`
+- Can be held by workspace admins and by explicitly delegated project creators.
+
+2. `project owner`
+- Holds lifecycle authority.
+- Holds admin-assignment authority.
+
+3. `project admin`
+- Holds governance authority but not ownership authority.
+
+Practical effect:
+
+1. A delegated project creator creates a project and automatically becomes its owner.
+2. Only the owner can:
+- delete a project
+- transfer ownership
+- assign or revoke project admins
+3. A non-owner project admin can:
+- manage project governance surfaces
+- but cannot manage lifecycle or delegate management
+
+This section is authoritative for upcoming refactor work even where current code still temporarily treats `project admin` and `owner` as equivalent.
+
+## Capability Boundary (Accepted Target)
+
+| Capability | System super admin | Workspace admin | Project creator | Project owner | Project admin |
+|------------|--------------------|-----------------|-----------------|---------------|---------------|
+| Create workspace | yes | no | no | no | no |
+| Configure workspace IdP/data | yes | no | no | no | no |
+| Grant workspace project creation | no | yes | no | no | no |
+| Create project | no | yes | yes | no | no |
+| Become owner on project create | no | no | yes | n/a | no |
+| Delete project | no | no | no | yes | no |
+| Transfer project owner | no | force only | no | yes | no |
+| Assign/revoke project admins | no | no | no | yes | no |
+| Govern project resources/policy/audit/settings | no | no | no | yes | yes |
 
 ## Decision Rule
 

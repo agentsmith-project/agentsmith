@@ -78,20 +78,23 @@
 1. `SystemAdmin`
 2. `Workspace`
 3. `WorkspaceAdmin`
-4. `ProjectAdmin`
-5. `IdentityProviderConfig`
-6. `WorkspaceDataConfig`
+4. `ProjectCreator`
+5. `ProjectOwner`
+6. `ProjectAdmin`
+7. `IdentityProviderConfig`
+8. `WorkspaceDataConfig`
 
 身份边界补充：
 
 1. Authn 由 workspace 绑定的 IdP 提供；当前只支持 Keycloak。
 2. Authz 由 AgentSmith 执行。
 3. workspace 成员不在 AgentSmith 内独立管理；workspace IdP 中的用户视为合法认证用户。
-4. workspace 管理员只负责 workspace 下 project 创建与 project 管理员分配。
-5. workspace 生命周期与底层租户配置只归系统超级管理员管理。
-6. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
-7. 当前 MVP 中，`ProjectAdmin` 在 project scope 内与 `owner` 共享同一组治理入口与 `project:manage` 权限。
-8. 这种等价只存在于 project scope，不外溢到 workspace 或 system scope。
+4. workspace 管理员负责 workspace 下 project 创建能力的授予、project owner 的强制转让，以及 project 管理角色的上层治理。
+5. 具备 workspace 级 project 创建权限的用户，在创建 project 后自动成为该 project 的 `ProjectOwner`。
+6. `ProjectOwner` 负责 project 生命周期、owner 转让和 `ProjectAdmin` 指定。
+7. `ProjectAdmin` 只负责 project scope 内治理，不负责删除 project、owner 转让或继续授予管理权限。
+8. workspace 生命周期与底层租户配置只归系统超级管理员管理。
+9. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
 
 ## 4. 必读文档（必须）
 

@@ -43,8 +43,14 @@ workspace 内部业务管理角色。
 允许：
 
 1. 在 workspace 下创建 project
-2. 指定 project 管理员
-3. 查看该 workspace 下项目列表与基本业务入口
+2. 指定哪些用户具备创建 project 的权限
+3. 强制转让某个 project 的 owner
+4. 查看该 workspace 下项目列表与基本业务入口
+
+说明：
+
+1. workspace admin 不负责 project 内日常治理细节。
+2. workspace admin 决定谁可以创建 project，以及必要时谁拥有 project。
 
 不允许：
 
@@ -53,20 +59,51 @@ workspace 内部业务管理角色。
 3. 修改 workspace 绑定的 IdP
 4. 管理 workspace 成员来源
 
-### 3.3 ProjectAdmin
+### 3.3 ProjectCreator
+
+由 workspace admin 授予 project 创建权限的用户。
 
 允许：
 
-1. 管理 project 内资源、凭据、策略与审计相关业务
-2. 在当前 MVP 中，与 `owner` 共享同一组 project-scope 治理入口与 `project:manage` 权限
+1. 在该 workspace 下创建 project
+2. 创建后自动成为所创建 project 的 `owner`
 
 不允许：
 
 1. 管理 workspace 生命周期
-2. 管理 workspace 绑定的 IdP
-3. 管理 system 级配置
+2. 修改 workspace 底层数据隔离配置
+3. 修改 workspace 绑定的 IdP
+4. 自动获得 workspace admin 身份
 
-### 3.4 Member
+### 3.4 ProjectOwner
+
+project 内部最终责任角色。
+
+允许：
+
+1. 管理 project 生命周期
+2. 删除 project
+3. 主动转让 owner
+4. 指定或撤销 `project admin`
+5. 管理 project 内资源、凭据、策略、审计与设置相关业务
+
+### 3.5 ProjectAdmin
+
+允许：
+
+1. 管理 project 内资源、凭据、策略、审计与 project-scope 治理设置
+2. 使用 project 内的治理入口完成日常 project 治理
+
+不允许：
+
+1. 删除 project
+2. 主动转让 owner
+3. 指定其他 `project admin`
+4. 管理 workspace 生命周期
+5. 管理 workspace 绑定的 IdP
+6. 管理 system 级配置
+
+### 3.6 Member
 
 允许：
 
@@ -78,6 +115,8 @@ workspace 内部业务管理角色。
 2. 只要用户存在于该 workspace 绑定的 IdP 中，即视为合法认证用户。
 3. AgentSmith 只管理授权结果：
    - 是否为 workspace 管理员
+   - 是否具备 workspace 级 project 创建权限
+   - 是否为 project owner
    - 是否为 project 管理员
    - 是否具备具体 permission token
 
@@ -187,7 +226,8 @@ workspace overview 只应承担：
 3. workspace 创建与配置最小表单
 4. workspace 数据配置自动生成
 5. workspace IdP（Keycloak）配置
-6. workspace 管理员与 project 管理员授权关系
+6. workspace 管理员与 project creator / owner / project admin 授权关系
+7. owner 转让与 project 管理权限分层
 
 当前 MVP 不进入：
 

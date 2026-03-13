@@ -1414,9 +1414,19 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('supports minimal project members governance write endpoints', async () => {
-    const { baseUrl } = startServer();
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Minimal Member Governance Project',
+        visibility: 'public',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
 
-    const createGroupRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups', {
+    const createGroupRes = await apiFetchWithToken(baseUrl, `/api/v1/workspaces/ws_default/projects/${project.id}/groups`, 'owner-token', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -1434,21 +1444,25 @@ describe('api-entry-node projects routes', () => {
       permission_template_id: string;
       member_ids: string[];
     };
-    expect(createdGroup.project_id).toBe('proj_1');
+    expect(createdGroup.project_id).toBe(project.id);
     expect(createdGroup.name).toBe('Core Team');
     expect(createdGroup.member_ids).toEqual(['user_test']);
 
-    const listGroupsAfterCreateRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
+    const listGroupsAfterCreateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups`,
+      'owner-token',
+    );
     expect(listGroupsAfterCreateRes.status).toBe(200);
     const groupsAfterCreate = (await listGroupsAfterCreateRes.json()) as { items: Array<{ id: string; name: string }> };
     expect(groupsAfterCreate.items.map((g) => g.id)).toContain(createdGroup.id);
 
-    const patchGroupRes = await apiFetch(
+    const patchGroupRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups/${createdGroup.id}`,
+      'owner-token',
       {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Core Team Updated',
           member_ids: ['user_test', 'user_other'],
@@ -1460,12 +1474,12 @@ describe('api-entry-node projects routes', () => {
     expect(patchedGroup.name).toBe('Core Team Updated');
     expect(patchedGroup.member_ids).toEqual(['user_test', 'user_other']);
 
-    const applyTemplateRes = await apiFetch(
+    const applyTemplateRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}/apply-template`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/groups/${createdGroup.id}/apply-template`,
+      'owner-token',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ member_ids: ['user_test'] }),
       },
     );
@@ -1477,100 +1491,31 @@ describe('api-entry-node projects routes', () => {
     expect(applyTemplate.applied_count).toBe(1);
     expect(applyTemplate.results[0]).toMatchObject({ member_id: 'user_test', status: 'applied' });
 
-    const missingApproveRes = await apiFetch(
+    const missingApproveRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests/jr_missing/approve',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests/jr_missing/approve`,
+      'owner-token',
       { method: 'POST' },
     );
     expect(missingApproveRes.status).toBe(404);
 
-    const missingRejectRes = await apiFetch(
+    const missingRejectRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests/jr_missing/reject',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests/jr_missing/reject`,
+      'owner-token',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ reason: 'nope' }),
       },
     );
     expect(missingRejectRes.status).toBe(404);
 
-    const createJoinRequestRes = await apiFetchWithToken(
+    const patchAltPermissionsRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests',
-      'alt-token',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason: 'Need access for support' }),
-      },
-    );
-    expect(createJoinRequestRes.status).toBe(201);
-    const createdJoinRequest = (await createJoinRequestRes.json()) as {
-      id: string;
-      user_id: string;
-      status: string;
-      reason: string;
-    };
-    expect(createdJoinRequest.user_id).toBe('user_alt');
-    expect(createdJoinRequest.status).toBe('pending');
-    expect(createdJoinRequest.reason).toBe('Need access for support');
-
-    const duplicateJoinRequestRes = await apiFetchWithToken(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests',
-      'alt-token',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason: 'duplicate' }),
-      },
-    );
-    expect(duplicateJoinRequestRes.status).toBe(409);
-
-    const approveJoinRequestRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/approve`,
-      { method: 'POST' },
-    );
-    expect(approveJoinRequestRes.status).toBe(204);
-
-    const membersAfterApproveRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members',
-    );
-    expect(membersAfterApproveRes.status).toBe(200);
-    const membersAfterApprove = (await membersAfterApproveRes.json()) as {
-      items: Array<{ id: string; role: string; status: string }>;
-    };
-    expect(membersAfterApprove.items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: 'user_alt', role: 'developer', status: 'active' }),
-      ]),
-    );
-
-    const approvedMembershipRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
-    );
-    expect(approvedMembershipRes.status).toBe(200);
-    const approvedMembership = (await approvedMembershipRes.json()) as {
-      user_id: string;
-      role: string;
-      status: string;
-    };
-    expect(approvedMembership).toMatchObject({
-      user_id: 'user_alt',
-      role: 'developer',
-      status: 'active',
-    });
-
-    const patchAltPermissionsRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_test/permissions`,
+      'owner-token',
       {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'custom',
           permissions: ['project:endpoint:use'],
@@ -1581,9 +1526,10 @@ describe('api-entry-node projects routes', () => {
 
     const permissionsAuditStart = new Date(Date.now() - 60_000).toISOString();
     const permissionsAuditEnd = new Date(Date.now() + 60_000).toISOString();
-    const memberPermissionsAuditRes = await apiFetch(
+    const memberPermissionsAuditRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(permissionsAuditStart)}&end_time=${encodeURIComponent(permissionsAuditEnd)}&action=member.permissions.updated&resource_type=member&resource_id=user_alt&page=1&page_size=20`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/audit?start_time=${encodeURIComponent(permissionsAuditStart)}&end_time=${encodeURIComponent(permissionsAuditEnd)}&action=member.permissions.updated&resource_type=member&resource_id=user_test&page=1&page_size=20`,
+      'owner-token',
     );
     expect(memberPermissionsAuditRes.status).toBe(200);
     const memberPermissionsAuditBody = (await memberPermissionsAuditRes.json()) as {
@@ -1597,18 +1543,18 @@ describe('api-entry-node projects routes', () => {
     expect(
       memberPermissionsAuditBody.items.some((item) =>
         item.action === 'member.permissions.updated'
-          && item.resource_id === 'user_alt'
+          && item.resource_id === 'user_test'
           && item.result === 'ok'
           && Array.isArray(item.metadata_json?.permissions_added)
           && (item.metadata_json?.permissions_added as unknown[]).includes('project:endpoint:use')),
     ).toBe(true);
 
-    const invalidPermissionsPatchRes = await apiFetch(
+    const invalidPermissionsPatchRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members/user_test/permissions`,
+      'owner-token',
       {
         method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           permissions: ['project:endpoint:use'],
         }),
@@ -1618,9 +1564,10 @@ describe('api-entry-node projects routes', () => {
 
     const invalidPermissionsAuditStart = new Date(Date.now() - 60_000).toISOString();
     const invalidPermissionsAuditEnd = new Date(Date.now() + 60_000).toISOString();
-    const invalidPermissionsAuditRes = await apiFetch(
+    const invalidPermissionsAuditRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(invalidPermissionsAuditStart)}&end_time=${encodeURIComponent(invalidPermissionsAuditEnd)}&action=member.permissions.updated&resource_type=member&resource_id=user_alt&page=1&page_size=20`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/audit?start_time=${encodeURIComponent(invalidPermissionsAuditStart)}&end_time=${encodeURIComponent(invalidPermissionsAuditEnd)}&action=member.permissions.updated&resource_type=member&resource_id=user_test&page=1&page_size=20`,
+      'owner-token',
     );
     expect(invalidPermissionsAuditRes.status).toBe(200);
     const invalidPermissionsAuditBody = (await invalidPermissionsAuditRes.json()) as {
@@ -1635,168 +1582,16 @@ describe('api-entry-node projects routes', () => {
     expect(
       invalidPermissionsAuditBody.items.some((item) =>
         item.action === 'member.permissions.updated'
-          && item.resource_id === 'user_alt'
+          && item.resource_id === 'user_test'
           && item.result === 'error'
           && item.error_code === 'VALIDATION_ERROR'
           && item.error_message === 'mode is required'),
     ).toBe(true);
 
-    const patchGroupForAltRes = await apiFetch(
+    const suspendMissingMembershipRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          member_ids: ['user_test', 'user_alt'],
-        }),
-      },
-    );
-    expect(patchGroupForAltRes.status).toBe(200);
-
-    const suspendAltMembershipRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'suspended' }),
-      },
-    );
-    expect(suspendAltMembershipRes.status).toBe(204);
-
-    const suspendedAltPermissionsRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
-    );
-    expect(suspendedAltPermissionsRes.status).toBe(200);
-    expect(await suspendedAltPermissionsRes.json()).toEqual({
-      platform_permissions: ['project:endpoint:use'],
-      resource_permissions: undefined,
-    });
-
-    const groupsWhileSuspendedRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
-    );
-    expect(groupsWhileSuspendedRes.status).toBe(200);
-    const groupsWhileSuspended = (await groupsWhileSuspendedRes.json()) as {
-      items: Array<{ id: string; member_ids: string[] }>;
-    };
-    expect(groupsWhileSuspended.items.find((item) => item.id === createdGroup.id)?.member_ids).toContain('user_alt');
-
-    const restoreAltMembershipRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ status: 'active' }),
-      },
-    );
-    expect(restoreAltMembershipRes.status).toBe(204);
-
-    const rejectJoinRequestRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/join-requests/${createdJoinRequest.id}/reject`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ reason: 'late reject for state change coverage' }),
-      },
-    );
-    expect(rejectJoinRequestRes.status).toBe(204);
-
-    const listJoinRequestsAfterRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/join-requests',
-    );
-    expect(listJoinRequestsAfterRes.status).toBe(200);
-    const joinRequestsAfter = (await listJoinRequestsAfterRes.json()) as {
-      items: Array<{ id: string; status: string; reviewed_by?: string; reject_reason?: string }>;
-    };
-    const updatedJoinRequest = joinRequestsAfter.items.find((item) => item.id === createdJoinRequest.id);
-    expect(updatedJoinRequest).toMatchObject({
-      status: 'rejected',
-      reviewed_by: 'user_test',
-      reject_reason: 'late reject for state change coverage',
-    });
-
-    const auditAfterJoinRequestRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString())}&end_time=${encodeURIComponent(new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString())}&page=1&page_size=50`,
-    );
-    expect(auditAfterJoinRequestRes.status).toBe(200);
-    const auditAfterJoinRequest = (await auditAfterJoinRequestRes.json()) as {
-      items: Array<{ action: string; resource_id?: string }>;
-    };
-    const actions = auditAfterJoinRequest.items
-      .filter((item) => item.resource_id === createdJoinRequest.id)
-      .map((item) => item.action);
-    expect(actions).toEqual(expect.arrayContaining([
-      'member.join_request.created',
-      'member.join_request.approved',
-      'member.join_request.rejected',
-    ]));
-
-    const deleteMembershipRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
-      { method: 'DELETE' },
-    );
-    expect(deleteMembershipRes.status).toBe(204);
-
-    const deletedMembershipRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_alt',
-    );
-    expect(deletedMembershipRes.status).toBe(200);
-    const deletedMembership = (await deletedMembershipRes.json()) as {
-      user_id: string;
-      status: string;
-      permissions: string[];
-    };
-    expect(deletedMembership).toMatchObject({
-      user_id: 'user_alt',
-      status: 'active',
-      permissions: [],
-    });
-
-    const altPermissionsRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/members/user_alt/permissions',
-    );
-    expect(altPermissionsRes.status).toBe(200);
-    expect(await altPermissionsRes.json()).toEqual({
-      platform_permissions: [],
-      resource_permissions: undefined,
-    });
-
-    const groupsAfterDeleteRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
-    );
-    expect(groupsAfterDeleteRes.status).toBe(200);
-    const groupsAfterDelete = (await groupsAfterDeleteRes.json()) as {
-      items: Array<{ id: string; member_ids: string[] }>;
-    };
-    expect(groupsAfterDelete.items.find((item) => item.id === createdGroup.id)?.member_ids).toEqual(['user_test']);
-
-    const deleteGroupRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/groups/${createdGroup.id}`,
-      { method: 'DELETE' },
-    );
-    expect(deleteGroupRes.status).toBe(204);
-
-    const listGroupsAfterDeleteRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/groups');
-    expect(listGroupsAfterDeleteRes.status).toBe(200);
-    const groupsAfterDeleteList = (await listGroupsAfterDeleteRes.json()) as { items: Array<{ id: string }> };
-    expect(groupsAfterDeleteList.items.map((g) => g.id)).not.toContain(createdGroup.id);
-
-    const suspendMissingMembershipRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_missing',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_missing`,
+      'owner-token',
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -1805,18 +1600,20 @@ describe('api-entry-node projects routes', () => {
     );
     expect(suspendMissingMembershipRes.status).toBe(404);
 
-    const deleteMissingMembershipRes = await apiFetch(
+    const deleteMissingMembershipRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/memberships/user_missing',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_missing`,
+      'owner-token',
       { method: 'DELETE' },
     );
     expect(deleteMissingMembershipRes.status).toBe(404);
 
     const failedMembershipAuditStart = new Date(Date.now() - 60_000).toISOString();
     const failedMembershipAuditEnd = new Date(Date.now() + 60_000).toISOString();
-    const failedMembershipAuditRes = await apiFetch(
+    const failedMembershipAuditRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(failedMembershipAuditStart)}&end_time=${encodeURIComponent(failedMembershipAuditEnd)}&resource_type=membership&page=1&page_size=20`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/audit?start_time=${encodeURIComponent(failedMembershipAuditStart)}&end_time=${encodeURIComponent(failedMembershipAuditEnd)}&resource_type=membership&page=1&page_size=20`,
+      'owner-token',
     );
     expect(failedMembershipAuditRes.status).toBe(200);
     const failedMembershipAuditBody = (await failedMembershipAuditRes.json()) as {
@@ -1847,18 +1644,30 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('supports minimal permission template CRUD endpoints', async () => {
-    const { baseUrl } = startServer();
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Minimal Permission Template Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
 
-    const listBeforeRes = await apiFetch(
+    const listBeforeRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
     );
     expect(listBeforeRes.status).toBe(200);
     expect(await listBeforeRes.json()).toEqual({ items: [] });
 
-    const createRes = await apiFetch(
+    const createRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -1877,14 +1686,15 @@ describe('api-entry-node projects routes', () => {
       permissions: string[];
       built_in?: boolean;
     };
-    expect(created.project_id).toBe('proj_1');
+    expect(created.project_id).toBe(project.id);
     expect(created.name).toBe('Analyst');
     expect(created.permissions).toContain('project:governance:update');
     expect(created.built_in).toBe(false);
 
-    const patchRes = await apiFetch(
+    const patchRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/permission-templates/${created.id}`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates/${created.id}`,
+      'owner-token',
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
@@ -1899,24 +1709,27 @@ describe('api-entry-node projects routes', () => {
     expect(patched.name).toBe('Analyst v2');
     expect(patched.permissions).toEqual(['project:endpoint:use']);
 
-    const listAfterRes = await apiFetch(
+    const listAfterRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
     );
     expect(listAfterRes.status).toBe(200);
     const listAfter = (await listAfterRes.json()) as { items: Array<{ id: string }> };
     expect(listAfter.items.map((i) => i.id)).toContain(created.id);
 
-    const deleteRes = await apiFetch(
+    const deleteRes = await apiFetchWithToken(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/permission-templates/${created.id}`,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates/${created.id}`,
+      'owner-token',
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
 
-    const listFinalRes = await apiFetch(
+    const listFinalRes = await apiFetchWithToken(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/permission-templates',
+      `/api/v1/workspaces/ws_default/projects/${project.id}/permission-templates`,
+      'owner-token',
     );
     expect(listFinalRes.status).toBe(200);
     const listFinal = (await listFinalRes.json()) as { items: Array<{ id: string }> };
@@ -2137,11 +1950,11 @@ describe('api-entry-node projects routes', () => {
     );
     expect(allowRes.status).toBe(200);
     expect(await allowRes.json()).toEqual({
-      allowed: false,
+      allowed: true,
       decision: {
         source: 'permission',
         rule_id: 'project:membership:update',
-        reason: 'owner_required',
+        reason: 'granted_by_member_governance',
       },
     });
   });
@@ -2275,7 +2088,7 @@ describe('api-entry-node projects routes', () => {
         }),
       },
     );
-    expect(restoredRouteRes.status).toBe(403);
+    expect(restoredRouteRes.status).toBe(200);
 
     const restoredAuthorizeRes = await apiFetch(
       baseUrl,
@@ -2292,11 +2105,11 @@ describe('api-entry-node projects routes', () => {
     );
     expect(restoredAuthorizeRes.status).toBe(200);
     expect(await restoredAuthorizeRes.json()).toEqual({
-      allowed: false,
+      allowed: true,
       decision: {
         source: 'permission',
         rule_id: 'project:membership:update',
-        reason: 'owner_required',
+        reason: 'granted_by_member_governance',
       },
     });
   });

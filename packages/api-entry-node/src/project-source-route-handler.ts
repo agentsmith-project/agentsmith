@@ -145,17 +145,32 @@ function projectScopedKey(workspaceId: string, projectId: string) {
   return `${workspaceId}:${projectId}`;
 }
 
-async function readProjectOwner(args: {
+async function readProjectPermissionContext(args: {
   deps: NodeApiDeps;
   workspaceId: string;
   projectId: string;
-}): Promise<string | null> {
+  actorUserId: string;
+}): Promise<{
+  ownerId: string;
+  governance: unknown;
+  permissions: readonly string[];
+} | null> {
   try {
     const project = await args.deps.getProjectUseCase.execute({
       workspaceId: args.workspaceId,
       projectId: args.projectId,
     });
-    return project.owner_id;
+    return {
+      ownerId: project.owner_id,
+      governance: project.governance_json,
+      permissions: resolveVisibleProjectPermissionsForActor({
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        projectOwnerId: project.owner_id,
+        projectGovernance: project.governance_json,
+        actorUserId: args.actorUserId,
+      }),
+    };
   } catch {
     return null;
   }
@@ -944,7 +959,16 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       input.owner_id.trim().length > 0 &&
       existingProject !== null &&
       input.owner_id.trim() !== existingProject.owner_id;
-    if (touchesProjectAdmins && existingProject && existingProject.owner_id !== user.id) {
+    const existingProjectPermissions = existingProject
+      ? resolveVisibleProjectPermissionsForActor({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        projectOwnerId: existingProject.owner_id,
+        projectGovernance: existingProject.governance_json,
+        actorUserId: user.id,
+      })
+      : [];
+    if (touchesProjectAdmins && existingProject && !existingProjectPermissions.includes('project:admins:update')) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -966,7 +990,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     if (
       touchesProjectOwner &&
       existingProject &&
-      existingProject.owner_id !== user.id &&
+      !existingProjectPermissions.includes('project:lifecycle:update') &&
       !actorWorkspacePermissions.includes('workspace:governance:update')
     ) {
       await writeProjectAuditEvent(deps, {
@@ -1089,7 +1113,15 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       // Best-effort project summary for audit metadata; delete flow still owns
       // authoritative existence checks.
     }
-    if (existingProjectOwnerId && existingProjectOwnerId !== user.id) {
+    const deletePermissionContext = existingProjectOwnerId
+      ? await readProjectPermissionContext({
+        deps,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        actorUserId: user.id,
+      })
+      : null;
+    if (existingProjectOwnerId && !deletePermissionContext?.permissions.includes('project:lifecycle:update')) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1266,12 +1298,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectJoinRequestApprove' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1311,12 +1344,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectJoinRequestReject' && method === 'POST' && route.workspaceId && route.projectId && route.joinId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1358,12 +1392,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectPermissionTemplates' && method === 'POST' && route.workspaceId && route.projectId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1402,12 +1437,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1443,12 +1479,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     && route.projectId
     && route.templateId
   ) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1478,12 +1515,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroups' && method === 'POST' && route.workspaceId && route.projectId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1516,12 +1554,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.groupId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1549,12 +1588,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.groupId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1567,12 +1607,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'projectGroupApplyTemplate' && method === 'POST' && route.workspaceId && route.projectId && route.groupId) {
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
@@ -1640,12 +1681,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   if (route.kind === 'projectMembershipItem' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
     const requestId = readRequestId(req);
     const body = await readBody(req) as { status?: 'active' | 'suspended' };
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1669,7 +1711,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'status must be active or suspended' });
       return true;
     }
-    if (projectOwnerId && route.userId === projectOwnerId) {
+    if (projectPermissionContext && route.userId === projectPermissionContext.ownerId) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1764,12 +1806,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectMembershipItem' && method === 'DELETE' && route.workspaceId && route.projectId && route.userId) {
     const requestId = readRequestId(req);
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1788,7 +1831,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
-    if (projectOwnerId && route.userId === projectOwnerId) {
+    if (projectPermissionContext && route.userId === projectPermissionContext.ownerId) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -1877,12 +1920,13 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
 
   if (route.kind === 'projectMemberPermissions' && method === 'PATCH' && route.workspaceId && route.projectId && route.userId) {
     const requestId = readRequestId(req);
-    const projectOwnerId = await readProjectOwner({
+    const projectPermissionContext = await readProjectPermissionContext({
       deps,
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      actorUserId: user.id,
     });
-    if (projectOwnerId && projectOwnerId !== user.id) {
+    if (!projectPermissionContext || !projectPermissionContext.permissions.includes('project:membership:update')) {
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,

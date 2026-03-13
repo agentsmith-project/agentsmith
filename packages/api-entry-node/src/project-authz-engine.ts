@@ -278,11 +278,17 @@ function mapProjectActionToPermission(action: string): string | null {
   if (action.startsWith('project.audit.')) return 'project:audit:read';
   if (action.startsWith('project.usage.')) return 'project:endpoint:use';
   if (action === 'project.read') return 'project:endpoint:use';
-  if (action === 'project.delete' || action === 'project.update' || action.startsWith('project.settings.')) {
-    return 'project:manage';
+  if (action === 'project.delete' || action.startsWith('project.owner.') || action.startsWith('project.settings.lifecycle.')) {
+    return 'project:lifecycle:update';
+  }
+  if (action.startsWith('project.admin.') || action.startsWith('project.settings.admins.')) {
+    return 'project:admins:update';
   }
   if (action.startsWith('project.member.')) return 'project:membership:update';
   if (action.startsWith('project.governance.')) return 'project:governance:update';
+  if (action === 'project.update' || action.startsWith('project.settings.')) {
+    return 'project:manage';
+  }
   return 'project:endpoint:use';
 }
 

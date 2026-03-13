@@ -1965,7 +1965,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Should Fail',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -1980,7 +1980,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Managers',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2011,7 +2011,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Allowed after template',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2039,7 +2039,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Should Fail',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2054,7 +2054,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'custom',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2068,7 +2068,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Allowed via member custom perms',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2106,7 +2106,7 @@ describe('api-entry-node projects routes', () => {
       allowed: false,
       decision: {
         source: 'permission',
-        rule_id: 'project:manage',
+        rule_id: 'project:membership:update',
         reason: 'permission_not_granted',
       },
     });
@@ -2120,7 +2120,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Managers',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2158,11 +2158,11 @@ describe('api-entry-node projects routes', () => {
     );
     expect(allowRes.status).toBe(200);
     expect(await allowRes.json()).toEqual({
-      allowed: true,
+      allowed: false,
       decision: {
         source: 'permission',
-        rule_id: 'project:manage',
-        reason: 'granted_by_member_governance',
+        rule_id: 'project:membership:update',
+        reason: 'owner_required',
       },
     });
   });
@@ -2189,7 +2189,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Managers',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2242,7 +2242,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Should Fail Suspended',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2292,11 +2292,11 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Recovered Access',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
-    expect(restoredRouteRes.status).toBe(200);
+    expect(restoredRouteRes.status).toBe(403);
 
     const restoredAuthorizeRes = await apiFetch(
       baseUrl,
@@ -2313,11 +2313,11 @@ describe('api-entry-node projects routes', () => {
     );
     expect(restoredAuthorizeRes.status).toBe(200);
     expect(await restoredAuthorizeRes.json()).toEqual({
-      allowed: true,
+      allowed: false,
       decision: {
         source: 'permission',
-        rule_id: 'project:manage',
-        reason: 'granted_by_member_governance',
+        rule_id: 'project:membership:update',
+        reason: 'owner_required',
       },
     });
   });
@@ -2344,7 +2344,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Lifecycle Managers',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2416,7 +2416,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Suspended Should Fail',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2465,11 +2465,11 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'Restored Should Pass',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
-    expect(restoredRouteRes.status).toBe(200);
+    expect(restoredRouteRes.status).toBe(403);
   });
 
   it('supports member governance overrides, history, and resource policy endpoints', async () => {
@@ -2493,7 +2493,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           mode: 'custom',
-          permissions: ['project:manage', 'project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );
@@ -2505,7 +2505,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(getPermsAfterRes.status).toBe(200);
     expect(await getPermsAfterRes.json()).toEqual({
-      platform_permissions: ['project:manage', 'project:manage'],
+      platform_permissions: ['project:audit:read', 'project:membership:update'],
       resource_permissions: undefined,
     });
 
@@ -8706,7 +8706,7 @@ describe('api-entry-node projects routes', () => {
         },
         body: JSON.stringify({
           template: 'admin',
-          permissions: ['project:manage'],
+          permissions: ['project:audit:read', 'project:membership:update'],
         }),
       },
     );

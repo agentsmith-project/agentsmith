@@ -1074,7 +1074,7 @@ export async function handleRequest(
         requiredPermissions:
           body.subject.type === 'user' && body.subject.id === user.id
             ? ['project:endpoint:use']
-            : ['project:manage'],
+            : ['project:audit:read'],
       });
       if (actorGate.decisions.some((item) => !item.granted)) {
         json(res, 403, { error_code: 'FORBIDDEN', message: 'forbidden' });
@@ -1110,6 +1110,25 @@ export async function handleRequest(
             source: permissionDecision.source,
             rule_id: permissionDecision.permission,
             reason: permissionDecision.reason,
+          },
+        });
+        return;
+      }
+
+      const ownerRequired =
+        body.action.startsWith('project.member.')
+        || body.action.startsWith('project.admin.')
+        || body.action.startsWith('project.owner.')
+        || body.action === 'project.delete'
+        || body.action.startsWith('project.settings.lifecycle.')
+        || body.action.startsWith('project.settings.admins.');
+      if (ownerRequired && (body.subject.type !== 'user' || body.subject.id !== project.owner_id)) {
+        json(res, 200, {
+          allowed: false,
+          decision: {
+            source: 'permission',
+            rule_id: permissionDecision.permission,
+            reason: 'owner_required',
           },
         });
         return;

@@ -123,7 +123,9 @@ export function MemberDetailDrawer({
             <p className="text-sm text-tertiary mt-1">{member.email}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge variant="outline">group: {formatGroupAlias(member.role)}</Badge>
+            <Badge variant="outline">
+              {t('table.access_group')}: {formatGroupAlias(member.role)}
+            </Badge>
             {onViewHistory && (
               <Button
                 variant="outline"

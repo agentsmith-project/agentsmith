@@ -16,10 +16,10 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByTestId('ws-settings__name')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__open-projects')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__create-project')).toBeVisible();
+    await expect(authedPage.getByTestId('ws-settings__project-creators')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__project-open-overview--proj_001')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__project-open-members--proj_001')).toBeVisible();
     await expect(authedPage.getByTestId('ws-settings__project-open-settings--proj_001')).toBeVisible();
-    await expect(authedPage.getByTestId('ws-settings__project-edit-admins--proj_001')).toBeVisible();
   });
 
   test('workspace admin can open create project dialog and create a project', async ({ authedPage }) => {
@@ -32,11 +32,9 @@ test.describe('Workspace Settings Page', () => {
     await expect(authedPage.getByRole('heading', { name: /Create Project/i })).not.toBeVisible();
   });
 
-  test('workspace admin can assign project admins', async ({ authedPage }) => {
-    await authedPage.getByTestId('ws-settings__project-edit-admins--proj_001').click();
-    await expect(authedPage.getByTestId('ws-settings__project-admin-dialog')).toBeVisible();
-    await authedPage.getByRole('checkbox', { name: /Dev Two/i }).click();
-    await authedPage.getByTestId('ws-settings__project-admin-save').click();
-    await expect(authedPage.getByTestId('ws-settings__project-admin-dialog')).not.toBeVisible();
+  test('workspace admin can save project creators', async ({ authedPage }) => {
+    await authedPage.getByTestId('ws-settings__project-creators-input').fill('user_alt');
+    await authedPage.getByTestId('ws-settings__project-creators-save').click();
+    await expect(authedPage.getByTestId('ws-settings__project-creators-input')).toHaveValue('user_alt');
   });
 });

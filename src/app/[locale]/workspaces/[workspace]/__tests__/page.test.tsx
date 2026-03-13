@@ -2,7 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_alpha', locale: 'en-US' }));
-const mockUseHasWorkspacePermission = vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create');
+const mockUseHasWorkspacePermission = vi.fn(
+  (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
+);
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -36,7 +38,7 @@ describe('WorkspaceHomePage', () => {
   beforeEach(() => {
     mockUseParams.mockReturnValue({ workspace: 'ws_alpha', locale: 'en-US' });
     mockUseHasWorkspacePermission.mockImplementation(
-      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
   });
 

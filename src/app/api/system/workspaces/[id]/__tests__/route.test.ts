@@ -43,6 +43,7 @@ describe('/api/system/workspaces/[id]', () => {
         body: JSON.stringify({
           name: 'Alpha Workspace',
           workspace_admin: 'ops-admin@example.com',
+          project_creators: ['creator@example.com'],
           idp_url: 'https://login.example.com',
           idp_realm: 'alpha',
           idp_client_id: 'alpha-client',
@@ -53,10 +54,11 @@ describe('/api/system/workspaces/[id]', () => {
 
     expect(response.status).toBe(200);
     expect(registryModule.updateSystemWorkspace).toHaveBeenCalledWith(
-      'ws_alpha',
-      expect.objectContaining({
-        workspace_admin: 'ops-admin@example.com',
-      }),
+        'ws_alpha',
+        expect.objectContaining({
+          workspace_admin: 'ops-admin@example.com',
+          project_creators: ['creator@example.com'],
+        }),
     );
   });
 

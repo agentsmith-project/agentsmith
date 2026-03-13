@@ -54,6 +54,7 @@ describe('/api/system/workspaces', () => {
         body: JSON.stringify({
           name: 'Alpha Workspace',
           workspace_admin: 'alpha-admin@example.com',
+          project_creators: ['creator@example.com'],
           idp_url: 'https://login.example.com',
           idp_realm: 'alpha',
           idp_client_id: 'alpha-client',
@@ -66,6 +67,7 @@ describe('/api/system/workspaces', () => {
       expect.objectContaining({
         name: 'Alpha Workspace',
         workspace_admin: 'alpha-admin@example.com',
+        project_creators: ['creator@example.com'],
       }),
     );
   });

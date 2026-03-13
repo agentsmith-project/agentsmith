@@ -25,6 +25,7 @@ describe('system workspace registry', () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
       workspace_admin: 'admin@example.com',
+      project_creators: ['creator@example.com'],
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -36,6 +37,7 @@ describe('system workspace registry', () => {
         id: 'platform_ops',
         name: 'Platform Ops',
         workspace_admin: 'admin@example.com',
+        project_creators: ['creator@example.com'],
         idp: expect.objectContaining({
           kind: 'keycloak',
           url: 'https://idp.example.com',
@@ -51,6 +53,7 @@ describe('system workspace registry', () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
       workspace_admin: 'admin@example.com',
+      project_creators: ['creator@example.com'],
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -67,6 +70,7 @@ describe('system workspace registry', () => {
     });
 
     expect(updated.workspace_admin).toBe('ops-admin@example.com');
+    expect(updated.project_creators).toEqual(['creator@example.com']);
     expect(updated.idp.url).toBe('https://login.example.com');
     expect(updated.idp.realm).toBe('platform-prod');
     expect(updated.idp.client_secret).toBe('secret-1');

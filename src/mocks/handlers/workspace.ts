@@ -67,6 +67,19 @@ const workspaceMembers = (() => {
   return fromP0;
 })();
 
+const workspaceProjectCreators = workspaceMembers
+  .filter(
+    (member) =>
+      member.permissions.includes('workspace:project:create') &&
+      !member.permissions.includes('workspace:governance:update'),
+  )
+  .map((member) => ({
+    id: member.user_id,
+    user_id: member.user_id,
+    name: member.name,
+    email: member.email,
+  }));
+
 export const workspaceHandlers = [
   http.get('/api/v1/workspaces', () => HttpResponse.json({ items: workspaceItems })),
   http.get('/api/public/workspaces/:id', ({ params }) => {
@@ -97,6 +110,28 @@ export const workspaceHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/members', () =>
     HttpResponse.json({ items: workspaceMembers, total: workspaceMembers.length })),
+  http.get('/api/v1/workspaces/:ws/project-creators', () =>
+    HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length })),
+  http.patch('/api/v1/workspaces/:ws/project-creators', async ({ request }) => {
+    const body = (await request.json().catch(() => ({}))) as { project_creators?: string[] };
+    const nextCreators = Array.isArray(body.project_creators)
+      ? body.project_creators
+          .filter((value): value is string => typeof value === 'string')
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      : [];
+    workspaceProjectCreators.splice(
+      0,
+      workspaceProjectCreators.length,
+      ...nextCreators.map((identifier) => ({
+        id: identifier,
+        user_id: identifier,
+        name: identifier,
+        email: identifier.includes('@') ? identifier : `${identifier}@workspace.local`,
+      })),
+    );
+    return HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length });
+  }),
   http.patch('/api/v1/workspaces/:ws/members/:memberId/governance', async ({ params, request }) => {
     const memberId = String(params.memberId ?? '');
     const body = (await request.json().catch(() => ({}))) as { governance_group?: 'wheel' | 'user' };

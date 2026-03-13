@@ -11,7 +11,6 @@ import { handleAgentRoute } from './agent-route-handler.js';
 import { matchProjectsRoute, type ProjectsRoute } from './projects-route-match.js';
 import type { ChatRoute } from './chat-route-match.js';
 import {
-  OWNER_WORKSPACE_PERMISSIONS,
   buildWorkspaceRecords,
 } from './workspace-permissions.js';
 import {
@@ -1169,7 +1168,6 @@ export async function handleRequest(
       requestUrl,
       json,
       readBody,
-      ownerWorkspacePermissions: OWNER_WORKSPACE_PERMISSIONS,
     });
     if (handledProjectSourceRoute) {
       return;

@@ -101,6 +101,7 @@ export function AppShellSidebar({
   const canManageResourcePolicy = useCanManageResourcePolicy();
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canCreateWorkspaceProject = useHasWorkspacePermission('workspace:project:create');
+  const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
 
   const workspaceId = params?.workspace as string | undefined;
   const projectId = params?.project as string | undefined;
@@ -145,7 +146,7 @@ export function AppShellSidebar({
       icon: SettingsIcon,
       labelKey: 'settings',
       href: '../../settings',
-      visible: canCreateWorkspaceProject,
+      visible: canManageWorkspaceGovernance,
       isActive: (currentPath, baseWorkspacePath) =>
         Boolean(currentPath && baseWorkspacePath && currentPath === `${baseWorkspacePath}/settings`),
     },

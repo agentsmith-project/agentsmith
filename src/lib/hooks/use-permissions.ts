@@ -41,14 +41,15 @@ export function useCurrentWorkspacePermissions() {
   const { workspace } = useParams();
   const workspaceId = validateWorkspaceParam(workspace);
   const userId = useAuthStore((state) => state.user?.id);
+  const userEmail = useAuthStore((state) => state.user?.email);
   const { data: members = [] } = useWorkspaceMembers(workspaceId ?? '');
 
   return useMemo(() => {
     if (!workspaceId || !userId) return EMPTY_PERMISSIONS;
-    const currentMember = members.find((m) => m.user_id === userId);
+    const currentMember = members.find((m) => m.user_id === userId || (userEmail ? m.email === userEmail : false));
     if (!currentMember) return EMPTY_PERMISSIONS;
     return currentMember.permissions ?? EMPTY_PERMISSIONS;
-  }, [members, userId, workspaceId]);
+  }, [members, userEmail, userId, workspaceId]);
 }
 
 export function useHasPermission(permission: string): boolean {

@@ -48,7 +48,9 @@ vi.mock('next-intl', () => ({
   },
 }));
 
-const mockUseHasWorkspacePermission = vi.fn((permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create');
+const mockUseHasWorkspacePermission = vi.fn(
+  (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
+);
 const mockUseHasPermission = vi.fn((_: string) => true);
 const mockUseCanManageResourcePolicy = vi.fn(() => true);
 
@@ -112,7 +114,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     mockUseHasPermission.mockReturnValue(true);
     mockUseCanManageResourcePolicy.mockReturnValue(true);
     mockUseHasWorkspacePermission.mockImplementation(
-      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
   });
 

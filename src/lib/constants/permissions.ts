@@ -9,7 +9,7 @@
  */
 
 export const PLATFORM_PERMISSIONS = {
-  WORKSPACE: ['workspace:read', 'workspace:project:create'] as const,
+  WORKSPACE: ['workspace:read', 'workspace:project:create', 'workspace:governance:update'] as const,
   PROJECT: [
     'project:endpoint:use',
     'project:agent:manage',
@@ -26,6 +26,7 @@ export const ALL_PLATFORM_PERMISSIONS = [
 export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'workspace:read': 'View workspace info',
   'workspace:project:create': 'Create projects in workspace',
+  'workspace:governance:update': 'Manage workspace project governance',
   'project:endpoint:use': 'Use project endpoints',
   'project:agent:manage': 'Create and manage own agents',
   'project:agent:public': 'Publish or unpublish agents for project-wide visibility',

@@ -14,6 +14,7 @@ export interface SystemWorkspaceRecord {
   id: string;
   name: string;
   workspace_admin: string;
+  project_creators: string[];
   idp: SystemWorkspaceIdpConfig;
   tenant: ReturnType<typeof buildWorkspaceTenantPreview>;
   created_at: string;
@@ -29,10 +30,22 @@ export interface PublicSystemWorkspaceRecord extends Omit<SystemWorkspaceRecord,
 export interface UpsertSystemWorkspaceInput {
   name: string;
   workspace_admin: string;
+  project_creators?: string[];
   idp_url: string;
   idp_realm: string;
   idp_client_id: string;
   idp_client_secret?: string;
+}
+
+function normalizeIdentifiers(items: string[] | undefined): string[] {
+  if (!Array.isArray(items)) return [];
+  return Array.from(
+    new Set(
+      items
+        .map((item) => (typeof item === 'string' ? item.trim() : ''))
+        .filter((item) => item.length > 0),
+    ),
+  );
 }
 
 function getRegistryPath(): string {
@@ -67,6 +80,7 @@ async function writeRegistryFile(records: SystemWorkspaceRecord[]): Promise<void
 function sanitizeRecord(record: SystemWorkspaceRecord): PublicSystemWorkspaceRecord {
   return {
     ...record,
+    project_creators: [...record.project_creators],
     idp: {
       kind: record.idp.kind,
       url: record.idp.url,
@@ -103,6 +117,7 @@ export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): 
     id: tenant.workspace_id,
     name: input.name.trim(),
     workspace_admin: input.workspace_admin.trim(),
+    project_creators: normalizeIdentifiers(input.project_creators),
     idp: {
       kind: 'keycloak',
       url: input.idp_url.trim(),
@@ -131,6 +146,7 @@ export async function updateSystemWorkspace(
     ...existing,
     name: input.name.trim(),
     workspace_admin: input.workspace_admin.trim(),
+    project_creators: input.project_creators ? normalizeIdentifiers(input.project_creators) : existing.project_creators,
     idp: {
       kind: 'keycloak',
       url: input.idp_url.trim(),

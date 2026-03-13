@@ -563,6 +563,141 @@ describe('api-entry-node projects routes', () => {
     expect(membersBody.items[0]?.permissions).toContain('workspace:project:create');
   });
 
+  it('lets workspace admins manage project creators and exposes creator permissions in workspace members', async () => {
+    const originalRegistryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-workspace-registry-'));
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          workspace_admin: 'owner@example.com',
+          project_creators: ['alt@example.com'],
+          idp: {
+            kind: 'keycloak',
+            url: 'http://localhost:8080',
+            realm: 'mbos',
+            client_id: 'agentsmith-web',
+          },
+          tenant: {
+            substrate: 'default',
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    try {
+      const { baseUrl } = startServer();
+
+      const creatorsRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token');
+      expect(creatorsRes.status).toBe(200);
+      const creatorsBody = (await creatorsRes.json()) as { items: Array<{ user_id: string }> };
+      expect(creatorsBody.items).toEqual([
+        expect.objectContaining({ user_id: 'alt@example.com' }),
+      ]);
+
+      const updateRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token', {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ project_creators: ['user_alt', 'creator@example.com'] }),
+      });
+      expect(updateRes.status).toBe(200);
+
+      const membersRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/members', 'owner-token');
+      expect(membersRes.status).toBe(200);
+      const membersBody = (await membersRes.json()) as {
+        items: Array<{ user_id: string; permissions: string[] }>;
+      };
+      expect(membersBody.items).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            user_id: 'user_alt',
+            permissions: expect.arrayContaining(['workspace:project:create']),
+          }),
+        ]),
+      );
+    } finally {
+      if (originalRegistryPath === undefined) {
+        delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+      } else {
+        process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = originalRegistryPath;
+      }
+    }
+  });
+
+  it('forbids plain workspace members from creating projects while allowing project creators', async () => {
+    const originalRegistryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-workspace-registry-'));
+    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          workspace_admin: 'owner@example.com',
+          project_creators: ['alt@example.com'],
+          idp: {
+            kind: 'keycloak',
+            url: 'http://localhost:8080',
+            realm: 'mbos',
+            client_id: 'agentsmith-web',
+          },
+          tenant: {
+            substrate: 'default',
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    try {
+      const { baseUrl } = startServer();
+
+      const deniedRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Blocked Project',
+          visibility: 'private',
+          join_policy: 'approval_required',
+        }),
+      });
+      expect(deniedRes.status).toBe(403);
+      await expect(deniedRes.json()).resolves.toEqual({
+        error_code: 'PERMISSION_DENIED',
+        message: 'workspace_project_create_required',
+      });
+
+      const allowedRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'alt-token', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          name: 'Creator Project',
+          visibility: 'private',
+          join_policy: 'approval_required',
+        }),
+      });
+      expect(allowedRes.status).toBe(201);
+      const created = (await allowedRes.json()) as { owner_id: string; name: string };
+      expect(created.name).toBe('Creator Project');
+      expect(created.owner_id).toBe('user_alt');
+    } finally {
+      if (originalRegistryPath === undefined) {
+        delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+      } else {
+        process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = originalRegistryPath;
+      }
+    }
+  });
+
   it('supports create then list flow', async () => {
     const { baseUrl } = startServer();
 

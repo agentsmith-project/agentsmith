@@ -20,7 +20,7 @@ export default function WorkspaceHomePage() {
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
-  const canCreateProject = useHasWorkspacePermission('workspace:project:create');
+  const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
 
   const { data: workspace } = useWorkspace(workspaceId ?? '');
@@ -93,7 +93,7 @@ export default function WorkspaceHomePage() {
                   </Link>
                 </section>
 
-                {canCreateProject ? (
+                {canManageWorkspaceGovernance ? (
                   <section
                     className="rounded-lg border border-subtle bg-bg-base/20 p-4 space-y-3"
                     data-testid="workspace-home__admin-section"

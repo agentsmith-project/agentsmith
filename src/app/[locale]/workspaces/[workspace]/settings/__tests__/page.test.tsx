@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 
@@ -60,6 +60,7 @@ const STABLE_PROJECTS = [
 
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
 const mockProjectCreate = vi.fn();
+const mockFetch = vi.fn<typeof fetch>();
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -120,14 +121,25 @@ function renderPage() {
 }
 
 describe('WorkspaceSettingsPage', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   beforeEach(() => {
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
     mockUseHasWorkspacePermission.mockImplementation(
-      (permission: string) => permission === 'workspace:read' || permission === 'workspace:project:create',
+      (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
     mockProjectCreate.mockResolvedValue({
       id: 'proj_created',
     });
+    mockFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [{ id: 'u_1', user_id: 'u_1', name: 'Dev One', email: 'dev1@example.com' }],
+      }),
+    } as Response);
+    vi.stubGlobal('fetch', mockFetch);
   });
 
   it('renders workspace administration summary', async () => {
@@ -169,6 +181,7 @@ describe('WorkspaceSettingsPage', () => {
       '/en/workspaces/ws_1/projects/proj_1/settings',
     );
     expect(screen.getByTestId('ws-settings__create-project')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-settings__project-creators')).toBeInTheDocument();
   });
 
   it('opens create project dialog and creates a project', async () => {
@@ -210,12 +223,35 @@ describe('WorkspaceSettingsPage', () => {
     });
   });
 
-  it('shows permission denied when user lacks workspace:project:create', async () => {
+  it('shows permission denied when user lacks workspace:governance:update', async () => {
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
     renderPage();
 
     await waitFor(() => {
       expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     });
+  });
+
+  it('loads and saves project creators for workspace admins', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-creators-input')).toHaveValue('u_1');
+    });
+
+    await user.clear(screen.getByTestId('ws-settings__project-creators-input'));
+    await user.type(screen.getByTestId('ws-settings__project-creators-input'), 'u_2{enter}dev3@example.com');
+    await user.click(screen.getByTestId('ws-settings__project-creators-save'));
+
+    await waitFor(() => {
+      expect(mockFetch).toHaveBeenCalledWith('/api/v1/workspaces/ws_1/project-creators', expect.objectContaining({
+        method: 'PATCH',
+      }));
+    });
+
+    const patchCall = mockFetch.mock.calls.find((call) => call[0] === '/api/v1/workspaces/ws_1/project-creators' && (call[1] as RequestInit | undefined)?.method === 'PATCH');
+    expect(patchCall).toBeTruthy();
+    expect((patchCall?.[1] as RequestInit).body).toBe(JSON.stringify({ project_creators: ['u_2', 'dev3@example.com'] }));
   });
 });

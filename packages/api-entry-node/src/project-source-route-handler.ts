@@ -21,7 +21,12 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-recorders.js';
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
-import { isProjectAdmin } from './workspace-permissions.js';
+import {
+  buildWorkspaceMembersFromConfig,
+  isProjectAdmin,
+  resolveWorkspacePermissions,
+} from './workspace-permissions.js';
+import { updateRegisteredWorkspaceProjectCreators } from './workspace-registry.js';
 import {
   getProjectResourcePolicyOrDefault,
   isProjectResourceAccessAllowedForUser,
@@ -77,7 +82,6 @@ interface ProjectSourceHandlerArgs {
   requestUrl: URL;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
-  ownerWorkspacePermissions: readonly string[];
 }
 
 const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
@@ -392,7 +396,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     requestUrl,
     json,
     readBody,
-    ownerWorkspacePermissions,
   } = args;
   const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
 
@@ -670,22 +673,132 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (route.kind === 'workspaceMembers' && method === 'GET' && route.workspaceId) {
-    if (!defaultWorkspace || route.workspaceId !== defaultWorkspace.id) {
+    const workspaceRecord = workspaces.find((item) => item.id === route.workspaceId)
+      ?? (defaultWorkspace && route.workspaceId === defaultWorkspace.id ? defaultWorkspace : null);
+    if (!workspaceRecord) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
       return true;
     }
-    const member = {
-      id: `wm_${user.id}`,
-      user_id: user.id,
-      name: user.name,
-      email: user.email,
-      role: 'owner',
-      governance_group: 'wheel',
-      permissions: [...ownerWorkspacePermissions],
-      status: 'active',
-      joined_at: defaultWorkspace.created_at,
-    };
-    json(res, 200, { items: [member], total: 1 });
+    const items = buildWorkspaceMembersFromConfig({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorName: user.name,
+      workspaceCreatedAt: workspaceRecord.created_at,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    });
+    json(res, 200, { items, total: items.length });
+    return true;
+  }
+
+  if (route.kind === 'workspaceProjectCreators' && method === 'GET' && route.workspaceId) {
+    const workspaceRecord = workspaces.find((item) => item.id === route.workspaceId)
+      ?? (defaultWorkspace && route.workspaceId === defaultWorkspace.id ? defaultWorkspace : null);
+    if (!workspaceRecord) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      return true;
+    }
+    const actorPermissions = resolveWorkspacePermissions({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    });
+    if (!actorPermissions.includes('workspace:governance:update')) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'workspace_admin_required' });
+      return true;
+    }
+    const items = buildWorkspaceMembersFromConfig({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorName: user.name,
+      workspaceCreatedAt: workspaceRecord.created_at,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    })
+      .filter((member) => member.permissions.includes('workspace:project:create') && !member.permissions.includes('workspace:governance:update'))
+      .map((member) => ({
+        id: member.user_id,
+        user_id: member.user_id,
+        name: member.name,
+        email: member.email,
+      }));
+    json(res, 200, { items, total: items.length });
+    return true;
+  }
+
+  if (route.kind === 'workspaceProjectCreators' && method === 'PATCH' && route.workspaceId) {
+    const requestId = readRequestId(req);
+    const workspaceRecord = workspaces.find((item) => item.id === route.workspaceId)
+      ?? (defaultWorkspace && route.workspaceId === defaultWorkspace.id ? defaultWorkspace : null);
+    if (!workspaceRecord) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+      return true;
+    }
+    const actorPermissions = resolveWorkspacePermissions({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    });
+    if (!actorPermissions.includes('workspace:governance:update')) {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'workspace_admin_required' });
+      return true;
+    }
+    const currentItems = buildWorkspaceMembersFromConfig({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      actorName: user.name,
+      workspaceCreatedAt: workspaceRecord.created_at,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    })
+      .filter((member) => member.permissions.includes('workspace:project:create') && !member.permissions.includes('workspace:governance:update'))
+      .map((member) => member.user_id);
+    const body = await readBody(req) as { project_creators?: unknown };
+    if (!body || !Array.isArray(body.project_creators)) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'project_creators must be an array' });
+      return true;
+    }
+    const nextCreators = body.project_creators
+      .filter((entry): entry is string => typeof entry === 'string')
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    try {
+      updateRegisteredWorkspaceProjectCreators(route.workspaceId, nextCreators);
+      const previousSet = new Set(currentItems);
+      const nextSet = new Set(nextCreators);
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: '__workspace__',
+        actor: { type: 'user', id: user.id },
+        action: 'workspace.project_creators.updated',
+        requestId,
+        resourceType: 'workspace',
+        resourceId: route.workspaceId,
+        metadata: {
+          added_identifiers: [...nextSet].filter((item) => !previousSet.has(item)),
+          removed_identifiers: [...previousSet].filter((item) => !nextSet.has(item)),
+          total_identifiers: nextCreators.length,
+        },
+      });
+      json(res, 200, {
+        items: nextCreators.map((identifier) => ({
+          id: identifier,
+          user_id: identifier,
+          name: identifier,
+          email: identifier.includes('@') ? identifier : `${identifier}@workspace.local`,
+        })),
+        total: nextCreators.length,
+      });
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: string }).code) : '';
+      if (code === 'WORKSPACE_NOT_FOUND') {
+        json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
+        return true;
+      }
+      throw error;
+    }
     return true;
   }
 
@@ -720,6 +833,28 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
     const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = CreateProjectRequestSchema.parse(raw);
+    const actorPermissions = resolveWorkspacePermissions({
+      workspaceId: route.workspaceId,
+      actorId: user.id,
+      actorEmail: user.email,
+      defaultWorkspaceId: defaultWorkspace?.id,
+    });
+    if (!actorPermissions.includes('workspace:project:create')) {
+      await writeProjectAuditEvent(deps, {
+        workspaceId: route.workspaceId,
+        projectId: '__workspace__',
+        actor: { type: 'user', id: user.id },
+        action: 'project.create',
+        result: 'error',
+        requestId,
+        resourceType: 'workspace',
+        resourceId: route.workspaceId,
+        errorCode: 'PERMISSION_DENIED',
+        errorMessage: 'workspace_project_create_required',
+      });
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'workspace_project_create_required' });
+      return true;
+    }
     const created = await deps.createProjectUseCase.execute({
       workspaceId: route.workspaceId,
       actorId: user.id,

@@ -42,7 +42,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
-| endpoints | create/update/delete endpoint | `project:manage` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
+| endpoints | create/update/delete endpoint | `project:governance:update` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
 | resource policy | view/update endpoint/agent policy | `project:manage` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
 | credentials | view/manage credentials | `project:manage` | `GET/POST/DELETE /credentials*` | page-level permission denied |
 | members | view/manage members/templates/groups | `project:membership:update` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/spending-limit-templates*` | page-level permission denied or mutating controls disabled |

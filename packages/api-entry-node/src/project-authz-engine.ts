@@ -275,15 +275,14 @@ export function resolveVisibleProjectPermissionsForActor(args: {
 }
 
 function mapProjectActionToPermission(action: string): string | null {
-  if (action.startsWith('project.audit.')) return 'project:endpoint:use';
+  if (action.startsWith('project.audit.')) return 'project:audit:read';
   if (action.startsWith('project.usage.')) return 'project:endpoint:use';
   if (action === 'project.read') return 'project:endpoint:use';
   if (action === 'project.delete' || action === 'project.update' || action.startsWith('project.settings.')) {
     return 'project:manage';
   }
-  if (action.startsWith('project.member.') || action.startsWith('project.governance.')) {
-    return 'project:manage';
-  }
+  if (action.startsWith('project.member.')) return 'project:membership:update';
+  if (action.startsWith('project.governance.')) return 'project:governance:update';
   return 'project:endpoint:use';
 }
 
@@ -291,7 +290,7 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
   if (resourceType === 'endpoint') {
     return /invoke|proxy|rerank|image|video|read|list/i.test(action)
       ? 'project:endpoint:use'
-      : 'project:manage';
+      : 'project:governance:update';
   }
   if (resourceType === 'source_library') {
     return /read|list|download|browse/i.test(action)

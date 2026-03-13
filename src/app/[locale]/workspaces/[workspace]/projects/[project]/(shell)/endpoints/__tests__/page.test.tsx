@@ -119,7 +119,7 @@ describe('EndpointsPage', () => {
     expect(screen.getByText('validation_error')).toBeInTheDocument();
   });
 
-  it('shows permission denied when user lacks read access', async () => {
+  it('shows permission denied when user lacks read and governance access', async () => {
     mockUseHasPermission.mockReturnValue(false);
     mockUseIsProjectAdmin.mockReturnValue(false);
     render(
@@ -132,5 +132,18 @@ describe('EndpointsPage', () => {
     });
 
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+  });
+
+  it('allows governance managers to read endpoints even without invoke permission', async () => {
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:governance:update');
+    mockUseIsProjectAdmin.mockReturnValue(true);
+
+    render(
+      <EndpointsPage params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })} />,
+      { wrapper: createWrapper() }
+    );
+
+    await waitFor(() => expect(screen.getByText('OpenAI Main')).toBeInTheDocument());
+    expect(screen.getByTestId('endpoints__create-btn')).toBeInTheDocument();
   });
 });

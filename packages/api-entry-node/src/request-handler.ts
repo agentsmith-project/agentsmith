@@ -265,7 +265,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     ) {
       return ['project:endpoint:use'];
     }
-    return ['project:manage'];
+    return ['project:governance:update'];
   }
 
   return ['project:endpoint:use'];

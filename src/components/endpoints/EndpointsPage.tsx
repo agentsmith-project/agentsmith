@@ -61,9 +61,9 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     '{\n  "completion": {\n    "model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
   );
   const canProjectEndpointRead = useHasPermission('project:endpoint:use');
-  const canProjectEndpointUpdate = useHasPermission('project:manage');
-  const canProjectEndpointCreate = useHasPermission('project:manage');
-  const canProjectEndpointDelete = useHasPermission('project:manage');
+  const canProjectEndpointUpdate = useHasPermission('project:governance:update');
+  const canProjectEndpointCreate = useHasPermission('project:governance:update');
+  const canProjectEndpointDelete = useHasPermission('project:governance:update');
   const canReadEndpoints = canProjectEndpointRead || canProjectEndpointUpdate;
   const canManageEndpoints = canProjectEndpointCreate || canProjectEndpointUpdate || canProjectEndpointDelete;
 

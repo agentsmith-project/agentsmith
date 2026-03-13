@@ -157,7 +157,10 @@ describe('project-authz-engine', () => {
 
   it('maps authorization actions to project permission tokens', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.invoke' })).toBe('project:endpoint:use');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.update' })).toBe('project:governance:update');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.audit.view' })).toBe('project:audit:read');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:membership:update');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.governance.credentials.update' })).toBe('project:governance:update');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'source_library', action: 'source_library.upload' })).toBe('project:manage');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:manage');
   });
 });

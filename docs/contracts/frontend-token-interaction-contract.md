@@ -54,7 +54,7 @@ Related docs:
 - Members: `project:membership:update`
 - Credentials: `project:governance:update`
 - Resource Policy: `project:governance:update`
-- Settings: `project:manage`
+- Settings: `project:governance:update` or `project:admins:update` or `project:lifecycle:update`
 - Audit: `project:audit:read`
 - Usage: `project:endpoint:use`
 
@@ -68,7 +68,7 @@ Target migration:
 
 ## Action-Level Permission Gate Contract
 
-- Endpoint create/update/delete: `project:manage`
+- Endpoint create/update/delete: `project:governance:update`
 - Credential create/rotate/delete: `project:manage`
 - Resource policy save: `project:manage`
 - Member/template/group management: `project:manage`

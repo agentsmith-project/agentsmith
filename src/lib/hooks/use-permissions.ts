@@ -85,18 +85,6 @@ export function useHasAllPermissions(permissions: string[]): boolean {
   return useMemo(() => permissions.every((p) => permissionMatches(currentPermissions, p)), [currentPermissions, permissions]);
 }
 
-// These helpers expose project relationship labels used to derive permissions.
-// They are not the authorization source of truth; permission checks remain primary.
-export function useHasProjectOwnerRelation(): boolean {
-  return useCurrentProjectRole() === 'owner';
-}
-
-export function useHasProjectAdminRelation(): boolean {
-  const role = useCurrentProjectRole();
-  return role === 'owner' || role === 'admin';
-}
-
-
 export function useCanReadProjectSettings(): boolean {
   return useHasAnyPermission([
     'project:governance:update',
@@ -118,7 +106,7 @@ export function useCanManageProjectLifecycle(): boolean {
 }
 
 export function useCanManageMemberGovernance(): boolean {
-  return useHasPermission('project:membership:update') && useHasProjectOwnerRelation();
+  return useHasPermission('project:membership:update');
 }
 
 export function useCanManageResourcePolicy(): boolean {

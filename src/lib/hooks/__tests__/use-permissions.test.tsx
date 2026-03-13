@@ -4,8 +4,6 @@ import React from 'react';
 import {
   useHasPermission,
   useCurrentPermissions,
-  useHasProjectAdminRelation,
-  useHasProjectOwnerRelation,
   useIsAuthenticated,
   useHasAnyPermission,
   useHasAllPermissions,
@@ -315,185 +313,8 @@ describe('use-permissions hooks', () => {
     });
   });
 
-  describe('useHasProjectAdminRelation', () => {
-    it('should return true when owner relation is present', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectAdminRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('should return true when project admin relation is present', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'admin' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectAdminRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('should return false without owner or admin relation', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'developer' as const,
-        permissions: ['project:endpoint:use'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectAdminRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(false);
-    });
-
-    it('should return false when project relation is undefined', () => {
-      mockUseProject.mockReturnValue({ data: undefined, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectAdminRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(false);
-    });
-  });
-
-  describe('useHasProjectOwnerRelation', () => {
-    it('should return true when owner relation is present', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectOwnerRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('should return false for project admin relation', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'admin' as const,
-        permissions: ['project:endpoint:use', 'project:governance:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectOwnerRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(false);
-    });
-  });
-
-  describe('project admin relation coverage', () => {
-    it('treats owner relation as project admin-capable relation source', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectAdminRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('treats project admin relation as project admin-capable relation source', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'admin' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useHasProjectAdminRelation(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-  });
-
   describe('useCanManageMemberGovernance', () => {
-    it('should return true for owner role', () => {
+    it('should return true when membership update permission is present', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -516,7 +337,7 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(true);
     });
 
-    it('should return false for project admin role', () => {
+    it('should return false without membership update permission', () => {
       const mockProject = {
         id: 'proj_001',
         workspace_id: 'ws_default',
@@ -527,7 +348,7 @@ describe('use-permissions hooks', () => {
         created_at: '2026-01-01T00:00:00Z',
         updated_at: '2026-01-01T00:00:00Z',
         role: 'admin' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
+        permissions: ['project:governance:update'],
       };
 
       mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });

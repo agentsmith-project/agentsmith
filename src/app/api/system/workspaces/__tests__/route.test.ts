@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createWorkspacePayload } from './helpers';
 
 const sessionModule = vi.hoisted(() => ({
   isSystemAdminAuthenticated: vi.fn(),
@@ -51,14 +52,7 @@ describe('/api/system/workspaces', () => {
       new Request('http://localhost/api/system/workspaces', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Alpha Workspace',
-          workspace_admin: 'alpha-admin@example.com',
-          project_creators: ['creator@example.com'],
-          idp_url: 'https://login.example.com',
-          idp_realm: 'alpha',
-          idp_client_id: 'alpha-client',
-        }),
+        body: JSON.stringify(createWorkspacePayload()),
       }),
     );
 

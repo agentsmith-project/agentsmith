@@ -21,30 +21,34 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Loader2, CheckCircle2, XCircle, AlertCircle } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { EndpointAPI, CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
 import type {
-  ValidateEndpointResponse,
   CustomEndpointProtocol,
-  EndpointHealthErrorCategory,
 } from '@/lib/api/types/endpoints';
-import type { EndpointCapabilityType } from '@/lib/api/types';
-import {
-  CUSTOM_PROTOCOL_OPTIONS,
-  getCustomProtocolConfig,
-} from '@/lib/endpoints/provider-catalog';
+import { getCustomProtocolConfig } from '@/lib/endpoints/provider-catalog';
 import { toast } from '@/components/ui/toast';
+import { BasicInfoStep } from './custom-endpoint-wizard/BasicInfoStep';
+import { ModelConfigStep } from './custom-endpoint-wizard/ModelConfigStep';
+import { StepIndicator } from './custom-endpoint-wizard/StepIndicator';
+import type {
+  CustomEndpointWizardFormState,
+  ValidationError,
+  WizardStep,
+} from './custom-endpoint-wizard/types';
+import { ValidateCreateStep } from './custom-endpoint-wizard/ValidateCreateStep';
+import { WizardFooter } from './custom-endpoint-wizard/WizardFooter';
+import {
+  buildCreateEndpointRequest,
+  DEFAULT_MODEL_PROFILE_FIELDS,
+  DEFAULT_WIZARD_FORM_STATE,
+  getErrorCategoryMessage,
+  getErrorForField,
+  runLocalValidation,
+  validateStep1,
+  validateStep2,
+} from './custom-endpoint-wizard/utils';
 
 export interface CustomEndpointWizardProps {
   open: boolean;
@@ -52,42 +56,6 @@ export interface CustomEndpointWizardProps {
   workspaceId: string;
   projectId: string;
   onSuccess?: () => void;
-}
-
-type WizardStep = 1 | 2 | 3;
-
-interface ValidationError {
-  field: string;
-  message: string;
-}
-
-function isValidHttpsUrl(value: string): boolean {
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === 'https:';
-  } catch {
-    return false;
-  }
-}
-
-function getProtocolI18nLabel(
-  t: (key: string) => string,
-  protocol: CustomEndpointProtocol,
-  fallback: string,
-): string {
-  const value = t(`protocol_options.${protocol}.name`);
-  return value === `protocol_options.${protocol}.name` ? fallback : value;
-}
-
-function getProtocolI18nDescription(
-  t: (key: string) => string,
-  protocol: CustomEndpointProtocol,
-  fallback?: string,
-): string | undefined {
-  const key = `protocol_options.${protocol}.description`;
-  const value = t(key);
-  if (value === key) return fallback;
-  return value;
 }
 
 export function CustomEndpointWizard({
@@ -102,23 +70,9 @@ export function CustomEndpointWizard({
   const tErrors = useTranslations('endpoints.custom_wizard.errors');
 
   const [step, setStep] = React.useState<WizardStep>(1);
-  const [name, setName] = React.useState('');
-  const [protocol, setProtocol] = React.useState<CustomEndpointProtocol>('openai_compatible');
-  const [baseUrl, setBaseUrl] = React.useState('');
-  const [modelId, setModelId] = React.useState('');
-  const [capability, setCapability] = React.useState<EndpointCapabilityType>('chat_completion');
-  const [credentialRef, setCredentialRef] = React.useState<string>('');
-  const [maxContextTokens, setMaxContextTokens] = React.useState('128000');
-  const [maxOutputTokens, setMaxOutputTokens] = React.useState('8192');
-  const [supportsFile, setSupportsFile] = React.useState(false);
-  const [supportsToolCall, setSupportsToolCall] = React.useState(true);
-  const [supportsReasoning, setSupportsReasoning] = React.useState(false);
-  const [priceInputPer1m, setPriceInputPer1m] = React.useState('0');
-  const [priceOutputPer1m, setPriceOutputPer1m] = React.useState('0');
-  const [cacheReadDiscountRatio, setCacheReadDiscountRatio] = React.useState('0');
-  const [cacheWriteDiscountRatio, setCacheWriteDiscountRatio] = React.useState('0');
+  const [form, setForm] = React.useState<CustomEndpointWizardFormState>(DEFAULT_WIZARD_FORM_STATE);
   const [validationErrors, setValidationErrors] = React.useState<ValidationError[]>([]);
-  const [validationResult, setValidationResult] = React.useState<ValidateEndpointResponse | null>(null);
+  const [validationResult, setValidationResult] = React.useState<ReturnType<typeof runLocalValidation> | null>(null);
   const [isValidating, setIsValidating] = React.useState(false);
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
@@ -132,11 +86,11 @@ export function CustomEndpointWizard({
 
   // Auto-select first credential when credentials are loaded
   React.useEffect(() => {
-    if (credentials.length > 0 && !credentialRef) {
-      setCredentialRef(credentials[0].id);
+    if (credentials.length > 0 && !form.credentialRef) {
+      setForm((prev) => ({ ...prev, credentialRef: credentials[0].id }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [credentials]);
+  }, [credentials, form.credentialRef]);
 
   const createMutation = useMutation({
     mutationFn: async (data: CreateEndpointRequest) => {
@@ -156,45 +110,23 @@ export function CustomEndpointWizard({
 
   // Update base URL when protocol changes
   React.useEffect(() => {
-    const config = getCustomProtocolConfig(protocol);
-    if (config && !baseUrl) {
-      setBaseUrl(config.default_base_url);
+    const config = getCustomProtocolConfig(form.protocol);
+    if (config && !form.baseUrl) {
+      setForm((prev) => ({ ...prev, baseUrl: config.default_base_url }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [protocol]);
+  }, [form.baseUrl, form.protocol]);
 
   const resetForm = () => {
     setStep(1);
-    setName('');
-    setProtocol('openai_compatible');
-    setBaseUrl('');
-    setModelId('');
-    setCapability('chat_completion');
-    setCredentialRef('');
-    setMaxContextTokens('128000');
-    setMaxOutputTokens('8192');
-    setSupportsFile(false);
-    setSupportsToolCall(true);
-    setSupportsReasoning(false);
-    setPriceInputPer1m('0');
-    setPriceOutputPer1m('0');
-    setCacheReadDiscountRatio('0');
-    setCacheWriteDiscountRatio('0');
+    setForm(DEFAULT_WIZARD_FORM_STATE);
     setValidationErrors([]);
     setValidationResult(null);
     setIsValidating(false);
   };
 
   const applyRecommendedDefaults = () => {
-    setMaxContextTokens('128000');
-    setMaxOutputTokens('8192');
-    setSupportsFile(false);
-    setSupportsToolCall(true);
-    setSupportsReasoning(false);
-    setPriceInputPer1m('0');
-    setPriceOutputPer1m('0');
-    setCacheReadDiscountRatio('0');
-    setCacheWriteDiscountRatio('0');
+    setForm((prev) => ({ ...prev, ...DEFAULT_MODEL_PROFILE_FIELDS }));
   };
 
   React.useEffect(() => {
@@ -203,115 +135,31 @@ export function CustomEndpointWizard({
     }
   }, [open]);
 
-  const validateStep1 = (): boolean => {
-    const errors: ValidationError[] = [];
-
-    if (!name.trim()) {
-      errors.push({ field: 'name', message: tErrors('name_required') });
-    }
-
-    // Validate URL format
-    if (!baseUrl.trim()) {
-      errors.push({ field: 'baseUrl', message: tErrors('invalid_url') });
-    } else if (!isValidHttpsUrl(baseUrl)) {
-      errors.push({ field: 'baseUrl', message: tErrors('https_required') });
-    }
-
+  const runStep1Validation = (): boolean => {
+    const errors = validateStep1(form, tErrors);
     setValidationErrors(errors);
     return errors.length === 0;
-  };
-
-  const runLocalValidation = (): ValidateEndpointResponse => {
-    try {
-      const url = new URL(baseUrl.trim());
-      if (url.protocol !== 'https:') {
-        return {
-          valid: false,
-          error: tErrors('https_required'),
-          healthCheck: {
-            endpointId: 'validation',
-            status: 'fail',
-            checkedAt: new Date().toISOString(),
-            errorCategory: 'auth',
-          },
-        };
-      }
-      const latencyMs = 50 + Math.floor(Math.random() * 200);
-      return {
-        valid: true,
-        healthCheck: {
-          endpointId: 'validation',
-          status: 'pass',
-          checkedAt: new Date().toISOString(),
-          latencyMs,
-        },
-      };
-    } catch {
-      return {
-        valid: false,
-        error: tErrors('invalid_url'),
-        healthCheck: {
-          endpointId: 'validation',
-          status: 'fail',
-          checkedAt: new Date().toISOString(),
-          errorCategory: 'unknown',
-        },
-      };
-    }
   };
 
   const handleValidate = async () => {
     setIsValidating(true);
     setValidationResult(null);
     await new Promise((resolve) => setTimeout(resolve, 250));
-    const result = runLocalValidation();
+    const result = runLocalValidation(form.baseUrl, tErrors);
     setValidationResult(result);
     setIsValidating(false);
   };
 
-  const validateStep2 = (): boolean => {
-    const errors: ValidationError[] = [];
-
-    if (!modelId.trim()) {
-      errors.push({ field: 'modelId', message: tErrors('model_required') });
-    }
-
-    if (!credentialRef) {
-      errors.push({ field: 'credentialRef', message: tErrors('credential_required') });
-    }
-    const context = Number(maxContextTokens);
-    const output = Number(maxOutputTokens);
-    const inputPrice = Number(priceInputPer1m);
-    const outputPrice = Number(priceOutputPer1m);
-    const cacheRead = Number(cacheReadDiscountRatio);
-    const cacheWrite = Number(cacheWriteDiscountRatio);
-    if (!Number.isFinite(context) || context <= 0) {
-      errors.push({ field: 'maxContextTokens', message: tErrors('invalid_number') });
-    }
-    if (!Number.isFinite(output) || output <= 0 || (Number.isFinite(context) && output > context)) {
-      errors.push({ field: 'maxOutputTokens', message: tErrors('invalid_number') });
-    }
-    if (!Number.isFinite(inputPrice) || inputPrice < 0) {
-      errors.push({ field: 'priceInputPer1m', message: tErrors('invalid_number') });
-    }
-    if (!Number.isFinite(outputPrice) || outputPrice < 0) {
-      errors.push({ field: 'priceOutputPer1m', message: tErrors('invalid_number') });
-    }
-    if (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1) {
-      errors.push({ field: 'cacheReadDiscountRatio', message: tErrors('invalid_number') });
-    }
-    if (!Number.isFinite(cacheWrite) || cacheWrite < 0) {
-      errors.push({ field: 'cacheWriteDiscountRatio', message: tErrors('invalid_number') });
-    }
-
+  const runStep2Validation = (): boolean => {
+    const errors = validateStep2(form, tErrors);
     setValidationErrors(errors);
     return errors.length === 0;
   };
 
   const handleNextStep = () => {
-    if (step === 1 && validateStep1()) {
+    if (step === 1 && runStep1Validation()) {
       setStep(2);
-    } else if (step === 2 && validateStep2()) {
+    } else if (step === 2 && runStep2Validation()) {
       setStep(3);
     }
   };
@@ -331,43 +179,7 @@ export function CustomEndpointWizard({
       return;
     }
 
-    const data: CreateEndpointRequest = {
-      name: name.trim(),
-      type: 'custom',
-      base_url: baseUrl.trim(),
-      provider_family: 'custom',
-      protocol: protocol,
-      meta: {
-        compatibility_interface: protocol,
-      },
-      credential_ref: credentialRef,
-      capabilities: [{ type: capability, enabled: true, default_model_id: modelId.trim() }],
-      models: [{ capability, model_id: modelId.trim(), display_name: modelId.trim() }],
-      defaults: capability === 'chat_completion'
-        ? { chat_model_id: modelId.trim() }
-        : capability === 'multimodal_completion'
-          ? { multimodal_model_id: modelId.trim() }
-          : capability === 'embedding'
-            ? { embedding_model_id: modelId.trim() }
-            : capability === 'rerank'
-              ? { rerank_model_id: modelId.trim() }
-              : capability === 'image_generation'
-              ? { image_model_id: modelId.trim() }
-              : { video_model_id: modelId.trim() },
-      model_profile: {
-        max_context_tokens: Number(maxContextTokens),
-        max_output_tokens: Number(maxOutputTokens),
-        supports_file: supportsFile,
-        supports_tool_call: supportsToolCall,
-        supports_reasoning: supportsReasoning,
-        price_input_per_1m: Number(priceInputPer1m),
-        price_output_per_1m: Number(priceOutputPer1m),
-        cache_read_discount_ratio: Number(cacheReadDiscountRatio),
-        cache_write_discount_ratio: Number(cacheWriteDiscountRatio),
-      },
-    };
-
-    createMutation.mutate(data);
+    createMutation.mutate(buildCreateEndpointRequest(form));
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -376,78 +188,20 @@ export function CustomEndpointWizard({
     }
   };
 
-  const getErrorForField = (field: string): string | undefined => {
-    const submitted = validationErrors.find((e) => e.field === field)?.message;
-    if (submitted) return submitted;
-    if (step !== 2) return undefined;
-    const context = Number(maxContextTokens);
-    const output = Number(maxOutputTokens);
-    const inputPrice = Number(priceInputPer1m);
-    const outputPrice = Number(priceOutputPer1m);
-    const cacheRead = Number(cacheReadDiscountRatio);
-    const cacheWrite = Number(cacheWriteDiscountRatio);
-    if (field === 'modelId' && !modelId.trim()) return tErrors('model_required');
-    if (field === 'credentialRef' && !credentialRef) return tErrors('credential_required');
-    if (field === 'maxContextTokens' && (!Number.isFinite(context) || context <= 0)) return tErrors('invalid_number');
-    if (field === 'maxOutputTokens' && (!Number.isFinite(output) || output <= 0 || (Number.isFinite(context) && output > context))) {
-      return tErrors('invalid_number');
-    }
-    if (field === 'priceInputPer1m' && (!Number.isFinite(inputPrice) || inputPrice < 0)) return tErrors('invalid_number');
-    if (field === 'priceOutputPer1m' && (!Number.isFinite(outputPrice) || outputPrice < 0)) return tErrors('invalid_number');
-    if (field === 'cacheReadDiscountRatio' && (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1)) {
-      return tErrors('invalid_number');
-    }
-    if (field === 'cacheWriteDiscountRatio' && (!Number.isFinite(cacheWrite) || cacheWrite < 0)) {
-      return tErrors('invalid_number');
-    }
-    return undefined;
-  };
+  const readFieldError = React.useCallback(
+    (field: string) =>
+      getErrorForField({
+        field,
+        step,
+        form,
+        validationErrors,
+        tErrors,
+      }),
+    [form, step, tErrors, validationErrors],
+  );
 
-  const getErrorCategoryMessage = (category: EndpointHealthErrorCategory): string => {
-    const key = category as keyof typeof tErrors;
-    const message = tErrors(key);
-    return message !== key ? message : tErrors('unknown');
-  };
-
-  const step1Blockers: ValidationError[] = [];
-  if (!name.trim()) {
-    step1Blockers.push({ field: 'name', message: tErrors('name_required') });
-  }
-  if (!baseUrl.trim() || !isValidHttpsUrl(baseUrl)) {
-    step1Blockers.push({ field: 'baseUrl', message: tErrors('https_required') });
-  }
-
-  const step2Blockers: ValidationError[] = [];
-  const context = Number(maxContextTokens);
-  const output = Number(maxOutputTokens);
-  const inputPrice = Number(priceInputPer1m);
-  const outputPrice = Number(priceOutputPer1m);
-  const cacheRead = Number(cacheReadDiscountRatio);
-  const cacheWrite = Number(cacheWriteDiscountRatio);
-  if (!modelId.trim()) {
-    step2Blockers.push({ field: 'modelId', message: tErrors('model_required') });
-  }
-  if (!credentialRef) {
-    step2Blockers.push({ field: 'credentialRef', message: tErrors('credential_required') });
-  }
-  if (!Number.isFinite(context) || context <= 0) {
-    step2Blockers.push({ field: 'maxContextTokens', message: tErrors('invalid_number') });
-  }
-  if (!Number.isFinite(output) || output <= 0 || (Number.isFinite(context) && output > context)) {
-    step2Blockers.push({ field: 'maxOutputTokens', message: tErrors('invalid_number') });
-  }
-  if (!Number.isFinite(inputPrice) || inputPrice < 0) {
-    step2Blockers.push({ field: 'priceInputPer1m', message: tErrors('invalid_number') });
-  }
-  if (!Number.isFinite(outputPrice) || outputPrice < 0) {
-    step2Blockers.push({ field: 'priceOutputPer1m', message: tErrors('invalid_number') });
-  }
-  if (!Number.isFinite(cacheRead) || cacheRead < 0 || cacheRead > 1) {
-    step2Blockers.push({ field: 'cacheReadDiscountRatio', message: tErrors('invalid_number') });
-  }
-  if (!Number.isFinite(cacheWrite) || cacheWrite < 0) {
-    step2Blockers.push({ field: 'cacheWriteDiscountRatio', message: tErrors('invalid_number') });
-  }
+  const step1Blockers = validateStep1(form, tErrors);
+  const step2Blockers = validateStep2(form, tErrors);
 
   const canProceed = step === 1
     ? step1Blockers.length === 0
@@ -460,6 +214,13 @@ export function CustomEndpointWizard({
     : step === 2
       ? (credentials.length === 0 ? t('create_credential_first') : step2Blockers[0]?.message)
       : undefined;
+
+  const handleFormChange = React.useCallback(
+    <K extends keyof CustomEndpointWizardFormState>(field: K, value: CustomEndpointWizardFormState[K]) => {
+      setForm((prev) => ({ ...prev, [field]: value }));
+    },
+    [],
+  );
 
   return (
     <Sheet open={open} onOpenChange={handleOpenChange}>
@@ -478,470 +239,56 @@ export function CustomEndpointWizard({
         </SheetHeader>
 
         <div className="flex-1 space-y-6 overflow-y-auto px-6 py-4">
-          {/* Step Indicator */}
-          <div className="flex items-center justify-center gap-2">
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-              step >= 1 ? 'bg-accent text-white' : 'bg-surface-low text-tertiary'
-            }`}>
-              {step > 1 ? <CheckCircle2 className="h-4 w-4" /> : '1'}
-            </div>
-            <div className={`h-0.5 w-12 ${
-              step >= 2 ? 'bg-accent' : 'bg-surface-low'
-            }`} />
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-              step >= 2 ? 'bg-accent text-white' : 'bg-surface-low text-tertiary'
-            }`}>
-              {step > 2 ? <CheckCircle2 className="h-4 w-4" /> : '2'}
-            </div>
-            <div className={`h-0.5 w-12 ${
-              step >= 3 ? 'bg-accent' : 'bg-surface-low'
-            }`} />
-            <div className={`flex h-8 w-8 items-center justify-center rounded-full text-sm font-medium ${
-              step >= 3 ? 'bg-accent text-white' : 'bg-surface-low text-tertiary'
-            }`}>
-              3
-            </div>
-          </div>
+          <StepIndicator step={step} />
 
-          {/* Step 1: Basic Info */}
           {step === 1 && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="wizard-name" className="text-sm font-medium text-foreground">
-                  {t('name')} <span className="text-error">*</span>
-                </label>
-                <Input
-                  id="wizard-name"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder={t('name_placeholder')}
-                  data-testid="wizard-name-input"
-                />
-                <p className="text-xs text-tertiary">{t('name_hint')}</p>
-                {getErrorForField('name') && (
-                  <p className="text-sm text-error">{getErrorForField('name')}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  {t('protocol')} <span className="text-error">*</span>
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  {CUSTOM_PROTOCOL_OPTIONS.map((option) => (
-                    <button
-                      key={option.protocol}
-                      type="button"
-                      onClick={() => setProtocol(option.protocol)}
-                      className={`flex flex-col items-start gap-1 rounded-md border p-3 text-left transition-colors ${
-                        protocol === option.protocol
-                          ? 'border-accent bg-accent/5'
-                          : 'border-subtle hover:bg-surface-low'
-                      }`}
-                      data-testid={`protocol-${option.protocol}`}
-                    >
-                      <span className="font-medium">
-                        {getProtocolI18nLabel(t, option.protocol, option.display_name)}
-                      </span>
-                      {(getProtocolI18nDescription(t, option.protocol, option.description)) && (
-                        <span className="text-xs text-tertiary">
-                          {getProtocolI18nDescription(t, option.protocol, option.description)}
-                        </span>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label htmlFor="wizard-base-url" className="text-sm font-medium text-foreground">
-                    {t('base_url')} <span className="text-error">*</span>
-                  </label>
-                  {getCustomProtocolConfig(protocol)?.default_base_url && (
-                    <button
-                      type="button"
-                      onClick={() => setBaseUrl(getCustomProtocolConfig(protocol)?.default_base_url || '')}
-                      className="text-xs text-accent hover:underline"
-                      data-testid="wizard-use-default-url"
-                    >
-                      {t('use_default')}
-                    </button>
-                  )}
-                </div>
-                <Input
-                  id="wizard-base-url"
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={t('base_url_placeholder')}
-                  className="font-mono text-sm"
-                  data-testid="wizard-base-url-input"
-                />
-                {getErrorForField('baseUrl') && (
-                  <p className="text-sm text-error">{getErrorForField('baseUrl')}</p>
-                )}
-              </div>
-            </div>
+            <BasicInfoStep
+              t={t}
+              form={form}
+              onChange={handleFormChange}
+              getErrorForField={readFieldError}
+            />
           )}
 
-          {/* Step 2: Model Config */}
           {step === 2 && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label htmlFor="wizard-model-id" className="text-sm font-medium text-foreground">
-                  {t('model_id')} <span className="text-error">*</span>
-                </label>
-                <Input
-                  id="wizard-model-id"
-                  value={modelId}
-                  onChange={(e) => setModelId(e.target.value)}
-                  placeholder={t('model_id_placeholder')}
-                  className="font-mono text-sm"
-                  data-testid="wizard-model-id-input"
-                />
-                <p className="text-xs text-tertiary">{t('model_id_hint')}</p>
-                {getErrorForField('modelId') && (
-                  <p className="text-sm text-error">{getErrorForField('modelId')}</p>
-                )}
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  {t('capability')} <span className="text-error">*</span>
-                </label>
-                <Select
-                  value={capability}
-                  onValueChange={(v) => setCapability(v as EndpointCapabilityType)}
-                  data-testid="wizard-capability-select"
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="chat_completion">{t('capabilities.chat_completion')}</SelectItem>
-                    <SelectItem value="multimodal_completion">{t('capabilities.multimodal_completion')}</SelectItem>
-                    <SelectItem value="embedding">{t('capabilities.embedding')}</SelectItem>
-                    <SelectItem value="rerank">{t('capabilities.rerank')}</SelectItem>
-                    <SelectItem value="image_generation">{t('capabilities.image_generation')}</SelectItem>
-                    <SelectItem value="video_generation">{t('capabilities.video_generation')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  {t('credential')} <span className="text-error">*</span>
-                </label>
-                {credentials.length === 0 ? (
-                  <div className="rounded-sm border border-subtle bg-surface-low p-4 text-sm text-tertiary">
-                    {t('no_credentials')}{' '}
-                    <a
-                      href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/credentials`}
-                      className="text-accent hover:underline"
-                    >
-                      {t('create_credential_first')}
-                    </a>
-                  </div>
-                ) : (
-                  <Select
-                    value={credentialRef}
-                    onValueChange={setCredentialRef}
-                    data-testid="wizard-credential-select"
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder={t('credential_placeholder')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {credentials.map((c) => (
-                        <SelectItem key={c.id} value={c.id}>
-                          {c.name} ({c.fingerprint})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-                {getErrorForField('credentialRef') && (
-                  <p className="text-sm text-error">{getErrorForField('credentialRef')}</p>
-                )}
-              </div>
-
-              <div className="space-y-3 rounded-sm border border-subtle p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">{t('model_profile.title')}</p>
-                  <button
-                    type="button"
-                    className="text-xs text-accent hover:underline"
-                    onClick={applyRecommendedDefaults}
-                    data-testid="wizard-model-profile-defaults"
-                  >
-                    {t('use_default')}
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.max_context_tokens')}</label>
-                    <Input value={maxContextTokens} onChange={(e) => setMaxContextTokens(e.target.value)} />
-                    {getErrorForField('maxContextTokens') && <p className="text-xs text-error">{getErrorForField('maxContextTokens')}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.max_output_tokens')}</label>
-                    <Input value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(e.target.value)} />
-                    {getErrorForField('maxOutputTokens') && <p className="text-xs text-error">{getErrorForField('maxOutputTokens')}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.price_input_per_1m')}</label>
-                    <Input value={priceInputPer1m} onChange={(e) => setPriceInputPer1m(e.target.value)} />
-                    {getErrorForField('priceInputPer1m') && <p className="text-xs text-error">{getErrorForField('priceInputPer1m')}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.price_output_per_1m')}</label>
-                    <Input value={priceOutputPer1m} onChange={(e) => setPriceOutputPer1m(e.target.value)} />
-                    {getErrorForField('priceOutputPer1m') && <p className="text-xs text-error">{getErrorForField('priceOutputPer1m')}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.cache_read_discount_ratio')}</label>
-                    <Input value={cacheReadDiscountRatio} onChange={(e) => setCacheReadDiscountRatio(e.target.value)} />
-                    {getErrorForField('cacheReadDiscountRatio') && <p className="text-xs text-error">{getErrorForField('cacheReadDiscountRatio')}</p>}
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.cache_write_discount_ratio')}</label>
-                    <Input
-                      value={cacheWriteDiscountRatio}
-                      onChange={(e) => setCacheWriteDiscountRatio(e.target.value)}
-                      data-testid="wizard-cache-write-discount-ratio-input"
-                    />
-                    {getErrorForField('cacheWriteDiscountRatio') && <p className="text-xs text-error">{getErrorForField('cacheWriteDiscountRatio')}</p>}
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.supports_file')}</label>
-                    <Select value={String(supportsFile)} onValueChange={(v) => setSupportsFile(v === 'true')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">{t('model_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('model_profile.no')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.supports_tool_call')}</label>
-                    <Select value={String(supportsToolCall)} onValueChange={(v) => setSupportsToolCall(v === 'true')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">{t('model_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('model_profile.no')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('model_profile.supports_reasoning')}</label>
-                    <Select value={String(supportsReasoning)} onValueChange={(v) => setSupportsReasoning(v === 'true')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">{t('model_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('model_profile.no')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Summary */}
-              <div className="rounded-sm bg-surface-low p-4 text-sm">
-                <p className="font-medium text-foreground">{t('summary_title')}</p>
-                <p className="text-tertiary">{t('summary_name')}: {name}</p>
-                <p className="text-tertiary">
-                  {t('summary_protocol')}: {getProtocolI18nLabel(
-                    t,
-                    protocol,
-                    CUSTOM_PROTOCOL_OPTIONS.find((o) => o.protocol === protocol)?.display_name ?? protocol,
-                  )}
-                </p>
-                <p className="text-tertiary">{t('summary_base_url')}: {baseUrl}</p>
-                <p className="text-tertiary">{t('summary_capability')}: {t(`capabilities.${capability}`)}</p>
-                <p className="text-tertiary">{t('summary_model')}: {modelId || t('summary_model_id') || '(not set)'}</p>
-              </div>
-            </div>
+            <ModelConfigStep
+              t={t}
+              locale={locale}
+              workspaceId={workspaceId}
+              projectId={projectId}
+              form={form}
+              credentials={credentials}
+              onChange={handleFormChange}
+              applyRecommendedDefaults={applyRecommendedDefaults}
+              getErrorForField={readFieldError}
+            />
           )}
 
-          {/* Step 3: Validate & Create */}
           {step === 3 && (
-            <div className="space-y-4">
-              {/* Configuration Summary */}
-              <div className="rounded-sm bg-surface-low p-4">
-                <h3 className="mb-3 font-medium text-foreground">{t('config_summary')}</h3>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-tertiary">{t('summary_name')}:</span>
-                    <span className="font-medium text-foreground">{name}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tertiary">{t('summary_protocol')}:</span>
-                    <span className="font-medium text-foreground">
-                      {getProtocolI18nLabel(
-                        t,
-                        protocol,
-                        CUSTOM_PROTOCOL_OPTIONS.find((o) => o.protocol === protocol)?.display_name ?? protocol,
-                      )}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tertiary">{t('summary_base_url')}:</span>
-                    <span className="font-mono text-sm text-foreground">{baseUrl}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tertiary">{t('summary_model_id')}:</span>
-                    <span className="font-mono text-sm text-foreground">{modelId}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-tertiary">{t('summary_capability')}:</span>
-                    <span className="text-foreground">{t(`capabilities.${capability}`)}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Validation Section */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  {t('check_button')}
-                </label>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  onClick={handleValidate}
-                  disabled={isValidating}
-                  className="w-full"
-                  data-testid="wizard-check-button"
-                >
-                  {isValidating ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      {t('validating')}
-                    </>
-                  ) : (
-                    t('check_button')
-                  )}
-                </Button>
-              </div>
-
-              {/* Validation Result */}
-              {validationResult && (
-                <div className={`rounded-sm p-4 ${
-                  validationResult.valid
-                    ? 'bg-success/10 text-success'
-                    : 'bg-error/10 text-error'
-                }`}>
-                  <div className="flex items-start gap-3">
-                    {validationResult.valid ? (
-                      <CheckCircle2 className="h-5 w-5 flex-shrink-0" />
-                    ) : (
-                      <XCircle className="h-5 w-5 flex-shrink-0" />
-                    )}
-                    <div className="flex-1">
-                      {validationResult.valid ? (
-                        <>
-                          <p className="font-medium">{t('validation.success', { latency: validationResult.healthCheck?.latencyMs ?? 0 })}</p>
-                          <p className="text-sm opacity-80">{t('endpoint_ready')}</p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-medium">{t('validation.failed')}</p>
-                          {validationResult.healthCheck?.errorCategory && (
-                            <p className="text-sm mt-1">
-                              <strong>{t('error_type')}:</strong> {getErrorCategoryMessage(validationResult.healthCheck.errorCategory)}
-                            </p>
-                          )}
-                          {validationResult.error && (
-                            <p className="text-sm mt-1 opacity-80">{validationResult.error}</p>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            onClick={handleValidate}
-                            className="mt-2"
-                          >
-                            {t('validation.retry')}
-                          </Button>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Warning if no credentials */}
-              {credentials.length === 0 && (
-                <div className="flex items-start gap-3 rounded-sm bg-warning/10 p-4 text-warning">
-                  <AlertCircle className="h-5 w-5 flex-shrink-0" />
-                  <div>
-                    <p className="font-medium">{t('no_credentials')}</p>
-                    <p className="text-sm opacity-80">{t('create_credential_first')}</p>
-                  </div>
-                </div>
-              )}
-            </div>
+            <ValidateCreateStep
+              t={t}
+              form={form}
+              credentials={credentials}
+              validationState={{ result: validationResult, isValidating }}
+              onValidate={handleValidate}
+              formatErrorCategory={(category) => getErrorCategoryMessage(tErrors, category)}
+            />
           )}
         </div>
 
-        {/* Footer Actions */}
-        <div className="flex flex-shrink-0 items-center justify-between gap-2 border-t border-subtle px-6 py-4">
-          <div>
-            {step < 3 && !canProceed && nextDisabledReason ? (
-              <p className="text-xs text-error" data-testid="wizard-next-disabled-reason">
-                {nextDisabledReason}
-              </p>
-            ) : null}
-          </div>
-          <div className="flex items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => handleOpenChange(false)}
-            disabled={createMutation.isPending || isValidating}
-          >
-            {t('cancel_button')}
-          </Button>
-          {step > 1 && (
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={handleBackStep}
-              disabled={createMutation.isPending || isValidating}
-            >
-              {t('back_button')}
-            </Button>
-          )}
-          {step < 3 ? (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleNextStep}
-              // Step 1 doesn't require credentials; step 2 does
-              disabled={!canProceed || (step >= 2 && credentials.length === 0)}
-            >
-              {t('next_button')}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleCreate}
-              disabled={createMutation.isPending || credentials.length === 0}
-              data-testid="wizard-create-button"
-            >
-              {createMutation.isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                t('create_button')
-              )}
-            </Button>
-          )}
-          </div>
-        </div>
+        <WizardFooter
+          t={t}
+          step={step}
+          canProceed={canProceed}
+          nextDisabledReason={nextDisabledReason}
+          credentialsAvailable={credentials.length > 0}
+          isCreating={createMutation.isPending}
+          isValidating={isValidating}
+          onCancel={() => handleOpenChange(false)}
+          onBack={handleBackStep}
+          onNext={handleNextStep}
+          onCreate={handleCreate}
+        />
       </SheetContent>
     </Sheet>
   );

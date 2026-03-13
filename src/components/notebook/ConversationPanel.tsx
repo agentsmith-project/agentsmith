@@ -4,10 +4,11 @@ import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { MessageList } from './MessageList';
 import { ConversationInput } from './ConversationInput';
-import { buttonVariants } from '@/components/ui/button';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
-import { classifyNotebookRealtimeFailure } from '@/lib/build-failure-explainability';
+import { ConnectionBanner } from '@/components/notebook/conversation-panel/ConnectionBanner';
+import { RunActivityBanner } from '@/components/notebook/conversation-panel/RunActivityBanner';
+import { formatElapsed, getConnectionBannerCopy } from '@/components/notebook/conversation-panel/utils';
 
 export interface ConversationPanelProps {
   messages: TaskMessage[];
@@ -93,68 +94,12 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
   const [inputValue, setInputValue] = React.useState('');
-  const formatElapsed = (seconds: number): string => {
-    if (!Number.isFinite(seconds) || seconds < 0) return '0s';
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    const remain = seconds % 60;
-    return remain === 0 ? `${minutes}m` : `${minutes}m ${remain}s`;
-  };
-  const connectionFailureKind = connectionStatus
-    ? classifyNotebookRealtimeFailure(connectionStatus, connectionErrorCode)
-    : null;
-
-  const connectionTitle = connectionFailureKind === 'connecting'
-    ? t('realtime_status_connecting_title')
-    : connectionFailureKind === 'reconnecting'
-      ? t('realtime_status_reconnecting_title')
-      : connectionFailureKind === 'disconnected'
-        ? t('realtime_status_disconnected_title')
-        : connectionFailureKind === 'ticket_unavailable'
-          ? t('realtime_status_ticket_unavailable_title')
-        : connectionFailureKind === 'ticket_unauthorized'
-          ? t('realtime_status_ticket_unauthorized_title')
-        : connectionFailureKind === 'ticket_rate_limited'
-          ? t('realtime_status_ticket_rate_limited_title')
-        : connectionFailureKind === 'stream_unavailable'
-          ? t('realtime_status_stream_unavailable_title')
-        : connectionFailureKind === 'stream_interrupted'
-          ? t('realtime_status_stream_interrupted_title')
-        : connectionFailureKind === 'stream_recovery_exhausted'
-          ? t('realtime_status_stream_recovery_exhausted_title')
-        : connectionFailureKind === 'ticket_network'
-          ? t('realtime_status_ticket_network_title')
-                : connectionFailureKind === 'reconcile_failed'
-                  ? t('realtime_status_reconcile_failed_title')
-                  : connectionFailureKind === 'error'
-                    ? t('realtime_status_error_title')
-                    : null;
-
-  const connectionDescription = connectionFailureKind === 'connecting'
-    ? t('realtime_status_connecting_description')
-    : connectionFailureKind === 'reconnecting'
-      ? t('realtime_status_reconnecting_description')
-      : connectionFailureKind === 'disconnected'
-        ? t('realtime_status_disconnected_description')
-        : connectionFailureKind === 'ticket_unavailable'
-          ? t('realtime_status_ticket_unavailable_description')
-        : connectionFailureKind === 'ticket_unauthorized'
-          ? t('realtime_status_ticket_unauthorized_description')
-        : connectionFailureKind === 'ticket_rate_limited'
-          ? t('realtime_status_ticket_rate_limited_description')
-        : connectionFailureKind === 'stream_unavailable'
-          ? connectionErrorMessage || t('realtime_status_stream_unavailable_description')
-        : connectionFailureKind === 'stream_interrupted'
-          ? connectionErrorMessage || t('realtime_status_stream_interrupted_description')
-        : connectionFailureKind === 'stream_recovery_exhausted'
-          ? connectionErrorMessage || t('realtime_status_stream_recovery_exhausted_description')
-        : connectionFailureKind === 'ticket_network'
-          ? t('realtime_status_ticket_network_description')
-                : connectionFailureKind === 'reconcile_failed'
-                  ? connectionErrorMessage || t('realtime_status_reconcile_failed_description')
-                  : connectionFailureKind === 'error'
-                    ? connectionErrorMessage || t('realtime_status_error_description')
-                    : null;
+  const { title: connectionTitle, description: connectionDescription } = getConnectionBannerCopy({
+    t,
+    connectionStatus,
+    connectionErrorCode,
+    connectionErrorMessage,
+  });
 
   const handleSend = () => {
     if (inputValue.trim().length === 0) return;
@@ -163,39 +108,16 @@ export function ConversationPanel({
   };
 
   return (
-    <div className="h-full flex flex-col bg-background">
+      <div className="h-full flex flex-col bg-background">
       {connectionStatus && connectionStatus !== 'connected' && (
-        <div className="border-b border-subtle px-4 py-2" data-testid="notebook__sse-status">
-          <div className="text-xs font-medium text-primary">{connectionTitle}</div>
-          <div className="mt-0.5 text-xs text-tertiary">{connectionDescription}</div>
-          {diagnosticsLinks ? (
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Link
-                href={diagnosticsLinks.audit}
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                data-testid="notebook__sse-status-open-audit"
-              >
-                {t('open_audit')}
-              </Link>
-              <Link
-                href={diagnosticsLinks.usage}
-                className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                data-testid="notebook__sse-status-open-usage"
-              >
-                {t('open_usage')}
-              </Link>
-              {diagnosticsLinks.agent ? (
-                <Link
-                  href={diagnosticsLinks.agent}
-                  className={buttonVariants({ variant: 'outline', size: 'sm' })}
-                  data-testid="notebook__sse-status-open-agent"
-                >
-                  {t('open_agent_diagnostics')}
-                </Link>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
+        <ConnectionBanner
+          title={connectionTitle ?? ''}
+          description={connectionDescription ?? ''}
+          diagnosticsLinks={diagnosticsLinks}
+          openAuditLabel={t('open_audit')}
+          openUsageLabel={t('open_usage')}
+          openAgentDiagnosticsLabel={t('open_agent_diagnostics')}
+        />
       )}
       {sandboxStarting ? (
         <div className="border-b border-subtle px-4 py-2" data-testid="notebook__sandbox-starting">
@@ -218,56 +140,13 @@ export function ConversationPanel({
         </button>
       </div>
       {runActivity?.active ? (
-        <div className="border-b border-blue-500/30 bg-blue-500/10 px-4 py-2" data-testid="notebook__run-active">
-          <div className="text-xs font-medium text-blue-300 flex items-center justify-between gap-2">
-            <span className="flex items-center gap-2">
-            <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-300 animate-pulse" aria-hidden />
-            {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
-            </span>
-            {onCancelActiveRun ? (
-              <button
-                type="button"
-                className="rounded border border-blue-300/40 px-2 py-0.5 text-[11px] text-blue-100 hover:bg-blue-400/10 disabled:opacity-60"
-                onClick={onCancelActiveRun}
-                disabled={disabled || !!runActivity.cancelling}
-                data-testid="notebook__run-active-cancel"
-              >
-                {runActivity.cancelling ? t('run_cancel_submitting') : t('run_cancel')}
-              </button>
-            ) : null}
-          </div>
-          {runActivity.lastSummary ? (
-            <div className="mt-1 flex items-start gap-2 text-xs text-blue-200/90">
-              <span className="inline-flex shrink-0 items-center rounded border border-blue-300/30 bg-blue-400/10 px-1.5 py-0.5 text-[10px] tracking-wide text-blue-200">
-                {runActivity.lastKind
-                  ? t(`run_action_kind_${runActivity.lastKind}`)
-                  : t('run_action_kind_system')}
-              </span>
-              <span className="truncate">{t('run_active_last_action', { summary: runActivity.lastSummary })}</span>
-            </div>
-          ) : null}
-          {runActivity.recentActions && runActivity.recentActions.length > 0 ? (
-            <div className="mt-2 space-y-1" data-testid="notebook__run-active-recent">
-              {runActivity.recentActions.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  className="w-full text-left flex items-start gap-2 text-[11px] text-blue-100/90 hover:text-blue-50"
-                  onClick={() => onRunActionClick?.({ traceName: item.traceName, summary: item.summary })}
-                  data-testid={`notebook__run-active-action-${item.id}`}
-                >
-                  <span className="inline-flex shrink-0 items-center rounded border border-blue-300/20 bg-blue-400/5 px-1.5 py-0.5 text-[10px] text-blue-200">
-                    {t(`run_action_kind_${item.kind}`)}
-                  </span>
-                  <span className="min-w-0 flex-1 truncate">{item.summary}</span>
-                  <span className="shrink-0 text-blue-200/70">
-                    {t('run_action_time_ago', { duration: formatElapsed(item.ageSeconds) })}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-        </div>
+        <RunActivityBanner
+          t={t}
+          runActivity={runActivity}
+          disabled={disabled}
+          onCancelActiveRun={onCancelActiveRun}
+          onRunActionClick={onRunActionClick}
+        />
       ) : null}
       <div className="flex-1 min-h-0">
         <MessageList

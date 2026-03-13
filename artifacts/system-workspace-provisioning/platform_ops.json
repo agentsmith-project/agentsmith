@@ -1,0 +1,19 @@
+{
+  "workspace_id": "platform_ops",
+  "workspace_name": "Platform Ops",
+  "tenant": {
+    "workspace_id": "platform_ops",
+    "workspace_name": "Platform Ops",
+    "substrate_label": "primary",
+    "database_name": "agentsmith_ws_platform_ops",
+    "collection_prefix": "ws_platform_ops_",
+    "key_prefix": "ws:platform_ops:"
+  },
+  "idp": {
+    "kind": "keycloak",
+    "url": "https://idp.example.com",
+    "realm": "platform",
+    "client_id": "agentsmith-platform"
+  },
+  "initialized_at": "2026-03-13T10:47:31.311Z"
+}

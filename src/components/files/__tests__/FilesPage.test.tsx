@@ -8,10 +8,15 @@
 
 import * as React from 'react';
 import { fireEvent, render, screen, within } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 
 import { FilesPage } from '../FilesPage';
+import {
+  createFileLibrary,
+  createObjectItem,
+  createPrefixItem,
+  renderWithQueryClient,
+} from './filesPageTestUtils';
 
 import { vi } from 'vitest';
 
@@ -37,21 +42,7 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 vi.mock('@/lib/hooks/use-files', () => ({
   useFileLibraries: () => ({
     data: {
-      items: [
-        {
-          id: 'lib_1',
-          workspace_id: 'ws_default',
-          project_id: 'proj_001',
-          name: 'Shared Docs',
-          description: '',
-          visibility: 'shared',
-          provider: 's3',
-          bucket: 'bucket-1',
-          created_by_user_id: 'user_001',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        },
-      ],
+      items: [createFileLibrary()],
     },
     isLoading: false,
   }),
@@ -66,18 +57,7 @@ vi.mock('@/lib/hooks/use-file-objects', () => ({
       pages: [
         {
           prefix: '',
-          items: [
-            { kind: 'prefix', prefix: 'docs/', name: 'docs' },
-            {
-              kind: 'object',
-              key: 'README.txt',
-              name: 'README.txt',
-              size_bytes: 10,
-              content_type: 'text/plain',
-              etag: '"etag"',
-              last_modified: new Date().toISOString(),
-            },
-          ],
+          items: [createPrefixItem(), createObjectItem()],
           next_continuation_token: null,
         },
       ],
@@ -91,18 +71,7 @@ vi.mock('@/lib/hooks/use-file-objects', () => ({
   useFileObjects: () => ({
     data: {
       prefix: '',
-      items: [
-        { kind: 'prefix', prefix: 'docs/', name: 'docs' },
-        {
-          kind: 'object',
-          key: 'README.txt',
-          name: 'README.txt',
-          size_bytes: 10,
-          content_type: 'text/plain',
-          etag: '"etag"',
-          last_modified: new Date().toISOString(),
-        },
-      ],
+      items: [createPrefixItem(), createObjectItem()],
       next_continuation_token: null,
     },
     isLoading: false,
@@ -114,23 +83,16 @@ vi.mock('@/lib/hooks/use-file-objects', () => ({
   useMoveFileObject: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }));
 
-function wrap(ui: React.ReactElement) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
-  return render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>);
-}
-
 describe('FilesPage (object browser)', () => {
   it('renders libraries pane and objects table', async () => {
-    wrap(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
     expect(await screen.findByTestId('files__library-list')).toBeInTheDocument();
     expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
   });
 
   it('navigates into a folder prefix row on double click', async () => {
-    wrap(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
     const user = userEvent.setup();
     const table = await screen.findByTestId('files__objects-table');
@@ -148,7 +110,7 @@ describe('FilesPage (object browser)', () => {
   });
 
   it('shows shortcut hint in single-select and summary in multi-select', async () => {
-    wrap(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const user = userEvent.setup();
 
     const table = await screen.findByTestId('files__objects-table');
@@ -168,7 +130,7 @@ describe('FilesPage (object browser)', () => {
   });
 
   it('shows dropzone overlay on drag enter', async () => {
-    wrap(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
     const dropzone = await screen.findByTestId('files__dropzone');
 
     fireEvent.dragEnter(dropzone);

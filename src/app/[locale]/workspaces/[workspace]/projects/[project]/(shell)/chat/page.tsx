@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
@@ -44,12 +43,12 @@ import { ChatLibraryPickerDialog } from '@/components/chat/ChatLibraryPickerDial
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { Button, buttonVariants } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { cn } from '@/lib/utils';
+import { AddUrlDialog } from './_components/AddUrlDialog';
+import { ChatHeaderActions } from './_components/ChatHeaderActions';
+import type { ResolvedChatPageParams } from './chat-page-types';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -61,7 +60,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const tErrors = useTranslations('errors');
 
   const token = useAuthStore((s) => s.token);
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<ResolvedChatPageParams | null>(null);
   const canAccessChat = useHasPermission('project:endpoint:use');
   const canReadThreads = canAccessChat;
   const canUseChat = canAccessChat;
@@ -489,31 +488,7 @@ export default function ChatPage({ params }: ChatPageProps) {
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/notebook`}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="chat__open-notebook"
-                >
-                  {t('open_notebook')}
-                </Link>
-                <Link
-                  href={`${basePath}/endpoints`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="chat__open-endpoints"
-                >
-                  {t('open_endpoints')}
-                </Link>
-                <Link
-                  href={`${basePath}/files`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="chat__open-files"
-                >
-                  {t('open_files')}
-                </Link>
-              </div>
-            )}
+            actions={<ChatHeaderActions basePath={basePath} t={t} />}
           />
         )}
       >
@@ -619,33 +594,15 @@ export default function ChatPage({ params }: ChatPageProps) {
           loading={addLibraryAttachmentMutation.isPending}
           onPickObject={handleAddLibraryObject}
         />
-        <Dialog open={addUrlOpen} onOpenChange={setAddUrlOpen}>
-          <DialogContent className="sm:max-w-lg">
-            <DialogHeader>
-              <DialogTitle>{t('composer.url_dialog.title')}</DialogTitle>
-              <DialogDescription>{t('composer.url_dialog.description')}</DialogDescription>
-            </DialogHeader>
-            <Input
-              value={urlInput}
-              onChange={(e) => setUrlInput(e.target.value)}
-              placeholder={t('composer.url_dialog.placeholder')}
-              autoFocus
-              data-testid="chat__url-input"
-            />
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setAddUrlOpen(false)}>
-                {t('composer.cancel')}
-              </Button>
-              <Button
-                onClick={handleAddUrlInput}
-                disabled={addUrlAttachmentMutation.isPending || !/^https?:\/\//i.test(urlInput.trim())}
-                data-testid="chat__url-input-confirm"
-              >
-                {t('composer.url_dialog.confirm')}
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <AddUrlDialog
+          isPending={addUrlAttachmentMutation.isPending}
+          open={addUrlOpen}
+          t={t}
+          urlInput={urlInput}
+          onConfirm={handleAddUrlInput}
+          onOpenChange={setAddUrlOpen}
+          onUrlInputChange={setUrlInput}
+        />
       </PageLayout>
     </PageState>
   );

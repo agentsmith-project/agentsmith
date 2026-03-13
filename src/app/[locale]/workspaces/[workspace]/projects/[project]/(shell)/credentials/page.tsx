@@ -8,118 +8,30 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import Link from 'next/link';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
+import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Key, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { PageLoading, EmptyState } from '@/components/ui/loading';
-import { DataTable } from '@/components/ui/data-table';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { PageLoading } from '@/components/ui/loading';
+import { Button } from '@/components/ui/button';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
 import { RotateCredentialDialog } from '@/components/credentials/RotateCredentialDialog';
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { cn } from '@/lib/utils';
+import { CredentialsContent } from './_components/CredentialsContent';
+import { CredentialsHeaderActions } from './_components/CredentialsHeaderActions';
+import { createCredentialColumns } from './credentials-table';
 
 interface CredentialsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
-
-const columnHelper = createColumnHelper<Credential>();
-
-function formatDate(iso: string | undefined): string {
-  if (!iso) return '-';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString(undefined, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  } catch {
-    return iso;
-  }
-}
-
-const createCredentialColumns = (
-  t: (key: string) => string,
-  onRotate: (cred: Credential) => void,
-  onDelete: (cred: Credential) => void,
-  canManageCredentials: boolean,
-  deleteMutation: { isPending: boolean }
-) => [
-  columnHelper.accessor('name', {
-    header: t('table.name'),
-    cell: (info) => (
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
-          <Key className="w-4 h-4 text-icon-default" />
-        </div>
-        <span className="text-foreground font-medium">{info.getValue()}</span>
-      </div>
-    ),
-  }),
-  columnHelper.accessor('type', {
-    header: t('table.type'),
-    cell: (info) => (
-      <span className="text-tertiary text-sm capitalize">{info.getValue()}</span>
-    ),
-  }),
-  columnHelper.accessor('fingerprint', {
-    header: t('fingerprint'),
-    cell: (info) => (
-      <span className="text-tertiary text-sm font-mono">{info.getValue()}</span>
-    ),
-  }),
-  columnHelper.accessor('last_rotated_at', {
-    header: t('table.last_rotated'),
-    cell: (info) => (
-      <span className="text-tertiary text-sm">{formatDate(info.getValue())}</span>
-    ),
-  }),
-  columnHelper.display({
-    id: 'actions',
-    header: '',
-    cell: (info) => (
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => onRotate(info.row.original)}
-          disabled={!canManageCredentials || deleteMutation.isPending}
-          className="h-8 w-8 text-tertiary hover:text-foreground hover:bg-hover"
-          title={t('rotate')}
-          data-testid={`credentials__action-rotate--${info.row.original.id}`}
-        >
-          <RotateCcw className="w-4 h-4" />
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          onClick={() => onDelete(info.row.original)}
-          disabled={!canManageCredentials || deleteMutation.isPending}
-          className="h-8 w-8 text-error hover:bg-hover"
-          title={t('delete')}
-          data-testid={`credentials__action-delete--${info.row.original.id}`}
-        >
-          <Trash2 className="w-4 h-4" />
-        </Button>
-      </div>
-    ),
-  }),
-];
 
 export default function CredentialsPage({ params }: CredentialsPageProps) {
   const t = useTranslations('credentials');
@@ -196,13 +108,13 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     invalidate();
   };
 
-  const credentialColumns = createCredentialColumns(
+  const credentialColumns = createCredentialColumns({
     t,
-    handleRotateClick,
-    handleDeleteClick,
+    onRotate: handleRotateClick,
+    onDelete: handleDeleteClick,
     canManageCredentials,
-    deleteMutation
-  );
+    deletePending: deleteMutation.isPending,
+  });
 
   const table = useReactTable({
     data: credentials ?? [],
@@ -248,29 +160,12 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
             title={t('title')}
             subtitle={t('subtitle')}
             actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/members`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="credentials__open-members"
-                >
-                  {t('open_members')}
-                </Link>
-                <Link
-                  href={`${basePath}/resource-policy`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="credentials__open-resource-policy"
-                >
-                  {t('open_resource_policy')}
-                </Link>
-                <Link
-                  href={`${basePath}/audit`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="credentials__open-audit"
-                >
-                  {t('open_audit')}
-                </Link>
-              </div>
+              <CredentialsHeaderActions
+                basePath={basePath}
+                openMembersLabel={t('open_members')}
+                openResourcePolicyLabel={t('open_resource_policy')}
+                openAuditLabel={t('open_audit')}
+              />
             )}
           />
         )}
@@ -289,21 +184,16 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         )}
       >
         <div className="w-full">
-          {isLoading ? (
-            <PageLoading />
-          ) : !credentials || credentials.length === 0 ? (
-            <EmptyState
-              icon={Key}
-              title={t('empty.title')}
-              description={t('empty.description')}
-              action={canManageCredentials ? {
-                label: t('create'),
-                onClick: () => setCreateDialogOpen(true),
-              } : undefined}
-            />
-          ) : (
-            <DataTable table={table} testId="credentials__table" />
-          )}
+          <CredentialsContent
+            isLoading={isLoading}
+            credentials={credentials}
+            canManageCredentials={canManageCredentials}
+            createLabel={t('create')}
+            emptyTitle={t('empty.title')}
+            emptyDescription={t('empty.description')}
+            onCreate={() => setCreateDialogOpen(true)}
+            table={table}
+          />
         </div>
 
         <CreateCredentialDialog

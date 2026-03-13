@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { makeWorkspace, mockWorkspaceListResponse } from './systemWorkspacesTestUtils';
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US' }),
@@ -25,24 +26,12 @@ describe('SystemWorkspacesPage', () => {
 
   beforeEach(() => {
     fetchMock.mockReset();
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        items: [
-        {
+    fetchMock.mockResolvedValue(
+      mockWorkspaceListResponse([
+        makeWorkspace({
           id: 'ws_alpha',
           name: 'Alpha Workspace',
-          provisioning_status: 'ready',
-          last_initialized_at: '2026-03-10T01:00:00.000Z',
-          last_init_error: null,
           workspace_admin: 'alpha-admin@example.com',
-          idp: {
-            kind: 'keycloak',
-            url: 'https://alpha.example.com',
-            realm: 'alpha',
-            client_id: 'alpha-client',
-            has_client_secret: true,
-          },
           tenant: {
             workspace_id: 'ws_alpha',
             workspace_name: 'Alpha Workspace',
@@ -51,15 +40,12 @@ describe('SystemWorkspacesPage', () => {
             collection_prefix: 'ws_ws_alpha_',
             key_prefix: 'ws:ws_alpha:',
           },
-          created_at: '2026-03-01T00:00:00.000Z',
-          updated_at: '2026-03-10T00:00:00.000Z',
-        },
-        {
+        }),
+        makeWorkspace({
           id: 'ws_beta',
           name: 'Beta Workspace',
           provisioning_status: 'draft',
           last_initialized_at: null,
-          last_init_error: null,
           workspace_admin: 'beta-admin@example.com',
           idp: {
             kind: 'keycloak',
@@ -76,12 +62,10 @@ describe('SystemWorkspacesPage', () => {
             collection_prefix: 'ws_ws_beta_',
             key_prefix: 'ws:ws_beta:',
           },
-          created_at: '2026-03-01T00:00:00.000Z',
           updated_at: '2026-03-11T00:00:00.000Z',
-        },
-      ],
-      }),
-    });
+        }),
+      ]),
+    );
     vi.stubGlobal('fetch', fetchMock);
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
@@ -141,72 +125,49 @@ describe('SystemWorkspacesPage', () => {
   it('loads existing workspace into the editor and saves updates', async () => {
     fetchMock
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'draft',
-              last_initialized_at: null,
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'draft',
+            last_initialized_at: null,
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: 'ws_alpha' }),
       })
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'draft',
-              last_initialized_at: null,
-              last_init_error: null,
-              workspace_admin: 'ops-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://login.example.com',
-                realm: 'alpha-prod',
-                client_id: 'alpha-client-prod',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'draft',
+            last_initialized_at: null,
+            workspace_admin: 'ops-admin@example.com',
+            idp: {
+              kind: 'keycloak',
+              url: 'https://login.example.com',
+              realm: 'alpha-prod',
+              client_id: 'alpha-client-prod',
+              has_client_secret: true,
             },
-          ],
-        }),
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
+            },
+          }),
+        ]),
       });
 
     render(<SystemWorkspacesPage />);
@@ -244,36 +205,21 @@ describe('SystemWorkspacesPage', () => {
   it('deletes selected workspace', async () => {
     fetchMock
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'draft',
-              last_initialized_at: null,
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'draft',
+            last_initialized_at: null,
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -342,72 +288,42 @@ describe('SystemWorkspacesPage', () => {
   it('publishes a selected draft workspace and surfaces ready status', async () => {
     fetchMock
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'draft',
-              last_initialized_at: null,
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'draft',
+            last_initialized_at: null,
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
       })
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'ready',
-              last_initialized_at: '2026-03-10T02:00:00.000Z',
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'ready',
+            last_initialized_at: '2026-03-10T02:00:00.000Z',
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       });
 
     render(<SystemWorkspacesPage />);
@@ -428,36 +344,21 @@ describe('SystemWorkspacesPage', () => {
   it('disables a ready workspace', async () => {
     fetchMock
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'ready',
-              last_initialized_at: '2026-03-10T02:00:00.000Z',
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'ready',
+            last_initialized_at: '2026-03-10T02:00:00.000Z',
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -514,72 +415,42 @@ describe('SystemWorkspacesPage', () => {
   it('re-publishes a disabled workspace', async () => {
     fetchMock
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'disabled',
-              last_initialized_at: '2026-03-10T02:00:00.000Z',
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'disabled',
+            last_initialized_at: '2026-03-10T02:00:00.000Z',
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       })
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
       })
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'ready',
-              last_initialized_at: '2026-03-10T03:00:00.000Z',
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'ready',
+            last_initialized_at: '2026-03-10T03:00:00.000Z',
+            workspace_admin: 'alpha-admin@example.com',
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
             },
-          ],
-        }),
+          }),
+        ]),
       });
 
     render(<SystemWorkspacesPage />);
@@ -600,38 +471,23 @@ describe('SystemWorkspacesPage', () => {
   });
 
   it('locks editing controls while provisioning is in progress', async () => {
-    fetchMock.mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({
-        items: [
-          {
-            id: 'ws_alpha',
-            name: 'Alpha Workspace',
-            provisioning_status: 'provisioning',
-            last_initialized_at: null,
-            last_init_error: null,
-            workspace_admin: 'alpha-admin@example.com',
-            idp: {
-              kind: 'keycloak',
-              url: 'https://alpha.example.com',
-              realm: 'alpha',
-              client_id: 'alpha-client',
-              has_client_secret: true,
-            },
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-            created_at: '2026-03-01T00:00:00.000Z',
-            updated_at: '2026-03-10T00:00:00.000Z',
+    fetchMock.mockResolvedValueOnce(
+      mockWorkspaceListResponse([
+        makeWorkspace({
+          provisioning_status: 'provisioning',
+          last_initialized_at: null,
+          workspace_admin: 'alpha-admin@example.com',
+          tenant: {
+            workspace_id: 'ws_alpha',
+            workspace_name: 'Alpha Workspace',
+            substrate_label: 'primary',
+            database_name: 'agentsmith_ws_ws_alpha',
+            collection_prefix: 'ws_ws_alpha_',
+            key_prefix: 'ws:ws_alpha:',
           },
-        ],
-      }),
-    });
+        }),
+      ]),
+    );
 
     render(<SystemWorkspacesPage />);
 

@@ -5,10 +5,14 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskPage } from '../TaskPage';
-import type { Task, TaskMessage, Artifact } from '@/lib/types/task';
 import { ApiError } from '@/lib/api/client';
+import {
+  mockArtifacts,
+  mockMessages,
+  mockTask,
+  renderWithNotebookQueryClient,
+} from './taskPageTestUtils';
 
 const mockTaskApiListTraces = vi.fn();
 const {
@@ -268,67 +272,12 @@ vi.mock('next/navigation', () => ({
   }),
 }));
 
-const mockTask: Task = {
-  id: 'task-1',
-  workspace_id: 'workspace-1',
-  project_id: 'project-1',
-  owner_user_id: 'user-1',
-  title: 'Test Task',
-  agent_id: 'agent-1',
-  agent_name: 'Test Agent',
-  status: 'active',
-  attached_inputs: [
-    { id: 'in_1', kind: 'source', source_id: 'source-1' },
-    { id: 'in_2', kind: 'source', source_id: 'source-2' },
-  ],
-  created_at: '2024-01-01T00:00:00Z',
-  updated_at: '2024-01-02T00:00:00Z',
-  last_activity_at: '2024-01-02T12:00:00Z',
-};
-
-const mockMessages: TaskMessage[] = [
-  {
-    id: 'msg-1',
-    task_id: 'task-1',
-    role: 'user',
-    content: 'Hello',
-    created_at: '2024-01-01T00:00:00Z',
-  },
-  {
-    id: 'msg-2',
-    task_id: 'task-1',
-    role: 'agent',
-    content: 'Hi there!',
-    created_at: '2024-01-01T00:01:00Z',
-  },
-];
-
-const mockArtifacts: Artifact[] = [
-  {
-    id: 'artifact-1',
-    task_id: 'task-1',
-    type: 'text',
-    title: 'Text Artifact',
-    content: 'Artifact content',
-    created_at: '2024-01-01T00:00:00Z',
-  },
-];
-
 describe('TaskPage', () => {
-  let queryClient: QueryClient;
-
   const mockWorkspaceId = 'workspace-1';
   const mockProjectId = 'project-1';
   const mockTaskId = 'task-1';
 
   beforeEach(() => {
-    queryClient = new QueryClient({
-      defaultOptions: {
-        queries: {
-          retry: false,
-        },
-      },
-    });
     vi.clearAllMocks();
     mockSendMessageMutateAsync.mockResolvedValue({
       id: 'new-msg-id',
@@ -366,12 +315,8 @@ describe('TaskPage', () => {
     latestTaskHeaderPropsRef.current = null;
   });
 
-  const wrapper = ({ children }: { children: React.ReactNode }) => (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
-  );
-
   const renderComponent = () => {
-    return render(
+    return renderWithNotebookQueryClient(
       <TaskPage
         workspaceId={mockWorkspaceId}
         projectId={mockProjectId}
@@ -380,7 +325,6 @@ describe('TaskPage', () => {
         canUpdateTask={true}
         canDeleteTask={true}
       />,
-      { wrapper }
     );
   };
 

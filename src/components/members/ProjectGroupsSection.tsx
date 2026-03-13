@@ -3,7 +3,6 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,7 +13,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import {
   useApplyProjectGroupTemplate,
   useCreateProjectGroup,
@@ -27,13 +25,15 @@ import {
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import type { ProjectGroup } from '@/lib/api/endpoints/members';
 import { toast } from '@/components/ui/toast';
-
-type PreviewDiff = {
-  memberId: string;
-  memberName: string;
-  addCount: number;
-  removeCount: number;
-};
+import { GroupEditorCard } from './project-groups-section/GroupEditorCard';
+import { GroupList } from './project-groups-section/GroupList';
+import type { PreviewDiff } from './project-groups-section/types';
+import {
+  buildDefaultTemplates,
+  buildFailedListText as buildFailedListCsvText,
+  buildPreviewDiffs,
+  buildTemplateOptions,
+} from './project-groups-section/utils';
 
 export interface ProjectGroupsSectionProps {
   workspaceId: string;
@@ -69,22 +69,12 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   } | null>(null);
 
   const defaultTemplates = React.useMemo(
-    () => [
-      { id: 'owner', name: t('default_templates.owner'), permissions: [...GROUP_TEMPLATES.owner], is_default: true },
-      { id: 'admin', name: t('default_templates.admin'), permissions: [...GROUP_TEMPLATES.admin], is_default: true },
-      { id: 'developer', name: t('default_templates.developer'), permissions: [...GROUP_TEMPLATES.developer], is_default: true },
-      { id: 'user', name: t('default_templates.user'), permissions: [...GROUP_TEMPLATES.user], is_default: true },
-    ],
+    () => buildDefaultTemplates(t),
     [t]
   );
 
   const templateOptions = React.useMemo(() => {
-    const deduped = new Map<string, { id: string; name: string; permissions: string[]; is_default?: boolean }>();
-    for (const template of defaultTemplates) deduped.set(template.id, template);
-    for (const template of templates) {
-      if (!deduped.has(template.id)) deduped.set(template.id, template);
-    }
-    return Array.from(deduped.values());
+    return buildTemplateOptions(defaultTemplates, templates);
   }, [defaultTemplates, templates]);
 
   const selectedTemplate = templateOptions.find((tpl) => tpl.id === templateId);
@@ -180,41 +170,9 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     members.map((member) => [member.id, member.name || member.email || member.id])
   );
 
-  const getTemplatePermissions = React.useCallback(
-    (templateIdValue: string): string[] => {
-      const custom = templateOptions.find((template) => template.id === templateIdValue);
-      if (custom) return custom.permissions;
-      const roleKey = templateIdValue as keyof typeof GROUP_TEMPLATES;
-      return roleKey in GROUP_TEMPLATES ? [...GROUP_TEMPLATES[roleKey]] : [];
-    },
-    [templateOptions],
-  );
-
   const previewDiffs = React.useMemo<PreviewDiff[]>(() => {
-    if (!previewGroupId) return [];
-    const group = groups.find((item) => item.id === previewGroupId);
-    if (!group) return [];
-    const memberNameMap = new Map(members.map((member) => [member.id, member.name || member.email || member.id]));
-    const templatePermissions = new Set(getTemplatePermissions(group.permission_template_id));
-    return group.member_ids.map((memberId) => {
-      const member = members.find((item) => item.id === memberId);
-      const currentPermissions = new Set(member?.permissions ?? []);
-      let addCount = 0;
-      let removeCount = 0;
-      for (const permission of templatePermissions) {
-        if (!currentPermissions.has(permission)) addCount += 1;
-      }
-      for (const permission of currentPermissions) {
-        if (!templatePermissions.has(permission)) removeCount += 1;
-      }
-      return {
-        memberId,
-        memberName: memberNameMap.get(memberId) ?? memberId,
-        addCount,
-        removeCount,
-      };
-    });
-  }, [getTemplatePermissions, groups, members, previewGroupId]);
+    return buildPreviewDiffs(groups, members, previewGroupId, templateOptions);
+  }, [groups, members, previewGroupId, templateOptions]);
 
   const handleApplyGroup = async (group: ProjectGroup) => {
     const result = await applyGroupTemplate.mutateAsync({ groupId: group.id });
@@ -243,10 +201,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   };
 
   const buildFailedListText = (groupId: string) => {
-    if (!lastApplyResult || lastApplyResult.groupId !== groupId) return '';
-    return lastApplyResult.failedDetails
-      .map((item) => `${item.memberId},${memberNameMap.get(item.memberId) ?? item.memberId},${item.message ?? ''}`)
-      .join('\n');
+    return buildFailedListCsvText(groupId, lastApplyResult, memberNameMap);
   };
 
   const handleCopyFailedList = async (groupId: string) => {
@@ -277,294 +232,67 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
         <p className="mt-1 text-xs text-tertiary">{t('group_templates_description')}</p>
       </div>
 
-      <div className="rounded-md border border-subtle bg-surface p-4 space-y-3">
-        <div className="grid gap-3 md:grid-cols-2">
-          <div>
-            <label className="mb-1 block text-xs text-tertiary">{t('group_name')}</label>
-            <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              placeholder={t('group_name_placeholder')}
-              disabled={!canManage}
-              data-testid="members__group-name-input"
-            />
-          </div>
-          <div>
-            <label className="mb-1 block text-xs text-tertiary">{t('select_template')}</label>
-            <select
-              className="h-10 w-full rounded-md border border-subtle bg-surface-high px-3 text-sm"
-              value={templateId}
-              onChange={(event) => setTemplateId(event.target.value)}
-              disabled={!canManage}
-              data-testid="members__group-template-select"
-            >
-              <option value="">{t('select_template')}</option>
-              {templateOptions.map((template) => (
-                <option key={template.id} value={template.id}>
-                  {template.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
+      <GroupEditorCard
+        allPagedSelected={allPagedSelected}
+        canManage={canManage}
+        commonT={commonT}
+        createPending={createGroup.isPending}
+        editingGroupId={editingGroupId}
+        filteredMembersCount={filteredMembers.length}
+        groupName={name}
+        hasAnyPagedSelected={hasAnyPagedSelected}
+        memberPage={memberPage}
+        memberPageCount={memberPageCount}
+        memberSearch={memberSearch}
+        membersT={membersT}
+        pagedMembers={pagedMembers}
+        selectedMemberIds={selectedMemberIds}
+        selectedTemplateId={templateId}
+        selectedTemplatePermissionsCount={selectedTemplate?.permissions.length}
+        templateOptions={templateOptions}
+        t={t}
+        updatePending={updateGroup.isPending}
+        onCancelEdit={resetForm}
+        onClearPage={deselectAllPagedMembers}
+        onGroupNameChange={setName}
+        onMemberPageChange={setMemberPage}
+        onMemberSearchChange={(value) => {
+          setMemberSearch(value);
+          setMemberPage(1);
+        }}
+        onSave={() => {
+          void handleSaveGroup();
+        }}
+        onSelectMember={toggleMember}
+        onSelectPage={selectAllPagedMembers}
+        onTemplateIdChange={setTemplateId}
+      />
 
-        <div>
-          <p className="mb-1 text-xs text-tertiary">{t('select_members')}</p>
-          <div className="space-y-2 rounded-sm border border-subtle bg-surface-high p-2">
-            <Input
-              value={memberSearch}
-              onChange={(event) => {
-                setMemberSearch(event.target.value);
-                setMemberPage(1);
-              }}
-              placeholder={membersT('filters.search_placeholder')}
-              className="h-8 bg-surface"
-              data-testid="members__group-member-search"
-            />
-            <div className="max-h-44 overflow-auto">
-              {pagedMembers.map((member) => (
-              <label key={member.id} className="flex items-center gap-2 py-1 text-xs text-primary">
-                <input
-                  type="checkbox"
-                  checked={selectedMemberIds.includes(member.id)}
-                  onChange={() => toggleMember(member.id)}
-                  disabled={!canManage}
-                  data-testid={`members__group-member-checkbox--${member.id}`}
-                />
-                {member.name || member.email}
-              </label>
-              ))}
-              {pagedMembers.length === 0 && (
-                <p className="px-1 py-3 text-xs text-tertiary">{t('group_empty')}</p>
-              )}
-            </div>
-            <div className="flex items-center justify-between text-xs text-tertiary">
-              <span>{t('selected_count', { count: selectedMemberIds.length })}</span>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2"
-                  disabled={!canManage || allPagedSelected || pagedMembers.length === 0}
-                  onClick={selectAllPagedMembers}
-                  data-testid="members__group-member-select-page"
-                >
-                  {t('select_all')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2"
-                  disabled={!canManage || !hasAnyPagedSelected}
-                  onClick={deselectAllPagedMembers}
-                  data-testid="members__group-member-clear-page"
-                >
-                  {t('deselect_all')}
-                </Button>
-              </div>
-            </div>
-            <div className="flex items-center justify-between text-xs text-tertiary">
-              <span>
-                {memberPage}/{memberPageCount} · {filteredMembers.length}
-              </span>
-              <div className="flex items-center gap-1">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2"
-                  disabled={memberPage <= 1}
-                  onClick={() => setMemberPage((prev) => Math.max(1, prev - 1))}
-                  data-testid="members__group-member-page-prev"
-                >
-                  {commonT('previous')}
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  className="h-7 px-2"
-                  disabled={memberPage >= memberPageCount}
-                  onClick={() => setMemberPage((prev) => Math.min(memberPageCount, prev + 1))}
-                  data-testid="members__group-member-page-next"
-                >
-                  {commonT('next')}
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            type="button"
-            onClick={() => {
-              void handleSaveGroup();
-            }}
-            disabled={!canManage || !name.trim() || !templateId || createGroup.isPending || updateGroup.isPending}
-            data-testid="members__group-save-btn"
-          >
-            {editingGroupId ? t('save_changes') : t('create_group')}
-          </Button>
-          {editingGroupId && (
-            <Button type="button" variant="ghost" onClick={resetForm}>
-              {t('cancel')}
-            </Button>
-          )}
-          {selectedTemplate && (
-            <span className="text-xs text-tertiary">
-              {t('permissions_count', { count: selectedTemplate.permissions.length })}
-            </span>
-          )}
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        {groups.length === 0 ? (
-          <div className="rounded-md border border-dashed border-subtle p-4 text-xs text-tertiary">
-            {t('group_empty')}
-          </div>
-        ) : (
-          groups.map((group) => (
-            <div
-              key={group.id}
-              className="rounded-md border border-subtle bg-surface p-3"
-              data-testid={`members__group-row--${group.id}`}
-            >
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-sm font-medium text-primary">{group.name}</p>
-                  <p className="text-xs text-tertiary">
-                    {templateNameMap.get(group.permission_template_id) || group.permission_template_id}
-                    {' · '}
-                    {t('selected_count', { count: group.member_ids.length })}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canManage || applyGroupTemplate.isPending}
-                    onClick={() => {
-                      void handleApplyGroup(group);
-                    }}
-                    data-testid={`members__group-apply-btn--${group.id}`}
-                  >
-                    {t('apply_to_members')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setPreviewGroupId(previewGroupId === group.id ? null : group.id)}
-                    data-testid={`members__group-preview-btn--${group.id}`}
-                  >
-                    {t('preview_changes')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canManage}
-                    onClick={() => startEdit(group)}
-                    data-testid={`members__group-edit-btn--${group.id}`}
-                  >
-                    {t('edit')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={!canManage || deleteGroup.isPending}
-                    onClick={() => setGroupToDelete(group)}
-                    data-testid={`members__group-delete-btn--${group.id}`}
-                  >
-                    {t('delete')}
-                  </Button>
-                </div>
-              </div>
-              {previewGroupId === group.id && (
-                <div className="mt-3 rounded-sm border border-subtle bg-surface-high p-3">
-                  <p className="mb-2 text-xs text-tertiary">{t('group_preview_title')}</p>
-                  <div className="space-y-1">
-                    {previewDiffs.length === 0 ? (
-                      <p className="text-xs text-tertiary">{t('group_preview_empty')}</p>
-                    ) : (
-                      previewDiffs.map((diff) => (
-                        <div
-                          key={diff.memberId}
-                          className="flex items-center justify-between text-xs"
-                          data-testid={`members__group-preview-row--${group.id}--${diff.memberId}`}
-                        >
-                          <span className="text-primary">{diff.memberName}</span>
-                          <span className="text-tertiary">
-                            +{diff.addCount} / -{diff.removeCount}
-                          </span>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-              {lastApplyResult?.groupId === group.id && (
-                <div className="mt-2 rounded-sm border border-subtle bg-surface-high p-2 text-xs text-tertiary">
-                  <p data-testid={`members__group-apply-result--${group.id}`}>
-                    {t('group_apply_result', {
-                      applied: lastApplyResult.appliedCount,
-                      failed: lastApplyResult.failedMemberIds.length,
-                    })}
-                  </p>
-                  {lastApplyResult.failedDetails.length > 0 && (
-                    <div className="mt-2 space-y-1" data-testid={`members__group-apply-failed-list--${group.id}`}>
-                      {lastApplyResult.failedDetails.map((item) => (
-                        <p key={item.memberId}>
-                          {(memberNameMap.get(item.memberId) ?? item.memberId)}
-                          {item.message ? ` (${item.message})` : ''}
-                        </p>
-                      ))}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          void handleRetryFailed(group.id, lastApplyResult.failedMemberIds);
-                        }}
-                        disabled={applyGroupTemplate.isPending}
-                        data-testid={`members__group-retry-failed-btn--${group.id}`}
-                      >
-                        {t('retry_failed_members')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => {
-                          void handleCopyFailedList(group.id);
-                        }}
-                        data-testid={`members__group-copy-failed-btn--${group.id}`}
-                      >
-                        {t('copy_failed_members')}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleExportFailedList(group.id)}
-                        data-testid={`members__group-export-failed-btn--${group.id}`}
-                      >
-                        {t('export_failed_members')}
-                      </Button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
+      <GroupList
+        applyPending={applyGroupTemplate.isPending}
+        canManage={canManage}
+        deletePending={deleteGroup.isPending}
+        groups={groups}
+        lastApplyResult={lastApplyResult}
+        memberNameMap={memberNameMap}
+        previewDiffs={previewDiffs}
+        previewGroupId={previewGroupId}
+        t={t}
+        templateNameMap={templateNameMap}
+        onApply={(group) => {
+          void handleApplyGroup(group);
+        }}
+        onCopyFailed={(groupId) => {
+          void handleCopyFailedList(groupId);
+        }}
+        onDelete={setGroupToDelete}
+        onEdit={startEdit}
+        onExportFailed={handleExportFailedList}
+        onPreviewToggle={(groupId) => setPreviewGroupId(previewGroupId === groupId ? null : groupId)}
+        onRetryFailed={(groupId, failedMemberIds) => {
+          void handleRetryFailed(groupId, failedMemberIds);
+        }}
+      />
 
       <AlertDialog
         open={!!groupToDelete}

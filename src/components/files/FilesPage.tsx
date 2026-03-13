@@ -12,22 +12,9 @@
 import * as React from 'react';
 import Link from 'next/link';
 import {
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-  Download,
   Folder,
-  FolderPlus,
-  Plus,
-  RefreshCw,
-  Search,
-  Trash2,
-  Upload,
-  X,
-  Pencil,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Virtuoso } from 'react-virtuoso';
 
 import { cn } from '@/lib/utils';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -47,6 +34,8 @@ import {
 } from '@/components/ui/dialog';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { FileObjectDetailsPanel } from '@/components/files/FileObjectDetailsPanel';
+import { FilesLibrariesPane } from '@/components/files/files-page/FilesLibrariesPane';
+import { FilesBrowserPane } from '@/components/files/files-page/FilesBrowserPane';
 
 import type { FileObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
@@ -69,65 +58,19 @@ import { useFileUploadManager } from '@/components/files/hooks/use-file-upload-m
 import { useFileBatchOperations } from '@/components/files/hooks/use-file-batch-operations';
 import { useFileLibraryManager } from '@/components/files/hooks/use-file-library-manager';
 import { useFileFolderMoveManager } from '@/components/files/hooks/use-file-folder-move-manager';
-import { FileItemIcon } from '@/components/files/FileItemIcon';
-import { formatBytes } from '@/lib/utils/formatters';
+import { useFilesSelectionState } from '@/components/files/files-page/useFilesSelectionState';
+import {
+  basename,
+  buildCrumbs,
+  parentPrefixForKey,
+  parentPrefixForPrefix,
+  type SelectedRowId,
+} from '@/components/files/files-page/utils';
 
 export interface FilesPageProps {
   workspaceId: string;
   projectId: string;
   locale?: string;
-}
-
-type SelectedRowId = `p:${string}` | `o:${string}`;
-type FileSelectionMode = 'single' | 'multi';
-
-interface LibraryViewSnapshot {
-  prefix: string;
-  searchInput: string;
-  sortBy: FileSortBy;
-  sortOrder: FileSortOrder;
-  selectedIds: SelectedRowId[];
-  selectionMode: FileSelectionMode;
-}
-
-function rowId(item: FileObjectsListItem): SelectedRowId {
-  return item.kind === 'prefix' ? (`p:${item.prefix}` as const) : (`o:${item.key}` as const);
-}
-
-function parseSelectedRowId(id: SelectedRowId): { kind: 'prefix'; prefix: string } | { kind: 'object'; key: string } {
-  if (id.startsWith('p:')) return { kind: 'prefix', prefix: id.slice(2) };
-  return { kind: 'object', key: id.slice(2) };
-}
-
-function basename(path: string) {
-  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path;
-  const idx = trimmed.lastIndexOf('/');
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function buildCrumbs(prefix: string) {
-  const normalized = prefix && !prefix.endsWith('/') ? `${prefix}/` : prefix;
-  const parts = (normalized || '').split('/').filter(Boolean);
-  const crumbs: Array<{ label: string; prefix: string }> = [{ label: '', prefix: '' }];
-  let cur = '';
-  for (const p of parts) {
-    cur = `${cur}${p}/`;
-    crumbs.push({ label: p, prefix: cur });
-  }
-  return crumbs;
-}
-
-function parentPrefixForKey(key: string) {
-  const idx = key.lastIndexOf('/');
-  if (idx < 0) return '';
-  return key.slice(0, idx + 1);
-}
-
-function parentPrefixForPrefix(prefix: string) {
-  const normalized = prefix.endsWith('/') ? prefix.slice(0, -1) : prefix;
-  const idx = normalized.lastIndexOf('/');
-  if (idx < 0) return '';
-  return normalized.slice(0, idx + 1);
 }
 
 export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
@@ -152,11 +95,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     sortOrder,
     updateSort,
   } = useFilesUrlState(libraries, { resetBrowseStateOnMount: true });
-  const [selectedIds, setSelectedIds] = React.useState<SelectedRowId[]>([]);
-  const [selectionMode, setSelectionMode] = React.useState<FileSelectionMode>('single');
-  const [multiSelectAnchorIndex, setMultiSelectAnchorIndex] = React.useState<number | null>(null);
-  const librarySnapshotsRef = React.useRef<Record<string, LibraryViewSnapshot>>({});
-  const sessionResetAppliedRef = React.useRef(false);
 
   const listParams = React.useMemo(
     () => ({
@@ -176,12 +114,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   );
   const filteredItems = items;
 
-  const selected = React.useMemo(() => selectedIds.map(parseSelectedRowId), [selectedIds]);
-  const selectedObjects = React.useMemo(
-    () => selected.filter((s): s is { kind: 'object'; key: string } => s.kind === 'object'),
-    [selected],
-  );
-
   const createLibrary = useCreateFileLibrary();
   const updateLibrary = useUpdateFileLibrary();
   const deleteLibrary = useDeleteFileLibrary();
@@ -194,137 +126,37 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const crumbs = React.useMemo(() => buildCrumbs(prefix), [prefix]);
-
-  const clearSelection = React.useCallback(() => setSelectedIds([]), []);
-
-  const navigateToPrefix = React.useCallback((nextPrefix: string) => {
-    setPrefix(nextPrefix);
-    setSearchImmediately('');
-    clearSelection();
-  }, [clearSelection, setPrefix, setSearchImmediately]);
-
-  const snapshotCurrentLibraryView = React.useCallback(() => {
-    if (!selectedLibraryId) return;
-    librarySnapshotsRef.current[selectedLibraryId] = {
-      prefix,
-      searchInput,
-      sortBy,
-      sortOrder,
-      selectedIds,
-      selectionMode,
-    };
-  }, [prefix, searchInput, selectedIds, selectedLibraryId, selectionMode, sortBy, sortOrder]);
-
-  const restoreLibraryView = React.useCallback((libraryId: string) => {
-    const snapshot = librarySnapshotsRef.current[libraryId];
-    if (!snapshot) {
-      setPrefix('');
-      setSearchImmediately('');
-      updateSort('name', 'asc');
-      setSelectionMode('single');
-      setSelectedIds([]);
-      setMultiSelectAnchorIndex(null);
-      return;
-    }
-    setPrefix(snapshot.prefix);
-    setSearchImmediately(snapshot.searchInput);
-    updateSort(snapshot.sortBy, snapshot.sortOrder);
-    setSelectionMode(snapshot.selectionMode);
-    setSelectedIds(snapshot.selectedIds);
-    setMultiSelectAnchorIndex(null);
-  }, [setPrefix, setSearchImmediately, updateSort]);
-
-  const selectLibrary = React.useCallback((libraryId: string) => {
-    if (selectedLibraryId === libraryId) return;
-    snapshotCurrentLibraryView();
-    setSelectedLibraryId(libraryId);
-    restoreLibraryView(libraryId);
-  }, [restoreLibraryView, selectedLibraryId, setSelectedLibraryId, snapshotCurrentLibraryView]);
-
-  const toggleRow = React.useCallback((id: SelectedRowId) => {
-    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  }, []);
-
-  const activateSingleObject = React.useCallback((id: SelectedRowId) => {
-    setSelectedIds([id]);
-  }, []);
-
-  const enterMultiMode = React.useCallback(() => {
-    setSelectionMode('multi');
-  }, []);
-
-  const exitMultiMode = React.useCallback(() => {
-    setSelectionMode('single');
-    setSelectedIds([]);
-    setMultiSelectAnchorIndex(null);
-  }, []);
-
-  const visibleSelectedCount = React.useMemo(
-    () => filteredItems.filter((it) => selectedIds.includes(rowId(it))).length,
-    [filteredItems, selectedIds],
-  );
-  const isMultiMode = selectionMode === 'multi';
-  const hasSelection = selected.length > 0;
-  const allSelected = filteredItems.length > 0 && visibleSelectedCount === filteredItems.length;
-  const toggleAll = () => {
-    if (selectionMode !== 'multi') return;
-    setSelectedIds((prev) => (prev.length > 0 ? [] : filteredItems.map((it) => rowId(it))));
-  };
-
-  const handleRowActivate = React.useCallback(
-    (
-      event: React.MouseEvent<HTMLButtonElement>,
-      item: FileObjectsListItem,
-      id: SelectedRowId,
-      index: number,
-    ) => {
-      const withCmdCtrl = event.metaKey || event.ctrlKey;
-      const withShift = event.shiftKey;
-
-      if (withCmdCtrl || withShift) {
-        if (selectionMode !== 'multi') {
-          enterMultiMode();
-        }
-
-        const anchorIndex = multiSelectAnchorIndex ?? index;
-        if (withShift) {
-          const start = Math.min(anchorIndex, index);
-          const end = Math.max(anchorIndex, index);
-          const rangeIds = filteredItems.slice(start, end + 1).map((it) => rowId(it));
-          setSelectedIds((prev) => {
-            if (withCmdCtrl) {
-              const merged = new Set(prev);
-              rangeIds.forEach((rid) => merged.add(rid));
-              return Array.from(merged);
-            }
-            return rangeIds;
-          });
-        } else {
-          toggleRow(id);
-        }
-
-        setMultiSelectAnchorIndex(index);
-        return;
-      }
-
-      if (selectionMode === 'multi') {
-        toggleRow(id);
-        setMultiSelectAnchorIndex(index);
-        return;
-      }
-
-      activateSingleObject(id);
-      setMultiSelectAnchorIndex(index);
-    },
-    [
-      activateSingleObject,
-      enterMultiMode,
-      filteredItems,
-      multiSelectAnchorIndex,
-      selectionMode,
-      toggleRow,
-    ],
-  );
+  const {
+    allSelected,
+    clearSelection,
+    exitMultiMode,
+    handleRowActivate,
+    handleToggleRowCheckbox,
+    hasSelection,
+    isMultiMode,
+    navigateToPrefix,
+    selectLibrary,
+    selected,
+    selectedIds,
+    selectedObjects,
+    selectionMode,
+    setSelectedIds,
+    toggleAll,
+    visibleSelectedCount,
+  } = useFilesSelectionState({
+    filteredItems,
+    isFetching: objectsQuery.isFetching,
+    libraries,
+    prefix,
+    searchInput,
+    selectedLibraryId,
+    sortBy,
+    sortOrder,
+    setPrefix,
+    setSearchImmediately,
+    setSelectedLibraryId,
+    updateSort,
+  });
 
   const handleRowOpen = React.useCallback(
     (item: FileObjectsListItem) => {
@@ -335,48 +167,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     },
     [navigateToPrefix, selectionMode],
   );
-
-  React.useEffect(() => {
-    if (sessionResetAppliedRef.current) return;
-    sessionResetAppliedRef.current = true;
-    setSelectionMode('single');
-    setSelectedIds([]);
-    setMultiSelectAnchorIndex(null);
-  }, []);
-
-  React.useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return;
-      if (selectionMode !== 'multi') return;
-      event.preventDefault();
-      exitMultiMode();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [exitMultiMode, selectionMode]);
-
-  React.useEffect(() => {
-    if (objectsQuery.isFetching && filteredItems.length === 0) return;
-    const available = new Set(filteredItems.map((it) => rowId(it)));
-    setSelectedIds((prev) => {
-      const next = prev.filter((id) => available.has(id));
-      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
-        return prev;
-      }
-      return next;
-    });
-  }, [filteredItems, objectsQuery.isFetching]);
-
-  React.useEffect(() => {
-    const availableLibraryIds = new Set(libraries.map((lib) => lib.id));
-    const next: Record<string, LibraryViewSnapshot> = {};
-    for (const [libraryId, snapshot] of Object.entries(librarySnapshotsRef.current)) {
-      if (availableLibraryIds.has(libraryId)) {
-        next[libraryId] = snapshot;
-      }
-    }
-    librarySnapshotsRef.current = next;
-  }, [libraries]);
 
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
 
@@ -602,450 +392,78 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
             : 'grid-cols-[260px_minmax(0,1fr)_360px]',
         )}
       >
-        <div className="min-h-0 rounded-md border border-subtle bg-surface">
-          <div className="px-3 py-2 border-b border-subtle flex items-center justify-between">
-            <div className="text-sm text-primary">{t('file_manager.libraries')}</div>
-            {canManage && (
-              <Button
-                type="button"
-                size="icon"
-                variant="ghost"
-                onClick={() => {
-                  openCreateLibraryDialog();
-                }}
-                aria-label={t('file_manager.library_create')}
-                data-testid="files__library-create"
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
-          <div className="min-h-0 overflow-auto">
-            {libsLoading ? (
-              <div className="p-3 text-sm text-tertiary">{t('file_manager.loading')}</div>
-            ) : libraries.length === 0 ? (
-              <div className="p-3 text-sm text-tertiary">{t('file_manager.no_libraries')}</div>
-            ) : (
-              <div className="p-1" data-testid="files__library-list">
-                {libraries.map((lib) => {
-                  const active = lib.id === selectedLibraryId;
-                  return (
-                    <div
-                      key={lib.id}
-                      onClick={() => {
-                        selectLibrary(lib.id);
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key !== 'Enter' && e.key !== ' ') return;
-                        e.preventDefault();
-                        selectLibrary(lib.id);
-                      }}
-                      className={cn(
-                        'w-full text-left px-3 py-2 rounded-sm flex items-center justify-between gap-2',
-                        active ? 'bg-hover text-strong' : 'hover:bg-hover/70 text-primary',
-                      )}
-                      role="button"
-                      tabIndex={0}
-                      data-testid={`files__library-item--${lib.id}`}
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate text-sm">{lib.name}</div>
-                        {lib.bucket && <div className="truncate text-[11px] text-tertiary">{lib.bucket}</div>}
-                      </div>
-                      {canManage && (
-                        <div className="flex items-center gap-1 shrink-0">
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openRenameLibraryDialog(lib);
-                            }}
-                            aria-label={t('file_manager.library_rename')}
-                          >
-                            <Pencil className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            type="button"
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7"
-                            onClick={(e) => {
-                              e.preventDefault();
-                              e.stopPropagation();
-                              openDeleteLibraryDialog(lib);
-                            }}
-                            aria-label={t('file_manager.library_delete')}
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </Button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        </div>
+        <FilesLibrariesPane
+          t={t}
+          canManage={canManage}
+          libsLoading={libsLoading}
+          libraries={libraries}
+          selectedLibraryId={selectedLibraryId}
+          onSelectLibrary={selectLibrary}
+          onCreateLibrary={openCreateLibraryDialog}
+          onRenameLibrary={openRenameLibraryDialog}
+          onDeleteLibrary={openDeleteLibraryDialog}
+        />
 
-        <div
-          className="relative min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col"
-          onDragEnter={handleDropEnter}
-          onDragOver={handleDropOver}
-          onDragLeave={handleDropLeave}
+        <FilesBrowserPane
+          t={t}
+          prefix={prefix}
+          crumbs={crumbs}
+          searchInput={searchInput}
+          setSearchInput={setSearchInput}
+          selectedLibraryId={selectedLibraryId}
+          filteredItems={filteredItems}
+          selectedIds={selectedIds}
+          selectionMode={selectionMode}
+          selectedCount={selected.length}
+          selectedObjectsCount={selectedObjects.length}
+          allSelected={allSelected}
+          hasSelection={hasSelection}
+          uploadInProgress={uploadInProgress}
+          uploadCurrentFileName={uploadCurrentFileName}
+          uploadQueueCompleted={uploadQueueCompleted}
+          uploadQueueTotal={uploadQueueTotal}
+          uploadCurrentProgress={uploadCurrentProgress}
+          isDropActive={isDropActive}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          objectsQuery={objectsQuery}
+          fileInputRef={fileInputRef}
+          selectedForMove={selectedForMove}
+          moveNamePlaceholder={moveNamePlaceholder}
+          onNavigateToPrefix={navigateToPrefix}
+          onGoUp={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
+          onRefresh={() => {
+            void objectsQuery.refetch();
+          }}
+          onCreateFolder={() => setCreateFolderOpen(true)}
+          onUploadClick={handleUploadClick}
+          onCancelUpload={handleCancelUpload}
+          onRename={() => {
+            if (selected.length !== 1) return;
+            const target = selectedForMove;
+            if (!target) return;
+            const parent = target.kind === 'object'
+              ? parentPrefixForKey(target.key)
+              : parentPrefixForPrefix(target.prefix);
+            setMoveDestPrefix(parent);
+            setMoveName(moveNamePlaceholder);
+            setMoveOverwrite(false);
+            setMoveOpen(true);
+          }}
+          onDelete={() => setDeleteConfirmOpen(true)}
+          onDownload={handleDownload}
+          onClearSelection={clearSelection}
+          onToggleAll={toggleAll}
+          onSortHeaderClick={handleSortHeaderClick}
+          onLoadNextPage={loadNextObjectsPage}
           onDrop={handleDrop}
-          data-testid="files__dropzone"
-        >
-          <div className="px-3 py-2 border-b border-subtle flex items-center gap-2">
-            <div className="text-sm text-primary">{t('file_manager.location')}</div>
-            {prefix ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2"
-                onClick={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
-                data-testid="files__go-up"
-              >
-                <ArrowUp className="h-3.5 w-3.5 mr-1" />
-                {t('file_manager.go_up')}
-              </Button>
-            ) : null}
-            <div className="flex items-center gap-1 min-w-0">
-              {crumbs.map((c, idx) => (
-                <React.Fragment key={c.prefix || 'root'}>
-                  {idx > 0 && <span className="text-tertiary text-sm">/</span>}
-                  <button
-                    type="button"
-                    className="text-sm text-primary hover:underline truncate max-w-[160px]"
-                    onClick={() => navigateToPrefix(c.prefix)}
-                    data-testid={idx === 0 ? 'files__breadcrumb-root' : `files__breadcrumb--${idx}`}
-                  >
-                    {idx === 0 ? t('file_manager.root') : c.label}
-                  </button>
-                </React.Fragment>
-              ))}
-            </div>
-            <div className="ml-auto flex items-center gap-3">
-              <div className="relative w-[280px]">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
-                <Input
-                  value={searchInput}
-                  onChange={(e) => setSearchInput(e.target.value)}
-                  placeholder={t('file_manager.search_placeholder')}
-                  className="h-8 pl-9 pr-9 bg-surface-high/30"
-                  data-testid="files__search"
-                />
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-tertiary hover:text-primary"
-                  onClick={() => void objectsQuery.refetch()}
-                  disabled={!selectedLibraryId}
-                  data-testid="files__refresh"
-                  title={t('file_manager.refresh')}
-                  aria-label={t('file_manager.refresh')}
-                >
-                  <RefreshCw className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-              <div className="text-xs text-tertiary tabular-nums">
-                {filteredItems.length} {t('file_manager.items')}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCreateFolderOpen(true)}
-                disabled={!selectedLibraryId}
-                data-testid="files__new-folder"
-              >
-                <FolderPlus className="h-4 w-4 mr-2" />
-                {t('file_manager.new_folder')}
-              </Button>
-              <Button
-                type="button"
-                onClick={handleUploadClick}
-                disabled={!selectedLibraryId || uploadInProgress}
-                data-testid="files__upload"
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {t('file_manager.upload')}
-              </Button>
-            </div>
-          </div>
-
-          <div className="flex-1 min-h-0">
-            <div className="w-full h-full text-sm flex flex-col" data-testid="files__objects-table">
-              <div
-                className="h-10 border-b border-subtle px-3 flex items-center justify-between gap-2"
-                data-testid="files__selection-summary"
-              >
-                {isMultiMode ? (
-                  <div className="flex items-center gap-2 min-w-0 text-xs text-primary">
-                    <span>{t('file_manager.selected_count', { count: String(selected.length) })}</span>
-                    <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
-                  </div>
-                ) : selected.length === 1 ? (
-                  <div className="flex items-center gap-2 min-w-0 text-xs text-tertiary">
-                    <span>{t('file_manager.selected_count', { count: '1' })}</span>
-                  </div>
-                ) : (
-                  <div className="min-w-0 text-xs text-tertiary" data-testid="files__selection-shortcuts">
-                    {t('file_manager.selection_shortcuts')}
-                  </div>
-                )}
-
-                <div className="flex items-center gap-2 shrink-0">
-                  {uploadInProgress ? (
-                    <div className="flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[260px]" data-testid="files__upload-progress">
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[11px] text-primary truncate">
-                          {t('file_manager.uploading', {
-                            name: uploadCurrentFileName || '-',
-                            completed: String(uploadQueueCompleted),
-                            total: String(uploadQueueTotal),
-                          })}
-                        </div>
-                        <Progress value={uploadCurrentProgress} className="mt-1 h-1.5" />
-                      </div>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 px-2 text-xs"
-                        onClick={handleCancelUpload}
-                        data-testid="files__upload-cancel"
-                      >
-                        <X className="h-3.5 w-3.5 mr-1" />
-                        {t('file_manager.upload_cancel')}
-                      </Button>
-                    </div>
-                  ) : null}
-
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2.5 text-xs"
-                    onClick={() => {
-                      if (selected.length !== 1) return;
-                      const target = selectedForMove;
-                      if (!target) return;
-                      const parent = target.kind === 'object'
-                        ? parentPrefixForKey(target.key)
-                        : parentPrefixForPrefix(target.prefix);
-                      setMoveDestPrefix(parent);
-                      setMoveName(moveNamePlaceholder);
-                      setMoveOverwrite(false);
-                      setMoveOpen(true);
-                    }}
-                    disabled={!selectedLibraryId || selected.length !== 1}
-                    data-testid="files__rename"
-                  >
-                    <Pencil className="h-3.5 w-3.5 mr-1" />
-                    {t('file_manager.rename')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2.5 text-xs"
-                    onClick={() => setDeleteConfirmOpen(true)}
-                    disabled={!selectedLibraryId || selected.length === 0}
-                    data-testid="files__delete"
-                  >
-                    <Trash2 className="h-3.5 w-3.5 mr-1" />
-                    {t('file_manager.delete')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2.5 text-xs"
-                    onClick={handleDownload}
-                    disabled={!selectedLibraryId || selectedObjects.length === 0}
-                    data-testid="files__download"
-                  >
-                    <Download className="h-3.5 w-3.5 mr-1" />
-                    {selectedObjects.length > 1
-                      ? t('file_manager.download_selected', { count: String(selectedObjects.length) })
-                      : t('file_manager.download')}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="h-8 px-2 text-xs"
-                    onClick={clearSelection}
-                    disabled={!hasSelection}
-                    data-testid="files__clear-selection"
-                  >
-                    {t('file_manager.clear_selection')}
-                  </Button>
-                </div>
-              </div>
-
-              <div className="sticky top-0 z-10 bg-surface border-b border-subtle text-xs text-tertiary">
-                <div className={cn('grid', selectionMode === 'multi' ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]')}>
-                  {selectionMode === 'multi' ? (
-                    <div className="px-3 py-2">
-                      <input
-                        type="checkbox"
-                        checked={allSelected}
-                        onChange={toggleAll}
-                        aria-label={t('file_manager.select_all')}
-                      />
-                    </div>
-                  ) : null}
-                  <div className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSortHeaderClick('name')}
-                      data-testid="files__sort-header--name"
-                      data-active={sortBy === 'name' ? 'true' : 'false'}
-                      data-order={sortBy === 'name' ? sortOrder : 'none'}
-                    >
-                      {t('file_manager.col_name')}
-                      {sortBy !== 'name' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <div className="px-3 py-2 text-right">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSortHeaderClick('size_bytes')}
-                      data-testid="files__sort-header--size_bytes"
-                      data-active={sortBy === 'size_bytes' ? 'true' : 'false'}
-                      data-order={sortBy === 'size_bytes' ? sortOrder : 'none'}
-                    >
-                      {t('file_manager.col_size')}
-                      {sortBy !== 'size_bytes' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                  <div className="px-3 py-2">
-                    <button
-                      type="button"
-                      className="inline-flex items-center gap-1 hover:text-primary"
-                      onClick={() => handleSortHeaderClick('last_modified')}
-                      data-testid="files__sort-header--last_modified"
-                      data-active={sortBy === 'last_modified' ? 'true' : 'false'}
-                      data-order={sortBy === 'last_modified' ? sortOrder : 'none'}
-                    >
-                      {t('file_manager.col_modified')}
-                      {sortBy !== 'last_modified' ? <ArrowUpDown className="h-3.5 w-3.5" /> : sortOrder === 'asc' ? <ArrowUp className="h-3.5 w-3.5" /> : <ArrowDown className="h-3.5 w-3.5" />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex-1 min-h-0">
-                {objectsQuery.isLoading ? (
-                  <div className="px-3 py-8 text-center text-tertiary">{t('file_manager.loading')}</div>
-                ) : filteredItems.length === 0 ? (
-                  <div className="px-3 py-10 text-center text-tertiary">{t('file_manager.empty')}</div>
-                ) : (
-                  <Virtuoso
-                    style={{ height: '100%' }}
-                    data={filteredItems}
-                    endReached={loadNextObjectsPage}
-                    overscan={240}
-                    itemContent={(_index, it) => {
-                      const id = rowId(it);
-                      const checked = selectedIds.includes(id);
-                      return (
-                        <div
-                          key={id}
-                          className={cn(
-                            'grid border-b border-subtle hover:bg-hover/60',
-                            selectionMode === 'multi' ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]',
-                            checked && 'bg-hover',
-                          )}
-                          data-testid="files__object-row"
-                          data-row-id={id}
-                        >
-                          {selectionMode === 'multi' ? (
-                            <div className="px-3 py-2">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  if (selectionMode !== 'multi') {
-                                    enterMultiMode();
-                                  }
-                                  toggleRow(id);
-                                  setMultiSelectAnchorIndex(_index);
-                                }}
-                                aria-label={t('file_manager.select_row')}
-                              />
-                            </div>
-                          ) : null}
-                          <div className="px-3 py-2 min-w-0">
-                            <button
-                              type="button"
-                              className="flex items-center gap-2 w-full text-left"
-                              onClick={(event) => handleRowActivate(event, it, id, _index)}
-                              onDoubleClick={() => handleRowOpen(it)}
-                            >
-                              <FileItemIcon
-                                kind={it.kind}
-                                name={it.name}
-                                contentType={it.kind === 'object' ? it.content_type : undefined}
-                                className="h-4 w-4 text-tertiary shrink-0"
-                              />
-                              <span className="truncate" title={it.name} aria-label={it.name}>
-                                {it.name}
-                              </span>
-                            </button>
-                          </div>
-                          <div className="px-3 py-2 text-right text-tertiary tabular-nums">
-                            {it.kind === 'object' ? formatBytes(it.size_bytes) : ''}
-                          </div>
-                          <div className="px-3 py-2 text-tertiary truncate">
-                            {it.kind === 'object' ? new Date(it.last_modified).toLocaleString() : ''}
-                          </div>
-                        </div>
-                      );
-                    }}
-                    components={{
-                      Footer: () =>
-                        objectsQuery.hasNextPage ? (
-                          <div className="flex items-center justify-center py-3">
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={loadNextObjectsPage}
-                              disabled={objectsQuery.isFetchingNextPage}
-                              data-testid="files__load-more"
-                            >
-                              {objectsQuery.isFetchingNextPage
-                                ? t('file_manager.loading')
-                                : t('file_manager.load_more')}
-                            </Button>
-                          </div>
-                        ) : null,
-                    }}
-                  />
-                )}
-              </div>
-            </div>
-          </div>
-
-          {isDropActive && (
-            <div className="absolute inset-0 z-20 bg-surface/95 backdrop-blur-[1px] border-2 border-dashed border-accent flex items-center justify-center pointer-events-none" data-testid="files__dropzone-overlay">
-              <div className="text-center px-6">
-                <div className="text-sm font-medium text-strong">{t('file_manager.dropzone_title')}</div>
-                <div className="mt-1 text-xs text-tertiary">{t('file_manager.dropzone_hint')}</div>
-              </div>
-            </div>
-          )}
-        </div>
+          onDropEnter={handleDropEnter}
+          onDropOver={handleDropOver}
+          onDropLeave={handleDropLeave}
+          onRowActivate={(event, _item, id, index) => handleRowActivate(event, id, index)}
+          onRowOpen={handleRowOpen}
+          onToggleRowCheckbox={handleToggleRowCheckbox}
+        />
 
         <FileObjectDetailsPanel
           workspaceId={workspaceId}

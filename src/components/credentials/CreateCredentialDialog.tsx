@@ -11,12 +11,13 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Loader2, Eye, EyeOff } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import { useMutation } from '@tanstack/react-query';
 import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateCredentialRequest } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
+import { CredentialSecretField } from '@/components/credentials/CredentialSecretField';
 
 export interface CreateCredentialDialogProps {
   open: boolean;
@@ -111,31 +112,19 @@ export function CreateCredentialDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <label htmlFor="cred-value" className="text-sm font-medium text-foreground">
-              {t('create_dialog.value')}
-            </label>
-            <div className="relative">
-              <Input
-                id="cred-value"
-                type={showValue ? 'text' : 'password'}
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                placeholder={t('create_dialog.value_placeholder')}
-                disabled={createMutation.isPending}
-                required
-                className="pr-10"
-              />
-              <button
-                type="button"
-                onClick={() => setShowValue((v) => !v)}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-tertiary hover:text-foreground"
-                aria-label={showValue ? t('create_dialog.hide') : t('create_dialog.show')}
-              >
-                {showValue ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
+          <CredentialSecretField
+            id="cred-value"
+            label={t('create_dialog.value')}
+            value={value}
+            placeholder={t('create_dialog.value_placeholder')}
+            disabled={createMutation.isPending}
+            required
+            showValue={showValue}
+            showLabel={t('create_dialog.show')}
+            hideLabel={t('create_dialog.hide')}
+            onValueChange={setValue}
+            onToggleVisibility={() => setShowValue((v) => !v)}
+          />
 
           <div className="flex justify-end gap-2 pt-2">
             <Button

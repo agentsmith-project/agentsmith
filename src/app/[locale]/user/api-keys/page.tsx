@@ -2,19 +2,12 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Plus, Key, Trash2 } from 'lucide-react';
+import { Plus, Key } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { UserAPIKeyService, getApiClient } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
-import {
-  createColumnHelper,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import { DataTable } from '@/components/ui/data-table';
-import type { UserAPIKey } from '@/lib/api/types';
 import { handleErrorForToast } from '@/lib/api';
 import {
   AlertDialog,
@@ -26,46 +19,9 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { KeyCreatedDialog } from '@/components/api-keys/KeyCreatedDialog';
-import { Input } from '@/components/ui/input';
-import { StatusBadge } from '@/components/ui/status-badge';
-
-const columnHelper = createColumnHelper<UserAPIKey>();
-
-function formatRelativeTime(date: Date): string {
-  const now = new Date();
-  const diffMs = now.getTime() - date.getTime();
-
-  // Future dates (e.g. expires_at)
-  if (diffMs < 0) {
-    const abs = Math.abs(diffMs);
-    const mins = Math.floor(abs / 60000);
-    const hours = Math.floor(abs / 3600000);
-    const days = Math.floor(abs / 86400000);
-    if (mins < 1) return 'in a moment';
-    if (mins < 60) return `in ${mins} min`;
-    if (hours < 24) return `in ${hours} hours`;
-    if (days < 30) return `in ${days} days`;
-    return date.toLocaleDateString();
-  }
-
-  // Past dates
-  const diffMins = Math.floor(diffMs / 60000);
-  const diffHours = Math.floor(diffMs / 3600000);
-  const diffDays = Math.floor(diffMs / 86400000);
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins} min ago`;
-  if (diffHours < 24) return `${diffHours} hours ago`;
-  if (diffDays < 30) return `${diffDays} days ago`;
-  return date.toLocaleDateString();
-}
+import { CreateApiKeyDialog } from './_components/CreateApiKeyDialog';
+import { UserApiKeysTable } from './_components/UserApiKeysTable';
 
 export default function UserAPIKeysPage() {
   const t = useTranslations('user_keys');
@@ -116,98 +72,6 @@ export default function UserAPIKeysPage() {
     });
   };
 
-  const columns = React.useMemo(
-    () => [
-      columnHelper.accessor('key_prefix', {
-        header: t('prefix'),
-        cell: (info) => (
-          <div className="flex items-center gap-2">
-            <Key className="w-4 h-4 text-icon-default" />
-            <code className="text-sm font-mono text-primary">{info.getValue()}</code>
-          </div>
-        ),
-      }),
-      columnHelper.accessor('note', {
-        header: t('note'),
-        cell: (info) => (
-          <span className="text-primary">{info.getValue() || '—'}</span>
-        ),
-      }),
-      columnHelper.accessor('created_at', {
-        header: t('created'),
-        cell: (info) => {
-          const val = info.getValue();
-          return (
-            <span className="text-tertiary">
-              {val ? formatRelativeTime(new Date(val)) : '—'}
-            </span>
-          );
-        },
-      }),
-      columnHelper.accessor('last_used_at', {
-        header: t('last_used'),
-        cell: (info) => {
-          const val = info.getValue();
-          return (
-            <span className="text-tertiary">
-              {val ? formatRelativeTime(new Date(val)) : '—'}
-            </span>
-          );
-        },
-      }),
-      columnHelper.accessor('expires_at', {
-        header: t('expires'),
-        cell: (info) => {
-          const val = info.getValue();
-          return (
-            <span className="text-tertiary">
-              {val ? formatRelativeTime(new Date(val)) : t('expiration_never')}
-            </span>
-          );
-        },
-      }),
-      columnHelper.accessor('status', {
-        header: '',
-        cell: (info) => {
-          const status = info.getValue();
-          const badgeStatus =
-            status === 'active'
-              ? 'active'
-              : status === 'suspended'
-                ? 'paused'
-                : 'error';
-          return (
-            <StatusBadge status={badgeStatus}>
-              {status}
-            </StatusBadge>
-          );
-        },
-      }),
-      columnHelper.display({
-        id: 'actions',
-        header: '',
-        cell: ({ row }) =>
-          row.original.status === 'active' ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-error hover:text-error"
-              onClick={() => setRevokeKeyId(row.original.id)}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          ) : null,
-      }),
-    ],
-    [t]
-  );
-
-  const table = useReactTable({
-    data: keys,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
   return (
     <PageState state="success">
       <PageLayout>
@@ -240,58 +104,21 @@ export default function UserAPIKeysPage() {
             </Button>
           </div>
         ) : (
-          <DataTable table={table} testId="api-keys__table" />
+          <UserApiKeysTable items={keys} onRevoke={setRevokeKeyId} t={t} />
         )}
 
-      <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]" data-testid="api-keys__create-dialog">
-          <DialogHeader>
-            <DialogTitle>{t('create')}</DialogTitle>
-            <DialogDescription>
-              Create a new API key. You can add an optional note and expiration.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('note')}</label>
-              <Input
-                value={createNote}
-                onChange={(e) => setCreateNote(e.target.value)}
-                placeholder={t('note')}
-                disabled={createMutation.isPending}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">{t('expires')}</label>
-              <Input
-                type="number"
-                min="1"
-                value={createExpiresIn}
-                onChange={(e) => setCreateExpiresIn(e.target.value)}
-                placeholder={t('expiration_never')}
-                disabled={createMutation.isPending}
-              />
-              <p className="text-xs text-tertiary">Leave empty for no expiration (days)</p>
-            </div>
-          </div>
-          <div className="flex justify-end gap-2">
-            <Button
-              variant="outline"
-              onClick={() => setCreateDialogOpen(false)}
-              disabled={createMutation.isPending}
-            >
-              {commonT('cancel')}
-            </Button>
-            <Button
-              variant="action"
-              onClick={handleCreate}
-              disabled={createMutation.isPending}
-            >
-              {createMutation.isPending ? 'Creating...' : t('create')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+      <CreateApiKeyDialog
+        commonT={commonT}
+        createExpiresIn={createExpiresIn}
+        createNote={createNote}
+        isPending={createMutation.isPending}
+        open={createDialogOpen}
+        t={t}
+        onCreate={handleCreate}
+        onCreateExpiresInChange={setCreateExpiresIn}
+        onCreateNoteChange={setCreateNote}
+        onOpenChange={setCreateDialogOpen}
+      />
 
       <KeyCreatedDialog
         open={!!keyCreatedDialog}

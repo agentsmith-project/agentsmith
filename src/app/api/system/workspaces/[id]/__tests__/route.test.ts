@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createWorkspacePayload } from '../../__tests__/helpers';
 
 const sessionModule = vi.hoisted(() => ({
   isSystemAdminAuthenticated: vi.fn(),
@@ -46,25 +47,18 @@ describe('/api/system/workspaces/[id]', () => {
       new Request('http://localhost/api/system/workspaces/ws_alpha', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Alpha Workspace',
-          workspace_admin: 'ops-admin@example.com',
-          project_creators: ['creator@example.com'],
-          idp_url: 'https://login.example.com',
-          idp_realm: 'alpha',
-          idp_client_id: 'alpha-client',
-        }),
+        body: JSON.stringify(createWorkspacePayload({ workspace_admin: 'ops-admin@example.com' })),
       }),
       { params: Promise.resolve({ id: 'ws_alpha' }) },
     );
 
     expect(response.status).toBe(200);
     expect(registryModule.updateSystemWorkspace).toHaveBeenCalledWith(
-        'ws_alpha',
-        expect.objectContaining({
-          workspace_admin: 'ops-admin@example.com',
-          project_creators: ['creator@example.com'],
-        }),
+      'ws_alpha',
+      expect.objectContaining({
+        workspace_admin: 'ops-admin@example.com',
+        project_creators: ['creator@example.com'],
+      }),
     );
   });
 

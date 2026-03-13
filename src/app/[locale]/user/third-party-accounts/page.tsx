@@ -4,11 +4,6 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  createColumnHelper,
-  getCoreRowModel,
-  useReactTable,
-} from '@tanstack/react-table';
-import {
   UserExternalConnectionsAPI,
   getApiClient,
   handleErrorForToast,
@@ -20,76 +15,24 @@ import type {
   UserExternalConnectionFieldInput,
   UserExternalConnectionKind,
   UserExternalConnectionProvider,
-  UserExternalConnectionStatus,
 } from '@/lib/api';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
-import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { Plus, PlugZap, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus } from 'lucide-react';
 
-const columnHelper = createColumnHelper<UserExternalConnection>();
-
-const PROVIDERS: readonly { value: UserExternalConnectionProvider; labelKey: string }[] = [
-  { value: 'feishu', labelKey: 'provider_feishu' },
-  { value: 'jira', labelKey: 'provider_jira' },
-  { value: 'github', labelKey: 'provider_github' },
-  { value: 'gitee', labelKey: 'provider_gitee' },
-  { value: 'custom', labelKey: 'provider_custom' },
-];
-
-const CREATE_PROVIDERS = PROVIDERS.filter((item) => item.value !== 'feishu');
-
-const KINDS: readonly { value: UserExternalConnectionKind; labelKey: string }[] = [
-  { value: 'oauth_account', labelKey: 'kind_oauth_account' },
-  { value: 'secret_bundle', labelKey: 'kind_secret_bundle' },
-  { value: 'ssh_keypair', labelKey: 'kind_ssh_keypair' },
-];
-
-function statusBadgeTone(status: UserExternalConnectionStatus) {
-  if (status === 'active') return 'active';
-  if (status === 'expired' || status === 'reauth_required') return 'warning';
-  return 'error';
-}
-
-function createEmptyField(): UserExternalConnectionFieldInput {
-  return { key: '', value: '', description: '', secret: true };
-}
-
-function fieldValue(item: UserExternalConnection | null, key: string): string {
-  return item?.fields.find((field) => field.key === key)?.masked_value ?? '';
-}
-
-function allowedKindsForProvider(provider: UserExternalConnectionProvider): readonly UserExternalConnectionKind[] {
-  switch (provider) {
-    case 'feishu':
-      return ['oauth_account'];
-    case 'jira':
-      return ['secret_bundle'];
-    case 'github':
-      return ['secret_bundle', 'ssh_keypair'];
-    case 'gitee':
-      return ['ssh_keypair'];
-    case 'custom':
-      return ['secret_bundle'];
-  }
-}
-
-function defaultKindForProvider(provider: UserExternalConnectionProvider): UserExternalConnectionKind {
-  return allowedKindsForProvider(provider)[0] ?? 'secret_bundle';
-}
-
-function formatDateTime(value?: string | null): string {
-  if (!value) return '—';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString();
-}
+import { ConnectionFormFields } from './_components/ConnectionFormFields';
+import { FeishuOAuthCard } from './_components/FeishuOAuthCard';
+import { ThirdPartyAccountsTable } from './_components/ThirdPartyAccountsTable';
+import {
+  allowedKindsForProvider,
+  createEmptyField,
+  defaultKindForProvider,
+  fieldValue,
+} from './third-party-accounts-utils';
 
 export default function ThirdPartyAccountsPage() {
   const t = useTranslations('third_party_accounts');
@@ -294,7 +237,7 @@ export default function ThirdPartyAccountsPage() {
       custom_domain: provider === 'custom' ? customDomain.trim() || undefined : undefined,
       display_name: displayName.trim(),
       note: note.trim() || null,
-      status: 'active' as UserExternalConnectionStatus,
+      status: 'active' as const,
       fields: sanitizedFields,
       account_identity: undefined,
       scopes: undefined,
@@ -319,89 +262,6 @@ export default function ThirdPartyAccountsPage() {
       ...payloadBase,
     });
   };
-
-  const columns = React.useMemo(
-    () => [
-      columnHelper.accessor('display_name', {
-        header: t('table_name'),
-        cell: ({ row }) => (
-          <button
-            type="button"
-            className="text-left"
-            onClick={() => openEditDialog(row.original)}
-            data-testid={`third-party-accounts__row-${row.original.id}`}
-          >
-            <div className="font-medium text-primary">{row.original.display_name}</div>
-            <div className="text-xs text-tertiary">
-              {row.original.provider === 'custom'
-                ? row.original.custom_domain || t('provider_custom')
-                : t(`provider_${row.original.provider}`)}
-            </div>
-          </button>
-        ),
-      }),
-      columnHelper.accessor('kind', {
-        header: t('table_kind'),
-        cell: (info) => <span className="text-tertiary">{t(`kind_${info.getValue()}`)}</span>,
-      }),
-      columnHelper.accessor('status', {
-        header: t('table_status'),
-        cell: (info) => (
-          <StatusBadge status={statusBadgeTone(info.getValue())}>
-            {t(`status_${info.getValue()}`)}
-          </StatusBadge>
-        ),
-      }),
-      columnHelper.display({
-        id: 'fields',
-        header: t('table_fields'),
-        cell: ({ row }) => (
-          <span className="text-tertiary">
-            {row.original.fields.map((field: UserExternalConnection['fields'][number]) => field.key).join(', ') || '—'}
-          </span>
-        ),
-      }),
-      columnHelper.accessor('updated_at', {
-        header: t('table_updated'),
-        cell: (info) => <span className="text-tertiary">{formatDateTime(info.getValue())}</span>,
-      }),
-      columnHelper.display({
-        id: 'actions',
-        header: '',
-        cell: ({ row }) => (
-          <div className="flex items-center justify-end gap-1">
-            {row.original.provider === 'feishu' ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => handleRefresh(row.original.id)}
-                data-testid={`third-party-accounts__refresh-${row.original.id}`}
-                title={t('refresh_connection')}
-              >
-                <RefreshCw className="w-4 h-4" />
-              </Button>
-            ) : null}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="text-error hover:text-error"
-              onClick={() => setDeleteId(row.original.id)}
-              data-testid={`third-party-accounts__delete-${row.original.id}`}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        ),
-      }),
-    ],
-    [handleRefresh, t]
-  );
-
-  const table = useReactTable({
-    data: items,
-    columns,
-    getCoreRowModel: getCoreRowModel(),
-  });
 
   const isPending = createMutation.isPending || updateMutation.isPending;
   const canSubmit = (() => {
@@ -430,37 +290,22 @@ export default function ThirdPartyAccountsPage() {
             </Button>
           </div>
 
-          <div className="rounded-md border border-border bg-surface p-5 space-y-2">
-            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-              <PlugZap className="w-4 h-4 text-icon-default" />
-              {t('feishu_oauth_title')}
-            </div>
-            <p className="text-sm text-tertiary">{t('feishu_oauth_description')}</p>
-            <div className="grid gap-2 text-sm text-tertiary md:grid-cols-2">
-              <div>{t('callback_uri_label')}: <code className="text-primary">{feishuConfig?.callback_uri ?? '—'}</code></div>
-              <div>{t('interactive_login_label')}: <span className="text-primary">{feishuConfig?.interactive_login_required ? t('yes') : t('no')}</span></div>
-            </div>
-            <div className="pt-2">
-              <Button
-                variant="action"
-                onClick={() => startFeishuMutation.mutate()}
-                disabled={!feishuConfig?.auth_configured || startFeishuMutation.isPending}
-                data-testid="third-party-accounts__feishu-connect"
-              >
-                <PlugZap className="w-4 h-4" />
-                {t('connect_feishu')}
-              </Button>
-              {!feishuConfig?.auth_configured ? (
-                <p className="mt-2 text-xs text-warning">{t('feishu_not_configured')}</p>
-              ) : null}
-            </div>
-          </div>
+          <FeishuOAuthCard
+            authConfigured={feishuConfig?.auth_configured}
+            callbackUri={feishuConfig?.callback_uri}
+            interactiveLoginRequired={feishuConfig?.interactive_login_required}
+            connectPending={startFeishuMutation.isPending}
+            onConnect={() => startFeishuMutation.mutate()}
+            t={t}
+          />
 
           {isLoading ? (
             <div className="text-tertiary py-12">{commonT('loading')}</div>
           ) : items.length === 0 ? (
             <div className="py-20 text-center border border-border rounded-md bg-surface">
-              <PlugZap className="w-12 h-12 text-tertiary mx-auto mb-4" />
+              <div className="w-12 h-12 text-tertiary mx-auto mb-4 flex items-center justify-center rounded-full border border-dashed border-subtle">
+                <Plus className="w-5 h-5" />
+              </div>
               <p className="text-foreground font-medium mb-2">{t('empty_title')}</p>
               <p className="text-tertiary mb-4">{t('empty_description')}</p>
               <Button variant="action" onClick={openCreateDialog}>
@@ -469,7 +314,13 @@ export default function ThirdPartyAccountsPage() {
               </Button>
             </div>
           ) : (
-            <DataTable table={table} testId="third-party-accounts__table" />
+            <ThirdPartyAccountsTable
+              items={items}
+              onDelete={setDeleteId}
+              onEdit={openEditDialog}
+              onRefresh={handleRefresh}
+              t={t}
+            />
           )}
         </div>
 
@@ -483,161 +334,37 @@ export default function ThirdPartyAccountsPage() {
               <DialogDescription>{t('dialog_description')}</DialogDescription>
             </DialogHeader>
 
-            <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('provider_label')}</label>
-                <select
-                  value={provider}
-                  onChange={(event) => setProvider(event.target.value as UserExternalConnectionProvider)}
-                  disabled={Boolean(editing)}
-                  aria-label={t('provider_label')}
-                  className="w-full h-10 px-3 rounded-md border border-subtle bg-surface-high text-primary text-sm"
-                >
-                  {(editing ? PROVIDERS : CREATE_PROVIDERS).map((item) => (
-                    <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('kind_label')}</label>
-                <select
-                  value={kind}
-                  onChange={(event) => setKind(event.target.value as UserExternalConnectionKind)}
-                  disabled={Boolean(editing) || provider === 'feishu'}
-                  aria-label={t('kind_label')}
-                  className="w-full h-10 px-3 rounded-md border border-subtle bg-surface-high text-primary text-sm"
-                >
-                  {KINDS.filter((item) => allowedKindsForProvider(provider).includes(item.value)).map((item) => (
-                    <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
-                  ))}
-                </select>
-              </div>
-
-              {provider === 'custom' ? (
-                <div className="space-y-2 md:col-span-2">
-                  <label className="text-sm font-medium">{t('custom_domain_label')}</label>
-                  <Input aria-label={t('custom_domain_label')} value={customDomain} onChange={(event) => setCustomDomain(event.target.value)} placeholder={t('custom_domain_placeholder')} />
-                </div>
-              ) : null}
-
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">{t('display_name_label')}</label>
-                <Input aria-label={t('display_name_label')} value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder={t('display_name_placeholder')} />
-              </div>
-
-              <div className="space-y-2 md:col-span-2">
-                <label className="text-sm font-medium">{t('note_label')}</label>
-                <Textarea aria-label={t('note_label')} value={note} onChange={(event) => setNote(event.target.value)} rows={2} placeholder={t('note_placeholder')} />
-              </div>
-
-              {provider === 'jira' ? (
-                <div className="space-y-3 md:col-span-2">
-                  <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">{t('jira_base_url_label')}</label>
-                      <Input aria-label={t('jira_base_url_label')} value={jiraBaseUrl} onChange={(event) => setJiraBaseUrl(event.target.value)} placeholder={t('jira_base_url_placeholder')} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">{t('jira_token_label')}</label>
-                      <Input aria-label={t('jira_token_label')} type="password" value={jiraApiToken} onChange={(event) => setJiraApiToken(event.target.value)} placeholder={editing ? t('secret_keep_existing_hint') : t('jira_token_placeholder')} />
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {provider === 'github' && kind === 'secret_bundle' ? (
-                <div className="space-y-3 md:col-span-2">
-                  <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4 md:grid-cols-2">
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">{t('github_api_base_url_label')}</label>
-                      <Input aria-label={t('github_api_base_url_label')} value={githubApiBaseUrl} onChange={(event) => setGithubApiBaseUrl(event.target.value)} placeholder={t('github_api_base_url_placeholder')} />
-                    </div>
-                    <div className="space-y-2 md:col-span-2">
-                      <label className="text-sm font-medium">{t('github_token_label')}</label>
-                      <Input aria-label={t('github_token_label')} type="password" value={githubToken} onChange={(event) => setGithubToken(event.target.value)} placeholder={editing ? t('secret_keep_existing_hint') : t('github_token_placeholder')} />
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {(provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair' ? (
-                <div className="space-y-3 md:col-span-2">
-                  <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4">
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{t('git_host_optional_label')}</label>
-                      <Input aria-label={t('git_host_optional_label')} value={gitHost} onChange={(event) => setGitHost(event.target.value)} placeholder={provider === 'gitee' ? 'gitee.com' : 'github.com'} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{t('ssh_public_key_label')}</label>
-                      <Textarea aria-label={t('ssh_public_key_label')} value={sshPublicKey} onChange={(event) => setSshPublicKey(event.target.value)} rows={4} placeholder={t('ssh_public_key_placeholder')} />
-                    </div>
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium">{t('ssh_private_key_label')}</label>
-                      <Textarea aria-label={t('ssh_private_key_label')} value={sshPrivateKey} onChange={(event) => setSshPrivateKey(event.target.value)} rows={6} placeholder={editing ? t('secret_keep_existing_hint') : t('ssh_private_key_placeholder')} />
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-
-              {provider === 'custom' ? (
-                <div className="space-y-3 md:col-span-2">
-                  <div className="flex items-center justify-between">
-                    <label className="text-sm font-medium">{t('fields_label')}</label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setFields((current) => [...current, createEmptyField()])}
-                    >
-                      <Plus className="w-4 h-4" />
-                      {t('add_field')}
-                    </Button>
-                  </div>
-                  <div className="space-y-3">
-                    {fields.map((field, index) => (
-                      <div key={`${index}-${field.key}`} className="rounded-md border border-subtle bg-surface-high p-3 space-y-3">
-                        <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
-                          <Input
-                            value={field.key}
-                            onChange={(event) => setFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, key: event.target.value } : item))}
-                            placeholder={t('field_key_placeholder')}
-                          />
-                          <Input
-                            value={field.value}
-                            onChange={(event) => setFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, value: event.target.value } : item))}
-                            placeholder={editing && field.secret ? t('secret_keep_existing_hint') : t('field_value_placeholder')}
-                          />
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-error hover:text-error"
-                            onClick={() => setFields((current) => current.length > 1 ? current.filter((_, itemIndex) => itemIndex !== index) : [createEmptyField()])}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </div>
-                        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                          <Input
-                            value={field.description ?? ''}
-                            onChange={(event) => setFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, description: event.target.value } : item))}
-                            placeholder={t('field_description_placeholder')}
-                          />
-                          <label className="inline-flex items-center gap-2 text-sm text-tertiary">
-                            <input
-                              type="checkbox"
-                              checked={field.secret !== false}
-                              onChange={(event) => setFields((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, secret: event.target.checked } : item))}
-                            />
-                            {t('field_secret_label')}
-                          </label>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
+            <ConnectionFormFields
+              createEmptyField={createEmptyField}
+              customDomain={customDomain}
+              displayName={displayName}
+              editing={Boolean(editing)}
+              fields={fields}
+              gitHost={gitHost}
+              githubApiBaseUrl={githubApiBaseUrl}
+              githubToken={githubToken}
+              jiraApiToken={jiraApiToken}
+              jiraBaseUrl={jiraBaseUrl}
+              kind={kind}
+              note={note}
+              provider={provider}
+              sshPrivateKey={sshPrivateKey}
+              sshPublicKey={sshPublicKey}
+              t={t}
+              onCustomDomainChange={setCustomDomain}
+              onDisplayNameChange={setDisplayName}
+              onFieldsChange={setFields}
+              onGitHostChange={setGitHost}
+              onGithubApiBaseUrlChange={setGithubApiBaseUrl}
+              onGithubTokenChange={setGithubToken}
+              onJiraApiTokenChange={setJiraApiToken}
+              onJiraBaseUrlChange={setJiraBaseUrl}
+              onKindChange={setKind}
+              onNoteChange={setNote}
+              onProviderChange={setProvider}
+              onSshPrivateKeyChange={setSshPrivateKey}
+              onSshPublicKeyChange={setSshPublicKey}
+            />
 
             <div className="flex justify-end gap-2">
               <Button variant="outline" onClick={() => setCreateOpen(false)} disabled={isPending}>
@@ -669,7 +396,7 @@ export default function ThirdPartyAccountsPage() {
                 <label className="text-sm font-medium">{t('callback_url_input_label')}</label>
                 <Textarea
                   value={feishuCallbackUrl}
-                  onChange={(event) => setFeishuCallbackUrl(event.target.value)}
+                  onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setFeishuCallbackUrl(event.target.value)}
                   rows={4}
                   placeholder={t('callback_url_input_placeholder')}
                 />

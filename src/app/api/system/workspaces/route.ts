@@ -5,20 +5,7 @@ import {
   listSystemWorkspaces,
   type UpsertSystemWorkspaceInput,
 } from '@/lib/system-admin/workspace-registry';
-
-function badRequest(message: string) {
-  return NextResponse.json({ error_code: 'VALIDATION_ERROR', error_message: message }, { status: 400 });
-}
-
-function validateInput(body: UpsertSystemWorkspaceInput | null): UpsertSystemWorkspaceInput | null {
-  if (!body) return null;
-  if (!body.name?.trim()) return null;
-  if (!body.workspace_admin?.trim()) return null;
-  if (!body.idp_url?.trim()) return null;
-  if (!body.idp_realm?.trim()) return null;
-  if (!body.idp_client_id?.trim()) return null;
-  return body;
-}
+import { badSystemWorkspaceRequest, validateSystemWorkspaceInput } from './_shared/validation';
 
 export async function GET() {
   const authenticated = await isSystemAdminAuthenticated();
@@ -35,9 +22,9 @@ export async function POST(request: Request) {
   }
 
   const body = (await request.json().catch(() => null)) as UpsertSystemWorkspaceInput | null;
-  const input = validateInput(body);
+  const input = validateSystemWorkspaceInput(body);
   if (!input) {
-    return badRequest('invalid_system_workspace_payload');
+    return badSystemWorkspaceRequest('invalid_system_workspace_payload');
   }
 
   try {

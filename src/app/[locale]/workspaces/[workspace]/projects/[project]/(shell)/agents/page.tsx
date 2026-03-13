@@ -7,30 +7,24 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
-import Link from 'next/link';
-import { useQuery, useMutation, useQueryClient, type UseMutationResult } from '@tanstack/react-query';
-import { useReactTable, getCoreRowModel, createColumnHelper } from '@tanstack/react-table';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
-import { Bot, Plus, Key, Pencil, Power, PowerOff, Trash2 } from 'lucide-react';
+import { Bot, Plus } from 'lucide-react';
 import { getApiClient, AgentAPI } from '@/lib/api';
 import type { Agent, AgentDiagnostics } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { PageLoading, EmptyState } from '@/components/ui/loading';
-import { StatusBadge } from '@/components/ui/status-badge';
-import { DataTable } from '@/components/ui/data-table';
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import { AgentKeysDialog } from '@/components/api-keys/AgentKeysDialog';
 import { CreateAgentDialog } from '@/components/agents/CreateAgentDialog';
 import { EditAgentDialog } from '@/components/agents/EditAgentDialog';
-import { AgentDiagnosticsPanel } from '@/components/agents/AgentDiagnosticsPanel';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { cn } from '@/lib/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -41,241 +35,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { AgentDetailsCard } from './_components/AgentDetailsCard';
+import { AgentsHeaderActions } from './_components/AgentsHeaderActions';
+import { AgentsTable } from './_components/AgentsTable';
+import type { ResolvedAgentsPageParams } from './agents-page-types';
 
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
-}
-
-const columnHelper = createColumnHelper<Agent>();
-
-type UpdateMutation = UseMutationResult<Agent, Error, { agentId: string; data: { name?: string; status?: 'enabled' | 'disabled' } }>;
-
-function formatDuration(sec?: number): string {
-  if (sec == null || sec < 0) return '—';
-  if (sec < 60) return `${sec}s`;
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return s > 0 ? `${m}m ${s}s` : `${m}m`;
-}
-
-function createAgentColumns(
-  t: (key: string) => string,
-  updateAgentMutation: UpdateMutation,
-  canManageAgents: boolean,
-  canIssueAgentKeys: boolean,
-  onKeysClick: (agent: Agent) => void,
-  onEditClick: (agent: Agent) => void,
-  onDeleteRequest: (agent: Agent) => void
-) {
-  return [
-  columnHelper.accessor('name', {
-    header: 'Name',
-    cell: (info) => (
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-sm bg-surface-high flex items-center justify-center">
-          <Bot className="w-4 h-4 text-icon-default" />
-        </div>
-        <div className="flex flex-col">
-          <span className="text-foreground font-medium">{info.getValue()}</span>
-          {info.row.original.description && (
-            <span className="text-xs text-tertiary line-clamp-1">
-              {info.row.original.description}
-            </span>
-          )}
-        </div>
-      </div>
-    ),
-  }),
-  columnHelper.accessor('mode', {
-    header: 'Mode',
-    cell: (info) => (
-      <span className="text-tertiary text-sm capitalize">
-        {info.getValue()}
-      </span>
-    ),
-  }),
-  columnHelper.display({
-    id: 'presence',
-    header: 'Presence',
-    cell: (info) => {
-      const agent = info.row.original;
-      const presence = agent.presence ?? 'offline';
-      const label = agent.mode === 'internal' && presence === 'online'
-        ? t('presence_running')
-        : presence === 'managed'
-          ? t('presence_managed')
-          : presence === 'online'
-            ? t('presence_online')
-            : t('presence_offline');
-      const dotClass = agent.mode === 'internal' && presence === 'online'
-        ? 'bg-success'
-        : presence === 'managed'
-          ? 'bg-accent'
-          : presence === 'online'
-            ? 'bg-success'
-            : 'bg-tertiary';
-      return (
-        <span className="inline-flex items-center gap-2 text-xs text-tertiary">
-          <span className={`inline-block h-2 w-2 rounded-full ${dotClass}`} />
-          {label}
-        </span>
-      );
-    },
-  }),
-  columnHelper.display({
-    id: 'mode_stats',
-    header: 'Stats',
-    cell: (info) => {
-      const agent = info.row.original;
-      if (agent.mode === 'external') {
-        const s = agent.external_stats;
-        return (
-          <div className="text-xs text-tertiary space-y-0.5">
-            {s?.source_ip != null && <div>IP: {s.source_ip}</div>}
-            {s?.connection_duration_sec != null && (
-              <div>{t('connection_duration')}: {formatDuration(s.connection_duration_sec)}</div>
-            )}
-            {s?.qpm != null && <div>QPM: {s.qpm}</div>}
-            {!s?.source_ip && !s?.connection_duration_sec && s?.qpm == null && <span>—</span>}
-          </div>
-        );
-      }
-      // internal
-      const s = agent.internal_stats;
-      return (
-        <div className="text-xs text-tertiary space-y-0.5">
-          {s?.pod_count != null && <div>{t('pods_running')}: {s.pod_count}</div>}
-          {s?.desired_replicas != null && <div>{t('desired_replicas')}: {s.desired_replicas}</div>}
-          {s?.pod_count == null && s?.desired_replicas == null && <span>—</span>}
-        </div>
-      );
-    },
-  }),
-  columnHelper.display({
-    id: 'owner',
-    header: 'Owner',
-    cell: (info) => {
-      const a = info.row.original;
-      const ownerLabel = a.owner_name ?? a.owner_id ?? '—';
-      const adminLabel = a.admin_name ?? a.admin_id;
-      return (
-        <div className="text-xs text-tertiary space-y-0.5">
-          <div>{ownerLabel}</div>
-          {adminLabel && adminLabel !== ownerLabel && (
-            <div className="text-tertiary/80">{t('admin')}: {adminLabel}</div>
-          )}
-        </div>
-      );
-    },
-  }),
-  columnHelper.display({
-    id: 'interaction',
-    header: 'Interaction',
-    cell: (info) => {
-      const mode = info.row.original.interaction_mode;
-      if (!mode) return <span className="text-tertiary text-xs">—</span>;
-      return (
-        <span className="text-tertiary text-xs capitalize">
-          {mode === 'both' ? t('interaction_both') : t(`interaction_${mode}`)}
-        </span>
-      );
-    },
-  }),
-  columnHelper.accessor('status', {
-    header: 'Status',
-    cell: (info) => <StatusBadge status={info.getValue() === 'enabled' ? 'active' : 'paused'} />,
-  }),
-  columnHelper.display({
-    id: 'actions',
-    header: '',
-    cell: (info) => {
-      const agent = info.row.original;
-      const isEnabled = agent.status === 'enabled';
-      const isExternal = agent.mode === 'external';
-      return (
-        <div className="flex items-center justify-end gap-1.5 min-w-[140px]">
-          {canManageAgents && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={(event) => {
-                event.stopPropagation();
-                onEditClick(agent);
-              }}
-              className="h-8 w-8 text-icon-default hover:bg-hover"
-              title={t('edit')}
-              aria-label={t('edit')}
-            >
-              <Pencil className="w-4 h-4" />
-            </Button>
-          )}
-          {isExternal && canIssueAgentKeys && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              onClick={(event) => {
-                event.stopPropagation();
-                onKeysClick(agent);
-              }}
-              className="h-8 w-8 text-icon-default hover:bg-hover"
-              title={t('keys_title')}
-              aria-label={t('keys_title')}
-            >
-              <Key className="w-4 h-4" />
-            </Button>
-          )}
-          {canManageAgents && (
-            <>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDeleteRequest(agent);
-                }}
-                className="h-8 w-8 text-error hover:bg-hover"
-                title={t('delete')}
-                aria-label={t('delete')}
-              >
-                <Trash2 className="w-4 h-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  updateAgentMutation.mutate({
-                    agentId: agent.id,
-                    data: { status: isEnabled ? 'disabled' : 'enabled' },
-                  });
-                }}
-                disabled={updateAgentMutation.isPending}
-                className="h-8 gap-1.5 px-3 text-xs"
-                title={isEnabled ? t('disable_hint') : t('enable_hint')}
-              >
-                {isEnabled ? (
-                  <>
-                    <PowerOff className="w-3.5 h-3.5 text-warning" />
-                    {t('disable')}
-                  </>
-                ) : (
-                  <>
-                    <Power className="w-3.5 h-3.5 text-success" />
-                    {t('enable')}
-                  </>
-                )}
-              </Button>
-            </>
-          )}
-        </div>
-      );
-    },
-  }),
-  ];
 }
 
 export default function AgentsPage({ params }: AgentsPageProps) {
@@ -284,7 +50,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
+  const [resolvedParams, setResolvedParams] = useState<ResolvedAgentsPageParams | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
   const [keysDialogAgent, setKeysDialogAgent] = useState<Agent | null>(null);
@@ -379,29 +145,6 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     setDetailsOpen(true);
   }, [agents, searchParams]);
 
-  const agentColumns = createAgentColumns(
-    t,
-    updateAgentMutation,
-    canManageAgents,
-    canIssueAgentKeys,
-    (agent) => setKeysDialogAgent(agent),
-    (agent) => {
-      setEditDialogAgent(agent);
-      setDetailsAgent(agent);
-      setDetailsOpen(true);
-    },
-    (agent) => {
-      setAgentToDelete(agent);
-      setDeleteConfirmOpen(true);
-    },
-  );
-
-  const table = useReactTable({
-    data: agents,
-    columns: agentColumns,
-    getCoreRowModel: getCoreRowModel(),
-  });
-
   if (!resolvedParams) {
     return (
       <PageState state="loading">
@@ -439,31 +182,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/chat`}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="agents__open-chat"
-                >
-                  {t('open_chat')}
-                </Link>
-                <Link
-                  href={`${basePath}/notebook`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="agents__open-notebook"
-                >
-                  {t('open_notebook')}
-                </Link>
-                <Link
-                  href={`${basePath}/endpoints`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="agents__open-endpoints"
-                >
-                  {t('open_endpoints')}
-                </Link>
-              </div>
-            )}
+            actions={<AgentsHeaderActions basePath={basePath} t={t} />}
           />
         )}
         toolbar={(
@@ -496,50 +215,38 @@ export default function AgentsPage({ params }: AgentsPageProps) {
               } : undefined}
             />
           ) : (
-            <DataTable
-              table={table}
-              testId="agents__table"
+            <AgentsTable
+              agents={agents}
+              canIssueAgentKeys={canIssueAgentKeys}
+              canManageAgents={canManageAgents}
+              isUpdating={updateAgentMutation.isPending}
+              t={t}
+              onDeleteRequest={(agent) => {
+                setAgentToDelete(agent);
+                setDeleteConfirmOpen(true);
+              }}
+              onEditClick={(agent) => {
+                setEditDialogAgent(agent);
+                setDetailsAgent(agent);
+                setDetailsOpen(true);
+              }}
+              onKeysClick={setKeysDialogAgent}
               onRowClick={(agent) => {
                 setDetailsAgent(agent);
                 setDetailsOpen(true);
               }}
+              onStatusToggle={(input) => updateAgentMutation.mutate(input)}
             />
           )}
 
           {detailsAgent && detailsOpen && (
-            <div className="rounded-md border border-border bg-surface p-6 space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-lg font-semibold text-foreground">{t('detail_title')}</h2>
-                  <p className="text-sm text-tertiary">{detailsAgent.name}</p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  className="text-sm text-tertiary"
-                  onClick={() => setDetailsOpen(false)}
-                >
-                  {t('cancel')}
-                </Button>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-xs text-tertiary">{t('mode_external')}</p>
-                  <p className="text-foreground capitalize">{detailsAgent.mode}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-tertiary">{t('interaction_mode')}</p>
-                  <p className="text-foreground capitalize">{detailsAgent.interaction_mode ?? '—'}</p>
-                </div>
-              </div>
-
-              <div>
-                <h3 className="text-sm font-medium text-foreground mb-2">{t('detail_diagnostics')}</h3>
-                <AgentDiagnosticsPanel diagnostics={diagnosticsData as AgentDiagnostics | null} loading={diagnosticsLoading} />
-              </div>
-            </div>
+            <AgentDetailsCard
+              agent={detailsAgent}
+              diagnostics={diagnosticsData as AgentDiagnostics | null}
+              diagnosticsLoading={diagnosticsLoading}
+              t={t}
+              onClose={() => setDetailsOpen(false)}
+            />
           )}
         </div>
 

@@ -27,53 +27,37 @@ import { PageLoading } from '@/components/ui/loading';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  useMembers,
-  useProjectGroups,
-  useResourcePolicy,
-  useUpdateResourcePolicy,
-} from '@/lib/hooks/use-members';
+import { buttonVariants } from '@/components/ui/button';
+import { useMembers, useProjectGroups, useResourcePolicy, useUpdateResourcePolicy } from '@/lib/hooks/use-members';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { useAuthorizationCheck } from '@/lib/hooks/use-governance-explainability';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import {
   getResourcePolicyStatus,
-  getRuleDefinitionsForResource,
-  getRuleLabel,
-  mergeRuleSets,
 } from '@/lib/constants/resource-policy';
 import {
   findDuplicateSubjects,
   findStaleSubjectRowIds,
   normalizeSubjectId,
-  type EditableSubjectDraft,
 } from '@/lib/utils/resource-policy-subjects';
 import {
   buildDraftRuleValues,
   buildRuleSetFromDraft,
   createSubjectRowId,
-  formatRuleValue,
-  mergeRuleSources,
 } from '@/lib/resource-policy/editor-utils';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 import { cn } from '@/lib/utils';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
+import { ResourcePolicyHeaderActions } from './_components/ResourcePolicyHeaderActions';
+import { ResourcePolicyEditor } from './_components/ResourcePolicyEditor';
+import type { EditableSubject } from './resource-policy-page-types';
+import { getDefaultActionForResourceType } from './resource-policy-page-utils';
 
 interface ResourcePolicyPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
-
-type EditableSubject = EditableSubjectDraft & {
-  rowId: string;
-  subject_type: 'group' | 'user';
-  subject_id: string;
-  draftRules: Partial<Record<PolicyRuleKey, string>>;
-  existingRateRules: PolicyRule[];
-  existingSpendingRules: PolicyRule[];
-};
 
 export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) {
   const tNav = useTranslations('nav');
@@ -331,12 +315,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     });
   const allowListInvalid = accessMode === 'allow_list' && validSubjects.length === 0;
   const hasDuplicateSubjects = duplicateSubjects.length > 0;
-  const draftRootRuleSet = buildRuleSetFromDraft(
-    selectedType,
-    selectedPolicy?.rate_limits?.rules,
-    selectedPolicy?.spending_limits?.rules,
-    rootDraftRules
-  );
 
   const handleSave = async () => {
     if (!selectedResource || !selectedPolicy) return;
@@ -404,7 +382,6 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   };
 
   const explainOptions = explainSubjectType === 'user' ? userOptions : groupOptions;
-  const explainMatchedPolicy = authorizationResult?.matched_policy;
 
   if (!resolvedParams) {
     return (
@@ -453,29 +430,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
               title={tNav('resource_policy')}
               subtitle={tResource('subtitle')}
               actions={(
-                <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`${basePath}/members`}
-                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                    data-testid="resource-policy__open-members"
-                  >
-                    {tResource('open_members')}
-                  </Link>
-                  <Link
-                    href={`${basePath}/credentials`}
-                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                    data-testid="resource-policy__open-credentials"
-                  >
-                    {tResource('open_credentials')}
-                  </Link>
-                  <Link
-                    href={`${basePath}/audit`}
-                    className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                    data-testid="resource-policy__open-audit"
-                  >
-                    {tResource('open_audit')}
-                  </Link>
-                </div>
+                <ResourcePolicyHeaderActions
+                  basePath={basePath}
+                  openMembersLabel={tResource('open_members')}
+                  openCredentialsLabel={tResource('open_credentials')}
+                  openAuditLabel={tResource('open_audit')}
+                />
               )}
             />
           )}
@@ -504,29 +464,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
             title={tNav('resource_policy')}
             subtitle={tResource('subtitle')}
             actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/members`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="resource-policy__open-members"
-                >
-                  {tResource('open_members')}
-                </Link>
-                <Link
-                  href={`${basePath}/credentials`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="resource-policy__open-credentials"
-                >
-                  {tResource('open_credentials')}
-                </Link>
-                <Link
-                  href={`${basePath}/audit`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="resource-policy__open-audit"
-                >
-                  {tResource('open_audit')}
-                </Link>
-              </div>
+              <ResourcePolicyHeaderActions
+                basePath={basePath}
+                openMembersLabel={tResource('open_members')}
+                openCredentialsLabel={tResource('open_credentials')}
+                openAuditLabel={tResource('open_audit')}
+              />
             )}
           />
         )}
@@ -545,489 +488,57 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
               onSelectResource={setSelectedResource}
               getRowPolicyState={getRowPolicyState}
             />
-
-            <div
-              className="rounded-sm border border-subtle bg-surface-high p-4 space-y-4"
-              data-testid="resource-policy__editor"
-            >
-              {!selectedResource ? (
-                <p className="text-sm text-tertiary">{tResource('select_resource')}</p>
-              ) : policyLoading ? (
-                <p className="text-sm text-tertiary">{tResource('loading_policy')}</p>
-              ) : (
-                <>
-                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-1">
-                    <h3 className="text-sm font-medium text-foreground">{selectedResource.name}</h3>
-                    <p className="text-xs text-tertiary">{tResource(`resource_type.${selectedResource.type}`)}</p>
-                    <p className="text-xs text-tertiary">
-                      {tResource(`editor_hint.${selectedResource.type}`)}
-                    </p>
-                  </div>
-
-                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-2">
-                    <label htmlFor="resource-policy-access-mode" className="text-xs text-tertiary">
-                      {tResource('access_mode.label')}
-                    </label>
-                    <select
-                      id="resource-policy-access-mode"
-                      value={accessMode}
-                      onChange={(event) =>
-                        setAccessMode(event.target.value as 'allow_all_members' | 'allow_list')
-                      }
-                      disabled={!canUpdatePolicy}
-                      className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground"
-                      data-testid="resource-policy__access-mode"
-                    >
-                      <option value="allow_all_members">{tResource('access_mode.allow_all_members')}</option>
-                      <option value="allow_list">{tResource('access_mode.allow_list')}</option>
-                    </select>
-                    <p className="text-xs text-tertiary">
-                      {tResource(`access_mode_description.${accessMode}`)}
-                    </p>
-                  </div>
-
-                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
-                    <div className="flex items-center justify-between flex-wrap gap-2">
-                      <p className="text-xs text-tertiary">{tResource('subjects.title')}</p>
-                      <div className="flex items-center gap-2">
-                        {hasStaleSubjects ? (
-                          <Button
-                            type="button"
-                            onClick={removeStaleSubjects}
-                            disabled={!canUpdatePolicy}
-                            variant="outline"
-                            size="sm"
-                            className="h-8 px-3 text-xs"
-                            data-testid="resource-policy__remove-stale"
-                          >
-                            {tResource('subjects.remove_stale')}
-                          </Button>
-                        ) : null}
-                        <Button
-                          type="button"
-                          onClick={addSubject}
-                          disabled={!canUpdatePolicy}
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-3 text-xs"
-                          data-testid="resource-policy__add-subject"
-                        >
-                          {tResource('subjects.add')}
-                        </Button>
-                      </div>
-                    </div>
-                    {subjects.length === 0 ? (
-                      <p className="text-xs text-tertiary">{tResource('subjects.empty')}</p>
-                    ) : (
-                      <div className="space-y-2" data-testid="resource-policy__subjects">
-                        {subjects.map((subject) => (
-                          <div
-                            key={subject.rowId}
-                            className={`rounded-sm border bg-surface p-3 space-y-2 ${
-                              duplicateSubjectRowIds.has(subject.rowId) ? 'border-error/60' : 'border-subtle'
-                            } ${staleSubjectRowIds.includes(subject.rowId) ? 'border-warning/50' : ''}`}
-                            data-testid={`resource-policy__subject--${subject.rowId}`}
-                          >
-                            <div className="flex items-center justify-between gap-2 flex-wrap">
-                              <div className="grid gap-2 md:grid-cols-[120px_1fr_auto] flex-1 min-w-0">
-                              <select
-                                value={subject.subject_type}
-                                onChange={(event) =>
-                                  updateSubject(subject.rowId, {
-                                    subject_type: event.target.value as 'group' | 'user',
-                                    subject_id: '',
-                                  })
-                                }
-                                disabled={!canUpdatePolicy}
-                                className="h-9 rounded-sm border border-subtle bg-surface-high px-2 text-sm text-foreground"
-                                data-testid="resource-policy__subject-type"
-                              >
-                                <option value="user">{tResource('subjects.user')}</option>
-                                <option value="group">{tResource('subjects.group')}</option>
-                              </select>
-                              <select
-                                value={subject.subject_id}
-                                onChange={(event) =>
-                                  updateSubject(subject.rowId, { subject_id: event.target.value })
-                                }
-                                disabled={!canUpdatePolicy}
-                                className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
-                                data-testid="resource-policy__subject-id-select"
-                              >
-                                <option value="">{tResource('subjects.select_subject')}</option>
-                                {(subject.subject_type === 'user' ? userOptions : groupOptions).map((option) => (
-                                  <option key={option.id} value={option.id}>
-                                    {option.label}
-                                  </option>
-                                ))}
-                                {subject.subject_id &&
-                                !(subject.subject_type === 'user' ? userOptions : groupOptions).some(
-                                  (option) => option.id === subject.subject_id
-                                ) ? (
-                                  <option value={subject.subject_id}>{subject.subject_id}</option>
-                                ) : null}
-                              </select>
-                              <Button
-                                type="button"
-                                onClick={() => removeSubject(subject.rowId)}
-                                disabled={!canUpdatePolicy}
-                                variant="outline"
-                                size="sm"
-                                className="h-9 px-3 text-xs"
-                              >
-                                {tResource('subjects.remove')}
-                              </Button>
-                              </div>
-                            {staleSubjectRowIds.includes(subject.rowId) ? (
-                              <span
-                                className="shrink-0 text-xs text-warning border border-warning/50 rounded px-2 py-0.5"
-                                data-testid={`resource-policy__subject-stale--${subject.rowId}`}
-                              >
-                                {tResource('subjects.stale')}
-                              </span>
-                            ) : null}
-                            </div>
-                            {duplicateSubjectRowIds.has(subject.rowId) ? (
-                              <p
-                                className="text-xs text-error"
-                                data-testid={`resource-policy__subject-duplicate--${subject.rowId}`}
-                              >
-                                {tResource('subjects.duplicate')}
-                              </p>
-                            ) : null}
-                            <div className="grid gap-2 md:grid-cols-2">
-                              {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
-                                <input
-                                  key={rule.key}
-                                  type="number"
-                                  min={1}
-                                  value={subject.draftRules[rule.key] ?? ''}
-                                  onChange={(event) =>
-                                    updateSubject(subject.rowId, {
-                                      draftRules: {
-                                        ...subject.draftRules,
-                                        [rule.key]: event.target.value,
-                                      },
-                                    })
-                                  }
-                                  disabled={!canUpdatePolicy}
-                                  placeholder={tResource(rule.subjectPlaceholderKey)}
-                                  className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
-                                />
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3">
-                    {getRuleDefinitionsForResource(selectedResource.type).map((rule) => (
-                      <div key={rule.key} className="space-y-2">
-                        <label htmlFor={rule.rootInputId} className="text-xs text-tertiary">
-                          {tResource(rule.labelKey)}
-                        </label>
-                        <input
-                          id={rule.rootInputId}
-                          type="number"
-                          min={1}
-                          value={rootDraftRules[rule.key] ?? ''}
-                          onChange={(event) =>
-                            setRootDraftRules((prev) => ({ ...prev, [rule.key]: event.target.value }))
-                          }
-                          disabled={!canUpdatePolicy}
-                          className="h-9 w-full rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
-                          data-testid={rule.rootTestId}
-                        />
-                      </div>
-                    ))}
-                  </div>
-
-                  <div className="flex justify-end">
-                    {allowListInvalid ? (
-                      <p
-                        className="mr-3 self-center text-xs text-error"
-                        data-testid="resource-policy__allow-list-required"
-                      >
-                        {tResource('allow_list_required')}
-                      </p>
-                    ) : null}
-                    {hasDuplicateSubjects ? (
-                      <p
-                        className="mr-3 self-center text-xs text-error"
-                        data-testid="resource-policy__duplicate-subjects"
-                      >
-                        {tResource('subjects.duplicate')}
-                      </p>
-                    ) : null}
-                    <Button
-                      type="button"
-                      onClick={handleSave}
-                      disabled={!canUpdatePolicy || updatePolicyMutation.isPending || allowListInvalid || hasDuplicateSubjects}
-                      variant="action"
-                      size="sm"
-                      className="h-9 px-4"
-                      data-testid="resource-policy__save"
-                    >
-                      {updatePolicyMutation.isPending ? tResource('saving') : tResource('save_policy')}
-                    </Button>
-                  </div>
-
-                  <div
-                    className="rounded-sm border border-subtle bg-surface p-3 space-y-2"
-                    data-testid="resource-policy__effective-summary"
-                  >
-                    <p className="text-xs font-medium text-foreground">{tResource('effective_summary.title')}</p>
-                    <p className="text-xs text-tertiary">
-                      {tResource('effective_summary.access')}:{' '}
-                      <span className="text-primary">{tResource(`access_mode.${accessMode}`)}</span>
-                    </p>
-                    <div className="space-y-1">
-                      {renderRuleSummary(
-                        draftRootRuleSet.rateRules,
-                        draftRootRuleSet.spendingRules,
-                        (key) => tResource(getRuleLabel(key)),
-                        tResource('effective_summary.no_explicit_limits'),
-                        (rule) => formatRuleValue(rule, tResource),
-                        () => tResource('effective_summary.source_resource')
-                      )}
-                    </div>
-                    {validSubjects.length > 0 ? (
-                      <div className="pt-2 border-t border-subtle space-y-2">
-                        {validSubjects.map((subject, index) => {
-                          const effectiveRate = mergeRuleSets(
-                            draftRootRuleSet.rateRules,
-                            subject.rate_limits?.rules ?? []
-                          );
-                          const effectiveSpending = mergeRuleSets(
-                            draftRootRuleSet.spendingRules,
-                            subject.spending_limits?.rules ?? []
-                          );
-                          const effectiveTrace = mergeRuleSources(
-                            draftRootRuleSet.rateRules,
-                            draftRootRuleSet.spendingRules,
-                            subject.rate_limits?.rules ?? [],
-                            subject.spending_limits?.rules ?? [],
-                          );
-                          return (
-                            <div
-                              key={`${subject.subject_type}:${subject.subject_id}:${index}`}
-                              className="space-y-1"
-                              data-testid={`resource-policy__effective-subject--${index}`}
-                            >
-                              <p className="text-xs text-tertiary">
-                                {tResource(`subjects.${subject.subject_type}`)}:{' '}
-                                <span className="text-primary">{subject.subject_id}</span>
-                              </p>
-                              {renderRuleSummary(
-                                effectiveRate,
-                                effectiveSpending,
-                                (key) => tResource(getRuleLabel(key)),
-                                tResource('effective_summary.no_explicit_limits'),
-                                (rule) => formatRuleValue(rule, tResource),
-                                (rule) =>
-                                  tResource(
-                                    effectiveTrace.get(rule.key) === 'subject'
-                                      ? 'effective_summary.source_subject'
-                                      : 'effective_summary.source_resource',
-                                  )
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div
-                    className="rounded-sm border border-subtle bg-surface p-3 space-y-3"
-                    data-testid="resource-policy__explainability"
-                  >
-                    <div className="space-y-1">
-                      <p className="text-xs font-medium text-foreground">{tResource('explainability.title')}</p>
-                      <p className="text-xs text-tertiary">{tResource('explainability.description')}</p>
-                    </div>
-                    <div className="grid gap-2 md:grid-cols-[120px_1fr]">
-                      <div className="rounded-sm border border-subtle bg-bg-base/10 p-3">
-                        <p className="text-[11px] uppercase tracking-wide text-tertiary">
-                          {tResource('explainability.current_resource')}
-                        </p>
-                        <p className="mt-1 text-sm text-foreground">{selectedResource.name}</p>
-                        <p className="text-xs text-tertiary">
-                          {tResource(`resource_type.${selectedResource.type}`)} / {selectedResource.id}
-                        </p>
-                      </div>
-                      <div className="grid gap-2 md:grid-cols-3">
-                        <select
-                          value={explainSubjectType}
-                          onChange={(event) => {
-                            setExplainSubjectType(event.target.value as 'user' | 'group');
-                            setExplainSubjectId('');
-                            setAuthorizationResult(null);
-                          }}
-                          className="h-9 rounded-sm border border-subtle bg-surface-high px-2 text-sm text-foreground"
-                          data-testid="resource-policy__explain-subject-type"
-                        >
-                          <option value="user">{tResource('subjects.user')}</option>
-                          <option value="group">{tResource('subjects.group')}</option>
-                        </select>
-                        <select
-                          value={explainSubjectId}
-                          onChange={(event) => {
-                            setExplainSubjectId(event.target.value);
-                            setAuthorizationResult(null);
-                          }}
-                          className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
-                          data-testid="resource-policy__explain-subject-id"
-                        >
-                          <option value="">{tResource('explainability.select_subject')}</option>
-                          {explainOptions.map((option) => (
-                            <option key={option.id} value={option.id}>
-                              {option.label}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          value={explainAction}
-                          onChange={(event) => {
-                            setExplainAction(event.target.value);
-                            setAuthorizationResult(null);
-                          }}
-                          className="h-9 rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
-                          placeholder={tResource('explainability.action_placeholder')}
-                          data-testid="resource-policy__explain-action"
-                        />
-                      </div>
-                    </div>
-                    <div className="flex justify-end">
-                      <Button
-                        type="button"
-                        onClick={handleAuthorizationExplain}
-                        disabled={!explainSubjectId.trim() || authorizationCheck.isPending}
-                        variant="outline"
-                        size="sm"
-                        className="h-9 px-4"
-                        data-testid="resource-policy__explain-run"
-                      >
-                        {authorizationCheck.isPending
-                          ? tResource('explainability.checking')
-                          : tResource('explainability.run')}
-                      </Button>
-                    </div>
-                    {authorizationResult ? (
-                      <div
-                        className="rounded-sm border border-subtle bg-bg-base/10 p-3 space-y-2"
-                        data-testid="resource-policy__explain-result"
-                      >
-                        <p className="text-xs text-tertiary">
-                          {tResource('explainability.decision')}:{' '}
-                          <span className="text-primary">
-                            {authorizationResult.allowed
-                              ? tResource('explainability.allowed')
-                              : tResource('explainability.denied')}
-                          </span>
-                        </p>
-                        <p className="text-xs text-tertiary">
-                          {tResource('explainability.source')}:{' '}
-                          <span className="text-primary">{authorizationResult.decision.source}</span>
-                        </p>
-                        <p className="text-xs text-tertiary">
-                          {tResource('explainability.reason')}:{' '}
-                          <span className="text-primary">{authorizationResult.decision.reason}</span>
-                        </p>
-                        {explainMatchedPolicy ? (
-                          <div
-                            className="rounded-sm border border-subtle bg-surface px-3 py-2 text-xs text-tertiary"
-                            data-testid="resource-policy__matched-policy"
-                          >
-                            <p>
-                              {tResource('explainability.matched_policy')}:{' '}
-                              <span className="text-primary">{explainMatchedPolicy.id}</span>
-                            </p>
-                            <p>
-                              {tResource('explainability.access_mode')}:{' '}
-                              <span className="text-primary">
-                                {tResource(`access_mode.${explainMatchedPolicy.access_mode}`)}
-                              </span>
-                            </p>
-                            {explainMatchedPolicy.matched_subject ? (
-                              <p>
-                                {tResource('explainability.matched_subject')}:{' '}
-                                <span className="text-primary">
-                                  {tResource(`subjects.${explainMatchedPolicy.matched_subject.type}`)} /{' '}
-                                  {explainMatchedPolicy.matched_subject.id}
-                                </span>
-                              </p>
-                            ) : null}
-                          </div>
-                        ) : null}
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div
-                    className="rounded-sm border border-subtle bg-surface p-3 space-y-2"
-                    data-testid="resource-policy__governance-audit"
-                  >
-                    <p className="text-xs font-medium text-foreground">{tResource('governance_audit.title')}</p>
-                    {policyAuditEvents.length === 0 ? (
-                      <p className="text-xs text-tertiary">{tResource('governance_audit.empty')}</p>
-                    ) : (
-                      <ul className="space-y-1.5">
-                        {policyAuditEvents.map((event) => (
-                          <li
-                            key={event.id}
-                            className="text-xs text-tertiary flex flex-wrap gap-x-2 gap-y-0.5"
-                            data-testid="resource-policy__audit-event"
-                          >
-                            <span>{new Date(event.timestamp).toLocaleString()}</span>
-                            <span className="text-primary">{tResource('governance_audit.actor')}: {event.actor_id}</span>
-                            <span className="text-primary">{tResource('governance_audit.action')}: {event.action}</span>
-                            {event.resource_type != null || event.resource_id != null ? (
-                              <span className="text-primary">
-                                {tResource('governance_audit.resource')}: {[event.resource_type, event.resource_id].filter(Boolean).join(' / ')}
-                              </span>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
+            <ResourcePolicyEditor
+              tResource={tResource}
+              selectedResource={selectedResource}
+              policyLoading={policyLoading}
+              selectedPolicy={selectedPolicy}
+              selectedType={selectedType}
+              canUpdatePolicy={canUpdatePolicy}
+              accessMode={accessMode}
+              onAccessModeChange={setAccessMode}
+              rootDraftRules={rootDraftRules}
+              onRootDraftRuleChange={(key, value) => setRootDraftRules((prev) => ({ ...prev, [key]: value }))}
+              subjects={subjects}
+              duplicateSubjectRowIds={duplicateSubjectRowIds}
+              staleSubjectRowIds={staleSubjectRowIds}
+              hasStaleSubjects={hasStaleSubjects}
+              allowListInvalid={allowListInvalid}
+              hasDuplicateSubjects={hasDuplicateSubjects}
+              validSubjects={validSubjects}
+              userOptions={userOptions}
+              groupOptions={groupOptions}
+              onAddSubject={addSubject}
+              onRemoveSubject={removeSubject}
+              onRemoveStaleSubjects={removeStaleSubjects}
+              onUpdateSubject={updateSubject}
+              onSave={handleSave}
+              saving={updatePolicyMutation.isPending}
+              explainSubjectType={explainSubjectType}
+              explainSubjectId={explainSubjectId}
+              explainAction={explainAction}
+              explainOptions={explainOptions}
+              onExplainSubjectTypeChange={(value) => {
+                setExplainSubjectType(value);
+                setExplainSubjectId('');
+                setAuthorizationResult(null);
+              }}
+              onExplainSubjectIdChange={(value) => {
+                setExplainSubjectId(value);
+                setAuthorizationResult(null);
+              }}
+              onExplainActionChange={(value) => {
+                setExplainAction(value);
+                setAuthorizationResult(null);
+              }}
+              onRunExplain={handleAuthorizationExplain}
+              explainChecking={authorizationCheck.isPending}
+              authorizationResult={authorizationResult}
+              policyAuditEvents={policyAuditEvents}
+            />
           </div>
         </div>
       </PageLayout>
     </PageState>
   );
-}
-
-function getDefaultActionForResourceType(resourceType: ResourceRow['type']): string {
-  if (resourceType !== 'endpoint') return 'invoke';
-  return 'invoke';
-}
-
-function renderRuleSummary(
-  rateRules: PolicyRule[],
-  spendingRules: PolicyRule[],
-  labelForKey: (key: PolicyRuleKey) => string,
-  noRulesText: string,
-  valueForRule: (rule: PolicyRule) => string,
-  sourceForRule?: (rule: PolicyRule) => string
-) {
-  const rules = [...rateRules, ...spendingRules];
-  if (rules.length === 0) {
-    return <p className="text-xs text-tertiary">{noRulesText}</p>;
-  }
-  return rules.map((rule) => (
-    <p key={`${rule.key}-${rule.value}`} className="text-xs text-tertiary">
-      {labelForKey(rule.key)}:{' '}
-      <span className="text-primary">{valueForRule(rule)}</span>
-      {sourceForRule ? (
-        <span className="ml-1 text-[11px] text-tertiary">({sourceForRule(rule)})</span>
-      ) : null}
-    </p>
-  ));
 }

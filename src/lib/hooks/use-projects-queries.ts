@@ -32,6 +32,10 @@ export function useProjects(workspaceId: string) {
     },
     enabled: !!workspaceId && Boolean(token),
     staleTime: 60_000,
+    retry: (failureCount, error) => {
+      if (error instanceof APIError && error.isNotFoundError()) return false;
+      return failureCount < 2;
+    },
   });
 }
 

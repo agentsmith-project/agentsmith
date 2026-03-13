@@ -5,6 +5,7 @@ import type { WorkspaceRecord } from './resource-models.js';
 type RegistryRecord = {
   id: string;
   name: string;
+  provisioning_status?: string;
   workspace_admin?: string;
   project_creators?: string[];
   tenant?: {
@@ -30,6 +31,10 @@ export function readRegisteredWorkspaces(): WorkspaceRecord[] {
     }
     return parsed
       .filter((item): item is RegistryRecord => typeof item === 'object' && item !== null)
+      .filter((item) => {
+        const status = typeof item.provisioning_status === 'string' ? item.provisioning_status.trim() : '';
+        return !status || status === 'ready';
+      })
       .map((item) => ({
         id: String(item.id ?? '').trim(),
         name: String(item.name ?? '').trim(),

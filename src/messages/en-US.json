@@ -278,7 +278,9 @@
     "workspace_home_admin_title": "Workspace administration",
     "workspace_home_open_settings": "Open workspace settings",
     "workspace_home_denied_title": "Workspace access denied",
-    "workspace_home_denied_description": "Your current account cannot open this workspace."
+    "workspace_home_denied_description": "Your current account cannot open this workspace.",
+    "workspace_home_unavailable_title": "Workspace unavailable",
+    "workspace_home_unavailable_description": "This workspace is no longer available. It may be disabled or no longer published."
   },
   "project": {
     "select": "Select Project",
@@ -2114,6 +2116,13 @@
     "workspace_label": "Workspace:",
     "back_to_workspace": "Back to workspace",
     "loading": "Loading...",
+    "retry": "Retry",
+    "workspace_unavailable_title": "Workspace unavailable",
+    "workspace_unavailable_description": "This workspace is no longer available. It may be disabled or no longer published.",
+    "project_unavailable_title": "Project unavailable",
+    "project_unavailable_description": "This project is no longer available. It may have been removed, or its workspace may no longer be accessible.",
+    "load_failed_title": "Unable to load projects",
+    "load_failed_description": "Please retry. If this keeps happening, check workspace access and try again.",
     "empty": {
       "title": "No projects yet",
       "description": "Create your first project to get started",

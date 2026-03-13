@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
+import { APIError } from '@/lib/api/errors';
 
 let mockProjectsData = [
   {
@@ -16,10 +17,31 @@ let mockProjectsData = [
     updated_at: '2026-02-01T00:00:00Z',
   },
 ];
+const emptyProjects: typeof mockProjectsData = [];
 const mockWorkspaceData = { id: 'ws_1', name: 'Workspace One' };
 
-const mockUseWorkspace = vi.fn(() => ({ data: mockWorkspaceData }));
+const mockUseWorkspace = vi.fn<
+  () => {
+    data: { id: string; name: string } | undefined;
+    isFetched: boolean;
+  }
+>(() => ({ data: mockWorkspaceData, isFetched: true }));
 const mockUseAuthStore = vi.fn(() => ({ isAuthenticated: true }));
+const mockUseProjects = vi.fn<
+  () => {
+    data: typeof mockProjectsData;
+    isLoading: boolean;
+    isError: boolean;
+    error: APIError | null;
+    refetch: ReturnType<typeof vi.fn>;
+  }
+>(() => ({
+  data: mockProjectsData,
+  isLoading: false,
+  isError: false,
+  error: null,
+  refetch: vi.fn(),
+}));
 
 const mockPush = vi.fn();
 const mockUseParams = vi.fn(() => ({
@@ -68,9 +90,7 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
-  useProjects: () => ({
-    data: mockProjectsData,
-  }),
+  useProjects: () => mockUseProjects(),
 }));
 
 vi.mock('@tanstack/react-query', async () => {
@@ -113,8 +133,15 @@ describe('ProjectsPage route', () => {
     mockPush.mockClear();
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
     mockUseHasWorkspacePermission.mockReturnValue(true);
-    mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData }));
+    mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData, isFetched: true }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true }));
+    mockUseProjects.mockImplementation(() => ({
+      data: mockProjectsData,
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: vi.fn(),
+    }));
   });
 
   it('renders projects list when params and permissions are valid', async () => {
@@ -168,7 +195,7 @@ describe('ProjectsPage route', () => {
   });
 
   it('shows permission denied when user lacks project list permissions', async () => {
-    mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData }));
+    mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData, isFetched: true }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false }));
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => {
       if (permission === 'workspace:read') {
@@ -183,6 +210,35 @@ describe('ProjectsPage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+  });
+
+  it('shows workspace unavailable state when the workspace is no longer accessible', async () => {
+    mockUseWorkspace.mockImplementation(() => ({ data: undefined, isFetched: true }));
+
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+    expect(screen.getByText('workspace_unavailable_title')).toBeInTheDocument();
+    expect(screen.getByText('workspace_unavailable_description')).toBeInTheDocument();
+  });
+
+  it('shows workspace unavailable state when project list lookup returns not found', async () => {
+    mockUseProjects.mockImplementation(() => ({
+      data: emptyProjects,
+      isLoading: false,
+      isError: true,
+      error: new APIError('RESOURCE_NOT_FOUND', 'workspace_not_found', undefined, 404),
+      refetch: vi.fn(),
+    }));
+
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+    });
+    expect(screen.getByText('workspace_unavailable_title')).toBeInTheDocument();
   });
 
   it('shows a create-first empty state for users with project creation permission', async () => {

@@ -60,6 +60,15 @@ export async function DELETE(
         { status: 404 },
       );
     }
+    if (code === 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE') {
+      return NextResponse.json(
+        {
+          error_code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
+          error_message: 'workspace_disable_required_before_delete',
+        },
+        { status: 409 },
+      );
+    }
     throw error;
   }
 }

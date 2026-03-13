@@ -620,6 +620,127 @@ describe('api-entry-node projects routes', () => {
     expect(workspaceAdmin?.permissions).toContain('workspace:project:create');
   });
 
+  it('does not expose disabled registered workspaces in runtime workspace list', async () => {
+    const { baseUrl } = startServer();
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          provisioning_status: 'ready',
+          workspace_admin: 'owner@example.com',
+          project_creators: ['test@example.com'],
+          idp: {
+            kind: 'keycloak',
+            url: process.env.KEYCLOAK_ISSUER_URL,
+            realm: 'mbos',
+            client_id: 'agentsmith-web',
+          },
+          tenant: {
+            substrate: 'default',
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+          },
+        },
+        {
+          id: 'ws_disabled',
+          name: 'Disabled Workspace',
+          provisioning_status: 'disabled',
+          workspace_admin: 'disabled-owner@example.com',
+          project_creators: ['disabled@example.com'],
+          idp: {
+            kind: 'keycloak',
+            url: process.env.KEYCLOAK_ISSUER_URL,
+            realm: 'disabled',
+            client_id: 'agentsmith-disabled',
+          },
+          tenant: {
+            substrate: 'default',
+            database_name: 'agentsmith_ws_disabled',
+            collection_prefix: 'ws_disabled_',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    const workspaces = await apiFetch(baseUrl, '/api/v1/workspaces');
+    expect(workspaces.status).toBe(200);
+    const body = (await workspaces.json()) as { items: Array<{ id: string }> };
+    expect(body.items.map((item) => item.id)).toEqual(['ws_default']);
+  });
+
+  it('blocks project listing and creation for disabled registered workspaces', async () => {
+    const { baseUrl } = startServer();
+    writeFileSync(
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          provisioning_status: 'ready',
+          workspace_admin: 'owner@example.com',
+          project_creators: ['test@example.com'],
+          idp: {
+            kind: 'keycloak',
+            url: process.env.KEYCLOAK_ISSUER_URL,
+            realm: 'mbos',
+            client_id: 'agentsmith-web',
+          },
+          tenant: {
+            substrate: 'default',
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+          },
+        },
+        {
+          id: 'ws_disabled',
+          name: 'Disabled Workspace',
+          provisioning_status: 'disabled',
+          workspace_admin: 'disabled-owner@example.com',
+          project_creators: ['disabled@example.com'],
+          idp: {
+            kind: 'keycloak',
+            url: process.env.KEYCLOAK_ISSUER_URL,
+            realm: 'disabled',
+            client_id: 'agentsmith-disabled',
+          },
+          tenant: {
+            substrate: 'default',
+            database_name: 'agentsmith_ws_disabled',
+            collection_prefix: 'ws_disabled_',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+
+    const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_disabled/projects');
+    expect(listRes.status).toBe(404);
+    await expect(listRes.json()).resolves.toEqual({
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: 'workspace_not_found',
+    });
+
+    const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_disabled/projects', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: 'Blocked Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(createRes.status).toBe(404);
+    await expect(createRes.json()).resolves.toEqual({
+      error_code: 'RESOURCE_NOT_FOUND',
+      message: 'workspace_not_found',
+    });
+  });
+
   it('lets workspace admins manage project creators and exposes creator permissions in workspace members', async () => {
     const { baseUrl } = startServer();
     writeFileSync(

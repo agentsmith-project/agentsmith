@@ -114,9 +114,15 @@ export async function disableSystemWorkspace(id: string): Promise<SystemWorkspac
 
 export async function deleteSystemWorkspace(id: string): Promise<void> {
   const records = await readRegistryFile();
-  const nextRecords = records.filter((record) => record.id !== id);
-  if (nextRecords.length === records.length) {
+  const existing = records.find((record) => record.id === id);
+  if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
+  if (existing.provisioning_status !== 'disabled') {
+    throw Object.assign(new Error('workspace_disable_required_before_delete'), {
+      code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
+    });
+  }
+  const nextRecords = records.filter((record) => record.id !== id);
   await writeRegistryFile(nextRecords);
 }

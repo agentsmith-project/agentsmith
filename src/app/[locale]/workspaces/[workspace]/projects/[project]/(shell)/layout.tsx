@@ -9,6 +9,7 @@
 
 import { ReactNode, useMemo } from 'react';
 import { useParams, useRouter, usePathname } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { AppShellSidebar } from '@/components/app-shell/AppShellSidebar';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
@@ -24,6 +25,7 @@ export default function AppShellLayout({
 }: {
   children: ReactNode;
 }) {
+  const t = useTranslations('projects');
   const params = useParams();
   const router = useRouter();
   const pathname = usePathname();
@@ -72,12 +74,12 @@ export default function AppShellLayout({
         <div data-testid="page-layout" className="h-screen bg-background flex items-center justify-center p-6">
           <div data-testid="project-shell__project-not-found" className="w-full max-w-2xl">
             <ErrorState
-              title="Project not found"
-              message="This project ID may be stale after restarting the local in-memory backend. Re-initialize resources and reopen the latest project URL from /tmp/agentsmith_project_id.txt."
+              title={t('project_unavailable_title')}
+              message={t('project_unavailable_description')}
               onRetry={() => {
                 void refetchProject();
               }}
-              retryLabel="Retry Project Lookup"
+              retryLabel={t('retry')}
             />
           </div>
         </div>

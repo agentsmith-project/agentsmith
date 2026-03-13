@@ -202,13 +202,13 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
   });
 
-  it('deletes selected workspace', async () => {
+  it('deletes a disabled workspace', async () => {
     fetchMock
       .mockResolvedValueOnce({
         ...mockWorkspaceListResponse([
           makeWorkspace({
-            provisioning_status: 'draft',
-            last_initialized_at: null,
+            provisioning_status: 'disabled',
+            last_initialized_at: '2026-03-10T02:00:00.000Z',
             workspace_admin: 'alpha-admin@example.com',
             tenant: {
               workspace_id: 'ws_alpha',
@@ -498,5 +498,33 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
     expect(screen.getByTestId('system-workspaces__delete')).toBeDisabled();
     expect(screen.getByTestId('system-workspaces__notice')).toHaveTextContent('provisioning_notice');
+  });
+
+  it('only enables delete for disabled workspaces', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ...mockWorkspaceListResponse([
+          makeWorkspace({
+            provisioning_status: 'ready',
+            last_initialized_at: '2026-03-10T02:00:00.000Z',
+          }),
+          makeWorkspace({
+            id: 'ws_disabled',
+            name: 'Disabled Workspace',
+            provisioning_status: 'disabled',
+            last_initialized_at: '2026-03-10T02:00:00.000Z',
+          }),
+        ]),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    expect(screen.getByTestId('system-workspaces__delete')).toBeDisabled();
+
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_disabled'));
+    expect(screen.getByTestId('system-workspaces__delete')).not.toBeDisabled();
   });
 });

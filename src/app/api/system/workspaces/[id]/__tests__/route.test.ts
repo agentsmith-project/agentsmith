@@ -75,6 +75,26 @@ describe('/api/system/workspaces/[id]', () => {
     expect(registryModule.deleteSystemWorkspace).toHaveBeenCalledWith('ws_alpha');
   });
 
+  it('returns 409 when delete is attempted before workspace is disabled', async () => {
+    sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    registryModule.deleteSystemWorkspace.mockRejectedValue(
+      Object.assign(new Error('workspace_disable_required_before_delete'), {
+        code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
+      }),
+    );
+
+    const response = await DELETE(
+      new Request('http://localhost/api/system/workspaces/ws_alpha', { method: 'DELETE' }),
+      { params: Promise.resolve({ id: 'ws_alpha' }) },
+    );
+
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({
+      error_code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
+      error_message: 'workspace_disable_required_before_delete',
+    });
+  });
+
   it('publishes workspace config for authenticated system admin', async () => {
     sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
     registryModule.publishSystemWorkspace.mockResolvedValue({ id: 'ws_alpha', provisioning_status: 'ready' });

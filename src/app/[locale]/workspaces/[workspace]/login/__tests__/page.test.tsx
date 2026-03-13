@@ -109,4 +109,19 @@ describe('WorkspaceLoginPage', () => {
     const [authUrl] = mockAssign.mock.calls[0] as [string];
     expect(decodeURIComponent(authUrl)).toContain('/en-US/workspaces/ws_alpha/login/callback');
   });
+
+  it('shows not found state when workspace login config is unavailable', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: false,
+      json: async () => ({
+        error_code: 'WORKSPACE_NOT_FOUND',
+        error_message: 'workspace_not_found',
+      }),
+    });
+
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__error')).toBeInTheDocument();
+    expect(screen.getByText('workspace_not_found')).toBeInTheDocument();
+  });
 });

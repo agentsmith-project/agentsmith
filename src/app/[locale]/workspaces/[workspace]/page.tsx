@@ -24,7 +24,7 @@ export default function WorkspaceHomePage() {
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
 
-  const { data: workspace } = useWorkspace(workspaceId ?? '');
+  const { data: workspace, isFetched: isWorkspaceFetched } = useWorkspace(workspaceId ?? '');
 
   if (!workspaceId) {
     return (
@@ -43,6 +43,17 @@ export default function WorkspaceHomePage() {
         <div className="max-w-md text-center space-y-2">
           <h2 className="text-lg font-semibold">{t('workspace_home_denied_title')}</h2>
           <p className="text-sm text-tertiary">{t('workspace_home_denied_description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (isWorkspaceFetched && !workspace) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{t('workspace_home_unavailable_title')}</h2>
+          <p className="text-sm text-tertiary">{t('workspace_home_unavailable_description')}</p>
         </div>
       </PageState>
     );

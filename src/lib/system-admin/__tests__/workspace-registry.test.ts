@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createSystemWorkspace,
+  deleteSystemWorkspace,
   disableSystemWorkspace,
   getPublicSystemWorkspace,
   listPublicSystemWorkspaces,
@@ -267,5 +268,23 @@ describe('system workspace registry', () => {
         init_error: null,
       }),
     ]);
+  });
+
+  it('requires workspace to be disabled before deletion', async () => {
+    await createSystemWorkspace({
+      name: 'Delete Guard Workspace',
+      workspace_admin: 'admin@example.com',
+      idp_url: 'https://idp.example.com',
+      idp_realm: 'delete-guard',
+      idp_client_id: 'agentsmith-delete-guard',
+      idp_client_secret: 'secret-1',
+    });
+
+    await expect(deleteSystemWorkspace('delete_guard_workspace')).rejects.toMatchObject({
+      code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
+    });
+
+    await disableSystemWorkspace('delete_guard_workspace');
+    await expect(deleteSystemWorkspace('delete_guard_workspace')).resolves.toBeUndefined();
   });
 });

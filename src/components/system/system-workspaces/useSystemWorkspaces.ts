@@ -86,7 +86,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
       Boolean(selectedWorkspaceId) &&
       (selectedStatus === 'draft' || selectedStatus === 'failed' || selectedStatus === 'disabled'),
     canDisable: Boolean(selectedWorkspaceId) && selectedStatus === 'ready',
-    canDelete: Boolean(selectedWorkspaceId) && !isProvisioning,
+    canDelete: Boolean(selectedWorkspaceId) && selectedStatus === 'disabled',
     isProvisioning,
   };
 

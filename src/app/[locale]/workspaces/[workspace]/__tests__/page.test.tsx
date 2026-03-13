@@ -8,6 +8,15 @@ const mockUseHasWorkspacePermission = vi.fn(
     permission === 'workspace:governance:update' ||
     permission === 'workspace:project:create',
 );
+const mockUseWorkspace = vi.fn<
+  () => {
+    data: { id: string; name: string } | undefined;
+    isFetched: boolean;
+  }
+>(() => ({
+  data: { id: 'ws_alpha', name: 'Alpha Workspace' },
+  isFetched: true,
+}));
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -26,9 +35,7 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
-  useWorkspace: () => ({
-    data: { id: 'ws_alpha', name: 'Alpha Workspace' },
-  }),
+  useWorkspace: () => mockUseWorkspace(),
 }));
 
 vi.mock('@/components/app-shell/Topbar', () => ({
@@ -46,6 +53,10 @@ describe('WorkspaceHomePage', () => {
         permission === 'workspace:governance:update' ||
         permission === 'workspace:project:create',
     );
+    mockUseWorkspace.mockReturnValue({
+      data: { id: 'ws_alpha', name: 'Alpha Workspace' },
+      isFetched: true,
+    });
   });
 
   it('renders workspace business entry actions', async () => {
@@ -101,5 +112,19 @@ describe('WorkspaceHomePage', () => {
     await waitFor(() => {
       expect(screen.getByText('workspace_home_denied_title')).toBeInTheDocument();
     });
+  });
+
+  it('shows unavailable state when workspace can no longer be loaded', async () => {
+    mockUseWorkspace.mockReturnValue({
+      data: undefined,
+      isFetched: true,
+    });
+
+    render(<WorkspaceHomePage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('workspace_home_unavailable_title')).toBeInTheDocument();
+    });
+    expect(screen.getByText('workspace_home_unavailable_description')).toBeInTheDocument();
   });
 });

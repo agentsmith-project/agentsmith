@@ -33,6 +33,7 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { ProjectAPI, getApiClient } from '@/lib/api';
+import { APIError } from '@/lib/api/errors';
 import { toast } from '@/components/ui/toast';
 import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
@@ -65,9 +66,18 @@ export default function ProjectsPage() {
   const locale = routeParams?.locale || 'en-US';
 
   // Fetch workspace and projects
-  const { data: currentWorkspace } = useWorkspace(workspaceId ?? '');
+  const {
+    data: currentWorkspace,
+    isFetched: isWorkspaceFetched,
+  } = useWorkspace(workspaceId ?? '');
   const { data: workspaceMembers = [] } = useWorkspaceMembers(workspaceId ?? '');
-  const { data: allProjects = [] } = useProjects(workspaceId ?? '');
+  const {
+    data: allProjects = [],
+    isLoading: isProjectsLoading,
+    isError: isProjectsError,
+    error: projectsError,
+    refetch: refetchProjects,
+  } = useProjects(workspaceId ?? '');
   const pinnedStorageKey = useMemo(
     () => (workspaceId ? `mbos:projects:pinned:${workspaceId}` : ''),
     [workspaceId]
@@ -215,6 +225,47 @@ export default function ProjectsPage() {
     );
   }
 
+  if (isWorkspaceFetched && !currentWorkspace) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{t('workspace_unavailable_title')}</h2>
+          <p className="text-sm text-tertiary">{t('workspace_unavailable_description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  const isProjectsNotFound =
+    isProjectsError && projectsError instanceof APIError && projectsError.isNotFoundError();
+
+  if (isProjectsNotFound) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-2">
+          <h2 className="text-lg font-semibold">{t('workspace_unavailable_title')}</h2>
+          <p className="text-sm text-tertiary">{t('workspace_unavailable_description')}</p>
+        </div>
+      </PageState>
+    );
+  }
+
+  if (isProjectsError) {
+    return (
+      <PageState state="error">
+        <div className="max-w-md text-center space-y-3">
+          <div className="space-y-2">
+            <h2 className="text-lg font-semibold">{t('load_failed_title')}</h2>
+            <p className="text-sm text-tertiary">{t('load_failed_description')}</p>
+          </div>
+          <div className="flex justify-center">
+            <Button variant="action" onClick={() => void refetchProjects()}>{t('retry')}</Button>
+          </div>
+        </div>
+      </PageState>
+    );
+  }
+
   return (
     <PageState state="success">
       <PageLayout>
@@ -238,7 +289,11 @@ export default function ProjectsPage() {
           </p>
         </div>
 
-        {!isAuthenticated || projects.length === 0 ? (
+        {!isAuthenticated || (isProjectsLoading && projects.length === 0) ? (
+          <div className="flex min-h-[320px] items-center justify-center">
+            <PageLoading />
+          </div>
+        ) : projects.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20">
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>

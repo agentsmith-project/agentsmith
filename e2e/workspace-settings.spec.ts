@@ -55,10 +55,6 @@ test.describe('Workspace Settings Page', () => {
   });
 
   test('project creators can create projects without workspace administration access', async ({ page }) => {
-    await page.request.patch(`/api/v1/workspaces/${WS_ID}/project-creators`, {
-      data: { project_creators: ['u_2'] },
-    });
-
     await withAuth(page, WS_ID, 'dev2@corp.com', 'u_2');
     await goTo(page, wsSettingsPath);
     await expect(page.getByRole('heading', { name: /Permission Denied/i })).toBeVisible();
@@ -72,7 +68,35 @@ test.describe('Workspace Settings Page', () => {
 
     await page.getByTestId('workspace-home__open-projects').click();
     await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects$`), { timeout: 10_000 });
-    await expect(page.getByTestId('projects__create-btn')).toBeVisible();
+    await expect(page.getByTestId('projects__create-btn')).toBeEnabled();
     await expect(page.getByTestId('projects__back-to-workspace')).toBeVisible();
+  });
+
+  test('project creators become project owners for projects they create', async ({ page }) => {
+    await withAuth(page, WS_ID, 'dev2@corp.com', 'u_2');
+    await goTo(page, wsSettingsPath);
+    await expect(page.getByRole('heading', { name: /Permission Denied/i })).toBeVisible();
+
+    await goTo(page, `/${LOCALE}/workspaces/${WS_ID}`);
+    await expect(page.getByTestId('workspace-home__page')).toBeVisible();
+    await page.getByTestId('workspace-home__open-projects').click();
+    await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects$`), { timeout: 10_000 });
+    await expect(page.getByTestId('projects__create-btn')).toBeEnabled();
+
+    const projectName = `Creator Owned ${Date.now()}`;
+    await page.getByTestId('projects__create-btn').click();
+    await expect(page.getByRole('heading', { name: /Create Project/i })).toBeVisible();
+    await page.getByLabel('Project Name').fill(projectName);
+    await page.getByRole('button', { name: /^Create$/i }).click();
+
+    await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects/.+/overview$`), { timeout: 10_000 });
+    await expect(page.getByTestId('sidebar__nav-item--settings')).toBeVisible();
+
+    await page.getByTestId('sidebar__nav-item--settings').click();
+    await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects/.+/settings$`), { timeout: 10_000 });
+
+    await expect(page.getByTestId('settings__project-admins-save')).toBeVisible();
+    await expect(page.getByTestId('settings__project-owner-save')).toBeVisible();
+    await expect(page.getByTestId('settings__delete-project-btn')).toBeEnabled();
   });
 });

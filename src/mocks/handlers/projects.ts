@@ -61,6 +61,7 @@ export const projectHandlers = [
     });
   }),
   http.post('/api/v1/workspaces/:ws/projects', async ({ params, request }) => {
+    const userId = getRequestUserId(request);
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const visibility: 'public' | 'private' =
       body.visibility === 'public' ? 'public' : 'private';
@@ -73,7 +74,7 @@ export const projectHandlers = [
       description: (body.description as string) ?? '',
       visibility,
       join_policy: joinPolicy,
-      owner_id: CURRENT_USER_ID,
+      owner_id: userId,
       status: 'active',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -81,7 +82,7 @@ export const projectHandlers = [
     projects.push(created);
     projectMembershipFixtures.push({
       project_id: created.id,
-      user_id: CURRENT_USER_ID,
+      user_id: userId,
       role: 'owner',
       permissions: [...GROUP_TEMPLATES.owner],
       status: 'active',
@@ -93,7 +94,55 @@ export const projectHandlers = [
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const idx = projects.findIndex((p) => p.workspace_id === params.ws && p.id === params.prj);
     if (idx < 0) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    projects[idx] = { ...projects[idx], ...body, updated_at: new Date().toISOString() };
+    const previous = projects[idx];
+    const nextOwnerId =
+      typeof body.owner_id === 'string' && body.owner_id.trim().length > 0
+        ? body.owner_id.trim()
+        : previous.owner_id;
+    const governanceJson =
+      body.governance_json && typeof body.governance_json === 'object' && !Array.isArray(body.governance_json)
+        ? body.governance_json as Record<string, unknown>
+        : previous.governance_json ?? {};
+    if (nextOwnerId !== previous.owner_id) {
+      const nextProjectAdmins = new Set<string>(
+        Array.isArray(governanceJson.project_admins)
+          ? governanceJson.project_admins.filter((value): value is string => typeof value === 'string')
+          : [],
+      );
+      nextProjectAdmins.add(previous.owner_id);
+      nextProjectAdmins.delete(nextOwnerId);
+      governanceJson.project_admins = [...nextProjectAdmins];
+      const previousOwnerMembership = projectMembershipFixtures.find(
+        (membership) => membership.project_id === previous.id && membership.user_id === previous.owner_id,
+      );
+      if (previousOwnerMembership) {
+        previousOwnerMembership.role = 'admin';
+        previousOwnerMembership.permissions = [...GROUP_TEMPLATES.admin];
+      }
+      const nextOwnerMembership = projectMembershipFixtures.find(
+        (membership) => membership.project_id === previous.id && membership.user_id === nextOwnerId,
+      );
+      if (nextOwnerMembership) {
+        nextOwnerMembership.role = 'owner';
+        nextOwnerMembership.permissions = [...GROUP_TEMPLATES.owner];
+      } else {
+        projectMembershipFixtures.push({
+          project_id: previous.id,
+          user_id: nextOwnerId,
+          role: 'owner',
+          permissions: [...GROUP_TEMPLATES.owner],
+          status: 'active',
+          joined_at: new Date().toISOString(),
+        });
+      }
+    }
+    projects[idx] = {
+      ...previous,
+      ...body,
+      governance_json: governanceJson,
+      owner_id: nextOwnerId,
+      updated_at: new Date().toISOString(),
+    };
     return HttpResponse.json(projects[idx]);
   }),
   http.delete('/api/v1/workspaces/:ws/projects/:prj', ({ params }) => {

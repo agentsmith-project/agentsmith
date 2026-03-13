@@ -68,11 +68,7 @@ const workspaceMembers = (() => {
 })();
 
 const workspaceProjectCreators = workspaceMembers
-  .filter(
-    (member) =>
-      member.permissions.includes('workspace:project:create') &&
-      !member.permissions.includes('workspace:governance:update'),
-  )
+  .filter((member) => member.user_id === 'u_2')
   .map((member) => ({
     id: member.user_id,
     user_id: member.user_id,

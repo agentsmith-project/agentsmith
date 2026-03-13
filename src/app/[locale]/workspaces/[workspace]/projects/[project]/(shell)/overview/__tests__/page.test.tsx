@@ -30,7 +30,6 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
       if (permission === 'project:agent:manage') return true;
       if (permission === 'project:governance:update') return true;
       if (permission === 'project:membership:update') return true;
-      if (permission === 'project:manage') return true;
       return false;
     });
     mockUseCanReadProjectSettings.mockReturnValue(true);

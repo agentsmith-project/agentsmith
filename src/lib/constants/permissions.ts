@@ -11,7 +11,7 @@
  * - project:membership:update
  * - project:admins:update
  * - project:lifecycle:update
- * - project:manage
+ * - project:manage (legacy compatibility token, not primary authz truth)
  */
 
 export const PLATFORM_PERMISSIONS = {

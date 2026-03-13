@@ -115,7 +115,7 @@ Contract alignment checks:
 
 Permission boundary:
 
-- Catalog sync: `project:manage`
+- Catalog sync: `project:governance:update`
 - Catalog read for endpoint forms: existing endpoint read/manage permissions
 
 ## Governance Evidence Contract

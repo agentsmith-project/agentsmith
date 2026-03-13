@@ -50,7 +50,7 @@
 
 ## 2) Sidebar（project 内）
 规则：
-- 根据 token 权限可见性隐藏菜单项（例如缺少 `project:manage` 时隐藏 Settings）
+- 根据 token 权限可见性隐藏菜单项（例如缺少 `project:governance:update` / `project:admins:update` / `project:lifecycle:update` 时隐藏 Settings）
 - 但深链访问时仍要显示“无权限”页（避免 404 迷惑）
 - Sidebar 需要提供折叠/展开按钮：
   - 折叠态仅显示 icon（可用 tooltip 显示 label）

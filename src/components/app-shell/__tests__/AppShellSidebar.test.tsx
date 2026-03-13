@@ -188,8 +188,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       permission === 'project:endpoint:use'
       || permission === 'project:governance:update'
       || permission === 'project:membership:update'
-      || permission === 'project:manage',
-    );
+          );
     mockUseCanReadProjectSettings.mockReturnValue(true);
 
     render(<AppShellSidebar />, { wrapper });

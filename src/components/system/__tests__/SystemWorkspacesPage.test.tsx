@@ -95,6 +95,7 @@ describe('SystemWorkspacesPage', () => {
       'href',
       '/en-US/workspaces/ws_alpha/login',
     );
+    expect(screen.getByTestId('system-workspaces__open-workspace-login--ws_beta')).toBeDisabled();
     expect(screen.getByTestId('system-workspaces__preview')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__mode')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
@@ -237,6 +238,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_success');
     expect(screen.getByTestId('system-workspaces__publish')).not.toBeDisabled();
+    expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
   });
 
   it('deletes selected workspace', async () => {
@@ -507,5 +509,138 @@ describe('SystemWorkspacesPage', () => {
       ),
     );
     expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('disable_success');
+  });
+
+  it('re-publishes a disabled workspace', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              provisioning_status: 'disabled',
+              last_initialized_at: '2026-03-10T02:00:00.000Z',
+              last_init_error: null,
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              provisioning_status: 'ready',
+              last_initialized_at: '2026-03-10T03:00:00.000Z',
+              last_init_error: null,
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    expect(screen.getByTestId('system-workspaces__publish')).not.toBeDisabled();
+    expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
+    fireEvent.click(screen.getByTestId('system-workspaces__publish'));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha/publish',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('publish_success');
+  });
+
+  it('locks editing controls while provisioning is in progress', async () => {
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        items: [
+          {
+            id: 'ws_alpha',
+            name: 'Alpha Workspace',
+            provisioning_status: 'provisioning',
+            last_initialized_at: null,
+            last_init_error: null,
+            workspace_admin: 'alpha-admin@example.com',
+            idp: {
+              kind: 'keycloak',
+              url: 'https://alpha.example.com',
+              realm: 'alpha',
+              client_id: 'alpha-client',
+              has_client_secret: true,
+            },
+            tenant: {
+              workspace_id: 'ws_alpha',
+              workspace_name: 'Alpha Workspace',
+              substrate_label: 'primary',
+              database_name: 'agentsmith_ws_ws_alpha',
+              collection_prefix: 'ws_ws_alpha_',
+              key_prefix: 'ws:ws_alpha:',
+            },
+            created_at: '2026-03-01T00:00:00.000Z',
+            updated_at: '2026-03-10T00:00:00.000Z',
+          },
+        ],
+      }),
+    });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    expect(screen.getByTestId('system-workspaces__save')).toBeDisabled();
+    expect(screen.getByTestId('system-workspaces__publish')).toBeDisabled();
+    expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
+    expect(screen.getByTestId('system-workspaces__delete')).toBeDisabled();
+    expect(screen.getByTestId('system-workspaces__notice')).toHaveTextContent('provisioning_notice');
   });
 });

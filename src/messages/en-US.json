@@ -2685,6 +2685,8 @@
     "status_idle": "Ready",
     "status_success": "Saved",
     "status_error": "Action failed",
+    "workspace_login_unavailable": "Workspace login unavailable",
+    "provisioning_notice": "Workspace initialization is in progress. Publishing and editing are temporarily locked.",
     "workspace_status_card_label": "Provisioning status",
     "workspace_status_label": "Workspace Status",
     "workspace_status_title": "Provisioning and initialization",

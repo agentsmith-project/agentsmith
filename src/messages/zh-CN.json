@@ -2688,6 +2688,8 @@
     "status_idle": "就绪",
     "status_success": "已保存",
     "status_error": "操作失败",
+    "workspace_login_unavailable": "工作区登录暂不可用",
+    "provisioning_notice": "工作区正在初始化，暂时无法发布或编辑。",
     "workspace_status_card_label": "初始化状态",
     "workspace_status_label": "工作区状态",
     "workspace_status_title": "发布与初始化",

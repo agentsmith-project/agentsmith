@@ -82,6 +82,9 @@ describe('system workspace registry', () => {
     expect(updated.idp.url).toBe('https://login.example.com');
     expect(updated.idp.realm).toBe('platform-prod');
     expect(updated.idp.client_secret).toBe('secret-1');
+    expect(updated.provisioning_status).toBe('draft');
+    expect(updated.last_initialized_at).toBeNull();
+    expect(updated.last_init_error).toBeNull();
   });
 
   it('publishes and disables workspace visibility', async () => {

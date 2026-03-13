@@ -220,6 +220,12 @@ export function SystemWorkspacesPage() {
   const isEditingWorkspace = Boolean(selectedWorkspaceId);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedStatus = selectedWorkspace?.provisioning_status ?? 'draft';
+  const isProvisioning = selectedStatus === 'provisioning';
+  const canPublish =
+    Boolean(selectedWorkspaceId) &&
+    (selectedStatus === 'draft' || selectedStatus === 'failed' || selectedStatus === 'disabled');
+  const canDisable = Boolean(selectedWorkspaceId) && selectedStatus === 'ready';
+  const canDelete = Boolean(selectedWorkspaceId) && !isProvisioning;
   const primaryActionLabel = isSubmitting
     ? activeAction === 'update'
       ? t('updating')
@@ -233,6 +239,7 @@ export function SystemWorkspacesPage() {
     : selectedWorkspaceId
       ? t('save_draft')
       : t('create_workspace');
+  const idleNotice = isProvisioning ? t('provisioning_notice') : t('create_notice');
   const statusToneClass = saveError ? 'border-error/30 text-error' : saveNotice ? 'border-success/30 text-foreground' : 'border-subtle text-tertiary';
   const statusPrefix = saveError
     ? t('status_error')
@@ -363,11 +370,22 @@ export function SystemWorkspacesPage() {
                           >
                             {t('configure_workspace')}
                           </Button>
-                          <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
-                            <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
-                              {t('open_workspace_login')}
+                          {workspace.provisioning_status === 'ready' ? (
+                            <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
+                              <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
+                                {t('open_workspace_login')}
+                              </Button>
+                            </Link>
+                          ) : (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              disabled
+                              data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
+                            >
+                              {t('workspace_login_unavailable')}
                             </Button>
-                          </Link>
+                          )}
                         </div>
                       </article>
                     ))}
@@ -515,7 +533,7 @@ export function SystemWorkspacesPage() {
                   ) : saveNotice ? (
                     <p className="text-foreground" data-testid="system-workspaces__save-notice">{saveNotice}</p>
                   ) : (
-                    t('create_notice')
+                    idleNotice
                   )}
                 </div>
 
@@ -523,7 +541,7 @@ export function SystemWorkspacesPage() {
                   <Button
                     type="button"
                     onClick={() => void handleSubmit()}
-                    disabled={!canSubmit || isSubmitting}
+                    disabled={!canSubmit || isSubmitting || isProvisioning}
                     data-testid="system-workspaces__save"
                   >
                     {primaryActionLabel}
@@ -533,7 +551,7 @@ export function SystemWorkspacesPage() {
                       type="button"
                       variant="outline"
                       onClick={() => void handlePublish()}
-                      disabled={isSubmitting || !(selectedStatus === 'draft' || selectedStatus === 'failed')}
+                      disabled={isSubmitting || !canPublish}
                       data-testid="system-workspaces__publish"
                     >
                       {isSubmitting && activeAction === 'publish' ? t('publishing') : t('publish_workspace')}
@@ -544,7 +562,7 @@ export function SystemWorkspacesPage() {
                       type="button"
                       variant="outline"
                       onClick={() => void handleDisable()}
-                      disabled={isSubmitting || selectedStatus !== 'ready'}
+                      disabled={isSubmitting || !canDisable}
                       data-testid="system-workspaces__disable"
                     >
                       {isSubmitting && activeAction === 'disable' ? t('disabling') : t('disable_workspace')}
@@ -560,7 +578,7 @@ export function SystemWorkspacesPage() {
                       type="button"
                       variant="destructive"
                       onClick={() => void handleDelete()}
-                      disabled={isSubmitting}
+                      disabled={isSubmitting || !canDelete}
                       data-testid="system-workspaces__delete"
                     >
                       {isSubmitting && activeAction === 'delete' ? t('deleting') : t('delete_workspace')}

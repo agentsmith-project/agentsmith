@@ -194,21 +194,33 @@ export async function updateSystemWorkspace(
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
+  const nextProjectCreators = input.project_creators
+    ? normalizeIdentifiers(input.project_creators)
+    : existing.project_creators;
+  const nextIdp: SystemWorkspaceIdpConfig = {
+    kind: 'keycloak',
+    url: input.idp_url.trim(),
+    realm: input.idp_realm.trim(),
+    client_id: input.idp_client_id.trim(),
+    client_secret: input.idp_client_secret?.trim() || existing.idp.client_secret,
+  };
+  const requiresRepublish =
+    existing.name !== input.name.trim() ||
+    existing.workspace_admin !== input.workspace_admin.trim() ||
+    JSON.stringify(existing.project_creators) !== JSON.stringify(nextProjectCreators) ||
+    existing.idp.url !== nextIdp.url ||
+    existing.idp.realm !== nextIdp.realm ||
+    existing.idp.client_id !== nextIdp.client_id ||
+    (existing.idp.client_secret || '') !== (nextIdp.client_secret || '');
   const updated: SystemWorkspaceRecord = {
     ...existing,
     name: input.name.trim(),
     workspace_admin: input.workspace_admin.trim(),
-    project_creators: input.project_creators ? normalizeIdentifiers(input.project_creators) : existing.project_creators,
-    idp: {
-      kind: 'keycloak',
-      url: input.idp_url.trim(),
-      realm: input.idp_realm.trim(),
-      client_id: input.idp_client_id.trim(),
-      client_secret: input.idp_client_secret?.trim() || existing.idp.client_secret,
-    },
-    provisioning_status: existing.provisioning_status,
-    last_initialized_at: existing.last_initialized_at,
-    last_init_error: existing.last_init_error,
+    project_creators: nextProjectCreators,
+    idp: nextIdp,
+    provisioning_status: requiresRepublish ? 'draft' : existing.provisioning_status,
+    last_initialized_at: requiresRepublish ? null : existing.last_initialized_at,
+    last_init_error: requiresRepublish ? null : existing.last_init_error,
     updated_at: new Date().toISOString(),
   };
   await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));

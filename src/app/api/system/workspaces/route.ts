@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { isSystemAdminAuthenticated } from '@/lib/system-admin/session';
 import {
   createSystemWorkspace,
-  listPublicSystemWorkspaces,
+  listSystemWorkspaces,
   type UpsertSystemWorkspaceInput,
 } from '@/lib/system-admin/workspace-registry';
 
@@ -25,7 +25,7 @@ export async function GET() {
   if (!authenticated) {
     return NextResponse.json({ error_code: 'UNAUTHORIZED', error_message: 'unauthorized' }, { status: 401 });
   }
-  return NextResponse.json({ items: await listPublicSystemWorkspaces() });
+  return NextResponse.json({ items: await listSystemWorkspaces() });
 }
 
 export async function POST(request: Request) {

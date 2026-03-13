@@ -17,9 +17,19 @@ export interface SystemWorkspaceRecord {
   project_creators: string[];
   idp: SystemWorkspaceIdpConfig;
   tenant: ReturnType<typeof buildWorkspaceTenantPreview>;
+  provisioning_status: WorkspaceProvisioningStatus;
+  last_initialized_at: string | null;
+  last_init_error: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type WorkspaceProvisioningStatus =
+  | 'draft'
+  | 'provisioning'
+  | 'ready'
+  | 'failed'
+  | 'disabled';
 
 export interface PublicSystemWorkspaceRecord extends Omit<SystemWorkspaceRecord, 'idp'> {
   idp: Omit<SystemWorkspaceIdpConfig, 'client_secret'> & {
@@ -35,6 +45,12 @@ export interface UpsertSystemWorkspaceInput {
   idp_realm: string;
   idp_client_id: string;
   idp_client_secret?: string;
+}
+
+export interface PublishSystemWorkspaceResult {
+  status: WorkspaceProvisioningStatus;
+  initialized_at: string | null;
+  init_error: string | null;
 }
 
 function normalizeIdentifiers(items: string[] | undefined): string[] {
@@ -61,7 +77,7 @@ async function readRegistryFile(): Promise<SystemWorkspaceRecord[]> {
   try {
     const raw = await readFile(pathname, 'utf-8');
     const data = JSON.parse(raw) as unknown;
-    return Array.isArray(data) ? (data as SystemWorkspaceRecord[]) : [];
+    return Array.isArray(data) ? data.map(normalizeRecord) : [];
   } catch (error) {
     const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: string }).code) : '';
     if (code === 'ENOENT') {
@@ -69,6 +85,31 @@ async function readRegistryFile(): Promise<SystemWorkspaceRecord[]> {
     }
     throw error;
   }
+}
+
+function normalizeRecord(record: SystemWorkspaceRecord | Record<string, unknown>): SystemWorkspaceRecord {
+  const raw = record as Record<string, unknown>;
+  const provisioningStatus = raw['provisioning_status'];
+  return {
+    ...(record as SystemWorkspaceRecord),
+    project_creators: normalizeIdentifiers(Array.isArray(raw['project_creators']) ? (raw['project_creators'] as string[]) : []),
+    provisioning_status:
+      provisioningStatus === 'draft' ||
+      provisioningStatus === 'provisioning' ||
+      provisioningStatus === 'ready' ||
+      provisioningStatus === 'failed' ||
+      provisioningStatus === 'disabled'
+        ? provisioningStatus
+        : 'ready',
+    last_initialized_at:
+      typeof raw['last_initialized_at'] === 'string' && raw['last_initialized_at'].trim().length > 0
+        ? String(raw['last_initialized_at'])
+        : null,
+    last_init_error:
+      typeof raw['last_init_error'] === 'string' && raw['last_init_error'].trim().length > 0
+        ? String(raw['last_init_error'])
+        : null,
+  };
 }
 
 async function writeRegistryFile(records: SystemWorkspaceRecord[]): Promise<void> {
@@ -98,12 +139,20 @@ export async function listSystemWorkspaces(): Promise<SystemWorkspaceRecord[]> {
 
 export async function listPublicSystemWorkspaces(): Promise<PublicSystemWorkspaceRecord[]> {
   const records = await listSystemWorkspaces();
-  return records.map(sanitizeRecord);
+  return records.filter((record) => record.provisioning_status === 'ready').map(sanitizeRecord);
 }
 
 export async function getSystemWorkspace(id: string): Promise<SystemWorkspaceRecord | null> {
   const records = await readRegistryFile();
   return records.find((record) => record.id === id) ?? null;
+}
+
+export async function getPublicSystemWorkspace(id: string): Promise<SystemWorkspaceRecord | null> {
+  const record = await getSystemWorkspace(id);
+  if (!record || record.provisioning_status !== 'ready') {
+    return null;
+  }
+  return record;
 }
 
 export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): Promise<SystemWorkspaceRecord> {
@@ -126,6 +175,9 @@ export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): 
       client_secret: input.idp_client_secret?.trim() || undefined,
     },
     tenant,
+    provisioning_status: 'draft',
+    last_initialized_at: null,
+    last_init_error: null,
     created_at: now,
     updated_at: now,
   };
@@ -154,6 +206,105 @@ export async function updateSystemWorkspace(
       client_id: input.idp_client_id.trim(),
       client_secret: input.idp_client_secret?.trim() || existing.idp.client_secret,
     },
+    provisioning_status: existing.provisioning_status,
+    last_initialized_at: existing.last_initialized_at,
+    last_init_error: existing.last_init_error,
+    updated_at: new Date().toISOString(),
+  };
+  await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));
+  return updated;
+}
+
+function getProvisioningArtifactPath(id: string): string {
+  const root = process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH?.trim() || join(process.cwd(), 'artifacts/system-workspace-provisioning');
+  return join(root, `${id}.json`);
+}
+
+async function initializeWorkspaceResources(record: SystemWorkspaceRecord): Promise<PublishSystemWorkspaceResult> {
+  const provisioningArtifact = getProvisioningArtifactPath(record.id);
+  const now = new Date().toISOString();
+
+  if (!record.idp.url.trim() || !record.idp.realm.trim() || !record.idp.client_id.trim()) {
+    return {
+      status: 'failed',
+      initialized_at: null,
+      init_error: 'identity_provider_config_incomplete',
+    };
+  }
+
+  if (!record.tenant.database_name.trim() || !record.tenant.collection_prefix.trim() || !record.tenant.key_prefix.trim()) {
+    return {
+      status: 'failed',
+      initialized_at: null,
+      init_error: 'tenant_configuration_incomplete',
+    };
+  }
+
+  await ensureRegistryDir(provisioningArtifact);
+  await writeFile(
+    provisioningArtifact,
+    `${JSON.stringify(
+      {
+        workspace_id: record.id,
+        workspace_name: record.name,
+        tenant: record.tenant,
+        idp: {
+          kind: record.idp.kind,
+          url: record.idp.url,
+          realm: record.idp.realm,
+          client_id: record.idp.client_id,
+        },
+        initialized_at: now,
+      },
+      null,
+      2,
+    )}\n`,
+    'utf-8',
+  );
+
+  return {
+    status: 'ready',
+    initialized_at: now,
+    init_error: null,
+  };
+}
+
+export async function publishSystemWorkspace(id: string): Promise<SystemWorkspaceRecord> {
+  const records = await readRegistryFile();
+  const existing = records.find((record) => record.id === id);
+  if (!existing) {
+    throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
+  }
+
+  const provisioningRecord: SystemWorkspaceRecord = {
+    ...existing,
+    provisioning_status: 'provisioning',
+    last_init_error: null,
+    updated_at: new Date().toISOString(),
+  };
+  await writeRegistryFile(records.map((record) => (record.id === id ? provisioningRecord : record)));
+
+  const result = await initializeWorkspaceResources(provisioningRecord);
+  const finalized: SystemWorkspaceRecord = {
+    ...provisioningRecord,
+    provisioning_status: result.status,
+    last_initialized_at: result.initialized_at,
+    last_init_error: result.init_error,
+    updated_at: new Date().toISOString(),
+  };
+  await writeRegistryFile(records.map((record) => (record.id === id ? finalized : record)));
+  return finalized;
+}
+
+export async function disableSystemWorkspace(id: string): Promise<SystemWorkspaceRecord> {
+  const records = await readRegistryFile();
+  const existing = records.find((record) => record.id === id);
+  if (!existing) {
+    throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
+  }
+  const updated: SystemWorkspaceRecord = {
+    ...existing,
+    provisioning_status: 'disabled',
     updated_at: new Date().toISOString(),
   };
   await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));

@@ -5,7 +5,7 @@ const sessionModule = vi.hoisted(() => ({
 }));
 
 const registryModule = vi.hoisted(() => ({
-  listPublicSystemWorkspaces: vi.fn(),
+  listSystemWorkspaces: vi.fn(),
   createSystemWorkspace: vi.fn(),
 }));
 
@@ -17,7 +17,7 @@ import { GET, POST } from '../route';
 describe('/api/system/workspaces', () => {
   beforeEach(() => {
     sessionModule.isSystemAdminAuthenticated.mockReset();
-    registryModule.listPublicSystemWorkspaces.mockReset();
+    registryModule.listSystemWorkspaces.mockReset();
     registryModule.createSystemWorkspace.mockReset();
   });
 
@@ -31,7 +31,7 @@ describe('/api/system/workspaces', () => {
 
   it('returns workspace items for authenticated system admin', async () => {
     sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
-    registryModule.listPublicSystemWorkspaces.mockResolvedValue([
+    registryModule.listSystemWorkspaces.mockResolvedValue([
       { id: 'ws_alpha', name: 'Alpha Workspace' },
     ]);
 

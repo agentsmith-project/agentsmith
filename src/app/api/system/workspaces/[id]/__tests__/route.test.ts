@@ -7,18 +7,24 @@ const sessionModule = vi.hoisted(() => ({
 const registryModule = vi.hoisted(() => ({
   updateSystemWorkspace: vi.fn(),
   deleteSystemWorkspace: vi.fn(),
+  publishSystemWorkspace: vi.fn(),
+  disableSystemWorkspace: vi.fn(),
 }));
 
 vi.mock('@/lib/system-admin/session', () => sessionModule);
 vi.mock('@/lib/system-admin/workspace-registry', () => registryModule);
 
 import { DELETE, PATCH } from '../route';
+import { POST as PUBLISH } from '../publish/route';
+import { POST as DISABLE } from '../disable/route';
 
 describe('/api/system/workspaces/[id]', () => {
   beforeEach(() => {
     sessionModule.isSystemAdminAuthenticated.mockReset();
     registryModule.updateSystemWorkspace.mockReset();
     registryModule.deleteSystemWorkspace.mockReset();
+    registryModule.publishSystemWorkspace.mockReset();
+    registryModule.disableSystemWorkspace.mockReset();
   });
 
   it('returns 401 when system admin session is missing', async () => {
@@ -73,5 +79,31 @@ describe('/api/system/workspaces/[id]', () => {
 
     expect(response.status).toBe(200);
     expect(registryModule.deleteSystemWorkspace).toHaveBeenCalledWith('ws_alpha');
+  });
+
+  it('publishes workspace config for authenticated system admin', async () => {
+    sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    registryModule.publishSystemWorkspace.mockResolvedValue({ id: 'ws_alpha', provisioning_status: 'ready' });
+
+    const response = await PUBLISH(
+      new Request('http://localhost/api/system/workspaces/ws_alpha/publish', { method: 'POST' }),
+      { params: Promise.resolve({ id: 'ws_alpha' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(registryModule.publishSystemWorkspace).toHaveBeenCalledWith('ws_alpha');
+  });
+
+  it('disables workspace config for authenticated system admin', async () => {
+    sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    registryModule.disableSystemWorkspace.mockResolvedValue({ id: 'ws_alpha', provisioning_status: 'disabled' });
+
+    const response = await DISABLE(
+      new Request('http://localhost/api/system/workspaces/ws_alpha/disable', { method: 'POST' }),
+      { params: Promise.resolve({ id: 'ws_alpha' }) },
+    );
+
+    expect(response.status).toBe(200);
+    expect(registryModule.disableSystemWorkspace).toHaveBeenCalledWith('ws_alpha');
   });
 });

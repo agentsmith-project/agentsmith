@@ -4,7 +4,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   createSystemWorkspace,
+  disableSystemWorkspace,
+  getPublicSystemWorkspace,
   listPublicSystemWorkspaces,
+  publishSystemWorkspace,
   updateSystemWorkspace,
 } from '../workspace-registry';
 
@@ -21,8 +24,8 @@ describe('system workspace registry', () => {
     process.env = originalEnv;
   });
 
-  it('creates and lists public system workspaces', async () => {
-    await createSystemWorkspace({
+  it('creates draft workspaces and only lists ready workspaces publicly', async () => {
+    const created = await createSystemWorkspace({
       name: 'Platform Ops',
       workspace_admin: 'admin@example.com',
       project_creators: ['creator@example.com'],
@@ -31,6 +34,11 @@ describe('system workspace registry', () => {
       idp_client_id: 'agentsmith-platform',
       idp_client_secret: 'secret-1',
     });
+
+    expect(created.provisioning_status).toBe('draft');
+    await expect(listPublicSystemWorkspaces()).resolves.toEqual([]);
+
+    await publishSystemWorkspace('platform_ops');
 
     await expect(listPublicSystemWorkspaces()).resolves.toEqual([
       expect.objectContaining({
@@ -74,5 +82,27 @@ describe('system workspace registry', () => {
     expect(updated.idp.url).toBe('https://login.example.com');
     expect(updated.idp.realm).toBe('platform-prod');
     expect(updated.idp.client_secret).toBe('secret-1');
+  });
+
+  it('publishes and disables workspace visibility', async () => {
+    await createSystemWorkspace({
+      name: 'Platform Ops',
+      workspace_admin: 'admin@example.com',
+      idp_url: 'https://idp.example.com',
+      idp_realm: 'platform',
+      idp_client_id: 'agentsmith-platform',
+      idp_client_secret: 'secret-1',
+    });
+
+    const published = await publishSystemWorkspace('platform_ops');
+    expect(published.provisioning_status).toBe('ready');
+    expect(published.last_initialized_at).toBeTruthy();
+    await expect(getPublicSystemWorkspace('platform_ops')).resolves.toEqual(
+      expect.objectContaining({ id: 'platform_ops', provisioning_status: 'ready' }),
+    );
+
+    const disabled = await disableSystemWorkspace('platform_ops');
+    expect(disabled.provisioning_status).toBe('disabled');
+    await expect(getPublicSystemWorkspace('platform_ops')).resolves.toBeNull();
   });
 });

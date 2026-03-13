@@ -10,7 +10,10 @@ import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
 import { SystemLogoutButton } from './SystemLogoutButton';
 import { buildWorkspaceTenantPreview } from '@/lib/system-admin/config';
-import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
+import type {
+  PublicSystemWorkspaceRecord,
+  WorkspaceProvisioningStatus,
+} from '@/lib/system-admin/workspace-registry';
 
 export function SystemWorkspacesPage() {
   const params = useParams();
@@ -20,7 +23,9 @@ export function SystemWorkspacesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isError, setIsError] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeAction, setActiveAction] = useState<'create' | 'update' | 'delete' | null>(null);
+  const [activeAction, setActiveAction] = useState<
+    'create' | 'update' | 'delete' | 'publish' | 'disable' | null
+  >(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
@@ -110,18 +115,69 @@ export function SystemWorkspacesPage() {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const data = (await response.json().catch(() => null)) as { error_message?: string } | null;
+      const data = (await response.json().catch(() => null)) as { error_message?: string; id?: string } | null;
       if (!response.ok) {
         setSaveError(data?.error_message || 'invalid_system_workspace_payload');
         return;
       }
       await loadWorkspaces();
+      if (data?.id) {
+        setSelectedWorkspaceId(data.id);
+      }
       if (!selectedWorkspaceId) {
-        resetDraft();
+        setDraftIdpClientSecret('');
       } else {
         setDraftIdpClientSecret('');
       }
-      setSaveNotice(action === 'update' ? t('update_success') : t('create_success'));
+      setSaveNotice(action === 'update' ? t('update_success') : t('draft_success'));
+    } finally {
+      setIsSubmitting(false);
+      setActiveAction(null);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!selectedWorkspaceId) return;
+    setIsSubmitting(true);
+    setActiveAction('publish');
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      const response = await fetch(`/api/system/workspaces/${selectedWorkspaceId}/publish`, {
+        method: 'POST',
+      });
+      const data = (await response.json().catch(() => null)) as { error_message?: string; id?: string } | null;
+      if (!response.ok) {
+        setSaveError(data?.error_message || 'workspace_publish_failed');
+        return;
+      }
+      await loadWorkspaces();
+      setDraftIdpClientSecret('');
+      setSaveNotice(t('publish_success'));
+    } finally {
+      setIsSubmitting(false);
+      setActiveAction(null);
+    }
+  };
+
+  const handleDisable = async () => {
+    if (!selectedWorkspaceId) return;
+    setIsSubmitting(true);
+    setActiveAction('disable');
+    setSaveError(null);
+    setSaveNotice(null);
+    try {
+      const response = await fetch(`/api/system/workspaces/${selectedWorkspaceId}/disable`, {
+        method: 'POST',
+      });
+      const data = (await response.json().catch(() => null)) as { error_message?: string } | null;
+      if (!response.ok) {
+        setSaveError(data?.error_message || 'workspace_disable_failed');
+        return;
+      }
+      await loadWorkspaces();
+      setDraftIdpClientSecret('');
+      setSaveNotice(t('disable_success'));
     } finally {
       setIsSubmitting(false);
       setActiveAction(null);
@@ -162,14 +218,20 @@ export function SystemWorkspacesPage() {
     draftIdpRealm.trim() &&
     draftIdpClientId.trim();
   const isEditingWorkspace = Boolean(selectedWorkspaceId);
+  const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
+  const selectedStatus = selectedWorkspace?.provisioning_status ?? 'draft';
   const primaryActionLabel = isSubmitting
     ? activeAction === 'update'
       ? t('updating')
       : activeAction === 'delete'
         ? t('deleting')
+        : activeAction === 'publish'
+          ? t('publishing')
+          : activeAction === 'disable'
+            ? t('disabling')
         : t('creating')
     : selectedWorkspaceId
-      ? t('update_workspace')
+      ? t('save_draft')
       : t('create_workspace');
   const statusToneClass = saveError ? 'border-error/30 text-error' : saveNotice ? 'border-success/30 text-foreground' : 'border-subtle text-tertiary';
   const statusPrefix = saveError
@@ -247,7 +309,15 @@ export function SystemWorkspacesPage() {
                           <div className="min-w-0 flex-1">
                             <h2 className="truncate text-base font-semibold text-foreground">{workspace.name}</h2>
                             <p className="mt-1 truncate text-sm text-tertiary">{workspace.id}</p>
-                            <div className="mt-3 space-y-2">
+                          <div className="mt-3 space-y-2">
+                              <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
+                                <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">
+                                  {t('workspace_status_card_label')}
+                                </p>
+                                <p className="mt-1 truncate text-sm font-medium text-foreground">
+                                  {t(`provisioning_status.${workspace.provisioning_status}`)}
+                                </p>
+                              </div>
                               <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
                                 <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">
                                   {t('workspace_admin_card_label')}
@@ -412,6 +482,27 @@ export function SystemWorkspacesPage() {
                   <PreviewRow label={t('preview_key_prefix')} value={preview.key_prefix} />
                 </div>
 
+                <div className="space-y-3 rounded-sm border border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__status">
+                  <div className="space-y-1">
+                    <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_status_label')}</p>
+                    <p className="text-sm font-medium text-foreground">{t('workspace_status_title')}</p>
+                    <p className="text-sm text-tertiary">{t('workspace_status_description')}</p>
+                  </div>
+                  <PreviewRow label={t('current_status_label')} value={t(`provisioning_status.${selectedStatus}`)} />
+                  <PreviewRow
+                    label={t('initialized_at_label')}
+                    value={
+                      selectedWorkspace?.last_initialized_at
+                        ? new Date(selectedWorkspace.last_initialized_at).toLocaleString(locale)
+                        : t('not_initialized')
+                    }
+                  />
+                  <PreviewRow
+                    label={t('last_init_error_label')}
+                    value={selectedWorkspace?.last_init_error || t('none')}
+                  />
+                </div>
+
                 <div
                   className={`rounded-sm border border-dashed bg-bg-base/20 p-4 text-sm ${statusToneClass}`}
                   data-testid="system-workspaces__notice"
@@ -437,6 +528,28 @@ export function SystemWorkspacesPage() {
                   >
                     {primaryActionLabel}
                   </Button>
+                  {selectedWorkspaceId ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handlePublish()}
+                      disabled={isSubmitting || !(selectedStatus === 'draft' || selectedStatus === 'failed')}
+                      data-testid="system-workspaces__publish"
+                    >
+                      {isSubmitting && activeAction === 'publish' ? t('publishing') : t('publish_workspace')}
+                    </Button>
+                  ) : null}
+                  {selectedWorkspaceId ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleDisable()}
+                      disabled={isSubmitting || selectedStatus !== 'ready'}
+                      data-testid="system-workspaces__disable"
+                    >
+                      {isSubmitting && activeAction === 'disable' ? t('disabling') : t('disable_workspace')}
+                    </Button>
+                  ) : null}
                   {selectedWorkspaceId ? (
                     <Button type="button" variant="outline" onClick={resetDraft} data-testid="system-workspaces__reset">
                       {t('new_workspace')}

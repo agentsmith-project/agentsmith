@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const registryModule = vi.hoisted(() => ({
-  getSystemWorkspace: vi.fn(),
+  getPublicSystemWorkspace: vi.fn(),
 }));
 
 vi.mock('@/lib/system-admin/workspace-registry', () => registryModule);
@@ -12,12 +12,12 @@ describe('/api/public/workspaces/[id]', () => {
   const envBackup = { ...process.env };
 
   beforeEach(() => {
-    registryModule.getSystemWorkspace.mockReset();
+    registryModule.getPublicSystemWorkspace.mockReset();
     process.env = { ...envBackup };
   });
 
   it('returns configured workspace login settings', async () => {
-    registryModule.getSystemWorkspace.mockResolvedValue({
+    registryModule.getPublicSystemWorkspace.mockResolvedValue({
       id: 'ws_alpha',
       name: 'Alpha Workspace',
       idp: {
@@ -52,7 +52,7 @@ describe('/api/public/workspaces/[id]', () => {
     process.env.NEXT_PUBLIC_KEYCLOAK_URL = 'https://login.example.com';
     process.env.NEXT_PUBLIC_KEYCLOAK_REALM = 'mbos';
     process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID = 'agentsmith-web';
-    registryModule.getSystemWorkspace.mockResolvedValue(null);
+    registryModule.getPublicSystemWorkspace.mockResolvedValue(null);
 
     const response = await GET(new Request('http://localhost/api/public/workspaces/ws_default'), {
       params: Promise.resolve({ id: 'ws_default' }),
@@ -69,5 +69,15 @@ describe('/api/public/workspaces/[id]', () => {
         client_id: 'agentsmith-web',
       },
     });
+  });
+
+  it('returns 404 for non-ready workspace config', async () => {
+    registryModule.getPublicSystemWorkspace.mockResolvedValue(null);
+
+    const response = await GET(new Request('http://localhost/api/public/workspaces/ws_alpha'), {
+      params: Promise.resolve({ id: 'ws_alpha' }),
+    });
+
+    expect(response.status).toBe(404);
   });
 });

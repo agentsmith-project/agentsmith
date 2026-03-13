@@ -32,6 +32,9 @@ describe('SystemWorkspacesPage', () => {
         {
           id: 'ws_alpha',
           name: 'Alpha Workspace',
+          provisioning_status: 'ready',
+          last_initialized_at: '2026-03-10T01:00:00.000Z',
+          last_init_error: null,
           workspace_admin: 'alpha-admin@example.com',
           idp: {
             kind: 'keycloak',
@@ -54,6 +57,9 @@ describe('SystemWorkspacesPage', () => {
         {
           id: 'ws_beta',
           name: 'Beta Workspace',
+          provisioning_status: 'draft',
+          last_initialized_at: null,
+          last_init_error: null,
           workspace_admin: 'beta-admin@example.com',
           idp: {
             kind: 'keycloak',
@@ -94,7 +100,10 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__status')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_idle');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_status_card_label');
+    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('provisioning_status.ready');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_admin_card_label');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_idp_card_label');
@@ -137,6 +146,9 @@ describe('SystemWorkspacesPage', () => {
             {
               id: 'ws_alpha',
               name: 'Alpha Workspace',
+              provisioning_status: 'draft',
+              last_initialized_at: null,
+              last_init_error: null,
               workspace_admin: 'alpha-admin@example.com',
               idp: {
                 kind: 'keycloak',
@@ -170,6 +182,9 @@ describe('SystemWorkspacesPage', () => {
             {
               id: 'ws_alpha',
               name: 'Alpha Workspace',
+              provisioning_status: 'draft',
+              last_initialized_at: null,
+              last_init_error: null,
               workspace_admin: 'ops-admin@example.com',
               idp: {
                 kind: 'keycloak',
@@ -221,6 +236,7 @@ describe('SystemWorkspacesPage', () => {
     );
     expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_success');
+    expect(screen.getByTestId('system-workspaces__publish')).not.toBeDisabled();
   });
 
   it('deletes selected workspace', async () => {
@@ -232,6 +248,9 @@ describe('SystemWorkspacesPage', () => {
             {
               id: 'ws_alpha',
               name: 'Alpha Workspace',
+              provisioning_status: 'draft',
+              last_initialized_at: null,
+              last_init_error: null,
               workspace_admin: 'alpha-admin@example.com',
               idp: {
                 kind: 'keycloak',
@@ -316,5 +335,177 @@ describe('SystemWorkspacesPage', () => {
       expect(screen.getByTestId('system-workspaces__save-error')).toBeInTheDocument();
     });
     expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_error');
+  });
+
+  it('publishes a selected draft workspace and surfaces ready status', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              provisioning_status: 'draft',
+              last_initialized_at: null,
+              last_init_error: null,
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              provisioning_status: 'ready',
+              last_initialized_at: '2026-03-10T02:00:00.000Z',
+              last_init_error: null,
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    fireEvent.click(screen.getByTestId('system-workspaces__publish'));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha/publish',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('publish_success');
+  });
+
+  it('disables a ready workspace', async () => {
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              provisioning_status: 'ready',
+              last_initialized_at: '2026-03-10T02:00:00.000Z',
+              last_init_error: null,
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'ws_alpha', provisioning_status: 'disabled' }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            {
+              id: 'ws_alpha',
+              name: 'Alpha Workspace',
+              provisioning_status: 'disabled',
+              last_initialized_at: '2026-03-10T02:00:00.000Z',
+              last_init_error: null,
+              workspace_admin: 'alpha-admin@example.com',
+              idp: {
+                kind: 'keycloak',
+                url: 'https://alpha.example.com',
+                realm: 'alpha',
+                client_id: 'alpha-client',
+                has_client_secret: true,
+              },
+              tenant: {
+                workspace_id: 'ws_alpha',
+                workspace_name: 'Alpha Workspace',
+                substrate_label: 'primary',
+                database_name: 'agentsmith_ws_ws_alpha',
+                collection_prefix: 'ws_ws_alpha_',
+                key_prefix: 'ws:ws_alpha:',
+              },
+              created_at: '2026-03-01T00:00:00.000Z',
+              updated_at: '2026-03-10T00:00:00.000Z',
+            },
+          ],
+        }),
+      });
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    fireEvent.click(screen.getByTestId('system-workspaces__disable'));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha/disable',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('disable_success');
   });
 });

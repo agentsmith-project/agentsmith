@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getSystemWorkspace } from '@/lib/system-admin/workspace-registry';
+import { getPublicSystemWorkspace } from '@/lib/system-admin/workspace-registry';
 
 function getDefaultWorkspaceLoginConfig(id: string) {
   const defaultWorkspaceId = process.env.MBOS_DEFAULT_WORKSPACE_ID?.trim() || 'ws_default';
@@ -28,7 +28,7 @@ function getDefaultWorkspaceLoginConfig(id: string) {
 
 export async function GET(_request: Request, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params;
-  const record = await getSystemWorkspace(id);
+  const record = await getPublicSystemWorkspace(id);
   if (record) {
     return NextResponse.json({
       id: record.id,

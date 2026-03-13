@@ -1,6 +1,7 @@
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect } from '@playwright/test';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 function startOpenAICompatibleTaskUpstream(): Promise<{
   server: Server;
@@ -60,9 +61,7 @@ function startOpenAICompatibleTaskUpstream(): Promise<{
 }
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
-  await page.goto(`/${locale}/login/workspace`);
-  await page.getByTestId('workspace-select__card--ws_default').click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+  await page.goto(`/${locale}/workspaces/ws_default/login`);
   await page.getByTestId('workspace-login__keycloak-btn').click();
 
   const keycloakError = page.getByTestId('login__keycloak-error');
@@ -75,27 +74,14 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
   });
   await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
   await page.locator('input#password, input[name="password"]').first().fill(password);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
-    page.locator('#kc-login, button[type="submit"]').first().click(),
-  ]);
-}
-
-async function getToken(page: import('@playwright/test').Page): Promise<string> {
-  const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('agentsmith-auth');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
-      return parsed.state?.token ?? null;
-    } catch {
-      return null;
-    }
-  });
-  if (!token) {
-    throw new Error('missing_auth_token');
+  await page.locator('#kc-login, button[type="submit"]').first().click();
+  await expect
+    .poll(() => page.url(), { timeout: 60_000 })
+    .toMatch(new RegExp(`/${locale}/workspaces/ws_default(?:$|/projects)`));
+  if (!new RegExp(`/${locale}/workspaces/ws_default/projects`).test(page.url())) {
+    await page.goto(`/${locale}/workspaces/ws_default/projects`);
   }
-  return token;
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
 }
 
 test.describe('@lane-real integration endpoint capabilities', () => {
@@ -109,7 +95,9 @@ test.describe('@lane-real integration endpoint capabilities', () => {
     const upstream = await startOpenAICompatibleTaskUpstream();
     try {
       await keycloakLogin(page, locale, username, password);
-      const token = await getToken(page);
+      const token = await readStoredAuthToken(page);
+      await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
+      await page.goto(`/${locale}/workspaces/ws_default/projects`);
 
       const createProjectRes = await page.request.post(
         `${apiBase}/api/v1/workspaces/ws_default/projects`,

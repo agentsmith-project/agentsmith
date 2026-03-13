@@ -117,15 +117,13 @@ test.describe('Files Page (object browser)', () => {
 
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
     await authedPage.getByTestId('files__library-item--lib_large_bench').click();
-    const loadMoreButton = authedPage.getByTestId('files__load-more');
-    await expect(loadMoreButton).toBeVisible();
+    await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
     const targetRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'bulk-0250.txt' }).first();
     for (let attempt = 0; attempt < 12; attempt += 1) {
       if (await targetRow.isVisible().catch(() => false)) break;
+      const loadMoreButton = authedPage.getByTestId('files__load-more');
       if (!await loadMoreButton.isVisible().catch(() => false)) break;
-      await expect(async () => {
-        await loadMoreButton.click();
-      }).toPass({ timeout: 10000 });
+      await loadMoreButton.click();
       await authedPage.waitForTimeout(150);
     }
 

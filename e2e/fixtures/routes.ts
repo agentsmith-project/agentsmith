@@ -1,9 +1,9 @@
 export const ROUTES = {
   public: [
-    { path: '/', title: /MBOS|Login|Sign in|登录/i },
+    { path: '/', title: /Choose how to enter AgentSmith|选择进入 AgentSmith 的方式/i },
     { path: '/app-shell', title: /App Shell/i },
-    { path: '/zh-CN', title: /MBOS|Login|Sign in|登录/i },
-    { path: '/zh-CN/login', title: /Login|Sign in|登录/i },
+    { path: '/zh-CN', title: /选择进入 AgentSmith 的方式|Choose how to enter AgentSmith/i },
+    { path: '/zh-CN/login', title: /选择进入 AgentSmith 的方式|Choose how to enter AgentSmith/i },
     { path: '/zh-CN/login/workspace', title: /Workspace|Select|工作区|工作空间/i },
     { path: '/zh-CN/join', title: /Invalid|Join|加入|邀请无效|加入项目/i },
   ],

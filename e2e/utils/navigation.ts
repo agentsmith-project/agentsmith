@@ -34,11 +34,20 @@ export async function gotoAndWait(
 /** Wait for the page to reach a ready state */
 export async function waitForPageReady(page: Page, timeout = 30000) {
   // Some routes briefly render an MSW bootstrapping screen before the app layout is mounted.
-  // Accept loading marker first, then wait for terminal page markers.
-  await page.waitForSelector(
-    '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"], [data-testid="page-state__loading"]',
-    { timeout },
-  );
+  // Accept the bootstrap text as an initial state, then wait for terminal page markers.
+  await Promise.race([
+    page
+      .locator(
+        '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"], [data-testid="page-state__loading"]',
+      )
+      .first()
+      .waitFor({ state: 'visible', timeout }),
+    page.getByText('Starting mocks...').waitFor({ state: 'visible', timeout }),
+  ]);
+  const bootMessage = page.getByText('Starting mocks...');
+  if (await bootMessage.isVisible().catch(() => false)) {
+    await bootMessage.waitFor({ state: 'hidden', timeout }).catch(() => {});
+  }
   const hasTerminalMarker = await page
     .locator('[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]')
     .first()

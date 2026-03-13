@@ -41,8 +41,26 @@ export const test = base.extend<{
 export { expect } from '@playwright/test';
 
 async function ensureAuthenticatedSession(page: Page, bootstrapPath: string): Promise<void> {
-  await gotoAndWait(page, bootstrapPath);
-  await waitForPageReady(page);
+  let bootstrapError: unknown = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      await gotoAndWait(page, bootstrapPath);
+      await waitForPageReady(page);
+      bootstrapError = null;
+      break;
+    } catch (error) {
+      bootstrapError = error;
+      if (page.isClosed()) {
+        throw error;
+      }
+      if (attempt < 2) {
+        await page.waitForTimeout(500 * (attempt + 1));
+      }
+    }
+  }
+  if (bootstrapError) {
+    throw bootstrapError;
+  }
   if (!LOGIN_PATH_REGEX.test(new URL(page.url()).pathname)) return;
 
   const ctx = await page.evaluate(() => window.__MBOS_AUTH_E2E_CONTEXT__ ?? null).catch(() => null);
@@ -83,6 +101,9 @@ export async function goTo(page: Page, path: string) {
       break;
     } catch (error) {
       navigateError = error;
+      if (page.isClosed()) {
+        throw error;
+      }
       if (attempt < 2) {
         await page.waitForTimeout(250);
       }

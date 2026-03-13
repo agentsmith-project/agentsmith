@@ -3,6 +3,7 @@ import type { AddressInfo } from 'node:net';
 import fs from 'node:fs';
 import path from 'node:path';
 import { test, expect } from '@playwright/test';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 const RUN_REAL_COMPLETION = process.env.INTEGRATION_REAL_COMPLETION_E2E === 'true';
 let lastApiAuthContext: { apiBase: string; authHeader: string } | null = null;
@@ -162,7 +163,7 @@ async function startOpenAIStreamingUpstreamWith(args: {
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
   const clearLocalState = async () => {
-    await page.goto(`/${locale}/login/workspace`);
+    await page.goto(`/${locale}/workspaces/ws_default/login`);
     await page.evaluate(async () => {
       localStorage.clear();
       sessionStorage.clear();
@@ -175,13 +176,8 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
   await clearLocalState();
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
-    if (!new RegExp(`/${locale}/login/workspace|/${locale}/workspaces/ws_default/login`).test(page.url())) {
-      await page.goto(`/${locale}/login/workspace`);
-    }
-
-    if (new RegExp(`/${locale}/login/workspace`).test(page.url())) {
-      await page.getByTestId('workspace-select__card--ws_default').click();
-      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+    if (!new RegExp(`/${locale}/workspaces/ws_default/login`).test(page.url())) {
+      await page.goto(`/${locale}/workspaces/ws_default/login`);
     }
 
     await page.getByTestId('workspace-login__keycloak-btn').click();
@@ -197,12 +193,12 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
     await page.locator('input#password, input[name="password"]').first().fill(password);
     await page.locator('#kc-login, button[type="submit"]').first().click();
 
-    let reachedProjects = false;
+    let reachedWorkspace = false;
     let callbackError = false;
     for (let tick = 0; tick < 120; tick += 1) {
       const currentUrl = page.url();
-      if (new RegExp(`/${locale}/workspaces/ws_default/projects`).test(currentUrl)) {
-        reachedProjects = true;
+      if (new RegExp(`/${locale}/workspaces/ws_default(?:$|/projects)`).test(currentUrl)) {
+        reachedWorkspace = true;
         break;
       }
       if (new RegExp(`/${locale}/workspaces/ws_default/login/callback`).test(currentUrl)) {
@@ -224,9 +220,17 @@ async function keycloakLogin(page: import('@playwright/test').Page, locale: stri
       continue;
     }
 
-    if (!reachedProjects) {
-      throw new Error('Keycloak login did not reach workspace projects');
+    if (!reachedWorkspace) {
+      throw new Error('Keycloak login did not reach workspace');
     }
+    if (!new RegExp(`/${locale}/workspaces/ws_default/projects`).test(page.url())) {
+      await page.goto(`/${locale}/workspaces/ws_default/projects`);
+    }
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
+    const apiBase = process.env.INTEGRATION_API_BASE || 'http://localhost:20010';
+    const token = await readStoredAuthToken(page);
+    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
+    await page.goto(`/${locale}/workspaces/ws_default/projects`);
     return;
   }
 
@@ -821,9 +825,10 @@ async function openChatAttachAndSend(
   await sendBtn.click();
   const msgReq = await createMessageRequest;
   const msgRes = await createMessageResponse;
-  const body = msgReq.postDataJSON() as { attachments?: string[] } | null;
-  expect(Array.isArray(body?.attachments)).toBeTruthy();
-  expect((body?.attachments ?? []).length).toBeGreaterThan(0);
+  const body = msgReq.postDataJSON() as { inputs?: Array<{ kind?: string }> } | null;
+  expect(Array.isArray(body?.inputs)).toBeTruthy();
+  expect((body?.inputs ?? []).length).toBeGreaterThan(0);
+  expect((body?.inputs ?? []).some((input) => input.kind === 'library_object')).toBeTruthy();
   if (!msgRes.ok()) {
     const bodyText = await msgRes.text().catch(() => '');
     throw new Error(`Create message failed (${msgRes.status()}): ${bodyText}`);
@@ -890,7 +895,7 @@ test.describe('@lane-real integration chat flow', () => {
       expect(firstThreadId).toBeTruthy();
       expect(selectedThreadId).toBe(firstThreadId);
 
-      await page.getByRole('link', { name: /ai ops home|overview|概览/i }).first().click();
+      await page.goto(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`);
       await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
         timeout: 30_000,
       });
@@ -1572,7 +1577,7 @@ test.describe('@lane-real integration chat flow', () => {
       await renameThreadInChat(page, threadAId, renamedTitle);
       await deleteThreadInChat(page, threadBId);
 
-      await page.getByRole('link', { name: /ai ops home|overview|概览/i }).first().click();
+      await page.goto(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`);
       await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/${projectId}/overview`), {
         timeout: 30_000,
       });

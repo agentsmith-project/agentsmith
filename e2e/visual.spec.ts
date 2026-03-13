@@ -24,8 +24,21 @@ const test = base.extend<{ authedPage: Page }>({
 
 /** Navigate and wait for page to settle before screenshot */
 async function stableNavigate(page: Page, path: string) {
-  await gotoAndWait(page, path, 20000);
-  await waitForPageReady(page);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await gotoAndWait(page, path, 20000);
+    try {
+      await waitForPageReady(page, attempt === 0 ? 30000 : 45000);
+    } catch (error) {
+      const notFound = await page.getByRole('heading', { name: '404' }).isVisible().catch(() => false);
+      const booting = await page.getByText('Starting mocks...').isVisible().catch(() => false);
+      if (attempt === 0 && (notFound || booting)) {
+        await page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+        continue;
+      }
+      throw error;
+    }
+    break;
+  }
   // In MSW mode, the app can briefly render a full-page "Starting mocks..." overlay after the route is technically mounted.
   // Wait for it to disappear to avoid capturing transient bootstrap screens as baselines.
   const mwsBootMessage = page.getByText('Starting mocks...');

@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentResourceService } from './agent-resource-service.js';
 
 describe('AgentResourceService', () => {
+  const originalCwd = process.cwd();
+
   afterEach(() => {
     delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+    process.chdir(originalCwd);
   });
 
   it('creates external agent with expected defaults', async () => {
@@ -96,6 +99,43 @@ describe('AgentResourceService', () => {
     expect(await docStore.list('ws_default_agent_service_keys', {})).toHaveLength(1);
     expect((await service.listAgents('ws_default', 'proj_1')).map((item) => item.id)).toContain(agent.id);
     expect((await service.listAgentKeys('ws_default', 'proj_1', agent.id)).map((item) => item.id)).toContain(record.id);
+
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('verifies agent keys from the default registry path when SYSTEM_WORKSPACE_REGISTRY_PATH is unset', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-agent-default-registry-'));
+    const artifactsDir = join(dir, 'artifacts');
+    const registryPath = join(artifactsDir, 'system-workspaces.json');
+    mkdirSync(artifactsDir, { recursive: true });
+    writeFileSync(
+      registryPath,
+      JSON.stringify([
+        {
+          id: 'ws_default',
+          name: 'Default Workspace',
+          tenant: {
+            database_name: 'agentsmith_ws_default',
+            collection_prefix: 'ws_default_',
+            key_prefix: 'ws_default:',
+          },
+        },
+      ]),
+      'utf-8',
+    );
+    process.chdir(dir);
+
+    const docStore = new InMemoryJsonDocStore();
+    const service = new AgentResourceService(docStore);
+    const agent = await service.createAgent('ws_default', 'proj_1', {
+      name: 'tenant-agent-default-path',
+      mode: 'external',
+    });
+    const { record, key } = await service.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    const verified = await service.verifyAgentKey(agent.id, key);
+    expect(verified?.id).toBe(record.id);
+    expect(verified?.workspace_id).toBe('ws_default');
 
     rmSync(dir, { recursive: true, force: true });
   });

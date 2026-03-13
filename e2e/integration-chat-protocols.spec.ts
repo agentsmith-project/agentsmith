@@ -1,6 +1,7 @@
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { test, expect, type Page } from '@playwright/test';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 type UpstreamServer = {
   server: Server;
@@ -11,7 +12,7 @@ type UpstreamServer = {
 async function keycloakLogin(page: Page, locale: string, username: string, password: string): Promise<void> {
   await page.context().clearCookies();
   const clearLocalState = async () => {
-    await page.goto(`/${locale}/login/workspace`);
+    await page.goto(`/${locale}/workspaces/ws_default/login`);
     await page.evaluate(async () => {
       localStorage.clear();
       sessionStorage.clear();
@@ -24,13 +25,8 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
   await clearLocalState();
 
   for (let cycle = 0; cycle < 3; cycle += 1) {
-    if (!new RegExp(`/${locale}/login/workspace|/${locale}/workspaces/ws_default/login`).test(page.url())) {
-      await page.goto(`/${locale}/login/workspace`);
-    }
-
-    if (new RegExp(`/${locale}/login/workspace`).test(page.url())) {
-      await page.getByTestId('workspace-select__card--ws_default').click();
-      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+    if (!new RegExp(`/${locale}/workspaces/ws_default/login`).test(page.url())) {
+      await page.goto(`/${locale}/workspaces/ws_default/login`);
     }
 
     await page.getByTestId('workspace-login__keycloak-btn').click();
@@ -46,12 +42,12 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
     await page.locator('input#password, input[name="password"]').first().fill(password);
     await page.locator('#kc-login, button[type="submit"]').first().click();
 
-    let reachedProjects = false;
+    let reachedWorkspace = false;
     let callbackError = false;
     for (let tick = 0; tick < 120; tick += 1) {
       const currentUrl = page.url();
-      if (new RegExp(`/${locale}/workspaces/ws_default/projects`).test(currentUrl)) {
-        reachedProjects = true;
+      if (new RegExp(`/${locale}/workspaces/ws_default(?:$|/projects)`).test(currentUrl)) {
+        reachedWorkspace = true;
         break;
       }
       if (new RegExp(`/${locale}/workspaces/ws_default/login/callback`).test(currentUrl)) {
@@ -73,9 +69,17 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
       continue;
     }
 
-    if (!reachedProjects) {
-      throw new Error('Keycloak login did not reach workspace projects');
+    if (!reachedWorkspace) {
+      throw new Error('Keycloak login did not reach workspace');
     }
+    if (!new RegExp(`/${locale}/workspaces/ws_default/projects`).test(page.url())) {
+      await page.goto(`/${locale}/workspaces/ws_default/projects`);
+    }
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
+    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
+    const token = await readStoredAuthToken(page);
+    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
+    await page.goto(`/${locale}/workspaces/ws_default/projects`);
     return;
   }
 
@@ -101,21 +105,6 @@ async function createProjectFromUi(page: Page, locale: string): Promise<string> 
   const match = page.url().match(/\/projects\/([^/]+)\//);
   if (!match?.[1]) throw new Error('project_id_not_found');
   return match[1];
-}
-
-async function getAuthToken(page: Page): Promise<string> {
-  const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('agentsmith-auth');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
-      return parsed.state?.token ?? null;
-    } catch {
-      return null;
-    }
-  });
-  if (!token) throw new Error('auth_token_not_found');
-  return token;
 }
 
 async function createCredentialViaApi(page: Page, apiBase: string, projectId: string, token: string): Promise<string> {
@@ -299,7 +288,7 @@ test.describe('@lane-real integration chat endpoint protocols', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      const token = await getAuthToken(page);
+      const token = await readStoredAuthToken(page);
       const credentialId = await createCredentialViaApi(page, apiBase, projectId, token);
       const endpointId = await createEndpointViaApi(page, apiBase, projectId, token, {
         name: `it-openai-endpoint-${Date.now()}`,
@@ -327,7 +316,7 @@ test.describe('@lane-real integration chat endpoint protocols', () => {
     try {
       await keycloakLogin(page, locale, username, password);
       const projectId = await createProjectFromUi(page, locale);
-      const token = await getAuthToken(page);
+      const token = await readStoredAuthToken(page);
       const credentialId = await createCredentialViaApi(page, apiBase, projectId, token);
       const endpointId = await createEndpointViaApi(page, apiBase, projectId, token, {
         name: `it-anthropic-endpoint-${Date.now()}`,

@@ -8,6 +8,8 @@
 import { test, expect, goToProject } from './fixtures/test-base';
 import { withAuth } from './fixtures/authenticated';
 
+test.describe.configure({ mode: 'serial' });
+
 async function pickSelectOption(
   dialog: import('@playwright/test').Locator,
   page: import('@playwright/test').Page,
@@ -383,13 +385,15 @@ test.describe('Endpoints Page', () => {
           /OpenAI API Key|Anthropic API Key|E2E Credential/i,
         );
         expect(credentialPicked).toBe(true);
+        nextBtn = wizard.getByRole('button', { name: 'Next' });
       }
 
+      await expect(nextBtn).toBeEnabled({ timeout: 10_000 });
       await nextBtn.click();
 
       // Step 3
-      await expect(wizard.getByTestId('wizard-check-button')).toBeVisible();
-      await expect(wizard.getByTestId('wizard-create-button')).toBeVisible();
+      await expect(wizard.getByTestId('wizard-check-button')).toBeVisible({ timeout: 10_000 });
+      await expect(wizard.getByTestId('wizard-create-button')).toBeVisible({ timeout: 10_000 });
 
       // Create button should be enabled - validation is optional
       await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled();

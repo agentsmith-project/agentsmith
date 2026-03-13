@@ -31,7 +31,6 @@ const chromiumMvpSpecMatch = [
   /endpoints\.spec\.ts$/,
   /files\.spec\.ts$/,
   /login\.spec\.ts$/,
-  /system-admin\.spec\.ts$/,
   /workspace-overview\.spec\.ts$/,
   /workspace-settings\.spec\.ts$/,
   /usage\.spec\.ts$/,
@@ -95,6 +94,19 @@ export default defineConfig({
           args: desktopWindowArgs,
         },
       },
+    },
+    {
+      name: 'chromium-serial',
+      testMatch: [/system-admin\.spec\.ts$/, /system-workspace-mainline\.spec\.ts$/],
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
+      fullyParallel: false,
+      workers: 1,
     },
     {
       name: 'visual',

@@ -22,6 +22,7 @@ const desktopWindowArgs = ['--window-size=1920,1080'];
 export default defineConfig({
   testDir: './e2e',
   grep: /@lane-real/,
+  globalSetup: './e2e/integration-global-setup.ts',
   fullyParallel: false,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,

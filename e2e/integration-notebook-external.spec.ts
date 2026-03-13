@@ -2,17 +2,15 @@ import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 async function keycloakLogin(page: Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
-  await page.goto(`/${locale}/login/workspace`);
+  await page.goto(`/${locale}/workspaces/ws_default/login`);
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
-
-  await page.getByTestId('workspace-select__card--ws_default').click();
-  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
 
   await page.getByTestId('workspace-login__keycloak-btn').click();
   const keycloakError = page.getByTestId('workspace-login__keycloak-error');
@@ -26,10 +24,14 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
 
   await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
   await page.locator('input#password, input[name="password"]').first().fill(password);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
-    page.locator('#kc-login, button[type="submit"]').first().click(),
-  ]);
+  await page.locator('#kc-login, button[type="submit"]').first().click();
+  await expect
+    .poll(() => page.url(), { timeout: 60_000 })
+    .toMatch(new RegExp(`/${locale}/workspaces/ws_default(?:$|/projects)`));
+  if (!new RegExp(`/${locale}/workspaces/ws_default/projects`).test(page.url())) {
+    await page.goto(`/${locale}/workspaces/ws_default/projects`);
+  }
+  await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
 }
 
 async function ensureProject(page: Page, locale: string): Promise<string> {
@@ -65,21 +67,6 @@ async function ensureProject(page: Page, locale: string): Promise<string> {
   const match = page.url().match(/\/projects\/([^/]+)\//);
   if (!match?.[1]) throw new Error('project_id_not_found_after_create');
   return match[1];
-}
-
-async function getAuthToken(page: Page): Promise<string> {
-  const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('agentsmith-auth');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
-      return parsed.state?.token ?? null;
-    } catch {
-      return null;
-    }
-  });
-  if (!token) throw new Error('auth_token_not_found');
-  return token;
 }
 
 function startMockOpenAIUpstream(): {
@@ -151,8 +138,10 @@ test.describe('@lane-real integration notebook external execution service', () =
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
     await keycloakLogin(page, locale, username, password);
+    const token = await readStoredAuthToken(page);
+    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
+    await page.goto(`/${locale}/workspaces/ws_default/projects`);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
     const upstream = startMockOpenAIUpstream();
 
     let ws: WebSocket | null = null;

@@ -2,23 +2,19 @@ import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import path from 'node:path';
+import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 async function keycloakLogin(page: Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
-  await page.goto(`/${locale}/login/workspace`);
+  await page.goto(`/${locale}/workspaces/ws_default/login`);
   await page.evaluate(() => {
     localStorage.clear();
     sessionStorage.clear();
   });
 
   for (let cycle = 0; cycle < 2; cycle += 1) {
-    if (!new RegExp(`/${locale}/login/workspace|/${locale}/workspaces/ws_default/login`).test(page.url())) {
-      await page.goto(`/${locale}/login/workspace`);
-    }
-
-    if (new RegExp(`/${locale}/login/workspace`).test(page.url())) {
-      await page.getByTestId('workspace-select__card--ws_default').click();
-      await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/login`), { timeout: 30_000 });
+    if (!new RegExp(`/${locale}/workspaces/ws_default/login`).test(page.url())) {
+      await page.goto(`/${locale}/workspaces/ws_default/login`);
     }
 
     await page.getByTestId('workspace-login__keycloak-btn').click();
@@ -33,11 +29,18 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
 
     await page.locator('input#username, input[name="username"], input[name="email"]').first().fill(username);
     await page.locator('input#password, input[name="password"]').first().fill(password);
-    await Promise.all([
-      page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 60_000 }),
-      page.locator('#kc-login, button[type="submit"]').first().click(),
-    ]);
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects`), { timeout: 30_000 });
+    await page.locator('#kc-login, button[type="submit"]').first().click();
+    await expect
+      .poll(() => page.url(), { timeout: 60_000 })
+      .toMatch(new RegExp(`/${locale}/workspaces/ws_default(?:$|/projects)`));
+    if (!new RegExp(`/${locale}/workspaces/ws_default/projects`).test(page.url())) {
+      await page.goto(`/${locale}/workspaces/ws_default/projects`);
+    }
+    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
+    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
+    const token = await readStoredAuthToken(page);
+    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
+    await page.goto(`/${locale}/workspaces/ws_default/projects`);
     return;
   }
 
@@ -69,21 +72,6 @@ async function ensureProject(page: Page, locale: string): Promise<string> {
   const match = page.url().match(/\/projects\/([^/]+)\//);
   if (!match?.[1]) throw new Error('project_id_not_found_after_create');
   return match[1];
-}
-
-async function getAuthToken(page: Page): Promise<string> {
-  const token = await page.evaluate(() => {
-    const raw = window.localStorage.getItem('agentsmith-auth');
-    if (!raw) return null;
-    try {
-      const parsed = JSON.parse(raw) as { state?: { token?: string | null } };
-      return parsed.state?.token ?? null;
-    } catch {
-      return null;
-    }
-  });
-  if (!token) throw new Error('auth_token_not_found');
-  return token;
 }
 
 async function createExternalAgentBundle(page: Page, args: {
@@ -396,7 +384,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
 
     await keycloakLogin(page, locale, username, password);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
+    const token = await readStoredAuthToken(page);
 
     const title = `External Agent Session ${Date.now()}`;
     const bundle = await createExternalAgentBundle(page, {
@@ -447,7 +435,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
 
     await keycloakLogin(page, locale, username, password);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
+    const token = await readStoredAuthToken(page);
 
     const title = `External Agent Stop Session ${Date.now()}`;
     const bundle = await createExternalAgentBundle(page, {
@@ -491,7 +479,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
 
     await keycloakLogin(page, locale, username, password);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
+    const token = await readStoredAuthToken(page);
 
     const multimodalTitle = `External Agent Multimodal ${Date.now()}`;
     const multimodalBundle = await createExternalAgentBundle(page, {
@@ -569,7 +557,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
 
     await keycloakLogin(page, locale, username, password);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
+    const token = await readStoredAuthToken(page);
 
     const title = `External Agent Protocol ${Date.now()}`;
     const bundle = await createExternalAgentBundle(page, {
@@ -600,7 +588,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
 
     await keycloakLogin(page, locale, username, password);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
+    const token = await readStoredAuthToken(page);
 
     const title = `External Agent Text Only ${Date.now()}`;
     await createExternalAgentBundle(page, {
@@ -631,7 +619,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
 
     await keycloakLogin(page, locale, username, password);
     const projectId = await ensureProject(page, locale);
-    const token = await getAuthToken(page);
+    const token = await readStoredAuthToken(page);
 
     const title = `External Agent Invalid Key ${Date.now()}`;
     const bundle = await createExternalAgentBundle(page, {

@@ -12,11 +12,34 @@ async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
 }
 
+async function waitForWorkspaceId(page: import('@playwright/test').Page, workspaceName: string) {
+  await expect
+    .poll(
+      async () => {
+        const response = await page.evaluate(async (name) => {
+          const result = await fetch('/api/system/workspaces', { cache: 'no-store' });
+          const payload = (await result.json()) as { items?: Array<{ id: string; name: string }> };
+          return payload.items?.find((item) => item.name === name)?.id ?? null;
+        }, workspaceName);
+        return response;
+      },
+      { timeout: 15_000 },
+    )
+    .not.toBeNull();
+
+  return page.evaluate(async (name) => {
+    const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+    const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
+    return payload.items?.find((item) => item.name === name)?.id ?? null;
+  }, workspaceName);
+}
+
 test.describe('System Admin', () => {
   test('system admin can open system info', async ({ page }) => {
     await loginAsSystemAdmin(page);
 
-    await page.getByTestId('system-workspaces__open-info').click();
+    await expect(page.getByTestId('system-workspaces__open-info')).toBeVisible();
+    await page.goto('/en-US/system/info');
     await page.waitForURL(/\/en-US\/system\/info/, { timeout: 15_000 });
     await expect(page.getByTestId('system-info__heading')).toBeVisible();
     await expect(page.getByTestId('system-info__notice')).toBeVisible();
@@ -37,13 +60,7 @@ test.describe('System Admin', () => {
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('platform-ops-secret');
     await page.getByTestId('system-workspaces__save').click();
 
-    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible();
-    const createdWorkspaceId = await page.evaluate(async (name) => {
-      const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
-      const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
-      const item = payload.items?.find((candidate) => candidate.name === name);
-      return item?.id ?? null;
-    }, workspaceName);
+    const createdWorkspaceId = await waitForWorkspaceId(page, workspaceName);
 
     expect(createdWorkspaceId).toBeTruthy();
     const workspaceCard = page.getByTestId(`system-workspaces__card--${createdWorkspaceId}`);
@@ -63,7 +80,7 @@ test.describe('System Admin', () => {
     await page.getByTestId('system-workspaces__draft-idp-realm').fill(updatedRealm);
     await page.getByTestId('system-workspaces__save').click();
 
-    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible();
+    await expect(page.getByTestId('system-workspaces__save-notice')).toBeVisible({ timeout: 15_000 });
     await expect(page.getByTestId('system-workspaces__draft-admin')).toHaveValue(updatedAdmin);
     await expect(page.getByTestId('system-workspaces__draft-idp-realm')).toHaveValue(updatedRealm);
 

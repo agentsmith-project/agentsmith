@@ -40,6 +40,7 @@ Related docs:
 - `project:membership:update`
 - `project:admins:update`
 - `project:lifecycle:update`
+- `project:files:update`
 - `project:manage`
 
 ## Route-Level Permission Gate Contract
@@ -69,9 +70,10 @@ Target migration:
 ## Action-Level Permission Gate Contract
 
 - Endpoint create/update/delete: `project:governance:update`
-- Credential create/rotate/delete: `project:manage`
-- Resource policy save: `project:manage`
-- Member/template/group management: `project:manage`
+- File/library create/update/delete: `project:files:update`
+- Credential create/rotate/delete: `project:governance:update`
+- Resource policy save: `project:governance:update`
+- Member/template/group management and join request decisions: `project:membership:update`
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
 - Agent publish/unpublish visibility changes: `project:agent:public`
 

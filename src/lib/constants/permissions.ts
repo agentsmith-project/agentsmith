@@ -6,6 +6,7 @@
  * - project:agent:manage
  * - project:agent:public
  * - project:audit:read
+ * - project:files:update
  * - project:governance:update
  * - project:membership:update
  * - project:admins:update
@@ -20,6 +21,7 @@ export const PLATFORM_PERMISSIONS = {
     'project:agent:manage',
     'project:agent:public',
     'project:audit:read',
+    'project:files:update',
     'project:governance:update',
     'project:membership:update',
     'project:admins:update',
@@ -41,6 +43,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:agent:manage': 'Create and manage own agents',
   'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
   'project:audit:read': 'Read project audit records',
+  'project:files:update': 'Create, upload, move, rename, and delete project file libraries and objects',
   'project:governance:update': 'Manage project governance resources such as credentials, resource policy, and endpoint governance',
   'project:membership:update': 'Manage project memberships, templates, groups, and join requests',
   'project:admins:update': 'Assign or revoke project administrators',
@@ -69,6 +72,7 @@ export const GROUP_TEMPLATES = {
     'project:endpoint:use',
     'project:agent:manage',
     'project:audit:read',
+    'project:files:update',
     'project:governance:update',
     'project:membership:update',
     'project:admins:update',
@@ -79,6 +83,7 @@ export const GROUP_TEMPLATES = {
     'project:endpoint:use',
     'project:agent:manage',
     'project:audit:read',
+    'project:files:update',
     'project:governance:update',
     'project:manage',
   ],

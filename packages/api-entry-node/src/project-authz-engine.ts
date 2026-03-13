@@ -295,7 +295,7 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
   if (resourceType === 'source_library') {
     return /read|list|download|browse/i.test(action)
       ? 'project:endpoint:use'
-      : 'project:manage';
+      : 'project:files:update';
   }
   if (/public|publish|unpublish/i.test(action)) {
     return 'project:agent:public';

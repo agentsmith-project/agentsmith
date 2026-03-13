@@ -5,6 +5,7 @@ export const OWNER_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
   'project:agent:manage',
   'project:agent:public',
+  'project:files:update',
   'project:governance:update',
   'project:membership:update',
   'project:admins:update',
@@ -16,6 +17,7 @@ export const PROJECT_ADMIN_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
   'project:agent:manage',
   'project:agent:public',
+  'project:files:update',
   'project:governance:update',
   'project:manage',
 ] as const;

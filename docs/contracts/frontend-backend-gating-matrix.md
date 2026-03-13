@@ -25,6 +25,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
 - `project:membership:update`
 - `project:admins:update`
 - `project:lifecycle:update`
+- `project:files:update`
 - `project:manage`
 
 ## Matrix
@@ -37,14 +38,14 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | chat | access chat page and stream completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
 | notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
 | files | view/use personal file libraries | `project:endpoint:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
-| files | create/update/delete file or library | `project:manage` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
+| files | create/update/delete file or library | `project:files:update` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
 | agents | view/use visible agents | `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/execution-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
 | agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
 | endpoints | view/use endpoints | `project:endpoint:use` | `GET /endpoints*` | page-level permission denied |
 | endpoints | create/update/delete endpoint | `project:governance:update` | `POST/PUT/DELETE /endpoints*` | mutating controls disabled |
-| resource policy | view/update endpoint/agent policy | `project:manage` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
-| credentials | view/manage credentials | `project:manage` | `GET/POST/DELETE /credentials*` | page-level permission denied |
+| resource policy | view/update endpoint/agent policy | `project:governance:update` | `GET/PATCH /resources/{endpoint\|agent}/{id}/policy` | mutating controls disabled |
+| credentials | view/manage credentials | `project:governance:update` | `GET/POST/DELETE /credentials*` | page-level permission denied |
 | members | view/manage members/templates/groups | `project:membership:update` | `/members/*`, `/invites`, `/join-requests/*`, `/groups*`, `/permission-templates*`, `/spending-limit-templates*` | page-level permission denied or mutating controls disabled |
 | settings | view project settings shell | `project:governance:update` or `project:admins:update` or `project:lifecycle:update` | `GET /projects/{id}` | page-level permission denied |
 | audit | view audit data | `project:audit:read` | `GET /audit` | component-level permission denied |
@@ -71,6 +72,8 @@ The current matrix still uses `project:manage` on several project governance sur
   - endpoints governance writes
   - credentials
   - resource policy
+- `project:files:update`
+  - file and library mutations
 - `project:membership:update`
   - join requests
   - membership state changes

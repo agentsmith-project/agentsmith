@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import {
   Sheet,
@@ -12,19 +11,9 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Loader2, Sparkles } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { EndpointAPI, CredentialsAPI, ModelConfigAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
-import type { EndpointCapabilityType } from '@/lib/api/types';
 import {
   APIError,
   resolveApiErrorPresentation,
@@ -34,9 +23,12 @@ import {
   buildModelCatalogProviderOptions,
   CUSTOM_MODEL_CATALOG_PROVIDER_OPTION,
 } from '@/lib/endpoints/model-catalog-provider-options';
-import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 import { toast } from '@/components/ui/toast';
 import { CustomEndpointWizard } from './CustomEndpointWizard';
+import { EndpointBasicsForm } from './create-endpoint-dialog/EndpointBasicsForm';
+import { EndpointDialogFooter } from './create-endpoint-dialog/EndpointDialogFooter';
+import type { CapabilityOption, CatalogModelOption } from './create-endpoint-dialog/types';
+import { buildCreateEndpointPayload, buildProviderModels } from './create-endpoint-dialog/utils';
 
 export interface CreateEndpointDialogProps {
   open: boolean;
@@ -57,17 +49,6 @@ export function CreateEndpointDialog({
   const tErrors = useTranslations('errors');
   const commonT = useTranslations('common');
   const locale = useLocale();
-  type CapabilityOption = EndpointCapabilityType;
-  type CatalogModelOption = {
-    model_id: string;
-    name: string;
-    capabilities: EndpointCapabilityType[];
-    limit?: {
-      context?: number;
-      output?: number;
-    };
-    cost?: Record<string, number | Record<string, number>>;
-  };
 
   const [name, setName] = React.useState('');
   const [description, setDescription] = React.useState('');
@@ -108,17 +89,10 @@ export function CreateEndpointDialog({
     enabled: open && !!workspaceId && !!projectId,
   });
 
-  const providerModels = React.useMemo<CatalogModelOption[]>(() => {
-    const catalogItems = modelCatalogModelsData?.items ?? [];
-    if (catalogItems.length === 0) return [];
-    return catalogItems.map((item) => ({
-      model_id: item.model_id,
-      name: item.name || item.model_id,
-      capabilities: item.capabilities as EndpointCapabilityType[],
-      limit: item.limit,
-      cost: item.cost,
-    }));
-  }, [modelCatalogModelsData?.items]);
+  const providerModels = React.useMemo<CatalogModelOption[]>(
+    () => buildProviderModels(modelCatalogModelsData?.items ?? []),
+    [modelCatalogModelsData?.items],
+  );
 
   const selectedCatalogModel = React.useMemo(
     () => providerModels.find((item) => item.model_id === selectedModel),
@@ -243,38 +217,16 @@ export function CreateEndpointDialog({
       return;
     }
 
-    const url = baseUrl.trim();
-
-    const data: CreateEndpointRequest = {
-      name: name.trim(),
-      description: description.trim() || undefined,
-      model: selectedModel.trim(),
-      type: provider === 'openai' ? 'openai' : 'custom',
-      base_url: url,
-      credential_ref: credentialRef,
-      provider_family: selectedProvider.family,
-      protocol: selectedProvider.protocol,
-      meta: {
-        compatibility_interface: selectedProvider.compatibility_interface,
-        catalog_provider_key: provider,
-      },
-      capabilities: [{ type: capability, enabled: true, default_model_id: selectedModel.trim() }],
-      models: [{ capability, model_id: selectedModel.trim(), display_name: selectedModel.trim() }],
-      defaults: capability === 'chat_completion'
-        ? { chat_model_id: selectedModel.trim() }
-        : capability === 'multimodal_completion'
-          ? { multimodal_model_id: selectedModel.trim() }
-        : capability === 'embedding'
-          ? { embedding_model_id: selectedModel.trim() }
-          : capability === 'rerank'
-            ? { rerank_model_id: selectedModel.trim() }
-            : capability === 'image_generation'
-              ? { image_model_id: selectedModel.trim() }
-              : { video_model_id: selectedModel.trim() },
-      model_profile: undefined,
-    };
-
-    createMutation.mutate(data);
+    createMutation.mutate(buildCreateEndpointPayload({
+      baseUrl,
+      capability,
+      credentialRef,
+      description,
+      name,
+      provider,
+      selectedProvider,
+      selectedModel,
+    }));
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -305,224 +257,43 @@ export function CreateEndpointDialog({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 flex flex-col gap-4 overflow-y-auto px-6 py-4">
-          <div className="space-y-2 order-4">
-            <label htmlFor="endpoint-name" className="text-sm font-medium text-foreground">
-              {t('create_dialog.name')} <span className="text-error">*</span>
-            </label>
-            <Input
-              id="endpoint-name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder={t('create_dialog.name_placeholder')}
-              disabled={createMutation.isPending}
-              required
-            />
-            <p className="text-xs text-tertiary">{t('create_dialog.name_hint')}</p>
-            {duplicateNameExists ? (
-              <p className="text-xs text-error">{t('create_dialog.name_conflict')}</p>
-            ) : null}
-          </div>
+          <EndpointBasicsForm
+            baseUrl={baseUrl}
+            capability={capability}
+            commonT={commonT}
+            createPending={createMutation.isPending}
+            credentialRef={credentialRef}
+            credentials={credentials}
+            description={description}
+            duplicateNameExists={duplicateNameExists}
+            locale={locale}
+            name={name}
+            projectId={projectId}
+            provider={provider}
+            providerModels={providerModels}
+            providerOptions={providerOptions}
+            selectedCatalogModel={selectedCatalogModel ?? null}
+            selectedModel={selectedModel}
+            selectedProvider={selectedProvider}
+            t={t}
+            workspaceId={workspaceId}
+            onBaseUrlChange={setBaseUrl}
+            onCapabilityChange={setCapability}
+            onCredentialRefChange={setCredentialRef}
+            onDescriptionChange={setDescription}
+            onNameChange={setName}
+            onOpenWizard={() => setShowCustomWizard(true)}
+            onProviderChange={setProvider}
+            onSelectedModelChange={setSelectedModel}
+          />
 
-          <div className="space-y-2 order-5">
-            <label htmlFor="endpoint-description" className="text-sm font-medium text-foreground">
-              {t('create_dialog.description')}
-            </label>
-            <textarea
-              id="endpoint-description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder={commonT('placeholders.enter_description')}
-              rows={2}
-              disabled={createMutation.isPending}
-              className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-            />
-          </div>
-
-          <div className="space-y-2 order-2">
-            <label className="text-sm font-medium text-foreground">
-              {t('create_dialog.capability')} <span className="text-error">*</span>
-            </label>
-            <Select
-              value={capability}
-              onValueChange={(v) => setCapability(v as CapabilityOption)}
-              disabled={createMutation.isPending}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="chat_completion">{t('create_dialog.capability_chat_completion')}</SelectItem>
-                <SelectItem value="multimodal_completion">{t('create_dialog.capability_multimodal_completion')}</SelectItem>
-                <SelectItem value="embedding">{t('create_dialog.capability_embedding')}</SelectItem>
-                <SelectItem value="rerank">{t('create_dialog.capability_rerank')}</SelectItem>
-                <SelectItem value="image_generation">{t('create_dialog.capability_image_generation')}</SelectItem>
-                <SelectItem value="video_generation">{t('create_dialog.capability_video_generation')}</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2 order-1">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium text-foreground">
-                {t('create_dialog.provider')} <span className="text-error">*</span>
-              </label>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => setShowCustomWizard(true)}
-                disabled={createMutation.isPending}
-              >
-                <Sparkles className="mr-1 h-4 w-4" />
-                {t('create_dialog.open_wizard_button')}
-              </Button>
-            </div>
-            <Select
-              value={provider}
-              onValueChange={setProvider}
-              disabled={createMutation.isPending}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {providerOptions.map((item) => (
-                  <SelectItem key={item.key} value={item.key}>
-                    <span className="flex items-center gap-2">
-                      <span>{item.display_name}</span>
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-2 order-2">
-            <label className="text-sm font-medium text-foreground">
-              {t('create_dialog.compatibility_interface')}
-            </label>
-            <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
-              {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
-            </div>
-          </div>
-
-          {providerModels.length > 0 && (
-            <div className="space-y-2 order-3">
-              <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
-              <p className="text-xs text-tertiary">{t('create_dialog.model_id_hint')}</p>
-              <Select
-                value={selectedModel}
-                onValueChange={setSelectedModel}
-                disabled={createMutation.isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={t('create_dialog.select_from_catalog')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {providerModels.slice(0, 100).map((model) => (
-                    <SelectItem key={model.model_id} value={model.model_id}>
-                      {model.name} ({model.model_id})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedCatalogModel && (
-                <div className="rounded-sm border border-subtle bg-surface-low p-3 text-xs text-secondary">
-                  <p>
-                    {t('create_dialog.catalog_context_tokens')}: {selectedCatalogModel.limit?.context ?? '-'}
-                  </p>
-                  <p>
-                    {t('create_dialog.catalog_output_tokens')}: {selectedCatalogModel.limit?.output ?? '-'}
-                  </p>
-                  <p>
-                    {t('create_dialog.catalog_input_price')}: {typeof selectedCatalogModel.cost?.input === 'number' ? selectedCatalogModel.cost?.input : '-'}
-                  </p>
-                  <p>
-                    {t('create_dialog.catalog_output_price')}: {typeof selectedCatalogModel.cost?.output === 'number' ? selectedCatalogModel.cost?.output : '-'}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {providerModels.length === 0 && (
-            <div className="order-3 rounded-sm border border-subtle bg-surface-low p-3 text-xs text-secondary">
-              {t('create_dialog.select_from_catalog')}
-            </div>
-          )}
-
-          <div className="space-y-2 order-8">
-            <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
-              {t('create_dialog.base_url')} <span className="text-error">*</span>
-            </label>
-            <Input
-              id="endpoint-base-url"
-              value={baseUrl}
-              onChange={(e) => setBaseUrl(e.target.value)}
-              placeholder="https://api.example.com/v1"
-              disabled={createMutation.isPending}
-              required
-            />
-          </div>
-
-          <div className="space-y-2 order-9">
-            <label className="text-sm font-medium text-foreground">
-              {t('create_dialog.credential')} <span className="text-error">*</span>
-            </label>
-            {credentials.length === 0 ? (
-              <div className="rounded-sm border border-subtle bg-surface-low p-4 text-sm text-tertiary">
-                {t('create_dialog.no_credentials')}{' '}
-                <Link
-                  href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/credentials`}
-                  className="text-accent hover:underline"
-                >
-                  {t('create_dialog.create_credential_first')}
-                </Link>
-              </div>
-            ) : (
-              <Select
-                value={credentialRef}
-                onValueChange={setCredentialRef}
-                disabled={createMutation.isPending}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder={commonT('placeholders.select')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {credentials.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name} ({c.fingerprint})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
-
-          </div>
-
-          <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => handleOpenChange(false)}
-              disabled={createMutation.isPending}
-            >
-              {commonT('cancel')}
-            </Button>
-            <Button
-              type="submit"
-              variant="primary"
-              disabled={!canSubmit || credentials.length === 0}
-            >
-              {createMutation.isPending ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                commonT('create')
-              )}
-            </Button>
-          </div>
+          <EndpointDialogFooter
+            canSubmit={canSubmit}
+            createPending={createMutation.isPending}
+            hasCredentials={credentials.length > 0}
+            commonT={commonT}
+            onCancel={() => handleOpenChange(false)}
+          />
         </form>
       </SheetContent>
     </Sheet>

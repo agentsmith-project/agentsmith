@@ -35,20 +35,22 @@ import { useChatThreadActions } from '@/lib/chat/use-chat-thread-actions';
 import { useChatDeleteDialog } from '@/lib/chat/use-chat-delete-dialog';
 import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 
-import { toast } from '@/components/ui/toast';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
-import { ChatDeleteDialog } from '@/components/chat/ChatDeleteDialog';
-import { ChatLibraryPickerDialog } from '@/components/chat/ChatLibraryPickerDialog';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { cn } from '@/lib/utils';
-import { AddUrlDialog } from './_components/AddUrlDialog';
+import { ChatDialogs } from './_components/ChatDialogs';
 import { ChatHeaderActions } from './_components/ChatHeaderActions';
-import type { ResolvedChatPageParams } from './chat-page-types';
+import {
+  ChatPageLoadingState,
+  ChatPagePermissionErrorState,
+  ChatPageValidationErrorState,
+} from './_components/ChatPageState';
+import { useChatAttachmentActions } from './useChatAttachmentActions';
+import { useResolvedChatParams } from './useResolvedChatParams';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -60,7 +62,7 @@ export default function ChatPage({ params }: ChatPageProps) {
   const tErrors = useTranslations('errors');
 
   const token = useAuthStore((s) => s.token);
-  const [resolvedParams, setResolvedParams] = useState<ResolvedChatPageParams | null>(null);
+  const resolvedParams = useResolvedChatParams(params);
   const canAccessChat = useHasPermission('project:endpoint:use');
   const canReadThreads = canAccessChat;
   const canUseChat = canAccessChat;
@@ -75,24 +77,6 @@ export default function ChatPage({ params }: ChatPageProps) {
   const [urlInput, setUrlInput] = useState('');
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
@@ -345,134 +329,52 @@ export default function ChatPage({ params }: ChatPageProps) {
     runStream,
   });
 
-  const handlePickFiles = useCallback(() => {
-    if (editingMessageId) {
-      toast.info(t('attachments.disabled_while_editing'));
-      return;
-    }
-    if (!canAttachFiles) {
-      toast.info(t('attachments.multimodal_required'));
-      return;
-    }
-    onPickFiles();
-  }, [canAttachFiles, editingMessageId, onPickFiles, t]);
-
-  const handlePickFromLibrary = useCallback(() => {
-    if (editingMessageId) {
-      toast.info(t('attachments.disabled_while_editing'));
-      return;
-    }
-    if (!currentSessionId) return;
-    if (!canAttachFiles) {
-      toast.info(t('attachments.multimodal_required'));
-      return;
-    }
-    setLibraryPickerOpen(true);
-  }, [canAttachFiles, currentSessionId, editingMessageId, t]);
-
-  const handlePickUrl = useCallback(() => {
-    if (editingMessageId) {
-      toast.info(t('attachments.disabled_while_editing'));
-      return;
-    }
-    if (!currentSessionId) return;
-    if (!canAttachFiles) {
-      toast.info(t('attachments.multimodal_required'));
-      return;
-    }
-    setAddUrlOpen(true);
-  }, [canAttachFiles, currentSessionId, editingMessageId, t]);
-
-  const handleAddLibraryObject = useCallback((input: {
-    libraryId: string;
-    key: string;
-    name: string;
-    contentType?: string;
-  }) => {
-    if (!currentSessionId) return;
-    if (!canAttachFiles) {
-      toast.info(t('attachments.multimodal_required'));
-      return;
-    }
-    addLibraryAttachmentMutation.mutate({
-      sessionId: currentSessionId,
-      libraryId: input.libraryId,
-      key: input.key,
-      name: input.name,
-      contentType: input.contentType,
-    });
-  }, [addLibraryAttachmentMutation, canAttachFiles, currentSessionId, t]);
-
-  const handleAddUrlInput = useCallback(() => {
-    const normalized = urlInput.trim();
-    if (!currentSessionId) return;
-    if (!/^https?:\/\//i.test(normalized)) return;
-    addUrlAttachmentMutation.mutate(
-      { sessionId: currentSessionId, url: normalized },
-      {
-        onSuccess: () => {
-          setUrlInput('');
-          setAddUrlOpen(false);
-        },
-      },
-    );
-  }, [addUrlAttachmentMutation, currentSessionId, urlInput]);
-
-  const handleAttachFiles = useCallback(async (files: File[]) => {
-    if (editingMessageId) {
-      toast.info(t('attachments.disabled_while_editing'));
-      return;
-    }
-    if (!currentSessionId) {
-      toast.info(t('no_active_thread_description'));
-      return;
-    }
-    if (!canAttachFiles) {
-      toast.info(t('attachments.multimodal_required'));
-      return;
-    }
-    await onAttachFiles(files);
-  }, [canAttachFiles, currentSessionId, editingMessageId, onAttachFiles, t]);
-
-  const handleRemoveAttachment = useCallback((attachmentId: string) => {
-    if (!canUseChat || !currentSessionId) return;
-    deleteAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
-  }, [canUseChat, currentSessionId, deleteAttachmentMutation]);
-
-  const handleRetryAttachment = useCallback((attachmentId: string) => {
-    if (!canUseChat || !currentSessionId) return;
-    retryAttachmentMutation.mutate({ sessionId: currentSessionId, attachmentId });
-  }, [canUseChat, currentSessionId, retryAttachmentMutation]);
+  const {
+    handleAddLibraryObject,
+    handleAddUrlInput,
+    handleAttachFiles,
+    handlePickFiles,
+    handlePickFromLibrary,
+    handlePickUrl,
+    handleRemoveAttachment,
+    handleRetryAttachment,
+  } = useChatAttachmentActions({
+    addLibraryAttachment: (input) => addLibraryAttachmentMutation.mutate(input),
+    addUrlAttachment: (input, options) => addUrlAttachmentMutation.mutate(input, options),
+    canAttachFiles,
+    canUseChat,
+    currentSessionId,
+    deleteAttachment: (input) => deleteAttachmentMutation.mutate(input),
+    editingMessageId,
+    onAttachFiles,
+    onPickFiles,
+    retryAttachment: (input) => retryAttachmentMutation.mutate(input),
+    setAddUrlOpen,
+    setLibraryPickerOpen,
+    setUrlInput,
+    t,
+    urlInput,
+  });
 
   if (!resolvedParams) {
-    return (
-          <PageState state="loading">
-        <div className="flex items-center justify-center h-full">
-          <div className="text-tertiary">{t('loading')}</div>
-        </div>
-      </PageState>
-    );
+    return <ChatPageLoadingState message={t('loading')} />;
   }
 
   if (!workspaceId || !projectId) {
     return (
-      <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
-      </PageState>
+      <ChatPageValidationErrorState
+        title={tErrors('validation_error')}
+        description={tErrors('badRequest.description')}
+      />
     );
   }
 
   if (!canReadThreads) {
     return (
-      <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
-      </PageState>
+      <ChatPagePermissionErrorState
+        title={tErrors('permission_denied_title')}
+        description={tErrors('permission_denied_hint')}
+      />
     );
   }
 
@@ -574,33 +476,29 @@ export default function ChatPage({ params }: ChatPageProps) {
             onCancelEdit={() => setEditingMessageId(null)}
           />
         </div>
-        <ChatDeleteDialog
-          open={deleteThreadDialogOpen}
-          onOpenChange={setDeleteThreadDialogOpen}
-          onConfirm={handleConfirmDeleteThread}
-          labels={{
+        <ChatDialogs
+          addLibraryAttachmentPending={addLibraryAttachmentMutation.isPending}
+          addUrlOpen={addUrlOpen}
+          addUrlPending={addUrlAttachmentMutation.isPending}
+          deleteThreadDialogOpen={deleteThreadDialogOpen}
+          libraryPickerOpen={libraryPickerOpen}
+          localeLabels={{
             title: t('delete_confirm_title'),
             message: t('delete_confirm_message', { name: threadToDelete?.title ?? '' }),
             cancel: t('delete_confirm_cancel'),
             confirm: t('delete_confirm_action'),
           }}
-        />
-        <ChatLibraryPickerDialog
-          open={libraryPickerOpen}
-          onOpenChange={setLibraryPickerOpen}
-          workspaceId={workspaceId}
           projectId={projectId}
           sourcesAPI={sourcesAPI}
-          loading={addLibraryAttachmentMutation.isPending}
-          onPickObject={handleAddLibraryObject}
-        />
-        <AddUrlDialog
-          isPending={addUrlAttachmentMutation.isPending}
-          open={addUrlOpen}
           t={t}
           urlInput={urlInput}
-          onConfirm={handleAddUrlInput}
-          onOpenChange={setAddUrlOpen}
+          workspaceId={workspaceId}
+          onConfirmDeleteThread={handleConfirmDeleteThread}
+          onLibraryPickerOpenChange={setLibraryPickerOpen}
+          onOpenAddUrlChange={setAddUrlOpen}
+          onOpenDeleteThreadChange={setDeleteThreadDialogOpen}
+          onPickLibraryObject={handleAddLibraryObject}
+          onSubmitUrl={handleAddUrlInput}
           onUrlInputChange={setUrlInput}
         />
       </PageLayout>

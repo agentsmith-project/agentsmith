@@ -2,21 +2,26 @@
 
 import * as React from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Copy, Download, Expand, FileText, FileType2, Image as ImageIcon, Link2 } from 'lucide-react';
+import { Copy, Download, Link2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/toast';
 import { getApiClient, FilesAPI } from '@/lib/api';
-import type { FileObjectMeta } from '@/lib/api/types';
 import { queryKeys } from '@/lib/query-keys';
 import { formatBytes } from '@/lib/utils/formatters';
 import { FileItemIcon } from '@/components/files/FileItemIcon';
+import { PreviewDialog } from '@/components/files/file-object-details-panel/PreviewDialog';
+import { PreviewSection } from '@/components/files/file-object-details-panel/PreviewSection';
+import { ShareLinkDialog } from '@/components/files/file-object-details-panel/ShareLinkDialog';
+import {
+  basename,
+  formatMetaSummary,
+  previewSupportsInline,
+  previewTypeLabel,
+  resolvePreviewKind,
+} from '@/components/files/file-object-details-panel/utils';
 
 type SelectedItem =
   | { kind: 'prefix'; prefix: string }
@@ -28,60 +33,6 @@ interface FileObjectDetailsPanelProps {
   selectedLibraryId: string | null;
   selected: SelectedItem[];
   onDownload: () => void;
-}
-
-type PreviewKind = 'image' | 'pdf' | 'text' | 'none';
-
-const TEXT_CONTENT_TYPES = new Set([
-  'application/json',
-  'application/xml',
-  'application/javascript',
-  'application/x-yaml',
-  'application/yaml',
-  'text/markdown',
-]);
-
-function basename(path: string) {
-  const trimmed = path.endsWith('/') ? path.slice(0, -1) : path;
-  const idx = trimmed.lastIndexOf('/');
-  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
-}
-
-function extensionOf(filename: string) {
-  const idx = filename.lastIndexOf('.');
-  if (idx < 0 || idx === filename.length - 1) return '';
-  return filename.slice(idx + 1).toLowerCase();
-}
-
-function formatExpiry(iso: string) {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  return new Date(ms).toLocaleString();
-}
-
-function resolvePreviewKind(contentType: string, key: string): PreviewKind {
-  if (contentType.startsWith('image/')) return 'image';
-  if (contentType === 'application/pdf') return 'pdf';
-  if (contentType.startsWith('text/') || TEXT_CONTENT_TYPES.has(contentType)) return 'text';
-
-  const ext = extensionOf(key);
-  if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg'].includes(ext)) return 'image';
-  if (ext === 'pdf') return 'pdf';
-  if (['txt', 'md', 'json', 'csv', 'xml', 'yml', 'yaml', 'log', 'js', 'ts', 'tsx', 'jsx', 'css', 'html'].includes(ext)) {
-    return 'text';
-  }
-  return 'none';
-}
-
-function previewSupportsInline(kind: PreviewKind) {
-  return kind === 'image' || kind === 'pdf' || kind === 'text';
-}
-
-function previewTypeLabel(kind: PreviewKind, t: ReturnType<typeof useTranslations>) {
-  if (kind === 'image') return t('file_manager.preview_type_image');
-  if (kind === 'pdf') return t('file_manager.preview_type_pdf');
-  if (kind === 'text') return t('file_manager.preview_type_text');
-  return t('file_manager.preview_type_binary');
 }
 
 export function FileObjectDetailsPanel({
@@ -260,8 +211,7 @@ export function FileObjectDetailsPanel({
   }
 
   const meta = metaQuery.data;
-  const filename = basename(meta.key);
-  const ext = extensionOf(filename);
+  const { ext, filename, summary } = formatMetaSummary(meta, t, formatBytes);
 
   return (
     <div className="min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col" data-testid="files__details-panel">
@@ -287,9 +237,7 @@ export function FileObjectDetailsPanel({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-strong font-medium">{filename}</div>
-                  <div className="mt-1 text-xs text-tertiary">
-                    {ext ? ext.toUpperCase() : t('file_manager.unknown')} · {formatBytes(meta.size_bytes)} · {new Date(meta.last_modified).toLocaleString()}
-                  </div>
+                  <div className="mt-1 text-xs text-tertiary">{summary}</div>
                   <div className="mt-2 inline-flex items-center rounded-sm border border-subtle bg-surface px-2 py-0.5 text-[11px] text-tertiary">
                     {previewTypeLabel(previewKind, t)}
                   </div>
@@ -360,76 +308,34 @@ export function FileObjectDetailsPanel({
         </Tabs>
       </div>
 
-      <Dialog open={shareDialogOpen} onOpenChange={setShareDialogOpen}>
-        <DialogContent className="max-w-lg" data-testid="files__dialog__share-link">
-          <DialogHeader>
-            <DialogTitle>{t('file_manager.share_link')}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="text-xs text-tertiary break-all">{meta.key}</div>
-            <div className="space-y-1.5">
-              <Label htmlFor="share-expiry">{t('file_manager.share_link_expiry')}</Label>
-              <Select value={shareExpirySeconds} onValueChange={setShareExpirySeconds}>
-                <SelectTrigger id="share-expiry" data-testid="files__share-expiry">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="900">{t('file_manager.share_expiry_15m')}</SelectItem>
-                  <SelectItem value="3600">{t('file_manager.share_expiry_1h')}</SelectItem>
-                  <SelectItem value="86400">{t('file_manager.share_expiry_24h')}</SelectItem>
-                  <SelectItem value="604800">{t('file_manager.share_expiry_7d')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button type="button" onClick={() => void createShareLink()} disabled={creatingShareLink} data-testid="files__share-generate">
-                {creatingShareLink ? t('file_manager.generating') : t('file_manager.generate_link')}
-              </Button>
-              {shareLinkValue && (
-                <Button type="button" variant="outline" onClick={() => void copyShareLink()} data-testid="files__share-copy">
-                  {t('file_manager.copy_link')}
-                </Button>
-              )}
-            </div>
-            {shareLinkValue && (
-              <div className="space-y-2">
-                <Input readOnly value={shareLinkValue} data-testid="files__share-link-value" />
-                <div className="text-xs text-tertiary">
-                  {t('file_manager.share_link_expires_at', { time: formatExpiry(shareExpiresAt ?? '') })}
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <ShareLinkDialog
+        creatingShareLink={creatingShareLink}
+        metaKey={meta.key}
+        open={shareDialogOpen}
+        shareExpirySeconds={shareExpirySeconds}
+        shareExpiresAt={shareExpiresAt}
+        shareLinkValue={shareLinkValue}
+        t={t}
+        onCopyShareLink={() => {
+          void copyShareLink();
+        }}
+        onCreateShareLink={() => {
+          void createShareLink();
+        }}
+        onOpenChange={setShareDialogOpen}
+        onShareExpirySecondsChange={setShareExpirySeconds}
+      />
 
-      <Dialog open={previewModalOpen} onOpenChange={setPreviewModalOpen}>
-        <DialogContent className="max-w-6xl h-[86vh] flex flex-col" data-testid="files__dialog__preview-expand">
-          <DialogHeader>
-            <DialogTitle className="truncate">{filename}</DialogTitle>
-          </DialogHeader>
-          <div className="flex-1 min-h-0">
-            {previewKind === 'image' && objectUrl ? (
-              <div className="h-full rounded border border-subtle bg-black/20 p-3">
-                <img src={objectUrl} alt={basename(meta.key)} className="h-full w-full object-contain rounded" />
-              </div>
-            ) : previewKind === 'pdf' && objectUrl ? (
-              <iframe src={objectUrl} title={basename(meta.key)} className="h-full w-full rounded border border-subtle bg-surface" />
-            ) : previewKind === 'text' ? (
-              <div className="h-full rounded border border-subtle bg-surface p-3 overflow-auto">
-                <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words text-primary">
-                  {textPreview || t('file_manager.preview_loading')}
-                </pre>
-              </div>
-            ) : (
-              <div className="h-full rounded border border-subtle bg-surface flex flex-col items-center justify-center gap-2 text-tertiary">
-                <FileType2 className="h-5 w-5" />
-                <span>{t('file_manager.preview_unsupported')}</span>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
+      <PreviewDialog
+        filename={filename}
+        metaKey={meta.key}
+        objectUrl={objectUrl}
+        open={previewModalOpen}
+        previewKind={previewKind}
+        t={t}
+        textPreview={textPreview}
+        onOpenChange={setPreviewModalOpen}
+      />
     </div>
   );
 }
@@ -447,85 +353,6 @@ function KeyValue({
     <div>
       <div className="text-xs text-tertiary">{label}</div>
       <div className={mono ? 'font-mono text-xs break-all text-primary' : 'break-all text-primary'}>{value}</div>
-    </div>
-  );
-}
-
-function PreviewSection({
-  meta,
-  previewKind,
-  previewLoading,
-  previewError,
-  objectUrl,
-  textPreview,
-  onDownload,
-  onExpand,
-  t,
-}: {
-  meta: FileObjectMeta;
-  previewKind: PreviewKind;
-  previewLoading: boolean;
-  previewError: boolean;
-  objectUrl: string | null;
-  textPreview: string;
-  onDownload: () => void;
-  onExpand: () => void;
-  t: ReturnType<typeof useTranslations>;
-}) {
-  const expandable = previewKind !== 'none' && !previewLoading && !previewError;
-  return (
-    <div className="rounded-md border border-subtle bg-surface-high/20 p-3 space-y-2" data-testid="files__details-preview">
-      <div className="flex items-center justify-between gap-2">
-        <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.preview')}</div>
-        {expandable && (
-          <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={onExpand} data-testid="files__preview-expand">
-            <Expand className="h-3.5 w-3.5" />
-            {t('file_manager.preview_expand')}
-          </Button>
-        )}
-      </div>
-
-      {previewKind === 'none' ? (
-        <div className="h-40 rounded border border-subtle bg-surface flex flex-col items-center justify-center text-tertiary gap-2">
-          <FileType2 className="h-5 w-5" />
-          <span className="text-sm">{t('file_manager.preview_unsupported')}</span>
-          <Button type="button" variant="outline" size="sm" className="h-8" onClick={onDownload}>
-            {t('file_manager.download_to_view')}
-          </Button>
-        </div>
-      ) : previewLoading ? (
-        <div className="h-40 rounded border border-subtle bg-surface flex items-center justify-center text-tertiary text-sm">
-          {t('file_manager.preview_loading')}
-        </div>
-      ) : previewError ? (
-        <div className="h-40 rounded border border-subtle bg-surface flex flex-col items-center justify-center text-tertiary text-sm gap-2">
-          <span>{t('file_manager.preview_failed')}</span>
-          <Button type="button" variant="outline" size="sm" className="h-8" onClick={onDownload}>
-            {t('file_manager.download_to_view')}
-          </Button>
-        </div>
-      ) : previewKind === 'image' && objectUrl ? (
-        <div className="rounded border border-subtle bg-black/10 p-2">
-          <img src={objectUrl} alt={basename(meta.key)} className="max-h-[280px] w-full object-contain rounded" />
-        </div>
-      ) : previewKind === 'pdf' && objectUrl ? (
-        <iframe src={objectUrl} title={basename(meta.key)} className="h-[320px] w-full rounded border border-subtle bg-surface" />
-      ) : previewKind === 'text' ? (
-        <div className="rounded border border-subtle bg-surface p-2 max-h-[320px] overflow-auto">
-          <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words text-primary">
-            {textPreview || t('file_manager.preview_loading')}
-          </pre>
-        </div>
-      ) : (
-        <div className="h-40 rounded border border-subtle bg-surface flex items-center justify-center text-tertiary text-sm">
-          {t('file_manager.preview_unsupported')}
-        </div>
-      )}
-
-      <div className="flex items-center gap-2 text-xs text-tertiary">
-        {previewKind === 'image' ? <ImageIcon className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
-        <span>{meta.content_type}</span>
-      </div>
     </div>
   );
 }

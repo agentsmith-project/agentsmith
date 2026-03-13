@@ -3,14 +3,14 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { Virtuoso } from 'react-virtuoso';
-import { Plus, Search } from 'lucide-react';
 
 import type { ChatSession } from '@/lib/api/types';
 import { cn } from '@/lib/utils';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { ThreadItem } from './ThreadItem';
+import { ThreadsPaneHeader } from './threads-pane/ThreadsPaneHeader';
+import { ThreadsPaneStatus } from './threads-pane/ThreadsPaneStatus';
+import { countGeneratingSessions, filterSessions } from './threads-pane/utils';
 
 export function ThreadsPane({
   sessions,
@@ -48,18 +48,10 @@ export function ThreadsPane({
   const t = useTranslations('chat');
 
   const filtered = React.useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const base = sessions;
-    const sorted = [...base].sort((a, b) => {
-      if ((a.starred ? 1 : 0) !== (b.starred ? 1 : 0)) return (b.starred ? 1 : 0) - (a.starred ? 1 : 0);
-      if ((a.pinned ? 1 : 0) !== (b.pinned ? 1 : 0)) return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
-      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
-    });
-    if (!q) return sorted;
-    return sorted.filter((s) => (s.title || '').toLowerCase().includes(q));
+    return filterSessions(sessions, searchQuery);
   }, [sessions, searchQuery]);
   const generatingCount = React.useMemo(
-    () => new Set(streamingSessionIds).size,
+    () => countGeneratingSessions(streamingSessionIds),
     [streamingSessionIds],
   );
 
@@ -71,47 +63,23 @@ export function ThreadsPane({
       )}
       data-testid="chat__threads-pane"
     >
-      <div className="p-2.5 border-b border-subtle space-y-2">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-xs font-medium uppercase tracking-wide text-tertiary">{t('threads_title')}</div>
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-8 gap-1.5 px-2.5"
-            onClick={onCreate}
-            disabled={!canCreate || createPending}
-            data-testid="chat__new-thread-btn"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            {t('new_thread')}
-          </Button>
-        </div>
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />
-          <Input
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder={t('search_threads_placeholder')}
-            className="h-8 pl-9"
+      <div className="border-b border-subtle space-y-2">
+        <ThreadsPaneHeader
+          canCreate={canCreate}
+          createPending={createPending}
+          searchQuery={searchQuery}
+          t={t}
+          onCreate={onCreate}
+          onSearchQueryChange={onSearchQueryChange}
+        />
+        <div className="px-2.5 pb-2.5">
+          <ThreadsPaneStatus
+            activeSessionId={activeSessionId}
+            generatingCount={generatingCount}
+            sessionsCount={sessions.length}
+            t={t}
           />
         </div>
-        {(generatingCount > 0 || (!activeSessionId && sessions.length > 0)) && (
-          <div className="flex items-center justify-between gap-2 text-[11px] text-tertiary">
-            <div className="min-w-0 truncate">
-              {!activeSessionId && sessions.length > 0 ? (
-                <span data-testid="chat__threads-no-active-hint">{t('threads_no_active_hint')}</span>
-              ) : ''}
-            </div>
-            {generatingCount > 0 && (
-              <div
-                className="inline-flex shrink-0 items-center rounded-full border border-subtle bg-surface-high px-2 py-0.5 text-[10px] text-tertiary"
-                data-testid="chat__threads-generating-count"
-              >
-                {t('threads_generating_count', { count: generatingCount })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       <div className="flex-1 min-h-0">

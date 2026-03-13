@@ -10,18 +10,17 @@
 
 import * as React from 'react';
 import { useState } from 'react';
-import { Plus, Bell, Settings } from 'lucide-react';
 import { useTranslations } from 'next-intl';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { PageState } from '@/components/layout/PageState';
-import { Button } from '@/components/ui/button';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { AlertRulesList } from './AlertRulesList';
-import { AlertNotificationsPanel } from './AlertNotificationsPanel';
 import { AlertRuleFormDialog } from './AlertRuleFormDialog';
 import type { AlertRuleFormData } from './AlertRuleFormDialog';
 import type { AlertRule } from '@/lib/types/alerts';
 import type { Alert } from '@/lib/types/alerts';
+import { AlertCenterHeader } from './alert-center-page/AlertCenterHeader';
+import { AlertCenterTabs } from './alert-center-page/AlertCenterTabs';
+import type { AlertCenterTabValue } from './alert-center-page/types';
+import { ruleToFormData } from './alert-center-page/utils';
 
 export interface AlertCenterPageProps {
   workspaceId: string;
@@ -36,8 +35,6 @@ export interface AlertCenterPageProps {
   onAlertMarkAsRead?: (alertId: string) => void;
   onAlertDismiss?: (alertId: string) => void;
 }
-
-type TabValue = 'rules' | 'notifications';
 
 /**
  * Alert center page component
@@ -67,7 +64,7 @@ export function AlertCenterPage({
 }: AlertCenterPageProps) {
   const t = useTranslations('alerts');
   const tErrors = useTranslations('errors');
-  const [activeTab, setActiveTab] = useState<TabValue>('rules');
+  const [activeTab, setActiveTab] = useState<AlertCenterTabValue>('rules');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
@@ -146,75 +143,26 @@ export function AlertCenterPage({
 
   const editingRule = editingRuleId ? rules.find((r) => r.id === editingRuleId) : null;
 
-  // Convert AlertRule to AlertRuleFormData for the dialog
-  const ruleToFormData = (rule: AlertRule): AlertRuleFormData => ({
-    name: rule.name,
-    description: rule.description,
-    enabled: rule.enabled,
-    trigger: rule.trigger,
-    channels: rule.channels,
-    behavior: rule.behavior,
-  });
-
   return (
     <div className="w-full space-y-4" data-testid="alert-center-page">
-      {!embedded ? (
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-            <p className="mt-1 text-sm text-tertiary">{t('subtitle')}</p>
-          </div>
-        </div>
-      ) : null}
+      <AlertCenterHeader embedded={embedded} t={t} />
 
-      {/* Tabs */}
-      <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as TabValue)}>
-        <div className="flex items-center justify-between">
-          <TabsList>
-            <TabsTrigger value="rules">
-              <Settings className="h-4 w-4 mr-2" />
-              {t('rules')}
-            </TabsTrigger>
-            <TabsTrigger value="notifications">
-              <Bell className="h-4 w-4 mr-2" />
-              {t('notifications')}
-            </TabsTrigger>
-          </TabsList>
+      <AlertCenterTabs
+        activeTab={activeTab}
+        alerts={alerts}
+        canManageAlerts={canManageAlerts}
+        rules={rules}
+        t={t}
+        onAlertDismiss={handleDismiss}
+        onAlertMarkAsRead={handleMarkAsRead}
+        onCreateOpen={() => setIsCreateDialogOpen(true)}
+        onRuleDelete={handleDeleteRule}
+        onRuleEdit={handleEditRule}
+        onRuleTest={handleTestRule}
+        onRuleToggle={handleToggleRule}
+        onTabChange={setActiveTab}
+      />
 
-          {activeTab === 'rules' && canManageAlerts && (
-            <Button
-              onClick={() => setIsCreateDialogOpen(true)}
-              variant="action"
-              size="sm"
-              className="gap-2"
-              data-testid="alert-center__create-button"
-            >
-              <Plus className="h-4 w-4" />
-              {t('create_rule')}
-            </Button>
-          )}
-        </div>
-
-        <TabsContent value="rules" className="mt-4">
-          <AlertRulesList
-            rules={rules}
-            onEdit={handleEditRule}
-            onDelete={handleDeleteRule}
-            onToggle={handleToggleRule}
-            onTest={handleTestRule}
-          />
-        </TabsContent>
-
-        <TabsContent value="notifications" className="mt-4">
-          <AlertNotificationsPanel
-            alerts={alerts}
-            onMarkAsRead={handleMarkAsRead}
-            onDismiss={handleDismiss}
-          />
-        </TabsContent>
-      </Tabs>
-
-      {/* Create Dialog */}
       <AlertRuleFormDialog
         open={isCreateDialogOpen}
         onClose={() => setIsCreateDialogOpen(false)}
@@ -222,7 +170,6 @@ export function AlertCenterPage({
         mode="create"
       />
 
-      {/* Edit Dialog */}
       {editingRule && (
         <AlertRuleFormDialog
           open={!!editingRule}

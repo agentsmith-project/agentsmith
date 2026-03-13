@@ -10,6 +10,13 @@ import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { useCanReadAudit, useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
+import { OverviewLinkSection } from './_components/OverviewLinkSection';
+import {
+  buildGovernanceLinks,
+  buildOverviewPaths,
+  buildWorkLinks,
+  createOverviewErrorContent,
+} from './overview-page-utils';
 
 export default function OverviewPage() {
   const params = useParams();
@@ -31,10 +38,10 @@ export default function OverviewPage() {
   if (!workspaceId || !projectId) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
-        </div>
+        {createOverviewErrorContent(
+          tErrors('validation_error'),
+          tErrors('badRequest.description'),
+        )}
       </PageState>
     );
   }
@@ -42,44 +49,24 @@ export default function OverviewPage() {
   if (!canUseProject) {
     return (
       <PageState state="error">
-        <div className="max-w-md text-center space-y-2">
-          <h2 className="text-lg font-semibold">{tErrors('permission_denied_title')}</h2>
-          <p className="text-sm text-tertiary">{tErrors('permission_denied_hint')}</p>
-        </div>
+        {createOverviewErrorContent(
+          tErrors('permission_denied_title'),
+          tErrors('permission_denied_hint'),
+        )}
       </PageState>
     );
   }
 
-  const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
-  const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
-  const workLinks = [
-    { label: tNav('chat'), href: `${basePath}/chat` },
-    { label: tNav('notebook'), href: `${basePath}/notebook` },
-    { label: tNav('files'), href: `${basePath}/files` },
-    { label: tNav('endpoints'), href: `${basePath}/endpoints` },
-    { label: tNav('usage'), href: `${basePath}/usage` },
-    { label: tNav('api_access_guide'), href: `${basePath}/use-guide` },
-  ];
-  const governanceLinks = [
-    ...(canManageAgents ? [{ label: tNav('agents'), href: `${basePath}/agents` }] : []),
-    ...(canReadAudit ? [{ label: tNav('audit'), href: `${basePath}/audit` }] : []),
-    ...(canManageGovernance
-      ? [
-          { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },
-          { label: tNav('credentials'), href: `${basePath}/credentials` },
-        ]
-      : []),
-    ...(canManageMembership
-      ? [
-          { label: tNav('members'), href: `${basePath}/members` },
-        ]
-      : []),
-    ...(canReadProjectSettings
-      ? [
-          { label: tNav('settings'), href: `${basePath}/settings` },
-        ]
-      : []),
-  ];
+  const { basePath, workspaceBasePath } = buildOverviewPaths(locale, workspaceId, projectId);
+  const workLinks = buildWorkLinks(tNav, basePath);
+  const governanceLinks = buildGovernanceLinks(tNav, basePath, {
+    canManageAgents,
+    canManageGovernance,
+    canManageMembership,
+    canReadAudit,
+    canReadProjectSettings,
+    canUseProject,
+  });
 
   return (
     <PageState state="success">
@@ -96,41 +83,23 @@ export default function OverviewPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">{tGuide('quick_links.title')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4" data-testid="project-hub__quick-links">
-              <section className="space-y-2" data-testid="project-hub__work-links">
-                <h2 className="text-sm font-semibold text-foreground">{tProject('workspace_home_projects_title')}</h2>
-                <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                  {workLinks.map((item) => (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="rounded-sm border border-subtle px-3 py-2 text-sm text-foreground transition-colors hover:bg-hover"
-                    >
-                      {item.label}
-                    </Link>
-                  ))}
-                </div>
-              </section>
+            <CardTitle className="text-base">{tGuide('quick_links.title')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4" data-testid="project-hub__quick-links">
+            <OverviewLinkSection
+              items={workLinks}
+              testId="project-hub__work-links"
+              title={tProject('workspace_home_projects_title')}
+            />
 
-              {governanceLinks.length > 0 ? (
-                <section className="space-y-2" data-testid="project-hub__governance-links">
-                  <h2 className="text-sm font-semibold text-foreground">{tProject('workspace_home_admin_title')}</h2>
-                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {governanceLinks.map((item) => (
-                      <Link
-                        key={item.href}
-                        href={item.href}
-                        className="rounded-sm border border-subtle px-3 py-2 text-sm text-foreground transition-colors hover:bg-hover"
-                      >
-                        {item.label}
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-            </CardContent>
+            {governanceLinks.length > 0 ? (
+              <OverviewLinkSection
+                items={governanceLinks}
+                testId="project-hub__governance-links"
+                title={tProject('workspace_home_admin_title')}
+              />
+            ) : null}
+          </CardContent>
           </Card>
         </div>
       </PageLayout>

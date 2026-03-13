@@ -2,25 +2,6 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { TaskHeader } from './TaskHeader';
-import { AttachedFilesPanel } from './AttachedFilesPanel';
-import { ConversationPanel } from './ConversationPanel';
-import { NotebookSseDebugPanel } from './NotebookSseDebugPanel';
-import { ArtifactsPanel } from './ArtifactsPanel';
-import { FileSelectDialog } from './FileSelectDialog';
-import { ArtifactImageViewer } from './ArtifactImageViewer';
-import { ArtifactSaveDialog } from './ArtifactSaveDialog';
-import { TaskCreateDialog } from './TaskCreateDialog';
-import { EditTaskDialog } from './EditTaskDialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Button } from '@/components/ui/button';
 import { useTask, useTaskMessages, useTaskArtifacts, useSendMessage, useAddFiles, useUpdateTask } from '@/lib/hooks/use-task';
 import { useTaskSSE } from '@/lib/hooks/use-task-sse';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
@@ -39,6 +20,9 @@ import {
   createPendingMessage,
   deriveRunAction,
 } from '@/components/notebook/task-page/run-activity';
+import { TaskPageContent } from '@/components/notebook/task-page/TaskPageContent';
+import { TaskPageDialogs } from '@/components/notebook/task-page/TaskPageDialogs';
+import { TaskPageLoadingState, TaskPageNotFoundState } from '@/components/notebook/task-page/TaskPageStates';
 import { useTaskTraceState } from '@/components/notebook/task-page/useTaskTraceState';
 import { useTaskInputActions } from '@/components/notebook/task-page/useTaskInputActions';
 
@@ -526,27 +510,17 @@ export function TaskPage({
   };
 
   if (taskLoading) {
-    return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-tertiary">{tTask('loading')}</div>
-      </div>
-    );
+    return <TaskPageLoadingState text={tTask('loading')} />;
   }
 
   if (!task) {
     return (
-      <div className="h-full flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-lg font-semibold text-foreground mb-2">{tTask('not_found_title')}</h2>
-          <p className="text-sm text-tertiary mb-4">{tTask('not_found_description')}</p>
-          <button
-            onClick={() => router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/notebook`)}
-            className="text-sm text-accent hover:underline"
-          >
-            {tTask('back_to_notebook')}
-          </button>
-        </div>
-      </div>
+      <TaskPageNotFoundState
+        title={tTask('not_found_title')}
+        description={tTask('not_found_description')}
+        backLabel={tTask('back_to_notebook')}
+        onBack={() => router.push(`/${locale}/workspaces/${workspaceId}/projects/${projectId}/notebook`)}
+      />
     );
   }
 
@@ -595,159 +569,102 @@ export function TaskPage({
         onDeleted={handleTaskDeleted}
         onLeave={handleLeave}
       />
-      <div className="flex-1 flex min-h-0">
-        <div className="w-[232px] flex-shrink-0">
-          <AttachedFilesPanel
-            workspaceId={workspaceId}
-            projectId={projectId}
-            taskId={taskId}
-            attachedInputIds={task.attached_inputs.map((item) => item.id)}
-            addingInput={addingInput}
-            onAddFromFiles={() => {
-              if (!canUpdateTask) return;
-              setFileSelectOpen(true);
-            }}
-            onAddFromLocal={() => {
-              if (!canUpdateTask || addingInput) return;
-              localFileInputRef.current?.click();
-            }}
-            onAddFromUrl={() => {
-              if (!canUpdateTask || addingInput) return;
-              setAddUrlOpen(true);
-            }}
-          />
-        </div>
-        <div className="flex-1 min-w-0">
-          {showSseDebugPanel && <NotebookSseDebugPanel events={sseDebugEvents} />}
-          <ConversationPanel
-            messages={messages || []}
-            streamingMessageId={streamingMessageId}
-            streamingContent={streamingContent}
-            connectionStatus={connectionStatus}
-            connectionErrorCode={realtimeFailureCode}
-            connectionErrorMessage={realtimeFailureMessage}
-            traceEventsByMessageId={traceEventsByMessageId}
-            traceHasMoreByMessageId={traceHasMoreByMessageId}
-            traceLoadingByMessageId={traceLoadingByMessageId}
-            traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
-            traceErrorByMessageId={traceErrorByMessageId}
-            diagnosticsLinks={notebookDiagnosticsLinks}
-            onTraceExpand={fetchTracesForMessage}
-            onTraceLoadMore={loadMoreTracesForMessage}
-            onSendMessage={handleSendMessage}
-            agentRunning={agentIsBusy}
-            pendingQueue={pendingMessages}
-            onPendingUpdate={handlePendingUpdate}
-            onPendingRemove={handlePendingRemove}
-            runActivity={{
-              active: agentIsBusy,
-              elapsedSeconds: runElapsedSeconds,
-              cancelling: cancelActiveRun.isPending,
-              lastSummary: latestRunAction.summary,
-              lastKind: latestRunAction.kind,
-              recentActions: recentRunActions,
-            }}
-            onCancelActiveRun={handleCancelActiveRun}
-            onRunActionClick={(action) => {
-              if (!action.traceName || !activeTraceMessageId) return;
-              setShowExecutionDetails(true);
-              setTraceFocusMessageId(activeTraceMessageId);
-              setTraceFocusName(action.traceName);
-              setTraceFocusToken((prev) => prev + 1);
-            }}
-            focusTraceMessageId={traceFocusMessageId}
-            focusTraceName={traceFocusName}
-            focusTraceToken={traceFocusToken}
-            showExecutionDetails={showExecutionDetails}
-            onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
-            sandboxStarting={showSandboxStarting}
-            disabled={isConversationInputDisabled}
-            sending={sendMessage.isPending}
-          />
-        </div>
-        <div className="w-[288px] flex-shrink-0">
-          <ArtifactsPanel
-            artifacts={artifacts || []}
-            onView={handleViewArtifact}
-            onSave={handleSaveArtifact}
-            onDownload={handleDownloadArtifact}
-            onAttachAsInput={canUpdateTask && !isDisabled ? handleAttachArtifactAsInput : undefined}
-            disabled={isDisabled || !canUpdateTask}
-          />
-        </div>
-      </div>
-
-      <FileSelectDialog
-        open={fileSelectOpen}
-        onOpenChange={setFileSelectOpen}
-        workspaceId={workspaceId}
+      <TaskPageContent
+        addingInput={addingInput}
+        agentIsBusy={agentIsBusy}
+        artifacts={artifacts || []}
+        canUpdateTask={canUpdateTask}
+        connectionErrorCode={realtimeFailureCode}
+        connectionErrorMessage={realtimeFailureMessage}
+        connectionStatus={connectionStatus}
+        diagnosticsLinks={notebookDiagnosticsLinks}
+        disabled={isConversationInputDisabled}
+        fetchTracesForMessage={fetchTracesForMessage}
+        focusTraceMessageId={traceFocusMessageId}
+        focusTraceName={traceFocusName}
+        focusTraceToken={traceFocusToken}
+        handleAttachArtifactAsInput={canUpdateTask && !isDisabled ? handleAttachArtifactAsInput : undefined}
+        handleCancelActiveRun={handleCancelActiveRun}
+        handleDownloadArtifact={handleDownloadArtifact}
+        handlePendingRemove={handlePendingRemove}
+        handlePendingUpdate={handlePendingUpdate}
+        handleSaveArtifact={handleSaveArtifact}
+        handleSendMessage={handleSendMessage}
+        handleViewArtifact={handleViewArtifact}
+        isDisabled={isDisabled}
+        loadMoreTracesForMessage={loadMoreTracesForMessage}
+        localFileInputRef={localFileInputRef}
+        messages={messages || []}
+        onRunActionClick={(action) => {
+          if (!action.traceName || !activeTraceMessageId) return;
+          setShowExecutionDetails(true);
+          setTraceFocusMessageId(activeTraceMessageId);
+          setTraceFocusName(action.traceName);
+          setTraceFocusToken((prev) => prev + 1);
+        }}
+        onSetAddUrlOpen={setAddUrlOpen}
+        onSetFileSelectOpen={setFileSelectOpen}
+        onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
+        pendingMessages={pendingMessages}
         projectId={projectId}
-        onConfirm={handleAddFiles}
-        excludeIds={task.attached_inputs.filter((item) => item.kind === 'source').map((item) => item.source_id)}
-      />
-
-      <input
-        ref={localFileInputRef}
-        type="file"
-        multiple
-        className="hidden"
-        onChange={handleLocalInputChange}
-      />
-
-      <Dialog open={addUrlOpen} onOpenChange={setAddUrlOpen}>
-        <DialogContent className="sm:max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('title')}</DialogTitle>
-            <DialogDescription>{t('description')}</DialogDescription>
-          </DialogHeader>
-          <Input
-            value={urlInput}
-            onChange={(e) => setUrlInput(e.target.value)}
-            placeholder={t('placeholder')}
-            autoFocus
-          />
-          <DialogFooter>
-            <Button variant="ghost" onClick={() => setAddUrlOpen(false)}>
-              {tCommon('cancel')}
-            </Button>
-            <Button
-              onClick={handleSubmitUrlInput}
-              disabled={addingInput || !/^https?:\/\//i.test(urlInput.trim())}
-            >
-              {t('confirm')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <ArtifactImageViewer
-        open={imageViewerOpen}
-        onOpenChange={setImageViewerOpen}
-        artifact={selectedArtifact}
-        onDownload={selectedArtifact ? () => handleDownloadArtifact(selectedArtifact) : undefined}
-      />
-
-      <ArtifactSaveDialog
-        open={saveDialogOpen}
-        onOpenChange={setSaveDialogOpen}
-        artifact={selectedArtifact}
-        onSave={handleSaveArtifactToLibrary}
-      />
-
-      <TaskCreateDialog
-        open={canCreateTask && createDialogOpen}
-        onOpenChange={setCreateDialogOpen}
+        runActivity={{
+          active: agentIsBusy,
+          elapsedSeconds: runElapsedSeconds,
+          cancelling: cancelActiveRun.isPending,
+          lastSummary: latestRunAction.summary,
+          lastKind: latestRunAction.kind,
+          recentActions: recentRunActions,
+        }}
+        sandboxStarting={showSandboxStarting}
+        sending={sendMessage.isPending}
+        showExecutionDetails={showExecutionDetails}
+        showSseDebugPanel={showSseDebugPanel}
+        sseDebugEvents={sseDebugEvents}
+        streamingContent={streamingContent}
+        streamingMessageId={streamingMessageId}
+        taskAttachedInputIds={task.attached_inputs.map((item) => item.id)}
+        taskId={taskId}
+        traceErrorByMessageId={traceErrorByMessageId}
+        traceEventsByMessageId={traceEventsByMessageId}
+        traceHasMoreByMessageId={traceHasMoreByMessageId}
+        traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
+        traceLoadingByMessageId={traceLoadingByMessageId}
         workspaceId={workspaceId}
-        projectId={projectId}
-        onSuccess={handleTaskCreated}
       />
 
-      <EditTaskDialog
-        open={canUpdateTask && editDialogOpen}
-        onOpenChange={setEditDialogOpen}
+      <TaskPageDialogs
+        addUrlOpen={addUrlOpen}
+        addingInput={addingInput}
+        canCreateTask={canCreateTask}
+        canUpdateTask={canUpdateTask}
+        createDialogOpen={createDialogOpen}
+        editDialogOpen={editDialogOpen}
+        fileSelectOpen={fileSelectOpen}
+        imageViewerOpen={imageViewerOpen}
+        localFileInputRef={localFileInputRef}
+        projectId={projectId}
+        saveDialogOpen={saveDialogOpen}
+        savingTask={updateTask.isPending}
+        selectedArtifact={selectedArtifact}
+        t={t}
+        tCommon={tCommon}
         task={task}
-        saving={updateTask.isPending}
-        onSubmit={handleTaskUpdated}
+        urlInput={urlInput}
+        workspaceId={workspaceId}
+        onAddFilesConfirm={handleAddFiles}
+        onArtifactDownload={handleDownloadArtifact}
+        onArtifactSaveToLibrary={handleSaveArtifactToLibrary}
+        onEditDialogOpenChange={setEditDialogOpen}
+        onFileSelectOpenChange={setFileSelectOpen}
+        onHandleTaskUpdated={handleTaskUpdated}
+        onImageViewerOpenChange={setImageViewerOpen}
+        onLocalInputChange={handleLocalInputChange}
+        onSaveDialogOpenChange={setSaveDialogOpen}
+        onSetAddUrlOpen={setAddUrlOpen}
+        onSetCreateDialogOpen={setCreateDialogOpen}
+        onSetUrlInput={setUrlInput}
+        onSubmitUrlInput={handleSubmitUrlInput}
+        onTaskCreated={handleTaskCreated}
       />
     </div>
   );

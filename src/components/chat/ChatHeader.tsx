@@ -14,6 +14,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { EditableSessionTitle } from '@/components/chat/chat-header/EditableSessionTitle';
+import {
+  findCurrentEndpoint,
+  findCurrentExternalAgent,
+  getStreamStatusText,
+} from '@/components/chat/chat-header/utils';
 
 export function ChatHeader({
   session,
@@ -53,21 +59,15 @@ export function ChatHeader({
   }, [session?.id, session?.title]);
 
   const currentEndpoint = React.useMemo(() => {
-    if (!session) return null;
-    return endpoints.find((e) => e.id === session.endpoint_id) || null;
+    return findCurrentEndpoint(session, endpoints);
   }, [endpoints, session]);
   const currentAgent = React.useMemo(() => {
-    if (!session?.external_agent_id) return null;
-    return (externalAgents ?? []).find((agent) => agent.id === session.external_agent_id) ?? null;
+    return findCurrentExternalAgent(session, externalAgents ?? []);
   }, [externalAgents, session?.external_agent_id]);
   const usingExternalAgent = !!session?.external_agent_id;
 
   const statusText = React.useMemo(() => {
-    if (streamStatus === 'connecting' || streamStatus === 'streaming') return t('header.status_generating');
-    if (streamStatus === 'recovering') return t('header.status_recovering');
-    if (streamStatus === 'stopped') return t('header.status_stopped');
-    if (streamStatus === 'error') return t('header.status_error');
-    return '';
+    return getStreamStatusText(streamStatus, t);
   }, [streamStatus, t]);
 
   const commitRename = () => {
@@ -87,53 +87,22 @@ export function ChatHeader({
     <div className="h-14 border-b border-subtle bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className={cn('mx-auto flex h-full w-full items-center justify-between gap-3 px-3 md:px-4', contentWidthClass)}>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 min-w-0">
-            {editing ? (
-              <input
-                value={draftTitle}
-                onChange={(e) => setDraftTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    commitRename();
-                  } else if (e.key === 'Escape') {
-                    e.preventDefault();
-                    setEditing(false);
-                    setDraftTitle(session?.title || '');
-                  }
-                }}
-                onBlur={commitRename}
-                autoFocus
-                className={cn(
-                  'w-full bg-transparent text-sm text-foreground',
-                  layoutMode === 'ultrawide' ? 'max-w-[980px]' : 'max-w-[640px]',
-                  'border border-subtle rounded-sm px-2 py-1',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
-                )}
-              />
-            ) : (
-              session ? (
-                <button
-                  type="button"
-                  onClick={() => setEditing(true)}
-                  className={cn(
-                    'text-sm font-medium text-foreground truncate',
-                    'hover:text-foreground/90 transition-colors',
-                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm px-1 -mx-1',
-                  )}
-                  title={t('header.rename_thread')}
-                >
-                  {session.title || t('header.default_title')}
-                </button>
-              ) : (
-                <div className="text-sm font-medium text-foreground truncate">{t('header.default_title')}</div>
-              )
-            )}
-
-            {statusText && (
-              <span className="text-xs text-tertiary" data-testid="chat__stream-status">{statusText}</span>
-            )}
-          </div>
+          <EditableSessionTitle
+            draftTitle={draftTitle}
+            editing={editing}
+            layoutMode={layoutMode}
+            placeholderTitle={t('header.default_title')}
+            renameTitle={t('header.rename_thread')}
+            sessionTitle={session?.title || ''}
+            statusText={statusText}
+            onCancel={() => {
+              setEditing(false);
+              setDraftTitle(session?.title || '');
+            }}
+            onChange={setDraftTitle}
+            onCommit={commitRename}
+            onStartEditing={() => setEditing(true)}
+          />
           {session ? (
             <div className="text-xs text-tertiary truncate">
               {usingExternalAgent ? (

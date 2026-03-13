@@ -8,14 +8,6 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { useQuery } from '@tanstack/react-query';
 import { CredentialsAPI, EndpointAPI, ModelConfigAPI, getApiClient } from '@/lib/api';
 import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
@@ -23,9 +15,13 @@ import {
   buildModelCatalogProviderOptions,
   CUSTOM_MODEL_CATALOG_PROVIDER_OPTION,
 } from '@/lib/endpoints/model-catalog-provider-options';
-import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
+import { EndpointDialogFooter } from './create-endpoint-dialog/EndpointDialogFooter';
+import type { CapabilityOption, CatalogModelOption } from './create-endpoint-dialog/types';
+import { buildProviderModels } from './create-endpoint-dialog/utils';
+import { EditEndpointForm } from './edit-endpoint-dialog/EditEndpointForm';
+import { buildEditEndpointPayload } from './edit-endpoint-dialog/utils';
 
 export interface EditEndpointDialogProps {
   open: boolean;
@@ -47,17 +43,6 @@ export function EditEndpointDialog({
   const t = useTranslations('endpoints');
   const commonT = useTranslations('common');
   const { handleError } = useApiError();
-  type CapabilityOption = EndpointCapabilityType;
-  type CatalogModelOption = {
-    model_id: string;
-    name: string;
-    capabilities: EndpointCapabilityType[];
-    limit?: {
-      context?: number;
-      output?: number;
-    };
-    cost?: Record<string, number | Record<string, number>>;
-  };
 
   const isEndpointCustom = endpoint.type === 'custom' || endpoint.provider_family === 'custom';
   const [provider, setProvider] = React.useState<string>('openai');
@@ -107,17 +92,10 @@ export function EditEndpointDialog({
     enabled: open && !!workspaceId && !!projectId && !isCustomProvider,
   });
 
-  const providerModels = React.useMemo<CatalogModelOption[]>(() => {
-    const catalogItems = modelCatalogModelsData?.items ?? [];
-    if (catalogItems.length === 0) return [];
-    return catalogItems.map((item) => ({
-      model_id: item.model_id,
-      name: item.name || item.model_id,
-      capabilities: item.capabilities as EndpointCapabilityType[],
-      limit: item.limit,
-      cost: item.cost,
-    }));
-  }, [modelCatalogModelsData?.items]);
+  const providerModels = React.useMemo<CatalogModelOption[]>(
+    () => buildProviderModels(modelCatalogModelsData?.items ?? []),
+    [modelCatalogModelsData?.items],
+  );
 
   const selectedCatalogModel = React.useMemo(
     () => providerModels.find((item) => item.model_id === selectedModel),
@@ -191,47 +169,29 @@ export function EditEndpointDialog({
     setIsSaving(true);
     try {
       await endpointAPI.update(workspaceId, projectId, endpoint.id, {
-        name: name.trim(),
-        description: description.trim() || undefined,
-        model: selectedModel.trim(),
-        base_url: resolvedBaseUrl,
-        status,
-        credential_ref: credentialRef,
-        provider_family: isEndpointCustom ? 'custom' : selectedProvider.family,
-        protocol: protocolForSubmit,
-        meta: {
-          compatibility_interface: isEndpointCustom
-            ? (endpoint.meta?.compatibility_interface ?? protocolForSubmit)
-            : selectedProvider.compatibility_interface,
-          catalog_provider_key: isCustomProvider ? 'custom' : provider,
-        },
-        capabilities: [{ type: capability, enabled: true, default_model_id: selectedModel.trim() }],
-        models: [{ capability, model_id: selectedModel.trim(), display_name: selectedModel.trim() }],
-        defaults:
-          capability === 'chat_completion'
-            ? { chat_model_id: selectedModel.trim() }
-            : capability === 'multimodal_completion'
-              ? { multimodal_model_id: selectedModel.trim() }
-            : capability === 'embedding'
-              ? { embedding_model_id: selectedModel.trim() }
-              : capability === 'rerank'
-                ? { rerank_model_id: selectedModel.trim() }
-                : capability === 'image_generation'
-                ? { image_model_id: selectedModel.trim() }
-                : { video_model_id: selectedModel.trim() },
-        model_profile: isCustomProvider
-          ? {
-            max_context_tokens: Number(maxContextTokens),
-            max_output_tokens: Number(maxOutputTokens),
-            supports_file: supportsFile,
-            supports_tool_call: supportsToolCall,
-            supports_reasoning: supportsReasoning,
-            price_input_per_1m: Number(priceInputPer1m),
-            price_output_per_1m: Number(priceOutputPer1m),
-            cache_read_discount_ratio: Number(cacheReadDiscountRatio),
-            cache_write_discount_ratio: Number(cacheWriteDiscountRatio),
-          }
-          : undefined,
+        ...buildEditEndpointPayload({
+          baseUrl: resolvedBaseUrl,
+          cacheReadDiscountRatio,
+          cacheWriteDiscountRatio,
+          capability,
+          credentialRef,
+          description,
+          endpoint,
+          isCustomProvider,
+          maxContextTokens,
+          maxOutputTokens,
+          name,
+          priceInputPer1m,
+          priceOutputPer1m,
+          provider,
+          protocolForSubmit,
+          selectedModel,
+          selectedProvider,
+          status,
+          supportsFile,
+          supportsReasoning,
+          supportsToolCall,
+        }),
       });
       toast.success(t('edit_dialog.success'));
       onSuccess?.();
@@ -267,283 +227,61 @@ export function EditEndpointDialog({
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
-          <div className="flex-1 space-y-4 overflow-y-auto px-6 py-4">
-            <div className="space-y-2">
-              <label htmlFor="endpoint-name" className="text-sm font-medium text-foreground">
-                {t('create_dialog.name')} <span className="text-error">*</span>
-              </label>
-              <Input
-                id="endpoint-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={isSaving}
-                required
-              />
-            </div>
+          <EditEndpointForm
+            baseUrl={baseUrl}
+            cacheReadDiscountRatio={cacheReadDiscountRatio}
+            cacheWriteDiscountRatio={cacheWriteDiscountRatio}
+            capability={capability}
+            commonT={commonT}
+            credentialRef={credentialRef}
+            credentials={credentials}
+            description={description}
+            isCustomProvider={isCustomProvider}
+            isEndpointCustom={isEndpointCustom}
+            isSaving={isSaving}
+            maxContextTokens={maxContextTokens}
+            maxOutputTokens={maxOutputTokens}
+            name={name}
+            priceInputPer1m={priceInputPer1m}
+            priceOutputPer1m={priceOutputPer1m}
+            provider={provider}
+            providerModels={providerModels}
+            providerOptions={providerOptions}
+            selectedCatalogModel={selectedCatalogModel ?? null}
+            selectedModel={selectedModel}
+            selectedProvider={selectedProvider}
+            status={status}
+            supportsFile={supportsFile}
+            supportsReasoning={supportsReasoning}
+            supportsToolCall={supportsToolCall}
+            t={t}
+            onApplyModelProfileDefaults={applyModelProfileDefaults}
+            onBaseUrlChange={setBaseUrl}
+            onCacheReadDiscountRatioChange={setCacheReadDiscountRatio}
+            onCacheWriteDiscountRatioChange={setCacheWriteDiscountRatio}
+            onCapabilityChange={setCapability}
+            onCredentialRefChange={setCredentialRef}
+            onDescriptionChange={setDescription}
+            onMaxContextTokensChange={setMaxContextTokens}
+            onMaxOutputTokensChange={setMaxOutputTokens}
+            onNameChange={setName}
+            onPriceInputPer1mChange={setPriceInputPer1m}
+            onPriceOutputPer1mChange={setPriceOutputPer1m}
+            onProviderChange={setProvider}
+            onSelectedModelChange={setSelectedModel}
+            onStatusChange={setStatus}
+            onSupportsFileChange={setSupportsFile}
+            onSupportsReasoningChange={setSupportsReasoning}
+            onSupportsToolCallChange={setSupportsToolCall}
+          />
 
-            <div className="space-y-2">
-              <label htmlFor="endpoint-description" className="text-sm font-medium text-foreground">
-                {t('create_dialog.description')}
-              </label>
-              <textarea
-                id="endpoint-description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                rows={2}
-                disabled={isSaving}
-                className="w-full px-3 py-2 rounded-sm border border-subtle bg-surface-high text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                {t('create_dialog.capability')} <span className="text-error">*</span>
-              </label>
-              <Select
-                value={capability}
-                onValueChange={(v) => setCapability(v as CapabilityOption)}
-                disabled={isSaving}
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="chat_completion">{t('create_dialog.capability_chat_completion')}</SelectItem>
-                  <SelectItem value="multimodal_completion">{t('create_dialog.capability_multimodal_completion')}</SelectItem>
-                  <SelectItem value="embedding">{t('create_dialog.capability_embedding')}</SelectItem>
-                  <SelectItem value="rerank">{t('create_dialog.capability_rerank')}</SelectItem>
-                  <SelectItem value="image_generation">{t('create_dialog.capability_image_generation')}</SelectItem>
-                  <SelectItem value="video_generation">{t('create_dialog.capability_video_generation')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {!isEndpointCustom && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">
-                  {t('create_dialog.provider')} <span className="text-error">*</span>
-                </label>
-                <Select
-                  value={provider}
-                  onValueChange={setProvider}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {providerOptions.map((item) => (
-                      <SelectItem key={item.key} value={item.key}>
-                        <span className="flex items-center gap-2">
-                          <span>{item.display_name}</span>
-                        </span>
-                      </SelectItem>
-                    ))}
-                    <SelectItem value="custom">{t('create_dialog.provider_custom')}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                {t('create_dialog.compatibility_interface')}
-              </label>
-              <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
-                {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
-              </div>
-            </div>
-
-            {isCustomProvider && (
-              <div className="space-y-2">
-                <label htmlFor="endpoint-model" className="text-sm font-medium text-foreground">
-                  {t('create_dialog.model_id')} <span className="text-error">*</span>
-                </label>
-                <Input
-                  id="endpoint-model"
-                  value={selectedModel}
-                  onChange={(e) => setSelectedModel(e.target.value)}
-                  disabled={isSaving}
-                  required
-                />
-              </div>
-            )}
-
-            {!isCustomProvider && providerModels.length > 0 && (
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">{t('create_dialog.catalog_models')}</label>
-                <Select
-                  value={selectedModel}
-                  onValueChange={setSelectedModel}
-                  disabled={isSaving}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('create_dialog.select_from_catalog')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {providerModels.slice(0, 100).map((model) => (
-                      <SelectItem key={model.model_id} value={model.model_id}>
-                        {model.name} ({model.model_id})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                {selectedCatalogModel && (
-                  <div className="rounded-sm border border-subtle bg-surface-low p-3 text-xs text-secondary">
-                    <p>
-                      {t('create_dialog.catalog_context_tokens')}: {selectedCatalogModel.limit?.context ?? '-'}
-                    </p>
-                    <p>
-                      {t('create_dialog.catalog_output_tokens')}: {selectedCatalogModel.limit?.output ?? '-'}
-                    </p>
-                    <p>
-                      {t('create_dialog.catalog_input_price')}: {typeof selectedCatalogModel.cost?.input === 'number' ? selectedCatalogModel.cost?.input : '-'}
-                    </p>
-                    <p>
-                      {t('create_dialog.catalog_output_price')}: {typeof selectedCatalogModel.cost?.output === 'number' ? selectedCatalogModel.cost?.output : '-'}
-                    </p>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {isCustomProvider ? (
-              <div className="space-y-2">
-                <label htmlFor="endpoint-base-url" className="text-sm font-medium text-foreground">
-                  {t('create_dialog.base_url')} <span className="text-error">*</span>
-                </label>
-                <Input
-                  id="endpoint-base-url"
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  disabled={isSaving}
-                  required
-                />
-              </div>
-            ) : (
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground">{t('create_dialog.base_url')}</label>
-                <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 font-mono text-sm text-foreground">
-                  {selectedProvider.default_base_url || baseUrl}
-                </div>
-              </div>
-            )}
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-foreground">
-                {t('create_dialog.credential')} <span className="text-error">*</span>
-              </label>
-              <Select value={credentialRef} onValueChange={setCredentialRef} disabled={isSaving}>
-                <SelectTrigger>
-                  <SelectValue placeholder={commonT('placeholders.select')} />
-                </SelectTrigger>
-                <SelectContent>
-                  {credentials.map((credential) => (
-                    <SelectItem key={credential.id} value={credential.id}>
-                      {credential.name} ({credential.fingerprint})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <label htmlFor="endpoint-status" className="text-sm font-medium text-foreground">
-                {t('status')}
-              </label>
-              <Select value={status} onValueChange={(v) => setStatus(v as 'active' | 'disabled')}>
-                <SelectTrigger id="endpoint-status">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="active">{t('status_active')}</SelectItem>
-                  <SelectItem value="disabled">{t('status_disabled')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {isCustomProvider && (
-              <div className="space-y-3 rounded-sm border border-subtle p-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-medium text-foreground">{t('custom_wizard.model_profile.title')}</p>
-                  <button
-                    type="button"
-                    className="text-xs text-accent hover:underline"
-                    onClick={applyModelProfileDefaults}
-                  >
-                    {t('custom_wizard.use_default')}
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.max_context_tokens')}</label>
-                    <Input value={maxContextTokens} onChange={(e) => setMaxContextTokens(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.max_output_tokens')}</label>
-                    <Input value={maxOutputTokens} onChange={(e) => setMaxOutputTokens(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.price_input_per_1m')}</label>
-                    <Input value={priceInputPer1m} onChange={(e) => setPriceInputPer1m(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.price_output_per_1m')}</label>
-                    <Input value={priceOutputPer1m} onChange={(e) => setPriceOutputPer1m(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.cache_read_discount_ratio')}</label>
-                    <Input value={cacheReadDiscountRatio} onChange={(e) => setCacheReadDiscountRatio(e.target.value)} />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.cache_write_discount_ratio')}</label>
-                    <Input value={cacheWriteDiscountRatio} onChange={(e) => setCacheWriteDiscountRatio(e.target.value)} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.supports_file')}</label>
-                    <Select value={String(supportsFile)} onValueChange={(v) => setSupportsFile(v === 'true')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">{t('custom_wizard.model_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('custom_wizard.model_profile.no')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.supports_tool_call')}</label>
-                    <Select value={String(supportsToolCall)} onValueChange={(v) => setSupportsToolCall(v === 'true')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">{t('custom_wizard.model_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('custom_wizard.model_profile.no')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs text-secondary">{t('custom_wizard.model_profile.supports_reasoning')}</label>
-                    <Select value={String(supportsReasoning)} onValueChange={(v) => setSupportsReasoning(v === 'true')}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="true">{t('custom_wizard.model_profile.yes')}</SelectItem>
-                        <SelectItem value="false">{t('custom_wizard.model_profile.no')}</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
-            <Button variant="ghost" type="button" onClick={() => handleOpenChange(false)}>
-              {t('edit_dialog.cancel')}
-            </Button>
-            <Button variant="primary" type="submit" disabled={!canSubmit}>
-              {t('edit_dialog.save')}
-            </Button>
-          </div>
+          <EndpointDialogFooter
+            canSubmit={canSubmit}
+            createPending={isSaving}
+            hasCredentials={credentials.length > 0}
+            commonT={(key) => key === 'create' ? t('edit_dialog.save') : t('edit_dialog.cancel')}
+            onCancel={() => handleOpenChange(false)}
+          />
         </form>
       </SheetContent>
     </Sheet>

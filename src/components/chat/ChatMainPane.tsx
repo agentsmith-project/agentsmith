@@ -1,7 +1,6 @@
 'use client';
 
 import * as React from 'react';
-import { MessageSquare, Plus } from 'lucide-react';
 
 import type { Agent, Attachment, ChatMessage, ChatSession, Endpoint } from '@/lib/api/types';
 import { deriveChatComposerState } from '@/lib/chat/composer-state';
@@ -9,9 +8,10 @@ import type { SessionStreamStatus, SessionStreamingAssistant } from '@/lib/chat/
 
 import { ChatHeader } from '@/components/chat/ChatHeader';
 import { Composer } from '@/components/chat/Composer';
-import { Markdown } from '@/components/chat/Markdown';
 import { MessageList } from '@/components/chat/MessageList';
-import { Button } from '@/components/ui/button';
+import { ChatEmptyState } from '@/components/chat/chat-main-pane/ChatEmptyState';
+import { ChatLoadingState } from '@/components/chat/chat-main-pane/ChatLoadingState';
+import { StreamingAppendFooter } from '@/components/chat/chat-main-pane/StreamingAppendFooter';
 
 export interface ChatMainPaneLabels {
   loading: string;
@@ -156,32 +156,14 @@ export function ChatMainPane(props: ChatMainPaneProps) {
 
       <div className="flex-1 min-h-0">
         {!currentSessionId ? (
-          <div className="h-full flex items-center justify-center px-4">
-            <div className="mx-auto w-full max-w-[560px] text-center px-6">
-              <MessageSquare className="w-12 h-12 mx-auto mb-4 text-tertiary" />
-              <div className="text-foreground font-medium mb-1">{labels.noActiveThreadTitle}</div>
-              <div className="text-tertiary text-sm">{labels.noActiveThreadDescription}</div>
-              <div className="mt-3 text-xs text-tertiary">
-                {labels.noActiveThreadHint}
-                <span className="mx-1">·</span>
-                {labels.selectThreadHint}
-              </div>
-              <Button
-                className="mt-4"
-                variant="outline"
-                onClick={onCreateThread}
-                disabled={!canUseChat || createPending}
-                data-testid="chat__empty-create-btn"
-              >
-                <Plus className="w-4 h-4" />
-                {labels.newThread}
-              </Button>
-            </div>
-          </div>
+          <ChatEmptyState
+            canUseChat={canUseChat}
+            createPending={createPending}
+            labels={labels}
+            onCreateThread={onCreateThread}
+          />
         ) : messagesLoading ? (
-          <div className="h-full flex items-center justify-center px-4">
-            <div className="text-tertiary">{labels.loading}</div>
-          </div>
+          <ChatLoadingState loading={labels.loading} />
         ) : (
           <MessageList
             messages={messages}
@@ -196,16 +178,10 @@ export function ChatMainPane(props: ChatMainPaneProps) {
             disabled={disabled}
             footer={
               showAppendFooter ? (
-                <div className="px-4 py-2">
-                  <div className="flex justify-start">
-                    <div className="max-w-[80%] rounded-md px-4 py-3 border bg-surface-high text-primary border-subtle">
-                      <div className="text-xs text-tertiary mb-1">{labels.assistant}</div>
-                      <div className="space-y-2">
-                        <Markdown content={activeStreamingAssistant?.content || '...'} />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <StreamingAppendFooter
+                  assistant={labels.assistant}
+                  content={activeStreamingAssistant?.content || '...'}
+                />
               ) : null
             }
             streamingAssistant={activeStreamingAssistant}

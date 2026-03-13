@@ -226,6 +226,37 @@ describe('AuditTable', () => {
     expect(screen.getByText('Credential OpenAI Admin Key')).toBeInTheDocument();
   });
 
+  it('humanizes workspace project creator updates for audit scanning', () => {
+    render(
+      <AuditTable
+        data={[
+          {
+            id: 'audit_workspace_1',
+            timestamp: '2026-03-01T12:00:00.000Z',
+            workspace_id: 'ws_default',
+            project_id: '__workspace__',
+            actor_type: 'user',
+            actor_id: 'user_admin',
+            action: 'workspace.project_creators.updated',
+            resource_type: 'workspace',
+            resource_id: 'ws_default',
+            result: 'ok',
+            request_id: 'req_workspace_creators',
+            metadata_json: {
+              added_identifiers: ['creator@example.com'],
+              removed_identifiers: [],
+              total_identifiers: 1,
+            },
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText('Updated Project Creators')).toBeInTheDocument();
+    expect(screen.getByText('Workspace ws_default')).toBeInTheDocument();
+    expect(screen.getByText('User Updated Project Creators on Workspace ws_default and succeeded')).toBeInTheDocument();
+  });
+
   it('humanizes policy enforcement actions for review scanning', () => {
     render(
       <AuditTable

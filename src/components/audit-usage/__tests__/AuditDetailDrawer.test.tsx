@@ -229,6 +229,43 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('Model Endpoint Primary GPT Endpoint')).toBeInTheDocument();
   });
 
+  it('humanizes workspace project creator updates in detail view', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_workspace_1',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_default',
+          project_id: '__workspace__',
+          actor_type: 'user',
+          actor_id: 'user_admin',
+          action: 'workspace.project_creators.updated',
+          resource_type: 'workspace',
+          resource_id: 'ws_default',
+          result: 'error',
+          error_code: 'VALIDATION_ERROR',
+          error_message: 'project_creators must be an array',
+          request_id: 'req_workspace_creators',
+          metadata_json: {
+            added_identifiers: ['creator@example.com'],
+            removed_identifiers: [],
+            total_identifiers: 1,
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Updated Project Creators on Workspace ws_default and failed',
+    );
+    expect(screen.getAllByText('Workspace').length).toBeGreaterThan(0);
+    expect(screen.getByText('Workspace ws_default')).toBeInTheDocument();
+    expect(screen.getByText('Validation Error')).toBeInTheDocument();
+    expect(screen.getAllByText('Project creators must be an array').length).toBeGreaterThan(0);
+  });
+
   it('humanizes policy enforcement errors in detail view', () => {
     render(
       <AuditDetailDrawer

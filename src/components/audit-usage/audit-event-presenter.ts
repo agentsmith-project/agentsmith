@@ -50,6 +50,7 @@ const ACTION_LABELS: Record<string, string> = {
   'project.update': 'Updated Project',
   project_update: 'Updated Project',
   'project.owner.transferred': 'Transferred Project Owner',
+  'workspace.project_creators.updated': 'Updated Project Creators',
   'project.delete': 'Deleted Project',
   project_delete: 'Deleted Project',
   'project.member.manage': 'Managed Member Access',
@@ -126,8 +127,11 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   unsupported_resource_type: 'Unsupported resource type',
   'access_mode and allowed_subjects are required': 'Access mode and allowed subjects are required',
   'mode is required': 'Mode is required',
+  'project_creators must be an array': 'Project creators must be an array',
   project_owner_required: 'Project owner required',
   project_owner_or_workspace_admin_required: 'Project owner or workspace administrator required',
+  workspace_admin_required: 'Workspace administrator required',
+  workspace_not_found: 'Workspace not found',
   rate_limits_rule_key_invalid: 'Invalid rate limit rule',
   rate_limits_rule_value_invalid: 'Invalid rate limit value',
   spending_limits_rule_key_invalid: 'Invalid spending limit rule',
@@ -240,6 +244,9 @@ export function getAuditResourceTypeLabel(resourceType?: string): string | undef
 }
 
 export function getAuditResourceLabel(event: AuditEvent): string {
+  if (event.resource_type === 'workspace' && event.resource_id) {
+    return `Workspace ${event.resource_id}`;
+  }
   if (
     event.resource_type === 'join_request'
     && event.metadata_json

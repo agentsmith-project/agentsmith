@@ -27,8 +27,10 @@ import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { useApiError } from '@/lib/hooks/use-api-error';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
+  useCanReadAudit,
   useCanManageProjectAdmins,
   useCanManageProjectLifecycle,
+  useHasPermission,
   useCanReadProjectSettings,
 } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
@@ -60,8 +62,11 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
   const canReadSettings = useCanReadProjectSettings();
+  const canReadAudit = useCanReadAudit();
   const canManageProjectLifecyclePermission = useCanManageProjectLifecycle();
   const canManageProjectAdminsPermission = useCanManageProjectAdmins();
+  const canManageGovernance = useHasPermission('project:governance:update');
+  const canManageMembership = useHasPermission('project:membership:update');
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 
@@ -246,21 +251,27 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
             actions={(
               <div className="flex flex-wrap items-center gap-2">
-                <Button asChild variant="action" size="sm" data-testid="settings__open-audit">
-                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/audit`}>
-                    {settingsT('open_audit')}
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="sm" data-testid="settings__open-members">
-                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members`}>
-                    {settingsT('open_members')}
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" size="sm" data-testid="settings__open-credentials">
-                  <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/credentials`}>
-                    {settingsT('open_credentials')}
-                  </Link>
-                </Button>
+                {canReadAudit ? (
+                  <Button asChild variant="action" size="sm" data-testid="settings__open-audit">
+                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/audit`}>
+                      {settingsT('open_audit')}
+                    </Link>
+                  </Button>
+                ) : null}
+                {canManageMembership ? (
+                  <Button asChild variant="outline" size="sm" data-testid="settings__open-members">
+                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members`}>
+                      {settingsT('open_members')}
+                    </Link>
+                  </Button>
+                ) : null}
+                {canManageGovernance ? (
+                  <Button asChild variant="outline" size="sm" data-testid="settings__open-credentials">
+                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/credentials`}>
+                      {settingsT('open_credentials')}
+                    </Link>
+                  </Button>
+                ) : null}
               </div>
             )}
           />

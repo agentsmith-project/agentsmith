@@ -2,8 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
+  useCanReadAudit,
   useCanManageProjectAdmins,
   useCanManageProjectLifecycle,
+  useHasPermission,
   useCanReadProjectSettings,
 } from '@/lib/hooks/use-permissions';
 
@@ -37,8 +39,12 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanReadProjectSettings: vi.fn(() => true),
+  useCanReadAudit: vi.fn(() => true),
   useCanManageProjectLifecycle: vi.fn(() => true),
   useCanManageProjectAdmins: vi.fn(() => true),
+  useHasPermission: vi.fn((permission: string) =>
+    permission === 'project:governance:update' || permission === 'project:membership:update'
+  ),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -104,15 +110,21 @@ vi.mock('@/components/ui/tabs', () => ({
 import SettingsPage from '../page';
 
 const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
+const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
 const mockUseCanManageProjectLifecycle = vi.mocked(useCanManageProjectLifecycle);
 const mockUseCanManageProjectAdmins = vi.mocked(useCanManageProjectAdmins);
+const mockUseHasPermission = vi.mocked(useHasPermission);
 
 describe('SettingsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanReadAudit.mockReturnValue(true);
     mockUseCanManageProjectLifecycle.mockReturnValue(true);
     mockUseCanManageProjectAdmins.mockReturnValue(true);
+    mockUseHasPermission.mockImplementation((permission: string) =>
+      permission === 'project:governance:update' || permission === 'project:membership:update'
+    );
     mockAuthUser.mockReturnValue({ id: 'owner_1' });
     mockProjectUpdate.mockResolvedValue(undefined);
     mockProjectDelete.mockResolvedValue(undefined);
@@ -137,9 +149,12 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__open-audit')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__open-members')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__open-credentials')).toBeInTheDocument();
   });
 
-  it('allows project admins with project manage permission to access settings', async () => {
+  it('allows project admins with split governance permissions to access settings', async () => {
     mockUseCanReadProjectSettings.mockReturnValue(true);
     mockUseCanManageProjectLifecycle.mockReturnValue(false);
     mockUseCanManageProjectAdmins.mockReturnValue(false);
@@ -162,6 +177,9 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__open-audit')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__open-members')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__open-credentials')).toBeInTheDocument();
     expect(screen.getByTestId('settings__save-btn')).toBeDisabled();
     expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();
@@ -170,8 +188,10 @@ describe('SettingsPage route', () => {
 
   it('allows governance managers to read settings in read-only mode', async () => {
     mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanReadAudit.mockReturnValue(false);
     mockUseCanManageProjectLifecycle.mockReturnValue(false);
     mockUseCanManageProjectAdmins.mockReturnValue(false);
+    mockUseHasPermission.mockReturnValue(false);
     mockAuthUser.mockReturnValue({ id: 'governance_1' });
 
     render(
@@ -188,6 +208,9 @@ describe('SettingsPage route', () => {
       expect(screen.getByTestId('settings__governance-section')).toBeInTheDocument();
       expect(screen.getByTestId('settings__ownership-section')).toBeInTheDocument();
     });
+    expect(screen.queryByTestId('settings__open-audit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__open-members')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__open-credentials')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__save-btn')).toBeDisabled();
     expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();

@@ -24,6 +24,7 @@ import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine
 import {
   buildWorkspaceMembersFromConfig,
   isProjectAdmin,
+  readProjectAdminIds,
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
 import { updateRegisteredWorkspaceProjectCreators } from './workspace-registry.js';
@@ -987,11 +988,36 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_or_workspace_admin_required' });
       return true;
     }
+    let normalizedInput = input;
+    if (touchesProjectOwner && existingProject) {
+      const previousOwnerId = existingProject.owner_id;
+      const nextOwnerId = input.owner_id!.trim();
+      const requestedGovernance = typeof input.governance_json === 'object' && input.governance_json !== null
+        ? input.governance_json
+        : {};
+      const requestedAdmins = readProjectAdminIds(requestedGovernance);
+      const existingAdmins = readProjectAdminIds(existingProject.governance_json);
+      const nextAdmins = Array.from(new Set([...existingAdmins, ...requestedAdmins]))
+        .filter((item) => item !== nextOwnerId);
+      if (!nextAdmins.includes(previousOwnerId)) {
+        nextAdmins.push(previousOwnerId);
+      }
+      normalizedInput = {
+        ...input,
+        governance_json: {
+          ...(typeof existingProject.governance_json === 'object' && existingProject.governance_json !== null
+            ? existingProject.governance_json
+            : {}),
+          ...requestedGovernance,
+          project_admins: nextAdmins,
+        },
+      };
+    }
     try {
       const updated = await deps.updateProjectUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
-        input,
+        input: normalizedInput,
       });
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
@@ -1005,7 +1031,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
           name: updated.name,
           visibility: updated.visibility,
           join_policy: updated.join_policy,
-          updated_fields: Object.keys(input).sort(),
+          updated_fields: Object.keys(normalizedInput).sort(),
         },
       });
       if (touchesProjectOwner && existingProject) {
@@ -1020,6 +1046,7 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
           metadata: {
             previous_owner_id: existingProject.owner_id,
             next_owner_id: updated.owner_id,
+            previous_owner_retained_admin: true,
           },
         });
       }

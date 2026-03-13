@@ -8773,6 +8773,24 @@ describe('api-entry-node projects routes', () => {
     expect(transferRes.status).toBe(200);
     await expect(transferRes.json()).resolves.toMatchObject({
       owner_id: 'user_alt',
+      governance_json: {
+        project_admins: ['user_test'],
+      },
+    });
+
+    const previousOwnerViewRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      headers: {
+        authorization: 'Bearer test-token',
+      },
+    });
+    expect(previousOwnerViewRes.status).toBe(200);
+    await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
+      owner_id: 'user_alt',
+      role: 'admin',
+      permissions: expect.arrayContaining(['project:manage']),
+      governance_json: {
+        project_admins: ['user_test'],
+      },
     });
 
     const auditRes = await apiFetchWithToken(
@@ -8786,7 +8804,11 @@ describe('api-entry-node projects routes', () => {
         action: string;
         request_id?: string;
         result: string;
-        metadata_json?: { previous_owner_id?: string; next_owner_id?: string };
+        metadata_json?: {
+          previous_owner_id?: string;
+          next_owner_id?: string;
+          previous_owner_retained_admin?: boolean;
+        };
       }>;
     };
     expect(audit.items.some((item) =>
@@ -8794,7 +8816,8 @@ describe('api-entry-node projects routes', () => {
       && item.request_id === 'req_project_owner_transfer'
       && item.result === 'ok'
       && item.metadata_json?.previous_owner_id === 'user_test'
-      && item.metadata_json?.next_owner_id === 'user_alt')).toBe(true);
+      && item.metadata_json?.next_owner_id === 'user_alt'
+      && item.metadata_json?.previous_owner_retained_admin === true)).toBe(true);
   });
 
   it('lets workspace admins force ownership transfer and rejects project admins', async () => {
@@ -8866,6 +8889,24 @@ describe('api-entry-node projects routes', () => {
     expect(forcedTransferRes.status).toBe(200);
     await expect(forcedTransferRes.json()).resolves.toMatchObject({
       owner_id: 'user_owner',
+      governance_json: {
+        project_admins: ['user_alt', 'user_test'],
+      },
+    });
+
+    const previousOwnerViewRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
+      headers: {
+        authorization: 'Bearer test-token',
+      },
+    });
+    expect(previousOwnerViewRes.status).toBe(200);
+    await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
+      owner_id: 'user_owner',
+      role: 'admin',
+      permissions: expect.arrayContaining(['project:manage']),
+      governance_json: {
+        project_admins: ['user_alt', 'user_test'],
+      },
     });
 
     const auditRes = await apiFetchWithToken(
@@ -8881,7 +8922,11 @@ describe('api-entry-node projects routes', () => {
         result: string;
         error_code?: string;
         error_message?: string;
-        metadata_json?: { previous_owner_id?: string; next_owner_id?: string };
+        metadata_json?: {
+          previous_owner_id?: string;
+          next_owner_id?: string;
+          previous_owner_retained_admin?: boolean;
+        };
       }>;
     };
     expect(audit.items.some((item) =>
@@ -8895,7 +8940,8 @@ describe('api-entry-node projects routes', () => {
       && item.request_id === 'req_project_owner_transfer_forced'
       && item.result === 'ok'
       && item.metadata_json?.previous_owner_id === 'user_test'
-      && item.metadata_json?.next_owner_id === 'user_owner')).toBe(true);
+      && item.metadata_json?.next_owner_id === 'user_owner'
+      && item.metadata_json?.previous_owner_retained_admin === true)).toBe(true);
   });
 
   it('rejects project deletion from non-owners and records audit errors', async () => {

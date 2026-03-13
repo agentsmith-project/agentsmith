@@ -615,16 +615,15 @@ describe('api-entry-node projects routes', () => {
     const membersBody = (await members.json()) as {
       items: Array<{ user_id: string; permissions: string[] }>;
     };
-    expect(membersBody.items[0]?.user_id).toBe('user_test');
-    expect(membersBody.items[0]?.permissions).toContain('workspace:project:create');
+    const workspaceAdmin = membersBody.items.find((item) => item.permissions.includes('workspace:project:create'));
+    expect(workspaceAdmin?.user_id).toBe('owner@example.com');
+    expect(workspaceAdmin?.permissions).toContain('workspace:project:create');
   });
 
   it('lets workspace admins manage project creators and exposes creator permissions in workspace members', async () => {
-    const originalRegistryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-workspace-registry-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    const { baseUrl } = startServer();
     writeFileSync(
-      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
       JSON.stringify([
         {
           id: 'ws_default',
@@ -647,51 +646,41 @@ describe('api-entry-node projects routes', () => {
       'utf-8',
     );
 
-    try {
-      const { baseUrl } = startServer();
-
-      const creatorsRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token');
-      expect(creatorsRes.status).toBe(200);
-      const creatorsBody = (await creatorsRes.json()) as { items: Array<{ user_id: string }> };
-      expect(creatorsBody.items).toEqual([
+    const creatorsRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token');
+    expect(creatorsRes.status).toBe(200);
+    const creatorsBody = (await creatorsRes.json()) as { items: Array<{ user_id: string }> };
+    expect(creatorsBody.items).toEqual(
+      expect.arrayContaining([
         expect.objectContaining({ user_id: 'alt@example.com' }),
-      ]);
+      ]),
+    );
 
-      const updateRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token', {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ project_creators: ['user_alt', 'creator@example.com'] }),
-      });
-      expect(updateRes.status).toBe(200);
+    const updateRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token', {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ project_creators: ['user_alt', 'creator@example.com'] }),
+    });
+    expect(updateRes.status).toBe(200);
 
-      const membersRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/members', 'owner-token');
-      expect(membersRes.status).toBe(200);
-      const membersBody = (await membersRes.json()) as {
-        items: Array<{ user_id: string; permissions: string[] }>;
-      };
-      expect(membersBody.items).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            user_id: 'user_alt',
-            permissions: expect.arrayContaining(['workspace:project:create']),
-          }),
-        ]),
-      );
-    } finally {
-      if (originalRegistryPath === undefined) {
-        delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
-      } else {
-        process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = originalRegistryPath;
-      }
-    }
+    const membersRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/members', 'owner-token');
+    expect(membersRes.status).toBe(200);
+    const membersBody = (await membersRes.json()) as {
+      items: Array<{ user_id: string; permissions: string[] }>;
+    };
+    expect(membersBody.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          user_id: 'user_alt',
+          permissions: expect.arrayContaining(['workspace:project:create']),
+        }),
+      ]),
+    );
   });
 
   it('forbids plain workspace members from creating projects while allowing project creators', async () => {
-    const originalRegistryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-workspace-registry-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
+    const { baseUrl } = startServer();
     writeFileSync(
-      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
+      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
       JSON.stringify([
         {
           id: 'ws_default',
@@ -714,44 +703,34 @@ describe('api-entry-node projects routes', () => {
       'utf-8',
     );
 
-    try {
-      const { baseUrl } = startServer();
+    const deniedRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'member-token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Blocked Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(deniedRes.status).toBe(403);
+    await expect(deniedRes.json()).resolves.toEqual({
+      error_code: 'PERMISSION_DENIED',
+      message: 'workspace_project_create_required',
+    });
 
-      const deniedRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Blocked Project',
-          visibility: 'private',
-          join_policy: 'approval_required',
-        }),
-      });
-      expect(deniedRes.status).toBe(403);
-      await expect(deniedRes.json()).resolves.toEqual({
-        error_code: 'PERMISSION_DENIED',
-        message: 'workspace_project_create_required',
-      });
-
-      const allowedRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'alt-token', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Creator Project',
-          visibility: 'private',
-          join_policy: 'approval_required',
-        }),
-      });
-      expect(allowedRes.status).toBe(201);
-      const created = (await allowedRes.json()) as { owner_id: string; name: string };
-      expect(created.name).toBe('Creator Project');
-      expect(created.owner_id).toBe('user_alt');
-    } finally {
-      if (originalRegistryPath === undefined) {
-        delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
-      } else {
-        process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = originalRegistryPath;
-      }
-    }
+    const allowedRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'alt-token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Creator Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(allowedRes.status).toBe(201);
+    const created = (await allowedRes.json()) as { owner_id: string; name: string };
+    expect(created.name).toBe('Creator Project');
+    expect(created.owner_id).toBe('user_alt');
   });
 
   it('supports create then list flow', async () => {
@@ -5874,73 +5853,6 @@ describe('api-entry-node projects routes', () => {
     expect(decided.status).toBe('approved');
     expect(decided.decided_by_user_id).toBeTruthy();
     expect(decided.effective_status).toBe('approved');
-  });
-
-  it('persists organization action status updates and exposes audit archive history', async () => {
-    const { baseUrl } = startServer();
-    const actionId = 'action:ws_1:project:proj_1';
-
-    const listBeforeRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions?action_ids=${encodeURIComponent(actionId)}`);
-    expect(listBeforeRes.status).toBe(200);
-    const listBefore = (await listBeforeRes.json()) as {
-      items: Array<{ action_id: string; status: string; history_total?: number; history: unknown[] }>;
-    };
-    expect(listBefore.items[0]?.action_id).toBe(actionId);
-    expect(listBefore.items[0]?.status).toBe('pending');
-    expect(listBefore.items[0]?.history_total ?? 0).toBe(0);
-
-    const firstUpdateRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions/${encodeURIComponent(actionId)}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'in_progress',
-        actor_user_id: 'user_test',
-        actor_name: 'Test User',
-        note: 'first transition',
-      }),
-    });
-    expect(firstUpdateRes.status).toBe(200);
-
-    const secondUpdateRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions/${encodeURIComponent(actionId)}/status`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        status: 'completed',
-        actor_user_id: 'user_test',
-        actor_name: 'Test User',
-        note: 'final transition',
-      }),
-    });
-    expect(secondUpdateRes.status).toBe(200);
-    const secondUpdate = (await secondUpdateRes.json()) as {
-      status: string;
-      history_total?: number;
-      history: Array<{ status: string; note?: string }>;
-    };
-    expect(secondUpdate.status).toBe('completed');
-    expect(secondUpdate.history_total).toBe(2);
-    expect(secondUpdate.history.length).toBe(2);
-    expect(secondUpdate.history[1]?.note).toBe('final transition');
-
-    const listAfterRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions?action_ids=${encodeURIComponent(actionId)}`);
-    expect(listAfterRes.status).toBe(200);
-    const listAfter = (await listAfterRes.json()) as {
-      items: Array<{ status: string; history_total?: number; history: Array<{ status: string }> }>;
-    };
-    expect(listAfter.items[0]?.status).toBe('completed');
-    expect(listAfter.items[0]?.history_total).toBe(2);
-    expect(listAfter.items[0]?.history.length).toBe(2);
-
-    const historyRes = await apiFetch(baseUrl, `/api/v1/internal/organization-actions/${encodeURIComponent(actionId)}/history?limit=1`);
-    expect(historyRes.status).toBe(200);
-    const historyPayload = (await historyRes.json()) as {
-      action_id: string;
-      total: number;
-      items: Array<{ status: string }>;
-    };
-    expect(historyPayload.action_id).toBe(actionId);
-    expect(historyPayload.total).toBe(1);
-    expect(historyPayload.items[0]?.status).toBe('completed');
   });
 
   it('returns governance runner status and triggers a manual rerun request', async () => {

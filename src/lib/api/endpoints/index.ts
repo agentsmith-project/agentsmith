@@ -20,7 +20,6 @@ export { TaskAPI } from './tasks';
 export { AlertAPI } from './alerts';
 export { ModelConfigAPI } from './model-config';
 export { GovernanceExplainabilityAPI } from './governance-explainability';
-export { OrganizationActionsAPI } from './organization-actions';
 
 // Re-export types
 export type { CreateProjectRequest, UpdateProjectRequest } from './projects';

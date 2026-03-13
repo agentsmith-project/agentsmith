@@ -67,7 +67,6 @@ ensure_web
 
 info "running workspace governance contract suite"
 npm run test:run -- \
-  src/lib/__tests__/workspace-governance-posture.test.ts \
   src/app/[locale]/workspaces/[workspace]/settings/__tests__/page.test.tsx
 
 info "running workspace governance browser lane"

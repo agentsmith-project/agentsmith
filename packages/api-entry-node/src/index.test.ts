@@ -5965,18 +5965,24 @@ describe('api-entry-node projects routes', () => {
     expect(postMessageRes.status).toBe(200);
 
     for (let attempt = 0; attempt < 30; attempt += 1) {
-      const traces = await deps.docStore.list<{ task_id: string }>('notebook_task_trace_events', { task_id: task.id });
-      const msgs = await deps.docStore.list<{ task_id: string; role: string; content: string }>('notebook_task_messages', { task_id: task.id });
+      const traces = await deps.docStore.list<{ task_id: string }>('ws_default_notebook_task_trace_events', { task_id: task.id });
+      const msgs = await deps.docStore.list<{ task_id: string; role: string; content: string }>('ws_default_notebook_task_messages', { task_id: task.id });
       if (traces.length > 0 && msgs.some((m) => m.role === 'agent' && m.content.includes('persisted-output'))) {
         break;
       }
       await new Promise((resolve) => setTimeout(resolve, 20));
     }
 
-    const storedTasks = await deps.docStore.list<{ id: string }>('notebook_tasks', {});
-    const storedMessages = await deps.docStore.list<{ task_id: string; role: string; content: string }>('notebook_task_messages', { task_id: task.id });
-    const storedTraces = await deps.docStore.list<{ task_id: string; category: string }>('notebook_task_trace_events', { task_id: task.id });
+    const baseTasks = await deps.docStore.list<{ id: string }>('notebook_tasks', {});
+    const baseMessages = await deps.docStore.list<{ task_id: string; role: string; content: string }>('notebook_task_messages', { task_id: task.id });
+    const baseTraces = await deps.docStore.list<{ task_id: string; category: string }>('notebook_task_trace_events', { task_id: task.id });
+    const storedTasks = await deps.docStore.list<{ id: string }>('ws_default_notebook_tasks', {});
+    const storedMessages = await deps.docStore.list<{ task_id: string; role: string; content: string }>('ws_default_notebook_task_messages', { task_id: task.id });
+    const storedTraces = await deps.docStore.list<{ task_id: string; category: string }>('ws_default_notebook_task_trace_events', { task_id: task.id });
 
+    expect(baseTasks).toHaveLength(0);
+    expect(baseMessages).toHaveLength(0);
+    expect(baseTraces).toHaveLength(0);
     expect(storedTasks.some((t) => t.id === task.id)).toBe(true);
     expect(storedMessages.some((m) => m.role === 'user')).toBe(true);
     expect(storedMessages.some((m) => m.role === 'agent' && m.content.includes('persisted-output'))).toBe(true);

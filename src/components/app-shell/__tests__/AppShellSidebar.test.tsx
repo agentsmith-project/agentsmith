@@ -53,11 +53,13 @@ const mockUseHasWorkspacePermission = vi.fn(
 );
 const mockUseHasPermission = vi.fn((_: string) => true);
 const mockUseCanReadProjectSettings = vi.fn(() => true);
+const mockUseCanReadAudit = vi.fn(() => true);
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: (permission: string) => mockUseHasPermission(permission),
   useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
   useCanReadProjectSettings: () => mockUseCanReadProjectSettings(),
+  useCanReadAudit: () => mockUseCanReadAudit(),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -113,6 +115,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     });
     mockUseHasPermission.mockReturnValue(true);
     mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanReadAudit.mockReturnValue(true);
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
@@ -195,6 +198,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--audit')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
   });
 
@@ -204,12 +208,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       permission === 'project:endpoint:use' || permission === 'project:governance:update',
     );
     mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<AppShellSidebar />, { wrapper });
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--members')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
@@ -220,13 +226,27 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       permission === 'project:endpoint:use' || permission === 'project:membership:update',
     );
     mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<AppShellSidebar />, { wrapper });
 
     const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--audit')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--resource_policy')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--credentials')).not.toBeInTheDocument();
     expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
+  });
+
+  it('shows audit only for users with project audit read permission', () => {
+    const wrapper = createWrapper();
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
+    mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(true);
+
+    render(<AppShellSidebar />, { wrapper });
+
+    const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
+    expect(within(governSection).getByTestId('sidebar__nav-item--audit')).toBeInTheDocument();
   });
 });

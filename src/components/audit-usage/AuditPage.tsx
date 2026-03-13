@@ -8,7 +8,7 @@ import { AuditFilters } from './AuditFilters';
 import { AuditTable } from './AuditTable';
 import { AuditDetailDrawer } from './AuditDetailDrawer';
 import { useAuditEvents } from '@/lib/hooks/use-audit-usage';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanReadAudit } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -246,7 +246,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
   const router = useRouter();
   const pathname = usePathname();
   const queryClient = useQueryClient();
-  const canReadAudit = useHasPermission('project:manage');
+  const canReadAudit = useCanReadAudit();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const searchParams = useSearchParams();
   const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);

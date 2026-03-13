@@ -5,6 +5,7 @@
  * - project:endpoint:use
  * - project:agent:manage
  * - project:agent:public
+ * - project:audit:read
  * - project:governance:update
  * - project:membership:update
  * - project:admins:update
@@ -18,6 +19,7 @@ export const PLATFORM_PERMISSIONS = {
     'project:endpoint:use',
     'project:agent:manage',
     'project:agent:public',
+    'project:audit:read',
     'project:governance:update',
     'project:membership:update',
     'project:admins:update',
@@ -38,6 +40,7 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:endpoint:use': 'Use project endpoints',
   'project:agent:manage': 'Create and manage own agents',
   'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
+  'project:audit:read': 'Read project audit records',
   'project:governance:update': 'Manage project governance resources such as credentials, resource policy, and endpoint governance',
   'project:membership:update': 'Manage project memberships, templates, groups, and join requests',
   'project:admins:update': 'Assign or revoke project administrators',
@@ -65,6 +68,7 @@ export const GROUP_TEMPLATES = {
   owner: [
     'project:endpoint:use',
     'project:agent:manage',
+    'project:audit:read',
     'project:governance:update',
     'project:membership:update',
     'project:admins:update',
@@ -74,6 +78,7 @@ export const GROUP_TEMPLATES = {
   admin: [
     'project:endpoint:use',
     'project:agent:manage',
+    'project:audit:read',
     'project:governance:update',
     'project:manage',
   ],
@@ -82,7 +87,7 @@ export const GROUP_TEMPLATES = {
 } as const;
 
 export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
-  project_admin_template: [...GROUP_TEMPLATES.owner],
+  project_admin_template: [...GROUP_TEMPLATES.admin],
   project_operator_template: [...GROUP_TEMPLATES.developer],
   project_member_template: [...GROUP_TEMPLATES.user],
   project_viewer_template: [...GROUP_TEMPLATES.user],

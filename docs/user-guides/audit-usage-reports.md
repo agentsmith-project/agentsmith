@@ -191,9 +191,9 @@ Example: "Why did this request fail?"
 
 Required permissions:
 
-- **View Audit**: `project:manage`
+- **View Audit**: `project:audit:read`
 - **View Usage**: `project:endpoint:use`
-- **View Details**: `project:manage` (audit detail) / `project:endpoint:use` (usage detail)
+- **View Details**: `project:audit:read` (audit detail) / `project:endpoint:use` (usage detail)
 
 ## Troubleshooting
 
@@ -201,7 +201,7 @@ Required permissions:
 
 - Refresh the page
 - Check time range selector (default: last 24 hours)
-- Verify you have `project:manage` permission
+- Verify you have `project:audit:read` permission
 
 ### No Events Showing
 

@@ -18,6 +18,7 @@ import {
   useCanManageProjectAdmins,
   useCanManageProjectLifecycle,
   useCanManageResourcePolicy,
+  useCanReadAudit,
   useCanReadProjectSettings,
   useCanReadProjectPolicy,
   useCanUpdateProjectPolicy,
@@ -871,6 +872,30 @@ describe('use-permissions hooks', () => {
         { wrapper: createWrapper() }
       );
       expect(writeResult.current).toBe(false);
+    });
+  });
+
+  describe('split project permission helpers', () => {
+    it('should allow audit page only with project:audit:read', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:audit:read'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanReadAudit(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current).toBe(true);
     });
   });
 });

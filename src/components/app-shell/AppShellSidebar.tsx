@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
+  useCanReadAudit,
   useCanReadProjectSettings,
   useHasPermission,
   useHasWorkspacePermission,
@@ -49,6 +50,7 @@ type ProjectMenuItem = {
   permission:
     | 'project:endpoint:use'
     | 'project:agent:manage'
+    | 'project:audit:read'
     | 'project:governance:update'
     | 'project:membership:update'
     | '__multi__';
@@ -71,7 +73,7 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:governance:update', section: 'govern' },
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:governance:update', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:membership:update', section: 'govern' },
-  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
+  { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:audit:read', section: 'govern' },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: '__multi__', section: 'govern' },
 ];
 
@@ -102,6 +104,7 @@ export function AppShellSidebar({
   const [collapsed, setCollapsed] = React.useState(false);
   const canUseProject = useHasPermission('project:endpoint:use');
   const canReadAgents = useHasPermission('project:agent:manage');
+  const canReadAudit = useCanReadAudit();
   const canManageGovernance = useHasPermission('project:governance:update');
   const canManageMembership = useHasPermission('project:membership:update');
   const canReadProjectSettings = useCanReadProjectSettings();
@@ -120,6 +123,7 @@ export function AppShellSidebar({
           return canUseProject;
         }
         if (item.permission === 'project:agent:manage') return canReadAgents;
+        if (item.permission === 'project:audit:read') return canReadAudit;
         if (item.permission === 'project:governance:update') return canManageGovernance;
         if (item.permission === 'project:membership:update') return canManageMembership;
         if (item.href === 'settings') {

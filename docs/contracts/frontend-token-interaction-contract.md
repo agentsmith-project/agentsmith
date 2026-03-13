@@ -35,6 +35,7 @@ Related docs:
 - `project:endpoint:use`
 - `project:agent:manage`
 - `project:agent:public`
+- `project:audit:read`
 - `project:governance:update`
 - `project:membership:update`
 - `project:admins:update`
@@ -50,11 +51,11 @@ Related docs:
 - Files: `project:endpoint:use`
 - Endpoints: `project:endpoint:use`
 - Agents: `project:agent:manage`
-- Members: `project:manage`
-- Credentials: `project:manage`
-- Resource Policy: `project:manage`
+- Members: `project:membership:update`
+- Credentials: `project:governance:update`
+- Resource Policy: `project:governance:update`
 - Settings: `project:manage`
-- Audit: `project:endpoint:use`
+- Audit: `project:audit:read`
 - Usage: `project:endpoint:use`
 
 Target migration:
@@ -63,6 +64,7 @@ Target migration:
 - Members governance writes: `project:membership:update`
 - Project owner / admin assignment: `project:admins:update`
 - Project lifecycle settings and delete: `project:lifecycle:update`
+- Audit read: `project:audit:read`
 
 ## Action-Level Permission Gate Contract
 

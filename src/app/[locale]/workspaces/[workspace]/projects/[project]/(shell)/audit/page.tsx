@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanReadAudit } from '@/lib/hooks/use-permissions';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
@@ -27,7 +27,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   } | null>(null);
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const canViewAudit = useHasPermission('project:manage');
+  const canViewAudit = useCanReadAudit();
   const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
   const featureAvailability = getFeatureAvailability('audit');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('audit');

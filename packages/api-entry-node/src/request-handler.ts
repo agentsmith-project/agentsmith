@@ -180,7 +180,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
   }
 
   if (route.kind === 'audit') {
-    return ['project:manage'];
+    return ['project:audit:read'];
   }
 
   if (

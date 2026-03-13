@@ -51,7 +51,7 @@ vi.mock('@/components/audit-usage/AuditDetailDrawer', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) => mockHasPermission(permission),
+  useCanReadAudit: () => mockHasPermission('project:audit:read'),
 }));
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
@@ -91,7 +91,7 @@ describe('AuditPage route', () => {
     });
   });
 
-  it('checks audit permission with project manage token', async () => {
+  it('checks audit permission with project audit read token', async () => {
     render(
       <AuditPage
         params={Promise.resolve({
@@ -103,7 +103,7 @@ describe('AuditPage route', () => {
     );
 
     await waitFor(() => {
-      expect(mockHasPermission).toHaveBeenCalledWith('project:manage');
+      expect(mockHasPermission).toHaveBeenCalledWith('project:audit:read');
     });
   });
 

@@ -112,6 +112,10 @@ export function useCanReadProjectSettings(): boolean {
   ]);
 }
 
+export function useCanReadAudit(): boolean {
+  return useHasPermission('project:audit:read');
+}
+
 export function useCanManageProjectAdmins(): boolean {
   return useHasPermission('project:admins:update');
 }

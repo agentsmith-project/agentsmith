@@ -19,6 +19,7 @@ Clarify the boundary between authentication data and authorization enforcement t
   - `project:endpoint:use`
   - `project:agent:manage`
   - `project:agent:public`
+  - `project:audit:read`
   - `project:governance:update`
   - `project:membership:update`
   - `project:admins:update`
@@ -104,7 +105,8 @@ Clarify the boundary between authentication data and authorization enforcement t
 5. `Project admin`
 - Is a project governance label that maps to project governance permissions.
 - Is assigned by the `project owner`.
-- Can govern project resources, credentials, policy, audit, and project-scope settings.
+- Can read project audit via `project:audit:read`.
+- Can govern project resources, credentials, policy, and project-scope settings.
 - Cannot delete the project.
 - Cannot assign other project admins.
 - Cannot transfer ownership.
@@ -164,7 +166,8 @@ This section is authoritative for upcoming refactor work even where current code
 | Delete project | no | no | no | yes | no |
 | Transfer project owner | no | force only | no | yes | no |
 | Assign/revoke project admins | no | no | no | yes | no |
-| Govern project resources/policy/audit/settings | no | no | no | yes | yes |
+| Read project audit | no | no | no | yes | yes |
+| Govern project resources/policy/settings | no | no | no | yes | yes |
 
 ## Decision Rule
 

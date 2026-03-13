@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanReadAudit, useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
 import OverviewPage from '../page';
 
 const mockUseParams = vi.fn(() => ({
@@ -16,11 +16,13 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
   useCanReadProjectSettings: vi.fn(() => true),
+  useCanReadAudit: vi.fn(() => true),
 }));
 
 describe('OverviewPage', () => {
 const mockUseHasPermission = vi.mocked(useHasPermission);
 const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
+const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
 
   beforeEach(() => {
     mockUseHasPermission.mockImplementation((permission: string) => {
@@ -32,6 +34,7 @@ const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
       return false;
     });
     mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanReadAudit.mockReturnValue(true);
     mockUseParams.mockReturnValue({
       workspace: 'ws_default',
       project: 'proj_001',
@@ -56,6 +59,7 @@ const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
   it('hides governance links that require project management permissions', () => {
     mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
     mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<OverviewPage />);
 
@@ -70,6 +74,7 @@ const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
       return false;
     });
     mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<OverviewPage />);
 
@@ -77,6 +82,7 @@ const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
     expect(governance).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'resource_policy' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'credentials' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'audit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'members' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
   });
@@ -88,15 +94,29 @@ const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
       return false;
     });
     mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<OverviewPage />);
 
     const governance = screen.getByTestId('project-hub__governance-links');
     expect(governance).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'members' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'audit' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'resource_policy' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'credentials' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
+  });
+
+  it('shows audit link only for users with audit read permission', () => {
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
+    mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanReadAudit.mockReturnValue(true);
+
+    render(<OverviewPage />);
+
+    const governance = screen.getByTestId('project-hub__governance-links');
+    expect(governance).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'audit' })).toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', () => {

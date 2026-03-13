@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanReadAudit, useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
 
 export default function OverviewPage() {
   const params = useParams();
@@ -18,6 +18,7 @@ export default function OverviewPage() {
   const tProject = useTranslations('project');
   const tErrors = useTranslations('errors');
   const canUseProject = useHasPermission('project:endpoint:use');
+  const canReadAudit = useCanReadAudit();
   const canManageGovernance = useHasPermission('project:governance:update');
   const canManageMembership = useHasPermission('project:membership:update');
   const canReadProjectSettings = useCanReadProjectSettings();
@@ -57,11 +58,11 @@ export default function OverviewPage() {
     { label: tNav('files'), href: `${basePath}/files` },
     { label: tNav('endpoints'), href: `${basePath}/endpoints` },
     { label: tNav('usage'), href: `${basePath}/usage` },
-    { label: tNav('audit'), href: `${basePath}/audit` },
     { label: tNav('api_access_guide'), href: `${basePath}/use-guide` },
   ];
   const governanceLinks = [
     ...(canManageAgents ? [{ label: tNav('agents'), href: `${basePath}/agents` }] : []),
+    ...(canReadAudit ? [{ label: tNav('audit'), href: `${basePath}/audit` }] : []),
     ...(canManageGovernance
       ? [
           { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },

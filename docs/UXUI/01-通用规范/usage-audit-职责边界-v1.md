@@ -56,7 +56,7 @@
 ## 3. 权限与入口
 
 1. `Usage`：`project:endpoint:use`
-2. `Audit`：`project:manage`
+2. `Audit`：`project:audit:read`
 
 入口约束：
 

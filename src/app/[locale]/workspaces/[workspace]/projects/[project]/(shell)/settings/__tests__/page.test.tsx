@@ -149,9 +149,9 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__open-audit')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__open-members')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__open-credentials')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__governance-link--audit')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__governance-link--members')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__governance-link--credentials')).toBeInTheDocument();
   });
 
   it('allows project admins with split governance permissions to access settings', async () => {
@@ -177,9 +177,9 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__open-audit')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__open-members')).toBeInTheDocument();
-    expect(screen.getByTestId('settings__open-credentials')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__governance-link--audit')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__governance-link--members')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__governance-link--credentials')).toBeInTheDocument();
     expect(screen.getByTestId('settings__save-btn')).toBeDisabled();
     expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();
@@ -208,9 +208,9 @@ describe('SettingsPage route', () => {
       expect(screen.getByTestId('settings__governance-section')).toBeInTheDocument();
       expect(screen.getByTestId('settings__ownership-section')).toBeInTheDocument();
     });
-    expect(screen.queryByTestId('settings__open-audit')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('settings__open-members')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('settings__open-credentials')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__governance-link--audit')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__governance-link--members')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__governance-link--credentials')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__save-btn')).toBeDisabled();
     expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();

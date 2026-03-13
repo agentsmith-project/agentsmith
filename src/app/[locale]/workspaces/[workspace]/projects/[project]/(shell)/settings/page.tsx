@@ -246,31 +246,6 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             title={settingsT('title')}
             subtitle={settingsT('subtitle')}
             className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                {canReadAudit ? (
-                  <Button asChild variant="action" size="sm" data-testid="settings__open-audit">
-                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/audit`}>
-                      {settingsT('open_audit')}
-                    </Link>
-                  </Button>
-                ) : null}
-                {canManageMembership ? (
-                  <Button asChild variant="outline" size="sm" data-testid="settings__open-members">
-                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members`}>
-                      {settingsT('open_members')}
-                    </Link>
-                  </Button>
-                ) : null}
-                {canManageGovernance ? (
-                  <Button asChild variant="outline" size="sm" data-testid="settings__open-credentials">
-                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/credentials`}>
-                      {settingsT('open_credentials')}
-                    </Link>
-                  </Button>
-                ) : null}
-              </div>
-            )}
           />
         )}
       >
@@ -280,6 +255,31 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             <p className="text-sm text-tertiary">
               {settingsT('governance_help')}
             </p>
+            {(canReadAudit || canManageMembership || canManageGovernance) ? (
+              <div className="mt-4 flex flex-wrap gap-2">
+                {canReadAudit ? (
+                  <Button asChild variant="action" size="sm" data-testid="settings__governance-link--audit">
+                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/audit`}>
+                      {settingsT('open_audit')}
+                    </Link>
+                  </Button>
+                ) : null}
+                {canManageMembership ? (
+                  <Button asChild variant="outline" size="sm" data-testid="settings__governance-link--members">
+                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members`}>
+                      {settingsT('open_members')}
+                    </Link>
+                  </Button>
+                ) : null}
+                {canManageGovernance ? (
+                  <Button asChild variant="outline" size="sm" data-testid="settings__governance-link--credentials">
+                    <Link href={`/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/credentials`}>
+                      {settingsT('open_credentials')}
+                    </Link>
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-xl border border-border bg-surface p-5 md:p-6 space-y-6" data-testid="settings__ownership-section">

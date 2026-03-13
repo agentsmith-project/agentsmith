@@ -136,7 +136,7 @@ describe('ResourcePolicyPage', () => {
   beforeEach(() => {
     mockSearchParams.forEach((_, key) => mockSearchParams.delete(key));
     mockMutateAsync.mockClear();
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:governance:update');
   });
 
   it('renders endpoint group', async () => {

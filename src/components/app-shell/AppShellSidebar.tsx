@@ -45,6 +45,7 @@ type ProjectMenuItem = {
   permission:
     | 'project:endpoint:use'
     | 'project:agent:manage'
+    | 'project:governance:update'
     | 'project:manage'
     | '__multi__';
   section: ProjectMenuSection;
@@ -63,8 +64,8 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:manage', section: 'develop' },
   // Govern section
   { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:manage', section: 'govern' },
-  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:manage', section: 'govern' },
+  { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:governance:update', section: 'govern' },
+  { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:governance:update', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:manage', section: 'govern' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
   { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:manage', section: 'govern' },
@@ -97,6 +98,7 @@ export function AppShellSidebar({
   const [collapsed, setCollapsed] = React.useState(false);
   const canUseProject = useHasPermission('project:endpoint:use');
   const canReadAgents = useHasPermission('project:agent:manage');
+  const canManageGovernance = useHasPermission('project:governance:update');
   const canManageProject = useHasPermission('project:manage');
   const canManageResourcePolicy = useCanManageResourcePolicy();
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
@@ -114,8 +116,9 @@ export function AppShellSidebar({
           return canUseProject;
         }
         if (item.permission === 'project:agent:manage') return canReadAgents;
+        if (item.permission === 'project:governance:update') return canManageGovernance;
         if (item.permission === 'project:manage') {
-          return canManageResourcePolicy || canManageProject;
+          return canManageProject;
         }
         return true;
       })

@@ -218,7 +218,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
   }
 
   if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {
-    return ['project:manage'];
+    return ['project:governance:update'];
   }
 
   if (
@@ -234,7 +234,7 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     if (route.kind === 'modelCatalogProviders' || route.kind === 'modelCatalogModels') {
       return ['project:endpoint:use'];
     }
-    return ['project:manage'];
+    return ['project:governance:update'];
   }
 
   if (

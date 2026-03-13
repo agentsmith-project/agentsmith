@@ -64,6 +64,7 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:endpoint:use')).toBe(true);
     expect(permissions.has('project:agent:manage')).toBe(true);
     expect(permissions.has('project:agent:public')).toBe(true);
+    expect(permissions.has('project:governance:update')).toBe(true);
     expect(permissions.has('project:manage')).toBe(true);
   });
 

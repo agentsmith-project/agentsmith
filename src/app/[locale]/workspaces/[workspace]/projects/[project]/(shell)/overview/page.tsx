@@ -18,6 +18,7 @@ export default function OverviewPage() {
   const tProject = useTranslations('project');
   const tErrors = useTranslations('errors');
   const canUseProject = useHasPermission('project:endpoint:use');
+  const canManageGovernance = useHasPermission('project:governance:update');
   const canManageProject = useHasPermission('project:manage');
   const canManageAgents = useHasPermission('project:agent:manage');
 
@@ -60,10 +61,14 @@ export default function OverviewPage() {
   ];
   const governanceLinks = [
     ...(canManageAgents ? [{ label: tNav('agents'), href: `${basePath}/agents` }] : []),
-    ...(canManageProject
+    ...(canManageGovernance
       ? [
           { label: tNav('resource_policy'), href: `${basePath}/resource-policy` },
           { label: tNav('credentials'), href: `${basePath}/credentials` },
+        ]
+      : []),
+    ...(canManageProject
+      ? [
           { label: tNav('members'), href: `${basePath}/members` },
           { label: tNav('settings'), href: `${basePath}/settings` },
         ]

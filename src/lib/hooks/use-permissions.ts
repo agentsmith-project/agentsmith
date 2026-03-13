@@ -109,19 +109,19 @@ export function useCanManageMemberGovernance(): boolean {
 }
 
 export function useCanManageResourcePolicy(): boolean {
-  return useHasPermission('project:manage');
+  return useHasPermission('project:governance:update');
 }
 
 export function useCanReadProjectPolicy(): boolean {
-  return useHasPermission('project:manage');
+  return useHasPermission('project:governance:update');
 }
 
 export function useCanUpdateProjectPolicy(): boolean {
-  return useHasPermission('project:manage');
+  return useHasPermission('project:governance:update');
 }
 
 export function useCanAccessCredentials(): { canRead: boolean; canManage: boolean } {
-  const canManage = useHasPermission('project:manage');
+  const canManage = useHasPermission('project:governance:update');
   return useMemo(() => ({ canRead: canManage, canManage }), [canManage]);
 }
 

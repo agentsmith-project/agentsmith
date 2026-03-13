@@ -15,6 +15,10 @@ import {
   useCanUpdateTask,
   useCanDeleteTask,
   useCanManageMemberGovernance,
+  useCanManageResourcePolicy,
+  useCanReadProjectPolicy,
+  useCanUpdateProjectPolicy,
+  useCanAccessCredentials,
   useIsProjectAdmin,
 } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -530,6 +534,51 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current).toBe(false);
+    });
+  });
+
+  describe('governance capability hooks', () => {
+    it('resource policy governance helpers should require project:governance:update', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:governance:update'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result: canManage } = renderHook(() => useCanManageResourcePolicy(), { wrapper: createWrapper() });
+      const { result: canRead } = renderHook(() => useCanReadProjectPolicy(), { wrapper: createWrapper() });
+      const { result: canUpdate } = renderHook(() => useCanUpdateProjectPolicy(), { wrapper: createWrapper() });
+
+      expect(canManage.current).toBe(true);
+      expect(canRead.current).toBe(true);
+      expect(canUpdate.current).toBe(true);
+    });
+
+    it('credentials access should require project:governance:update', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:governance:update'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result } = renderHook(() => useCanAccessCredentials(), { wrapper: createWrapper() });
+      expect(result.current).toEqual({ canRead: true, canManage: true });
     });
   });
 

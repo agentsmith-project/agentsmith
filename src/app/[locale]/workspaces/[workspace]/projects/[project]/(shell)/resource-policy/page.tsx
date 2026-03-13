@@ -92,7 +92,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const [explainSubjectId, setExplainSubjectId] = useState('');
   const [explainAction, setExplainAction] = useState('invoke');
   const [authorizationResult, setAuthorizationResult] = useState<GovernanceAuthorizationResponse | null>(null);
-  const canUpdatePolicy = useHasPermission('project:manage');
+  const canUpdatePolicy = useHasPermission('project:governance:update');
   const canReadPolicy = canUpdatePolicy;
 
   useEffect(() => {

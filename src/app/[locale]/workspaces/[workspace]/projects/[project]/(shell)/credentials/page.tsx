@@ -133,9 +133,8 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
-  const canManageCredentials = useHasPermission('project:manage');
+  const canManageCredentials = useHasPermission('project:governance:update');
   const canReadCredentials = canManageCredentials;
-
 
   useEffect(() => {
     params.then((p) => {

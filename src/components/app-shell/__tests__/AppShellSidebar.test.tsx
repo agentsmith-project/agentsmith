@@ -182,7 +182,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
   it('shows governance project links for project admins', () => {
     const wrapper = createWrapper();
     mockUseHasPermission.mockImplementation((permission: string) =>
-      permission === 'project:endpoint:use' || permission === 'project:manage',
+      permission === 'project:endpoint:use' || permission === 'project:governance:update' || permission === 'project:manage',
     );
     mockUseCanManageResourcePolicy.mockReturnValue(false);
 
@@ -193,5 +193,21 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--members')).toBeInTheDocument();
     expect(within(governSection).getByTestId('sidebar__nav-item--settings')).toBeInTheDocument();
+  });
+
+  it('shows only governance resource links for governance-only users', () => {
+    const wrapper = createWrapper();
+    mockUseHasPermission.mockImplementation((permission: string) =>
+      permission === 'project:endpoint:use' || permission === 'project:governance:update',
+    );
+    mockUseCanManageResourcePolicy.mockReturnValue(true);
+
+    render(<AppShellSidebar />, { wrapper });
+
+    const governSection = within(screen.getByTestId('sidebar')).getByTestId('sidebar__section--govern');
+    expect(within(governSection).getByTestId('sidebar__nav-item--resource_policy')).toBeInTheDocument();
+    expect(within(governSection).getByTestId('sidebar__nav-item--credentials')).toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--members')).not.toBeInTheDocument();
+    expect(within(governSection).queryByTestId('sidebar__nav-item--settings')).not.toBeInTheDocument();
   });
 });

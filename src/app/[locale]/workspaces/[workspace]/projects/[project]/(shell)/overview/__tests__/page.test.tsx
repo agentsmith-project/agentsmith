@@ -24,6 +24,7 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
     mockUseHasPermission.mockImplementation((permission: string) => {
       if (permission === 'project:endpoint:use') return true;
       if (permission === 'project:agent:manage') return true;
+      if (permission === 'project:governance:update') return true;
       if (permission === 'project:manage') return true;
       return false;
     });
@@ -57,10 +58,10 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
     expect(screen.queryByTestId('project-hub__governance-links')).not.toBeInTheDocument();
   });
 
-  it('shows governance links for project admins with project manage permission', () => {
+  it('shows governance resource links for governance managers without ownership actions', () => {
     mockUseHasPermission.mockImplementation((permission: string) => {
       if (permission === 'project:endpoint:use') return true;
-      if (permission === 'project:manage') return true;
+      if (permission === 'project:governance:update') return true;
       return false;
     });
 
@@ -70,8 +71,8 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
     expect(governance).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'resource_policy' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'credentials' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'members' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'settings' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'members' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'settings' })).not.toBeInTheDocument();
   });
 
   it('shows invalid parameter error for unsafe route params', () => {

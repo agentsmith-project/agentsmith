@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   buildWorkspaceTenantPreview,
-  getSystemInfoSnapshot,
+  getBaseSystemInfoSnapshot,
   slugifyWorkspaceId,
 } from '../config';
 
@@ -38,7 +38,7 @@ describe('system admin config helpers', () => {
     });
   });
 
-  it('returns current system info snapshot', () => {
+  it('returns current base system info snapshot', () => {
     process.env.SYSTEM_ADMIN_USERNAME = 'root-admin';
     process.env.SYSTEM_SUBSTRATE_LABEL = 'mongo-main';
     process.env.SYSTEM_SUBSTRATE_URL = 'mongodb://db.internal:27017';
@@ -53,7 +53,7 @@ describe('system admin config helpers', () => {
     process.env.NEXT_PUBLIC_KEYCLOAK_REALM = 'platform';
     process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID = 'agentsmith-web';
 
-    expect(getSystemInfoSnapshot()).toEqual({
+    expect(getBaseSystemInfoSnapshot()).toEqual({
       system_admin_username: 'root-admin',
       api_base_url: 'http://localhost:20000',
       workspace_registry_path: '/tmp/system-workspaces.json',

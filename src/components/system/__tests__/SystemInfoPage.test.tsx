@@ -23,8 +23,10 @@ describe('SystemInfoPage', () => {
           system_admin_username: 'mbos-admin',
           api_base_url: 'http://localhost:20000',
           workspace_registry_path: 'artifacts/system-workspaces.json',
+          workspace_registry_status: 'available',
           substrate_label: 'primary',
           substrate_url: 'mongodb://localhost:27017',
+          data_service_status: 'configured',
           database_prefix: 'agentsmith_ws_',
           collection_prefix: 'ws_',
           key_prefix: 'ws:',
@@ -33,6 +35,15 @@ describe('SystemInfoPage', () => {
           default_idp_url: 'https://login.example.com',
           default_idp_realm: 'mbos',
           default_idp_client_id: 'agentsmith',
+          default_idp_status: 'configured',
+          workspace_provisioning: {
+            total: 4,
+            draft: 1,
+            provisioning: 1,
+            ready: 1,
+            failed: 1,
+            disabled: 0,
+          },
         }}
       />,
     );
@@ -46,8 +57,12 @@ describe('SystemInfoPage', () => {
     expect(screen.getByText('default_workspace_title')).toBeInTheDocument();
     expect(screen.getByText('default_idp_title')).toBeInTheDocument();
     expect(screen.getByText('data_service_title')).toBeInTheDocument();
+    expect(screen.getByText('workspace_provisioning_title')).toBeInTheDocument();
     expect(screen.getByText('mongodb://localhost:27017')).toBeInTheDocument();
     expect(screen.getByText('artifacts/system-workspaces.json')).toBeInTheDocument();
     expect(screen.getByText('https://login.example.com')).toBeInTheDocument();
+    expect(screen.getByText('config_status.available')).toBeInTheDocument();
+    expect(screen.getAllByText('config_status.configured')).toHaveLength(2);
+    expect(screen.getByText('4')).toBeInTheDocument();
   });
 });

@@ -2703,7 +2703,7 @@
     },
     "delete_confirm": "Delete this workspace? This removes its saved workspace configuration.",
     "info_title": "System Information",
-    "info_subtitle": "Review the active system administrator account, substrate connection, and tenant naming rules.",
+    "info_subtitle": "Review restrained system-level configuration and workspace provisioning state.",
     "back_to_workspaces": "Back to workspaces",
     "system_admin_title": "System Administrator",
     "system_admin_username_label": "Configured username",
@@ -2711,9 +2711,11 @@
     "api_base_url_label": "API base URL",
     "workspace_registry_title": "Workspace Registry",
     "workspace_registry_path_label": "Workspace registry path",
+    "workspace_registry_status_label": "Registry status",
     "data_service_title": "Data Service",
     "substrate_label_label": "Substrate label",
     "substrate_url_label": "Substrate URL",
+    "data_service_status_label": "Data service status",
     "default_workspace_title": "Default Workspace Identity",
     "default_workspace_id_label": "Default workspace ID",
     "default_workspace_name_label": "Default workspace name",
@@ -2721,10 +2723,25 @@
     "default_idp_url_label": "Default IdP URL",
     "default_idp_realm_label": "Default IdP realm",
     "default_idp_client_id_label": "Default IdP client ID",
+    "default_idp_status_label": "Default IdP status",
     "tenant_rules_title": "Tenant Naming Rules",
     "database_prefix_label": "Database prefix",
     "collection_prefix_label": "Collection prefix",
     "key_prefix_label": "Key prefix",
-    "info_notice": "These values come from system startup configuration. Workspace administrators do not manage them."
+    "workspace_provisioning_title": "Workspace Provisioning",
+    "workspace_total_label": "Total workspaces",
+    "workspace_ready_label": "Ready",
+    "workspace_provisioning_label": "Provisioning",
+    "workspace_failed_label": "Failed",
+    "workspace_draft_label": "Draft",
+    "workspace_disabled_label": "Disabled",
+    "config_status": {
+      "available": "Available",
+      "unavailable": "Unavailable",
+      "configured": "Configured",
+      "incomplete": "Incomplete",
+      "missing": "Missing"
+    },
+    "info_notice": "This page only shows system-level configuration and provisioning state. It does not show business or performance metrics."
   }
 }

@@ -2706,7 +2706,7 @@
     },
     "delete_confirm": "要删除这个工作区吗？这会移除已保存的工作区配置。",
     "info_title": "系统信息",
-    "info_subtitle": "查看当前系统超级管理员账户、substrate 连接和租户命名规则。",
+    "info_subtitle": "查看克制的系统级配置和工作区初始化状态。",
     "back_to_workspaces": "返回工作区",
     "system_admin_title": "系统超级管理员",
     "system_admin_username_label": "当前用户名",
@@ -2714,9 +2714,11 @@
     "api_base_url_label": "API 地址",
     "workspace_registry_title": "工作区注册表",
     "workspace_registry_path_label": "工作区注册表路径",
+    "workspace_registry_status_label": "注册表状态",
     "data_service_title": "数据服务",
     "substrate_label_label": "Substrate 标识",
     "substrate_url_label": "Substrate 地址",
+    "data_service_status_label": "数据服务状态",
     "default_workspace_title": "默认工作区身份配置",
     "default_workspace_id_label": "默认工作区 ID",
     "default_workspace_name_label": "默认工作区名称",
@@ -2724,10 +2726,25 @@
     "default_idp_url_label": "默认 IdP 地址",
     "default_idp_realm_label": "默认 IdP Realm",
     "default_idp_client_id_label": "默认 IdP Client ID",
+    "default_idp_status_label": "默认 IdP 状态",
     "tenant_rules_title": "租户命名规则",
     "database_prefix_label": "数据库前缀",
     "collection_prefix_label": "Collection 前缀",
     "key_prefix_label": "Key 前缀",
-    "info_notice": "这些值来自系统启动配置，工作区管理员无权修改。"
+    "workspace_provisioning_title": "工作区初始化概览",
+    "workspace_total_label": "工作区总数",
+    "workspace_ready_label": "已就绪",
+    "workspace_provisioning_label": "初始化中",
+    "workspace_failed_label": "初始化失败",
+    "workspace_draft_label": "草稿",
+    "workspace_disabled_label": "已禁用",
+    "config_status": {
+      "available": "可用",
+      "unavailable": "不可用",
+      "configured": "已配置",
+      "incomplete": "配置不完整",
+      "missing": "缺失"
+    },
+    "info_notice": "此页只展示系统级配置和初始化状态，不展示业务或性能指标。"
   }
 }

@@ -11,8 +11,10 @@ export interface SystemInfoSnapshot {
   system_admin_username: string;
   api_base_url: string;
   workspace_registry_path: string;
+  workspace_registry_status: 'available' | 'unavailable';
   substrate_label: string;
   substrate_url: string;
+  data_service_status: 'configured' | 'missing';
   database_prefix: string;
   collection_prefix: string;
   key_prefix: string;
@@ -21,6 +23,15 @@ export interface SystemInfoSnapshot {
   default_idp_url: string;
   default_idp_realm: string;
   default_idp_client_id: string;
+  default_idp_status: 'configured' | 'incomplete';
+  workspace_provisioning: {
+    total: number;
+    draft: number;
+    provisioning: number;
+    ready: number;
+    failed: number;
+    disabled: number;
+  };
 }
 
 const DEFAULT_SYSTEM_ADMIN_USERNAME = 'mbos-admin';
@@ -65,7 +76,10 @@ export function buildWorkspaceTenantPreview(workspaceNameOrId: string): Workspac
   };
 }
 
-export function getSystemInfoSnapshot(): SystemInfoSnapshot {
+export function getBaseSystemInfoSnapshot(): Omit<
+  SystemInfoSnapshot,
+  'workspace_registry_status' | 'data_service_status' | 'default_idp_status' | 'workspace_provisioning'
+> {
   return {
     system_admin_username: getSystemAdminUsername(),
     api_base_url: process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000',

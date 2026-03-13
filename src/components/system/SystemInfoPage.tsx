@@ -63,6 +63,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 title={t('workspace_registry_title')}
                 rows={[
                   { label: t('workspace_registry_path_label'), value: snapshot.workspace_registry_path },
+                  { label: t('workspace_registry_status_label'), value: t(`config_status.${snapshot.workspace_registry_status}`) },
                 ]}
               />
               <InfoCard
@@ -71,6 +72,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                 rows={[
                   { label: t('substrate_label_label'), value: snapshot.substrate_label },
                   { label: t('substrate_url_label'), value: snapshot.substrate_url },
+                  { label: t('data_service_status_label'), value: t(`config_status.${snapshot.data_service_status}`) },
                 ]}
               />
               <InfoCard
@@ -88,6 +90,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   { label: t('default_idp_url_label'), value: snapshot.default_idp_url || '-' },
                   { label: t('default_idp_realm_label'), value: snapshot.default_idp_realm || '-' },
                   { label: t('default_idp_client_id_label'), value: snapshot.default_idp_client_id || '-' },
+                  { label: t('default_idp_status_label'), value: t(`config_status.${snapshot.default_idp_status}`) },
                 ]}
               />
               <InfoCard
@@ -97,6 +100,18 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                   { label: t('database_prefix_label'), value: snapshot.database_prefix },
                   { label: t('collection_prefix_label'), value: snapshot.collection_prefix },
                   { label: t('key_prefix_label'), value: snapshot.key_prefix },
+                ]}
+              />
+              <InfoCard
+                icon={<Wrench className="h-5 w-5" />}
+                title={t('workspace_provisioning_title')}
+                rows={[
+                  { label: t('workspace_total_label'), value: String(snapshot.workspace_provisioning.total) },
+                  { label: t('workspace_ready_label'), value: String(snapshot.workspace_provisioning.ready) },
+                  { label: t('workspace_provisioning_label'), value: String(snapshot.workspace_provisioning.provisioning) },
+                  { label: t('workspace_failed_label'), value: String(snapshot.workspace_provisioning.failed) },
+                  { label: t('workspace_draft_label'), value: String(snapshot.workspace_provisioning.draft) },
+                  { label: t('workspace_disabled_label'), value: String(snapshot.workspace_provisioning.disabled) },
                 ]}
               />
             </div>

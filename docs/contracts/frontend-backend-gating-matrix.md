@@ -20,6 +20,10 @@ Backend enforces `401/403`; frontend applies route/component gates.
 - `project:endpoint:use`
 - `project:agent:manage`
 - `project:agent:public`
+- `project:governance:update`
+- `project:membership:update`
+- `project:admins:update`
+- `project:lifecycle:update`
 - `project:manage`
 
 ## Matrix
@@ -57,3 +61,25 @@ Backend enforces `401/403`; frontend applies route/component gates.
 7. `GET /limits/summary` should support endpoint-level limit projection for Usage UI:
    - return `endpoints[].limits[]` with canonical fields: `kind/window/metric/policy_key/used/max/remaining/usage_pct/reset_at`.
    - return `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
+
+## Target Migration (Accepted)
+
+The current matrix still uses `project:manage` on several project governance surfaces. The accepted target split is:
+
+- `project:governance:update`
+  - endpoints governance writes
+  - credentials
+  - resource policy
+- `project:membership:update`
+  - join requests
+  - membership state changes
+  - permission templates
+  - project groups
+- `project:admins:update`
+  - assign/revoke project admins
+- `project:lifecycle:update`
+  - delete project
+  - owner transfer
+  - other lifecycle settings
+
+`project:manage` remains temporarily in the matrix until all route and page gates finish migrating.

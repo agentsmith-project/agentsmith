@@ -35,6 +35,10 @@ Related docs:
 - `project:endpoint:use`
 - `project:agent:manage`
 - `project:agent:public`
+- `project:governance:update`
+- `project:membership:update`
+- `project:admins:update`
+- `project:lifecycle:update`
 - `project:manage`
 
 ## Route-Level Permission Gate Contract
@@ -53,6 +57,13 @@ Related docs:
 - Audit: `project:endpoint:use`
 - Usage: `project:endpoint:use`
 
+Target migration:
+- Credentials: `project:governance:update`
+- Resource Policy: `project:governance:update`
+- Members governance writes: `project:membership:update`
+- Project owner / admin assignment: `project:admins:update`
+- Project lifecycle settings and delete: `project:lifecycle:update`
+
 ## Action-Level Permission Gate Contract
 
 - Endpoint create/update/delete: `project:manage`
@@ -61,6 +72,14 @@ Related docs:
 - Member/template/group management: `project:manage`
 - Agent create/update/delete/key issue/key revoke: `project:agent:manage`
 - Agent publish/unpublish visibility changes: `project:agent:public`
+
+Target migration:
+- Endpoint governance writes: `project:governance:update`
+- Credential create/rotate/delete: `project:governance:update`
+- Resource policy save: `project:governance:update`
+- Member/template/group management and join request decisions: `project:membership:update`
+- Project admin assignment: `project:admins:update`
+- Project delete / owner transfer / lifecycle settings: `project:lifecycle:update`
 
 ## UI Behavior Contract
 

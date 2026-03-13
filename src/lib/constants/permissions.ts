@@ -5,6 +5,10 @@
  * - project:endpoint:use
  * - project:agent:manage
  * - project:agent:public
+ * - project:governance:update
+ * - project:membership:update
+ * - project:admins:update
+ * - project:lifecycle:update
  * - project:manage
  */
 
@@ -14,6 +18,10 @@ export const PLATFORM_PERMISSIONS = {
     'project:endpoint:use',
     'project:agent:manage',
     'project:agent:public',
+    'project:governance:update',
+    'project:membership:update',
+    'project:admins:update',
+    'project:lifecycle:update',
     'project:manage',
   ] as const,
 } as const;
@@ -30,7 +38,11 @@ export const PERMISSION_DESCRIPTIONS: Record<string, string> = {
   'project:endpoint:use': 'Use project endpoints',
   'project:agent:manage': 'Create and manage own agents',
   'project:agent:public': 'Publish or unpublish agents for project-wide visibility',
-  'project:manage': 'Manage all project resources and governance settings',
+  'project:governance:update': 'Manage project governance resources such as credentials, resource policy, and endpoint governance',
+  'project:membership:update': 'Manage project memberships, templates, groups, and join requests',
+  'project:admins:update': 'Assign or revoke project administrators',
+  'project:lifecycle:update': 'Manage project lifecycle settings such as owner transfer and deletion',
+  'project:manage': 'Transitional umbrella permission for project governance and lifecycle gates during refactor',
 };
 
 export const PLATFORM_PERMISSIONS_GROUPED = [
@@ -50,8 +62,21 @@ export const GROUP_TEMPLATES = {
   // These templates are product-facing defaults, not the authorization truth.
   // Runtime allow/deny must still resolve through permission checks in scope.
   // Owner/admin/creator labels are only sources for deriving permissions.
-  owner: ['project:endpoint:use', 'project:agent:manage', 'project:manage'],
-  admin: ['project:endpoint:use', 'project:agent:manage', 'project:manage'],
+  owner: [
+    'project:endpoint:use',
+    'project:agent:manage',
+    'project:governance:update',
+    'project:membership:update',
+    'project:admins:update',
+    'project:lifecycle:update',
+    'project:manage',
+  ],
+  admin: [
+    'project:endpoint:use',
+    'project:agent:manage',
+    'project:governance:update',
+    'project:manage',
+  ],
   developer: ['project:endpoint:use', 'project:agent:manage'],
   user: ['project:endpoint:use'],
 } as const;
@@ -65,6 +90,9 @@ export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
 
 export const HIGH_RISK_PERMISSIONS = [
   'project:agent:public',
+  'project:membership:update',
+  'project:admins:update',
+  'project:lifecycle:update',
   'project:manage',
 ] as const;
 

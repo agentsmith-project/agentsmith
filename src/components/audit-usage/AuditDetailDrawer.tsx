@@ -58,6 +58,37 @@ function hasGovernanceContext(event: AuditEvent): boolean {
   );
 }
 
+function getOwnershipTransferContext(event: AuditEvent): {
+  previousOwnerId?: string;
+  nextOwnerId?: string;
+  previousOwnerRetainedAdmin?: boolean;
+} | null {
+  if (event.action !== 'project.owner.transferred') {
+    return null;
+  }
+  const metadata = event.metadata_json;
+  if (!metadata || typeof metadata !== 'object') {
+    return null;
+  }
+  const previousOwnerId = typeof metadata.previous_owner_id === 'string'
+    ? metadata.previous_owner_id
+    : undefined;
+  const nextOwnerId = typeof metadata.next_owner_id === 'string'
+    ? metadata.next_owner_id
+    : undefined;
+  const previousOwnerRetainedAdmin = typeof metadata.previous_owner_retained_admin === 'boolean'
+    ? metadata.previous_owner_retained_admin
+    : undefined;
+  if (!previousOwnerId && !nextOwnerId && previousOwnerRetainedAdmin === undefined) {
+    return null;
+  }
+  return {
+    previousOwnerId,
+    nextOwnerId,
+    previousOwnerRetainedAdmin,
+  };
+}
+
 function getDefaultGovernanceAction(resourceType?: string): string {
   if (resourceType === 'source_library') return 'upload';
   if (resourceType === 'project') return 'read';
@@ -136,6 +167,7 @@ export function AuditDetailDrawer({
   const summary = getAuditSummary(event, t);
   const category = getAuditEventCategory(event);
   const showInvestigationRefs = hasGovernanceContext(event);
+  const ownershipTransfer = getOwnershipTransferContext(event);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -209,6 +241,34 @@ export function AuditDetailDrawer({
               </Badge>
             </div>
           </div>
+
+          {ownershipTransfer ? (
+            <div className="bg-surface border border-border rounded-md p-4 space-y-3" data-testid="audit__detail-ownership">
+              <h4 className="text-sm font-semibold text-foreground">{t('detail.ownership_title')}</h4>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.previous_owner')}:</span>
+                  <p className="mt-1 text-sm text-foreground font-mono">
+                    {ownershipTransfer.previousOwnerId ?? '--'}
+                  </p>
+                </div>
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.next_owner')}:</span>
+                  <p className="mt-1 text-sm text-foreground font-mono">
+                    {ownershipTransfer.nextOwnerId ?? '--'}
+                  </p>
+                </div>
+              </div>
+              {ownershipTransfer.previousOwnerRetainedAdmin !== undefined ? (
+                <div>
+                  <span className="text-sm text-tertiary">{t('detail.previous_owner_retained_admin')}:</span>
+                  <p className="mt-1 text-sm text-foreground">
+                    {ownershipTransfer.previousOwnerRetainedAdmin ? t('detail.retained_project_admin') : commonT('no')}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
 
           {showInvestigationRefs ? (
             <div className="bg-surface border border-border rounded-md p-4 space-y-3">

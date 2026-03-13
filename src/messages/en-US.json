@@ -1144,6 +1144,11 @@
     "detail": {
       "title": "Audit Event Details",
       "governance_title": "Governance Evidence",
+      "ownership_title": "Ownership Change",
+      "previous_owner": "Previous Owner",
+      "next_owner": "Next Owner",
+      "previous_owner_retained_admin": "Previous owner retained project admin access",
+      "retained_project_admin": "Retained project admin access",
       "governance_kind": "Governance Kind",
       "enforcement_kind": "Enforcement Kind",
       "limit_key": "Limit Key",

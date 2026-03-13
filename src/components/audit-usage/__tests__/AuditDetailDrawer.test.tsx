@@ -266,6 +266,43 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getAllByText('Project creators must be an array').length).toBeGreaterThan(0);
   });
 
+  it('shows ownership transfer details for project owner changes', () => {
+    render(
+      <AuditDetailDrawer
+        open
+        onOpenChange={() => {}}
+        event={{
+          id: 'audit_owner_transfer',
+          timestamp: '2026-03-01T00:00:00.000Z',
+          workspace_id: 'ws_default',
+          project_id: 'proj_owner',
+          actor_type: 'user',
+          actor_id: 'user_admin',
+          action: 'project.owner.transferred',
+          resource_type: 'project',
+          resource_id: 'proj_owner',
+          result: 'ok',
+          request_id: 'req_owner_transfer',
+          metadata_json: {
+            previous_owner_id: 'user_old',
+            next_owner_id: 'user_new',
+            previous_owner_retained_admin: true,
+            name: 'Owner Transfer Project',
+          },
+        }}
+      />
+    );
+
+    expect(screen.getByTestId('audit__detail-summary')).toHaveTextContent(
+      'User Transferred Project Owner on Project Owner Transfer Project and succeeded',
+    );
+    const ownership = screen.getByTestId('audit__detail-ownership');
+    expect(ownership).toHaveTextContent('detail.ownership_title');
+    expect(ownership).toHaveTextContent('user_old');
+    expect(ownership).toHaveTextContent('user_new');
+    expect(ownership).toHaveTextContent('detail.retained_project_admin');
+  });
+
   it('humanizes policy enforcement errors in detail view', () => {
     render(
       <AuditDetailDrawer

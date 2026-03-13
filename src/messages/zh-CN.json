@@ -1146,6 +1146,11 @@
     "detail": {
       "title": "审计事件详情",
       "governance_title": "治理证据",
+      "ownership_title": "所有权变更",
+      "previous_owner": "原所有者",
+      "next_owner": "新所有者",
+      "previous_owner_retained_admin": "原所有者保留项目管理权限",
+      "retained_project_admin": "保留项目管理权限",
       "governance_kind": "治理类型",
       "enforcement_kind": "生效方式",
       "limit_key": "限额键",

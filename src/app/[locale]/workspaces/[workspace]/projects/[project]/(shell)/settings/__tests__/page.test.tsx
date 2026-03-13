@@ -168,6 +168,32 @@ describe('SettingsPage route', () => {
     expect(screen.getByTestId('settings__delete-project-btn')).toBeDisabled();
   });
 
+  it('allows governance managers to read settings in read-only mode', async () => {
+    mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanManageProjectLifecycle.mockReturnValue(false);
+    mockUseCanManageProjectAdmins.mockReturnValue(false);
+    mockAuthUser.mockReturnValue({ id: 'governance_1' });
+
+    render(
+      <SettingsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings__governance-section')).toBeInTheDocument();
+      expect(screen.getByTestId('settings__ownership-section')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('settings__save-btn')).toBeDisabled();
+    expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();
+    expect(screen.getByTestId('settings__delete-project-btn')).toBeDisabled();
+  });
+
   it('lets project owners transfer ownership', async () => {
     const user = userEvent.setup();
     render(

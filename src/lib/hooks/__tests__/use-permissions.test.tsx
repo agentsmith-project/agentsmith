@@ -15,7 +15,10 @@ import {
   useCanUpdateTask,
   useCanDeleteTask,
   useCanManageMemberGovernance,
+  useCanManageProjectAdmins,
+  useCanManageProjectLifecycle,
   useCanManageResourcePolicy,
+  useCanReadProjectSettings,
   useCanReadProjectPolicy,
   useCanUpdateProjectPolicy,
   useCanAccessCredentials,
@@ -538,6 +541,59 @@ describe('use-permissions hooks', () => {
   });
 
   describe('governance capability hooks', () => {
+    it('project settings read should accept governance, admins, or lifecycle permissions', () => {
+      const baseProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+      };
+
+      mockUseProject.mockReturnValue({
+        data: { ...baseProject, permissions: ['project:governance:update'] },
+        isLoading: false,
+      });
+      expect(renderHook(() => useCanReadProjectSettings(), { wrapper: createWrapper() }).result.current).toBe(true);
+
+      mockUseProject.mockReturnValue({
+        data: { ...baseProject, permissions: ['project:admins:update'] },
+        isLoading: false,
+      });
+      expect(renderHook(() => useCanReadProjectSettings(), { wrapper: createWrapper() }).result.current).toBe(true);
+
+      mockUseProject.mockReturnValue({
+        data: { ...baseProject, permissions: ['project:lifecycle:update'] },
+        isLoading: false,
+      });
+      expect(renderHook(() => useCanReadProjectSettings(), { wrapper: createWrapper() }).result.current).toBe(true);
+    });
+
+    it('project admin and lifecycle helpers should require their specific split permissions', () => {
+      const mockProject = {
+        id: 'proj_001',
+        workspace_id: 'ws_default',
+        name: 'Test Project',
+        owner_id: 'user_001',
+        status: 'active' as const,
+        visibility: 'public' as const,
+        created_at: '2026-01-01T00:00:00Z',
+        updated_at: '2026-01-01T00:00:00Z',
+        permissions: ['project:admins:update', 'project:lifecycle:update'],
+      };
+
+      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
+
+      const { result: canManageAdmins } = renderHook(() => useCanManageProjectAdmins(), { wrapper: createWrapper() });
+      const { result: canManageLifecycle } = renderHook(() => useCanManageProjectLifecycle(), { wrapper: createWrapper() });
+
+      expect(canManageAdmins.current).toBe(true);
+      expect(canManageLifecycle.current).toBe(true);
+    });
+
     it('resource policy governance helpers should require project:governance:update', () => {
       const mockProject = {
         id: 'proj_001',

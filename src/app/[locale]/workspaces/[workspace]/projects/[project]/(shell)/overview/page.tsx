@@ -9,7 +9,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
 
 export default function OverviewPage() {
   const params = useParams();
@@ -20,7 +20,7 @@ export default function OverviewPage() {
   const canUseProject = useHasPermission('project:endpoint:use');
   const canManageGovernance = useHasPermission('project:governance:update');
   const canManageMembership = useHasPermission('project:membership:update');
-  const canManageProject = useHasPermission('project:manage');
+  const canReadProjectSettings = useCanReadProjectSettings();
   const canManageAgents = useHasPermission('project:agent:manage');
 
   const workspaceId = validateWorkspaceParam(params.workspace);
@@ -73,7 +73,7 @@ export default function OverviewPage() {
           { label: tNav('members'), href: `${basePath}/members` },
         ]
       : []),
-    ...(canManageProject
+    ...(canReadProjectSettings
       ? [
           { label: tNav('settings'), href: `${basePath}/settings` },
         ]

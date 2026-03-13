@@ -26,7 +26,11 @@ import { useTranslations } from 'next-intl';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { useApiError } from '@/lib/hooks/use-api-error';
 import { useProject } from '@/lib/hooks/use-projects-queries';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import {
+  useCanManageProjectAdmins,
+  useCanManageProjectLifecycle,
+  useCanReadProjectSettings,
+} from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useAuthStore } from '@/lib/stores/authStore';
@@ -55,8 +59,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
   const currentUser = useAuthStore((state) => state.user);
-  const canReadSettings = useHasPermission('project:manage');
-  const canManageSettings = useHasPermission('project:manage');
+  const canReadSettings = useCanReadProjectSettings();
+  const canManageProjectLifecyclePermission = useCanManageProjectLifecycle();
+  const canManageProjectAdminsPermission = useCanManageProjectAdmins();
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
 
@@ -104,10 +109,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   }, [currentProject]);
 
   const isProjectOwner = currentProject?.owner_id === currentUser?.id;
-  const canManageProjectLifecycle = canManageSettings && isProjectOwner;
-  const canDeleteProject = canManageSettings && isProjectOwner;
-  const canAssignProjectAdmins = canManageSettings && isProjectOwner;
-  const canTransferProjectOwner = canManageSettings && isProjectOwner;
+  const canManageProjectLifecycle = canManageProjectLifecyclePermission && isProjectOwner;
+  const canDeleteProject = canManageProjectLifecyclePermission && isProjectOwner;
+  const canAssignProjectAdmins = canManageProjectAdminsPermission && isProjectOwner;
+  const canTransferProjectOwner = canManageProjectLifecyclePermission && isProjectOwner;
 
   const handleProjectAdminCheckedChange = (userId: string, checked: boolean) => {
     setSelectedProjectAdmins((current) => {

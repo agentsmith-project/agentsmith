@@ -1,7 +1,11 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import {
+  useCanManageProjectAdmins,
+  useCanManageProjectLifecycle,
+  useCanReadProjectSettings,
+} from '@/lib/hooks/use-permissions';
 
 const mockPush = vi.fn();
 const mockProjectUpdate = vi.fn();
@@ -32,7 +36,9 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn((permission: string) => permission === 'project:manage'),
+  useCanReadProjectSettings: vi.fn(() => true),
+  useCanManageProjectLifecycle: vi.fn(() => true),
+  useCanManageProjectAdmins: vi.fn(() => true),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -97,19 +103,22 @@ vi.mock('@/components/ui/tabs', () => ({
 
 import SettingsPage from '../page';
 
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
+const mockUseCanManageProjectLifecycle = vi.mocked(useCanManageProjectLifecycle);
+const mockUseCanManageProjectAdmins = vi.mocked(useCanManageProjectAdmins);
 
 describe('SettingsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
+    mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanManageProjectLifecycle.mockReturnValue(true);
+    mockUseCanManageProjectAdmins.mockReturnValue(true);
     mockAuthUser.mockReturnValue({ id: 'owner_1' });
     mockProjectUpdate.mockResolvedValue(undefined);
     mockProjectDelete.mockResolvedValue(undefined);
   });
 
   it('renders settings page when params and permission are valid', async () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -131,7 +140,9 @@ describe('SettingsPage route', () => {
   });
 
   it('allows project admins with project manage permission to access settings', async () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:manage');
+    mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseCanManageProjectLifecycle.mockReturnValue(false);
+    mockUseCanManageProjectAdmins.mockReturnValue(false);
     mockAuthUser.mockReturnValue({ id: 'admin_1' });
 
     render(
@@ -182,7 +193,9 @@ describe('SettingsPage route', () => {
   });
 
   it('shows permission denied when user lacks settings manage permission', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanManageProjectLifecycle.mockReturnValue(false);
+    mockUseCanManageProjectAdmins.mockReturnValue(false);
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -200,7 +213,7 @@ describe('SettingsPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanReadProjectSettings.mockReturnValue(true);
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -218,7 +231,9 @@ describe('SettingsPage route', () => {
   });
 
   it('shows permission denied when user lacks settings read permission', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseCanReadProjectSettings.mockReturnValue(false);
+    mockUseCanManageProjectLifecycle.mockReturnValue(false);
+    mockUseCanManageProjectAdmins.mockReturnValue(false);
     render(
       <SettingsPage
         params={Promise.resolve({

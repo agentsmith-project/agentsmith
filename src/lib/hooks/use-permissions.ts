@@ -104,6 +104,22 @@ export function useCanManageProject(): boolean {
   return useHasPermission('project:manage');
 }
 
+export function useCanReadProjectSettings(): boolean {
+  return useHasAnyPermission([
+    'project:governance:update',
+    'project:admins:update',
+    'project:lifecycle:update',
+  ]);
+}
+
+export function useCanManageProjectAdmins(): boolean {
+  return useHasPermission('project:admins:update');
+}
+
+export function useCanManageProjectLifecycle(): boolean {
+  return useHasPermission('project:lifecycle:update');
+}
+
 export function useCanManageMemberGovernance(): boolean {
   return useHasPermission('project:membership:update') && useIsOwner();
 }

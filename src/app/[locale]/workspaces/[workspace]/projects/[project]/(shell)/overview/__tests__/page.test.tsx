@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
 import OverviewPage from '../page';
 
 const mockUseParams = vi.fn(() => ({
@@ -15,10 +15,12 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: vi.fn(() => true),
+  useCanReadProjectSettings: vi.fn(() => true),
 }));
 
 describe('OverviewPage', () => {
 const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
 
   beforeEach(() => {
     mockUseHasPermission.mockImplementation((permission: string) => {
@@ -29,6 +31,7 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
       if (permission === 'project:manage') return true;
       return false;
     });
+    mockUseCanReadProjectSettings.mockReturnValue(true);
     mockUseParams.mockReturnValue({
       workspace: 'ws_default',
       project: 'proj_001',
@@ -52,6 +55,7 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
 
   it('hides governance links that require project management permissions', () => {
     mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
+    mockUseCanReadProjectSettings.mockReturnValue(false);
 
     render(<OverviewPage />);
 
@@ -65,6 +69,7 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
       if (permission === 'project:governance:update') return true;
       return false;
     });
+    mockUseCanReadProjectSettings.mockReturnValue(false);
 
     render(<OverviewPage />);
 
@@ -82,6 +87,7 @@ const mockUseHasPermission = vi.mocked(useHasPermission);
       if (permission === 'project:membership:update') return true;
       return false;
     });
+    mockUseCanReadProjectSettings.mockReturnValue(false);
 
     render(<OverviewPage />);
 

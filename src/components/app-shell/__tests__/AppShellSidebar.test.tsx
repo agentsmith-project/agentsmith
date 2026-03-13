@@ -52,10 +52,12 @@ const mockUseHasWorkspacePermission = vi.fn(
   (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
 );
 const mockUseHasPermission = vi.fn((_: string) => true);
+const mockUseCanReadProjectSettings = vi.fn(() => true);
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: (permission: string) => mockUseHasPermission(permission),
   useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
+  useCanReadProjectSettings: () => mockUseCanReadProjectSettings(),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -110,6 +112,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       locale: 'en-US',
     });
     mockUseHasPermission.mockReturnValue(true);
+    mockUseCanReadProjectSettings.mockReturnValue(true);
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
@@ -184,6 +187,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       || permission === 'project:membership:update'
       || permission === 'project:manage',
     );
+    mockUseCanReadProjectSettings.mockReturnValue(true);
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -199,6 +203,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     mockUseHasPermission.mockImplementation((permission: string) =>
       permission === 'project:endpoint:use' || permission === 'project:governance:update',
     );
+    mockUseCanReadProjectSettings.mockReturnValue(false);
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -214,6 +219,7 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
     mockUseHasPermission.mockImplementation((permission: string) =>
       permission === 'project:endpoint:use' || permission === 'project:membership:update',
     );
+    mockUseCanReadProjectSettings.mockReturnValue(false);
 
     render(<AppShellSidebar />, { wrapper });
 

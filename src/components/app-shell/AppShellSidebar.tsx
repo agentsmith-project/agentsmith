@@ -5,7 +5,11 @@ import { useParams, usePathname } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
-import { useHasPermission, useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
+import {
+  useCanReadProjectSettings,
+  useHasPermission,
+  useHasWorkspacePermission,
+} from '@/lib/hooks/use-permissions';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { Button } from '@/components/ui/button';
 import {
@@ -47,7 +51,6 @@ type ProjectMenuItem = {
     | 'project:agent:manage'
     | 'project:governance:update'
     | 'project:membership:update'
-    | 'project:manage'
     | '__multi__';
   section: ProjectMenuSection;
 };
@@ -69,7 +72,7 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: Key, labelKey: 'credentials', href: 'credentials', permission: 'project:governance:update', section: 'govern' },
   { icon: Users, labelKey: 'members', href: 'members', permission: 'project:membership:update', section: 'govern' },
   { icon: Shield, labelKey: 'audit', href: 'audit', permission: 'project:endpoint:use', section: 'govern' },
-  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: 'project:manage', section: 'govern' },
+  { icon: SettingsIcon, labelKey: 'settings', href: 'settings', permission: '__multi__', section: 'govern' },
 ];
 
 const PROJECT_MENU_SECTIONS: Array<{ id: ProjectMenuSection; labelKey: string }> = [
@@ -101,7 +104,7 @@ export function AppShellSidebar({
   const canReadAgents = useHasPermission('project:agent:manage');
   const canManageGovernance = useHasPermission('project:governance:update');
   const canManageMembership = useHasPermission('project:membership:update');
-  const canManageProject = useHasPermission('project:manage');
+  const canReadProjectSettings = useCanReadProjectSettings();
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canCreateWorkspaceProject = useHasWorkspacePermission('workspace:project:create');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
@@ -119,8 +122,8 @@ export function AppShellSidebar({
         if (item.permission === 'project:agent:manage') return canReadAgents;
         if (item.permission === 'project:governance:update') return canManageGovernance;
         if (item.permission === 'project:membership:update') return canManageMembership;
-        if (item.permission === 'project:manage') {
-          return canManageProject;
+        if (item.href === 'settings') {
+          return canReadProjectSettings;
         }
         return true;
       })

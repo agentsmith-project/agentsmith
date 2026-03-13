@@ -1361,6 +1361,7 @@
     "governance_save_confirm_action": "Confirm & Save",
     "token_reference_title": "Supported tokens",
     "general_help": "Basic project metadata. Visibility and join policy control who can see and join the project.",
+    "general_read_only_help": "Only the project owner can change project metadata, visibility, and join policy.",
     "execution_preferences_help": "Agent execution preferences. Agents may override these values at agent level. Changes take effect when agents next fetch their config.",
     "project_admins_title": "Project administrators",
     "project_admins_owner_help": "Only the project owner can assign or revoke project administrators.",

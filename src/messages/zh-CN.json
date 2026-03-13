@@ -1363,6 +1363,7 @@
     "governance_save_confirm_action": "确认并保存",
     "token_reference_title": "支持的 token",
     "general_help": "项目基础元数据。可见性与加入策略控制谁可查看和加入项目。",
+    "general_read_only_help": "只有项目所有者可以修改项目元数据、可见性和加入策略。",
     "execution_preferences_help": "智能体执行偏好。智能体可在智能体级别覆盖这些值。更改会在智能体下次获取配置时生效。",
     "project_admins_title": "项目管理员",
     "project_admins_owner_help": "只有项目所有者可以分配或撤销项目管理员。",

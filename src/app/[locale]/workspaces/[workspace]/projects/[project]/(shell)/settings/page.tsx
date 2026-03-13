@@ -104,6 +104,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   }, [currentProject]);
 
   const isProjectOwner = currentProject?.owner_id === currentUser?.id;
+  const canManageProjectLifecycle = canManageSettings && isProjectOwner;
   const canDeleteProject = canManageSettings && isProjectOwner;
   const canAssignProjectAdmins = canManageSettings && isProjectOwner;
   const canTransferProjectOwner = canManageSettings && isProjectOwner;
@@ -165,7 +166,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   const handleSaveGeneral = async () => {
     if (!resolvedParams) return;
-    if (!canManageSettings) return;
+    if (!canManageProjectLifecycle) return;
     if (!resolvedParams.workspace || !resolvedParams.project) return;
     setSavingGeneral(true);
     try {
@@ -263,19 +264,21 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         <div className="w-full space-y-6">
           <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__general-section">
             <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('general_access_title')}</h2>
-            <p className="text-sm text-tertiary mb-4">{settingsT('general_help')}</p>
+            <p className="text-sm text-tertiary mb-4">
+              {isProjectOwner ? settingsT('general_help') : settingsT('general_read_only_help')}
+            </p>
             <div className="grid gap-4 md:grid-cols-2">
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('project_name')}</label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
-                  disabled={!canManageSettings}
+                  disabled={!canManageProjectLifecycle}
                 />
               </div>
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('visibility')}</label>
-                <Select value={visibility} onValueChange={(value) => setVisibility(value as 'public' | 'private')} disabled={!canManageSettings}>
+                <Select value={visibility} onValueChange={(value) => setVisibility(value as 'public' | 'private')} disabled={!canManageProjectLifecycle}>
                   <SelectTrigger data-testid="settings__visibility-select">
                     <SelectValue />
                   </SelectTrigger>
@@ -292,12 +295,12 @@ export default function SettingsPage({ params }: SettingsPageProps) {
                   rows={3}
                   value={description}
                   onChange={(e) => setDescription(e.target.value)}
-                  disabled={!canManageSettings}
+                  disabled={!canManageProjectLifecycle}
                 />
               </div>
               <div className="md:col-span-1">
                 <label className="block text-sm font-medium text-primary mb-2">{settingsT('join_policy')}</label>
-                <Select value={joinPolicy} onValueChange={(value) => setJoinPolicy(value as 'approval_required' | 'open')} disabled={!canManageSettings}>
+                <Select value={joinPolicy} onValueChange={(value) => setJoinPolicy(value as 'approval_required' | 'open')} disabled={!canManageProjectLifecycle}>
                   <SelectTrigger data-testid="settings__join-policy-select">
                     <SelectValue />
                   </SelectTrigger>
@@ -309,7 +312,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               </div>
             </div>
             <div className="mt-6 flex justify-end">
-              <Button onClick={handleSaveGeneral} disabled={!canManageSettings || savingGeneral} variant="primary" data-testid="settings__save-btn">
+              <Button onClick={handleSaveGeneral} disabled={!canManageProjectLifecycle || savingGeneral} variant="primary" data-testid="settings__save-btn">
                 <Save className="w-4 h-4" />
                 {savingGeneral ? 'Saving...' : commonT('save')}
               </Button>

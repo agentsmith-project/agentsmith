@@ -147,6 +147,7 @@ describe('SettingsPage route', () => {
     });
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__save-btn')).toBeDisabled();
     expect(screen.queryByTestId('settings__project-admins-save')).not.toBeInTheDocument();
     expect(screen.queryByTestId('settings__project-owner-save')).not.toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeDisabled();

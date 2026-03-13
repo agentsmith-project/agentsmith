@@ -25,7 +25,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-1',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: ['project:manage'], // Add new permission
+      permissions: ['project:governance:update'], // Add new permission
       mode: 'custom',
     };
 
@@ -39,7 +39,7 @@ describe('Permission Change Propagation', () => {
       project_id: 'proj-1',
     });
 
-    expect(currentPerms.permissions).toContain('project:manage');
+    expect(currentPerms.permissions).toContain('project:governance:update');
   });
 
   // Test Case 2: Adding permission is reflected in next authorization check
@@ -48,7 +48,7 @@ describe('Permission Change Propagation', () => {
       member_id: 'user-2',
       workspace_id: 'ws-1',
       project_id: 'proj-1',
-      permissions: ['project:manage'],
+      permissions: ['project:governance:update'],
       mode: 'custom',
     };
 
@@ -58,7 +58,7 @@ describe('Permission Change Propagation', () => {
     const { checkPermission } = await import('../unified-authorization');
     const result = await checkPermission({
       member_id: 'user-2',
-      permission: 'project:manage',
+      permission: 'project:governance:update',
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -84,7 +84,7 @@ describe('Permission Change Propagation', () => {
     const { checkPermission } = await import('../unified-authorization');
     const result = await checkPermission({
       member_id: 'user-1',
-      permission: 'project:manage', // This should now be denied
+      permission: 'project:governance:update', // This should now be denied
       resource_context: {
         workspace_id: 'ws-1',
         project_id: 'proj-1',
@@ -114,8 +114,8 @@ describe('Permission Change Propagation', () => {
       project_id: 'proj-1',
     });
 
-    // Admin template should include project:manage
-    expect(currentPerms.permissions).toContain('project:manage');
+    // Admin template should include project:governance:update
+    expect(currentPerms.permissions).toContain('project:governance:update');
   });
 
   // Test Case 5: No stale cache after permission update

@@ -11,7 +11,7 @@ describe('resolveProjectPermissionsForRequest', () => {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
-      permissions: ['project:manage'],
+      permissions: ['project:governance:update'],
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -33,6 +33,6 @@ describe('resolveProjectPermissionsForRequest', () => {
     }));
 
     expect(perms.has('project:endpoint:use')).toBe(true);
-    expect(perms.has('project:manage')).toBe(true);
+    expect(perms.has('project:governance:update')).toBe(true);
   });
 });

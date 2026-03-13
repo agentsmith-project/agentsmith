@@ -83,7 +83,7 @@ describe('GovernanceExplainabilityAPI', () => {
         joined_at: '2026-03-01T00:00:00.000Z',
       })
       .mockResolvedValueOnce({
-        platform_permissions: ['project:endpoint:use', 'project:manage'],
+        platform_permissions: ['project:endpoint:use', 'project:governance:update'],
       });
 
     const api = new GovernanceExplainabilityAPI(toApiClient(mock));
@@ -92,7 +92,7 @@ describe('GovernanceExplainabilityAPI', () => {
     expect(mock.get).toHaveBeenNthCalledWith(1, '/workspaces/ws_1/projects/proj_1/memberships/user_1');
     expect(mock.get).toHaveBeenNthCalledWith(2, '/workspaces/ws_1/projects/proj_1/members/user_1/permissions');
     expect(snapshot.membership_status).toBe('suspended');
-    expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:manage']);
+    expect(snapshot.effective_permissions).toEqual(['project:endpoint:use', 'project:governance:update']);
   });
 
   it('extracts governance limit error details from APIError', () => {
@@ -136,10 +136,10 @@ describe('GovernanceExplainabilityAPI', () => {
       {
         error_code: 'FORBIDDEN',
         message: 'forbidden',
-        missing_permissions: ['project:manage'],
+        missing_permissions: ['project:membership:update'],
         authz_decision: {
           membership_status: 'suspended',
-          decisions: [{ permission: 'project:manage', granted: false, reason: 'membership_suspended', source: 'permission', membership_status: 'suspended' }],
+          decisions: [{ permission: 'project:membership:update', granted: false, reason: 'membership_suspended', source: 'permission', membership_status: 'suspended' }],
         },
       },
     );

@@ -98,6 +98,9 @@
 10. `ProjectAdmin` 只负责 project scope 内治理，不负责删除 project、owner 转让或继续授予管理权限。
 11. workspace 生命周期与底层租户配置只归系统超级管理员管理。
 12. 只有系统超级管理员可以查看 workspace 级系统信息、依赖服务 URL 与租户隔离结果。
+13. workspace 创建必须支持 `draft -> publish -> ready/failed/disabled` 的最小 provisioning 状态模型。
+14. system admin 发布 workspace 时，必须同步等待后台基础资源初始化完成。
+15. system info 只允许展示系统级基础运行状态，不得演化成业务或性能指标面。
 
 ## 4. 必读文档（必须）
 
@@ -106,9 +109,10 @@
 3. [Usage / Audit MVP 职责边界](./UXUI/01-通用规范/usage-audit-职责边界-v1.md)
 4. [Usage / Audit MVP 功能与 UX 定义](./UXUI/01-通用规范/usage-audit-mvp-功能与uxui-v1.md)
 5. [System / Workspace Identity & Entry MVP](./UXUI/01-通用规范/system-workspace-identity-entry-mvp-v1.md)
-6. [Contracts Index](./contracts/README.md)
-7. [User Guides Index](./user-guides/README.md)
-8. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
+6. [System / Workspace Provisioning MVP Analysis](./UXUI/01-通用规范/system-workspace-provisioning-mvp-analysis-v1.md)
+7. [Contracts Index](./contracts/README.md)
+8. [User Guides Index](./user-guides/README.md)
+9. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
 
 ## 5. 设计与交互规范（必须遵循）
 

@@ -228,6 +228,8 @@ workspace overview 只应承担：
 5. workspace IdP（Keycloak）配置
 6. workspace 管理员与 project creator / owner / project admin 授权关系
 7. owner 转让与 project 管理权限分层
+8. workspace provisioning 的 `draft / publish / ready / failed / disabled` 基础状态模型
+9. system info 的系统级基础状态查看，不扩展为业务或性能指标面
 
 当前 MVP 不进入：
 
@@ -235,3 +237,11 @@ workspace overview 只应承担：
 2. workspace 成员生命周期管理
 3. 系统级运营大盘
 4. 复杂租户迁移与重命名工具
+
+补充说明：
+
+1. workspace 创建不应止于登记配置。
+2. system admin 必须能够先保存 draft，再显式发布 workspace。
+3. 发布 workspace 时，必须同步等待后台基础资源初始化完成。
+4. 只有初始化成功后，workspace 才进入可对外登录和使用的 `ready` 状态。
+5. system info 只展示系统级基础运行状态，例如服务是否联通、workspace 是否初始化完成，不展示业务或性能指标。

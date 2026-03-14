@@ -20,7 +20,7 @@ export function PageLayout({
   const chromeClass =
     density === 'immersive'
       ? 'px-[var(--layout-padding-immersive)] py-[var(--layout-padding-immersive)] gap-[var(--layout-gap-immersive)]'
-      : 'px-[var(--layout-padding)] py-[var(--layout-padding)] gap-[var(--layout-gap)]';
+      : 'px-[var(--layout-padding)] py-5 md:px-6 md:py-6 gap-[var(--layout-gap)]';
 
   const bodyClass = density === 'immersive' ? 'gap-[var(--layout-gap-immersive)]' : 'gap-[var(--layout-gap)]';
   const footerClass = density === 'immersive' ? 'px-[var(--layout-padding-immersive)] pb-[var(--layout-padding-immersive)]' : 'px-[var(--layout-padding)] pb-[var(--layout-padding)]';
@@ -29,14 +29,14 @@ export function PageLayout({
       ? 'w-full'
       : contentWidth === 'narrow'
         ? 'w-full max-w-5xl mx-auto'
-        : 'w-full max-w-[1600px] mx-auto';
+        : 'w-full max-w-[1680px] mx-auto';
 
   const bodyContentClass =
     contentWidth === 'full'
       ? 'w-full min-h-0 flex-1 flex flex-col'
       : contentWidth === 'narrow'
         ? 'w-full max-w-5xl mx-auto min-h-0 flex-1 flex flex-col'
-        : 'w-full max-w-[1600px] mx-auto min-h-0 flex-1 flex flex-col';
+        : 'w-full max-w-[1680px] mx-auto min-h-0 flex-1 flex flex-col';
 
   return (
     <div data-testid="page-layout" className="h-full flex flex-col">

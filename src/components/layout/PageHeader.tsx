@@ -11,13 +11,18 @@ type PageHeaderProps = {
 export function PageHeader({ title, subtitle, actions, className }: PageHeaderProps) {
   return (
     <div
-      className={cn('flex flex-col gap-3 md:flex-row md:items-start md:justify-between', className)}
+      className={cn(
+        'rounded-[20px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] px-5 py-4 shadow-[0_12px_30px_rgba(0,0,0,0.18)] md:px-6 md:py-5',
+        'flex flex-col gap-4 md:flex-row md:items-start md:justify-between',
+        className,
+      )}
     >
-      <div className="space-y-1">
-        <h1 className="text-2xl font-semibold text-foreground">{title}</h1>
-        {subtitle ? <p className="text-sm text-secondary">{subtitle}</p> : null}
+      <div className="space-y-1.5">
+        <div className="text-[11px] font-medium uppercase tracking-[0.18em] text-tertiary">Project Surface</div>
+        <h1 className="text-[28px] font-semibold leading-tight text-foreground">{title}</h1>
+        {subtitle ? <p className="max-w-3xl text-sm text-secondary md:text-[15px]">{subtitle}</p> : null}
       </div>
-      {actions ? <div className="flex items-center gap-2">{actions}</div> : null}
+      {actions ? <div className="flex flex-wrap items-center gap-2 md:justify-end">{actions}</div> : null}
     </div>
   );
 }

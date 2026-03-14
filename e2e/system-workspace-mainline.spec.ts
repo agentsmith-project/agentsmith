@@ -77,12 +77,12 @@ test.describe('System Workspace Mainline', () => {
     await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}/projects$`), { timeout: 15_000 });
     await expect(page.getByRole('heading', { level: 1, name: /projects/i })).toBeVisible();
 
-    const emptyStateCreateButton = page.getByRole('button', { name: /new project/i });
     const toolbarCreateButton = page.getByTestId('projects__create-btn');
-    if (await emptyStateCreateButton.isVisible()) {
-      await emptyStateCreateButton.click();
-    } else {
+    const emptyStateCreateButton = page.getByRole('button', { name: /new project/i }).last();
+    if (await toolbarCreateButton.isVisible().catch(() => false)) {
       await toolbarCreateButton.click();
+    } else {
+      await emptyStateCreateButton.click();
     }
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();

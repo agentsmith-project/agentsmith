@@ -274,6 +274,7 @@
     "overview_updated_at": "Updated: {value}",
     "overview_open_workspace": "Open workspace",
     "workspace_home_eyebrow": "Workspace business area",
+    "workspace_home_description": "Open projects, create new work, and manage workspace access from one focused entry.",
     "workspace_home_projects_title": "Projects",
     "workspace_home_admin_title": "Workspace administration",
     "workspace_home_open_settings": "Open workspace settings",

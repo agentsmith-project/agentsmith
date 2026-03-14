@@ -23,9 +23,11 @@ export function OverviewLinkSection({
           <Link
             key={item.href}
             href={item.href}
-            className="rounded-sm border border-subtle px-3 py-2 text-sm text-foreground transition-colors hover:bg-hover"
+            aria-label={item.label}
+            className="group rounded-[18px] border border-white/6 bg-white/[0.03] px-4 py-4 text-sm text-foreground transition-all hover:-translate-y-0.5 hover:border-accent/20 hover:bg-white/[0.05] hover:shadow-[0_14px_30px_rgba(0,0,0,0.16)]"
           >
-            {item.label}
+            <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">Open</div>
+            <div className="mt-2 font-medium text-foreground transition-colors group-hover:text-white">{item.label}</div>
           </Link>
         ))}
       </div>

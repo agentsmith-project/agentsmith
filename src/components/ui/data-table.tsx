@@ -27,19 +27,19 @@ export function DataTable<TData>({
 
   return (
     <div
-      className="rounded-md border border-border bg-surface"
+      className="overflow-hidden rounded-[20px] border border-subtle bg-surface/90 shadow-[0_12px_30px_rgba(0,0,0,0.14)]"
       data-testid={testId}
     >
       <div className="overflow-x-auto overflow-y-hidden">
       <table className="min-w-full border-collapse">
-        <thead className="bg-transparent border-b border-subtle">
+        <thead className="border-b border-white/6 bg-white/[0.03]">
           {table.getHeaderGroups().map(headerGroup => (
             <tr key={headerGroup.id}>
               {headerGroup.headers.map(header => (
                 <th
                   key={header.id}
                   className={cn(
-                    'text-left text-xs font-medium uppercase tracking-wide text-tertiary',
+                    'text-left text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary',
                     headerPadding,
                   )}
                 >
@@ -62,7 +62,7 @@ export function DataTable<TData>({
             <tr
               key={row.id}
               className={cn(
-                'border-b border-border last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
+                'border-b border-white/6 last:border-b-0 transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
                 clickable && 'cursor-pointer',
                 row.getIsSelected() ? selectedRowBg : unselectedRowBg,
               )}

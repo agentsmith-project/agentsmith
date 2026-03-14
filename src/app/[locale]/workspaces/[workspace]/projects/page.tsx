@@ -14,10 +14,12 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
   ArrowLeft,
+  ArrowUpRight,
   FolderOpen,
   Plus,
   Pin,
   Search,
+  Sparkles,
 } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
@@ -272,21 +274,58 @@ export default function ProjectsPage() {
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 w-full max-w-[1600px] mx-auto px-4 py-4 md:px-5 md:py-5">
-        {/* Header */}
-        <div className="mb-6">
+          <main className="flex-1 w-full max-w-[1640px] mx-auto px-4 py-6 md:px-6 md:py-8">
+        <div className="mb-6 space-y-4">
           <Link
             href={workspaceBasePath}
-            className="mb-3 inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
+            className="inline-flex items-center gap-2 text-sm text-tertiary transition-colors hover:text-foreground"
             data-testid="projects__back-to-workspace"
           >
             <ArrowLeft className="h-4 w-4" />
             {t('back_to_workspace')}
           </Link>
-          <h1 className="text-2xl font-semibold text-foreground mb-2">{t('title')}</h1>
-          <p className="text-tertiary">
-            {t('workspace_label')} {currentWorkspace?.name || workspaceId}
-          </p>
+
+          <section className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.22)] md:p-7">
+            <div className="flex flex-col gap-6 xl:flex-row xl:items-end xl:justify-between">
+              <div className="space-y-3">
+                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Workspace Projects
+                </div>
+                <div className="space-y-2">
+                  <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">{t('title')}</h1>
+                  <p className="max-w-2xl text-sm text-secondary md:text-[15px]">
+                    {t('workspace_label')} {currentWorkspace?.name || workspaceId}
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto]">
+                <label className="relative block">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
+                  <input
+                    type="text"
+                    placeholder={t('search_placeholder')}
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    data-testid="projects__search"
+                    className="h-11 w-full rounded-xl border border-white/6 bg-white/5 pl-10 pr-4 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
+                  />
+                </label>
+
+                <Button
+                  variant="primary"
+                  onClick={() => setCreateDialogOpen(true)}
+                  disabled={!canCreateProject}
+                  data-testid="projects__create-btn"
+                  className="h-11 px-5"
+                >
+                  <Plus className="h-4 w-4" />
+                  {t('new_project')}
+                </Button>
+              </div>
+            </div>
+          </section>
         </div>
 
         {!isAuthenticated || (isProjectsLoading && projects.length === 0) ? (
@@ -294,15 +333,15 @@ export default function ProjectsPage() {
             <PageLoading />
           </div>
         ) : projects.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-20">
+          <div className="rounded-[24px] border border-subtle bg-surface/90 px-6 py-20 text-center shadow-[0_18px_40px_rgba(0,0,0,0.18)]">
             <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
             <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
-            <p className="text-tertiary mb-6">
+            <p className="mx-auto mb-6 max-w-xl text-tertiary">
               {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
             </p>
             {canCreateProject ? (
               <Button
-                variant="action"
+                variant="primary"
                 onClick={() => setCreateDialogOpen(true)}
               >
                 <Plus className="w-4 h-4" />
@@ -314,8 +353,8 @@ export default function ProjectsPage() {
           <div className="space-y-6">
             {/* Pinned Projects Section */}
             {pinnedProjects.length > 0 && (
-              <section>
-                <h2 className="text-lg font-medium text-foreground mb-4 flex items-center gap-2">
+              <section className="space-y-4">
+                <h2 className="text-lg font-medium text-foreground flex items-center gap-2">
                   <Pin className="w-4 h-4" />
                   {t('pinned.title')}
                 </h2>
@@ -336,35 +375,20 @@ export default function ProjectsPage() {
             )}
 
             {/* All Projects Table Section */}
-            <section>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-medium text-foreground">
+            <section className="rounded-[24px] border border-subtle bg-surface/92 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.18)] md:p-6">
+              <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+                <div>
+                  <h2 className="text-lg font-medium text-foreground">
                   {t('all.count', { count: unpinnedProjects.length })}
-                </h2>
-                <div className="flex items-center gap-3">
-                  {/* Search */}
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-icon-default" />
-                    <input
-                      type="text"
-                      placeholder={t('search_placeholder')}
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      data-testid="projects__search"
-                      className="pl-9 pr-4 py-2 w-64 bg-surface-high border border-subtle rounded-sm text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                    />
-                  </div>
+                  </h2>
+                  <p className="mt-1 text-sm text-secondary">{t('workspace_label')} {currentWorkspace?.name || workspaceId}</p>
+                </div>
 
-                  {/* New Project Button */}
-                  <Button
-                    variant="action"
-                    onClick={() => setCreateDialogOpen(true)}
-                    disabled={!canCreateProject}
-                    data-testid="projects__create-btn"
-                  >
-                    <Plus className="w-4 h-4" />
-                    {t('new_project')}
-                  </Button>
+                <div className="flex flex-wrap items-center gap-3 text-sm text-secondary">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-white/6 bg-white/[0.03] px-3 py-2">
+                    <ArrowUpRight className="h-4 w-4 text-accent" />
+                    {t('workspace_label')} {currentWorkspace?.name || workspaceId}
+                  </div>
                 </div>
               </div>
 

@@ -13,39 +13,39 @@
     */
 
     /* Background hierarchy */
-    --bg-base: 20 19 19;          /* #141313 */
-    --bg-sidebar: 25 25 25;       /* #191919 */
-    --bg-surface: 30 31 32;       /* #1E1F20 */
-    --bg-surface-high: 40 42 44;  /* #282A2C */
-    --bg-hover: 50 50 50;         /* #323232 */
+    --bg-base: 18 18 20;          /* #121214 */
+    --bg-sidebar: 23 24 27;       /* #17181B */
+    --bg-surface: 31 33 37;       /* #1F2125 */
+    --bg-surface-high: 43 46 52;  /* #2B2E34 */
+    --bg-hover: 56 60 68;         /* #383C44 */
 
     /* Dialog-specific (layered hierarchy) */
-    --bg-dialog: 47 49 52;        /* #2F3134 - lighter than surface */
-    --bg-input: 66 69 72;         /* #424548 - lighter than dialog */
-    --border-input: 74 77 82;     /* #4A4D52 - subtle input border */
+    --bg-dialog: 43 46 51;        /* #2B2E33 */
+    --bg-input: 61 65 72;         /* #3D4148 */
+    --border-input: 80 85 94;     /* #50555E */
 
     /* Borders */
-    --border: 51 51 51;           /* #333333 */
-    --border-subtle: 38 38 38;    /* #262626 */
+    --border: 63 68 76;           /* #3F444C */
+    --border-subtle: 47 50 57;    /* #2F3239 */
 
     /* Typography colors */
     --text-strong: 255 255 255;   /* #FFFFFF */
-    --text-primary: 212 212 212;  /* #D4D4D4 */
-    --text-secondary: 212 212 212;/* #D4D4D4 (same as primary by default) */
-    --text-tertiary: 140 140 140; /* #8C8C8C */
-    --icon-default: 196 198 207;  /* #C4C6CF */
+    --text-primary: 219 223 228;  /* #DBDFE4 */
+    --text-secondary: 191 197 206;/* #BFC5CE */
+    --text-tertiary: 133 141 153; /* #858D99 */
+    --icon-default: 190 198 210;  /* #BEC6D2 */
 
     /* Brand & semantic */
-    --accent: 135 169 255;        /* #87A9FF */
-    --ai-gradient: linear-gradient(90deg, #B1C5FF, #076EFF);
+    --accent: 124 160 255;        /* #7CA0FF */
+    --ai-gradient: linear-gradient(90deg, #C6D4FF, #3B82F6);
     --success: 61 219 133;        /* #3DDB85 */
     --error: 244 67 54;           /* #F44336 */
     --warning: 255 185 92;        /* #FFB95C (备用) */
 
     /* Radius */
     --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
 
     /* Spacing */
     --spacing-xs: 8px;
@@ -54,13 +54,13 @@
     --spacing-lg: 24px;
 
     /* Layout density */
-    --layout-padding: 16px;
-    --layout-gap: 16px;
+    --layout-padding: 20px;
+    --layout-gap: 20px;
     --layout-padding-immersive: 8px;
     --layout-gap-immersive: 8px;
 
     /* App shell widths */
-    --sidebar-width: 192px;
+    --sidebar-width: 208px;
     --sidebar-width-collapsed: 72px;
   }
 
@@ -76,6 +76,12 @@
     font-feature-settings: "rlig" 1, "calt" 1;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at top left, rgb(var(--accent) / 0.12), transparent 28%),
+      radial-gradient(circle at top right, rgb(83 153 255 / 0.08), transparent 22%),
+      linear-gradient(180deg, rgb(12 12 14 / 0.82), transparent 180px);
+    background-attachment: fixed;
   }
 
   /*

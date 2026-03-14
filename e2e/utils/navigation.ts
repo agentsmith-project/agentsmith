@@ -35,18 +35,26 @@ export async function gotoAndWait(
 export async function waitForPageReady(page: Page, timeout = 30000) {
   // Some routes briefly render an MSW bootstrapping screen before the app layout is mounted.
   // Accept the bootstrap text as an initial state, then wait for terminal page markers.
-  await Promise.race([
-    page
-      .locator(
-        '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"], [data-testid="page-state__loading"]',
-      )
-      .first()
-      .waitFor({ state: 'visible', timeout }),
-    page.getByText('Starting mocks...').waitFor({ state: 'visible', timeout }),
-  ]);
+  const readyMarker = page
+    .locator(
+      '[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"], [data-testid="page-state__loading"]',
+    )
+    .first();
   const bootMessage = page.getByText('Starting mocks...');
+
+  await Promise.race([
+    readyMarker.waitFor({ state: 'visible', timeout }),
+    bootMessage.waitFor({ state: 'visible', timeout }),
+  ]);
+
   if (await bootMessage.isVisible().catch(() => false)) {
-    await bootMessage.waitFor({ state: 'hidden', timeout }).catch(() => {});
+    try {
+      await bootMessage.waitFor({ state: 'hidden', timeout });
+    } catch (error) {
+      throw new Error(
+        `mock_bootstrap_stalled:${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
   const hasTerminalMarker = await page
     .locator('[data-testid="page-state__success"], [data-testid="page-state__error"], [data-testid="page-layout"]')

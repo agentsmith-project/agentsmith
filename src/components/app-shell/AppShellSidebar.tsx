@@ -215,17 +215,17 @@ export function AppShellSidebar({
       data-testid="sidebar"
       className={cn(
         collapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width)]',
-        'border-r border-subtle bg-panel flex flex-col transition-[width] duration-200',
+        'border-r border-white/6 bg-[linear-gradient(180deg,rgba(23,24,27,0.98),rgba(19,20,23,0.96))] shadow-[inset_-1px_0_0_rgba(255,255,255,0.02)] flex flex-col transition-[width] duration-200',
         className,
       )}
     >
-      <nav className="flex-1 overflow-y-auto px-2 py-4">
+      <nav className="flex-1 overflow-y-auto px-2.5 py-5">
         {currentProject ? (
           <div className="space-y-4">
             {groupedProjectMenuItems.map((section) => (
               <div key={section.id} data-testid={`sidebar__section--${section.id}`}>
                 {!collapsed ? (
-                  <div className="px-3 pb-1 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
+                  <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-tertiary/90">
                     {t(section.labelKey)}
                   </div>
                 ) : null}
@@ -240,19 +240,19 @@ export function AppShellSidebar({
                         data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
                         title={collapsed ? label : undefined}
                         className={cn(
-                          'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
+                          'relative flex items-center h-10 rounded-xl text-sm transition-colors duration-200',
                           'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
                           collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                           isActive
-                            ? 'bg-hover text-foreground'
-                            : 'text-primary hover:bg-hover hover:text-foreground',
+                            ? 'border border-accent/20 bg-accent/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                            : 'border border-transparent text-primary hover:border-white/5 hover:bg-white/5 hover:text-foreground',
                         )}
                       >
                         <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
                         <span className={cn('truncate', collapsed && 'hidden')}>{label}</span>
                         {isActive ? (
                           <div
-                            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-8 rounded-r-full"
+                            className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-7 rounded-r-full"
                             style={{ backgroundColor: 'rgb(var(--accent))' }}
                           />
                         ) : null}
@@ -277,12 +277,12 @@ export function AppShellSidebar({
                   data-testid={`sidebar__nav-item--${item.labelKey.replace('sidebar.', '')}`}
                   title={collapsed ? label : undefined}
                   className={cn(
-                    'relative flex items-center h-10 rounded-sm text-sm transition-colors duration-200',
+                    'relative flex items-center h-10 rounded-xl text-sm transition-colors duration-200',
                     'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50',
                     collapsed ? 'justify-center px-0' : 'gap-3 px-3',
                     isActive
-                      ? 'bg-hover text-foreground'
-                      : 'text-primary hover:bg-hover hover:text-foreground',
+                      ? 'border border-accent/20 bg-accent/10 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]'
+                      : 'border border-transparent text-primary hover:border-white/5 hover:bg-white/5 hover:text-foreground',
                   )}
                 >
                   <item.icon className={cn('w-5 h-5', isActive ? 'text-accent' : 'text-icon-default')} />
@@ -300,14 +300,14 @@ export function AppShellSidebar({
         )}
       </nav>
 
-      <div className={cn('p-2 border-t border-subtle', collapsed ? 'flex justify-center' : 'flex justify-end')}>
+      <div className={cn('p-2.5 border-t border-white/6', collapsed ? 'flex justify-center' : 'flex justify-end')}>
         <Button
           type="button"
           variant="ghost"
           size="icon"
           data-testid="sidebar__collapse-btn"
           onClick={toggleCollapsed}
-          className={cn('h-10 w-10 rounded-sm text-icon-default hover:bg-hover hover:text-foreground')}
+          className={cn('h-10 w-10 rounded-xl text-icon-default hover:bg-white/6 hover:text-foreground')}
           aria-label={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
           title={collapsed ? t('sidebar.expand') : t('sidebar.collapse')}
         >

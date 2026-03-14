@@ -9,13 +9,13 @@ const buttonVariants = cva(
       variant: {
         default: "bg-surface-high text-foreground border border-subtle hover:bg-hover",
         // Primary: solid accent for main CTA in dialogs (design doc 5.5)
-        primary: "bg-accent text-white hover:bg-accent/90",
+        primary: "border border-accent/40 bg-[linear-gradient(180deg,rgba(124,160,255,1),rgba(92,131,244,1))] text-white shadow-[0_10px_24px_rgba(76,110,211,0.28)] hover:brightness-110",
         // Action: neutral toolbar CTA for page-level "Create/New" actions (design system 5.3)
-        action: "bg-hover border border-subtle text-foreground hover:bg-surface-high",
-        outline: "border border-border bg-transparent text-primary hover:bg-hover hover:text-foreground",
-        secondary: "bg-surface text-primary border border-subtle hover:bg-hover hover:text-foreground",
+        action: "border border-white/8 bg-white/6 text-foreground shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] hover:border-accent/30 hover:bg-white/10",
+        outline: "border border-border bg-transparent text-primary hover:border-accent/30 hover:bg-white/5 hover:text-foreground",
+        secondary: "border border-subtle bg-surface text-primary hover:border-border hover:bg-hover hover:text-foreground",
         // Ghost: text-only for Cancel in dialogs (design doc 5.5)
-        ghost: "bg-transparent text-tertiary hover:text-primary hover:bg-transparent",
+        ghost: "bg-transparent text-tertiary hover:text-primary hover:bg-white/5",
         link: "bg-transparent text-accent underline-offset-4 hover:underline",
         destructive: "bg-transparent text-error hover:bg-error/10",
       },

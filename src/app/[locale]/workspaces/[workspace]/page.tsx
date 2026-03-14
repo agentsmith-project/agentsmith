@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderKanban, Settings as SettingsIcon } from 'lucide-react';
+import { FolderKanban, Plus, Settings as SettingsIcon, Sparkles } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -68,64 +68,71 @@ export default function WorkspaceHomePage() {
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 max-w-4xl mx-auto w-full px-4 py-4 md:px-5 md:py-5">
+          <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-6 md:px-6 md:py-8">
             <section
-              className="rounded-xl border border-border bg-surface p-6 space-y-5"
+              className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-6 shadow-[0_24px_60px_rgba(0,0,0,0.22)] space-y-6 md:p-8"
               data-testid="workspace-home__page"
             >
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_home_eyebrow')}</p>
-                <h1 className="text-2xl font-semibold text-foreground" data-testid="workspace-home__heading">
-                  {workspaceName}
-                </h1>
-              </div>
-
-              <div className="rounded-lg border border-subtle bg-bg-base/20 p-4">
-                <div className="text-[11px] uppercase tracking-[0.12em] text-tertiary">{t('workspace_id_label')}</div>
-                <div className="mt-1 text-sm font-medium text-foreground" data-testid="workspace-home__workspace-id">
-                  {workspaceId}
-                </div>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <section
-                  className="rounded-lg border border-subtle bg-bg-base/20 p-4 space-y-3"
-                  data-testid="workspace-home__projects-section"
-                >
-                  <div className="space-y-1">
-                    <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_projects_title')}</h2>
+              <div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between">
+                <div className="space-y-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+                    <Sparkles className="h-3.5 w-3.5" />
+                    {t('workspace_home_eyebrow')}
                   </div>
+                  <div className="space-y-2">
+                    <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl" data-testid="workspace-home__heading">
+                      {workspaceName}
+                    </h1>
+                    <p className="max-w-2xl text-sm text-secondary md:text-[15px]">
+                      {t('workspace_home_description')}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
                   <Link
                     href={`${workspaceBasePath}/projects`}
-                    className={cn(buttonVariants({ variant: 'primary' }))}
+                    className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'justify-start px-5')}
                     data-testid="workspace-home__open-projects"
                   >
-                    <FolderKanban className="mr-2 h-4 w-4" />
+                    <FolderKanban className="h-4 w-4" />
                     {t('workspace_open_projects')}
                   </Link>
                   {canCreateProjects ? (
                     <Link
                       href={`${workspaceBasePath}/projects?create=1`}
-                      className={cn(buttonVariants({ variant: 'outline' }))}
+                      className={cn(buttonVariants({ variant: 'action', size: 'lg' }), 'justify-start px-5')}
                       data-testid="workspace-home__create-project"
                     >
-                      <FolderKanban className="mr-2 h-4 w-4" />
+                      <Plus className="h-4 w-4" />
                       {t('workspace_create_project')}
                     </Link>
                   ) : null}
-                </section>
+                </div>
+              </div>
 
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1.5fr)_minmax(0,1fr)]">
+                <div className="rounded-[18px] border border-white/6 bg-black/15 p-5">
+                  <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_id_label')}</div>
+                  <div className="mt-2 text-lg font-semibold text-foreground" data-testid="workspace-home__workspace-id">
+                    {workspaceId}
+                  </div>
+                  <p className="mt-2 text-sm text-secondary">
+                    {t('workspace_home_projects_title')}
+                  </p>
+                </div>
                 {canManageWorkspaceGovernance ? (
                   <section
-                    className="rounded-lg border border-subtle bg-bg-base/20 p-4 space-y-3"
+                    className="rounded-[18px] border border-white/6 bg-black/15 p-5 space-y-3"
                     data-testid="workspace-home__admin-section"
                   >
                     <div className="space-y-1">
                       <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_admin_title')}</h2>
+                      <p className="text-sm text-secondary">{t('workspace_home_open_settings')}</p>
                     </div>
                     <Link
                       href={`${workspaceBasePath}/settings`}
-                      className={cn(buttonVariants({ variant: 'outline' }))}
+                      className={cn(buttonVariants({ variant: 'outline' }), 'justify-start')}
                       data-testid="workspace-home__open-settings"
                     >
                       <SettingsIcon className="mr-2 h-4 w-4" />
@@ -133,6 +140,30 @@ export default function WorkspaceHomePage() {
                     </Link>
                   </section>
                 ) : null}
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <section
+                  className="rounded-[18px] border border-white/6 bg-black/15 p-5 space-y-4"
+                  data-testid="workspace-home__projects-section"
+                >
+                  <div className="space-y-1">
+                    <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_projects_title')}</h2>
+                    <p className="text-sm text-secondary">{t('workspace_open_projects')}</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_open_projects')}</div>
+                      <div className="mt-2 text-sm text-primary">{workspaceName}</div>
+                    </div>
+                    <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_create_project')}</div>
+                      <div className="mt-2 text-sm text-primary">
+                        {canCreateProjects ? t('workspace_create_project') : t('workspace_home_admin_title')}
+                      </div>
+                    </div>
+                  </div>
+                </section>
               </div>
             </section>
           </main>

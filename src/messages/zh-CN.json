@@ -276,6 +276,7 @@
     "overview_updated_at": "最近更新：{value}",
     "overview_open_workspace": "进入工作区",
     "workspace_home_eyebrow": "工作区业务入口",
+    "workspace_home_description": "在一个更聚焦的入口中打开项目、创建新工作并管理工作区访问。",
     "workspace_home_projects_title": "项目",
     "workspace_home_admin_title": "工作区管理",
     "workspace_home_open_settings": "打开工作区设置",

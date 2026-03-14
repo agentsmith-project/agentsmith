@@ -8,7 +8,7 @@
 import { test, expect, goTo, goToProject, projectUrl, WS_ID } from './fixtures/test-base';
 import { ROUTES } from './fixtures/routes';
 import { withAuth } from './fixtures/authenticated';
-import { waitForPageReady } from './utils/navigation';
+import { gotoAndWait, waitForPageReady } from './utils/navigation';
 
 // Keep smoke serial for route-health determinism in local dev server mode.
 test.describe.configure({ mode: 'default' });
@@ -91,7 +91,7 @@ test.describe('Smoke: Public Routes', () => {
         }
       });
 
-      await page.goto(route.path);
+      await gotoAndWait(page, route.path);
       await waitForPageReady(page);
 
       // Every public page should reach a success or layout state

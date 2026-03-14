@@ -103,12 +103,15 @@ export function Topbar({ className = '' }: TopbarProps) {
   }, [layoutMode]);
 
   return (
-    <header data-testid="topbar" className={`h-14 flex items-center justify-between px-4 bg-panel border-b border-subtle ${className}`}>
+    <header
+      data-testid="topbar"
+      className={`h-16 flex items-center justify-between px-4 md:px-5 bg-[linear-gradient(180deg,rgba(31,33,37,0.96),rgba(26,28,31,0.92))] backdrop-blur-xl border-b border-white/6 shadow-[0_10px_28px_rgba(0,0,0,0.22)] ${className}`}
+    >
       {/* Left: Brand */}
       <div className="flex items-center gap-3">
         <button
           onClick={handleLogoClick}
-          className="focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 rounded-sm"
+          className="rounded-xl px-1.5 py-1 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
           aria-label={t('go_to_projects')}
         >
           <Logo />
@@ -120,7 +123,10 @@ export function Topbar({ className = '' }: TopbarProps) {
         <div className="flex items-center gap-2 min-w-0">
           {/* Workspace Switcher */}
           <DropdownMenu>
-            <DropdownMenuTrigger data-testid="topbar__workspace-switcher" className="max-w-[340px] flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
+            <DropdownMenuTrigger
+              data-testid="topbar__workspace-switcher"
+              className="max-w-[360px] flex items-center gap-2 px-3.5 h-11 rounded-xl border border-white/6 bg-white/4 hover:bg-white/8 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors"
+            >
               <Globe className="w-4 h-4 text-icon-default flex-shrink-0" />
               <span className="text-sm text-foreground truncate">
                 {currentWorkspace?.name || t('select_workspace')}
@@ -159,7 +165,7 @@ export function Topbar({ className = '' }: TopbarProps) {
                       <button
                         data-testid="topbar__project-switcher"
                         onClick={handleGoToProjects}
-                        className="flex items-center gap-2 px-3 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors group"
+                        className="flex items-center gap-2 px-3.5 h-11 rounded-xl border border-transparent hover:border-white/6 hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors group"
                         aria-label={t('go_to_projects')}
                       >
                         <FolderKanban className="w-4 h-4 text-icon-default flex-shrink-0" />
@@ -174,7 +180,7 @@ export function Topbar({ className = '' }: TopbarProps) {
                   </Tooltip>
                 </TooltipProvider>
                 <DropdownMenu>
-                  <DropdownMenuTrigger className="p-1.5 h-10 rounded-sm hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
+                  <DropdownMenuTrigger className="p-2 h-11 rounded-xl hover:bg-white/6 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50 transition-colors">
                     <ChevronDown className="w-4 h-4 text-tertiary" />
                   </DropdownMenuTrigger>
                 <DropdownMenuContent align="start">
@@ -196,7 +202,7 @@ export function Topbar({ className = '' }: TopbarProps) {
       </div>
 
       {/* Right: Controls */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-3 md:gap-4">
         {workspaceId && projectId && showLayoutToggle ? (
           <Button
             type="button"

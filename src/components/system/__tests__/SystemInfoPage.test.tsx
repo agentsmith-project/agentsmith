@@ -69,7 +69,7 @@ describe('SystemInfoPage', () => {
     expect(screen.getByText('https://login.example.com')).toBeInTheDocument();
     expect(screen.getByText('config_status.available')).toBeInTheDocument();
     expect(screen.getAllByText('config_status.configured')).toHaveLength(2);
-    expect(screen.getByText('4')).toBeInTheDocument();
+    expect(screen.getAllByText('4').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('tenant_configuration_incomplete')).toBeInTheDocument();
   });
 });

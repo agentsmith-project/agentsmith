@@ -11,13 +11,18 @@ else
   export NODE_OPTIONS="--max-old-space-size=${DEFAULT_MAX_OLD_SPACE_SIZE}"
 fi
 
-running_count="$(
-  pgrep -af "next-server|next dev" \
-    | grep -F "${ROOT_DIR}" \
-    | grep -v "run-next-dev-safe.sh" \
-    | wc -l \
-    | tr -d ' '
-)"
+running_processes="$(pgrep -af "next-server|next dev" || true)"
+if [[ -n "${running_processes}" ]]; then
+  running_count="$(
+    printf '%s\n' "${running_processes}" \
+      | { grep -F "${ROOT_DIR}" || true; } \
+      | { grep -v "run-next-dev-safe.sh" || true; } \
+      | wc -l \
+      | tr -d ' '
+  )"
+else
+  running_count="0"
+fi
 
 if [[ "${running_count}" -ge 2 ]]; then
   cat >&2 <<EOF

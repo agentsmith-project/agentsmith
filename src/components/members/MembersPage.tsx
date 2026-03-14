@@ -54,6 +54,9 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   const contextValue = useMembersList({ workspaceId, projectId });
   const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'groups'>('people');
   const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
+  const peopleCount = contextValue.members.length;
+  const joinRequestCount = Array.isArray(joinRequests) ? joinRequests.length : 0;
+  const selectedCount = contextValue.selectedMemberIds.length;
 
   React.useEffect(() => {
     const requestedTab = searchParams.get('member_tab');
@@ -107,11 +110,21 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
           />
         )}
       >
+        <div className="grid gap-3 md:grid-cols-3">
+          <MembersSummaryCard label={t('tabs.people')} value={String(peopleCount)} helper={t('description')} />
+          <MembersSummaryCard label={t('tabs.requests')} value={String(joinRequestCount)} helper={isLoadingRequests ? t('limit_history.loading') : t('join_requests_title')} />
+          <MembersSummaryCard
+            label={t('permissions.title')}
+            value={String(selectedCount)}
+            helper={t('permissions.selected_count', { count: selectedCount })}
+          />
+        </div>
+
         {drilldownContext ? (
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'groups')} className="flex-1 min-h-0 flex flex-col min-w-0">
-          <TabsList className="flex-shrink-0">
+          <TabsList className="flex-shrink-0 rounded-[18px] border border-white/6 bg-white/[0.04] p-1">
             <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>
             <TabsTrigger value="requests">{t('tabs.requests')}</TabsTrigger>
             <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
@@ -224,4 +237,22 @@ function RemoveMemberAlertDialog() {
 
 export function MembersPage(props: MembersPageProps) {
   return <MembersPageContent {...props} />;
+}
+
+function MembersSummaryCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
+      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
+  );
 }

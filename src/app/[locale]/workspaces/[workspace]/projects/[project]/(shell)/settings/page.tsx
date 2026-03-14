@@ -29,6 +29,7 @@ import {
 } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
+import { ShieldCheck, Users, FolderKanban } from 'lucide-react';
 import { GeneralSettingsSection } from './_components/GeneralSettingsSection';
 import { GovernanceSection } from './_components/GovernanceSection';
 import { ProjectAdminsSection } from './_components/ProjectAdminsSection';
@@ -110,6 +111,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const canDeleteProject = canManageProjectLifecyclePermission;
   const canAssignProjectAdmins = canManageProjectAdminsPermission;
   const canTransferProjectOwner = canManageProjectLifecyclePermission;
+  const projectAdminCount = selectedProjectAdmins.length;
 
   const handleProjectAdminCheckedChange = (userId: string, checked: boolean) => {
     setSelectedProjectAdmins((current) => {
@@ -245,6 +247,27 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         )}
       >
         <div className="w-full space-y-6">
+          <div className="grid gap-3 md:grid-cols-3">
+            <SettingsSummaryCard
+              icon={<FolderKanban className="h-4 w-4" />}
+              label={settingsT('project_name')}
+              value={currentProject.name}
+              helper={projectT(`visibility.${visibility}`)}
+            />
+            <SettingsSummaryCard
+              icon={<Users className="h-4 w-4" />}
+              label={settingsT('project_admins_title')}
+              value={String(projectAdminCount)}
+              helper={settingsT('workspace_projects_admin_summary')}
+            />
+            <SettingsSummaryCard
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label={settingsT('workspace_project_owner_label')}
+              value={selectedProjectOwner || currentProject.owner_id}
+              helper={settingsT(`join_policy.${joinPolicy}`)}
+            />
+          </div>
+
           <GovernanceSection
             canManageGovernance={canManageGovernance}
             canManageMembership={canManageMembership}
@@ -255,7 +278,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
             workspaceId={resolvedParams.workspace}
           />
 
-          <div className="rounded-xl border border-border bg-surface p-5 md:p-6 space-y-6" data-testid="settings__ownership-section">
+          <div className="rounded-[22px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-6 space-y-6" data-testid="settings__ownership-section">
             <div>
               <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('ownership_lifecycle_title')}</h2>
               <p className="text-sm text-tertiary">
@@ -301,7 +324,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onSave={handleSaveProjectOwner}
             />
 
-            <div className="rounded-lg border border-subtle bg-surface-high border-l-2 border-l-error/70 p-4">
+            <div className="rounded-[18px] border border-error/20 bg-error/5 p-4">
               <h3 className="text-sm font-semibold text-error mb-3">{settingsT('danger_zone_title')}</h3>
               <div className="flex items-center justify-between gap-4">
                 <div>
@@ -348,5 +371,28 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         </div>
       </PageLayout>
     </PageState>
+  );
+}
+
+function SettingsSummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 text-lg font-semibold text-foreground break-all">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

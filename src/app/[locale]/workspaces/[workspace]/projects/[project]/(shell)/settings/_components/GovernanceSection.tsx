@@ -24,7 +24,7 @@ export function GovernanceSection({
   workspaceId,
 }: GovernanceSectionProps) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-5 md:p-6" data-testid="settings__governance-section">
+    <div className="rounded-[22px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-6" data-testid="settings__governance-section">
       <h2 className="text-base font-semibold text-foreground mb-1">{settingsT('governance_title')}</h2>
       <p className="text-sm text-tertiary">{settingsT('governance_help')}</p>
       {(canReadAudit || canManageMembership || canManageGovernance) ? (

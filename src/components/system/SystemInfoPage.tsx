@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { Database, ShieldCheck, Wrench } from 'lucide-react';
+import { Activity, Database, ShieldCheck, Wrench } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
@@ -19,27 +19,49 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
   const params = useParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
+  const provisioning = snapshot.workspace_provisioning;
 
   return (
     <PageState state="success">
       <PageLayout>
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="mx-auto max-w-5xl space-y-5">
-            <header className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
-                <h1 className="text-2xl font-semibold text-foreground" data-testid="system-info__heading">
+            <header className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.045),rgba(255,255,255,0.02))] p-6 shadow-[0_22px_55px_rgba(0,0,0,0.18)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+                    <Activity className="h-3.5 w-3.5" />
+                    {t('eyebrow')}
+                  </div>
+                  <div className="space-y-2">
+                    <h1 className="text-3xl font-semibold tracking-tight text-foreground" data-testid="system-info__heading">
                   {t('info_title')}
-                </h1>
-                <p className="text-sm text-tertiary">{t('info_subtitle')}</p>
+                    </h1>
+                    <p className="max-w-2xl text-sm text-secondary">{t('info_subtitle')}</p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href={`/${locale}/system/workspaces`}>
+                    <Button type="button" variant="outline" data-testid="system-info__back">
+                      {t('back_to_workspaces')}
+                    </Button>
+                  </Link>
+                  <SystemLogoutButton />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Link href={`/${locale}/system/workspaces`}>
-                  <Button type="button" variant="outline" data-testid="system-info__back">
-                    {t('back_to_workspaces')}
-                  </Button>
-                </Link>
-                <SystemLogoutButton />
+
+              <div className="mt-6 grid gap-3 md:grid-cols-4">
+                <SummaryCard label={t('workspace_total_label')} value={String(provisioning.total)} />
+                <SummaryCard label={t('workspace_ready_label')} value={String(provisioning.ready)} tone="positive" />
+                <SummaryCard label={t('workspace_provisioning_label')} value={String(provisioning.provisioning)} />
+                <SummaryCard
+                  label={t('workspace_last_failed_label')}
+                  value={
+                    provisioning.last_failed_at
+                      ? new Date(provisioning.last_failed_at).toLocaleString(locale)
+                      : '-'
+                  }
+                />
               </div>
             </header>
 
@@ -138,7 +160,7 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
               />
             </div>
 
-            <section className="rounded-md border border-dashed border-subtle bg-bg-base/20 p-4" data-testid="system-info__notice">
+            <section className="rounded-[18px] border border-dashed border-subtle bg-bg-base/20 p-4" data-testid="system-info__notice">
               <p className="text-sm text-tertiary">{t('info_notice')}</p>
             </section>
           </div>
@@ -158,19 +180,42 @@ function InfoCard({
   rows: Array<{ label: string; value: string }>;
 }) {
   return (
-    <section className="rounded-md border border-border bg-surface p-4">
+    <section className="rounded-[20px] border border-subtle bg-surface/95 p-5 shadow-[0_14px_32px_rgba(0,0,0,0.14)]">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
         {icon}
         {title}
       </div>
       <div className="mt-4 space-y-3">
         {rows.map((row) => (
-          <div key={row.label} className="space-y-1">
+          <div key={row.label} className="space-y-1 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
             <code className="block break-all text-sm text-foreground">{row.value}</code>
           </div>
         ))}
       </div>
     </section>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone = 'default',
+}: {
+  label: string;
+  value: string;
+  tone?: 'default' | 'positive';
+}) {
+  return (
+    <div
+      className={
+        tone === 'positive'
+          ? 'rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 p-4'
+          : 'rounded-[18px] border border-white/6 bg-black/15 p-4'
+      }
+    >
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
+      <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
+    </div>
   );
 }

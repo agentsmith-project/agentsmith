@@ -6,8 +6,8 @@
     "packages/*"
   ],
   "scripts": {
-    "dev": "next dev --turbopack",
-    "dev:test": "next dev",
+    "dev": "bash scripts/run-next-dev-safe.sh --turbopack",
+    "dev:test": "bash scripts/run-next-dev-safe.sh",
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",

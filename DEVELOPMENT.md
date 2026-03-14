@@ -209,6 +209,7 @@ Notes:
 - By default, Playwright manages its own `next dev` web server (port `3001`) with MSW enabled.
 - If you set `BASE_URL=...`, Playwright will not start a server. In that mode you must start the dev server yourself.
 - Desktop Playwright runs in this repo use an explicit browser window and viewport of `1920x1080`. This is especially required for visual baseline consistency.
+- Dev server startup is wrapped by `scripts/run-next-dev-safe.sh`, which sets `NODE_OPTIONS=--max-old-space-size=4096` by default and warns if multiple repo-local `next dev` processes are already running.
 
 ### 1) Start dev server in a persistent terminal
 

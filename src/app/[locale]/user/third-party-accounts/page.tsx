@@ -22,7 +22,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
-import { Plus } from 'lucide-react';
+import { Plus, PlugZap, ShieldCheck, Link2 } from 'lucide-react';
 
 import { ConnectionFormFields } from './_components/ConnectionFormFields';
 import { FeishuOAuthCard } from './_components/FeishuOAuthCard';
@@ -274,21 +274,68 @@ export default function ThirdPartyAccountsPage() {
     }
     return true;
   })();
+  const activeItems = React.useMemo(
+    () => items.filter((item) => item.status === 'active'),
+    [items],
+  );
+  const oauthItems = React.useMemo(
+    () => items.filter((item) => item.provider === 'feishu'),
+    [items],
+  );
+  const providerCount = React.useMemo(
+    () => new Set(items.map((item) => item.provider)).size,
+    [items],
+  );
 
   return (
     <PageState state="success">
       <PageLayout>
         <div className="max-w-6xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
-              <p className="text-tertiary mt-1">{t('description')}</p>
+          <section className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+            <div className="flex items-start justify-between gap-4">
+              <div className="max-w-3xl space-y-2">
+                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                  <Link2 className="h-3.5 w-3.5" />
+                  {t('summary_badge')}
+                </div>
+                <div>
+                  <h1 className="text-2xl font-semibold text-foreground">{t('title')}</h1>
+                  <p className="text-tertiary mt-1">{t('description')}</p>
+                </div>
+                <p className="max-w-2xl text-sm leading-6 text-secondary">{t('summary_intro')}</p>
+              </div>
+              <Button variant="action" onClick={openCreateDialog} data-testid="third-party-accounts__create-btn">
+                <Plus className="w-4 h-4" />
+                {t('create')}
+              </Button>
             </div>
-            <Button variant="action" onClick={openCreateDialog} data-testid="third-party-accounts__create-btn">
-              <Plus className="w-4 h-4" />
-              {t('create')}
-            </Button>
-          </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+                  <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+                  {t('summary_active_label')}
+                </div>
+                <div className="mt-3 text-2xl font-semibold text-foreground">{activeItems.length}</div>
+                <p className="mt-1 text-sm text-tertiary">{t('summary_active_hint')}</p>
+              </div>
+              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+                  <PlugZap className="h-3.5 w-3.5 text-accent" />
+                  {t('summary_oauth_label')}
+                </div>
+                <div className="mt-3 text-2xl font-semibold text-foreground">{oauthItems.length}</div>
+                <p className="mt-1 text-sm text-tertiary">{t('summary_oauth_hint')}</p>
+              </div>
+              <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+                  <Link2 className="h-3.5 w-3.5 text-accent" />
+                  {t('summary_provider_label')}
+                </div>
+                <div className="mt-3 text-2xl font-semibold text-foreground">{providerCount}</div>
+                <p className="mt-1 text-sm text-tertiary">{t('summary_provider_hint')}</p>
+              </div>
+            </div>
+          </section>
 
           <FeishuOAuthCard
             authConfigured={feishuConfig?.auth_configured}
@@ -299,29 +346,46 @@ export default function ThirdPartyAccountsPage() {
             t={t}
           />
 
-          {isLoading ? (
-            <div className="text-tertiary py-12">{commonT('loading')}</div>
-          ) : items.length === 0 ? (
-            <div className="py-20 text-center border border-border rounded-md bg-surface">
-              <div className="w-12 h-12 text-tertiary mx-auto mb-4 flex items-center justify-center rounded-full border border-dashed border-subtle">
-                <Plus className="w-5 h-5" />
+          <section className="rounded-2xl border border-border bg-surface shadow-sm shadow-black/10">
+            <div className="border-b border-border px-5 py-4 md:px-6">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">
+                    {t('list_title')}
+                  </h2>
+                  <p className="mt-1 text-sm text-tertiary">{t('list_description')}</p>
+                </div>
+                <div className="rounded-full border border-border/70 bg-surface-high px-3 py-1 text-xs font-medium text-secondary">
+                  {t('summary_total_label', { count: String(items.length) })}
+                </div>
               </div>
-              <p className="text-foreground font-medium mb-2">{t('empty_title')}</p>
-              <p className="text-tertiary mb-4">{t('empty_description')}</p>
-              <Button variant="action" onClick={openCreateDialog}>
-                <Plus className="w-4 h-4" />
-                {t('create')}
-              </Button>
             </div>
-          ) : (
-            <ThirdPartyAccountsTable
-              items={items}
-              onDelete={setDeleteId}
-              onEdit={openEditDialog}
-              onRefresh={handleRefresh}
-              t={t}
-            />
-          )}
+            <div className="px-5 py-5 md:px-6">
+              {isLoading ? (
+                <div className="py-12 text-sm text-tertiary">{commonT('loading')}</div>
+              ) : items.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-border bg-surface-high/70 px-6 py-16 text-center">
+                  <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full border border-dashed border-subtle text-tertiary">
+                    <Plus className="w-5 h-5" />
+                  </div>
+                  <p className="mb-2 text-foreground font-medium">{t('empty_title')}</p>
+                  <p className="mx-auto mb-5 max-w-xl text-sm leading-6 text-tertiary">{t('empty_description')}</p>
+                  <Button variant="action" onClick={openCreateDialog}>
+                    <Plus className="w-4 h-4" />
+                    {t('create')}
+                  </Button>
+                </div>
+              ) : (
+                <ThirdPartyAccountsTable
+                  items={items}
+                  onDelete={setDeleteId}
+                  onEdit={openEditDialog}
+                  onRefresh={handleRefresh}
+                  t={t}
+                />
+              )}
+            </div>
+          </section>
         </div>
 
         <Dialog open={createOpen} onOpenChange={(open) => {

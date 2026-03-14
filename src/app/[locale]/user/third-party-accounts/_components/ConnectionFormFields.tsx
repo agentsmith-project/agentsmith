@@ -82,72 +82,85 @@ export function ConnectionFormFields({
   onSshPublicKeyChange,
 }: ConnectionFormFieldsProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 py-4 md:grid-cols-2">
-      <div className="space-y-2">
-        <label className="text-sm font-medium">{t('provider_label')}</label>
-        <select
-          value={provider}
-          onChange={(event) => onProviderChange(event.target.value as UserExternalConnectionProvider)}
-          disabled={editing}
-          aria-label={t('provider_label')}
-          className="w-full h-10 px-3 rounded-md border border-subtle bg-surface-high text-primary text-sm"
-        >
-          {(editing ? PROVIDERS : CREATE_PROVIDERS).map((item) => (
-            <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
-          ))}
-        </select>
-      </div>
-      <div className="space-y-2">
-        <label className="text-sm font-medium">{t('kind_label')}</label>
-        <select
-          value={kind}
-          onChange={(event) => onKindChange(event.target.value as UserExternalConnectionKind)}
-          disabled={editing || provider === 'feishu'}
-          aria-label={t('kind_label')}
-          className="w-full h-10 px-3 rounded-md border border-subtle bg-surface-high text-primary text-sm"
-        >
-          {KINDS.filter((item) => allowedKindsForProvider(provider).includes(item.value)).map((item) => (
-            <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
-          ))}
-        </select>
-      </div>
-
-      {provider === 'custom' ? (
-        <div className="space-y-2 md:col-span-2">
-          <label className="text-sm font-medium">{t('custom_domain_label')}</label>
-          <Input
-            aria-label={t('custom_domain_label')}
-            value={customDomain}
-            onChange={(event) => onCustomDomainChange(event.target.value)}
-            placeholder={t('custom_domain_placeholder')}
-          />
+    <div className="space-y-4 py-4">
+      <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+        <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+          {t('section_connection_title')}
         </div>
-      ) : null}
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('provider_label')}</label>
+            <select
+              value={provider}
+              onChange={(event) => onProviderChange(event.target.value as UserExternalConnectionProvider)}
+              disabled={editing}
+              aria-label={t('provider_label')}
+              className="w-full h-10 rounded-md border border-subtle bg-background px-3 text-sm text-primary"
+            >
+              {(editing ? PROVIDERS : CREATE_PROVIDERS).map((item) => (
+                <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
+              ))}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm font-medium">{t('kind_label')}</label>
+            <select
+              value={kind}
+              onChange={(event) => onKindChange(event.target.value as UserExternalConnectionKind)}
+              disabled={editing || provider === 'feishu'}
+              aria-label={t('kind_label')}
+              className="w-full h-10 rounded-md border border-subtle bg-background px-3 text-sm text-primary"
+            >
+              {KINDS.filter((item) => allowedKindsForProvider(provider).includes(item.value)).map((item) => (
+                <option key={item.value} value={item.value}>{t(item.labelKey)}</option>
+              ))}
+            </select>
+          </div>
 
-      <div className="space-y-2 md:col-span-2">
-        <label className="text-sm font-medium">{t('display_name_label')}</label>
-        <Input
-          aria-label={t('display_name_label')}
-          value={displayName}
-          onChange={(event) => onDisplayNameChange(event.target.value)}
-          placeholder={t('display_name_placeholder')}
-        />
-      </div>
+          {provider === 'custom' ? (
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium">{t('custom_domain_label')}</label>
+              <Input
+                aria-label={t('custom_domain_label')}
+                value={customDomain}
+                onChange={(event) => onCustomDomainChange(event.target.value)}
+                placeholder={t('custom_domain_placeholder')}
+                className="bg-background"
+              />
+            </div>
+          ) : null}
 
-      <div className="space-y-2 md:col-span-2">
-        <label className="text-sm font-medium">{t('note_label')}</label>
-        <Textarea
-          aria-label={t('note_label')}
-          value={note}
-          onChange={(event) => onNoteChange(event.target.value)}
-          rows={2}
-          placeholder={t('note_placeholder')}
-        />
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-medium">{t('display_name_label')}</label>
+            <Input
+              aria-label={t('display_name_label')}
+              value={displayName}
+              onChange={(event) => onDisplayNameChange(event.target.value)}
+              placeholder={t('display_name_placeholder')}
+              className="bg-background"
+            />
+          </div>
+
+          <div className="space-y-2 md:col-span-2">
+            <label className="text-sm font-medium">{t('note_label')}</label>
+            <Textarea
+              aria-label={t('note_label')}
+              value={note}
+              onChange={(event) => onNoteChange(event.target.value)}
+              rows={2}
+              placeholder={t('note_placeholder')}
+              className="bg-background"
+            />
+          </div>
+        </div>
       </div>
 
       {provider === 'jira' ? (
-        <div className="space-y-3 md:col-span-2">
-          <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+          <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+            {t('section_credentials_title')}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-medium">{t('jira_base_url_label')}</label>
               <Input
@@ -155,6 +168,7 @@ export function ConnectionFormFields({
                 value={jiraBaseUrl}
                 onChange={(event) => onJiraBaseUrlChange(event.target.value)}
                 placeholder={t('jira_base_url_placeholder')}
+                className="bg-background"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -165,6 +179,7 @@ export function ConnectionFormFields({
                 value={jiraApiToken}
                 onChange={(event) => onJiraApiTokenChange(event.target.value)}
                 placeholder={editing ? t('secret_keep_existing_hint') : t('jira_token_placeholder')}
+                className="bg-background"
               />
             </div>
           </div>
@@ -172,8 +187,11 @@ export function ConnectionFormFields({
       ) : null}
 
       {provider === 'github' && kind === 'secret_bundle' ? (
-        <div className="space-y-3 md:col-span-2">
-          <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4 md:grid-cols-2">
+        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+          <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+            {t('section_credentials_title')}
+          </div>
+          <div className="grid gap-4 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
               <label className="text-sm font-medium">{t('github_api_base_url_label')}</label>
               <Input
@@ -181,6 +199,7 @@ export function ConnectionFormFields({
                 value={githubApiBaseUrl}
                 onChange={(event) => onGithubApiBaseUrlChange(event.target.value)}
                 placeholder={t('github_api_base_url_placeholder')}
+                className="bg-background"
               />
             </div>
             <div className="space-y-2 md:col-span-2">
@@ -191,6 +210,7 @@ export function ConnectionFormFields({
                 value={githubToken}
                 onChange={(event) => onGithubTokenChange(event.target.value)}
                 placeholder={editing ? t('secret_keep_existing_hint') : t('github_token_placeholder')}
+                className="bg-background"
               />
             </div>
           </div>
@@ -198,8 +218,11 @@ export function ConnectionFormFields({
       ) : null}
 
       {(provider === 'github' || provider === 'gitee') && kind === 'ssh_keypair' ? (
-        <div className="space-y-3 md:col-span-2">
-          <div className="rounded-md border border-subtle bg-surface-high p-4 grid gap-4">
+        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+          <div className="mb-3 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
+            {t('section_credentials_title')}
+          </div>
+          <div className="grid gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium">{t('git_host_optional_label')}</label>
               <Input
@@ -207,6 +230,7 @@ export function ConnectionFormFields({
                 value={gitHost}
                 onChange={(event) => onGitHostChange(event.target.value)}
                 placeholder={provider === 'gitee' ? 'gitee.com' : 'github.com'}
+                className="bg-background"
               />
             </div>
             <div className="space-y-2">
@@ -217,6 +241,7 @@ export function ConnectionFormFields({
                 onChange={(event) => onSshPublicKeyChange(event.target.value)}
                 rows={4}
                 placeholder={t('ssh_public_key_placeholder')}
+                className="bg-background"
               />
             </div>
             <div className="space-y-2">
@@ -227,6 +252,7 @@ export function ConnectionFormFields({
                 onChange={(event) => onSshPrivateKeyChange(event.target.value)}
                 rows={6}
                 placeholder={editing ? t('secret_keep_existing_hint') : t('ssh_private_key_placeholder')}
+                className="bg-background"
               />
             </div>
           </div>
@@ -234,8 +260,8 @@ export function ConnectionFormFields({
       ) : null}
 
       {provider === 'custom' ? (
-        <div className="space-y-3 md:col-span-2">
-          <div className="flex items-center justify-between">
+        <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+          <div className="mb-3 flex items-center justify-between">
             <label className="text-sm font-medium">{t('fields_label')}</label>
             <Button
               type="button"
@@ -249,7 +275,7 @@ export function ConnectionFormFields({
           </div>
           <div className="space-y-3">
             {fields.map((field, index) => (
-              <div key={`${index}-${field.key}`} className="rounded-md border border-subtle bg-surface-high p-3 space-y-3">
+              <div key={`${index}-${field.key}`} className="space-y-3 rounded-md border border-subtle bg-background p-3">
                 <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto]">
                   <Input
                     value={field.key}

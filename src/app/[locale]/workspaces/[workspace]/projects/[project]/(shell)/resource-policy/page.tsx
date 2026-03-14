@@ -11,6 +11,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { Gauge, ShieldCheck, Users } from 'lucide-react';
 import { AuditAPI, EndpointAPI, MemberAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
@@ -477,11 +478,33 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
         {drilldownContext ? (
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
-        <div className="p-4 rounded-md border border-subtle bg-surface">
-          <p className="text-sm text-tertiary mb-4">
-            {tResource('default_model_hint')}
-          </p>
-          <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
+        <div className="space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <ResourcePolicySummaryCard
+              icon={<Gauge className="h-4 w-4" />}
+              label={tResource('resource_type.endpoint')}
+              value={String(groupedRows.endpoint.length)}
+              helper={tResource('default_model_hint')}
+            />
+            <ResourcePolicySummaryCard
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label={tResource('access_mode.label')}
+              value={selectedResource?.name ?? tResource('select_resource')}
+              helper={selectedResource ? tResource(`resource_type.${selectedResource.type}`) : tResource('loading_policy')}
+            />
+            <ResourcePolicySummaryCard
+              icon={<Users className="h-4 w-4" />}
+              label={tResource('subjects.title')}
+              value={String(validSubjects.length)}
+              helper={accessMode === 'allow_list' ? tResource('access_mode.allow_list') : tResource('access_mode.allow_all_members')}
+            />
+          </div>
+
+          <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+            <p className="mb-4 text-sm text-tertiary">
+              {tResource('default_model_hint')}
+            </p>
+            <div className="grid gap-4 lg:grid-cols-[minmax(280px,360px)_1fr]">
             <ResourcePolicyTable
               groupedRows={groupedRows}
               selectedResource={selectedResource}
@@ -536,9 +559,33 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
               authorizationResult={authorizationResult}
               policyAuditEvents={policyAuditEvents}
             />
+            </div>
           </div>
         </div>
       </PageLayout>
     </PageState>
+  );
+}
+
+function ResourcePolicySummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 truncate text-lg font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

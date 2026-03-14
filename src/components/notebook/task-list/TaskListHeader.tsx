@@ -17,8 +17,13 @@ export function TaskListHeader({
   onCreate,
 }: TaskListHeaderProps) {
   return (
-    <div className="px-4 pb-2 pt-3 md:px-5">
-      <PageToolbar className="justify-end">
+    <div className="px-4 pb-3 pt-3 md:px-5">
+      <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <div className="mb-3">
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('title')}</div>
+          <div className="mt-1 text-sm text-secondary">{t('description')}</div>
+        </div>
+        <PageToolbar className="justify-end">
         <Button
           onClick={onCreate}
           disabled={!canCreateTask}
@@ -27,7 +32,8 @@ export function TaskListHeader({
           <Plus className="h-4 w-4 mr-2" />
           {t('new_task')}
         </Button>
-      </PageToolbar>
+        </PageToolbar>
+      </div>
     </div>
   );
 }

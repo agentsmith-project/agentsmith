@@ -508,6 +508,8 @@
       "back_to_notebook": "返回 Notebook"
     },
     "task_list": {
+      "title": "任务列表",
+      "description": "查看当前 Notebook 任务，然后进入某个任务继续智能体会话。",
       "new_task": "新建任务",
       "create_task": "创建任务",
       "empty_title": "暂无任务",

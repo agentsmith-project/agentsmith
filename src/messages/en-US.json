@@ -506,6 +506,8 @@
       "back_to_notebook": "Go back to Notebook"
     },
     "task_list": {
+      "title": "Task list",
+      "description": "Review active notebook tasks, then open one to continue the agent session.",
       "new_task": "New Task",
       "create_task": "Create Task",
       "empty_title": "No tasks yet",

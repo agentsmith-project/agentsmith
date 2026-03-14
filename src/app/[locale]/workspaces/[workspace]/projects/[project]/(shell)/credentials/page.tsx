@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { Plus } from 'lucide-react';
+import { KeyRound, Plus, RotateCcw, ShieldCheck } from 'lucide-react';
 import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -121,6 +121,9 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     columns: credentialColumns,
     getCoreRowModel: getCoreRowModel(),
   });
+  const credentialList = credentials ?? [];
+  const rotatedCount = credentialList.filter((credential) => credential.last_rotated_at).length;
+  const credentialTypeCount = new Set(credentialList.map((credential) => credential.type)).size;
 
   if (!resolvedParams) {
     return (
@@ -183,7 +186,28 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
           </PageToolbar>
         )}
       >
-        <div className="w-full">
+        <div className="w-full space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <CredentialsSummaryCard
+              icon={<KeyRound className="h-4 w-4" />}
+              label={t('table.name')}
+              value={String(credentialList.length)}
+              helper={t('create')}
+            />
+            <CredentialsSummaryCard
+              icon={<RotateCcw className="h-4 w-4" />}
+              label={t('rotate.title')}
+              value={String(rotatedCount)}
+              helper={t('table.last_rotated')}
+            />
+            <CredentialsSummaryCard
+              icon={<ShieldCheck className="h-4 w-4" />}
+              label={t('fingerprint')}
+              value={String(credentialTypeCount)}
+              helper={t('table.last_rotated')}
+            />
+          </div>
+
           <CredentialsContent
             isLoading={isLoading}
             credentials={credentials}
@@ -221,5 +245,28 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         />
       </PageLayout>
     </PageState>
+  );
+}
+
+function CredentialsSummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

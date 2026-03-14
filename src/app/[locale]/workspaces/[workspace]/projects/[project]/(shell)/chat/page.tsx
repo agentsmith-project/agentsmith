@@ -13,6 +13,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
+import { Link2, MessagesSquare, PlugZap } from 'lucide-react';
 
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
@@ -394,87 +395,110 @@ export default function ChatPage({ params }: ChatPageProps) {
           />
         )}
       >
-        <div
-          className={cn(
-            'h-full min-h-0 flex overflow-hidden rounded-md border border-subtle bg-panel/40',
-            'w-full',
-          )}
-        >
-          <ThreadsPane
-            sessions={sessions}
-            activeSessionId={currentSessionId}
-            searchQuery={searchQuery}
-            onSearchQueryChange={setSearchQuery}
-            onSelect={handleSelectThread}
-            streamingSessionIds={mergedStreamingSessionIds}
-            onRename={handleRenameThread}
-            onToggleStar={handleToggleThreadStar}
-            onTogglePin={handleToggleThreadPin}
-            onDelete={handleDeleteThreadRequest}
-            onCreate={handleCreateThread}
-            canCreate={canUseChat}
-            createPending={createSessionMutation.isPending}
-            isLoading={sessionsLoading}
-            layoutMode={layoutMode}
-          />
+        <div className="flex h-full min-h-0 flex-col gap-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <ChatSummaryCard
+              icon={<MessagesSquare className="h-4 w-4" />}
+              label={t('threads_title')}
+              value={String(sessions.length)}
+              helper={t('new_thread')}
+            />
+            <ChatSummaryCard
+              icon={<PlugZap className="h-4 w-4" />}
+              label={t('attachments_title')}
+              value={String(endpoints.length)}
+              helper={t('no_active_endpoint_hint')}
+            />
+            <ChatSummaryCard
+              icon={<Link2 className="h-4 w-4" />}
+              label={t('open_files')}
+              value={String(externalAgents.length)}
+              helper={t('attachments.multimodal_required')}
+            />
+          </div>
 
-          <ChatMainPane
-            currentSessionId={currentSessionId}
-            activeSession={activeSession}
-            endpoints={endpoints}
-            externalAgents={externalAgents}
-            messages={messages}
-            messagesLoading={messagesLoading}
-            attachments={attachments}
-            activeVariantIndexByGroup={activeVariantIndexByGroup}
-            editingMessageId={editingMessageId}
-            disabled={disabled}
-            activeStreamStatus={activeStreamStatus}
-            activeStreamingAssistant={activeStreamingAssistant}
-            suppressAutoScroll={suppressAutoScroll}
-            createPending={createSessionMutation.isPending}
-            createMessagePending={createMessageMutation.isPending}
-            editMessagePending={editMessageMutation.isPending}
-            initAttachmentPending={initAttachmentMutation.isPending}
-            canUseChat={canUseChat}
-            canAttachFiles={canAttachFiles}
-            composerValue={composerValue}
-            fileInputRef={fileInputRef}
-            layoutMode={layoutMode}
-            labels={{
-              loading: t('loading'),
-              noActiveThreadTitle: t('no_active_thread_title'),
-              noActiveThreadDescription: t('no_active_thread_description'),
-              noActiveThreadHint: t('no_active_thread_hint_create'),
-              noEndpointHint: t('no_active_endpoint_hint'),
-              selectThreadHint: t('no_active_thread_hint_select'),
-              attachmentsDisabledReason: t('attachments.multimodal_required'),
-              newThread: t('new_thread'),
-              assistant: t('assistant'),
-            }}
-            onCreateThread={handleCreateThread}
-            onRenameActiveSession={handleRenameActiveSession}
-            onSelectActiveEndpoint={handleSelectActiveEndpoint}
-            onSelectExternalAgent={handleSelectExternalAgent}
-            onSelectVariant={handleSelectVariant}
-            onEditMessage={handleEditMessage}
-            onEditCommit={handleEditCommit}
-            onRegenerate={handleRegenerate}
-            onComposerChange={(v) => {
-              if (!currentSessionId) return;
-              setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
-            }}
-            onSend={handleSend}
-            onStop={stopStreaming}
-            onPickFiles={handlePickFiles}
-            onPickFromLibrary={handlePickFromLibrary}
-            onPickUrl={handlePickUrl}
-            onFilePicked={onFilePicked}
-            onAttachFiles={handleAttachFiles}
-            onRemoveAttachment={handleRemoveAttachment}
-            onRetryAttachment={handleRetryAttachment}
-            onCancelEdit={() => setEditingMessageId(null)}
-          />
+          <div
+            className={cn(
+              'h-full min-h-0 flex overflow-hidden rounded-[22px] border border-subtle bg-panel/40 shadow-[0_18px_40px_rgba(0,0,0,0.16)]',
+              'w-full',
+            )}
+          >
+            <ThreadsPane
+              sessions={sessions}
+              activeSessionId={currentSessionId}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
+              onSelect={handleSelectThread}
+              streamingSessionIds={mergedStreamingSessionIds}
+              onRename={handleRenameThread}
+              onToggleStar={handleToggleThreadStar}
+              onTogglePin={handleToggleThreadPin}
+              onDelete={handleDeleteThreadRequest}
+              onCreate={handleCreateThread}
+              canCreate={canUseChat}
+              createPending={createSessionMutation.isPending}
+              isLoading={sessionsLoading}
+              layoutMode={layoutMode}
+            />
+
+            <ChatMainPane
+              currentSessionId={currentSessionId}
+              activeSession={activeSession}
+              endpoints={endpoints}
+              externalAgents={externalAgents}
+              messages={messages}
+              messagesLoading={messagesLoading}
+              attachments={attachments}
+              activeVariantIndexByGroup={activeVariantIndexByGroup}
+              editingMessageId={editingMessageId}
+              disabled={disabled}
+              activeStreamStatus={activeStreamStatus}
+              activeStreamingAssistant={activeStreamingAssistant}
+              suppressAutoScroll={suppressAutoScroll}
+              createPending={createSessionMutation.isPending}
+              createMessagePending={createMessageMutation.isPending}
+              editMessagePending={editMessageMutation.isPending}
+              initAttachmentPending={initAttachmentMutation.isPending}
+              canUseChat={canUseChat}
+              canAttachFiles={canAttachFiles}
+              composerValue={composerValue}
+              fileInputRef={fileInputRef}
+              layoutMode={layoutMode}
+              labels={{
+                loading: t('loading'),
+                noActiveThreadTitle: t('no_active_thread_title'),
+                noActiveThreadDescription: t('no_active_thread_description'),
+                noActiveThreadHint: t('no_active_thread_hint_create'),
+                noEndpointHint: t('no_active_endpoint_hint'),
+                selectThreadHint: t('no_active_thread_hint_select'),
+                attachmentsDisabledReason: t('attachments.multimodal_required'),
+                newThread: t('new_thread'),
+                assistant: t('assistant'),
+              }}
+              onCreateThread={handleCreateThread}
+              onRenameActiveSession={handleRenameActiveSession}
+              onSelectActiveEndpoint={handleSelectActiveEndpoint}
+              onSelectExternalAgent={handleSelectExternalAgent}
+              onSelectVariant={handleSelectVariant}
+              onEditMessage={handleEditMessage}
+              onEditCommit={handleEditCommit}
+              onRegenerate={handleRegenerate}
+              onComposerChange={(v) => {
+                if (!currentSessionId) return;
+                setComposerBySession((prev) => ({ ...prev, [currentSessionId]: v }));
+              }}
+              onSend={handleSend}
+              onStop={stopStreaming}
+              onPickFiles={handlePickFiles}
+              onPickFromLibrary={handlePickFromLibrary}
+              onPickUrl={handlePickUrl}
+              onFilePicked={onFilePicked}
+              onAttachFiles={handleAttachFiles}
+              onRemoveAttachment={handleRemoveAttachment}
+              onRetryAttachment={handleRetryAttachment}
+              onCancelEdit={() => setEditingMessageId(null)}
+            />
+          </div>
         </div>
         <ChatDialogs
           addLibraryAttachmentPending={addLibraryAttachmentMutation.isPending}
@@ -503,5 +527,28 @@ export default function ChatPage({ params }: ChatPageProps) {
         />
       </PageLayout>
     </PageState>
+  );
+}
+
+function ChatSummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

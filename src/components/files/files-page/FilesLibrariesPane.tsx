@@ -27,9 +27,12 @@ export function FilesLibrariesPane({
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
   return (
-    <div className="min-h-0 rounded-md border border-subtle bg-surface">
-      <div className="px-3 py-2 border-b border-subtle flex items-center justify-between">
-        <div className="text-sm text-primary">{t('file_manager.libraries')}</div>
+    <div className="min-h-0 rounded-[22px] border border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="flex items-center justify-between border-b border-subtle px-4 py-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.libraries')}</div>
+          <div className="mt-1 text-sm text-secondary">{libraries.length} {t('file_manager.items')}</div>
+        </div>
         {canManage ? (
           <Button
             type="button"
@@ -49,7 +52,7 @@ export function FilesLibrariesPane({
         ) : libraries.length === 0 ? (
           <div className="p-3 text-sm text-tertiary">{t('file_manager.no_libraries')}</div>
         ) : (
-          <div className="p-1" data-testid="files__library-list">
+          <div className="p-2" data-testid="files__library-list">
             {libraries.map((library) => {
               const active = library.id === selectedLibraryId;
               return (
@@ -62,8 +65,10 @@ export function FilesLibrariesPane({
                     onSelectLibrary(library.id);
                   }}
                   className={cn(
-                    'w-full text-left px-3 py-2 rounded-sm flex items-center justify-between gap-2',
-                    active ? 'bg-hover text-strong' : 'hover:bg-hover/70 text-primary',
+                    'flex w-full items-center justify-between gap-2 rounded-[16px] px-3 py-3 text-left transition-colors',
+                    active
+                      ? 'border border-accent/20 bg-accent/10 text-strong'
+                      : 'border border-transparent text-primary hover:bg-hover/70',
                   )}
                   role="button"
                   tabIndex={0}

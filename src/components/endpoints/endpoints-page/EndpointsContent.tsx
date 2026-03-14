@@ -30,17 +30,23 @@ export function EndpointsContent({
 
   if (endpoints.length === 0) {
     return (
-      <EmptyState
-        icon={Server}
-        title={t('empty.title')}
-        description={t('empty.description')}
-        action={canManageEndpoints ? {
-          label: `Add ${t('title')}`,
-          onClick: onCreate,
-        } : undefined}
-      />
+      <div className="rounded-[22px] border border-subtle bg-surface/95 p-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <EmptyState
+          icon={Server}
+          title={t('empty.title')}
+          description={t('empty.description')}
+          action={canManageEndpoints ? {
+            label: `Add ${t('title')}`,
+            onClick: onCreate,
+          } : undefined}
+        />
+      </div>
     );
   }
 
-  return <DataTable table={table} testId="endpoints__table" />;
+  return (
+    <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <DataTable table={table} testId="endpoints__table" />
+    </div>
+  );
 }

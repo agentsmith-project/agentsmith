@@ -59,7 +59,7 @@ interface FilesPageContentProps {
   setSearchInput: React.ComponentProps<typeof FilesBrowserPane>['setSearchInput'];
   sortBy: React.ComponentProps<typeof FilesBrowserPane>['sortBy'];
   sortOrder: React.ComponentProps<typeof FilesBrowserPane>['sortOrder'];
-  t: (key: string) => string;
+  t: (key: string, values?: Record<string, string>) => string;
   uploadCurrentFileName: React.ComponentProps<typeof FilesBrowserPane>['uploadCurrentFileName'];
   uploadCurrentProgress: React.ComponentProps<typeof FilesBrowserPane>['uploadCurrentProgress'];
   uploadInProgress: React.ComponentProps<typeof FilesBrowserPane>['uploadInProgress'];
@@ -126,82 +126,122 @@ export function FilesPageContent({
   uploadQueueTotal,
   workspaceId,
 }: FilesPageContentProps) {
+  const selectedLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? null;
+
   return (
-    <div
-      className={cn(
-        'flex-1 min-h-0 grid gap-3',
-        layoutMode === 'ultrawide'
-          ? 'grid-cols-[300px_minmax(0,1fr)_520px]'
-          : 'grid-cols-[260px_minmax(0,1fr)_360px]',
-      )}
-    >
-      <FilesLibrariesPane
-        t={t}
-        canManage={canManage}
-        libsLoading={libsLoading}
-        libraries={libraries}
-        selectedLibraryId={selectedLibraryId}
-        onSelectLibrary={onSelectLibrary}
-        onCreateLibrary={onCreateLibrary}
-        onRenameLibrary={onRenameLibrary}
-        onDeleteLibrary={onDeleteLibrary}
-      />
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="grid gap-3 md:grid-cols-3">
+        <FilesSummaryCard
+          label={t('file_manager.libraries')}
+          value={String(libraries.length)}
+          helper={selectedLibrary ? selectedLibrary.name : t('file_manager.no_libraries')}
+        />
+        <FilesSummaryCard
+          label={t('file_manager.location')}
+          value={prefix || t('file_manager.root')}
+          helper={selectedLibrary ? selectedLibrary.bucket || selectedLibrary.name : t('file_manager.loading')}
+        />
+        <FilesSummaryCard
+          label={t('file_manager.selected_count', { count: String(selectedCount) })}
+          value={String(filteredItems.length)}
+          helper={hasSelection ? t('file_manager.multi_select_hint_esc') : t('file_manager.selection_shortcuts')}
+        />
+      </div>
 
-      <FilesBrowserPane
-        t={t}
-        prefix={prefix}
-        crumbs={crumbs}
-        searchInput={searchInput}
-        setSearchInput={setSearchInput}
-        selectedLibraryId={selectedLibraryId}
-        filteredItems={filteredItems}
-        selectedIds={selectedIds}
-        selectionMode={selectionMode}
-        selectedCount={selectedCount}
-        selectedObjectsCount={selectedObjectsCount}
-        allSelected={allSelected}
-        hasSelection={hasSelection}
-        uploadInProgress={uploadInProgress}
-        uploadCurrentFileName={uploadCurrentFileName}
-        uploadQueueCompleted={uploadQueueCompleted}
-        uploadQueueTotal={uploadQueueTotal}
-        uploadCurrentProgress={uploadCurrentProgress}
-        isDropActive={isDropActive}
-        sortBy={sortBy}
-        sortOrder={sortOrder}
-        objectsQuery={objectsQuery}
-        fileInputRef={fileInputRef}
-        selectedForMove={selectedForMove}
-        moveNamePlaceholder={moveNamePlaceholder}
-        onNavigateToPrefix={onNavigateToPrefix}
-        onGoUp={onGoUp}
-        onRefresh={handleRefresh}
-        onCreateFolder={onCreateFolder}
-        onUploadClick={handleUploadClick}
-        onCancelUpload={handleCancelUpload}
-        onRename={handleRename}
-        onDelete={handleDelete}
-        onDownload={handleDownload}
-        onClearSelection={onClearSelection}
-        onToggleAll={onToggleAll}
-        onSortHeaderClick={handleSortHeaderClick}
-        onLoadNextPage={handleLoadNextPage}
-        onDrop={handleDrop}
-        onDropEnter={handleDropEnter}
-        onDropOver={handleDropOver}
-        onDropLeave={handleDropLeave}
-        onRowActivate={handleRowActivate}
-        onRowOpen={handleRowOpen}
-        onToggleRowCheckbox={handleToggleRowCheckbox}
-      />
+      <div
+        className={cn(
+          'flex-1 min-h-0 grid gap-3',
+          layoutMode === 'ultrawide'
+            ? 'grid-cols-[300px_minmax(0,1fr)_520px]'
+            : 'grid-cols-[260px_minmax(0,1fr)_360px]',
+        )}
+      >
+        <FilesLibrariesPane
+          t={t}
+          canManage={canManage}
+          libsLoading={libsLoading}
+          libraries={libraries}
+          selectedLibraryId={selectedLibraryId}
+          onSelectLibrary={onSelectLibrary}
+          onCreateLibrary={onCreateLibrary}
+          onRenameLibrary={onRenameLibrary}
+          onDeleteLibrary={onDeleteLibrary}
+        />
 
-      <FileObjectDetailsPanel
-        workspaceId={workspaceId}
-        projectId={projectId}
-        selectedLibraryId={selectedLibraryId}
-        selected={selected}
-        onDownload={handleDownload}
-      />
+        <FilesBrowserPane
+          t={t}
+          prefix={prefix}
+          crumbs={crumbs}
+          searchInput={searchInput}
+          setSearchInput={setSearchInput}
+          selectedLibraryId={selectedLibraryId}
+          filteredItems={filteredItems}
+          selectedIds={selectedIds}
+          selectionMode={selectionMode}
+          selectedCount={selectedCount}
+          selectedObjectsCount={selectedObjectsCount}
+          allSelected={allSelected}
+          hasSelection={hasSelection}
+          uploadInProgress={uploadInProgress}
+          uploadCurrentFileName={uploadCurrentFileName}
+          uploadQueueCompleted={uploadQueueCompleted}
+          uploadQueueTotal={uploadQueueTotal}
+          uploadCurrentProgress={uploadCurrentProgress}
+          isDropActive={isDropActive}
+          sortBy={sortBy}
+          sortOrder={sortOrder}
+          objectsQuery={objectsQuery}
+          fileInputRef={fileInputRef}
+          selectedForMove={selectedForMove}
+          moveNamePlaceholder={moveNamePlaceholder}
+          onNavigateToPrefix={onNavigateToPrefix}
+          onGoUp={onGoUp}
+          onRefresh={handleRefresh}
+          onCreateFolder={onCreateFolder}
+          onUploadClick={handleUploadClick}
+          onCancelUpload={handleCancelUpload}
+          onRename={handleRename}
+          onDelete={handleDelete}
+          onDownload={handleDownload}
+          onClearSelection={onClearSelection}
+          onToggleAll={onToggleAll}
+          onSortHeaderClick={handleSortHeaderClick}
+          onLoadNextPage={handleLoadNextPage}
+          onDrop={handleDrop}
+          onDropEnter={handleDropEnter}
+          onDropOver={handleDropOver}
+          onDropLeave={handleDropLeave}
+          onRowActivate={handleRowActivate}
+          onRowOpen={handleRowOpen}
+          onToggleRowCheckbox={handleToggleRowCheckbox}
+        />
+
+        <FileObjectDetailsPanel
+          workspaceId={workspaceId}
+          projectId={projectId}
+          selectedLibraryId={selectedLibraryId}
+          selected={selected}
+          onDownload={handleDownload}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FilesSummaryCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
+      <div className="mt-2 truncate text-xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 truncate text-sm text-secondary">{helper}</div>
     </div>
   );
 }

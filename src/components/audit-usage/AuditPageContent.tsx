@@ -77,7 +77,7 @@ export function AuditPageContent({
     <div className="flex min-h-0 flex-1 flex-col" data-testid="audit__page">
       {drilldownContext}
       <AuditOverviewCards summary={overviewSummary} t={t} />
-      <div className="mb-3">
+      <div className="mb-3 rounded-[20px] border border-white/6 bg-white/[0.025] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
         <InvestigationAnchorBar
           traceSource={traceSource}
           requestId={filters.request_id}
@@ -96,7 +96,10 @@ export function AuditPageContent({
           </p>
         ) : null}
       </div>
-      <div data-testid="audit__filters">
+      <div
+        data-testid="audit__filters"
+        className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+      >
         <AuditFilters
           filters={filters}
           onChange={onFiltersChange}
@@ -107,7 +110,7 @@ export function AuditPageContent({
         />
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
         <AuditTable
           data={auditItems}
           loading={isLoading}
@@ -115,7 +118,7 @@ export function AuditPageContent({
           onClearFilters={onClearFilters}
           onRefresh={onRefresh}
         />
-        <div className="mt-4 flex items-center justify-between">
+        <div className="mt-4 flex items-center justify-between rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
           <p className="text-xs text-tertiary">
             {commonT('total_items', { count: String(totalItems) })}
             {totalPages > 1 ? (

@@ -10,6 +10,7 @@ import { useState, useEffect } from 'react';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { useMutation } from '@tanstack/react-query';
+import { Activity, Ban, Server } from 'lucide-react';
 import { APIError, resolveApiErrorPresentation } from '@/lib/api/errors';
 import type { Endpoint } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -76,6 +77,9 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     projectId,
     canReadEndpoints,
   });
+  const activeCount = endpoints.filter((endpoint) => endpoint.status === 'active').length;
+  const disabledCount = endpoints.filter((endpoint) => endpoint.status === 'disabled').length;
+  const providerCount = new Set(endpoints.map((endpoint) => endpoint.type).filter(Boolean)).size;
 
   const { invalidateEndpoints, deleteEndpointMutation, updateEndpointMutation, importOpenAICompatibleMutation } = useEndpointsMutations({
     workspaceId,
@@ -239,7 +243,29 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
           />
         )}
       >
-        <div className="w-full">
+        <div className="w-full space-y-4">
+          <div className="grid gap-3 md:grid-cols-3">
+            <EndpointsSummaryCard
+              icon={<Server className="h-4 w-4" />}
+              label={t('title')}
+              value={String(endpoints.length)}
+              helper={t('subtitle')}
+            />
+            <EndpointsSummaryCard
+              icon={<Activity className="h-4 w-4" />}
+              label={t('status_active')}
+              value={String(activeCount)}
+              helper={t('table.columns.health')}
+              tone="positive"
+            />
+            <EndpointsSummaryCard
+              icon={<Ban className="h-4 w-4" />}
+              label={t('status_disabled')}
+              value={String(disabledCount)}
+              helper={`${providerCount} ${t('table.columns.provider').toLowerCase()}`}
+            />
+          </div>
+
           <EndpointsContent
             canManageEndpoints={canManageEndpoints}
             endpoints={endpoints}
@@ -277,5 +303,36 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
         />
       </PageLayout>
     </PageState>
+  );
+}
+
+function EndpointsSummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+  tone = 'default',
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+  tone?: 'default' | 'positive';
+}) {
+  return (
+    <div
+      className={
+        tone === 'positive'
+          ? 'rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]'
+          : 'rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]'
+      }
+    >
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

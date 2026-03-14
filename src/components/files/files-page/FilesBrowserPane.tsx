@@ -132,15 +132,18 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
   return (
     <div
-      className="relative min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col"
+      className="relative flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
       onDragEnter={onDropEnter}
       onDragOver={onDropOver}
       onDragLeave={onDropLeave}
       onDrop={onDrop}
       data-testid="files__dropzone"
     >
-      <div className="px-3 py-2 border-b border-subtle flex items-center gap-2">
-        <div className="text-sm text-primary">{t('file_manager.location')}</div>
+      <div className="flex items-center gap-2 border-b border-subtle px-4 py-3">
+        <div>
+          <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.location')}</div>
+          <div className="mt-1 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
+        </div>
         {prefix ? (
           <Button
             type="button"
@@ -209,7 +212,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
       <div className="flex-1 min-h-0">
         <div className="w-full h-full text-sm flex flex-col" data-testid="files__objects-table">
-          <div className="h-10 border-b border-subtle px-3 flex items-center justify-between gap-2" data-testid="files__selection-summary">
+          <div className="flex h-12 items-center justify-between gap-2 border-b border-subtle px-4" data-testid="files__selection-summary">
             {isMultiMode ? (
               <div className="flex items-center gap-2 min-w-0 text-xs text-primary">
                 <span>{t('file_manager.selected_count', { count: String(selectedCount) })}</span>

@@ -29,7 +29,10 @@ export function EndpointsToolbar({
   onSyncCatalog,
 }: EndpointsToolbarProps) {
   return (
-    <PageToolbar>
+    <PageToolbar className="rounded-[18px] border border-white/6 bg-white/[0.025] p-3 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
+      <div className="mr-1 rounded-full border border-white/8 bg-black/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {endpointsCount} {t('title').toLowerCase()}
+      </div>
       <Button
         onClick={onImport}
         disabled={!canManageEndpoints}
@@ -54,6 +57,7 @@ export function EndpointsToolbar({
         data-testid="endpoints__sync-catalog-btn"
         variant="outline"
       >
+        {syncPending ? '...' : null}
         {t('sync_catalog')}
       </Button>
       <Button

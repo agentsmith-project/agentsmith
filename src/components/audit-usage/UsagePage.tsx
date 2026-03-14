@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { RefreshCw } from 'lucide-react';
+import { Gauge, RefreshCw, Wallet } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { UsageView } from './UsageView';
@@ -127,6 +127,7 @@ export function UsagePage({
         name: endpointNameMap.get(item.resource_id as string) || (item.resource_id as string),
       }));
   }, [endpointNameMap, endpoints, limitsOverview.endpoints, usageData?.items]);
+  const totalLimitCards = limitsOverview.endpoints.reduce((count, endpoint) => count + endpoint.limits.length, 0);
 
   React.useEffect(() => {
     if (selectedEndpointId === 'all' && endpointOptions.length > 0) {
@@ -191,6 +192,27 @@ export function UsagePage({
         </PageToolbar>
       )}
     >
+      <div className="grid gap-3 md:grid-cols-3">
+        <UsageSummaryCard
+          icon={<Gauge className="h-4 w-4" />}
+          label={t('title')}
+          value={String(endpointOptions.length)}
+          helper={t('view.panel_title')}
+        />
+        <UsageSummaryCard
+          icon={<Wallet className="h-4 w-4" />}
+          label={t('view.limits_section_title')}
+          value={String(totalLimitCards)}
+          helper={t('view.rate_limit_title')}
+        />
+        <UsageSummaryCard
+          icon={<RefreshCw className="h-4 w-4" />}
+          label={t('scope_my_usage')}
+          value={periodHours === 48 ? '48h' : '24h'}
+          helper={commonT('refresh')}
+        />
+      </div>
+
       <UsageView
         records={usageData?.items ?? []}
         loading={usageLoading}
@@ -202,5 +224,28 @@ export function UsagePage({
         limitsOverview={limitsOverview}
       />
     </PageLayout>
+  );
+}
+
+function UsageSummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

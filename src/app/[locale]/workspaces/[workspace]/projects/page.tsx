@@ -15,6 +15,7 @@ import Link from 'next/link';
 import {
   ArrowLeft,
   ArrowUpRight,
+  FolderKanban,
   FolderOpen,
   Plus,
   Pin,
@@ -298,6 +299,36 @@ export default function ProjectsPage() {
                     {t('workspace_label')} {currentWorkspace?.name || workspaceId}
                   </p>
                 </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                      {t('summary.total_label')}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                        <FolderKanban className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-2xl font-semibold text-foreground">{filteredProjects.length}</p>
+                        <p className="text-sm text-secondary">{t('summary.total_hint')}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                      {t('summary.pinned_label')}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.06] text-foreground">
+                        <Pin className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-2xl font-semibold text-foreground">{pinnedProjects.length}</p>
+                        <p className="text-sm text-secondary">{t('summary.pinned_hint')}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto]">
@@ -334,7 +365,9 @@ export default function ProjectsPage() {
           </div>
         ) : projects.length === 0 ? (
           <div className="rounded-[24px] border border-subtle bg-surface/90 px-6 py-20 text-center shadow-[0_18px_40px_rgba(0,0,0,0.18)]">
-            <FolderOpen className="w-16 h-16 text-tertiary mb-4" />
+            <div className="mx-auto mb-5 inline-flex h-16 w-16 items-center justify-center rounded-3xl border border-white/8 bg-white/[0.04]">
+              <FolderOpen className="h-8 w-8 text-tertiary" />
+            </div>
             <h2 className="text-xl font-semibold text-foreground mb-2">{t('empty.title')}</h2>
             <p className="mx-auto mb-6 max-w-xl text-tertiary">
               {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
@@ -353,11 +386,19 @@ export default function ProjectsPage() {
           <div className="space-y-6">
             {/* Pinned Projects Section */}
             {pinnedProjects.length > 0 && (
-              <section className="space-y-4">
-                <h2 className="text-lg font-medium text-foreground flex items-center gap-2">
-                  <Pin className="w-4 h-4" />
-                  {t('pinned.title')}
-                </h2>
+              <section className="space-y-4 rounded-[24px] border border-subtle bg-surface/88 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-6">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <h2 className="text-lg font-medium text-foreground flex items-center gap-2">
+                      <Pin className="w-4 h-4" />
+                      {t('pinned.title')}
+                    </h2>
+                    <p className="mt-1 text-sm text-secondary">{t('summary.pinned_section_hint')}</p>
+                  </div>
+                  <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-sm text-secondary">
+                    {pinnedProjects.length}
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {pinnedProjects.map((project) => (
                     <ProjectCard
@@ -379,9 +420,9 @@ export default function ProjectsPage() {
               <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
                 <div>
                   <h2 className="text-lg font-medium text-foreground">
-                  {t('all.count', { count: unpinnedProjects.length })}
+                    {t('all.count', { count: unpinnedProjects.length })}
                   </h2>
-                  <p className="mt-1 text-sm text-secondary">{t('workspace_label')} {currentWorkspace?.name || workspaceId}</p>
+                  <p className="mt-1 text-sm text-secondary">{t('summary.table_hint')}</p>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-3 text-sm text-secondary">

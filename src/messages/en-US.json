@@ -2191,6 +2191,14 @@
     "title": "Projects",
     "workspace_label": "Workspace:",
     "back_to_workspace": "Back to workspace",
+    "summary": {
+      "total_label": "Project inventory",
+      "total_hint": "Projects visible in this workspace right now.",
+      "pinned_label": "Pinned focus",
+      "pinned_hint": "Projects you pinned for faster return.",
+      "pinned_section_hint": "Keep your active project set visible above the full list.",
+      "table_hint": "Browse every project you can access in this workspace."
+    },
     "loading": "Loading...",
     "retry": "Retry",
     "workspace_unavailable_title": "Workspace unavailable",

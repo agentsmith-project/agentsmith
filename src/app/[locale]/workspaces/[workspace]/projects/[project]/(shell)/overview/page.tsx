@@ -21,8 +21,9 @@ import {
 export default function OverviewPage() {
   const params = useParams();
   const tNav = useTranslations('nav');
-  const tGuide = useTranslations('use_guide');
-  const tProject = useTranslations('project');
+  const tOverview = useTranslations('overview');
+  const tWorkspace = useTranslations('workspace');
+  const tProjects = useTranslations('projects');
   const tErrors = useTranslations('errors');
   const canUseProject = useHasPermission('project:endpoint:use');
   const canReadAudit = useCanReadAudit();
@@ -78,7 +79,7 @@ export default function OverviewPage() {
             data-testid="project-hub__back-to-workspace"
           >
             <ArrowLeft className="h-4 w-4" />
-            {tGuide('back_to_workspace')}
+            {tProjects('back_to_workspace')}
           </Link>
 
           <Card className="overflow-hidden">
@@ -88,25 +89,28 @@ export default function OverviewPage() {
                 Project Hub
               </div>
               <p className="mt-4 max-w-3xl text-sm text-secondary md:text-[15px]">
-                {tGuide('subtitle')}
+                {tOverview('subtitle')}
               </p>
             </CardContent>
-            <CardHeader>
-              <CardTitle className="text-lg">{tGuide('quick_links.title')}</CardTitle>
+            <CardHeader className="space-y-2">
+              <CardTitle className="text-lg">{tOverview('title')}</CardTitle>
+              <p className="max-w-2xl text-sm text-secondary">
+                {tWorkspace('workspace_home_next_steps_description')}
+              </p>
             </CardHeader>
             <CardContent className="space-y-6" data-testid="project-hub__quick-links">
               <OverviewLinkSection
                 items={workLinks}
                 testId="project-hub__work-links"
-                title={tProject('workspace_home_projects_title')}
+                title={tWorkspace('workspace_home_projects_title')}
               />
 
               {governanceLinks.length > 0 ? (
-              <OverviewLinkSection
-                items={governanceLinks}
-                testId="project-hub__governance-links"
-                title={tProject('workspace_home_admin_title')}
-              />
+                <OverviewLinkSection
+                  items={governanceLinks}
+                  testId="project-hub__governance-links"
+                  title={tWorkspace('workspace_home_admin_title')}
+                />
               ) : null}
             </CardContent>
           </Card>

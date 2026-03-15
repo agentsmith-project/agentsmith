@@ -2194,6 +2194,14 @@
     "title": "项目",
     "workspace_label": "工作空间：",
     "back_to_workspace": "返回工作区",
+    "summary": {
+      "total_label": "项目清单",
+      "total_hint": "当前工作区里你现在可以看到的项目数量。",
+      "pinned_label": "置顶关注",
+      "pinned_hint": "你置顶后便于快速返回的项目。",
+      "pinned_section_hint": "把当前重点项目固定在完整列表上方，便于快速进入。",
+      "table_hint": "查看这个工作区里你当前可以访问的全部项目。"
+    },
     "loading": "加载中...",
     "retry": "重试",
     "workspace_unavailable_title": "工作区不可用",

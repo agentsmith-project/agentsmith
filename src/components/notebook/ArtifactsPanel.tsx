@@ -9,7 +9,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ArtifactCard } from './ArtifactCard';
-import { ArtifactImageGrid } from './ArtifactImageGrid';
 import { EmptyState } from '@/components/ui/loading';
 import type { Artifact, ArtifactType } from '@/lib/types/task';
 
@@ -37,9 +36,6 @@ export function ArtifactsPanel({
     if (filterType === 'all') return artifacts;
     return artifacts.filter((a) => a.type === filterType);
   }, [artifacts, filterType]);
-
-  const imageArtifacts = filteredArtifacts.filter((a) => a.type === 'image');
-  const nonImageArtifacts = filteredArtifacts.filter((a) => a.type !== 'image');
 
   return (
     <div className="h-full flex flex-col bg-transparent">
@@ -71,29 +67,18 @@ export function ArtifactsPanel({
             description={t('empty_description')}
           />
         ) : (
-          <div className="space-y-2">
-            {imageArtifacts.length > 0 && (
-              <ArtifactImageGrid
-                artifacts={imageArtifacts}
-                onImageClick={(artifact) => onView?.(artifact)}
-                onAttachAsInput={onAttachAsInput}
+          <div className="space-y-1.5">
+            {filteredArtifacts.map((artifact) => (
+              <ArtifactCard
+                key={artifact.id}
+                artifact={artifact}
+                onView={onView ? () => onView(artifact) : undefined}
+                onSave={onSave ? () => onSave(artifact) : undefined}
+                onDownload={onDownload ? () => onDownload(artifact) : undefined}
+                onAttachAsInput={onAttachAsInput ? () => onAttachAsInput(artifact) : undefined}
+                disabled={disabled}
               />
-            )}
-            {nonImageArtifacts.length > 0 && (
-              <div className="space-y-2">
-                {nonImageArtifacts.map((artifact) => (
-                  <ArtifactCard
-                    key={artifact.id}
-                    artifact={artifact}
-                    onView={onView ? () => onView(artifact) : undefined}
-                    onSave={onSave ? () => onSave(artifact) : undefined}
-                    onDownload={onDownload ? () => onDownload(artifact) : undefined}
-                    onAttachAsInput={onAttachAsInput ? () => onAttachAsInput(artifact) : undefined}
-                    disabled={disabled}
-                  />
-                ))}
-              </div>
-            )}
+            ))}
           </div>
         )}
       </div>

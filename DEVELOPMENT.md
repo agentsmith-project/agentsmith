@@ -247,6 +247,39 @@ Notes:
 2. Real-lane notebook verification requires `GLM_API_KEY`.
 3. `npm run test:visual:real:review` writes real-environment screenshots to `artifacts/release-real-visual/<run-id>/` for manual inspection.
 
+## Test & Evidence Directory Contract
+
+当前测试与审查资产的目录约定固定为：
+
+### 测试代码
+- `src/**/__tests__/`
+- `e2e/`
+- `scripts/**/__tests__/`
+
+### 临时运行结果
+- `test-results/`
+- 这里只放 Playwright 单次运行的临时结果，例如 actual、diff、error context
+
+### mock lane visual 基线
+- `e2e/__screenshots__/`
+- 这里只表示 mock lane visual baseline，不表示真实发布审查截图
+
+### 长期证据与发布审查资产
+- `artifacts/`
+- 其中长期结构约定为：
+  - `artifacts/release-real-visual/`
+  - `artifacts/release-evidence/`
+  - `artifacts/governance-reports/`
+  - `artifacts/system-state/`
+  - `artifacts/notebook-runner/`
+
+使用规则：
+1. 日常失败排查看 `test-results/`
+2. mock visual 基线看 `e2e/__screenshots__/`
+3. 真实后端人工界面审查看 `artifacts/release-real-visual/<run-id>/`
+4. 不再新增泛化的 `tests/` 目录承载主测试代码
+5. 过渡期内仍在使用的 `artifacts/system-workspaces.json` 与 `artifacts/system-workspace-provisioning/` 属于现有运行时输出路径，不要按新目录约定直接重命名或手工迁走
+
 ## Governance Mainline Strict Gate
 
 When the current work touches

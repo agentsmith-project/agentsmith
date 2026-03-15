@@ -60,6 +60,9 @@ artifacts/governance-reports/failed/
 
 # Generated local release verification snapshots / debug captures
 artifacts/release-real-visual/
+artifacts/release-evidence/
+artifacts/system-state/
+artifacts/notebook-runner/
 artifacts/system-workspaces.json
 artifacts/system-workspaces.mock.json
 artifacts/system-workspace-provisioning/

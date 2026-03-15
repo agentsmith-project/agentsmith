@@ -9,7 +9,7 @@
  * These are integration tests that run actual CLI commands
  * and verify the outputs match expectations.
  *
- * Run: npm test -- tests/integration/epic-d-governance.spec.ts
+ * Run: npm test -- scripts/governance/__tests__/epic-d-governance.integration.test.ts
  */
 
 import { execSync, spawn } from 'node:child_process';

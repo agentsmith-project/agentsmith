@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArtifactCard } from '../ArtifactCard';
 import type { Artifact } from '@/lib/types/task';
@@ -62,6 +62,7 @@ describe('ArtifactCard', () => {
   const mockOnView = vi.fn();
   const mockOnSave = vi.fn();
   const mockOnDownload = vi.fn();
+  const mockOnAttachAsInput = vi.fn();
 
   const writeTextMock = vi.fn().mockResolvedValue(undefined);
 
@@ -86,6 +87,7 @@ describe('ArtifactCard', () => {
         onView={mockOnView}
         onSave={mockOnSave}
         onDownload={mockOnDownload}
+        onAttachAsInput={mockOnAttachAsInput}
         {...props}
       />
     );
@@ -118,20 +120,21 @@ describe('ArtifactCard', () => {
     it('shows copy button for text artifacts', () => {
       renderComponent(mockTextArtifact);
 
-      expect(screen.getByRole('button', { name: /copy/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /artifact actions/i })).toBeInTheDocument();
     });
 
     it('copies text content to clipboard', async () => {
       const { toast } = await import('@/components/ui/toast');
+      const user = userEvent.setup();
 
       renderComponent(mockTextArtifact);
 
-      const copyButton = screen.getByRole('button', { name: /copy/i });
-      fireEvent.click(copyButton);
+      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
 
       await waitFor(() => {
-        expect(navigator.clipboard.writeText).toHaveBeenCalledWith('This is a text artifact with some content');
+        expect(screen.getByRole('menuitem', { name: /copy/i })).toBeInTheDocument();
       });
+      await user.click(screen.getByRole('menuitem', { name: /copy/i }));
       expect(toast.info).toHaveBeenCalledWith('Copied!');
     });
   });
@@ -250,7 +253,7 @@ describe('ArtifactCard', () => {
     it('shows save button when onSave is provided', () => {
       renderComponent(mockTextArtifact);
 
-      expect(screen.getByRole('button', { name: /save/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /artifact actions/i })).toBeInTheDocument();
     });
 
     it('does not show save button when onSave is not provided', () => {
@@ -269,7 +272,8 @@ describe('ArtifactCard', () => {
       const user = userEvent.setup();
       renderComponent(mockTextArtifact);
 
-      const saveButton = screen.getByRole('button', { name: /save/i });
+      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
+      const saveButton = await screen.findByRole('menuitem', { name: /save/i });
       await user.click(saveButton);
 
       expect(mockOnSave).toHaveBeenCalled();
@@ -278,7 +282,7 @@ describe('ArtifactCard', () => {
     it('shows download button when onDownload is provided', () => {
       renderComponent(mockTextArtifact);
 
-      expect(screen.getByRole('button', { name: /download/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /artifact actions/i })).toBeInTheDocument();
     });
 
     it('does not show download button when onDownload is not provided', () => {
@@ -297,7 +301,8 @@ describe('ArtifactCard', () => {
       const user = userEvent.setup();
       renderComponent(mockFileArtifact);
 
-      const downloadButton = screen.getByRole('button', { name: /download/i });
+      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
+      const downloadButton = await screen.findByRole('menuitem', { name: /download/i });
       await user.click(downloadButton);
 
       expect(mockOnDownload).toHaveBeenCalled();
@@ -312,12 +317,13 @@ describe('ArtifactCard', () => {
           onView={mockOnView}
           onSave={mockOnSave}
           onDownload={mockOnDownload}
+          onAttachAsInput={mockOnAttachAsInput}
           disabled={true}
         />
       );
 
-      const copyButton = screen.getByRole('button', { name: /copy/i });
-      expect(copyButton).toBeDisabled();
+      const menuButton = screen.getByRole('button', { name: /artifact actions/i });
+      expect(menuButton).toBeDisabled();
     });
 
     it('disables view button when disabled', () => {
@@ -346,8 +352,8 @@ describe('ArtifactCard', () => {
         />
       );
 
-      const saveButton = screen.getByRole('button', { name: /save/i });
-      expect(saveButton).toBeDisabled();
+      const menuButton = screen.getByRole('button', { name: /artifact actions/i });
+      expect(menuButton).toBeDisabled();
     });
 
     it('disables download button when disabled', () => {
@@ -361,8 +367,8 @@ describe('ArtifactCard', () => {
         />
       );
 
-      const downloadButton = screen.getByRole('button', { name: /download/i });
-      expect(downloadButton).toBeDisabled();
+      const menuButton = screen.getByRole('button', { name: /actions/i });
+      expect(menuButton).toBeDisabled();
     });
   });
 
@@ -378,13 +384,13 @@ describe('ArtifactCard', () => {
       const { container } = renderComponent(mockTextArtifact);
 
       const card = container.firstChild as HTMLElement;
-      expect(card).toHaveClass('hover:bg-hover');
+      expect(card).toHaveClass('hover:bg-hover/45');
     });
 
     it('uses flex layout for actions', () => {
       const { container } = renderComponent(mockTextArtifact);
 
-      const actions = container.querySelector('.flex');
+      const actions = container.querySelector('[aria-label="artifact actions"]');
       expect(actions).toBeInTheDocument();
     });
   });
@@ -424,6 +430,20 @@ describe('ArtifactCard', () => {
       renderComponent(longTitleArtifact);
 
       expect(screen.getByText(/This is a very long title/)).toBeInTheDocument();
+    });
+
+    it('keeps secondary artifact actions inside the actions menu', async () => {
+      const user = userEvent.setup();
+      renderComponent(mockTextArtifact);
+
+      expect(screen.getByRole('button', { name: /view/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /attach as input/i })).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
+      const menu = screen.getByRole('menu');
+      expect(within(menu).getByRole('menuitem', { name: /copy/i })).toBeInTheDocument();
+      expect(within(menu).getByRole('menuitem', { name: /save/i })).toBeInTheDocument();
+      expect(within(menu).getByRole('menuitem', { name: /download/i })).toBeInTheDocument();
     });
   });
 });

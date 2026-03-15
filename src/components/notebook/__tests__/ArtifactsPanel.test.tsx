@@ -31,20 +31,6 @@ vi.mock('../ArtifactCard', () => ({
   ),
 }));
 
-vi.mock('../ArtifactImageGrid', () => ({
-  ArtifactImageGrid: ({ artifacts, onImageClick, onAttachAsInput }: any) => (
-    <div data-testid="image-grid">
-      {artifacts.map((artifact: Artifact) => (
-        <div key={artifact.id} data-testid={`image-grid-item-${artifact.id}`}>
-          <img src={artifact.thumbnail_url || artifact.content} alt={artifact.title} />
-          <button onClick={() => onImageClick(artifact)}>View Image</button>
-          {onAttachAsInput && <button onClick={() => onAttachAsInput(artifact)}>Attach Image Input</button>}
-        </div>
-      ))}
-    </div>
-  ),
-}));
-
 describe('ArtifactsPanel', () => {
   const mockArtifacts: Artifact[] = [
     {
@@ -136,21 +122,16 @@ describe('ArtifactsPanel', () => {
     it('renders all artifacts', () => {
       renderComponent();
 
+      expect(screen.getByTestId('artifact-card-artifact-2')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-1')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-3')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-4')).toBeInTheDocument();
     });
 
-    it('separates image artifacts into grid', () => {
-      renderComponent();
-
-      expect(screen.getByTestId('image-grid')).toBeInTheDocument();
-      expect(screen.getByTestId('image-grid-item-artifact-2')).toBeInTheDocument();
-    });
-
     it('renders non-image artifacts as cards', () => {
       renderComponent();
 
+      expect(screen.getByTestId('artifact-card-artifact-2')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-1')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-3')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-4')).toBeInTheDocument();
@@ -184,7 +165,7 @@ describe('ArtifactsPanel', () => {
     it('shows all artifacts when filter is set to "all"', () => {
       renderComponent();
 
-      expect(screen.getByTestId('image-grid')).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-artifact-2')).toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-artifact-1')).toBeInTheDocument();
     });
   });
@@ -193,8 +174,7 @@ describe('ArtifactsPanel', () => {
     it('passes view callback to image artifacts', () => {
       renderComponent();
 
-      const viewButtons = screen.getAllByText('View Image');
-      expect(viewButtons.length).toBeGreaterThan(0);
+      expect(screen.getByTestId('artifact-card-artifact-2').querySelector('[data-action="view"]')).toBeInTheDocument();
     });
 
     it('passes view callback to non-image artifacts', () => {
@@ -219,7 +199,7 @@ describe('ArtifactsPanel', () => {
       renderComponent();
 
       expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="attach-input"]')).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: 'Attach Image Input' })).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-artifact-2').querySelector('[data-action="attach-input"]')).toBeInTheDocument();
     });
   });
 
@@ -255,37 +235,21 @@ describe('ArtifactsPanel', () => {
       expect(panel).toBeInTheDocument();
     });
 
-    it('has left border', () => {
-      const { container } = renderComponent();
-
-      const panel = container.querySelector('.border-l');
-      expect(panel).toBeInTheDocument();
-    });
-
     it('has correct background', () => {
       const { container } = renderComponent();
 
-      const panel = container.querySelector('.bg-surface');
+      const panel = container.querySelector('.bg-transparent');
       expect(panel).toBeInTheDocument();
-    });
-  });
-
-  describe('Image Artifacts', () => {
-    it('renders image artifacts in grid', () => {
-      renderComponent();
-
-      expect(screen.getByTestId('image-grid')).toBeInTheDocument();
-    });
-
-    it('passes image click handler', () => {
-      renderComponent();
-
-      const imageGrid = screen.getByTestId('image-grid');
-      expect(imageGrid).toBeInTheDocument();
     });
   });
 
   describe('Non-Image Artifacts', () => {
+    it('renders image artifacts as compact cards', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('artifact-card-artifact-2')).toBeInTheDocument();
+    });
+
     it('renders text artifacts as cards', () => {
       renderComponent();
 
@@ -356,8 +320,8 @@ describe('ArtifactsPanel', () => {
         />
       );
 
-      expect(screen.getByTestId('image-grid')).toBeInTheDocument();
-      expect(screen.queryByTestId('artifact-card-img-1')).not.toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-img-1')).toBeInTheDocument();
+      expect(screen.getByTestId('artifact-card-img-2')).toBeInTheDocument();
     });
 
     it('handles only non-image artifacts', () => {
@@ -387,7 +351,6 @@ describe('ArtifactsPanel', () => {
         />
       );
 
-      expect(screen.queryByTestId('image-grid')).not.toBeInTheDocument();
       expect(screen.getByTestId('artifact-card-text-1')).toBeInTheDocument();
     });
   });

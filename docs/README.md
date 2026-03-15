@@ -19,6 +19,7 @@
 - [Usage / Audit MVP Engineering Checklist](./user-guides/usage-audit-engineering-checklist.md)
 - [Workspace / Project Mainline Engineering Checklist](./user-guides/workspace-project-mainline-engineering-checklist.md)
 - [Governance Mainline Engineering Checklist](./user-guides/governance-mainline-engineering-checklist.md)
+- [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)

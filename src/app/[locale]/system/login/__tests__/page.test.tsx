@@ -1,10 +1,9 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const mockReplace = vi.fn();
+const mockAssign = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: mockReplace }),
   useParams: () => ({ locale: 'en-US' }),
 }));
 
@@ -16,8 +15,15 @@ import SystemLoginPage from '../page';
 
 describe('SystemLoginPage', () => {
   beforeEach(() => {
-    mockReplace.mockClear();
+    mockAssign.mockClear();
     vi.restoreAllMocks();
+    Object.defineProperty(window, 'location', {
+      configurable: true,
+      value: {
+        ...window.location,
+        assign: mockAssign,
+      },
+    });
   });
 
   it('submits credentials and redirects to system workspaces on success', async () => {
@@ -33,7 +39,7 @@ describe('SystemLoginPage', () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith('/api/system/session', expect.objectContaining({ method: 'POST' }));
-      expect(mockReplace).toHaveBeenCalledWith('/en-US/system/workspaces');
+      expect(mockAssign).toHaveBeenCalledWith('/en-US/system/workspaces');
     });
   });
 
@@ -49,6 +55,6 @@ describe('SystemLoginPage', () => {
     fireEvent.click(screen.getByTestId('system-login__submit'));
 
     expect(await screen.findByTestId('system-login__error')).toBeInTheDocument();
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(mockAssign).not.toHaveBeenCalled();
   });
 });

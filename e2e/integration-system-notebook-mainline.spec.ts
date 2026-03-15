@@ -72,12 +72,31 @@ async function gotoWithRetry(page: Page, path: string): Promise<void> {
 
 async function loginAsSystemAdmin(page: Page): Promise<void> {
   await page.context().clearCookies();
-  await page.goto(`/${LOCALE}/system/login`);
+  await gotoWithRetry(page, `/${LOCALE}/system/login`);
   await expect(page.getByTestId('system-login__heading')).toBeVisible();
   await page.getByTestId('system-login__username').fill('mbos-admin');
   await page.getByTestId('system-login__password').fill('mbos-admin');
-  await page.getByTestId('system-login__submit').click();
-  await page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces`), { timeout: 30_000 });
+  let loginResponseOk = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const responsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes('/api/system/session') && response.request().method() === 'POST',
+        { timeout: 5_000 },
+      )
+      .catch(() => null);
+    await page.getByTestId('system-login__submit').click();
+    const response = await responsePromise;
+    if (response) {
+      loginResponseOk = response.ok();
+      break;
+    }
+    await page.waitForTimeout(1_000);
+  }
+  expect(loginResponseOk).toBe(true);
+  await expect
+    .poll(() => page.url(), { timeout: 30_000 })
+    .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
   await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
 }
 
@@ -111,11 +130,15 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   const workspaceName = `Notebook Mainline ${Date.now()}`;
 
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
-  await page.getByTestId('system-workspaces__draft-admin').fill('dev-admin@example.com');
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
   await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_CLIENT_ID);
   await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('integration-client-secret');
+  await page.getByTestId('system-workspaces__draft-admin').fill('dev-admin@example.com');
+  const adminResults = page.getByTestId('system-workspaces__admin-search-results');
+  await expect(adminResults.getByText('dev-admin@example.com')).toBeVisible({ timeout: 15_000 });
+  await adminResults.getByRole('button', { name: /dev-admin@example\.com/i }).click();
+  await expect(page.getByTestId('system-workspaces__selected-admin')).toContainText('dev-admin@example.com');
   await page.getByTestId('system-workspaces__save').click();
 
   const workspaceId = await waitForWorkspaceId(page, workspaceName);
@@ -186,12 +209,17 @@ async function saveWorkspaceProjectCreators(page: Page, workspaceId: string): Pr
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/settings`);
   await expect(page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
 
-  const textarea = page.getByTestId('ws-settings__project-creators-input');
-  await textarea.fill(PROJECT_CREATOR_EMAIL);
+  const searchInput = page.getByTestId('ws-settings__project-creators-input');
+  await searchInput.fill(PROJECT_CREATOR_EMAIL);
+  const creatorOption = page.getByTestId('ws-settings__project-creators-results').getByRole('button', {
+    name: new RegExp(PROJECT_CREATOR_EMAIL.replace('.', '\\.')),
+  });
+  await expect(creatorOption).toBeVisible({ timeout: 15_000 });
+  await creatorOption.click();
   await page.getByTestId('ws-settings__project-creators-save').click();
 
   await expect
-    .poll(async () => textarea.inputValue(), { timeout: 20_000 })
+    .poll(async () => page.getByTestId('ws-settings__project-creators-selected').textContent(), { timeout: 20_000 })
     .toContain(PROJECT_CREATOR_EMAIL);
 }
 

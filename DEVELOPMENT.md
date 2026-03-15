@@ -223,6 +223,27 @@ npm run test:mainline:strict:real
 
 This real-lane variant auto starts integration dependencies, API, and frontend on dedicated ports.
 
+## Release Readiness Checklist
+
+For final release-oriented verification, run:
+
+```bash
+npm run contracts:check
+npm run contracts:check-openapi
+npm run openapi:check-generated
+npx tsc --noEmit
+npm run test:mainline:strict
+npm run test:governance:strict
+npm run test:visual:strict
+npm run test:mainline:strict:real
+npm run test:smoke:real:notebook-mainline
+```
+
+Notes:
+
+1. `npm run test:visual:strict` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
+2. Real-lane notebook verification requires `GLM_API_KEY`.
+
 ## Governance Mainline Strict Gate
 
 When the current work touches

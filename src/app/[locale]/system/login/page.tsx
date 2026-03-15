@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -11,7 +11,6 @@ import { Input } from '@/components/ui/input';
 import { LockKeyhole, ShieldCheck } from 'lucide-react';
 
 export default function SystemLoginPage() {
-  const router = useRouter();
   const params = useParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
@@ -36,7 +35,7 @@ export default function SystemLoginPage() {
         setError(data?.error_message || 'invalid_system_admin_credentials');
         return;
       }
-      router.replace(`/${locale}/system/workspaces`);
+      window.location.assign(`/${locale}/system/workspaces`);
     } finally {
       setIsSubmitting(false);
     }

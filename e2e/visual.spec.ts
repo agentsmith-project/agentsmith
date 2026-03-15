@@ -67,7 +67,9 @@ async function loginAsSystemAdmin(page: Page) {
   await page.getByTestId('system-login__username').fill('mbos-admin');
   await page.getByTestId('system-login__password').fill('mbos-admin');
   await page.getByTestId('system-login__submit').click();
-  await page.waitForURL(/\/en-US\/system\/workspaces/, { timeout: 15_000 });
+  await expect
+    .poll(() => page.url(), { timeout: 20_000 })
+    .toMatch(/\/en-US\/system\/workspaces/);
   await waitForPageReady(page);
 }
 
@@ -427,8 +429,10 @@ test.describe('Visual - Overlays', () => {
     await stableNavigate(authedPage, projectPath('members'));
     const firstRow = authedPage.getByTestId('members__table__row').first();
     await expect(firstRow).toBeVisible();
-    await firstRow.getByRole('button').click();
-    await authedPage.getByRole('menuitem', { name: /view change history/i }).click();
+    await firstRow.click();
+    const memberDrawer = authedPage.getByRole('dialog');
+    await expect(memberDrawer).toBeVisible();
+    await memberDrawer.getByRole('button', { name: /view.*history/i }).click({ force: true });
     await expect(authedPage.getByRole('dialog')).toBeVisible();
     await expect(authedPage.getByText(/no change history available/i)).toBeVisible();
     await authedPage.waitForTimeout(400);

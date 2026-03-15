@@ -18,6 +18,13 @@ MAX_ATTEMPTS="${MOCK_LANE_MAX_ATTEMPTS:-3}"
 info() { echo "[mock-lane] $*"; }
 err() { echo "[mock-lane] ERROR: $*" >&2; }
 
+reset_next_dev_artifacts_if_corrupt() {
+  if grep -q "Cannot find module './vendor-chunks/next.js'" "${LOG_FILE}" 2>/dev/null; then
+    info "detected corrupted Next.js dev artifacts; clearing .next before retry"
+    rm -rf "${ROOT_DIR}/.next"
+  fi
+}
+
 cleanup() {
   if [[ "${STARTED_BY_SCRIPT}" == "1" ]] && [[ -f "${PID_FILE}" ]]; then
     local pid
@@ -180,6 +187,7 @@ start_mock_server() {
     fi
 
     info "mock web server failed to become ready; restarting lane bootstrap (${launch_attempt}/3)"
+    reset_next_dev_artifacts_if_corrupt
     kill_port_listeners
     rm -f "${PID_FILE}"
     sleep 2

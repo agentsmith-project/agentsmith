@@ -38,7 +38,23 @@ npm run test:governance:strict
 npm run test:visual:strict
 npm run test:mainline:strict:real
 npm run test:smoke:real:notebook-mainline
+npm run test:visual:real:review
+npm run test:release:real:full
 ```
+
+`npm run test:release:real:full` 会顺序执行发布级工程门禁、严格主线、真实 notebook 主线，以及真实环境截图巡检。
+
+真实截图默认输出到：
+
+```bash
+artifacts/release-real-visual/<run-id>/
+```
+
+目录内会生成：
+
+- `manifest.json`
+- `review.md`
+- 所有主要界面截图
 
 ## 身份与权限检查点
 

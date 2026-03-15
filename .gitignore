@@ -59,6 +59,12 @@ secrets/*
 artifacts/governance-reports/failed/
 
 # Generated local release verification snapshots / debug captures
+artifacts/release-real-visual/
+artifacts/system-workspaces.json
+artifacts/system-workspaces.mock.json
+artifacts/system-workspace-provisioning/
+artifacts/system-workspace-provisioning.mock/
+packages/api-entry-node/artifacts/
 artifacts/governance-reports/report-*.json
 artifacts/governance-reports/report-*.md
 artifacts/governance-reports/closure-*.json

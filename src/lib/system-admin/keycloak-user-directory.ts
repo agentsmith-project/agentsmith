@@ -105,6 +105,27 @@ async function adminFetch(idpUrl: string, token: string, path: string): Promise<
   }
 }
 
+async function fetchUsers(
+  idpUrl: string,
+  token: string,
+  realm: string,
+  searchParams: URLSearchParams,
+): Promise<KeycloakUserRecord[]> {
+  const response = await adminFetch(
+    idpUrl,
+    token,
+    `/admin/realms/${encodeURIComponent(realm.trim())}/users?${searchParams.toString()}`,
+  );
+  if (!response.ok) {
+    const text = await response.text();
+    throw Object.assign(new Error(`keycloak_user_search_failed:${response.status}:${text}`), {
+      code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
+    });
+  }
+  const payload = (await response.json()) as KeycloakUserRecord[];
+  return Array.isArray(payload) ? payload : [];
+}
+
 function toDirectoryUser(user: KeycloakUserRecord): KeycloakDirectoryUser | null {
   const userId = user.id?.trim();
   const email = user.email?.trim();
@@ -126,25 +147,30 @@ export async function searchKeycloakUsers(args: {
   if (!query) return [];
   const token = await getAdminToken(args.idpUrl);
   const max = Math.max(1, Math.min(args.max ?? 10, 20));
-  const searchParams = new URLSearchParams({
-    search: query,
-    max: String(max),
-  });
-  const response = await adminFetch(
-    args.idpUrl,
-    token,
-    `/admin/realms/${encodeURIComponent(args.realm.trim())}/users?${searchParams.toString()}`,
-  );
-  if (!response.ok) {
-    const text = await response.text();
-    throw Object.assign(new Error(`keycloak_user_search_failed:${response.status}:${text}`), {
-      code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
-    });
-  }
-
-  const payload = (await response.json()) as KeycloakUserRecord[];
+  const payload = query.includes('@')
+    ? (() => {
+        const exactEmailParams = new URLSearchParams({
+          email: query,
+          exact: 'true',
+          max: String(max),
+        });
+        return fetchUsers(args.idpUrl, token, args.realm, exactEmailParams);
+      })()
+    : Promise.resolve<KeycloakUserRecord[]>([]);
+  const exactMatches = await payload;
+  const fallbackMatches = exactMatches.length > 0
+    ? []
+    : await fetchUsers(
+      args.idpUrl,
+      token,
+      args.realm,
+      new URLSearchParams({
+        search: query,
+        max: String(max),
+      }),
+    );
   const unique = new Map<string, KeycloakDirectoryUser>();
-  for (const item of payload) {
+  for (const item of [...exactMatches, ...fallbackMatches]) {
     const user = toDirectoryUser(item);
     if (!user) continue;
     const haystack = `${user.email} ${user.name ?? ''}`.toLowerCase();

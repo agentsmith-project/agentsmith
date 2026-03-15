@@ -237,12 +237,15 @@ npm run test:governance:strict
 npm run test:visual:strict
 npm run test:mainline:strict:real
 npm run test:smoke:real:notebook-mainline
+npm run test:visual:real:review
+npm run test:release:real:full
 ```
 
 Notes:
 
 1. `npm run test:visual:strict` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
 2. Real-lane notebook verification requires `GLM_API_KEY`.
+3. `npm run test:visual:real:review` writes real-environment screenshots to `artifacts/release-real-visual/<run-id>/` for manual inspection.
 
 ## Governance Mainline Strict Gate
 

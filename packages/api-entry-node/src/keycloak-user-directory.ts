@@ -109,21 +109,15 @@ async function adminFetch(config: KeycloakDirectoryConfig, token: string, path: 
   }
 }
 
-export async function searchKeycloakDirectoryUsers(args: KeycloakDirectoryConfig & {
-  query: string;
-  max?: number;
-}): Promise<KeycloakDirectoryUser[]> {
-  const query = args.query.trim();
-  if (!query) return [];
-  const token = await getAdminToken(args);
-  const searchParams = new URLSearchParams({
-    search: query,
-    max: String(Math.max(1, Math.min(args.max ?? 10, 20))),
-  });
+async function fetchUsers(
+  config: KeycloakDirectoryConfig,
+  token: string,
+  searchParams: URLSearchParams,
+): Promise<KeycloakUserRecord[]> {
   const response = await adminFetch(
-    args,
+    config,
     token,
-    `/admin/realms/${encodeURIComponent(args.realm.trim())}/users?${searchParams.toString()}`,
+    `/admin/realms/${encodeURIComponent(config.realm.trim())}/users?${searchParams.toString()}`,
   );
   if (!response.ok) {
     const text = await response.text();
@@ -132,8 +126,40 @@ export async function searchKeycloakDirectoryUsers(args: KeycloakDirectoryConfig
     });
   }
   const payload = (await response.json()) as KeycloakUserRecord[];
+  return Array.isArray(payload) ? payload : [];
+}
+
+export async function searchKeycloakDirectoryUsers(args: KeycloakDirectoryConfig & {
+  query: string;
+  max?: number;
+}): Promise<KeycloakDirectoryUser[]> {
+  const query = args.query.trim();
+  if (!query) return [];
+  const token = await getAdminToken(args);
+  const max = Math.max(1, Math.min(args.max ?? 10, 20));
+  const exactMatches = query.includes('@')
+    ? await fetchUsers(
+      args,
+      token,
+      new URLSearchParams({
+        email: query,
+        exact: 'true',
+        max: String(max),
+      }),
+    )
+    : [];
+  const fallbackMatches = exactMatches.length > 0
+    ? []
+    : await fetchUsers(
+      args,
+      token,
+      new URLSearchParams({
+        search: query,
+        max: String(max),
+      }),
+    );
   const unique = new Map<string, KeycloakDirectoryUser>();
-  for (const item of payload) {
+  for (const item of [...exactMatches, ...fallbackMatches]) {
     const user = toDirectoryUser(item);
     if (!user) continue;
     const haystack = `${user.email} ${user.name ?? ''}`.toLowerCase();

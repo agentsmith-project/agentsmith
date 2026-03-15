@@ -3,6 +3,7 @@ import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import {
+  aggregateUsageRecords,
   getLimitsSummary,
   getUsageRecordsSummary,
   getUsageOperationsSummary,
@@ -80,6 +81,58 @@ export async function handleAuditUsageRoute({
     if (!user) return null;
     return user.id;
   };
+
+  if (route.kind === 'usage' && method === 'GET') {
+    const range = requireTimeRange(requestUrl, json, res);
+    if (range === true) return true;
+    const page = parsePositiveInt(requestUrl.searchParams.get('page'), 1);
+    const pageSize = parsePositiveInt(requestUrl.searchParams.get('page_size'), 20, 200);
+    const sortByRaw = requestUrl.searchParams.get('sort_by');
+    const sortBy = (
+      sortByRaw === 'time_bucket'
+      || sortByRaw === 'requests'
+      || sortByRaw === 'resource_type'
+    ) ? sortByRaw : 'time_bucket';
+    const sortOrder = requestUrl.searchParams.get('sort_order') === 'asc' ? 'asc' : 'desc';
+    const groupByRaw = requestUrl.searchParams.get('group_by');
+    const groupBy = (
+      groupByRaw === 'minute'
+      || groupByRaw === 'hour'
+      || groupByRaw === 'day'
+      || groupByRaw === 'week'
+      || groupByRaw === 'month'
+    ) ? groupByRaw : 'hour';
+    const payload = await aggregateUsageRecords(deps.docStore, {
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      startTime: range.start.toISOString(),
+      endTime: range.end.toISOString(),
+      resourceType: requestUrl.searchParams.get('resource_type'),
+      resourceId: requestUrl.searchParams.get('resource_id'),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
+      provider: requestUrl.searchParams.get('provider'),
+      model: requestUrl.searchParams.get('model'),
+      requestId: requestUrl.searchParams.get('request_id'),
+      decisionId: requestUrl.searchParams.get('decision_id'),
+      traceRef: requestUrl.searchParams.get('trace_ref'),
+      traceIncidentId: requestUrl.searchParams.get('trace_incident_id'),
+      traceEscalationId: requestUrl.searchParams.get('trace_escalation_id'),
+      traceRunId: requestUrl.searchParams.get('trace_run_id'),
+      result: requestUrl.searchParams.get('result') === 'error'
+        ? 'error'
+        : requestUrl.searchParams.get('result') === 'ok'
+          ? 'ok'
+          : null,
+      errorClass: parseProviderErrorClass(requestUrl.searchParams.get('error_class')),
+      groupBy,
+      sortBy,
+      sortOrder,
+      page,
+      pageSize,
+    });
+    json(res, 200, payload);
+    return true;
+  }
 
   if (route.kind === 'usageFacts' && method === 'GET') {
     const range = requireTimeRange(requestUrl, json, res);

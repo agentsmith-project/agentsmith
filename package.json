@@ -43,6 +43,8 @@
     "test:mainline:strict:real": "bash scripts/workspace-project-mainline-gate.sh --with-real-lane",
     "test:governance:strict": "bash scripts/governance-mainline-gate.sh",
     "test:smoke:real:notebook-mainline": "bash scripts/system-notebook-real-smoke-gate.sh",
+    "test:visual:real:review": "bash scripts/release-real-visual-review.sh",
+    "test:release:real:full": "bash scripts/release-real-full-gate.sh",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "integration:deps:up": "docker compose -f infra/integration/docker-compose.yml up -d",

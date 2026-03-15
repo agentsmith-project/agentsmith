@@ -1,5 +1,7 @@
+import { mkdir, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { WebSocket } from 'ws';
-import { test, expect, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import { readStoredAuthToken } from './integration-workspace-access';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -17,7 +19,10 @@ const MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-
 const MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123';
 const MEMBER_EMAIL = 'integration-member@example.com';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
-const NOTEBOOK_EXPECTED_TOKEN = `MAINLINE_REAL_NOTEBOOK_OK_${Date.now()}`;
+const NOTEBOOK_EXPECTED_TOKEN = `REAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
+const ARTIFACT_DIR = process.env.RELEASE_REAL_VISUAL_ARTIFACT_DIR
+  ? path.resolve(process.env.RELEASE_REAL_VISUAL_ARTIFACT_DIR)
+  : path.resolve('artifacts/release-real-visual/manual-run');
 
 type ExecutionWsMessage = {
   type?: string;
@@ -35,11 +40,75 @@ type ExecutionWsMessage = {
   };
 };
 
+type CaptureEntry = {
+  name: string;
+  path: string;
+  role: string;
+  route: string;
+  notes: string;
+};
+
+type ProjectContext = {
+  workspaceId: string;
+  projectId: string;
+  projectName: string;
+};
+
 function requireGlmApiKey(): string {
   if (!GLM_API_KEY?.trim()) {
     throw new Error('missing_GLM_API_KEY');
   }
   return GLM_API_KEY.trim();
+}
+
+async function ensureArtifactDir() {
+  await mkdir(ARTIFACT_DIR, { recursive: true });
+}
+
+async function capturePage(page: Page, captures: CaptureEntry[], args: {
+  name: string;
+  role: string;
+  route?: string;
+  notes: string;
+  fullPage?: boolean;
+}) {
+  await ensureArtifactDir();
+  const filename = `${args.name}.png`;
+  const absolutePath = path.join(ARTIFACT_DIR, filename);
+  await page.screenshot({ path: absolutePath, fullPage: args.fullPage ?? true });
+  captures.push({
+    name: args.name,
+    path: filename,
+    role: args.role,
+    route: args.route ?? page.url(),
+    notes: args.notes,
+  });
+}
+
+async function flushReviewArtifacts(captures: CaptureEntry[]) {
+  await ensureArtifactDir();
+  const manifest = {
+    generated_at: new Date().toISOString(),
+    total: captures.length,
+    screenshots: captures,
+  };
+  const reviewLines = [
+    '# 真实后端界面巡检截图',
+    '',
+    `- generated_at: ${manifest.generated_at}`,
+    `- total: ${manifest.total}`,
+    '',
+    '| Screenshot | Role | Route | Notes |',
+    '| --- | --- | --- | --- |',
+    ...captures.map((item) => `| ${item.path} | ${item.role} | ${item.route} | ${item.notes} |`),
+    '',
+    '## 审查说明',
+    '',
+    '- 这批截图来自真实 Keycloak、真实 API、真实 notebook 主线。',
+    '- 用于人工观察界面、状态、操作路径和明显 UX/UI 缺陷。',
+  ];
+  await writeFile(path.join(ARTIFACT_DIR, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
+  await writeFile(path.join(ARTIFACT_DIR, 'review.md'), `${reviewLines.join('\n')}\n`, 'utf-8');
 }
 
 async function clearAppState(page: Page, workspaceId = 'ws_default'): Promise<void> {
@@ -55,10 +124,10 @@ async function clearAppState(page: Page, workspaceId = 'ws_default'): Promise<vo
   });
 }
 
-async function gotoWithRetry(page: Page, path: string): Promise<void> {
+async function gotoWithRetry(page: Page, pathOrUrl: string): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await page.goto(pathOrUrl, { waitUntil: 'domcontentloaded' });
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -68,6 +137,12 @@ async function gotoWithRetry(page: Page, path: string): Promise<void> {
       await page.waitForTimeout(500);
     }
   }
+}
+
+async function settlePage(page: Page, timeout = 30_000): Promise<void> {
+  await page.waitForLoadState('domcontentloaded');
+  await page.waitForLoadState('networkidle', { timeout }).catch(() => {});
+  await page.waitForTimeout(600);
 }
 
 async function loginAsSystemAdmin(page: Page): Promise<void> {
@@ -128,8 +203,7 @@ async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<st
 }
 
 async function createAndPublishWorkspace(page: Page): Promise<string> {
-  const workspaceName = `Notebook Mainline ${Date.now()}`;
-
+  const workspaceName = `Real Visual Workspace ${Date.now()}`;
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
@@ -142,7 +216,6 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   const workspaceId = await waitForWorkspaceId(page, workspaceName);
   await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
   await page.getByTestId('system-workspaces__publish').click();
-
   await expect(page.getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`)).toHaveAttribute(
     'href',
     new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login$`),
@@ -198,7 +271,7 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
   await clearAppState(page, workspaceId);
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    await page.goto(`/${LOCALE}/workspaces/${workspaceId}/login`);
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
     await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible();
     await page.getByTestId('workspace-login__keycloak-btn').click();
 
@@ -250,7 +323,6 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
 async function saveWorkspaceProjectCreators(page: Page, workspaceId: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/settings`);
   await expect(page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
-
   const searchInput = page.getByTestId('ws-settings__project-creators-input');
   await searchInput.fill(PROJECT_CREATOR_EMAIL);
   const creatorOption = page.getByTestId('ws-settings__project-creators-results').getByRole('button', {
@@ -259,27 +331,25 @@ async function saveWorkspaceProjectCreators(page: Page, workspaceId: string): Pr
   await expect(creatorOption).toBeVisible({ timeout: 15_000 });
   await creatorOption.click();
   await page.getByTestId('ws-settings__project-creators-save').click();
-
   await expect
     .poll(async () => page.getByTestId('ws-settings__project-creators-selected').textContent(), { timeout: 20_000 })
     .toContain(PROJECT_CREATOR_EMAIL);
 }
 
-async function createProject(page: Page, workspaceId: string): Promise<{ projectId: string; projectName: string }> {
-  const projectName = `Notebook Delivery ${Date.now()}`;
-  await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
+async function createProject(page: Page, workspaceId: string): Promise<ProjectContext> {
+  const projectName = `Real Visual Project ${Date.now()}`;
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
   await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('projects__create-btn').click();
-
+  await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
   await page.locator('#project-name').fill(projectName);
   await page.getByRole('button', { name: /create|创建/i }).click();
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/overview`), { timeout: 30_000 });
-
   const match = page.url().match(/\/projects\/([^/]+)\//);
   if (!match?.[1]) {
     throw new Error('project_id_not_found_after_create');
   }
-  return { projectId: match[1], projectName };
+  return { workspaceId, projectId: match[1], projectName };
 }
 
 async function requestProjectAccess(page: Page, workspaceId: string, projectId: string): Promise<void> {
@@ -287,9 +357,7 @@ async function requestProjectAccess(page: Page, workspaceId: string, projectId: 
   const requestButton = page.getByTestId(`projects__join-request-btn--${projectId}`);
   await expect(requestButton).toBeVisible({ timeout: 30_000 });
   await requestButton.click();
-  await expect
-    .poll(async () => await requestButton.textContent(), { timeout: 5_000 })
-    .toMatch(/pending|request access/i);
+  await expect.poll(async () => await requestButton.textContent(), { timeout: 5_000 }).toMatch(/pending|request access/i);
 }
 
 async function approveJoinRequest(page: Page, workspaceId: string, projectId: string): Promise<void> {
@@ -297,27 +365,14 @@ async function approveJoinRequest(page: Page, workspaceId: string, projectId: st
   await expect(page.getByRole('tab', { name: /join requests/i })).toBeVisible({ timeout: 30_000 });
   const requestCard = page.locator('div').filter({ hasText: /integration-member/i }).first();
   await expect(requestCard).toBeVisible({ timeout: 30_000 });
-  await requestCard.getByRole('button', { name: /^approve$/i }).click();
-  await expect(requestCard.getByText(/approved/i)).toBeVisible({ timeout: 30_000 });
-}
-
-async function promoteJoinedMemberToProjectAdmin(page: Page, workspaceId: string, projectId: string): Promise<void> {
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/settings`);
-  await expect(page.getByTestId('settings__project-admins-section')).toBeVisible({ timeout: 30_000 });
-
-  const option = page.locator('[data-testid^="settings__project-admin-option--"]').filter({
-    hasText: /integration-member|Joined Member|integration-member@example.com/i,
-  }).first();
-  await expect(option).toBeVisible({ timeout: 30_000 });
-  await option.click();
-  await page.getByTestId('settings__project-admins-save').click();
+  await requestCard.getByRole('button', { name: /approve and grant project admin|批准并授予项目管理权限/i }).click();
+  await expect(page.getByText(/project admin/i).first()).toBeVisible({ timeout: 30_000 });
 }
 
 async function createCredential(page: Page, workspaceId: string, projectId: string, apiKey: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/credentials`);
   await expect(page.getByTestId('credentials__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('credentials__create-btn').click();
-
   const dialog = page.getByTestId('credentials__create-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('#cred-name').fill('BigModel Anthropic Key');
@@ -331,11 +386,9 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
   await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('endpoints__create-btn').click();
-
   const dialog = page.getByTestId('endpoints__create-dialog');
   await expect(dialog).toBeVisible();
   await dialog.getByRole('button', { name: /use guided setup/i }).click();
-
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-name-input').fill('BigModel Anthropic Endpoint');
@@ -354,11 +407,10 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
 }
 
 async function createAgent(page: Page, workspaceId: string, projectId: string): Promise<string> {
-  const agentName = `Notebook Bridge Agent ${Date.now()}`;
+  const agentName = `Real Visual Agent ${Date.now()}`;
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/agents`);
   await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('agents__create-btn').click();
-
   const dialog = page.getByTestId('agents__create-dialog');
   await expect(dialog).toBeVisible();
   await dialog.locator('#agent-name').fill(agentName);
@@ -366,16 +418,14 @@ async function createAgent(page: Page, workspaceId: string, projectId: string): 
   await expect(endpointSelect).toBeVisible({ timeout: 30_000 });
   await endpointSelect.selectOption({ index: 0 });
   await dialog.getByRole('button', { name: /create/i }).click();
-
   await expect(page.getByText(agentName)).toBeVisible({ timeout: 30_000 });
   return agentName;
 }
 
 async function resolveAgentId(page: Page, apiBase: string, workspaceId: string, projectId: string, token: string, agentName: string): Promise<string> {
-  const response = await page.request.get(
-    `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents`,
-    { headers: { Authorization: `Bearer ${token}` } },
-  );
+  const response = await page.request.get(`${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   expect(response.ok()).toBeTruthy();
   const body = (await response.json()) as { items?: Array<{ id: string; name: string }> };
   const agentId = body.items?.find((item) => item.name === agentName)?.id;
@@ -385,24 +435,13 @@ async function resolveAgentId(page: Page, apiBase: string, workspaceId: string, 
   return agentId;
 }
 
-async function createAgentKeyAndConnectionInfo(
-  page: Page,
-  apiBase: string,
-  workspaceId: string,
-  projectId: string,
-  agentId: string,
-  token: string,
-): Promise<{ agentKey: string; wsUrl: string }> {
+async function createAgentKeyAndConnectionInfo(page: Page, apiBase: string, workspaceId: string, projectId: string, agentId: string, token: string) {
   const createKeyResponse = await page.request.post(
     `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/keys`,
-    {
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      data: {},
-    },
+    { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' }, data: {} },
   );
   expect(createKeyResponse.ok()).toBeTruthy();
   const keyBody = (await createKeyResponse.json()) as { key: string };
-
   const connectionResponse = await page.request.get(
     `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}/connection-info`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -416,14 +455,10 @@ async function createAgentKeyAndConnectionInfo(
 }
 
 function extractAssistantContent(payload: unknown): string {
-  if (!payload || typeof payload !== 'object') {
-    return '';
-  }
+  if (!payload || typeof payload !== 'object') return '';
   const maybeChoices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
   const content = maybeChoices?.[0]?.message?.content;
-  if (typeof content === 'string') {
-    return content;
-  }
+  if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     return content
       .map((part) => (typeof part === 'object' && part !== null && 'text' in part ? String((part as { text?: unknown }).text ?? '') : ''))
@@ -437,11 +472,7 @@ function startExternalNotebookBridge(args: {
   agentKey: string;
   expectedToken: string;
   model: string;
-}): {
-  ready: Promise<void>;
-  observedReply: Promise<string>;
-  stop: () => Promise<void>;
-} {
+}) {
   let helloResolved = false;
   let helloResolve!: () => void;
   let helloReject!: (reason?: unknown) => void;
@@ -458,14 +489,10 @@ function startExternalNotebookBridge(args: {
     observedReject = reject;
   });
 
-  const ws = new WebSocket(args.wsUrl, {
-    headers: { Authorization: `Bearer ${args.agentKey}` },
-  });
+  const ws = new WebSocket(args.wsUrl, { headers: { Authorization: `Bearer ${args.agentKey}` } });
 
   ws.once('error', (error) => {
-    if (!helloResolved) {
-      helloReject(error);
-    }
+    if (!helloResolved) helloReject(error);
     observedReject(error);
   });
 
@@ -473,33 +500,23 @@ function startExternalNotebookBridge(args: {
     ws.send(JSON.stringify({
       type: 'agent.ready',
       timestamp: new Date().toISOString(),
-      payload: {
-        capabilities: {
-          streaming_completion: true,
-          multimodal_completion: false,
-        },
-      },
+      payload: { capabilities: { streaming_completion: true, multimodal_completion: false } },
     }));
   });
 
   ws.on('message', (raw) => {
     const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
-
     if (msg.type === 'server.ping') {
       ws.send(JSON.stringify({ type: 'agent.pong', timestamp: new Date().toISOString(), payload: {} }));
       return;
     }
-
     if (msg.type === 'server.hello') {
       resourceProxyBase = msg.payload?.resource_proxy?.base_url ?? '';
       helloResolved = true;
       helloResolve();
       return;
     }
-
-    if (msg.type !== 'server.request.start' || !msg.request_id) {
-      return;
-    }
+    if (msg.type !== 'server.request.start' || !msg.request_id) return;
 
     void (async () => {
       const userToken = msg.payload?.execution_context?.user_bearer_token ?? '';
@@ -516,26 +533,17 @@ function startExternalNotebookBridge(args: {
             messages: msg.payload?.messages ?? [],
           }),
         });
-
         if (!upstreamResponse.ok) {
           const errorText = await upstreamResponse.text();
           ws.send(JSON.stringify({
             type: 'agent.response.error',
             request_id: msg.request_id,
             timestamp: new Date().toISOString(),
-            payload: {
-              error_code: 'AGENT_UPSTREAM_ERROR',
-              error_message: errorText || 'upstream_request_failed',
-            },
+            payload: { error_code: 'AGENT_UPSTREAM_ERROR', error_message: errorText || 'upstream_request_failed' },
           }));
-          observedReject(
-            new Error(
-              `upstream_request_failed:${upstreamResponse.status}:${errorText || 'empty_response'}`,
-            ),
-          );
+          observedReject(new Error(`upstream_request_failed:${upstreamResponse.status}`));
           return;
         }
-
         const responseBody = (await upstreamResponse.json()) as unknown;
         const assistantContent = extractAssistantContent(responseBody);
         ws.send(JSON.stringify({
@@ -558,10 +566,7 @@ function startExternalNotebookBridge(args: {
           type: 'agent.response.error',
           request_id: msg.request_id,
           timestamp: new Date().toISOString(),
-          payload: {
-            error_code: 'AGENT_BRIDGE_ERROR',
-            error_message: error instanceof Error ? error.message : 'bridge_failed',
-          },
+          payload: { error_code: 'AGENT_BRIDGE_ERROR', error_message: error instanceof Error ? error.message : 'unknown_error' },
         }));
         observedReject(error);
       }
@@ -571,124 +576,296 @@ function startExternalNotebookBridge(args: {
   return {
     ready,
     observedReply,
-    stop: () =>
-      new Promise<void>((resolve) => {
-        if (ws.readyState === WebSocket.CLOSED) {
-          resolve();
-          return;
-        }
-        ws.once('close', () => resolve());
-        ws.close();
-      }),
+    stop: async () => {
+      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+        await new Promise<void>((resolve) => {
+          ws.once('close', () => resolve());
+          ws.close();
+        });
+      }
+    },
   };
 }
 
-async function waitForAgentPresenceOnline(
-  page: Page,
-  apiBase: string,
-  workspaceId: string,
-  projectId: string,
-  agentId: string,
-  token: string,
-): Promise<void> {
-  await expect
-    .poll(
-      async () => {
-        const response = await page.request.get(
-          `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents/${agentId}`,
-          { headers: { Authorization: `Bearer ${token}` } },
-        );
-        if (!response.ok()) {
-          return null;
-        }
-        const body = (await response.json()) as { presence?: string };
-        return body.presence ?? null;
-      },
-      { timeout: 30_000 },
-    )
-    .toBe('online');
-}
-
-async function runNotebookTask(
-  page: Page,
-  workspaceId: string,
-  projectId: string,
-  agentName: string,
-  expectedToken: string,
-): Promise<void> {
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
+async function runNotebookTask(page: Page, context: ProjectContext, expectedToken: string) {
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`);
   await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('notebook__create-task-btn').click();
-
-  const dialog = page.getByRole('dialog');
-  await expect(dialog).toBeVisible();
-  await dialog.locator('#task-title').fill('Mainline Real Notebook Task');
+  const dialog = page.getByRole('dialog', { name: /create task/i });
+  await expect(dialog.locator('#task-title')).toBeVisible({ timeout: 30_000 });
+  await dialog.locator('#task-title').fill('Release Review Task');
   await dialog.locator('#task-agent').click();
-  await page.getByRole('option', { name: new RegExp(agentName) }).click();
-  await dialog.getByRole('button', { name: /create/i }).click();
-
-  await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
-    timeout: 30_000,
-  });
+  await page.getByRole('option').first().click();
+  await dialog.getByRole('button', { name: /create task/i }).click();
   await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
 
   const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
-  await input.fill(`Reply with the exact token ${expectedToken} and nothing else.`);
+  await input.fill(`Reply with exactly this token and a short explanation: ${expectedToken}`);
   await page.getByTestId('notebook__send-btn').click();
   await expect(page.getByText(expectedToken)).toBeVisible({ timeout: 120_000 });
 }
 
-test.describe('@lane-real integration system-to-notebook mainline', () => {
-  test('completes fresh workspace setup to real notebook work', async ({ page }) => {
-    test.setTimeout(600_000);
-    const glmApiKey = requireGlmApiKey();
-    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
-    const pageErrors: string[] = [];
+async function captureProjectPages(page: Page, captures: CaptureEntry[], context: ProjectContext, role: string) {
+  const pages: Array<{ name: string; path: string; waitFor?: string }> = [
+    { name: 'project-overview', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`, waitFor: 'project-hub__page' },
+    { name: 'project-chat', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/chat`, waitFor: 'chat__main-pane' },
+    { name: 'project-notebook', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`, waitFor: 'notebook__task-list' },
+    { name: 'project-files', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`, waitFor: 'files__library-list' },
+    { name: 'project-endpoints', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/endpoints`, waitFor: 'endpoints__create-btn' },
+    { name: 'project-credentials', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/credentials`, waitFor: 'credentials__create-btn' },
+    { name: 'project-agents', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agents`, waitFor: 'agents__create-btn' },
+    { name: 'project-members', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/members`, waitFor: 'members__search-input' },
+    { name: 'project-resource-policy', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/resource-policy`, waitFor: 'resource-policy__editor' },
+    { name: 'project-audit', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/audit`, waitFor: 'audit__page' },
+    { name: 'project-usage', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/usage`, waitFor: 'usage__view' },
+    { name: 'project-settings', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/settings`, waitFor: 'settings__general-section' },
+    { name: 'project-use-guide', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/use-guide`, waitFor: 'use-guide__page' },
+    { name: 'project-alerts', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/alerts`, waitFor: 'alerts__open-audit' },
+  ];
 
-    page.on('pageerror', (error) => pageErrors.push(error.message));
+  for (const item of pages) {
+    await gotoWithRetry(page, item.path);
+    let notes = `真实项目页面巡检: ${item.name}`;
+    if (item.waitFor) {
+      const target = page.getByTestId(item.waitFor);
+      const permissionDenied = page.getByRole('heading', { name: /permission denied/i });
+      const notFound = page.getByRole('heading', { name: '404' });
+      const result = await Promise.race([
+        target.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'ready' as const),
+        permissionDenied.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'permission_denied' as const),
+        notFound.waitFor({ state: 'visible', timeout: 30_000 }).then(() => 'not_found' as const),
+      ]).catch(() => 'timeout' as const);
+
+      if (result === 'not_found') {
+        throw new Error(`visual_review_not_found:${item.name}:${item.path}`);
+      }
+      if (result === 'timeout') {
+        throw new Error(`visual_review_wait_timeout:${item.name}:${item.path}:${item.waitFor}`);
+      }
+      if (result === 'permission_denied') {
+        notes = `真实项目页面巡检: ${item.name}（当前角色权限不足，页面显示拒绝访问）`;
+      }
+    }
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: item.name,
+      role,
+      notes,
+    });
+  }
+}
+
+test.describe('@lane-real integration visual review', () => {
+  test('captures real backend screenshots for main system and project surfaces', async ({ page }) => {
+    test.setTimeout(900_000);
+    const captures: CaptureEntry[] = [];
+    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
+    const glmApiKey = requireGlmApiKey();
+
+    await gotoWithRetry(page, `/${LOCALE}/system/login`);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'system-login',
+      role: 'system 管理侧',
+      notes: 'system 管理侧登录入口',
+    });
 
     await loginAsSystemAdmin(page);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'system-workspaces',
+      role: 'system 管理侧',
+      notes: '工作区清单与创建入口',
+    });
+
     const workspaceId = await createAndPublishWorkspace(page);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'system-workspace-editor',
+      role: 'system 管理侧',
+      notes: '新工作区创建并发布后的 system 管理侧工作区清单',
+    });
+
+    await page.getByTestId('system-workspaces__open-info').click();
+    await page.waitForURL(new RegExp(`/${LOCALE}/system/info`), { timeout: 20_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'system-info',
+      role: 'system 管理侧',
+      notes: 'system 信息页',
+    });
+
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'workspace-login',
+      role: 'workspace admin',
+      notes: '工作区登录入口',
+    });
 
     await loginToWorkspace(page, workspaceId, DEV_ADMIN_USERNAME, DEV_ADMIN_PASSWORD);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'workspace-home-admin',
+      role: 'workspace admin',
+      notes: 'workspace admin 进入工作区首页',
+    });
+
     await saveWorkspaceProjectCreators(page, workspaceId);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'workspace-settings',
+      role: 'workspace admin',
+      notes: '工作区设置与 project creators 配置',
+    });
 
     await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    const { projectId } = await createProject(page, workspaceId);
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'workspace-projects-before-create',
+      role: 'project creator',
+      notes: 'project creator 的项目列表与创建入口',
+    });
+
+    await page.getByTestId('projects__create-btn').click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-create-project-real',
+      role: 'project creator',
+      notes: '真实环境创建项目对话框',
+    });
+    await page.getByRole('dialog').getByRole('button', { name: /cancel|取消/i }).click();
+
+    const project = await createProject(page, workspaceId);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'project-overview-initial',
+      role: 'project owner',
+      notes: '项目创建成功后的 overview',
+    });
 
     await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-    await requestProjectAccess(page, workspaceId, projectId);
+    await requestProjectAccess(page, workspaceId, project.projectId);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'projects-join-request-pending',
+      role: 'ordinary member',
+      notes: '普通用户发起加入申请后的项目列表状态',
+    });
 
     await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await approveJoinRequest(page, workspaceId, projectId);
-    await promoteJoinedMemberToProjectAdmin(page, workspaceId, projectId);
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=requests`);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'members-join-requests-before-approve',
+      role: 'project owner',
+      notes: '加入申请审批页',
+    });
+    await approveJoinRequest(page, workspaceId, project.projectId);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'members-join-requests-after-approve',
+      role: 'project owner',
+      notes: '批准并授予项目管理权限后的成员治理页',
+    });
 
     await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-    await createCredential(page, workspaceId, projectId, glmApiKey);
-    await createEndpoint(page, workspaceId, projectId);
-    const agentName = await createAgent(page, workspaceId, projectId);
+    const projectAdminToken = await readStoredAuthToken(page);
 
-    const token = await readStoredAuthToken(page);
-    const agentId = await resolveAgentId(page, apiBase, workspaceId, projectId, token, agentName);
-    const { agentKey, wsUrl } = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, projectId, agentId, token);
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/credentials`);
+    await expect(page.getByTestId('credentials__create-btn')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('credentials__create-btn').click();
+    await expect(page.getByTestId('credentials__create-dialog')).toBeVisible();
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-create-credential-real',
+      role: 'project admin',
+      notes: '真实环境创建凭据对话框',
+    });
+    await page.getByTestId('credentials__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+    await createCredential(page, workspaceId, project.projectId, glmApiKey);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'project-credentials-real',
+      role: 'project admin',
+      notes: '真实凭据列表',
+    });
 
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/endpoints`);
+    await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('endpoints__create-btn').click();
+    await expect(page.getByTestId('endpoints__create-dialog')).toBeVisible();
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-create-endpoint-real',
+      role: 'project admin',
+      notes: '真实环境 endpoint 创建入口',
+    });
+    await page.getByTestId('endpoints__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+    await createEndpoint(page, workspaceId, project.projectId);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'project-endpoints-real',
+      role: 'project admin',
+      notes: '真实 endpoint 列表',
+    });
+
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
+    await expect(page.getByTestId('agents__create-btn')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('agents__create-btn').click();
+    await expect(page.getByTestId('agents__create-dialog')).toBeVisible();
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-create-agent-real',
+      role: 'project admin',
+      notes: '真实环境 agent 创建对话框',
+    });
+    await page.getByTestId('agents__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
+    const agentName = await createAgent(page, workspaceId, project.projectId);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'project-agents-real',
+      role: 'project admin',
+      notes: '真实 agent 列表',
+    });
+
+    const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectAdminToken, agentName);
+    const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectAdminToken);
     const bridge = startExternalNotebookBridge({
-      wsUrl,
-      agentKey,
+      wsUrl: connectionInfo.wsUrl,
+      agentKey: connectionInfo.agentKey,
       expectedToken: NOTEBOOK_EXPECTED_TOKEN,
       model: GLM_MODEL,
     });
+    await bridge.ready;
 
-    try {
-      await bridge.ready;
-      await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
-      await runNotebookTask(page, workspaceId, projectId, agentName, NOTEBOOK_EXPECTED_TOKEN);
-      const observedReply = await bridge.observedReply;
-      expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);
-    } finally {
-      await bridge.stop();
-    }
+    await captureProjectPages(page, captures, project, 'project admin');
+    await runNotebookTask(page, project, NOTEBOOK_EXPECTED_TOKEN);
+    await expect(bridge.observedReply).resolves.toContain(NOTEBOOK_EXPECTED_TOKEN);
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'project-notebook-task-detail-real',
+      role: 'project admin',
+      notes: 'notebook 真实任务完成后的详情页',
+    });
+    await bridge.stop();
 
-    expect(pageErrors).toEqual([]);
+    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=people`);
+    await expect(page.getByTestId('members__search-input')).toBeVisible({ timeout: 30_000 });
+    const firstMemberRow = page.getByTestId('members__table__row').first();
+    await expect(firstMemberRow).toBeVisible({ timeout: 30_000 });
+    await firstMemberRow.click();
+    await expect(page.getByRole('dialog')).toBeVisible({ timeout: 10_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'members-effective-access-real',
+      role: 'project admin',
+      notes: '成员有效权限抽屉',
+    });
+
+    await flushReviewArtifacts(captures);
   });
 });

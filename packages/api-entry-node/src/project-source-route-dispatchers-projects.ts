@@ -13,10 +13,9 @@ import {
   readRequestId,
 } from './project-source-route-handler-utils.js';
 import {
-  isProjectAdmin,
-  readProjectAdminIds,
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
+import { setProjectAdminGroupMembers } from './project-groups-store.js';
 
 export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext): Promise<boolean> {
   const {
@@ -157,6 +156,13 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
       typeof input.governance_json === 'object' &&
       input.governance_json !== null &&
       Object.prototype.hasOwnProperty.call(input.governance_json, 'project_admins');
+    const requestedProjectAdmins = touchesProjectAdmins
+      ? (((input.governance_json as Record<string, unknown>).project_admins) ?? [])
+        : [];
+    const normalizedRequestedProjectAdmins = Array.isArray(requestedProjectAdmins)
+      ? requestedProjectAdmins.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map((item) => item.trim())
+      : [];
     const touchesProjectOwner =
       typeof input.owner_id === 'string' &&
       input.owner_id.trim().length > 0 &&
@@ -222,13 +228,6 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
       const requestedGovernance = typeof input.governance_json === 'object' && input.governance_json !== null
         ? input.governance_json
         : {};
-      const requestedAdmins = readProjectAdminIds(requestedGovernance);
-      const existingAdmins = readProjectAdminIds(existingProject.governance_json);
-      const nextAdmins = Array.from(new Set([...existingAdmins, ...requestedAdmins]))
-        .filter((item) => item !== nextOwnerId);
-      if (!nextAdmins.includes(previousOwnerId)) {
-        nextAdmins.push(previousOwnerId);
-      }
       normalizedInput = {
         ...input,
         governance_json: {
@@ -236,8 +235,17 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
             ? existingProject.governance_json
             : {}),
           ...requestedGovernance,
-          project_admins: nextAdmins,
         },
+      };
+    }
+    if (touchesProjectAdmins) {
+      const requestedGovernance = typeof normalizedInput.governance_json === 'object' && normalizedInput.governance_json !== null
+        ? { ...(normalizedInput.governance_json as Record<string, unknown>) }
+        : {};
+      delete requestedGovernance.project_admins;
+      normalizedInput = {
+        ...normalizedInput,
+        governance_json: requestedGovernance,
       };
     }
     try {
@@ -246,6 +254,23 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
         projectId: route.projectId,
         input: normalizedInput,
       });
+      if (touchesProjectAdmins) {
+        setProjectAdminGroupMembers({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          memberIds: normalizedRequestedProjectAdmins,
+        });
+      }
+      if (touchesProjectOwner && existingProject) {
+        const retainedAdmins = new Set(normalizedRequestedProjectAdmins);
+        retainedAdmins.add(existingProject.owner_id);
+        retainedAdmins.delete(updated.owner_id);
+        setProjectAdminGroupMembers({
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          memberIds: [...retainedAdmins],
+        });
+      }
       await writeProjectAuditEvent(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,

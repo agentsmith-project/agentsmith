@@ -1,7 +1,7 @@
 export type ProjectMembershipRecord = {
   project_id: string;
   user_id: string;
-  role: string;
+  role?: string;
   status: 'active' | 'pending' | 'suspended';
   joined_at: string;
   approved_via_join_request_id?: string;

@@ -4,7 +4,9 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
 import {
+  addUserToProjectAdminGroup,
   getProjectGroupsState,
+  setProjectAdminGroupMembers,
   setProjectGroupsState,
 } from './project-groups-store.js';
 import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
@@ -15,7 +17,10 @@ import {
   getProjectPermissionTemplatesState,
   setProjectPermissionTemplatesState,
 } from './project-permission-templates-store.js';
-import { isProjectAdmin } from './workspace-permissions.js';
+import {
+  isBuiltInProjectGroupId,
+  isBuiltInProjectTemplateId,
+} from './project-governance-model.js';
 import { projectScopedKey, readProjectPermissionContext, readRequestId } from './project-source-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
@@ -25,7 +30,7 @@ type MemberChangeRecord = {
   timestamp: string;
   actor_id: string;
   actor_email: string;
-  change_type: 'permissions' | 'resource_policy' | 'role' | 'membership';
+  change_type: 'permissions' | 'resource_policy' | 'group' | 'membership';
   changes: {
     added?: string[];
     removed?: string[];
@@ -153,7 +158,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
       return true;
     }
-    if (item.built_in) {
+    if (item.built_in || isBuiltInProjectTemplateId(item.id)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be modified' });
       return true;
     }
@@ -184,7 +189,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
       return true;
     }
-    if (target.built_in) {
+    if (target.built_in || isBuiltInProjectTemplateId(target.id)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be deleted' });
       return true;
     }
@@ -217,7 +222,14 @@ export async function handleProjectGroupsRoute(args: {
   const { routeKind, method, workspaceId, projectId, groupId, req, res, deps, user, json, readBody } = args;
 
   if (routeKind === 'projectGroups' && method === 'GET') {
-    json(res, 200, { items: getProjectGroupsState(workspaceId, projectId) });
+    let projectOwnerId: string | null = null;
+    try {
+      const project = await deps.getProjectUseCase.execute({ workspaceId, projectId });
+      projectOwnerId = project.owner_id;
+    } catch {
+      projectOwnerId = null;
+    }
+    json(res, 200, { items: getProjectGroupsState(workspaceId, projectId, projectOwnerId) });
     return true;
   }
 
@@ -283,6 +295,10 @@ export async function handleProjectGroupsRoute(args: {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });
       return true;
     }
+    if (isBuiltInProjectGroupId(groupId)) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in groups cannot be modified from this route' });
+      return true;
+    }
     if (typeof body.name === 'string') group.name = body.name;
     if (typeof body.description === 'string' || body.description === undefined) group.description = body.description;
     if (typeof body.permission_template_id === 'string') group.permission_template_id = body.permission_template_id;
@@ -306,6 +322,10 @@ export async function handleProjectGroupsRoute(args: {
       return true;
     }
     const groups = getProjectGroupsState(workspaceId, projectId);
+    if (isBuiltInProjectGroupId(groupId)) {
+      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in groups cannot be deleted' });
+      return true;
+    }
     const next = groups.filter((g) => g.id !== groupId);
     setProjectGroupsState(workspaceId, projectId, next);
     res.statusCode = 204;
@@ -374,21 +394,30 @@ export async function handleProjectMembershipGovernanceRoute(args: {
     }
     const membership = getProjectMembershipsState(workspaceId, projectId).get(userId);
     const isCurrentUser = userId === user.id;
-    const role = membership?.role ?? (projectOwnerId === userId ? 'owner' : 'developer');
-    const effectiveRole = projectOwnerId === userId
-      ? 'owner'
-      : (isProjectAdmin(projectGovernance, userId) ? 'admin' : role);
+    const effectiveGroups = getProjectGroupsState(workspaceId, projectId, projectOwnerId).filter(
+      (group) => group.member_ids.includes(userId),
+    ).map((group) => ({
+      id: group.id,
+      name: group.name,
+      permission_template_id: group.permission_template_id,
+      built_in: group.built_in ?? false,
+      system_key: group.system_key,
+    }));
     json(res, 200, {
       project_id: projectId,
       user_id: userId,
-      role: effectiveRole,
+      role: projectOwnerId === userId
+        ? 'owner'
+        : effectiveGroups.some((group) => group.system_key === 'admins')
+          ? 'admin'
+          : 'developer',
+      groups: effectiveGroups,
       permissions: isCurrentUser
         ? [
           ...resolveVisibleProjectPermissionsForActor({
             workspaceId,
             projectId,
             projectOwnerId: projectOwnerId ?? user.id,
-            projectGovernance,
             actorUserId: user.id,
           }),
         ]
@@ -479,7 +508,6 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       memberships.set(userId, {
         project_id: projectId,
         user_id: userId,
-        role: 'developer',
         status: 'active',
         joined_at: new Date().toISOString(),
       });

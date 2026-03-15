@@ -270,10 +270,9 @@ describe('ResourcePolicyPage', () => {
 
     const subjectSelect = screen.getAllByTestId('resource-policy__subject-id-select')[0];
     const optionValues = within(subjectSelect).getAllByRole('option').map((option) => option.getAttribute('value'));
-    expect(optionValues).toContain('owner');
-    expect(optionValues).toContain('admin');
-    expect(optionValues).toContain('developer');
-    expect(optionValues).toContain('user');
+    expect(optionValues).toContain('grp_project_owner');
+    expect(optionValues).toContain('grp_project_admins');
+    expect(optionValues).toContain('grp_project_members');
     expect(optionValues).toContain('group_001');
   });
 });

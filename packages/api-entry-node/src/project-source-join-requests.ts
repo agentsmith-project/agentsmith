@@ -143,7 +143,6 @@ export async function handleProjectJoinRequestsRoute(args: {
     upsertProjectMembership(workspaceId, projectId, {
       project_id: projectId,
       user_id: target.user_id,
-      role: 'developer',
       status: 'active',
       joined_at: target.reviewed_at,
       approved_via_join_request_id: target.id,

@@ -3,17 +3,26 @@ type SubjectOption = {
   label: string;
 };
 
-const DEFAULT_RESOURCE_POLICY_GROUP_IDS = ['owner', 'admin', 'developer', 'user'] as const;
+const DEFAULT_RESOURCE_POLICY_GROUP_IDS = [
+  'grp_project_owner',
+  'grp_project_admins',
+  'grp_project_members',
+] as const;
 
 type DefaultResourcePolicyGroupId = (typeof DEFAULT_RESOURCE_POLICY_GROUP_IDS)[number];
 
 export function buildDefaultResourcePolicyGroupOptions(
   tMembers: (key: string) => string,
 ): SubjectOption[] {
-  return DEFAULT_RESOURCE_POLICY_GROUP_IDS.map((id) => ({
-    id,
-    label: tMembers(`default_templates.${id}`),
-  }));
+  return DEFAULT_RESOURCE_POLICY_GROUP_IDS.map((id) => {
+    if (id === 'grp_project_owner') {
+      return { id, label: tMembers('default_templates.owner') };
+    }
+    if (id === 'grp_project_admins') {
+      return { id, label: tMembers('default_templates.admin') };
+    }
+    return { id, label: tMembers('default_templates.user') };
+  });
 }
 
 export function mergeResourcePolicyGroupOptions(

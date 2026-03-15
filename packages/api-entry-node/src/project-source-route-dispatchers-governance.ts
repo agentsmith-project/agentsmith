@@ -7,6 +7,7 @@ import {
 } from './project-source-member-governance.js';
 import { handleProjectResourcePolicyRoute } from './project-source-resource-policy.js';
 import type { ProjectSourceRouteContext } from './project-source-route-types.js';
+import { getProjectGroupsState } from './project-groups-store.js';
 import { getProjectMembershipsState } from './project-memberships-store.js';
 import { getProjectJoinRequestsState } from './project-source-join-requests.js';
 
@@ -70,11 +71,21 @@ export async function handleProjectGovernanceRoutes(context: ProjectSourceRouteC
       const resolvedName = membership.user_id === user.id
         ? user.name
         : approvedRequest?.user_name || membership.user_id;
+      const groups = getProjectGroupsState(workspaceId, projectId, projectOwnerId ?? user.id)
+        .filter((group) => group.member_ids.includes(membership.user_id))
+        .map((group) => ({
+          id: group.id,
+          name: group.name,
+          permission_template_id: group.permission_template_id,
+          built_in: group.built_in ?? false,
+          system_key: group.system_key,
+        }));
       return {
         id: membership.user_id,
         email: resolvedEmail,
         name: resolvedName,
-        role: membership.role,
+        role: groups.some((group) => group.system_key === 'admins') ? 'admin' : 'developer',
+        groups,
         permissions: membership.user_id === user.id
           ? [
             ...resolveVisibleProjectPermissionsForActor({
@@ -97,6 +108,15 @@ export async function handleProjectGovernanceRoutes(context: ProjectSourceRouteC
         email: ownerId === user.id ? user.email : `${ownerId}@example.com`,
         name: ownerId === user.id ? user.name : ownerId,
         role: 'owner',
+        groups: getProjectGroupsState(workspaceId, projectId, ownerId)
+          .filter((group) => group.member_ids.includes(ownerId))
+          .map((group) => ({
+            id: group.id,
+            name: group.name,
+            permission_template_id: group.permission_template_id,
+            built_in: group.built_in ?? false,
+            system_key: group.system_key,
+          })),
         permissions: ownerId === user.id
           ? [
             ...resolveVisibleProjectPermissionsForActor({

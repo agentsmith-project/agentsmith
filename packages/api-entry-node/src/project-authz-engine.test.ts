@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { getProjectGroupsState } from './project-groups-store.js';
+import { getProjectGroupsState, setProjectAdminGroupMembers } from './project-groups-store.js';
 import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
 import { upsertProjectMembership } from './project-memberships-store.js';
 import { getProjectPermissionTemplatesState } from './project-permission-templates-store.js';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
+import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
 import {
   evaluateProjectPermissions,
   evaluateResourcePolicyAuthorization,
@@ -49,15 +50,19 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:endpoint:use')).toBe(true);
   });
 
-  it('grants project admin permissions from project governance', () => {
+  it('grants project admin permissions from the built-in admin group', () => {
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
+    setProjectAdminGroupMembers({
+      workspaceId,
+      projectId,
+      memberIds: ['user_test'],
+    });
 
     const permissions = new Set(resolveProjectPermissionsForActor({
       workspaceId,
       projectId,
       projectOwnerId: 'user_owner',
-      projectGovernance: { project_admins: ['user_test'] },
       actorUserId: 'user_test',
     }));
 
@@ -155,21 +160,25 @@ describe('project-authz-engine', () => {
     expect(denied.reason).toBe('not_in_allow_list');
   });
 
-  it('evaluates resource policy allow-list for default role groups', () => {
+  it('evaluates resource policy allow-list for the built-in admin group', () => {
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
     upsertProjectMembership(workspaceId, projectId, {
       project_id: projectId,
       user_id: 'user_admin',
-      role: 'admin',
       status: 'active',
       joined_at: new Date().toISOString(),
+    });
+    setProjectAdminGroupMembers({
+      workspaceId,
+      projectId,
+      memberIds: ['user_admin'],
     });
     upsertProjectResourcePolicy(workspaceId, projectId, {
       resource_type: 'endpoint',
       resource_id: 'ep_default_group',
       access_mode: 'allow_list',
-      allowed_subjects: [{ subject_type: 'group', subject_id: 'admin' }],
+      allowed_subjects: [{ subject_type: 'group', subject_id: PROJECT_BUILT_IN_GROUP_IDS.admins }],
     });
 
     const result = evaluateResourcePolicyAuthorization({
@@ -182,7 +191,7 @@ describe('project-authz-engine', () => {
     });
 
     expect(result.allowed).toBe(true);
-    expect(result.matched_policy?.matched_subject).toEqual({ type: 'group', id: 'admin' });
+    expect(result.matched_policy?.matched_subject).toEqual({ type: 'group', id: PROJECT_BUILT_IN_GROUP_IDS.admins });
   });
 
   it('maps authorization actions to project permission tokens', () => {

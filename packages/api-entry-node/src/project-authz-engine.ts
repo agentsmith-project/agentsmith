@@ -13,28 +13,13 @@ import {
   getProjectResourcePolicy,
 } from './project-resource-policy-store.js';
 import {
-  resolveProjectPermissions,
-  OWNER_PROJECT_PERMISSIONS,
-  PROJECT_ADMIN_PROJECT_PERMISSIONS,
-  isProjectAdmin,
-} from './workspace-permissions.js';
+  PROJECT_BUILT_IN_GROUP_IDS,
+} from './project-governance-model.js';
 
 type ResourceType = 'project' | 'endpoint' | 'source_library' | 'agent';
 type SubjectType = 'user' | 'group' | 'agent';
 
 export type ProjectAuthzPermissionSource =
-  | {
-    type: 'owner';
-    permission: string;
-  }
-  | {
-    type: 'project_default';
-    permission: string;
-  }
-  | {
-    type: 'project_admin';
-    permission: string;
-  }
   | {
     type: 'group_template';
     permission: string;
@@ -58,7 +43,7 @@ export type ProjectPermissionDecision = {
   permission: string;
   granted: boolean;
   reason: string;
-  source: 'permission' | 'project_default';
+  source: 'permission';
   source_detail?: ProjectAuthzPermissionSource;
   membership_status: 'active' | 'pending' | 'suspended' | 'none';
 };
@@ -122,36 +107,27 @@ function collectPermissionSources(args: {
   projectGovernance?: unknown;
   actorUserId: string;
 }): ProjectAuthorizationSnapshot {
-  const { workspaceId, projectId, projectOwnerId, projectGovernance, actorUserId } = args;
-  const membershipStatus = getMembershipStatus(workspaceId, projectId, actorUserId);
+  const { workspaceId, projectId, projectOwnerId, actorUserId } = args;
+  const storedMembershipStatus = getMembershipStatus(workspaceId, projectId, actorUserId);
   const byPermission = new Map<string, ProjectAuthzPermissionSource>();
 
-  if (projectOwnerId === actorUserId) {
-    for (const permission of OWNER_PROJECT_PERMISSIONS) {
-      addPermissionSource(byPermission, { type: 'owner', permission });
-    }
+  const templates = templateMap(workspaceId, projectId);
+  const groups = getProjectGroupsState(workspaceId, projectId, projectOwnerId);
+  const hasGroupMembership = groups.some((group) => group.member_ids.includes(actorUserId));
+  const membershipStatus: ProjectAuthorizationSnapshot['membership_status'] =
+    actorUserId === projectOwnerId
+      ? 'active'
+      : (storedMembershipStatus === 'none' && hasGroupMembership ? 'active' : storedMembershipStatus);
+
+  if (membershipStatus !== 'active' && actorUserId !== projectOwnerId) {
     return {
-      membership_status: 'active',
-      effective_permissions: [...byPermission.keys()],
-      permission_sources: [...byPermission.values()],
+      membership_status: membershipStatus,
+      effective_permissions: [],
+      permission_sources: [],
     };
   }
 
-  if (isProjectAdmin(projectGovernance, actorUserId)) {
-    for (const permission of PROJECT_ADMIN_PROJECT_PERMISSIONS) {
-      addPermissionSource(byPermission, { type: 'project_admin', permission });
-    }
-  }
-
-  if (membershipStatus === 'active') {
-    for (const permission of resolveProjectPermissions(projectOwnerId, actorUserId)) {
-      addPermissionSource(byPermission, { type: 'project_default', permission });
-    }
-  }
-
-  const templates = templateMap(workspaceId, projectId);
-
-  for (const group of getProjectGroupsState(workspaceId, projectId)) {
+  for (const group of groups) {
     if (!group.member_ids.includes(actorUserId)) continue;
     const template = templates.get(group.permission_template_id);
     if (!template) continue;
@@ -230,18 +206,11 @@ export function evaluateProjectPermissions(args: {
     }
     const sourceDetail = sourceByPermission.get(permission);
     if (sourceDetail) {
-      const source: ProjectPermissionDecision['source'] =
-        sourceDetail.type === 'project_default' || sourceDetail.type === 'owner' || sourceDetail.type === 'project_admin'
-          ? 'project_default'
-          : 'permission';
       return {
         permission,
         granted: true,
-        reason:
-          sourceDetail.type === 'project_default' || sourceDetail.type === 'owner' || sourceDetail.type === 'project_admin'
-            ? 'granted_by_project_default'
-            : 'granted_by_member_governance',
-        source,
+        reason: 'granted_by_member_governance',
+        source: 'permission',
         source_detail: sourceDetail,
         membership_status: snapshot.membership_status,
       };
@@ -285,7 +254,13 @@ export function resolveVisibleProjectRoleForActor(args: {
   if (args.projectOwnerId === args.actorUserId) {
     return 'owner';
   }
-  if (isProjectAdmin(args.projectGovernance, args.actorUserId)) {
+  const groupIds = getAllProjectGroupIdsForUser({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.actorUserId,
+    projectOwnerId: args.projectOwnerId,
+  });
+  if (groupIds.includes(PROJECT_BUILT_IN_GROUP_IDS.admins)) {
     return 'admin';
   }
   const snapshot = collectPermissionSources(args);
@@ -381,6 +356,7 @@ export function evaluateResourcePolicyAuthorization(args: {
       workspaceId: args.workspaceId,
       projectId: args.projectId,
       userId: args.subjectId,
+      projectOwnerId: null,
     });
     const groupMatch = policy.allowed_subjects.find(
       (subject) => subject.subject_type === 'group' && groups.includes(subject.subject_id),

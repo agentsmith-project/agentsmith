@@ -66,7 +66,7 @@ describe('project-source-member-governance', () => {
       }),
     })).resolves.toBe(true);
 
-    const created = getProjectPermissionTemplatesState(workspaceId, projectId)[0];
+    const created = getProjectPermissionTemplatesState(workspaceId, projectId).at(-1);
     expect(created).toEqual(expect.objectContaining({
       name: 'Custom Editors',
       permissions: ['project:files:update', 'project:audit:read'],
@@ -127,7 +127,7 @@ describe('project-source-member-governance', () => {
       }),
     })).resolves.toBe(true);
 
-    const group = getProjectGroupsState(workspaceId, projectId)[0];
+    const group = getProjectGroupsState(workspaceId, projectId).find((item) => item.name === 'Reviewers');
     expect(group).toEqual(expect.objectContaining({
       name: 'Reviewers',
       permission_template_id: 'pt_review',
@@ -139,7 +139,7 @@ describe('project-source-member-governance', () => {
       method: 'POST',
       workspaceId,
       projectId,
-      groupId: group.id,
+      groupId: group!.id,
       req: {} as never,
       res,
       deps: {} as never,
@@ -207,7 +207,6 @@ describe('project-source-member-governance', () => {
 
     expect(getProjectMembershipsState(workspaceId, projectId).get('user-1')).toEqual(expect.objectContaining({
       status: 'active',
-      role: 'developer',
     }));
     expect(getProjectMemberPermissionsState(workspaceId, projectId).get('user-1')).toEqual({
       mode: 'custom',

@@ -7,10 +7,11 @@ import {
   checkProjectEndpointSpendingLimitsForUser,
   checkProjectSourceLibraryLimitLimits,
 } from './project-resource-policy-enforcer.js';
-import { getProjectGroupsState } from './project-groups-store.js';
+import { getProjectGroupsState, setProjectAdminGroupMembers } from './project-groups-store.js';
 import { upsertProjectMembership } from './project-memberships-store.js';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
 import { recordUsageFact } from './audit-usage-store.js';
+import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
 
 describe('project-resource-policy-enforcer', () => {
   it('enforces endpoint requests_per_minute at policy root', () => {
@@ -87,7 +88,7 @@ describe('project-resource-policy-enforcer', () => {
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
   });
 
-  it('supports subject-level override via default role group rule', () => {
+  it('supports subject-level override via the built-in admin group rule', () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const workspaceId = `ws_${Math.random().toString(36).slice(2, 8)}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 8)}`;
@@ -95,9 +96,13 @@ describe('project-resource-policy-enforcer', () => {
     upsertProjectMembership(workspaceId, projectId, {
       project_id: projectId,
       user_id: userId,
-      role: 'admin',
       status: 'active',
       joined_at: new Date().toISOString(),
+    });
+    setProjectAdminGroupMembers({
+      workspaceId,
+      projectId,
+      memberIds: [userId],
     });
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'endpoint',
@@ -106,7 +111,7 @@ describe('project-resource-policy-enforcer', () => {
       allowed_subjects: [
         {
           subject_type: 'group',
-          subject_id: 'admin',
+          subject_id: PROJECT_BUILT_IN_GROUP_IDS.admins,
           rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 2 }] },
         },
       ],

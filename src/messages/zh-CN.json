@@ -872,6 +872,7 @@
     "create_dialog": {
       "title": "创建凭据",
       "description": "添加新的 API 密钥。创建后密钥值将不再显示。",
+      "guidance": "在这里保存一条密钥值，便于项目里的模型端点复用，而不需要在页面里再次暴露原始密钥。",
       "name": "名称",
       "name_placeholder": "例如 OpenAI API Key",
       "value": "密钥值",

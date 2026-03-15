@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { JSONViewer } from './JSONViewer';
-import { Copy } from 'lucide-react';
+import { Copy, ShieldCheck } from 'lucide-react';
 import { toast } from '@/components/ui/toast';
 import type { AuditEvent } from '@/lib/api/types';
 import { getGovernanceEvidenceDetails } from '@/lib/api/endpoints/governance-explainability';
@@ -171,16 +171,20 @@ export function AuditDetailDrawer({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[680px] max-h-[90vh] overflow-y-auto">
+        <DialogHeader className="space-y-3">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <ShieldCheck className="h-3.5 w-3.5" />
+            Audit
+          </div>
           <DialogTitle>{t('detail.title')}</DialogTitle>
           <DialogDescription className="sr-only">
             {t('detail.subtitle')}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="bg-surface border border-border rounded-md p-4 space-y-2" data-testid="audit__detail-summary">
+        <div className="space-y-5">
+          <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-4 space-y-3" data-testid="audit__detail-summary">
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={category === 'anomaly' ? 'destructive' : category === 'change' ? 'secondary' : 'outline'}>
                 {t(`category.${category}`)}
@@ -195,8 +199,11 @@ export function AuditDetailDrawer({
             ) : null}
           </div>
 
-          {/* Basic Info Card */}
-          <div className="bg-surface border border-border rounded-md p-4 space-y-3">
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-4">
+            <div>
+              <h4 className="text-sm font-semibold text-foreground">{t('detail.title')}</h4>
+              <p className="mt-1 text-sm text-secondary">{summary}</p>
+            </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-tertiary">{t('table.timestamp')}</span>
               <span className="text-sm text-foreground font-mono">
@@ -243,7 +250,7 @@ export function AuditDetailDrawer({
           </div>
 
           {ownershipTransfer ? (
-            <div className="bg-surface border border-border rounded-md p-4 space-y-3" data-testid="audit__detail-ownership">
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-3" data-testid="audit__detail-ownership">
               <h4 className="text-sm font-semibold text-foreground">{t('detail.ownership_title')}</h4>
               <div className="grid gap-3 md:grid-cols-2">
                 <div>
@@ -271,7 +278,7 @@ export function AuditDetailDrawer({
           ) : null}
 
           {showInvestigationRefs ? (
-            <div className="bg-surface border border-border rounded-md p-4 space-y-3">
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4 space-y-3">
               <h4 className="text-sm font-semibold text-foreground">{t('detail.error_information')}</h4>
               {event.error_code ? (
                 <div className="flex items-center gap-2">

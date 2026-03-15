@@ -5,6 +5,7 @@ import { useTranslations, useLocale } from 'next-intl';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -18,7 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Copy, Loader2, Check } from 'lucide-react';
+import { Copy, Loader2, Check, UserPlus } from 'lucide-react';
 import { useCreateInvite } from '@/lib/hooks/use-members';
 
 export interface InviteMemberDialogProps {
@@ -109,14 +110,21 @@ export function InviteMemberDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[480px]" data-testid="members__invite-dialog">
-        <DialogHeader>
+      <DialogContent className="sm:max-w-[520px]" data-testid="members__invite-dialog">
+        <DialogHeader className="space-y-3">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <UserPlus className="h-3.5 w-3.5" />
+            Members
+          </div>
           <DialogTitle>{t('title')}</DialogTitle>
+          <DialogDescription>{t('success_description')}</DialogDescription>
         </DialogHeader>
 
         {inviteUrl ? (
           <div className="space-y-4">
-            <p className="text-sm text-tertiary">{t('success_description')}</p>
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-sm leading-6 text-secondary">{t('success_description')}</p>
+            </div>
             <div className="flex items-center gap-2 rounded-lg border border-border bg-surface-high p-3">
               <Input
                 readOnly
@@ -152,8 +160,14 @@ export function InviteMemberDialog({
             </div>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-sm leading-6 text-secondary">
+                {t('success_description')}
+              </p>
+            </div>
+
+            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
               <Label htmlFor="invite-email">{t('email_label')}</Label>
               <Input
                 id="invite-email"
@@ -167,7 +181,7 @@ export function InviteMemberDialog({
               />
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
               <Label htmlFor="invite-group">{t('group_label')}</Label>
               <Select
                 value={groupTemplate}
@@ -185,7 +199,7 @@ export function InviteMemberDialog({
               </Select>
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
               <Label htmlFor="invite-expires">{t('expires_label')}</Label>
               <Select
                 value={expiresInHours.toString()}

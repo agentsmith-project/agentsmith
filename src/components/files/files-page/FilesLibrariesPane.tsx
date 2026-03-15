@@ -27,11 +27,11 @@ export function FilesLibrariesPane({
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
   return (
-    <div className="min-h-0 rounded-[20px] border border-white/6 bg-surface/92 shadow-[0_14px_30px_rgba(0,0,0,0.14)]">
-      <div className="flex items-center justify-between border-b border-white/6 px-3 py-2.5">
+    <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
+      <div className="flex items-center justify-between border-b border-white/6 px-3 py-2">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.libraries')}</div>
-          <div className="mt-0.5 text-xs text-secondary">{libraries.length} {t('file_manager.items')}</div>
+          <div className="mt-0.5 text-[11px] text-secondary">{libraries.length} {t('file_manager.items')}</div>
         </div>
         {canManage ? (
           <Button
@@ -52,7 +52,7 @@ export function FilesLibrariesPane({
         ) : libraries.length === 0 ? (
           <div className="p-3 text-sm text-tertiary">{t('file_manager.no_libraries')}</div>
         ) : (
-          <div className="p-2" data-testid="files__library-list">
+          <div className="p-1.5" data-testid="files__library-list">
             {libraries.map((library) => {
               const active = library.id === selectedLibraryId;
               return (
@@ -65,10 +65,10 @@ export function FilesLibrariesPane({
                     onSelectLibrary(library.id);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-[14px] px-3 py-2.5 text-left transition-colors',
+                    'flex w-full items-center justify-between gap-2 rounded-[12px] px-2.5 py-2 text-left transition-colors',
                     active
-                      ? 'border border-accent/20 bg-accent/10 text-strong'
-                      : 'border border-transparent text-primary hover:bg-hover/70',
+                      ? 'bg-accent/10 text-strong ring-1 ring-accent/18'
+                      : 'text-primary hover:bg-hover/55',
                   )}
                   role="button"
                   tabIndex={0}

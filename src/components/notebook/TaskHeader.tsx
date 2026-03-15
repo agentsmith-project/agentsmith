@@ -111,7 +111,7 @@ export function TaskHeader({
 
   return (
     <div
-      className="flex items-center justify-between gap-3 border-b border-white/6 bg-surface/70 px-4 py-2.5"
+      className="flex items-center justify-between gap-3 border-b border-white/6 bg-surface/55 px-3.5 py-1.5"
       data-testid="notebook__task-header"
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
@@ -122,7 +122,7 @@ export function TaskHeader({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-8 w-8 flex-shrink-0"
+                className="h-7 w-7 flex-shrink-0"
                 onClick={handleLeave}
                 aria-label={t('leave')}
               >
@@ -138,13 +138,13 @@ export function TaskHeader({
         {/* Task Info */}
         <div className="flex-1 min-w-0">
           <h1 className="truncate text-sm font-semibold text-foreground md:text-base">{task.title}</h1>
-          <div className="mt-1 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-tertiary">Agent: {task.agent_name}</span>
-            <Badge variant={agentPresenceVariant} className="text-xs">
+          <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+            <span className="text-[11px] text-tertiary">Agent: {task.agent_name}</span>
+            <Badge variant={agentPresenceVariant} className="text-[11px]">
               {agentPresenceLabel}
             </Badge>
             {agentRunActivity?.active ? (
-              <Badge variant="secondary" className="text-xs" data-testid="notebook__task-header-agent-busy">
+              <Badge variant="secondary" className="text-[11px]" data-testid="notebook__task-header-agent-busy">
                 {t('agent_busy', { duration: formatElapsed(agentRunActivity.elapsedSeconds) })}
               </Badge>
             ) : null}
@@ -154,7 +154,7 @@ export function TaskHeader({
 
       <div className="flex flex-shrink-0 items-center gap-2">
         {onEdit && (
-          <Button variant="outline" size="sm" onClick={onEdit}>
+          <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs" onClick={onEdit}>
             <Pencil className="h-4 w-4 mr-2" />
             {t('edit')}
           </Button>
@@ -162,7 +162,7 @@ export function TaskHeader({
         {canDeleteTask && (
           <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
             <AlertDialogTrigger asChild>
-              <Button variant="outline" size="sm" className="text-error hover:text-error">
+              <Button variant="outline" size="sm" className="h-8 px-2.5 text-xs text-error hover:text-error">
                 <Trash2 className="h-4 w-4 mr-2" />
                 {t('delete')}
               </Button>
@@ -194,7 +194,7 @@ export function TaskHeader({
 
         {/* New Task Button */}
         {onCreateNew && (
-          <Button variant="default" size="sm" onClick={onCreateNew}>
+          <Button variant="default" size="sm" className="h-8 px-2.5 text-xs" onClick={onCreateNew}>
             <Plus className="h-4 w-4 mr-2" />
             {t('new')}
           </Button>

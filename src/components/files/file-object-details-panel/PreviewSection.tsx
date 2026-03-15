@@ -33,7 +33,7 @@ export function PreviewSection({
   const expandable = previewKind !== 'none' && !previewLoading && !previewError;
 
   return (
-    <div className="rounded-2xl border border-subtle bg-surface-high/20 p-3 space-y-3" data-testid="files__details-preview">
+    <div className="rounded-[14px] bg-surface-high/16 p-3 space-y-3" data-testid="files__details-preview">
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.preview')}</div>
@@ -48,7 +48,7 @@ export function PreviewSection({
       </div>
 
       {previewKind === 'none' ? (
-        <div className="h-40 rounded border border-subtle bg-surface flex flex-col items-center justify-center text-tertiary gap-2">
+        <div className="h-40 rounded-xl bg-surface-high/28 flex flex-col items-center justify-center text-tertiary gap-2">
           <FileType2 className="h-5 w-5" />
           <span className="text-sm">{t('file_manager.preview_unsupported')}</span>
           <Button type="button" variant="outline" size="sm" className="h-8" onClick={onDownload}>
@@ -56,30 +56,30 @@ export function PreviewSection({
           </Button>
         </div>
       ) : previewLoading ? (
-        <div className="h-40 rounded border border-subtle bg-surface flex items-center justify-center text-tertiary text-sm">
+        <div className="h-40 rounded-xl bg-surface-high/28 flex items-center justify-center text-tertiary text-sm">
           {t('file_manager.preview_loading')}
         </div>
       ) : previewError ? (
-        <div className="h-40 rounded border border-subtle bg-surface flex flex-col items-center justify-center text-tertiary text-sm gap-2">
+        <div className="h-40 rounded-xl bg-surface-high/28 flex flex-col items-center justify-center text-tertiary text-sm gap-2">
           <span>{t('file_manager.preview_failed')}</span>
           <Button type="button" variant="outline" size="sm" className="h-8" onClick={onDownload}>
             {t('file_manager.download_to_view')}
           </Button>
         </div>
       ) : previewKind === 'image' && objectUrl ? (
-        <div className="rounded-xl border border-subtle bg-black/10 p-2">
+        <div className="rounded-xl bg-black/10 p-2">
           <img src={objectUrl} alt={basename(meta.key)} className="max-h-[280px] w-full object-contain rounded" />
         </div>
       ) : previewKind === 'pdf' && objectUrl ? (
-        <iframe src={objectUrl} title={basename(meta.key)} className="h-[320px] w-full rounded-xl border border-subtle bg-surface" />
+        <iframe src={objectUrl} title={basename(meta.key)} className="h-[320px] w-full rounded-xl bg-surface-high/28" />
       ) : previewKind === 'text' ? (
-        <div className="rounded-xl border border-subtle bg-surface p-2 max-h-[320px] overflow-auto">
+        <div className="rounded-xl bg-surface-high/28 p-2 max-h-[320px] overflow-auto">
           <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words text-primary">
             {textPreview || t('file_manager.preview_loading')}
           </pre>
         </div>
       ) : (
-        <div className="h-40 rounded border border-subtle bg-surface flex items-center justify-center text-tertiary text-sm">
+        <div className="h-40 rounded-xl bg-surface-high/28 flex items-center justify-center text-tertiary text-sm">
           {t('file_manager.preview_unsupported')}
         </div>
       )}

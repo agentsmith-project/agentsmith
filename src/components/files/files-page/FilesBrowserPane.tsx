@@ -132,14 +132,14 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
   return (
     <div
-      className="relative flex min-h-0 flex-col overflow-hidden rounded-[22px] border border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+      className="relative flex min-h-0 flex-col overflow-hidden rounded-[18px] border border-white/5 bg-surface/78 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
       onDragEnter={onDropEnter}
       onDragOver={onDropOver}
       onDragLeave={onDropLeave}
       onDrop={onDrop}
       data-testid="files__dropzone"
     >
-      <div className="flex flex-wrap items-center gap-2 border-b border-subtle px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 border-b border-white/6 px-3.5 py-1.5">
         <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.location')}</div>
           <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
@@ -173,7 +173,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
           ))}
         </div>
         <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
-          <div className="text-xs text-tertiary">
+          <div className="text-[11px] text-tertiary">
             {isMultiMode
               ? t('file_manager.selected_count', { count: String(selectedCount) })
               : `${filteredItems.length} ${t('file_manager.items')}`}
@@ -184,7 +184,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
               value={searchInput}
               onChange={(event) => setSearchInput(event.target.value)}
               placeholder={t('file_manager.search_placeholder')}
-              className="h-8 pl-9 pr-9 bg-surface-high/30"
+              className="h-8 pl-9 pr-9 bg-surface-high/20"
               data-testid="files__search"
             />
             <Button
@@ -214,25 +214,25 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
       <div className="flex-1 min-h-0">
         <div className="w-full h-full text-sm flex flex-col" data-testid="files__objects-table">
-          <div className="flex min-h-0 items-center justify-between gap-2 border-b border-subtle px-4 py-2" data-testid="files__selection-summary">
+          <div className="flex min-h-0 items-center justify-between gap-2 border-b border-white/6 px-3.5 py-1.5" data-testid="files__selection-summary">
             {isMultiMode ? (
-              <div className="flex items-center gap-2 min-w-0 text-xs text-primary">
+              <div className="flex items-center gap-2 min-w-0 text-[11px] text-primary">
                 <span>{t('file_manager.selected_count', { count: String(selectedCount) })}</span>
                 <span className="text-tertiary">{t('file_manager.multi_select_hint_esc')}</span>
               </div>
             ) : selectedCount === 1 ? (
-              <div className="flex items-center gap-2 min-w-0 text-xs text-tertiary">
+              <div className="flex items-center gap-2 min-w-0 text-[11px] text-tertiary">
                 <span>{t('file_manager.selected_count', { count: '1' })}</span>
               </div>
             ) : (
-              <div className="min-w-0 text-xs text-tertiary" data-testid="files__selection-shortcuts">
+              <div className="min-w-0 text-[11px] text-tertiary" data-testid="files__selection-shortcuts">
                 {t('file_manager.selection_shortcuts')}
               </div>
             )}
 
             <div className="flex items-center gap-2 shrink-0">
               {uploadInProgress ? (
-                <div className="flex items-center gap-2 rounded-md border border-subtle bg-surface-high/40 px-2.5 py-1.5 min-w-[260px]" data-testid="files__upload-progress">
+                <div className="flex items-center gap-2 rounded-xl bg-surface-high/30 px-2.5 py-1.5 min-w-[260px]" data-testid="files__upload-progress">
                   <div className="min-w-0 flex-1">
                     <div className="text-[11px] text-primary truncate">
                       {t('file_manager.uploading', {
@@ -294,7 +294,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
             </div>
           </div>
 
-          <div className="sticky top-0 z-10 bg-surface border-b border-subtle text-xs text-tertiary">
+          <div className="sticky top-0 z-10 bg-surface/95 border-b border-white/6 text-xs text-tertiary">
             <div className={cn('grid', isMultiMode ? 'grid-cols-[40px_minmax(0,1fr)_128px_192px]' : 'grid-cols-[minmax(0,1fr)_128px_192px]')}>
               {isMultiMode ? (
                 <div className="px-3 py-2">

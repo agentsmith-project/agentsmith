@@ -84,9 +84,9 @@ export function ChatHeader({
   };
 
   return (
-    <div className="border-b border-white/6 bg-background/70 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/65 md:px-4">
-      <div className={cn('mx-auto flex w-full items-start justify-between gap-3', contentWidthClass)}>
-        <div className="min-w-0 flex-1 space-y-1">
+    <div className="border-b border-white/6 bg-transparent px-3 py-1.5 md:px-4">
+      <div className={cn('mx-auto flex w-full items-start justify-between gap-2', contentWidthClass)}>
+        <div className="min-w-0 flex-1 space-y-0.5">
           <EditableSessionTitle
             draftTitle={draftTitle}
             editing={editing}
@@ -103,10 +103,10 @@ export function ChatHeader({
             onCommit={commitRename}
             onStartEditing={() => setEditing(true)}
           />
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-tertiary">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-tertiary">
             <span
               className={cn(
-                'rounded-full border px-2 py-0.5 font-medium',
+                'rounded-full border px-1.5 py-0.5 font-medium',
                 streamStatus === 'error'
                   ? 'border-error/30 bg-error/10 text-error'
                   : streamStatus === 'streaming'
@@ -136,7 +136,7 @@ export function ChatHeader({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 pt-0.5">
+        <div className="flex items-center gap-1.5 pt-0.5">
           {session ? (
             usingExternalAgent ? (
               <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>

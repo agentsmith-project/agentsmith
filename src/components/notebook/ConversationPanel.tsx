@@ -108,29 +108,29 @@ export function ConversationPanel({
   };
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[18px] border border-white/6 bg-background/75">
+    <div className="flex h-full flex-col overflow-hidden rounded-[16px] bg-background/55">
       {(connectionStatus && connectionStatus !== 'connected') || sandboxStarting || runActivity?.active ? (
-        <div className="border-b border-white/6 bg-white/[0.025] px-4 py-2.5">
+        <div className="border-b border-white/6 bg-white/[0.015] px-3.5 py-1.5">
           <div className="flex flex-wrap items-start justify-between gap-3" data-testid="notebook__execution-visibility">
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
                 {connectionStatus && connectionStatus !== 'connected' ? (
-                  <span className="rounded-full border border-error/20 bg-error/10 px-2 py-0.5 text-[11px] font-medium text-error">
+                  <span className="rounded-full border border-error/18 bg-error/8 px-1.5 py-0.5 text-[10px] font-medium text-error">
                     {connectionTitle ?? ''}
                   </span>
                 ) : null}
                 {sandboxStarting ? (
-                  <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent" data-testid="notebook__sandbox-starting">
+                  <span className="rounded-full border border-accent/18 bg-accent/8 px-1.5 py-0.5 text-[10px] font-medium text-accent" data-testid="notebook__sandbox-starting">
                     {t('sandbox_starting_title')}
                   </span>
                 ) : null}
                 {runActivity?.active ? (
-                  <span className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-secondary">
+                  <span className="rounded-full border border-white/8 bg-white/[0.035] px-1.5 py-0.5 text-[10px] font-medium text-secondary">
                     {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
                   </span>
                 ) : null}
               </div>
-              <div className="mt-1.5 space-y-1 text-xs text-secondary" data-testid="notebook__sse-status">
+              <div className="mt-1 space-y-0.5 text-[11px] text-secondary" data-testid="notebook__sse-status">
                 {connectionStatus && connectionStatus !== 'connected' ? (
                   <>
                     <div>{connectionTitle}</div>
@@ -158,7 +158,7 @@ export function ConversationPanel({
                 ) : null}
               </div>
               {connectionStatus && connectionStatus !== 'connected' && diagnosticsLinks ? (
-                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
                   <Link href={diagnosticsLinks.audit} data-testid="notebook__sse-status-open-audit" className="text-primary hover:underline">
                     {t('open_audit')}
                   </Link>
@@ -179,7 +179,7 @@ export function ConversationPanel({
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="h-7 px-2 text-xs"
+                  className="h-6 px-2 text-[11px]"
                   onClick={onCancelActiveRun}
                   disabled={disabled || runActivity.cancelling}
                 >
@@ -188,7 +188,7 @@ export function ConversationPanel({
               ) : null}
               <button
                 type="button"
-                className="text-xs text-primary hover:underline disabled:text-tertiary disabled:no-underline"
+                className="text-[11px] text-primary hover:underline disabled:text-tertiary disabled:no-underline"
                 onClick={onToggleExecutionDetails}
                 disabled={disabled}
                 data-testid="notebook__execution-visibility-toggle"
@@ -199,7 +199,7 @@ export function ConversationPanel({
           </div>
         </div>
       ) : null}
-      <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent_14%)]">
+      <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_12%)]">
         <MessageList
           messages={messages}
           streamingMessageId={streamingMessageId}
@@ -218,7 +218,7 @@ export function ConversationPanel({
           onTraceLoadMore={onTraceLoadMore}
         />
       </div>
-      <div className="border-t border-white/6 bg-white/[0.02]">
+      <div className="border-t border-white/6 bg-transparent">
         <ConversationInput
           value={inputValue}
           onChange={setInputValue}

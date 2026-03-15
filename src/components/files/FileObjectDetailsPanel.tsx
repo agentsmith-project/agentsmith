@@ -194,8 +194,8 @@ export function FileObjectDetailsPanel({
   const empty = renderEmpty();
   if (empty) {
     return (
-      <div className="min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col" data-testid="files__details-panel">
-        <div className="px-3 py-2 border-b border-subtle text-sm text-primary">{t('file_manager.details')}</div>
+      <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 overflow-hidden flex flex-col" data-testid="files__details-panel">
+        <div className="px-3 py-2 border-b border-white/6 text-sm text-primary">{t('file_manager.details')}</div>
         <div className="flex-1 min-h-0 overflow-auto p-3 text-sm">{empty}</div>
       </div>
     );
@@ -203,8 +203,8 @@ export function FileObjectDetailsPanel({
 
   if (metaQuery.isLoading || !metaQuery.data) {
     return (
-      <div className="min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col" data-testid="files__details-panel">
-        <div className="px-3 py-2 border-b border-subtle text-sm text-primary">{t('file_manager.details')}</div>
+      <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 overflow-hidden flex flex-col" data-testid="files__details-panel">
+        <div className="px-3 py-2 border-b border-white/6 text-sm text-primary">{t('file_manager.details')}</div>
         <div className="flex-1 min-h-0 overflow-auto p-3 text-sm text-tertiary">{t('file_manager.loading')}</div>
       </div>
     );
@@ -214,20 +214,20 @@ export function FileObjectDetailsPanel({
   const { ext, filename, summary } = formatMetaSummary(meta, t, formatBytes);
 
   return (
-    <div className="min-h-0 rounded-md border border-subtle bg-surface overflow-hidden flex flex-col" data-testid="files__details-panel">
-      <div className="px-3 py-2 border-b border-subtle text-sm text-primary">{t('file_manager.details')}</div>
+    <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 overflow-hidden flex flex-col" data-testid="files__details-panel">
+      <div className="px-3 py-2 border-b border-white/6 text-sm text-primary">{t('file_manager.details')}</div>
 
       <div className="flex-1 min-h-0 overflow-auto p-3">
         <Tabs value={tab} onValueChange={(v) => setTab(v as 'overview' | 'technical')} className="w-full" data-testid="files__details-tabs">
-          <TabsList className="w-full grid grid-cols-2 h-9 rounded-md border border-subtle bg-surface-high/40 p-0.5 overflow-hidden">
+          <TabsList className="w-full grid grid-cols-2 h-8 rounded-xl border border-white/6 bg-surface-high/25 p-0.5 overflow-hidden">
             <TabsTrigger className="h-full text-xs sm:text-sm" value="overview" data-testid="files__details-tab--overview">{t('file_manager.details_overview')}</TabsTrigger>
             <TabsTrigger className="h-full text-xs sm:text-sm" value="technical" data-testid="files__details-tab--technical">{t('file_manager.details_technical')}</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview" className="mt-3 space-y-3">
-            <div className="rounded-2xl border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] px-3 py-3" data-testid="files__details-hero">
+            <div className="rounded-[14px] bg-[linear-gradient(180deg,rgba(255,255,255,0.035),rgba(255,255,255,0.015))] px-3 py-3" data-testid="files__details-hero">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 rounded-xl border border-subtle bg-surface flex items-center justify-center">
+                <div className="h-10 w-10 rounded-xl bg-surface-high/45 flex items-center justify-center">
                   <FileItemIcon
                     kind="object"
                     name={filename}
@@ -238,7 +238,7 @@ export function FileObjectDetailsPanel({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-strong font-medium">{filename}</div>
                   <div className="mt-1 text-xs text-tertiary">{summary}</div>
-                  <div className="mt-2 inline-flex items-center rounded-full border border-subtle bg-surface px-2.5 py-1 text-[11px] text-tertiary">
+                  <div className="mt-2 inline-flex items-center rounded-full bg-surface-high/45 px-2.5 py-1 text-[11px] text-tertiary">
                     {previewTypeLabel(previewKind, t)}
                   </div>
                 </div>
@@ -281,7 +281,7 @@ export function FileObjectDetailsPanel({
           </TabsContent>
 
           <TabsContent value="technical" className="mt-3 space-y-3 text-sm">
-            <div className="rounded-md border border-subtle bg-surface-high/30 p-3 space-y-3">
+            <div className="rounded-[14px] bg-surface-high/20 p-3 space-y-3">
               <KeyValue label={t('file_manager.key')} value={meta.key} mono />
               <KeyValue label={t('file_manager.type')} value={meta.content_type} />
               <KeyValue label={t('file_manager.size')} value={`${meta.size_bytes.toLocaleString()} (${formatBytes(meta.size_bytes)})`} />
@@ -289,7 +289,7 @@ export function FileObjectDetailsPanel({
               <KeyValue label={t('file_manager.etag')} value={meta.etag ?? '-'} mono />
             </div>
 
-            <div className="rounded-md border border-subtle bg-surface-high/20 p-3 space-y-2">
+            <div className="rounded-[14px] bg-surface-high/16 p-3 space-y-2">
               <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.user_metadata')}</div>
               <pre className="text-xs leading-relaxed text-primary overflow-auto max-h-[220px]">
                 {JSON.stringify(meta.user_metadata ?? {}, null, 2)}

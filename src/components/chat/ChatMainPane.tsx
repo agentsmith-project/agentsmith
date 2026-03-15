@@ -140,7 +140,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
 
   return (
     <section
-      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent_18%)]"
+      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.012),transparent_14%)]"
       data-testid="chat__main-pane"
     >
       <ChatHeader

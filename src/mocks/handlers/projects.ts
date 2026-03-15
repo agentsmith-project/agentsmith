@@ -4,7 +4,7 @@ import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../
 import type { Project } from '@/lib/api/types';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 
-const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
+export const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
 function getRequestUserId(request: Request): string {
   const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');

@@ -1,4 +1,4 @@
-import { getProjectGroupsState } from './project-groups-store.js';
+import { getAllProjectGroupIdsForUser, getProjectGroupsState } from './project-groups-store.js';
 import {
   getProjectMembershipsState,
 } from './project-memberships-store.js';
@@ -377,9 +377,11 @@ export function evaluateResourcePolicyAuthorization(args: {
         },
       };
     }
-    const groups = getProjectGroupsState(args.workspaceId, args.projectId)
-      .filter((group) => group.member_ids.includes(args.subjectId))
-      .map((group) => group.id);
+    const groups = getAllProjectGroupIdsForUser({
+      workspaceId: args.workspaceId,
+      projectId: args.projectId,
+      userId: args.subjectId,
+    });
     const groupMatch = policy.allowed_subjects.find(
       (subject) => subject.subject_type === 'group' && groups.includes(subject.subject_id),
     );

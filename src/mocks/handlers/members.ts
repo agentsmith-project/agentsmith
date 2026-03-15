@@ -4,6 +4,7 @@ import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } 
 import { ensureWorkspaceMember } from './workspace';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import type { ChangeHistoryEntry } from '@/lib/api/types';
+import { projects } from './projects';
 
 const members = p0.members.length ? p0.members : memberFixtures.map((m, i) => ({
   ...m,
@@ -103,6 +104,21 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
       rules: [{ key: 'endpoint.usd_spending_per_day', value: 200000, window: 'day' }],
     },
   };
+}
+
+function getDefaultProjectGroupIdsForUser(projectId: string, userId: string): string[] {
+  const ids = new Set<string>();
+  const membership = memberProjectMembershipFixtures.find(
+    (item) => item.project_id === projectId && item.user_id === userId && item.status === 'active',
+  );
+  if (membership?.role && ['owner', 'admin', 'developer', 'user'].includes(membership.role)) {
+    ids.add(membership.role);
+  }
+  const project = projects.find((item) => item.id === projectId);
+  if (project?.owner_id === userId) {
+    ids.add('owner');
+  }
+  return [...ids];
 }
 
 export const memberHandlers = [
@@ -316,9 +332,21 @@ export const memberHandlers = [
     const policy = resourcePolicyStore[key] ?? getDefaultPolicy(resourceType, resourceId);
     const subjectType = body.subject?.type === 'group' ? 'group' : 'user';
     const subjectId = typeof body.subject?.id === 'string' ? body.subject.id : '';
-    const matchedSubject = policy.allowed_subjects.find(
+    const directMatch = policy.allowed_subjects.find(
       (subject) => subject.subject_type === subjectType && subject.subject_id === subjectId
     );
+    const explicitProjectGroupIds = projectGroups
+      .filter((group) => group.project_id === projectId && group.member_ids.includes(subjectId))
+      .map((group) => group.id);
+    const defaultGroupIds = subjectType === 'user' ? getDefaultProjectGroupIdsForUser(projectId, subjectId) : [];
+    const matchedSubject = directMatch
+      ?? (subjectType === 'user'
+        ? policy.allowed_subjects.find(
+          (subject) =>
+            subject.subject_type === 'group'
+            && [...defaultGroupIds, ...explicitProjectGroupIds].includes(subject.subject_id),
+        )
+        : undefined);
     const allowed = policy.access_mode === 'allow_all_members' || Boolean(matchedSubject);
 
     return HttpResponse.json({

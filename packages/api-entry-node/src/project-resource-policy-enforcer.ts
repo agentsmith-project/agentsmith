@@ -1,6 +1,6 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
-import { getProjectGroupIdsForUser } from './project-groups-store.js';
+import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
 import { listUsageFacts } from './audit-usage-store.js';
 
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
@@ -134,7 +134,11 @@ function getMatchingSubjectRateRules(args: {
   const userRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
     .flatMap((s) => readPolicyRules(s.rate_limits));
-  const groupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
+  const groupIds = getAllProjectGroupIdsForUser({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
     .flatMap((s) => readPolicyRules(s.rate_limits));
@@ -168,7 +172,11 @@ function getMatchingSubjectLimitRules(args: {
   const userRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
     .flatMap((s) => readPolicyRules(s.spending_limits));
-  const groupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
+  const groupIds = getAllProjectGroupIdsForUser({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
     .flatMap((s) => readPolicyRules(s.spending_limits));
@@ -448,7 +456,11 @@ function resolveEndpointSpendingRules(args: {
     .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
     .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
     .filter(isEndpointSpendingRule);
-  const groupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
+  const groupIds = getAllProjectGroupIdsForUser({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
   const groupRules = args.policy.allowed_subjects
     .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
     .flatMap((s) => readPolicyRulesRaw(s.spending_limits))

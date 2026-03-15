@@ -8,6 +8,7 @@ import {
   checkProjectSourceLibraryLimitLimits,
 } from './project-resource-policy-enforcer.js';
 import { getProjectGroupsState } from './project-groups-store.js';
+import { upsertProjectMembership } from './project-memberships-store.js';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
 import { recordUsageFact } from './audit-usage-store.js';
 
@@ -81,6 +82,40 @@ describe('project-resource-policy-enforcer', () => {
     const one = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs });
     const two = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 1 });
     const three = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 2 });
+    expect(one.allowed).toBe(true);
+    expect(two.allowed).toBe(true);
+    expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
+  });
+
+  it('supports subject-level override via default role group rule', () => {
+    __resetProjectResourcePolicyRateCountersForTests();
+    const workspaceId = `ws_${Math.random().toString(36).slice(2, 8)}`;
+    const projectId = `proj_${Math.random().toString(36).slice(2, 8)}`;
+    const userId = 'user_admin';
+    upsertProjectMembership(workspaceId, projectId, {
+      project_id: projectId,
+      user_id: userId,
+      role: 'admin',
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+    const policy: ProjectResourcePolicyRecord = {
+      resource_type: 'endpoint',
+      resource_id: 'ep_default_group',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [
+        {
+          subject_type: 'group',
+          subject_id: 'admin',
+          rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 2 }] },
+        },
+      ],
+      rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
+    };
+    const baseMs = 1_700_000_160_000;
+    const one = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs });
+    const two = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 1 });
+    const three = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 2 });
     expect(one.allowed).toBe(true);
     expect(two.allowed).toBe(true);
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });

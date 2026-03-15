@@ -155,6 +155,36 @@ describe('project-authz-engine', () => {
     expect(denied.reason).toBe('not_in_allow_list');
   });
 
+  it('evaluates resource policy allow-list for default role groups', () => {
+    const workspaceId = `ws_${Date.now()}`;
+    const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
+    upsertProjectMembership(workspaceId, projectId, {
+      project_id: projectId,
+      user_id: 'user_admin',
+      role: 'admin',
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+    upsertProjectResourcePolicy(workspaceId, projectId, {
+      resource_type: 'endpoint',
+      resource_id: 'ep_default_group',
+      access_mode: 'allow_list',
+      allowed_subjects: [{ subject_type: 'group', subject_id: 'admin' }],
+    });
+
+    const result = evaluateResourcePolicyAuthorization({
+      workspaceId,
+      projectId,
+      resourceType: 'endpoint',
+      resourceId: 'ep_default_group',
+      subjectType: 'user',
+      subjectId: 'user_admin',
+    });
+
+    expect(result.allowed).toBe(true);
+    expect(result.matched_policy?.matched_subject).toEqual({ type: 'group', id: 'admin' });
+  });
+
   it('maps authorization actions to project permission tokens', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.invoke' })).toBe('project:endpoint:use');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'endpoint', action: 'endpoint.update' })).toBe('project:governance:update');

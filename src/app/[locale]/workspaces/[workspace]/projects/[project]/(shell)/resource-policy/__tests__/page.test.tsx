@@ -250,4 +250,30 @@ describe('ResourcePolicyPage', () => {
     });
     expect(screen.getByText('validation_error')).toBeInTheDocument();
   });
+
+  it('includes system default groups in subject selector', async () => {
+    const user = userEvent.setup();
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__add-subject')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('resource-policy__add-subject'));
+    const typeSelect = screen.getAllByTestId('resource-policy__subject-type')[0];
+    await user.selectOptions(typeSelect, 'group');
+
+    const subjectSelect = screen.getAllByTestId('resource-policy__subject-id-select')[0];
+    const optionValues = within(subjectSelect).getAllByRole('option').map((option) => option.getAttribute('value'));
+    expect(optionValues).toContain('owner');
+    expect(optionValues).toContain('admin');
+    expect(optionValues).toContain('developer');
+    expect(optionValues).toContain('user');
+    expect(optionValues).toContain('group_001');
+  });
 });

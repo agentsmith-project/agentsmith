@@ -1,3 +1,5 @@
+import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
+
 type SubjectType = 'group' | 'user';
 type ResourceType = 'endpoint' | 'source_library' | 'agent';
 
@@ -86,7 +88,11 @@ export function isProjectResourceAccessAllowedForUser(args: {
   if (userMatch) {
     return { allowed: true, policy };
   }
-  const userGroupIds = getProjectGroupIdsForUser(args.workspaceId, args.projectId, args.userId);
+  const userGroupIds = getAllProjectGroupIdsForUser({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
   if (
     userGroupIds.length > 0
     && policy.allowed_subjects.some(
@@ -97,4 +103,3 @@ export function isProjectResourceAccessAllowedForUser(args: {
   }
   return { allowed: false, policy, reason: 'not_in_allow_list' };
 }
-import { getProjectGroupIdsForUser } from './project-groups-store.js';

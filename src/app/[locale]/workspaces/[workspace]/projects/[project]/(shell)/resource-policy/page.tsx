@@ -40,6 +40,10 @@ import {
   normalizeSubjectId,
 } from '@/lib/utils/resource-policy-subjects';
 import {
+  buildDefaultResourcePolicyGroupOptions,
+  mergeResourcePolicyGroupOptions,
+} from '@/lib/utils/resource-policy-default-groups';
+import {
   buildDraftRuleValues,
   buildRuleSetFromDraft,
   createSubjectRowId,
@@ -58,6 +62,7 @@ interface ResourcePolicyPageProps {
 
 export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) {
   const tNav = useTranslations('nav');
+  const tMembers = useTranslations('members');
   const tErrors = useTranslations('errors');
   const tResource = useTranslations('resource_policy');
   const searchParams = useSearchParams();
@@ -201,12 +206,14 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     [membersData]
   );
   const groupOptions = useMemo(
-    () =>
+    () => mergeResourcePolicyGroupOptions(
+      buildDefaultResourcePolicyGroupOptions(tMembers),
       (groupsData ?? []).map((group: ProjectGroup) => ({
         id: group.id,
         label: group.name,
       })),
-    [groupsData]
+    ),
+    [groupsData, tMembers]
   );
 
   useEffect(() => {

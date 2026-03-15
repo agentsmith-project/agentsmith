@@ -123,12 +123,22 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         {drilldownContext ? (
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'groups')} className="flex-1 min-h-0 flex flex-col min-w-0">
-          <TabsList className="flex-shrink-0 rounded-[18px] border border-white/6 bg-white/[0.04] p-1">
-            <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>
-            <TabsTrigger value="requests">{t('tabs.requests')}</TabsTrigger>
-            <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
-          </TabsList>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => setActiveTab(v as 'people' | 'requests' | 'groups')}
+          className="flex min-h-0 min-w-0 flex-1 flex-col rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+        >
+          <div className="mb-4 flex flex-col gap-3 rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
+              <p className="mt-1 text-sm text-secondary">{t('description')}</p>
+            </div>
+            <TabsList className="flex-shrink-0 rounded-[18px] border border-white/6 bg-white/[0.04] p-1">
+              <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>
+              <TabsTrigger value="requests">{t('tabs.requests')}</TabsTrigger>
+              <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
+            </TabsList>
+          </div>
 
           <TabsContent value="people" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <PeopleTab workspaceId={workspaceId} projectId={projectId} />

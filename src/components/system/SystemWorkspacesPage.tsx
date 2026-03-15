@@ -43,26 +43,51 @@ export function SystemWorkspacesPage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-4 md:p-6">
           <div className="mx-auto max-w-7xl space-y-5">
-            <header className="flex flex-wrap items-start justify-between gap-3">
-              <div className="space-y-2">
-                <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
-                <h1 className="text-2xl font-semibold text-foreground" data-testid="system-workspaces__heading">
-                  {t('workspaces_title')}
-                </h1>
-                <p className="text-sm text-tertiary">{t('workspaces_subtitle')}</p>
+            <header className="rounded-[28px] border border-subtle bg-surface/95 p-6 shadow-[0_22px_50px_rgba(0,0,0,0.18)]">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="max-w-3xl space-y-2">
+                  <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
+                  <h1 className="text-2xl font-semibold text-foreground" data-testid="system-workspaces__heading">
+                    {t('workspaces_title')}
+                  </h1>
+                  <p className="text-sm leading-6 text-secondary">{t('workspaces_subtitle')}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Link href={`/${locale}/system/info`}>
+                    <Button type="button" variant="outline" data-testid="system-workspaces__open-info">
+                      {t('open_system_info')}
+                    </Button>
+                  </Link>
+                  <SystemLogoutButton />
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <Link href={`/${locale}/system/info`}>
-                  <Button type="button" variant="outline" data-testid="system-workspaces__open-info">
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                <div className="rounded-[20px] border border-white/6 bg-white/[0.025] px-4 py-3">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
+                    {t('workspace_list_label')}
+                  </p>
+                  <p className="mt-2 text-2xl font-semibold text-foreground">{workspaces.length}</p>
+                </div>
+                <div className="rounded-[20px] border border-white/6 bg-white/[0.025] px-4 py-3">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
+                    {t('search_placeholder')}
+                  </p>
+                  <p className="mt-2 text-sm text-secondary">{searchQuery.trim() || t('workspaces_subtitle')}</p>
+                </div>
+                <div className="rounded-[20px] border border-white/6 bg-white/[0.025] px-4 py-3">
+                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
                     {t('open_system_info')}
-                  </Button>
-                </Link>
-                <SystemLogoutButton />
+                  </p>
+                  <p className="mt-2 text-sm text-secondary">{t('workspaces_title')}</p>
+                </div>
               </div>
             </header>
 
             <section className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-              <div className="space-y-4 rounded-md border border-border bg-surface p-4" data-testid="system-workspaces__list">
+              <div
+                className="space-y-4 rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+                data-testid="system-workspaces__list"
+              >
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('workspace_list_label')}</p>
@@ -73,7 +98,7 @@ export function SystemWorkspacesPage() {
                     value={searchQuery}
                     onChange={(event) => setSearchQuery(event.target.value)}
                     placeholder={t('search_placeholder')}
-                    className="h-9 min-w-[260px] rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
+                    className="h-10 min-w-[260px] rounded-xl border border-subtle bg-surface-high px-3 text-sm text-foreground placeholder:text-tertiary"
                     data-testid="system-workspaces__search"
                   />
                 </div>
@@ -81,7 +106,10 @@ export function SystemWorkspacesPage() {
                 {isLoading ? (
                   <p className="text-sm text-tertiary" data-testid="system-workspaces__loading">{t('loading')}</p>
                 ) : isError ? (
-                  <div className="space-y-3 rounded-sm border border-warning/30 bg-bg-base/20 p-4" data-testid="system-workspaces__error">
+                  <div
+                    className="space-y-3 rounded-[20px] border border-warning/30 bg-bg-base/20 p-4"
+                    data-testid="system-workspaces__error"
+                  >
                     <p className="text-sm font-medium text-foreground">{t('load_error_title')}</p>
                     <p className="text-sm text-tertiary">{t('load_error_description')}</p>
                     <Button type="button" variant="outline" onClick={() => void loadWorkspaces()} data-testid="system-workspaces__retry">
@@ -89,7 +117,10 @@ export function SystemWorkspacesPage() {
                     </Button>
                   </div>
                 ) : filteredWorkspaces.length === 0 ? (
-                  <div className="rounded-sm border border-dashed border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__empty">
+                  <div
+                    className="rounded-[20px] border border-dashed border-subtle bg-bg-base/20 p-5"
+                    data-testid="system-workspaces__empty"
+                  >
                     <p className="text-sm text-tertiary">{t('empty')}</p>
                   </div>
                 ) : (

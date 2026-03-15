@@ -227,7 +227,7 @@ async function approveJoinRequest(page: Page, workspaceId: string, projectId: st
   await expect(page.getByRole('tab', { name: /join requests/i })).toBeVisible({ timeout: 30_000 });
   const requestCard = page.locator('div').filter({ hasText: /integration-member/i }).first();
   await expect(requestCard).toBeVisible({ timeout: 30_000 });
-  await requestCard.getByRole('button', { name: /approve/i }).click();
+  await requestCard.getByRole('button', { name: /^approve$/i }).click();
   await expect(requestCard.getByText(/approved/i)).toBeVisible({ timeout: 30_000 });
 }
 
@@ -264,7 +264,7 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
 
   const dialog = page.getByTestId('endpoints__create-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.getByRole('button', { name: /open wizard/i }).click();
+  await dialog.getByRole('button', { name: /use guided setup/i }).click();
 
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });

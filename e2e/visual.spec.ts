@@ -267,6 +267,10 @@ test.describe('Visual - Project Pages', () => {
 
   test('files', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await expect(authedPage.getByTestId('project-workbench__heading')).toContainText('Files');
+    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
+    await authedPage.waitForTimeout(1500);
     await expect(authedPage).toHaveScreenshot('files.png', { fullPage: true });
   });
 
@@ -405,6 +409,9 @@ test.describe('Visual - Overlays', () => {
 
   test('files - create folder dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
+    await authedPage.waitForTimeout(1500);
     await authedPage.getByTestId('files__new-folder').click();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-files-create-folder.png');
@@ -412,6 +419,9 @@ test.describe('Visual - Overlays', () => {
 
   test('files - rename dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
+    await authedPage.waitForTimeout(1500);
     await authedPage.getByTestId('files__library-item--lib_shared_default').click();
     await authedPage.getByTestId('files__search').fill('README');
     const fileButton = authedPage.getByRole('button', { name: 'README.txt' }).first();
@@ -425,6 +435,9 @@ test.describe('Visual - Overlays', () => {
 
   test('files - selection with details panel', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
+    await authedPage.waitForTimeout(1500);
     await authedPage.getByTestId('files__library-item--lib_shared_default').click();
     await authedPage.getByTestId('files__search').fill('README');
     const fileButton = authedPage.getByRole('button', { name: 'README.txt' }).first();

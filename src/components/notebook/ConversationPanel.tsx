@@ -6,9 +6,8 @@ import { MessageList } from './MessageList';
 import { ConversationInput } from './ConversationInput';
 import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
 import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
-import { ConnectionBanner } from '@/components/notebook/conversation-panel/ConnectionBanner';
-import { RunActivityBanner } from '@/components/notebook/conversation-panel/RunActivityBanner';
 import { formatElapsed, getConnectionBannerCopy } from '@/components/notebook/conversation-panel/utils';
+import { Button } from '@/components/ui/button';
 
 export interface ConversationPanelProps {
   messages: TaskMessage[];
@@ -93,6 +92,7 @@ export function ConversationPanel({
   sandboxStarting = false,
 }: ConversationPanelProps) {
   const t = useTranslations('notebook.conversation');
+  const tCommon = useTranslations('common');
   const [inputValue, setInputValue] = React.useState('');
   const { title: connectionTitle, description: connectionDescription } = getConnectionBannerCopy({
     t,
@@ -108,57 +108,98 @@ export function ConversationPanel({
   };
 
   return (
-      <div className="flex h-full flex-col overflow-hidden rounded-[22px] border border-white/6 bg-background bg-background/70">
-      {connectionStatus && connectionStatus !== 'connected' && (
-        <ConnectionBanner
-          title={connectionTitle ?? ''}
-          description={connectionDescription ?? ''}
-          diagnosticsLinks={diagnosticsLinks}
-          openAuditLabel={t('open_audit')}
-          openUsageLabel={t('open_usage')}
-          openAgentDiagnosticsLabel={t('open_agent_diagnostics')}
-        />
-      )}
-      {sandboxStarting ? (
-        <div className="border-b border-subtle px-4 py-3" data-testid="notebook__sandbox-starting">
-          <div className="text-xs font-medium text-primary">{t('sandbox_starting_title')}</div>
-          <div className="mt-0.5 text-xs text-tertiary">{t('sandbox_starting_description')}</div>
+    <div className="flex h-full flex-col overflow-hidden rounded-[18px] border border-white/6 bg-background/75">
+      {(connectionStatus && connectionStatus !== 'connected') || sandboxStarting || runActivity?.active ? (
+        <div className="border-b border-white/6 bg-white/[0.025] px-4 py-2.5">
+          <div className="flex flex-wrap items-start justify-between gap-3" data-testid="notebook__execution-visibility">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                {connectionStatus && connectionStatus !== 'connected' ? (
+                  <span className="rounded-full border border-error/20 bg-error/10 px-2 py-0.5 text-[11px] font-medium text-error">
+                    {connectionTitle ?? ''}
+                  </span>
+                ) : null}
+                {sandboxStarting ? (
+                  <span className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] font-medium text-accent" data-testid="notebook__sandbox-starting">
+                    {t('sandbox_starting_title')}
+                  </span>
+                ) : null}
+                {runActivity?.active ? (
+                  <span className="rounded-full border border-white/8 bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-secondary">
+                    {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
+                  </span>
+                ) : null}
+              </div>
+              <div className="mt-1.5 space-y-1 text-xs text-secondary" data-testid="notebook__sse-status">
+                {connectionStatus && connectionStatus !== 'connected' ? (
+                  <>
+                    <div>{connectionTitle}</div>
+                    <div className="text-tertiary">{connectionDescription}</div>
+                  </>
+                ) : sandboxStarting ? (
+                  <div className="text-tertiary">{t('sandbox_starting_description')}</div>
+                ) : runActivity?.active ? (
+                  <>
+                    <div>{runActivity.lastSummary ?? t('run_active_default_action')}</div>
+                    {runActivity.recentActions?.[0] ? (
+                      <button
+                        type="button"
+                        className="text-left text-tertiary hover:text-secondary"
+                        onClick={() => {
+                          const action = runActivity.recentActions?.[0];
+                          if (!action) return;
+                          onRunActionClick?.(action);
+                        }}
+                      >
+                        {runActivity.recentActions[0].summary}
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+              {connectionStatus && connectionStatus !== 'connected' && diagnosticsLinks ? (
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  <Link href={diagnosticsLinks.audit} data-testid="notebook__sse-status-open-audit" className="text-primary hover:underline">
+                    {t('open_audit')}
+                  </Link>
+                  <Link href={diagnosticsLinks.usage} data-testid="notebook__sse-status-open-usage" className="text-primary hover:underline">
+                    {t('open_usage')}
+                  </Link>
+                  {diagnosticsLinks.agent ? (
+                    <Link href={diagnosticsLinks.agent} data-testid="notebook__sse-status-open-agent" className="text-primary hover:underline">
+                      {t('open_agent_diagnostics')}
+                    </Link>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              {runActivity?.active && onCancelActiveRun ? (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs"
+                  onClick={onCancelActiveRun}
+                  disabled={disabled || runActivity.cancelling}
+                >
+                  {runActivity.cancelling ? t('run_cancel_requested') : tCommon('cancel')}
+                </Button>
+              ) : null}
+              <button
+                type="button"
+                className="text-xs text-primary hover:underline disabled:text-tertiary disabled:no-underline"
+                onClick={onToggleExecutionDetails}
+                disabled={disabled}
+                data-testid="notebook__execution-visibility-toggle"
+              >
+                {showExecutionDetails ? t('execution_visibility_hide') : t('execution_visibility_show')}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
-      <div
-        className="flex items-center justify-between border-b border-subtle bg-white/[0.02] px-4 py-3"
-        data-testid="notebook__execution-visibility"
-      >
-        <div className="space-y-1">
-          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
-            {t('execution_visibility_label')}
-          </div>
-          <div className="text-sm text-secondary">
-            {connectionStatus === 'connected' ? t('execution_visibility_show') : (connectionTitle ?? '')}
-          </div>
-        </div>
-        <button
-          type="button"
-          className="text-xs text-primary hover:underline disabled:text-tertiary disabled:no-underline"
-          onClick={onToggleExecutionDetails}
-          disabled={disabled}
-          data-testid="notebook__execution-visibility-toggle"
-        >
-          {showExecutionDetails
-            ? t('execution_visibility_hide')
-            : t('execution_visibility_show')}
-        </button>
-      </div>
-      {runActivity?.active ? (
-        <RunActivityBanner
-          t={t}
-          runActivity={runActivity}
-          disabled={disabled}
-          onCancelActiveRun={onCancelActiveRun}
-          onRunActionClick={onRunActionClick}
-        />
-      ) : null}
-      <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.018),transparent_16%)]">
+      <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent_14%)]">
         <MessageList
           messages={messages}
           streamingMessageId={streamingMessageId}
@@ -177,7 +218,7 @@ export function ConversationPanel({
           onTraceLoadMore={onTraceLoadMore}
         />
       </div>
-      <div className="border-t border-subtle bg-white/[0.02]">
+      <div className="border-t border-white/6 bg-white/[0.02]">
         <ConversationInput
           value={inputValue}
           onChange={setInputValue}

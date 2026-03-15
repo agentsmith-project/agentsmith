@@ -1,16 +1,13 @@
 'use client';
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { PageHeader } from '@/components/layout/PageHeader';
 import { PageLayout } from '@/components/layout/PageLayout';
+import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { TaskPage } from '@/components/notebook/TaskPage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { buttonVariants } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
 
 interface TaskPageParams {
   params: Promise<{ workspace: string; project: string; taskId: string; locale: string }>;
@@ -95,38 +92,35 @@ export default function TaskDetailPage({ params }: TaskPageParams) {
       <PageLayout
         density="immersive"
         contentWidth="full"
-        header={(
-          <PageHeader
+      >
+        <div className="mb-4">
+          <ProjectWorkbenchBar
             title={tNotebook('title')}
-            subtitle={tNotebook('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/notebook`}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="notebook-task__open-list"
-                >
-                  {tNotebook('title')}
-                </Link>
-                <Link
-                  href={`${basePath}/chat`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="notebook-task__open-chat"
-                >
-                  {tNotebook('open_chat')}
-                </Link>
-                <Link
-                  href={`${basePath}/files`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="notebook-task__open-files"
-                >
-                  {tNotebook('open_files')}
-                </Link>
-              </div>
+            meta={<div className="text-sm text-secondary">{tNotebook('subtitle')}</div>}
+            switcher={(
+              <ProjectWorkbenchSwitcher
+                items={[
+                  {
+                    href: `${basePath}/notebook`,
+                    label: tNotebook('title'),
+                    testId: 'notebook-task__open-list',
+                    active: true,
+                  },
+                  {
+                    href: `${basePath}/chat`,
+                    label: tNotebook('open_chat'),
+                    testId: 'notebook-task__open-chat',
+                  },
+                  {
+                    href: `${basePath}/files`,
+                    label: tNotebook('open_files'),
+                    testId: 'notebook-task__open-files',
+                  },
+                ]}
+              />
             )}
           />
-        )}
-      >
+        </div>
         <TaskPage
           workspaceId={resolvedParams.workspace}
           projectId={resolvedParams.project}

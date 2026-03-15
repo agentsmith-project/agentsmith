@@ -108,8 +108,8 @@ export function TaskPageContent({
   workspaceId,
 }: TaskPageContentProps) {
   return (
-    <div className="flex min-h-0 flex-1 gap-4 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_40%)]">
-      <div className="w-[248px] flex-shrink-0 rounded-[24px] border border-subtle bg-surface/95 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+    <div className="flex min-h-0 flex-1 gap-3 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
+      <div className="w-[216px] flex-shrink-0 rounded-[20px] border border-white/6 bg-surface/90 p-2.5 shadow-[0_14px_30px_rgba(0,0,0,0.14)]">
         <AttachedFilesPanel
           workspaceId={workspaceId}
           projectId={projectId}
@@ -130,7 +130,7 @@ export function TaskPageContent({
           }}
         />
       </div>
-      <div className="min-w-0 flex-1 rounded-[28px] border border-subtle bg-surface/95 p-3 shadow-[0_22px_50px_rgba(0,0,0,0.18)]">
+      <div className="min-w-0 flex-1 rounded-[22px] border border-white/6 bg-surface/92 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
         {showSseDebugPanel ? <NotebookSseDebugPanel events={sseDebugEvents} /> : null}
         <ConversationPanel
           messages={messages}
@@ -165,7 +165,7 @@ export function TaskPageContent({
           sending={sending}
         />
       </div>
-      <div className="w-[300px] flex-shrink-0 rounded-[24px] border border-subtle bg-surface/95 p-3 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="w-[264px] flex-shrink-0 rounded-[20px] border border-white/6 bg-surface/90 p-2.5 shadow-[0_14px_30px_rgba(0,0,0,0.14)]">
         <ArtifactsPanel
           artifacts={artifacts}
           onView={handleViewArtifact}

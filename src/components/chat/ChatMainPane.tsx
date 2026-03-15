@@ -139,7 +139,10 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         : (!canAttachFiles ? labels.attachmentsDisabledReason : '');
 
   return (
-    <section className="flex-1 flex min-w-0 flex-col bg-background overflow-hidden" data-testid="chat__main-pane">
+    <section
+      className="flex min-w-0 flex-1 flex-col overflow-hidden bg-[linear-gradient(180deg,rgba(255,255,255,0.015),transparent_18%)]"
+      data-testid="chat__main-pane"
+    >
       <ChatHeader
         session={activeSession}
         endpoints={endpoints}
@@ -154,7 +157,7 @@ export function ChatMainPane(props: ChatMainPaneProps) {
         layoutMode={layoutMode}
       />
 
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1">
         {!currentSessionId ? (
           <ChatEmptyState
             canUseChat={canUseChat}

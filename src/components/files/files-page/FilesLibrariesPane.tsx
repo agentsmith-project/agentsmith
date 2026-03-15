@@ -27,11 +27,11 @@ export function FilesLibrariesPane({
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
   return (
-    <div className="min-h-0 rounded-[22px] border border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-      <div className="flex items-center justify-between border-b border-subtle px-4 py-3">
+    <div className="min-h-0 rounded-[20px] border border-white/6 bg-surface/92 shadow-[0_14px_30px_rgba(0,0,0,0.14)]">
+      <div className="flex items-center justify-between border-b border-white/6 px-3 py-2.5">
         <div>
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.libraries')}</div>
-          <div className="mt-1 text-sm text-secondary">{libraries.length} {t('file_manager.items')}</div>
+          <div className="mt-0.5 text-xs text-secondary">{libraries.length} {t('file_manager.items')}</div>
         </div>
         {canManage ? (
           <Button
@@ -65,7 +65,7 @@ export function FilesLibrariesPane({
                     onSelectLibrary(library.id);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-[16px] px-3 py-3 text-left transition-colors',
+                    'flex w-full items-center justify-between gap-2 rounded-[14px] px-3 py-2.5 text-left transition-colors',
                     active
                       ? 'border border-accent/20 bg-accent/10 text-strong'
                       : 'border border-transparent text-primary hover:bg-hover/70',

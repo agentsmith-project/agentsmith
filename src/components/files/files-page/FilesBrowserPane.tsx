@@ -139,10 +139,10 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
       onDrop={onDrop}
       data-testid="files__dropzone"
     >
-      <div className="flex items-center gap-2 border-b border-subtle px-4 py-3">
-        <div>
+      <div className="flex flex-wrap items-center gap-2 border-b border-subtle px-4 py-2.5">
+        <div className="min-w-0">
           <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{t('file_manager.location')}</div>
-          <div className="mt-1 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
+          <div className="mt-0.5 text-sm text-secondary">{selectedLibraryId ? t('file_manager.root') : t('file_manager.no_libraries')}</div>
         </div>
         {prefix ? (
           <Button
@@ -172,8 +172,13 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
             </React.Fragment>
           ))}
         </div>
-        <div className="ml-auto flex items-center gap-3">
-          <div className="relative w-[280px]">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2">
+          <div className="text-xs text-tertiary">
+            {isMultiMode
+              ? t('file_manager.selected_count', { count: String(selectedCount) })
+              : `${filteredItems.length} ${t('file_manager.items')}`}
+          </div>
+          <div className="relative w-[240px] max-w-full">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-tertiary" />
             <Input
               value={searchInput}
@@ -196,9 +201,6 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
               <RefreshCw className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <div className="text-xs text-tertiary tabular-nums">
-            {filteredItems.length} {t('file_manager.items')}
-          </div>
           <Button type="button" variant="outline" onClick={onCreateFolder} disabled={!selectedLibraryId} data-testid="files__new-folder">
             <FolderPlus className="h-4 w-4 mr-2" />
             {t('file_manager.new_folder')}
@@ -212,7 +214,7 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
 
       <div className="flex-1 min-h-0">
         <div className="w-full h-full text-sm flex flex-col" data-testid="files__objects-table">
-          <div className="flex h-12 items-center justify-between gap-2 border-b border-subtle px-4" data-testid="files__selection-summary">
+          <div className="flex min-h-0 items-center justify-between gap-2 border-b border-subtle px-4 py-2" data-testid="files__selection-summary">
             {isMultiMode ? (
               <div className="flex items-center gap-2 min-w-0 text-xs text-primary">
                 <span>{t('file_manager.selected_count', { count: String(selectedCount) })}</span>

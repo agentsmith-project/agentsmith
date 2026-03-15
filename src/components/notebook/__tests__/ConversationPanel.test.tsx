@@ -306,7 +306,7 @@ describe('ConversationPanel', () => {
       const { container } = renderComponent();
 
       const panel = container.firstChild as HTMLElement;
-      expect(panel).toHaveClass('h-full', 'flex', 'flex-col', 'bg-background');
+      expect(panel).toHaveClass('h-full', 'flex', 'flex-col');
     });
   });
 

@@ -126,34 +126,20 @@ export function FilesPageContent({
   uploadQueueTotal,
   workspaceId,
 }: FilesPageContentProps) {
-  const selectedLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? null;
+  const showDetailsPanel = Boolean(selected && selectedLibraryId);
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_40%)]">
-      <div className="grid gap-3 md:grid-cols-3">
-        <FilesSummaryCard
-          label={t('file_manager.libraries')}
-          value={String(libraries.length)}
-          helper={selectedLibrary ? selectedLibrary.name : t('file_manager.no_libraries')}
-        />
-        <FilesSummaryCard
-          label={t('file_manager.location')}
-          value={prefix || t('file_manager.root')}
-          helper={selectedLibrary ? selectedLibrary.bucket || selectedLibrary.name : t('file_manager.loading')}
-        />
-        <FilesSummaryCard
-          label={t('file_manager.selected_count', { count: String(selectedCount) })}
-          value={String(filteredItems.length)}
-          helper={hasSelection ? t('file_manager.multi_select_hint_esc') : t('file_manager.selection_shortcuts')}
-        />
-      </div>
-
+    <div className="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_40%)]">
       <div
         className={cn(
           'flex-1 min-h-0 grid gap-3',
-          layoutMode === 'ultrawide'
-            ? 'grid-cols-[300px_minmax(0,1fr)_520px]'
-            : 'grid-cols-[260px_minmax(0,1fr)_360px]',
+          showDetailsPanel
+            ? (layoutMode === 'ultrawide'
+                ? 'grid-cols-[240px_minmax(0,1fr)_320px]'
+                : 'grid-cols-[220px_minmax(0,1fr)_280px]')
+            : (layoutMode === 'ultrawide'
+                ? 'grid-cols-[240px_minmax(0,1fr)]'
+                : 'grid-cols-[220px_minmax(0,1fr)]'),
         )}
       >
         <FilesLibrariesPane
@@ -216,32 +202,16 @@ export function FilesPageContent({
           onToggleRowCheckbox={handleToggleRowCheckbox}
         />
 
-        <FileObjectDetailsPanel
-          workspaceId={workspaceId}
-          projectId={projectId}
-          selectedLibraryId={selectedLibraryId}
-          selected={selected}
-          onDownload={handleDownload}
-        />
+        {showDetailsPanel ? (
+          <FileObjectDetailsPanel
+            workspaceId={workspaceId}
+            projectId={projectId}
+            selectedLibraryId={selectedLibraryId}
+            selected={selected}
+            onDownload={handleDownload}
+          />
+        ) : null}
       </div>
-    </div>
-  );
-}
-
-function FilesSummaryCard({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
-      <div className="mt-2 truncate text-xl font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 truncate text-sm text-secondary">{helper}</div>
     </div>
   );
 }

@@ -98,31 +98,31 @@ describe('ChatHeader', () => {
     it('should show "Generating…" when streaming', () => {
       render(<ChatHeader {...defaultProps} streamStatus="streaming" />);
 
-      expect(screen.getByText('Generating…')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Generating…');
     });
 
     it('should show "Generating…" when connecting', () => {
       render(<ChatHeader {...defaultProps} streamStatus="connecting" />);
 
-      expect(screen.getByText('Generating…')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Generating…');
     });
 
     it('should show "Recovering stream..." when recovering', () => {
       render(<ChatHeader {...defaultProps} streamStatus="recovering" />);
 
-      expect(screen.getByText('Recovering stream...')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Recovering stream...');
     });
 
     it('should show "Stopped" when stopped', () => {
       render(<ChatHeader {...defaultProps} streamStatus="stopped" />);
 
-      expect(screen.getByText('Stopped')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Stopped');
     });
 
     it('should show "Interrupted" when error', () => {
       render(<ChatHeader {...defaultProps} streamStatus="error" />);
 
-      expect(screen.getByText('Interrupted')).toBeInTheDocument();
+      expect(screen.getByTestId('chat__stream-status')).toHaveTextContent('Interrupted');
     });
 
     it('should show no status when idle', () => {
@@ -478,10 +478,10 @@ describe('ChatHeader', () => {
   });
 
   describe('Component Layout', () => {
-    it('should have proper header height', () => {
+    it('should render a compact header shell', () => {
       const { container } = render(<ChatHeader {...defaultProps} />);
 
-      const header = container.querySelector('.h-14');
+      const header = container.querySelector('.border-b');
       expect(header).toBeInTheDocument();
     });
 

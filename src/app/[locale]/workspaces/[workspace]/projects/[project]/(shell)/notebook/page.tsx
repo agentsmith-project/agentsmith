@@ -7,19 +7,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { FileText, MessageSquareText, Sparkles } from 'lucide-react';
 import { TaskList } from '@/components/notebook/TaskList';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageHeader } from '@/components/layout/PageHeader';
+import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { buttonVariants } from '@/components/ui/button';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { cn } from '@/lib/utils';
 
 interface NotebookPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -92,77 +88,39 @@ export default function NotebookPage({ params }: NotebookPageProps) {
       <PageLayout
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-        header={(
-          <PageHeader
-            title={t('title')}
-            subtitle={t('subtitle')}
-            actions={(
-              <div className="flex flex-wrap items-center gap-2">
-                <Link
-                  href={`${basePath}/chat`}
-                  className={cn(buttonVariants({ variant: 'action', size: 'sm' }))}
-                  data-testid="notebook__open-chat"
-                >
-                  {t('open_chat')}
-                </Link>
-                <Link
-                  href={`${basePath}/files`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="notebook__open-files"
-                >
-                  {t('open_files')}
-                </Link>
-                <Link
-                  href={`${basePath}/agents`}
-                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                  data-testid="notebook__open-agents"
-                >
-                  {t('open_agents')}
-                </Link>
-              </div>
-            )}
-          />
-        )}
       >
         <div className="space-y-4">
-          <div className="rounded-[22px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-5">
-            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {t('title')}
-                </div>
-                <p className="mt-3 max-w-2xl text-sm text-secondary">{t('subtitle')}</p>
-              </div>
-              <Link
-                href={`${basePath}/chat`}
-                className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
-                data-testid="notebook__open-chat-secondary"
-              >
-                {t('open_chat')}
-              </Link>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <NotebookSummaryCard
-                icon={<Sparkles className="h-4 w-4" />}
-                label={t('title')}
-                value={t('task_list.new_task')}
-                helper={t('subtitle')}
+          <ProjectWorkbenchBar
+            title={t('title')}
+            meta={<div className="text-sm text-secondary">{t('subtitle')}</div>}
+            switcher={(
+              <ProjectWorkbenchSwitcher
+                items={[
+                  {
+                    href: `${basePath}/notebook`,
+                    label: t('title'),
+                    testId: 'notebook__open-list',
+                    active: true,
+                  },
+                  {
+                    href: `${basePath}/chat`,
+                    label: t('open_chat'),
+                    testId: 'notebook__open-chat',
+                  },
+                  {
+                    href: `${basePath}/files`,
+                    label: t('open_files'),
+                    testId: 'notebook__open-files',
+                  },
+                  {
+                    href: `${basePath}/agents`,
+                    label: t('open_agents'),
+                    testId: 'notebook__open-agents',
+                  },
+                ]}
               />
-              <NotebookSummaryCard
-                icon={<MessageSquareText className="h-4 w-4" />}
-                label={t('conversation.title')}
-                value={t('open_chat')}
-                helper={t('conversation.empty_description')}
-              />
-              <NotebookSummaryCard
-                icon={<FileText className="h-4 w-4" />}
-                label={t('artifacts.title')}
-                value={t('open_files')}
-                helper={t('artifacts.empty_description')}
-              />
-            </div>
-          </div>
+            )}
+          />
 
           <TaskList
             workspaceId={resolvedParams.workspace}
@@ -172,28 +130,5 @@ export default function NotebookPage({ params }: NotebookPageProps) {
         </div>
       </PageLayout>
     </PageState>
-  );
-}
-
-function NotebookSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-white/6 bg-black/15 p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 text-lg font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

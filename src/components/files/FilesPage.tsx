@@ -13,8 +13,7 @@ import * as React from 'react';
 import { useTranslations } from 'next-intl';
 
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageHeader } from '@/components/layout/PageHeader';
-import { FilesHeaderActions } from '@/components/files/files-page/FilesHeaderActions';
+import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
 import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
 import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
@@ -77,6 +76,10 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     sortOrder,
     updateSort,
   } = useFilesUrlState(libraries, { resetBrowseStateOnMount: true });
+  const selectedLibrary = React.useMemo(
+    () => libraries.find((library) => library.id === selectedLibraryId) ?? null,
+    [libraries, selectedLibraryId],
+  );
 
   const listParams = React.useMemo(
     () => ({
@@ -324,14 +327,45 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     <PageLayout
       density="immersive"
       contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-      header={(
-        <PageHeader
-          title={t('title')}
-          subtitle={t('subtitle')}
-          actions={<FilesHeaderActions basePath={basePath} t={t} />}
-        />
-      )}
     >
+      <ProjectWorkbenchBar
+        title={t('title')}
+        meta={(
+          <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
+            <span className="font-medium text-foreground">{selectedLibrary?.name ?? t('file_manager.no_libraries')}</span>
+            <span className="truncate text-tertiary">{prefix || t('file_manager.root')}</span>
+            <span className="text-tertiary">{filteredItems.length} {t('file_manager.items')}</span>
+          </div>
+        )}
+        className="mb-4"
+        switcher={(
+          <ProjectWorkbenchSwitcher
+            items={[
+              {
+                href: `${basePath}/files`,
+                label: t('title'),
+                testId: 'files__open-files',
+                active: true,
+              },
+              {
+                href: `${basePath}/chat`,
+                label: t('open_chat'),
+                testId: 'files__open-chat',
+              },
+              {
+                href: `${basePath}/notebook`,
+                label: t('open_notebook'),
+                testId: 'files__open-notebook',
+              },
+              {
+                href: `${basePath}/endpoints`,
+                label: t('open_endpoints'),
+                testId: 'files__open-endpoints',
+              },
+            ]}
+          />
+        )}
+      />
       <input
         ref={fileInputRef}
         type="file"

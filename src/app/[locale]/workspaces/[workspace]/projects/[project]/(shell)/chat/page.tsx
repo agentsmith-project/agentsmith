@@ -13,8 +13,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { Link2, MessagesSquare, PlugZap, Sparkles } from 'lucide-react';
-
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api';
 import { ChatAPI } from '@/lib/api/endpoints/chat';
@@ -39,13 +37,12 @@ import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { ThreadsPane } from '@/components/chat/ThreadsPane';
 import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { PageLayout } from '@/components/layout/PageLayout';
-import { PageHeader } from '@/components/layout/PageHeader';
+import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { cn } from '@/lib/utils';
 import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { ChatDialogs } from './_components/ChatDialogs';
-import { ChatHeaderActions } from './_components/ChatHeaderActions';
 import {
   ChatPageLoadingState,
   ChatPagePermissionErrorState,
@@ -388,49 +385,45 @@ export default function ChatPage({ params }: ChatPageProps) {
       <PageLayout
         density="immersive"
         contentWidth={layoutMode === 'ultrawide' ? 'full' : 'wide'}
-        header={(
-          <PageHeader
-            title={t('title')}
-            subtitle={t('subtitle')}
-            actions={<ChatHeaderActions basePath={basePath} t={t} />}
-          />
-        )}
       >
         <div className="flex h-full min-h-0 flex-col gap-4">
-          <div className="rounded-[22px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-5">
-            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {t('title')}
-                </div>
-                <p className="mt-3 max-w-2xl text-sm text-secondary">{t('subtitle')}</p>
+          <ProjectWorkbenchBar
+            title={t('title')}
+            meta={(
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm text-secondary">
+                <span className="font-medium text-foreground">{activeSession?.title ?? t('new_thread')}</span>
+                <span className="text-tertiary">{t('threads_title')} {sessions.length}</span>
+                {activeEndpoint ? <span className="truncate text-tertiary">{activeEndpoint.name}</span> : null}
               </div>
-              <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-sm text-secondary">
-                {t('threads_title')} {sessions.length}
-              </div>
-            </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <ChatSummaryCard
-                icon={<MessagesSquare className="h-4 w-4" />}
-                label={t('threads_title')}
-                value={String(sessions.length)}
-                helper={activeSession?.title ?? t('new_thread')}
+            )}
+            switcher={(
+              <ProjectWorkbenchSwitcher
+                items={[
+                  {
+                    href: `${basePath}/chat`,
+                    label: t('title'),
+                    testId: 'chat__open-chat',
+                    active: true,
+                  },
+                  {
+                    href: `${basePath}/notebook`,
+                    label: t('open_notebook'),
+                    testId: 'chat__open-notebook',
+                  },
+                  {
+                    href: `${basePath}/endpoints`,
+                    label: t('open_endpoints'),
+                    testId: 'chat__open-endpoints',
+                  },
+                  {
+                    href: `${basePath}/files`,
+                    label: t('open_files'),
+                    testId: 'chat__open-files',
+                  },
+                ]}
               />
-              <ChatSummaryCard
-                icon={<PlugZap className="h-4 w-4" />}
-                label={t('attachments_title')}
-                value={String(endpoints.length)}
-                helper={activeEndpoint?.name ?? t('no_active_endpoint_hint')}
-              />
-              <ChatSummaryCard
-                icon={<Link2 className="h-4 w-4" />}
-                label={t('open_files')}
-                value={String(externalAgents.length)}
-                helper={canAttachFiles ? t('open_files') : t('attachments.multimodal_required')}
-              />
-            </div>
-          </div>
+            )}
+          />
 
           <div
             className={cn(
@@ -542,28 +535,5 @@ export default function ChatPage({ params }: ChatPageProps) {
         />
       </PageLayout>
     </PageState>
-  );
-}
-
-function ChatSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-white/6 bg-black/15 p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

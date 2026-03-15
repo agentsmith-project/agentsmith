@@ -84,9 +84,9 @@ export function ChatHeader({
   };
 
   return (
-    <div className="h-14 border-b border-subtle bg-background/90 backdrop-blur supports-[backdrop-filter]:bg-background/80">
-      <div className={cn('mx-auto flex h-full w-full items-center justify-between gap-3 px-3 md:px-4', contentWidthClass)}>
-        <div className="min-w-0 flex-1">
+    <div className="border-b border-white/6 bg-background/70 px-3 py-2 backdrop-blur supports-[backdrop-filter]:bg-background/65 md:px-4">
+      <div className={cn('mx-auto flex w-full items-start justify-between gap-3', contentWidthClass)}>
+        <div className="min-w-0 flex-1 space-y-1">
           <EditableSessionTitle
             draftTitle={draftTitle}
             editing={editing}
@@ -103,24 +103,40 @@ export function ChatHeader({
             onCommit={commitRename}
             onStartEditing={() => setEditing(true)}
           />
-          {session ? (
-            <div className="text-xs text-tertiary truncate">
-              {usingExternalAgent ? (
-                `${currentAgent?.name ?? t('header.external_agent')} · ${session.external_agent_id}`
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-tertiary">
+            <span
+              className={cn(
+                'rounded-full border px-2 py-0.5 font-medium',
+                streamStatus === 'error'
+                  ? 'border-error/30 bg-error/10 text-error'
+                  : streamStatus === 'streaming'
+                    ? 'border-accent/30 bg-accent/10 text-accent'
+                    : 'border-white/8 bg-white/[0.04] text-secondary',
+              )}
+            >
+              {statusText}
+            </span>
+            {session ? (
+              usingExternalAgent ? (
+                <span className="truncate">
+                  {currentAgent?.name ?? t('header.external_agent')}
+                  <span className="text-tertiary/70"> · </span>
+                  {session.external_agent_id}
+                </span>
               ) : (
-                <>
+                <span className="truncate">
                   {currentEndpoint?.name || session.endpoint_id}
                   <span className="text-tertiary/70"> · </span>
                   {currentEndpoint?.model || session.model}
-                </>
-              )}
-            </div>
-          ) : (
-            <div className="text-xs text-tertiary truncate">{t('header.no_active_thread_hint')}</div>
-          )}
+                </span>
+              )
+            ) : (
+              <span className="truncate">{t('header.no_active_thread_hint')}</span>
+            )}
+          </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pt-0.5">
           {session ? (
             usingExternalAgent ? (
               <DropdownMenu open={modelOpen} onOpenChange={setModelOpen}>

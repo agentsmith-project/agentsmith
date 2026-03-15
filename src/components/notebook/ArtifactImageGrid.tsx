@@ -12,6 +12,7 @@ export interface ArtifactImageGridProps {
 
 export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: ArtifactImageGridProps) {
   const tArtifacts = useTranslations('notebook.artifacts');
+  const tCommon = useTranslations('common');
   if (artifacts.length === 0) {
     return (
       <div className="text-center py-8 text-sm text-tertiary">
@@ -21,47 +22,61 @@ export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: 
   }
 
   return (
-    <div className="grid grid-cols-2 gap-4">
+    <div className="grid grid-cols-1 gap-2">
       {artifacts.map((artifact) => (
-        <div key={artifact.id} className="space-y-2">
-          <button
-            onClick={() => onImageClick(artifact)}
-            className="relative w-full aspect-square bg-surface-high rounded-sm overflow-hidden border border-border hover:border-accent/50 transition-colors group"
-          >
-            {artifact.thumbnail_url ? (
-              <img
-                src={artifact.thumbnail_url}
-                alt={artifact.title || 'Image artifact'}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            ) : artifact.content ? (
-              <img
-                src={artifact.content}
-                alt={artifact.title || 'Image artifact'}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <ImageIcon className="h-8 w-8 text-tertiary" />
-              </div>
-            )}
-            {artifact.title && (
-              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-white text-xs p-2 truncate opacity-0 group-hover:opacity-100 transition-opacity">
-                {artifact.title}
-              </div>
-            )}
-          </button>
-          {onAttachAsInput && (
+        <div key={artifact.id} className="rounded-xl border border-white/6 bg-surface/55 p-2">
+          <div className="flex items-start gap-2.5">
             <button
-              type="button"
-              onClick={() => onAttachAsInput(artifact)}
-              className="w-full h-7 rounded-sm border border-border bg-surface text-xs text-primary hover:bg-hover transition-colors"
+              onClick={() => onImageClick(artifact)}
+              className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-surface-high/40 transition-colors hover:ring-1 hover:ring-accent/35"
             >
-              {tArtifacts('actions.attach_input')}
+              {artifact.thumbnail_url ? (
+                <img
+                  src={artifact.thumbnail_url}
+                  alt={artifact.title || 'Image artifact'}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              ) : artifact.content ? (
+                <img
+                  src={artifact.content}
+                  alt={artifact.title || 'Image artifact'}
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                />
+              ) : (
+                <div className="flex h-full w-full items-center justify-center">
+                  <ImageIcon className="h-5 w-5 text-tertiary" />
+                </div>
+              )}
             </button>
-          )}
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-medium text-foreground">
+                {artifact.title || 'Image artifact'}
+              </div>
+              <div className="mt-1 text-[11px] text-tertiary">
+                {tArtifacts('filter.image')}
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onImageClick(artifact)}
+                  className="h-6 rounded-md px-2 text-[11px] text-primary hover:bg-hover transition-colors"
+                >
+                  {tCommon('view')}
+                </button>
+                {onAttachAsInput ? (
+                  <button
+                    type="button"
+                    onClick={() => onAttachAsInput(artifact)}
+                    className="h-6 rounded-md px-2 text-[11px] text-primary hover:bg-hover transition-colors"
+                  >
+                    {tArtifacts('actions.attach_input')}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          </div>
         </div>
       ))}
     </div>

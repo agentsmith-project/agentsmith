@@ -43,12 +43,12 @@ export function ArtifactsPanel({
 
   return (
     <div className="h-full flex flex-col bg-transparent">
-      <div className="border-b border-white/6 px-3 py-2">
+      <div className="border-b border-white/6 px-3 py-1.5">
         <div className="mb-2 flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
         </div>
         <Select value={filterType} onValueChange={(v) => setFilterType(v as ArtifactType | 'all')}>
-          <SelectTrigger className="h-8 w-full border-white/8 bg-surface-high/22 text-xs">
+          <SelectTrigger className="h-7 w-full border-white/8 bg-surface-high/18 text-[11px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -61,7 +61,7 @@ export function ArtifactsPanel({
         </Select>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3">
+      <div className="flex-1 overflow-y-auto p-2.5">
         {filteredArtifacts.length === 0 ? (
           <EmptyState
             title={t('empty')}

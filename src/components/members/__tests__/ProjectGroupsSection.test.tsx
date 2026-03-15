@@ -181,6 +181,16 @@ describe('ProjectGroupsSection', () => {
     });
   });
 
+  it('surfaces a visible editing state when editing a group', async () => {
+    const user = userEvent.setup();
+    render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.click(screen.getByTestId('members__group-edit-btn--grp_1'));
+
+    expect(screen.getByTestId('members__group-editing-indicator')).toBeInTheDocument();
+    expect(screen.getByTestId('members__group-name-input')).toHaveValue('ops-team');
+  });
+
   it('resets editing state after deleting the group being edited so the next save creates a new group', async () => {
     const user = userEvent.setup();
     render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);

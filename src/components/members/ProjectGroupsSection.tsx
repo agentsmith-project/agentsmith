@@ -64,6 +64,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const [memberSearch, setMemberSearch] = React.useState('');
   const [memberPage, setMemberPage] = React.useState(1);
   const [editingGroupId, setEditingGroupId] = React.useState<string | null>(null);
+  const [editingGroupName, setEditingGroupName] = React.useState<string | null>(null);
   const [previewGroupId, setPreviewGroupId] = React.useState<string | null>(null);
   const [groupToDelete, setGroupToDelete] = React.useState<ProjectGroup | null>(null);
   const [createTemplateOpen, setCreateTemplateOpen] = React.useState(false);
@@ -73,6 +74,8 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     failedMemberIds: string[];
     failedDetails: Array<{ memberId: string; message?: string }>;
   } | null>(null);
+  const editorCardRef = React.useRef<HTMLDivElement | null>(null);
+  const groupNameInputRef = React.useRef<HTMLInputElement | null>(null);
 
   const defaultTemplates = React.useMemo(
     () => buildDefaultTemplates(t),
@@ -130,6 +133,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     setMemberSearch('');
     setMemberPage(1);
     setEditingGroupId(null);
+    setEditingGroupName(null);
     setPreviewGroupId(null);
     setLastApplyResult(null);
   };
@@ -162,10 +166,20 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     member_ids: string[];
   }) => {
     setEditingGroupId(group.id);
+    setEditingGroupName(group.name);
     setName(group.name);
     setTemplateId(group.permission_template_id);
     setSelectedMemberIds(group.member_ids);
     setMemberPage(1);
+    requestAnimationFrame(() => {
+      if (typeof editorCardRef.current?.scrollIntoView === 'function') {
+        editorCardRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      requestAnimationFrame(() => {
+        groupNameInputRef.current?.focus();
+        groupNameInputRef.current?.select();
+      });
+    });
   };
 
   const handleCreateTemplate = async (data: {
@@ -281,13 +295,16 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
         <GroupEditorCard
+          ref={editorCardRef}
           allPagedSelected={allPagedSelected}
           canManage={canManage}
           commonT={commonT}
           createPending={createGroup.isPending}
           editingGroupId={editingGroupId}
+          editingGroupName={editingGroupName ?? undefined}
           filteredMembersCount={filteredMembers.length}
           groupName={name}
+          groupNameInputRef={groupNameInputRef}
           hasAnyPagedSelected={hasAnyPagedSelected}
           memberPage={memberPage}
           memberPageCount={memberPageCount}

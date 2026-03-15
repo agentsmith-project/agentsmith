@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { cn } from '@/lib/utils';
 
 import type { GroupMemberLike, GroupTemplateOption } from './types';
 
@@ -14,8 +15,10 @@ interface GroupEditorCardProps {
   createTemplatePending: boolean;
   createPending: boolean;
   editingGroupId: string | null;
+  editingGroupName?: string;
   filteredMembersCount: number;
   groupName: string;
+  groupNameInputRef?: React.RefObject<HTMLInputElement | null>;
   hasAnyPagedSelected: boolean;
   memberPage: number;
   memberPageCount: number;
@@ -40,15 +43,17 @@ interface GroupEditorCardProps {
   onTemplateIdChange: (value: string) => void;
 }
 
-export function GroupEditorCard({
+export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardProps>(function GroupEditorCard({
   allPagedSelected,
   canManage,
   commonT,
   createTemplatePending,
   createPending,
   editingGroupId,
+  editingGroupName,
   filteredMembersCount,
   groupName,
+  groupNameInputRef,
   hasAnyPagedSelected,
   memberPage,
   memberPageCount,
@@ -71,14 +76,28 @@ export function GroupEditorCard({
   onSelectMember,
   onSelectPage,
   onTemplateIdChange,
-}: GroupEditorCardProps) {
+}, ref) {
   return (
-    <div className="space-y-4 rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+    <div
+      ref={ref}
+      className={cn(
+        'space-y-4 rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] transition-colors duration-200',
+        editingGroupId ? 'border-accent/40 bg-accent/5' : null,
+      )}
+    >
       <div className="flex flex-col gap-1">
         <h4 className="text-sm font-semibold text-foreground">
           {editingGroupId ? t('edit') : t('create_group')}
         </h4>
         <p className="text-sm leading-6 text-secondary">{t('group_templates_description')}</p>
+        {editingGroupId ? (
+          <div
+            className="mt-2 inline-flex w-fit items-center gap-2 rounded-full border border-accent/30 bg-accent/10 px-3 py-1 text-xs font-medium text-accent"
+            data-testid="members__group-editing-indicator"
+          >
+            {t('editing_group', { name: editingGroupName ?? groupName })}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -93,6 +112,7 @@ export function GroupEditorCard({
             disabled={!canManage}
             className="bg-surface-high"
             data-testid="members__group-name-input"
+            ref={groupNameInputRef}
           />
         </div>
         <div>
@@ -245,4 +265,4 @@ export function GroupEditorCard({
       </div>
     </div>
   );
-}
+});

@@ -68,6 +68,14 @@ export function WorkspaceEditorPanel({
       ? 'border-success/30 text-foreground'
       : 'border-subtle text-tertiary';
   const statusPrefix = saveError ? t('status_error') : saveNotice ? t('status_success') : t('status_idle');
+  const needsAdminBindingRepair = Boolean(
+    state.selectedWorkspace
+    && state.selectedWorkspace.workspace_admin
+    && (
+      state.selectedWorkspace.workspace_admin_binding_required
+      || !state.selectedWorkspace.workspace_admin_user_id
+    ),
+  );
 
   return (
     <aside className="space-y-4 rounded-md border border-border bg-surface p-4" data-testid="system-workspaces__create">
@@ -130,6 +138,15 @@ export function WorkspaceEditorPanel({
           >
             <p className="font-medium">{state.draft.admin.name || state.draft.admin.email}</p>
             <p className="text-xs text-tertiary">{state.draft.admin.email}</p>
+          </div>
+        ) : null}
+        {needsAdminBindingRepair ? (
+          <div
+            className="rounded-sm border border-warning/30 bg-warning/10 px-3 py-2 text-sm text-foreground"
+            data-testid="system-workspaces__admin-binding-warning"
+          >
+            <p className="font-medium">{t('workspace_admin_binding_warning_title')}</p>
+            <p className="mt-1 text-xs text-tertiary">{t('workspace_admin_binding_warning_body')}</p>
           </div>
         ) : null}
         <div className="space-y-2" data-testid="system-workspaces__admin-search-results">

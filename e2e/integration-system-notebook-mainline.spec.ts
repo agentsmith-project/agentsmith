@@ -97,7 +97,7 @@ async function loginAsSystemAdmin(page: Page): Promise<void> {
   await expect
     .poll(() => page.url(), { timeout: 30_000 })
     .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
-  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText('Loading workspaces...')).not.toBeVisible({ timeout: 30_000 });
 }
 
@@ -298,7 +298,7 @@ async function approveJoinRequest(page: Page, workspaceId: string, projectId: st
   const requestCard = page.locator('div').filter({ hasText: /integration-member/i }).first();
   await expect(requestCard).toBeVisible({ timeout: 30_000 });
   await requestCard.getByRole('button', { name: /^approve$/i }).click();
-  await expect(requestCard.getByText(/approved/i)).toBeVisible({ timeout: 30_000 });
+  await expect(requestCard.getByText(/^approved$/i)).toBeVisible({ timeout: 30_000 });
 }
 
 async function promoteJoinedMemberToProjectAdmin(page: Page, workspaceId: string, projectId: string): Promise<void> {

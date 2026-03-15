@@ -1,11 +1,22 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { SystemLogoutButton } from './SystemLogoutButton';
 import { WorkspaceCard } from './system-workspaces/WorkspaceCard';
 import { WorkspaceEditorPanel } from './system-workspaces/WorkspaceEditorPanel';
@@ -15,6 +26,7 @@ export function SystemWorkspacesPage() {
   const params = useParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const {
     workspaces,
     filteredWorkspaces,
@@ -158,11 +170,28 @@ export function SystemWorkspacesPage() {
                 onPublish={() => void publish()}
                 onDisable={() => void disable()}
                 onReset={resetDraft}
-                onDelete={() => void remove()}
+                onDelete={() => setDeleteDialogOpen(true)}
               />
             </section>
           </div>
         </div>
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent data-testid="system-workspaces__delete-dialog">
+            <AlertDialogHeader>
+              <AlertDialogTitle>{t('delete_confirm_title')}</AlertDialogTitle>
+              <AlertDialogDescription>{t('delete_confirm')}</AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel data-testid="system-workspaces__delete-cancel">{t('cancel')}</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => void remove()}
+                data-testid="system-workspaces__delete-confirm"
+              >
+                {t('delete_action')}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </PageLayout>
     </PageState>
   );

@@ -46,6 +46,8 @@ type CaptureEntry = {
   role: string;
   route: string;
   notes: string;
+  status: 'pass' | 'pass_with_follow_up' | 'needs_fix';
+  blocking: boolean;
 };
 
 type ProjectContext = {
@@ -71,6 +73,8 @@ async function capturePage(page: Page, captures: CaptureEntry[], args: {
   route?: string;
   notes: string;
   fullPage?: boolean;
+  status?: CaptureEntry['status'];
+  blocking?: boolean;
 }) {
   await ensureArtifactDir();
   const filename = `${args.name}.png`;
@@ -82,14 +86,23 @@ async function capturePage(page: Page, captures: CaptureEntry[], args: {
     role: args.role,
     route: args.route ?? page.url(),
     notes: args.notes,
+    status: args.status ?? 'pass',
+    blocking: args.blocking ?? false,
   });
 }
 
 async function flushReviewArtifacts(captures: CaptureEntry[]) {
   await ensureArtifactDir();
+  const counts = {
+    pass: captures.filter((item) => item.status === 'pass').length,
+    pass_with_follow_up: captures.filter((item) => item.status === 'pass_with_follow_up').length,
+    needs_fix: captures.filter((item) => item.status === 'needs_fix').length,
+  };
+  const blockingItems = captures.filter((item) => item.blocking);
   const manifest = {
     generated_at: new Date().toISOString(),
     total: captures.length,
+    summary: counts,
     screenshots: captures,
   };
   const reviewLines = [
@@ -97,10 +110,22 @@ async function flushReviewArtifacts(captures: CaptureEntry[]) {
     '',
     `- generated_at: ${manifest.generated_at}`,
     `- total: ${manifest.total}`,
+    `- pass: ${counts.pass}`,
+    `- pass_with_follow_up: ${counts.pass_with_follow_up}`,
+    `- needs_fix: ${counts.needs_fix}`,
     '',
-    '| Screenshot | Role | Route | Notes |',
-    '| --- | --- | --- | --- |',
-    ...captures.map((item) => `| ${item.path} | ${item.role} | ${item.route} | ${item.notes} |`),
+    '## 发布审查结论',
+    '',
+    blockingItems.length === 0 ? '- ready for release' : '- not ready for release',
+    blockingItems.length === 0
+      ? '- 当前真实后端主链、主要界面与关键操作路径未发现阻塞发布的问题。'
+      : `- 当前仍有 ${blockingItems.length} 个阻塞发布的问题需要修复。`,
+    '',
+    '## 页面审查结果',
+    '',
+    '| Screenshot | Role | Status | Blocking | Route | Notes |',
+    '| --- | --- | --- | --- | --- | --- |',
+    ...captures.map((item) => `| ${item.path} | ${item.role} | ${item.status} | ${item.blocking ? 'yes' : 'no'} | ${item.route} | ${item.notes} |`),
     '',
     '## 审查说明',
     '',

@@ -19,12 +19,14 @@
 - 创建或更新工作区时，`workspace admin` 必须通过身份目录搜索选择
 - 界面按 email 搜索 Keycloak 用户
 - 保存时系统会解析并保存该用户的 `user_id`
+- 如果历史工作区配置数据仍未绑定正式 `user_id`，界面会提示管理员重新选择并保存
 
 ### 工作区设置
 
 - `project creators` 通过身份目录搜索、多选和移除管理
 - 保存时只提交 `user_id[]`
 - 页面显示继续使用 `name + email`
+- 如果历史 `project creators` 仍是旧 email / 旧字符串绑定，页面会提示管理员重新选择并保存
 
 ### 项目级治理
 

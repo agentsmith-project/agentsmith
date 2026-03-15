@@ -1417,6 +1417,8 @@
     "workspace_project_creators_search_empty": "身份提供方中没有找到匹配的用户。",
     "workspace_project_creators_add": "添加",
     "workspace_project_creators_remove": "移除",
+    "workspace_project_creators_binding_warning_title": "部分项目创建者仍在使用历史身份绑定",
+    "workspace_project_creators_binding_warning_body": "请从用户目录中重新选择这些用户并再次保存，让工作区记录他们当前的内部用户 ID。",
     "tab_general": "常规",
     "tab_governance": "治理规则",
     "general_access_title": "常规与访问",
@@ -2033,7 +2035,9 @@
     },
     "join_requests": {
       "title": "加入申请",
+      "loading": "正在加载加入申请...",
       "pending_requests": "待处理申请",
+      "pending_help": "在这里处理加入申请。只有当申请人需要立即参与成员、访问和项目治理时，才授予项目管理权限。",
       "reviewed_requests": "已处理申请",
       "approve": "批准",
       "approve_and_grant": "批准并授予项目管理权限",
@@ -2052,6 +2056,10 @@
         "pending": "待处理",
         "approved": "已批准",
         "rejected": "已拒绝"
+      },
+      "outcome": {
+        "project_member": "已作为项目成员加入",
+        "project_admin": "已加入项目，并授予项目管理权限"
       },
       "empty": {
         "title": "暂无加入申请",
@@ -2808,6 +2816,8 @@
   "workspace_admin_label": "工作区管理员",
   "workspace_admin_title": "工作区管理员分配",
   "workspace_admin_description": "指定负责在当前工作区创建项目并分配项目管理员的人。",
+  "workspace_admin_binding_warning_title": "当前工作区管理员仍在使用历史身份绑定",
+  "workspace_admin_binding_warning_body": "请从用户目录中重新选择工作区管理员并再次保存，让当前工作区记录最新的内部用户 ID。",
   "workspace_admin_search_loading": "正在搜索身份提供方用户...",
   "workspace_admin_search_error": "用户目录搜索暂不可用，请检查身份提供方配置。",
   "workspace_admin_search_empty": "身份提供方中没有找到匹配的用户。",
@@ -2849,6 +2859,8 @@
     "publish_success": "工作区已发布。",
     "disable_success": "工作区已禁用。",
     "delete_success": "工作区已删除。",
+    "delete_confirm_title": "删除工作区",
+    "delete_action": "删除工作区",
     "status_idle": "就绪",
     "status_success": "已保存",
     "status_error": "操作失败",

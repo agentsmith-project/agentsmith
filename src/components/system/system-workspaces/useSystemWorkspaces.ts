@@ -250,8 +250,6 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
 
   const remove = async () => {
     if (!selectedWorkspaceId) return;
-    if (!window.confirm(t('delete_confirm'))) return;
-
     await runMutation('delete', async () => {
       const response = await fetch(`/api/system/workspaces/${selectedWorkspaceId}`, { method: 'DELETE' });
       const data = await parseJson<FetchResponse>(response);

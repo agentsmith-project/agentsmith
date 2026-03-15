@@ -8,7 +8,7 @@
  * Update baselines: npx playwright test e2e/visual.spec.ts --project=visual --update-snapshots
  */
 
-import { test as base, expect, type Page } from '@playwright/test';
+import { test as base, expect, type APIRequestContext, type Page } from '@playwright/test';
 import { withAuth } from './fixtures/authenticated';
 import { gotoAndWait, waitForPageReady } from './utils/navigation';
 
@@ -71,6 +71,13 @@ async function loginAsSystemAdmin(page: Page) {
     .poll(() => page.url(), { timeout: 20_000 })
     .toMatch(/\/en-US\/system\/workspaces/);
   await waitForPageReady(page);
+}
+
+async function seedSystemWorkspaces(request: APIRequestContext, state: 'empty' | 'with_workspace' | 'with_disabled_workspace' | 'with_failed_workspace') {
+  const response = await request.post('/api/test/system/workspaces/seed', {
+    data: { state },
+  });
+  expect(response.ok()).toBe(true);
 }
 
 function projectPath(section: string) {
@@ -159,13 +166,41 @@ test.describe('Visual - Workspace Pages', () => {
 // ─── System Pages ───────────────────────────────────────────────────────────
 
 test.describe('Visual - System Pages', () => {
-  test('system workspaces', async ({ page }) => {
+  test('system workspaces', async ({ page, request }) => {
+    await seedSystemWorkspaces(request, 'empty');
     await loginAsSystemAdmin(page);
     await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
     await expect(page).toHaveScreenshot('system-workspaces.png', { fullPage: true });
   });
 
-  test('system info', async ({ page }) => {
+  test('system workspaces edit mode', async ({ page, request }) => {
+    await seedSystemWorkspaces(request, 'with_workspace');
+    await loginAsSystemAdmin(page);
+    await page.getByTestId('system-workspaces__configure--ws_seeded').click();
+    await expect(page.getByTestId('system-workspaces__mode')).toContainText('Editing ws_seeded');
+    await expect(page).toHaveScreenshot('system-workspaces-edit-mode.png', { fullPage: true });
+  });
+
+  test('system workspaces failed state', async ({ page, request }) => {
+    await seedSystemWorkspaces(request, 'with_failed_workspace');
+    await loginAsSystemAdmin(page);
+    await page.getByTestId('system-workspaces__configure--ws_seeded').click();
+    await expect(page.getByTestId('system-workspaces__status')).toContainText('Failed');
+    await expect(page.getByTestId('system-workspaces__status')).toContainText('identity_provider_config_incomplete');
+    await expect(page).toHaveScreenshot('system-workspaces-failed-state.png', { fullPage: true });
+  });
+
+  test('system workspaces delete confirmation', async ({ page, request }) => {
+    await seedSystemWorkspaces(request, 'with_disabled_workspace');
+    await loginAsSystemAdmin(page);
+    await page.getByTestId('system-workspaces__configure--ws_seeded').click();
+    await page.getByTestId('system-workspaces__delete').click();
+    await expect(page.getByTestId('system-workspaces__delete-dialog')).toBeVisible();
+    await expect(page).toHaveScreenshot('system-workspaces-delete-confirmation.png', { fullPage: true });
+  });
+
+  test('system info', async ({ page, request }) => {
+    await seedSystemWorkspaces(request, 'with_failed_workspace');
     await loginAsSystemAdmin(page);
     await page.getByTestId('system-workspaces__open-info').click();
     await page.waitForURL(/\/en-US\/system\/info/, { timeout: 15_000 });
@@ -298,8 +333,8 @@ test.describe('Visual - Overlays', () => {
 
   test('alerts - notifications tab', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('alerts'));
-    await authedPage.getByRole('tab', { name: /notifications/i }).click();
-    await expect(authedPage.getByRole('tabpanel', { name: /notifications/i })).toBeVisible();
+    await authedPage.getByRole('tab', { name: 'Notifications', exact: true }).click();
+    await expect(authedPage.getByTestId('alert-notifications')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('alerts-notifications-tab.png', { fullPage: true });
   });

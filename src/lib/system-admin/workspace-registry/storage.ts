@@ -71,6 +71,7 @@ function normalizeRecord(record: SystemWorkspaceRecord | Record<string, unknown>
     workspace_admin: workspaceAdmin,
     workspace_admin_user_id: workspaceAdminUserId || undefined,
     workspace_admin_name: workspaceAdminName,
+    workspace_admin_binding_required: Boolean(workspaceAdmin) && !workspaceAdminUserId,
     project_creators: normalizeIdentitySnapshots(raw['project_creators']),
     provisioning_status:
       provisioningStatus === 'draft' ||

@@ -210,6 +210,27 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
   });
 
+  it('shows a repair warning when a selected workspace still uses a historical admin binding', async () => {
+    fetchMock.mockResolvedValueOnce(
+      mockWorkspaceListResponse([
+        makeWorkspace({
+          workspace_admin_user_id: undefined,
+          workspace_admin: 'legacy-admin@example.com',
+          workspace_admin_name: null,
+        }),
+      ]),
+    );
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+
+    expect(screen.getByTestId('system-workspaces__admin-binding-warning')).toHaveTextContent(
+      'workspace_admin_binding_warning_title',
+    );
+  });
+
   it('deletes a disabled workspace', async () => {
     fetchMock
       .mockResolvedValueOnce({
@@ -243,6 +264,8 @@ describe('SystemWorkspacesPage', () => {
     expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
     fireEvent.click(screen.getByTestId('system-workspaces__delete'));
+    expect(screen.getByTestId('system-workspaces__delete-dialog')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__delete-confirm'));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(

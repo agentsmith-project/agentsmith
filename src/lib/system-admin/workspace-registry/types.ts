@@ -27,6 +27,7 @@ export interface SystemWorkspaceRecord {
   workspace_admin: string;
   workspace_admin_user_id?: string;
   workspace_admin_name?: string | null;
+  workspace_admin_binding_required?: boolean;
   project_creators: WorkspaceIdentitySnapshot[];
   idp: SystemWorkspaceIdpConfig;
   tenant: ReturnType<typeof buildWorkspaceTenantPreview>;

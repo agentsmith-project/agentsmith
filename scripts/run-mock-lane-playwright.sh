@@ -44,14 +44,19 @@ trap cleanup EXIT
 
 is_server_alive() {
   if [[ ! -f "${PID_FILE}" ]]; then
-    return 1
+    is_port_listening
+    return $?
   fi
   local pid
   pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
   if [[ -z "${pid}" ]]; then
-    return 1
+    is_port_listening
+    return $?
   fi
-  kill -0 "${pid}" >/dev/null 2>&1
+  if kill -0 "${pid}" >/dev/null 2>&1; then
+    return 0
+  fi
+  is_port_listening
 }
 
 is_port_listening() {
@@ -137,7 +142,7 @@ wait_http_ok() {
     if [[ "${STARTED_BY_SCRIPT}" == "1" ]] && [[ -f "${PID_FILE}" ]]; then
       local pid
       pid="$(cat "${PID_FILE}" 2>/dev/null || true)"
-      if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1; then
+      if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1 && ! is_port_listening; then
         return 1
       fi
     fi

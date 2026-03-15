@@ -46,12 +46,19 @@ export function JoinRequestsTab({
   const [rejectReason, setRejectReason] = React.useState('');
   const [rejectTarget, setRejectTarget] = React.useState<JoinRequest | null>(null);
   const [elevatingRequestId, setElevatingRequestId] = React.useState<string | null>(null);
+  const currentProjectAdmins = React.useMemo(
+    () =>
+      new Set(
+        Array.isArray(currentProject?.governance_json?.project_admins)
+          ? currentProject.governance_json.project_admins.filter((value): value is string => typeof value === 'string')
+          : [],
+      ),
+    [currentProject?.governance_json?.project_admins],
+  );
 
   const grantProjectAdminMutation = useMutation({
     mutationFn: async (userId: string) => {
-      const currentAdmins = Array.isArray(currentProject?.governance_json?.project_admins)
-        ? currentProject.governance_json.project_admins.filter((value): value is string => typeof value === 'string')
-        : [];
+      const currentAdmins = Array.from(currentProjectAdmins);
       const nextAdmins = Array.from(new Set([...currentAdmins, userId]));
       return projectAPI.update(workspaceId, projectId, {
         governance_json: {
@@ -108,7 +115,7 @@ export function JoinRequestsTab({
   if (loading) {
     return (
       <div className="text-center py-8 text-tertiary">
-        <p className="text-sm">Loading join requests...</p>
+        <p className="text-sm">{t('loading')}</p>
       </div>
     );
   }
@@ -134,6 +141,7 @@ export function JoinRequestsTab({
           <h3 className="text-sm font-medium text-foreground">
             {t('pending_requests')} ({pendingRequests.length})
           </h3>
+          <p className="text-xs text-tertiary">{t('pending_help')}</p>
           <div className="space-y-3">
             {pendingRequests.map((request) => (
               <JoinRequestCard
@@ -149,6 +157,7 @@ export function JoinRequestsTab({
                   || grantProjectAdminMutation.isPending
                 }
                 isApprovingAndGranting={elevatingRequestId === request.id}
+                isProjectAdmin={currentProjectAdmins.has(request.user_id)}
               />
             ))}
           </div>
@@ -169,6 +178,7 @@ export function JoinRequestsTab({
                 canApprove={false}
                 onApprove={undefined}
                 onReject={undefined}
+                isProjectAdmin={currentProjectAdmins.has(request.user_id)}
               />
             ))}
           </div>
@@ -215,6 +225,7 @@ interface JoinRequestCardProps {
   onReject?: () => void;
   isProcessing?: boolean;
   isApprovingAndGranting?: boolean;
+  isProjectAdmin?: boolean;
 }
 
 function JoinRequestCard({
@@ -225,6 +236,7 @@ function JoinRequestCard({
   onReject,
   isProcessing = false,
   isApprovingAndGranting = false,
+  isProjectAdmin = false,
 }: JoinRequestCardProps) {
   const t = useTranslations('members.join_requests');
 
@@ -299,6 +311,13 @@ function JoinRequestCard({
           </span>
         )}
       </div>
+
+      {request.status === 'approved' && (
+        <div className="flex items-center gap-2 rounded-md border border-border/70 bg-surface-high px-3 py-2 text-xs text-secondary">
+          {isProjectAdmin ? <ShieldCheck className="h-3.5 w-3.5 text-accent" /> : <CheckCircle className="h-3.5 w-3.5 text-success" />}
+          <span>{isProjectAdmin ? t('outcome.project_admin') : t('outcome.project_member')}</span>
+        </div>
+      )}
 
       {request.status === 'pending' && canApprove && (
         <div className="flex items-center gap-2 pt-2 border-t border-border">

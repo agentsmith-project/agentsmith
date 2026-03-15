@@ -14,13 +14,17 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanManageMemberGovernance: vi.fn(),
 }));
 
-vi.mock('@/lib/hooks/use-projects-queries', () => ({
+const { useProject: mockUseProject } = vi.hoisted(() => ({
   useProject: vi.fn(() => ({
     data: {
       id: 'proj_1',
       governance_json: { project_admins: ['owner_1'] },
     },
   })),
+}));
+
+vi.mock('@/lib/hooks/use-projects-queries', () => ({
+  useProject: mockUseProject,
 }));
 
 const mockProjectUpdate = vi.fn();
@@ -70,6 +74,12 @@ describe('JoinRequestsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockProjectUpdate.mockResolvedValue(undefined);
+    mockUseProject.mockReturnValue({
+      data: {
+        id: 'proj_1',
+        governance_json: { project_admins: ['owner_1'] },
+      },
+    });
   });
 
   function renderTab() {
@@ -91,6 +101,7 @@ describe('JoinRequestsTab', () => {
     expect(screen.getByRole('button', { name: 'approve' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'reject' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'approve_and_grant' })).toBeInTheDocument();
+    expect(screen.getByText('pending_help')).toBeInTheDocument();
   });
 
   it('hides approve and reject actions for project admins without owner controls', () => {
@@ -127,5 +138,51 @@ describe('JoinRequestsTab', () => {
         project_admins: ['owner_1', 'user_alt'],
       },
     });
+  });
+
+  it('shows loading state through i18n key', () => {
+    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <JoinRequestsTab workspaceId="ws_1" projectId="proj_1" requests={[]} loading />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('loading')).toBeInTheDocument();
+  });
+
+  it('shows approved requests with project admin outcome when the user is already a project admin', () => {
+    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    mockUseProject.mockReturnValue({
+      data: {
+        id: 'proj_1',
+        governance_json: { project_admins: ['owner_1', 'user_alt'] },
+      },
+    });
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    render(
+      <QueryClientProvider client={queryClient}>
+        <JoinRequestsTab
+          workspaceId="ws_1"
+          projectId="proj_1"
+          requests={[
+            {
+              ...mockRequests[0],
+              status: 'approved',
+              reviewed_at: '2026-03-02T00:00:00Z',
+            },
+          ]}
+        />
+      </QueryClientProvider>,
+    );
+
+    expect(screen.getByText('outcome.project_admin')).toBeInTheDocument();
   });
 });

@@ -1,75 +1,37 @@
-# System Visual State Coverage TODO v1
+# System Visual State Coverage
 
-Last updated: 2026-03-12  
+Last updated: 2026-03-15  
 Owner: Frontend
 
-## 1. Purpose
+## Current status
 
-This document tracks the deferred visual work for `system` pages that require seeded state.
-
-Current visual baseline is healthy for:
+`system` 页面当前已经具备稳定 visual 覆盖，包含：
 
 1. `system login`
 2. `system workspaces`
-3. `system info`
+3. `system workspaces edit mode`
+4. `system workspaces failed state`
+5. `system workspaces delete confirmation`
+6. `system info`
 
-However, some high-value `system` UI states are not suitable for ad-hoc UI setup inside `visual.spec.ts`.
+## Fixture shape
 
-## 2. Why This Is Deferred
+当前 mock visual lane 使用专用 seeded-state 辅助入口来准备 `system 管理侧` 状态：
 
-The missing states are not blocked by page implementation. They are blocked by test setup shape.
+1. `empty`
+2. `with_workspace`
+3. `with_disabled_workspace`
+4. `with_failed_workspace`
 
-Example:
+实现目标已经完成：
 
-1. `system workspaces edit mode` requires at least one persisted workspace
-2. the visual lane currently boots with an empty system workspace registry
-3. creating a workspace inline inside a visual test makes the screenshot depend on:
-   - request timing
-   - page transitions
-   - shared mock registry mutation
-   - multi-step UI interaction
+1. 不在 `visual.spec.ts` 里通过长 UI 链造状态
+2. 不依赖前一个 visual 用例留下状态
+3. `system` 状态准备与工作区业务 visual 隔离
 
-That approach is too fragile for a stable visual baseline.
+## Follow-up boundary
 
-## 3. Required Structural Fix
+当前 MVP 不再缺少高价值 `system` visual 状态。后续如继续扩展，只允许补：
 
-Before adding more `system` state screenshots, introduce a structured seeded-state path for visual tests.
-
-Recommended direction:
-
-1. add a dedicated `system workspace registry` seed helper for mock lane
-2. support at least two explicit states:
-   - `system-empty`
-   - `system-with-workspace`
-3. allow `visual.spec.ts` to request the desired system state before page navigation
-
-Acceptable implementations:
-
-1. a mock-only registry seed file loaded by the lane bootstrap
-2. a dedicated internal test helper endpoint
-3. a Playwright fixture that writes the registry before visiting the page
-
-## 4. Deferred Visual States
-
-These are the next `system` visual states to add after the structural fix exists:
-
-1. `system workspaces edit mode`
-2. `system workspaces saved notice`
-3. `system workspaces action failed state`
-4. `system workspaces delete confirmation`
-5. `system workspaces with multiple configured workspaces`
-
-## 5. Constraints
-
-1. Do not create state through a long UI interaction chain inside `visual.spec.ts`
-2. Do not rely on previous visual tests to leave the registry in the correct state
-3. Do not block current MVP delivery on these deferred screenshots
-4. Keep `system` visual setup isolated from workspace business entry visual setup
-
-## 6. Current Decision
-
-For the current MVP mainline:
-
-1. keep page-level `system` visual coverage
-2. defer seeded `system` state visuals
-3. continue mainline work on system/workspace/product flow without waiting for this fixture work
+1. 新增 `system` 页面时同步加 visual
+2. 明确由产品新增的新状态，而不是为了截图继续制造额外测试状态

@@ -331,6 +331,21 @@ describe('WorkspaceSettingsPage', () => {
     });
   });
 
+  it('shows a repair warning when project creators still look like historical bindings', async () => {
+    mockListProjectCreators.mockResolvedValue([
+      { id: 'legacy@example.com', user_id: 'legacy@example.com', name: 'legacy@example.com', email: 'legacy@example.com' },
+    ]);
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-creators-binding-warning')).toBeInTheDocument();
+    });
+    expect(screen.getByTestId('ws-settings__project-creators-binding-warning')).toHaveTextContent(
+      'workspace_project_creators_binding_warning_title',
+    );
+  });
+
   it('lets workspace admins transfer project ownership', async () => {
     const user = userEvent.setup();
     renderPage();

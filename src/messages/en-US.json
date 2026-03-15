@@ -1415,6 +1415,8 @@
     "workspace_project_creators_search_empty": "No matching users were found in the identity provider.",
     "workspace_project_creators_add": "Add",
     "workspace_project_creators_remove": "Remove",
+    "workspace_project_creators_binding_warning_title": "Some project creators still use historical identity bindings",
+    "workspace_project_creators_binding_warning_body": "Re-select these users from the directory and save again so the workspace stores their current internal user IDs.",
     "tab_general": "General",
     "tab_governance": "Governance",
     "general_access_title": "General & Access",
@@ -2031,7 +2033,9 @@
     },
     "join_requests": {
       "title": "Join Requests",
+      "loading": "Loading join requests...",
       "pending_requests": "Pending Requests",
+      "pending_help": "Approve requests here. Grant project administration only when the requester should immediately help manage members, access, and project operations.",
       "reviewed_requests": "Reviewed Requests",
       "approve": "Approve",
       "approve_and_grant": "Approve and grant project admin",
@@ -2050,6 +2054,10 @@
         "pending": "Pending",
         "approved": "Approved",
         "rejected": "Rejected"
+      },
+      "outcome": {
+        "project_member": "Approved as a project member",
+        "project_admin": "Approved with project administration access"
       },
       "empty": {
         "title": "No join requests",
@@ -2805,6 +2813,8 @@
   "workspace_admin_label": "Workspace Administrator",
   "workspace_admin_title": "Workspace administrator assignment",
   "workspace_admin_description": "Assign the person responsible for creating projects and delegating project administrators in this workspace.",
+  "workspace_admin_binding_warning_title": "This workspace administrator still uses a historical identity binding",
+  "workspace_admin_binding_warning_body": "Re-select the workspace administrator from the directory and save again so this workspace stores the current internal user ID.",
   "workspace_admin_search_loading": "Searching identity provider users...",
   "workspace_admin_search_error": "Directory search is unavailable. Check the identity provider configuration.",
   "workspace_admin_search_empty": "No matching users were found in the identity provider.",
@@ -2846,6 +2856,8 @@
     "publish_success": "Workspace published.",
     "disable_success": "Workspace disabled.",
     "delete_success": "Workspace deleted.",
+    "delete_confirm_title": "Delete workspace",
+    "delete_action": "Delete workspace",
     "status_idle": "Ready",
     "status_success": "Saved",
     "status_error": "Action failed",

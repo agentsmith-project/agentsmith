@@ -69,6 +69,11 @@ export default function WorkspaceSettingsPage() {
   const workspaceDisplayId: string = workspace.id ?? workspaceId ?? '';
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
   const activeProjects = projects.filter((project) => project.status !== 'archived');
+  const hasLegacyProjectCreatorBindings = React.useMemo(
+    () =>
+      projectCreators.some((creator) => creator.user_id === creator.email || creator.email.endsWith('@workspace.local')),
+    [projectCreators],
+  );
 
   React.useEffect(() => {
     setOwnerDraftByProject((current) => {
@@ -405,6 +410,15 @@ export default function WorkspaceSettingsPage() {
                 subtitle={t('workspace_project_creators_description')}
               />
               <div className="mt-4 space-y-3">
+                {hasLegacyProjectCreatorBindings ? (
+                  <div
+                    className="rounded-[18px] border border-warning/30 bg-warning/10 px-4 py-3"
+                    data-testid="ws-settings__project-creators-binding-warning"
+                  >
+                    <p className="text-sm font-medium text-foreground">{t('workspace_project_creators_binding_warning_title')}</p>
+                    <p className="mt-1 text-sm text-secondary">{t('workspace_project_creators_binding_warning_body')}</p>
+                  </div>
+                ) : null}
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-foreground">{t('workspace_project_creators_field')}</span>
                   <input

@@ -13,11 +13,11 @@ export function NotebookSseDebugPanel({ events }: NotebookSseDebugPanelProps) {
 
   return (
     <div
-      className="border-b border-subtle bg-surface px-4 py-2 text-xs text-tertiary"
+      className="border-b border-white/6 bg-white/[0.015] px-3.5 py-1.5 text-[11px] text-tertiary"
       data-testid="notebook__sse-debug-panel"
     >
-      <div className="font-medium text-primary mb-1">{t('sse_debug_title')}</div>
-      <div className="space-y-1">
+      <div className="mb-1 font-medium text-primary">{t('sse_debug_title')}</div>
+      <div className="space-y-0.5">
         {events.map((evt, index) => (
           <div key={`${evt.at}-${evt.phase}-${index}`} className="font-mono truncate">
             [{new Date(evt.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}] {evt.phase} {evt.summary}

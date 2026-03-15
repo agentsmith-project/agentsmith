@@ -166,6 +166,7 @@ test.describe('Visual - System Pages', () => {
     await seedSystemWorkspaces(request, 'empty');
     await loginAsSystemAdmin(page);
     await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
+    await expect(page.getByTestId('system-workspaces__empty')).toBeVisible();
     await expect(page).toHaveScreenshot('system-workspaces.png', { fullPage: true });
   });
 

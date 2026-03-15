@@ -95,6 +95,33 @@ function withDerivedWorkspacePermissions() {
   });
 }
 
+export function ensureWorkspaceMember(member: {
+  user_id: string;
+  email: string;
+  name: string;
+  role?: 'owner' | 'admin' | 'developer' | 'user';
+}) {
+  if (workspaceMembers.some((item) => item.user_id === member.user_id || item.email === member.email)) {
+    return;
+  }
+
+  const role = member.role ?? 'user';
+  workspaceMembers.push({
+    id: `wm_${member.user_id}`,
+    user_id: member.user_id,
+    name: member.name,
+    email: member.email,
+    role,
+    governance_group: role === 'owner' || role === 'admin' ? 'wheel' : 'user',
+    permissions:
+      role === 'owner' || role === 'admin'
+        ? [...PLATFORM_PERMISSIONS.WORKSPACE]
+        : ['workspace:read'],
+    status: 'active',
+    joined_at: new Date().toISOString(),
+  });
+}
+
 type SystemWorkspaceRecord = {
   id: string;
   name: string;

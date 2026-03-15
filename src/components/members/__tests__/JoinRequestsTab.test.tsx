@@ -14,17 +14,22 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanManageMemberGovernance: vi.fn(),
 }));
 
-const { useProject: mockUseProject } = vi.hoisted(() => ({
+const { useProject: mockUseProject, projectKeys: mockProjectKeys } = vi.hoisted(() => ({
   useProject: vi.fn(() => ({
     data: {
       id: 'proj_1',
       governance_json: { project_admins: ['owner_1'] },
     },
   })),
+  projectKeys: {
+    detail: (workspaceId: string, projectId: string) => ['workspaces', workspaceId, 'projects', projectId] as const,
+    all: (workspaceId: string) => ['workspaces', workspaceId, 'projects'] as const,
+  },
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
   useProject: mockUseProject,
+  projectKeys: mockProjectKeys,
 }));
 
 const mockProjectUpdate = vi.fn();
@@ -102,6 +107,8 @@ describe('JoinRequestsTab', () => {
     expect(screen.getByRole('button', { name: 'reject' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'approve_and_grant' })).toBeInTheDocument();
     expect(screen.getByText('pending_help')).toBeInTheDocument();
+    expect(screen.getByTestId('members__join-request-decision-paths')).toHaveTextContent('decision_paths.approve');
+    expect(screen.getByTestId('members__join-request-decision-paths')).toHaveTextContent('decision_paths.approve_and_grant');
   });
 
   it('hides approve and reject actions for project admins without owner controls', () => {
@@ -184,5 +191,6 @@ describe('JoinRequestsTab', () => {
     );
 
     expect(screen.getByText('outcome.project_admin')).toBeInTheDocument();
+    expect(screen.getByText('reviewed_help')).toBeInTheDocument();
   });
 });

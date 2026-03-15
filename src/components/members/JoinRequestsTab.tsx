@@ -12,6 +12,7 @@ import { formatRelativeTime } from '@/lib/utils/formatters';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { useApproveJoinRequest, useRejectJoinRequest } from '@/lib/hooks/use-join-requests';
 import { useProject } from '@/lib/hooks/use-projects-queries';
+import { projectKeys } from '@/lib/hooks/use-projects-queries';
 import { queryKeys } from '@/lib/query-keys';
 import { ProjectAPI, getApiClient } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
@@ -68,6 +69,8 @@ export function JoinRequestsTab({
       });
     },
     onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: projectKeys.detail(workspaceId, projectId) });
+      void queryClient.invalidateQueries({ queryKey: projectKeys.all(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(workspaceId, projectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
@@ -142,6 +145,16 @@ export function JoinRequestsTab({
             {t('pending_requests')} ({pendingRequests.length})
           </h3>
           <p className="text-xs text-tertiary">{t('pending_help')}</p>
+          <div className="grid gap-3 md:grid-cols-2" data-testid="members__join-request-decision-paths">
+            <div className="rounded-md border border-subtle bg-surface-high px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-tertiary">{t('approve')}</p>
+              <p className="mt-1 text-sm text-secondary">{t('decision_paths.approve')}</p>
+            </div>
+            <div className="rounded-md border border-subtle bg-surface-high px-3 py-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-tertiary">{t('approve_and_grant')}</p>
+              <p className="mt-1 text-sm text-secondary">{t('decision_paths.approve_and_grant')}</p>
+            </div>
+          </div>
           <div className="space-y-3">
             {pendingRequests.map((request) => (
               <JoinRequestCard
@@ -170,6 +183,7 @@ export function JoinRequestsTab({
           <h3 className="text-sm font-medium text-foreground">
             {t('reviewed_requests')} ({reviewedRequests.length})
           </h3>
+          <p className="text-xs text-tertiary">{t('reviewed_help')}</p>
           <div className="space-y-3">
             {reviewedRequests.map((request) => (
               <JoinRequestCard

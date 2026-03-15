@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
+import { ensureWorkspaceMember } from './workspace';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import type { ChangeHistoryEntry } from '@/lib/api/types';
 
@@ -140,11 +141,38 @@ export const memberHandlers = [
     return HttpResponse.json({ items, total: items.length });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/approve', ({ params }) => {
+    const projectId = String(params.prj ?? '');
     const request = joinRequests.find((item) => item.id === params.id);
     if (!request) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     request.status = 'approved';
     request.reviewed_at = new Date().toISOString();
     request.reviewed_by = 'user_001';
+    if (!members.some((member) => member.id === request.user_id)) {
+      members.push({
+        id: request.user_id,
+        email: request.user_email,
+        name: request.user_name,
+        role: 'user',
+        status: 'active',
+        created_at: new Date().toISOString(),
+      });
+    }
+    ensureWorkspaceMember({
+      user_id: request.user_id,
+      email: request.user_email,
+      name: request.user_name,
+      role: 'user',
+    });
+    if (!memberProjectMembershipFixtures.some((item) => item.project_id === projectId && item.user_id === request.user_id)) {
+      memberProjectMembershipFixtures.push({
+        project_id: projectId,
+        user_id: request.user_id,
+        role: 'user',
+        permissions: [...GROUP_TEMPLATES.user],
+        status: 'active',
+        joined_at: request.reviewed_at,
+      });
+    }
     return HttpResponse.json({ ok: true });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/reject', async ({ params, request }) => {

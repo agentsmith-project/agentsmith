@@ -42,6 +42,7 @@
     "test:mainline:strict": "bash scripts/workspace-project-mainline-gate.sh",
     "test:mainline:strict:real": "bash scripts/workspace-project-mainline-gate.sh --with-real-lane",
     "test:governance:strict": "bash scripts/governance-mainline-gate.sh",
+    "test:members-governance:strict": "bash scripts/governance-mainline-gate.sh",
     "test:smoke:real:notebook-mainline": "bash scripts/system-notebook-real-smoke-gate.sh",
     "test:visual:real:review": "bash scripts/release-real-visual-review.sh",
     "test:release:real:full": "bash scripts/release-real-full-gate.sh",

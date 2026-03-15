@@ -150,26 +150,4 @@ export const projectHandlers = [
     if (idx >= 0) projects.splice(idx, 1);
     return HttpResponse.json({ ok: true });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/join-requests', () =>
-    HttpResponse.json({ items: p0.join_requests }),
-  ),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/approve', () =>
-    HttpResponse.json({ status: 'approved' }),
-  ),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/reject', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    return HttpResponse.json({ status: 'rejected', reject_reason: (body?.reason as string) ?? '' });
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/invites', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const invite = {
-      id: `inv_${Date.now()}`,
-      email: (body.email as string) ?? '',
-      group_template: (body.group_template as string) ?? 'user',
-      invite_url: `/join?token=mock_token_${Date.now()}`,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      created_at: new Date().toISOString(),
-    };
-    return HttpResponse.json(invite, { status: 201 });
-  }),
 ];

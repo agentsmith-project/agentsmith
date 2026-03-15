@@ -57,6 +57,8 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   const peopleCount = contextValue.members.length;
   const joinRequestCount = Array.isArray(joinRequests) ? joinRequests.length : 0;
   const selectedCount = contextValue.selectedMemberIds.length;
+  const tabFocusTitle = t(`tab_focus.${activeTab}.title`);
+  const tabFocusDescription = t(`tab_focus.${activeTab}.description`);
 
   React.useEffect(() => {
     const requestedTab = searchParams.get('member_tab');
@@ -111,12 +113,16 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
         )}
       >
         <div className="grid gap-3 md:grid-cols-3">
-          <MembersSummaryCard label={t('tabs.people')} value={String(peopleCount)} helper={t('description')} />
-          <MembersSummaryCard label={t('tabs.requests')} value={String(joinRequestCount)} helper={isLoadingRequests ? t('limit_history.loading') : t('join_requests_title')} />
+          <MembersSummaryCard label={t('tabs.people')} value={String(peopleCount)} helper={t('summary.people_helper')} />
+          <MembersSummaryCard
+            label={t('tabs.requests')}
+            value={String(joinRequestCount)}
+            helper={isLoadingRequests ? t('limit_history.loading') : t('summary.requests_helper')}
+          />
           <MembersSummaryCard
             label={t('permissions.title')}
             value={String(selectedCount)}
-            helper={t('permissions.selected_count', { count: selectedCount })}
+            helper={t('summary.permissions_helper')}
           />
         </div>
 
@@ -129,9 +135,10 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
           className="flex min-h-0 min-w-0 flex-1 flex-col rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
         >
           <div className="mb-4 flex flex-col gap-3 rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
+            <div className="space-y-1">
               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
-              <p className="mt-1 text-sm text-secondary">{t('description')}</p>
+              <p className="text-sm font-medium text-foreground">{tabFocusTitle}</p>
+              <p className="text-sm text-secondary">{tabFocusDescription}</p>
             </div>
             <TabsList className="flex-shrink-0 rounded-[18px] border border-white/6 bg-white/[0.04] p-1">
               <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>

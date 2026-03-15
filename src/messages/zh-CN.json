@@ -1454,8 +1454,11 @@
     "general_read_only_help": "修改项目元数据、可见性和加入策略需要项目生命周期权限。",
     "execution_preferences_help": "智能体执行偏好。智能体可在智能体级别覆盖这些值。更改会在智能体下次获取配置时生效。",
     "project_admins_title": "项目管理权限",
-    "project_admins_owner_help": "该区域用于配置哪些用户获得项目管理权限。",
-    "project_admins_read_only_help": "修改项目管理权限分配需要项目管理分配权限。",
+  "project_admins_owner_help": "在成员加入项目后，可在这里复核并调整最终的项目管理员名单。",
+  "project_admins_read_only_help": "成员审批完成后，项目管理权限名单在这里维护。修改它需要项目管理权限分配权限。",
+  "project_admins_members_flow_label": "审批流程",
+  "project_admins_members_flow_help": "新的访问申请请在成员页处理。这里用于复核或修正最终的项目管理员名单。",
+  "project_admins_open_members": "查看加入申请",
     "governance_title": "项目治理",
     "governance_help": "通过审计、资源策略、凭据和成员页面治理项目活动与访问。",
     "ownership_lifecycle_title": "所有权与生命周期",
@@ -1770,7 +1773,29 @@
       "success_description": "将此链接分享给被邀请人，他们可通过链接加入项目。",
       "create_success": "邀请已创建"
     },
-    "description": "管理项目成员、权限和限额",
+  "description": "管理项目成员、权限和限额",
+  "summary": {
+    "people_helper": "查看当前成员，并打开成员详情检查有效权限。",
+    "requests_helper": "处理新的访问申请，并决定谁需要一起管理项目。",
+    "permissions_helper": "通过成员详情检查为什么某个访问被允许或拒绝。"
+  },
+  "tab_focus": {
+    "people": {
+      "title": "人员页是成员治理的主工作台",
+      "description": "打开成员详情，查看有效权限、当前状态，并直接运行授权检查。"
+    },
+    "requests": {
+      "title": "加入申请页负责审批队列",
+      "description": "在这里处理新的加入申请。只有当申请人需要立刻参与项目治理时，才授予项目管理权限。"
+    },
+    "groups": {
+      "title": "分组页负责维护可复用的治理分配",
+      "description": "通过分组批量管理成员与权限模板，让治理默认值保持一致。"
+    }
+  },
+  "people_workbench_label": "成员治理",
+  "people_workbench_title": "打开成员详情查看有效权限",
+  "people_workbench_description": "这里是检查谁在项目中、他们能做什么、以及某个授权判断为何成立的主入口。",
     "action_block": "冻结",
     "action_unblock": "解冻",
     "action_remove": "移除",
@@ -2036,13 +2061,18 @@
       "clear_selection": "清除选择",
       "apply_permission_template": "应用权限模板"
     },
-    "join_requests": {
-      "title": "加入申请",
-      "loading": "正在加载加入申请...",
-      "pending_requests": "待处理申请",
-      "pending_help": "在这里处理加入申请。只有当申请人需要立即参与成员、访问和项目治理时，才授予项目管理权限。",
-      "reviewed_requests": "已处理申请",
-      "approve": "批准",
+  "join_requests": {
+    "title": "加入申请",
+    "loading": "正在加载加入申请...",
+    "pending_requests": "待处理申请",
+    "pending_help": "在这里处理加入申请。只有当申请人需要立即参与成员、访问和项目治理时，才授予项目管理权限。",
+    "reviewed_help": "已处理申请会直接显示最终结果，避免所有者再去别的页面核对。",
+    "reviewed_requests": "已处理申请",
+    "decision_paths": {
+      "approve": "将申请人加入为普通项目成员。",
+      "approve_and_grant": "将申请人加入项目，并立即授予项目管理权限。"
+    },
+    "approve": "批准",
       "approve_and_grant": "批准并授予项目管理权限",
       "approve_and_grant_pending": "正在批准并授予权限...",
       "reject": "拒绝",

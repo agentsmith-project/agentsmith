@@ -138,14 +138,28 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       }
     }
 
+    for (const userId of selectedProjectAdmins) {
+      if (!merged.has(userId)) {
+        merged.set(userId, {
+          id: userId,
+          user_id: userId,
+          name: userId,
+          email: userId,
+        });
+      }
+    }
+
     return [...merged.values()];
-  }, [projectMembers, workspaceMembers]);
+  }, [projectMembers, selectedProjectAdmins, workspaceMembers]);
 
   const canManageProjectLifecycle = canManageProjectLifecyclePermission;
   const canDeleteProject = canManageProjectLifecyclePermission;
   const canAssignProjectAdmins = canManageProjectAdminsPermission;
   const canTransferProjectOwner = canManageProjectLifecyclePermission;
   const projectAdminCount = selectedProjectAdmins.length;
+  const membersHref = resolvedParams
+    ? `/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members?member_tab=requests`
+    : '#';
   const ownerDisplayName = useMemo(() => {
     const ownerId = selectedProjectOwner || currentProject?.owner_id || '';
     const fromWorkspace = workspaceMembers.find((member) => member.user_id === ownerId);
@@ -354,6 +368,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               selectedProjectAdmins={selectedProjectAdmins}
               settingsT={settingsT}
               workspaceMembers={selectableProjectAdminMembers}
+              membersHref={membersHref}
               onCheckedChange={handleProjectAdminCheckedChange}
               onSave={handleSaveProjectAdmins}
             />

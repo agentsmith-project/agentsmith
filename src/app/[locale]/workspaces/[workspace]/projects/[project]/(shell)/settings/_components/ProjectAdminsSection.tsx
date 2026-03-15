@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { Loader2, Users } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -13,6 +14,7 @@ interface ProjectAdminsSectionProps {
   selectedProjectAdmins: string[];
   settingsT: (key: string) => string;
   workspaceMembers: SettingsProjectAdminOption[];
+  membersHref: string;
   onCheckedChange: (userId: string, checked: boolean) => void;
   onSave: () => void;
 }
@@ -23,6 +25,7 @@ export function ProjectAdminsSection({
   selectedProjectAdmins,
   settingsT,
   workspaceMembers,
+  membersHref,
   onCheckedChange,
   onSave,
 }: ProjectAdminsSectionProps) {
@@ -32,6 +35,21 @@ export function ProjectAdminsSection({
       <p className="text-sm text-tertiary mb-4">
         {canAssignProjectAdmins ? settingsT('project_admins_owner_help') : settingsT('project_admins_read_only_help')}
       </p>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-subtle bg-bg-base/20 p-3">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-tertiary">
+            {settingsT('project_admins_members_flow_label')}
+          </p>
+          <p className="text-sm text-secondary">{settingsT('project_admins_members_flow_help')}</p>
+        </div>
+        <Link
+          href={membersHref}
+          className="text-sm font-medium text-primary underline-offset-2 hover:underline"
+          data-testid="settings__project-admins-open-members"
+        >
+          {settingsT('project_admins_open_members')}
+        </Link>
+      </div>
       <div className="space-y-3">
         {workspaceMembers.map((member) => {
           const label = member.name || member.email || member.user_id;

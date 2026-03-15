@@ -29,14 +29,17 @@ run_cmd "npx eslint \
 run_cmd "npx tsc --noEmit"
 
 run_cmd "npm run test:run -- \
+  'src/components/members/__tests__/JoinRequestsTab.test.tsx' \
   'src/lib/__tests__/governance-explainability-presenter.test.ts' \
   'src/lib/api/__tests__/governance-explainability-api.test.ts' \
   'src/lib/hooks/__tests__/use-governance-explainability.test.tsx' \
   'src/components/members/__tests__/PeopleTab.test.tsx' \
   'src/components/members/__tests__/MemberDetailDrawer.test.tsx' \
+  'src/components/members/__tests__/MembersPage.test.tsx' \
   'src/components/audit-usage/__tests__/AuditDetailDrawer.test.tsx' \
   'src/components/alerts/__tests__/AlertNotificationsPanel.test.tsx' \
-  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/resource-policy/__tests__/page.test.tsx'"
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/resource-policy/__tests__/page.test.tsx' \
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/settings/__tests__/page.test.tsx'"
 
 run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   'packages/api-entry-node/src/index.test.ts' \

@@ -127,6 +127,7 @@ describe('MembersPage', () => {
     expect(within(header).getByRole('heading', { name: 'title' })).toBeInTheDocument();
     const body = screen.getByTestId('page-layout__body');
     expect(body.classList.contains('p-6')).toBe(false);
+    expect(screen.getByText('tab_focus.people.title')).toBeInTheDocument();
   });
 
   it('disables invite action for non-owners', () => {

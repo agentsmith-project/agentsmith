@@ -158,6 +158,10 @@ describe('SettingsPage route', () => {
     });
     expect(screen.getByTestId('settings__general-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
+    expect(screen.getByTestId('settings__project-admins-open-members')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/projects/proj_1/members?member_tab=requests',
+    );
     expect(screen.getByTestId('settings__project-owner-section')).toBeInTheDocument();
     expect(screen.getByTestId('settings__delete-project-btn')).toBeInTheDocument();
     expect(screen.getByTestId('settings__governance-link--audit')).toBeInTheDocument();

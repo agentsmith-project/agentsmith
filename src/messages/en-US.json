@@ -1452,8 +1452,11 @@
     "general_read_only_help": "Changing project metadata, visibility, and join policy requires project lifecycle permissions.",
     "execution_preferences_help": "Agent execution preferences. Agents may override these values at agent level. Changes take effect when agents next fetch their config.",
     "project_admins_title": "Project administration access",
-    "project_admins_owner_help": "This section controls who receives project administration permissions.",
-    "project_admins_read_only_help": "Changing project administration assignments requires project administration permissions.",
+  "project_admins_owner_help": "Use this section to review and adjust the final project administration list after members have joined the project.",
+  "project_admins_read_only_help": "Project administration assignments are maintained here after member approval. Changing them requires project administration permissions.",
+  "project_admins_members_flow_label": "Approval flow",
+  "project_admins_members_flow_help": "Handle incoming access requests in Members. Use this section to verify or correct the final administrator list.",
+  "project_admins_open_members": "Review join requests",
     "governance_title": "Project governance",
     "governance_help": "Use audit, resource policy, credentials, and members to govern project activity and access.",
     "ownership_lifecycle_title": "Ownership and lifecycle",
@@ -1768,7 +1771,29 @@
       "success_description": "Share this link with the invitee. They can use it to join the project.",
       "create_success": "Invite created successfully"
     },
-    "description": "Manage project members, permissions, and limits",
+  "description": "Manage project members, permissions, and limits",
+  "summary": {
+    "people_helper": "Review current members and open a person to inspect effective access.",
+    "requests_helper": "Handle incoming access requests and decide who should help manage the project.",
+    "permissions_helper": "Use member details to check why access is allowed or denied."
+  },
+  "tab_focus": {
+    "people": {
+      "title": "People is the member governance workbench",
+      "description": "Open a member to review effective access, inspect current permissions, and run an authorization check."
+    },
+    "requests": {
+      "title": "Join Requests is the approval queue",
+      "description": "Approve access requests here, and only grant project administration when the requester should immediately help manage members, access, and project operations."
+    },
+    "groups": {
+      "title": "Groups keeps reusable governance assignments aligned",
+      "description": "Use groups to manage batches of members with the right permission templates and governance defaults."
+    }
+  },
+  "people_workbench_label": "Member governance",
+  "people_workbench_title": "Open a member to review effective access",
+  "people_workbench_description": "This is the main place to inspect who is active in the project, what they can do, and why a specific authorization decision was reached.",
     "action_block": "Block",
     "action_unblock": "Unblock",
     "action_remove": "Remove",
@@ -2034,13 +2059,18 @@
       "clear_selection": "Clear selection",
       "apply_permission_template": "Apply Permission Template"
     },
-    "join_requests": {
-      "title": "Join Requests",
-      "loading": "Loading join requests...",
-      "pending_requests": "Pending Requests",
-      "pending_help": "Approve requests here. Grant project administration only when the requester should immediately help manage members, access, and project operations.",
-      "reviewed_requests": "Reviewed Requests",
-      "approve": "Approve",
+  "join_requests": {
+    "title": "Join Requests",
+    "loading": "Loading join requests...",
+    "pending_requests": "Pending Requests",
+    "pending_help": "Approve requests here. Grant project administration only when the requester should immediately help manage members, access, and project operations.",
+    "reviewed_help": "Reviewed requests show the final result so owners do not have to cross-check another page.",
+    "reviewed_requests": "Reviewed Requests",
+    "decision_paths": {
+      "approve": "Adds the requester as a project member.",
+      "approve_and_grant": "Adds the requester and immediately grants project administration access."
+    },
+    "approve": "Approve",
       "approve_and_grant": "Approve and grant project admin",
       "approve_and_grant_pending": "Approving and granting...",
       "reject": "Reject",

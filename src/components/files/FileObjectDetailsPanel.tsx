@@ -225,9 +225,9 @@ export function FileObjectDetailsPanel({
           </TabsList>
 
           <TabsContent value="overview" className="mt-3 space-y-3">
-            <div className="rounded-md border border-subtle bg-surface-high/30 px-3 py-3" data-testid="files__details-hero">
+            <div className="rounded-2xl border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] px-3 py-3" data-testid="files__details-hero">
               <div className="flex items-start gap-3">
-                <div className="h-10 w-10 rounded-md border border-subtle bg-surface flex items-center justify-center">
+                <div className="h-10 w-10 rounded-xl border border-subtle bg-surface flex items-center justify-center">
                   <FileItemIcon
                     kind="object"
                     name={filename}
@@ -238,7 +238,7 @@ export function FileObjectDetailsPanel({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm text-strong font-medium">{filename}</div>
                   <div className="mt-1 text-xs text-tertiary">{summary}</div>
-                  <div className="mt-2 inline-flex items-center rounded-sm border border-subtle bg-surface px-2 py-0.5 text-[11px] text-tertiary">
+                  <div className="mt-2 inline-flex items-center rounded-full border border-subtle bg-surface px-2.5 py-1 text-[11px] text-tertiary">
                     {previewTypeLabel(previewKind, t)}
                   </div>
                 </div>

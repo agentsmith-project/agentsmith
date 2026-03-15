@@ -33,9 +33,12 @@ export function PreviewSection({
   const expandable = previewKind !== 'none' && !previewLoading && !previewError;
 
   return (
-    <div className="rounded-md border border-subtle bg-surface-high/20 p-3 space-y-2" data-testid="files__details-preview">
+    <div className="rounded-2xl border border-subtle bg-surface-high/20 p-3 space-y-3" data-testid="files__details-preview">
       <div className="flex items-center justify-between gap-2">
-        <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.preview')}</div>
+        <div>
+          <div className="text-xs uppercase tracking-wide text-tertiary">{t('file_manager.preview')}</div>
+          <div className="mt-1 text-[11px] text-tertiary">{basename(meta.key)}</div>
+        </div>
         {expandable ? (
           <Button type="button" size="sm" variant="ghost" className="h-7 px-2" onClick={onExpand} data-testid="files__preview-expand">
             <Expand className="h-3.5 w-3.5" />
@@ -64,13 +67,13 @@ export function PreviewSection({
           </Button>
         </div>
       ) : previewKind === 'image' && objectUrl ? (
-        <div className="rounded border border-subtle bg-black/10 p-2">
+        <div className="rounded-xl border border-subtle bg-black/10 p-2">
           <img src={objectUrl} alt={basename(meta.key)} className="max-h-[280px] w-full object-contain rounded" />
         </div>
       ) : previewKind === 'pdf' && objectUrl ? (
-        <iframe src={objectUrl} title={basename(meta.key)} className="h-[320px] w-full rounded border border-subtle bg-surface" />
+        <iframe src={objectUrl} title={basename(meta.key)} className="h-[320px] w-full rounded-xl border border-subtle bg-surface" />
       ) : previewKind === 'text' ? (
-        <div className="rounded border border-subtle bg-surface p-2 max-h-[320px] overflow-auto">
+        <div className="rounded-xl border border-subtle bg-surface p-2 max-h-[320px] overflow-auto">
           <pre className="text-xs leading-relaxed whitespace-pre-wrap break-words text-primary">
             {textPreview || t('file_manager.preview_loading')}
           </pre>

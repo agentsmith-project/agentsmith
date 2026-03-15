@@ -59,6 +59,17 @@ export function AlertNotificationsPanel({
   loading = false,
 }: AlertNotificationsPanelProps) {
   const t = useTranslations('alerts');
+  const commonT = useTranslations('common');
+
+  const resolveActionLabel = React.useCallback((label: string) => {
+    if (label.startsWith('common.')) {
+      return commonT(label.slice('common.'.length));
+    }
+    if (label.startsWith('alerts.')) {
+      return t(label.slice('alerts.'.length));
+    }
+    return label;
+  }, [commonT, t]);
 
   // Loading state
   if (loading) {
@@ -103,7 +114,7 @@ export function AlertNotificationsPanel({
   });
 
   return (
-    <div className="space-y-3" data-testid="alert-notifications">
+      <div className="space-y-3" data-testid="alert-notifications">
       {sortedAlerts.map((alert) => {
         const SeverityIcon = severityIcons[alert.severity];
         const severityClass = severityColors[alert.severity];
@@ -113,8 +124,8 @@ export function AlertNotificationsPanel({
           <div
             key={alert.id}
             data-testid="alert-card"
-            className={`relative rounded-lg border bg-surface p-4 transition-colors ${
-              isUnread ? 'border-l-4 border-l-accent' : 'border-border'
+            className={`relative overflow-hidden rounded-[22px] border bg-surface p-5 shadow-[0_12px_28px_rgba(0,0,0,0.12)] transition-colors ${
+              isUnread ? 'border-l-4 border-l-accent border-border/80' : 'border-border'
             }`}
           >
             {/* Severity Badge */}
@@ -128,8 +139,15 @@ export function AlertNotificationsPanel({
 
               <div className="flex-1 min-w-0">
                 {/* Header: Title + Timestamp */}
-                <div className="flex items-start justify-between gap-2">
-                  <h4 className="text-sm font-medium text-foreground">{alert.title}</h4>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h4 className="text-sm font-medium text-foreground">{alert.title}</h4>
+                    {alert.resource_name ? (
+                      <p className="text-xs text-secondary">
+                        {t('resource')}: {alert.resource_name}
+                      </p>
+                    ) : null}
+                  </div>
                   <span className="text-xs text-tertiary shrink-0">
                     {new Date(alert.created_at).toLocaleString()}
                   </span>
@@ -144,13 +162,6 @@ export function AlertNotificationsPanel({
                     data-testid={`alert-status-resolved-${alert.id}`}
                   >
                     {t('resolved')}
-                  </p>
-                )}
-
-                {/* Resource context */}
-                {alert.resource_name && (
-                  <p className="mt-1 text-xs text-tertiary">
-                    {t('resource')}: {alert.resource_name}
                   </p>
                 )}
 
@@ -181,7 +192,7 @@ export function AlertNotificationsPanel({
                           : 'bg-surface-high text-foreground hover:bg-hover'
                       }`}
                     >
-                      {action.label}
+                      {resolveActionLabel(action.label)}
                     </button>
                   ))}
 

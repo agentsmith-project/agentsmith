@@ -230,8 +230,16 @@ export function UsageView({
                     className="data-[state=inactive]:hidden"
                     data-testid="usage__endpoint-dimensions"
                   >
-                    <div className="mb-5 border-b border-subtle pb-4">
-                      <p className="text-xl font-semibold text-foreground">{endpoint.endpointName}</p>
+                    <div className="mb-5 rounded-2xl border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-4 py-4">
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.panel_title')}</p>
+                          <p className="mt-2 text-xl font-semibold text-foreground">{endpoint.endpointName}</p>
+                        </div>
+                        <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-xs text-secondary">
+                          {cards.length} {cards.length === 1 ? 'limit' : 'limits'}
+                        </div>
+                      </div>
                     </div>
 
                     {cards.length > 0 ? (

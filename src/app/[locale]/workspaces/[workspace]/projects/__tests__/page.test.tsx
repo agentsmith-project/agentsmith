@@ -3,12 +3,27 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { APIError } from '@/lib/api/errors';
 
-let mockProjectsData = [
+type MockProject = {
+  id: string;
+  workspace_id: string;
+  name: string;
+  visibility: string;
+  join_policy?: 'approval_required' | 'open';
+  owner_id: string;
+  role?: string;
+  permissions: string[];
+  status: 'active';
+  created_at: string;
+  updated_at: string;
+};
+
+let mockProjectsData: MockProject[] = [
   {
     id: 'proj_1',
     workspace_id: 'ws_1',
     name: 'Project One',
     visibility: 'private',
+    join_policy: 'approval_required' as const,
     owner_id: 'owner_1',
     role: 'admin',
     permissions: ['project:endpoint:use', 'project:governance:update'],
@@ -41,7 +56,8 @@ const mockUseProjects = vi.fn<
   isError: false,
   error: null,
   refetch: vi.fn(),
-}));
+  }));
+const mockCreateJoinRequestMutateAsync = vi.fn().mockResolvedValue(undefined);
 
 const mockPush = vi.fn();
 const mockUseParams = vi.fn(() => ({
@@ -93,6 +109,12 @@ vi.mock('@/lib/hooks/use-projects-queries', () => ({
   useProjects: () => mockUseProjects(),
 }));
 
+vi.mock('@/lib/hooks/use-join-requests', () => ({
+  useCreateJoinRequest: () => ({
+    mutateAsync: mockCreateJoinRequestMutateAsync,
+  }),
+}));
+
 vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
   return {
@@ -122,6 +144,7 @@ describe('ProjectsPage route', () => {
         workspace_id: 'ws_1',
         name: 'Project One',
         visibility: 'private',
+        join_policy: 'approval_required' as const,
         owner_id: 'owner_1',
         role: 'admin',
         permissions: ['project:endpoint:use', 'project:governance:update'],
@@ -132,6 +155,8 @@ describe('ProjectsPage route', () => {
     ];
     mockPush.mockClear();
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
+    mockCreateJoinRequestMutateAsync.mockReset();
+    mockCreateJoinRequestMutateAsync.mockResolvedValue(undefined);
     mockUseHasWorkspacePermission.mockReturnValue(true);
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData, isFetched: true }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true }));
@@ -170,6 +195,7 @@ describe('ProjectsPage route', () => {
         workspace_id: 'ws_1',
         name: 'Project One',
         visibility: 'private',
+        join_policy: 'approval_required' as const,
         owner_id: 'owner_1',
         role: 'admin',
         permissions: ['project:endpoint:use'],
@@ -264,5 +290,36 @@ describe('ProjectsPage route', () => {
     });
     expect(screen.getAllByText('empty.read_only_description').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'empty.create_first' })).not.toBeInTheDocument();
+  });
+
+  it('shows request access action for approval-required projects without membership', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_request',
+        workspace_id: 'ws_1',
+        name: 'Needs Approval',
+        visibility: 'private',
+        join_policy: 'approval_required',
+        owner_id: 'owner_1',
+        permissions: [],
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+
+    render(<ProjectsPage />);
+
+    const requestButton = await screen.findByTestId('projects__join-request-btn--proj_request');
+    expect(requestButton).toHaveTextContent('join_request.action');
+
+    fireEvent.click(requestButton);
+
+    await waitFor(() => {
+      expect(mockCreateJoinRequestMutateAsync).toHaveBeenCalledWith({ projectId: 'proj_request' });
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('projects__join-request-btn--proj_request')).toHaveTextContent('join_request.pending');
+    });
   });
 });

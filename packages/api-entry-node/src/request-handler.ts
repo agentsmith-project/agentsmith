@@ -190,7 +190,6 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
 
   if (
     route.kind === 'projectMembers'
-    || route.kind === 'projectJoinRequests'
     || route.kind === 'projectJoinRequestApprove'
     || route.kind === 'projectJoinRequestReject'
     || route.kind === 'projectPermissionTemplates'
@@ -203,6 +202,10 @@ function requiredProjectPermissions(route: ProjectsRoute, method: string): strin
     || route.kind === 'projectMemberChangeHistory'
   ) {
     return ['project:membership:update'];
+  }
+
+  if (route.kind === 'projectJoinRequests') {
+    return method === 'POST' ? [] : ['project:membership:update'];
   }
 
   if (route.kind === 'projectResourcePolicy') {

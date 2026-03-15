@@ -27,6 +27,30 @@ export function useJoinRequests(workspaceId: string, projectId: string) {
 }
 
 /**
+ * Hook to create a join request
+ */
+export function useCreateJoinRequest(
+  workspaceId: string
+) {
+  const queryClient = useQueryClient();
+  const t = useTranslations('projects.join_request');
+
+  return useMutation({
+    mutationFn: async (payload: { projectId: string; reason?: string }) => {
+      return getMemberAPI().createJoinRequest(workspaceId, payload.projectId, {
+        reason: payload.reason,
+      });
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.joinRequests.list(workspaceId, variables.projectId) });
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(workspaceId) });
+      toast.success(t('success'));
+    },
+    onError: (error) => handleErrorForToast(error, 'useCreateJoinRequest'),
+  });
+}
+
+/**
  * Hook to approve a join request
  */
 export function useApproveJoinRequest(

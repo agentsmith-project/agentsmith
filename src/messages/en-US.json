@@ -2250,6 +2250,11 @@
       "settings": "Project settings",
       "delete": "Delete project"
     },
+    "join_request": {
+      "action": "Request Access",
+      "pending": "Request Pending",
+      "success": "Access request submitted. A project owner or project admin needs to review it."
+    },
     "delete_confirm_title": "Delete Project",
     "delete_confirm_message": "Are you sure you want to delete this project? This action cannot be undone."
   },

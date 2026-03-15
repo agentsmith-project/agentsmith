@@ -20,7 +20,7 @@ import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import { useQueryClient } from '@tanstack/react-query';
-import { ProjectAPI, getApiClient } from '@/lib/api';
+import { ProjectAPI, getApiClient, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
 
 export default function WorkspaceSettingsPage() {
@@ -32,6 +32,7 @@ export default function WorkspaceSettingsPage() {
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const queryClient = useQueryClient();
   const projectAPI = React.useMemo(() => new ProjectAPI(getApiClient()), []);
+  const workspaceAPI = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   useSyncAuthFromUrl();
@@ -85,15 +86,13 @@ export default function WorkspaceSettingsPage() {
     if (!workspaceId || !canManageWorkspaceGovernance) return;
     setProjectCreatorsLoading(true);
     try {
-      const response = await fetch(`/api/v1/workspaces/${workspaceId}/project-creators`, { cache: 'no-store' });
-      const data = (await response.json().catch(() => ({ items: [] }))) as { items?: Array<{ id: string; user_id: string; name: string; email: string }> };
-      const items = Array.isArray(data.items) ? data.items : [];
+      const items = await workspaceAPI.listProjectCreators(workspaceId);
       setProjectCreators(items);
       setProjectCreatorsDraft(items.map((item) => item.user_id || item.email || item.name).join('\n'));
     } finally {
       setProjectCreatorsLoading(false);
     }
-  }, [canManageWorkspaceGovernance, workspaceId]);
+  }, [canManageWorkspaceGovernance, workspaceAPI, workspaceId]);
 
   React.useEffect(() => {
     void loadProjectCreators();
@@ -107,20 +106,13 @@ export default function WorkspaceSettingsPage() {
         .split('\n')
         .map((item) => item.trim())
         .filter((item) => item.length > 0);
-      const response = await fetch(`/api/v1/workspaces/${workspaceId}/project-creators`, {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ project_creators: projectCreatorIds }),
-      });
-      if (!response.ok) {
-        return;
-      }
+      await workspaceAPI.updateProjectCreators(workspaceId, projectCreatorIds);
       await loadProjectCreators();
       await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'members'] });
     } finally {
       setProjectCreatorsSaving(false);
     }
-  }, [loadProjectCreators, projectCreatorsDraft, queryClient, workspaceId]);
+  }, [loadProjectCreators, projectCreatorsDraft, queryClient, workspaceAPI, workspaceId]);
 
   const handleSaveProjectOwner = React.useCallback(async (projectId: string) => {
     if (!workspaceId) return;

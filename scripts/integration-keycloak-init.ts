@@ -74,6 +74,13 @@ const seedUsers: SeedUser[] = [
     lastName: 'User',
     email: 'integration-user@example.com',
   },
+  {
+    username: process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member',
+    password: process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123',
+    firstName: 'Integration',
+    lastName: 'Member',
+    email: 'integration-member@example.com',
+  },
 ];
 
 async function getAdminToken(): Promise<string> {

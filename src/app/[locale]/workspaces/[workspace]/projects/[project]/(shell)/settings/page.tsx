@@ -29,12 +29,16 @@ import {
 } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
+import { useMembers } from '@/lib/hooks/use-members';
 import { ShieldCheck, Users, FolderKanban } from 'lucide-react';
 import { GeneralSettingsSection } from './_components/GeneralSettingsSection';
 import { GovernanceSection } from './_components/GovernanceSection';
 import { ProjectAdminsSection } from './_components/ProjectAdminsSection';
 import { ProjectOwnerSection } from './_components/ProjectOwnerSection';
-import type { ResolvedProjectSettingsParams } from './settings-page-types';
+import type {
+  ResolvedProjectSettingsParams,
+  SettingsProjectAdminOption,
+} from './settings-page-types';
 
 interface SettingsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -88,6 +92,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     resolvedParams?.project ?? ''
   );
   const { data: workspaceMembers = [] } = useWorkspaceMembers(resolvedParams?.workspace ?? '');
+  const { data: projectMembers = [] } = useMembers(
+    resolvedParams?.workspace ?? '',
+    resolvedParams?.project ?? ''
+  );
   const [selectedProjectAdmins, setSelectedProjectAdmins] = useState<string[]>([]);
   const [savingProjectAdmins, setSavingProjectAdmins] = useState(false);
   const [selectedProjectOwner, setSelectedProjectOwner] = useState('');
@@ -106,6 +114,32 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       setSelectedProjectOwner(currentProject.owner_id);
     }
   }, [currentProject]);
+
+  const selectableProjectAdminMembers = useMemo<SettingsProjectAdminOption[]>(() => {
+    const merged = new Map<string, SettingsProjectAdminOption>();
+
+    for (const member of workspaceMembers) {
+      merged.set(member.user_id, {
+        id: member.id,
+        user_id: member.user_id,
+        name: member.name || member.email || member.user_id,
+        email: member.email || member.user_id,
+      });
+    }
+
+    for (const member of projectMembers) {
+      if (!merged.has(member.id)) {
+        merged.set(member.id, {
+          id: member.id,
+          user_id: member.id,
+          name: member.name || member.email || member.id,
+          email: member.email || member.id,
+        });
+      }
+    }
+
+    return [...merged.values()];
+  }, [projectMembers, workspaceMembers]);
 
   const canManageProjectLifecycle = canManageProjectLifecyclePermission;
   const canDeleteProject = canManageProjectLifecyclePermission;
@@ -308,7 +342,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               savingProjectAdmins={savingProjectAdmins}
               selectedProjectAdmins={selectedProjectAdmins}
               settingsT={settingsT}
-              workspaceMembers={workspaceMembers}
+              workspaceMembers={selectableProjectAdminMembers}
               onCheckedChange={handleProjectAdminCheckedChange}
               onSave={handleSaveProjectAdmins}
             />

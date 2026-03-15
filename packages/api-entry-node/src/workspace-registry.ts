@@ -1,5 +1,6 @@
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { WorkspaceRecord } from './resource-models.js';
 
 type RegistryRecord = {
@@ -8,23 +9,51 @@ type RegistryRecord = {
   provisioning_status?: string;
   workspace_admin?: string;
   project_creators?: string[];
+  idp?: {
+    kind?: string;
+    url?: string;
+    realm?: string;
+    client_id?: string;
+    client_secret?: string;
+  };
   tenant?: {
     substrate_label?: string;
     database_name?: string;
     collection_prefix?: string;
     key_prefix?: string;
   };
+  last_initialized_at?: string | null;
+  last_init_error?: string | null;
   created_at?: string;
   updated_at?: string;
 };
 
-function getRegistryPath(): string {
-  return process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim() || join(process.cwd(), 'artifacts/system-workspaces.json');
+const moduleDir = dirname(fileURLToPath(import.meta.url));
+const packageRoot = resolve(moduleDir, '..');
+const repoRoot = resolve(moduleDir, '../../..');
+
+export function resolveRegisteredWorkspaceRegistryPath(): string {
+  const explicit = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  const repoRegistryPath = join(repoRoot, 'artifacts/system-workspaces.json');
+  if (existsSync(repoRegistryPath)) {
+    return repoRegistryPath;
+  }
+
+  const cwdRegistryPath = join(process.cwd(), 'artifacts/system-workspaces.json');
+  if (existsSync(cwdRegistryPath)) {
+    return cwdRegistryPath;
+  }
+
+  return join(packageRoot, 'artifacts/system-workspaces.json');
 }
 
 export function readRegisteredWorkspaces(): WorkspaceRecord[] {
   try {
-    const raw = readFileSync(getRegistryPath(), 'utf-8');
+    const raw = readFileSync(resolveRegisteredWorkspaceRegistryPath(), 'utf-8');
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) {
       return [];
@@ -50,8 +79,16 @@ export function readRegisteredWorkspaces(): WorkspaceRecord[] {
 export type RegisteredWorkspaceConfig = RegistryRecord & {
   id: string;
   name: string;
+  provisioning_status?: string;
   workspace_admin?: string;
   project_creators?: string[];
+  idp?: {
+    kind?: string;
+    url?: string;
+    realm?: string;
+    client_id?: string;
+    client_secret?: string;
+  };
   tenant?: {
     substrate_label?: string;
     database_name?: string;
@@ -64,7 +101,7 @@ export type RegisteredWorkspaceConfig = RegistryRecord & {
 
 function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
   try {
-    const raw = readFileSync(getRegistryPath(), 'utf-8');
+    const raw = readFileSync(resolveRegisteredWorkspaceRegistryPath(), 'utf-8');
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) {
       return [];
@@ -75,6 +112,8 @@ function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
       .map((item) => ({
         id: String(item.id ?? '').trim(),
         name: String(item.name ?? '').trim(),
+        provisioning_status:
+          typeof item.provisioning_status === 'string' ? item.provisioning_status.trim() : undefined,
         workspace_admin: typeof item.workspace_admin === 'string' ? item.workspace_admin.trim() : undefined,
         project_creators: Array.isArray(item.project_creators)
           ? Array.from(
@@ -85,6 +124,17 @@ function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
               ),
             )
           : [],
+        idp:
+          typeof item.idp === 'object' && item.idp !== null
+            ? {
+                kind: typeof item.idp.kind === 'string' ? item.idp.kind.trim() : undefined,
+                url: typeof item.idp.url === 'string' ? item.idp.url.trim() : undefined,
+                realm: typeof item.idp.realm === 'string' ? item.idp.realm.trim() : undefined,
+                client_id: typeof item.idp.client_id === 'string' ? item.idp.client_id.trim() : undefined,
+                client_secret:
+                  typeof item.idp.client_secret === 'string' ? item.idp.client_secret.trim() : undefined,
+              }
+            : undefined,
         tenant:
           typeof item.tenant === 'object' && item.tenant !== null
             ? {
@@ -100,6 +150,14 @@ function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
                   typeof item.tenant.key_prefix === 'string' ? item.tenant.key_prefix.trim() : undefined,
               }
             : undefined,
+        last_initialized_at:
+          typeof item.last_initialized_at === 'string' || item.last_initialized_at === null
+            ? item.last_initialized_at
+            : undefined,
+        last_init_error:
+          typeof item.last_init_error === 'string' || item.last_init_error === null
+            ? item.last_init_error
+            : undefined,
         created_at: typeof item.created_at === 'string' ? item.created_at : now,
         updated_at: typeof item.updated_at === 'string' ? item.updated_at : now,
       }))
@@ -110,7 +168,7 @@ function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
 }
 
 function writeRegisteredWorkspaceConfigs(records: RegisteredWorkspaceConfig[]): void {
-  const pathname = getRegistryPath();
+  const pathname = resolveRegisteredWorkspaceRegistryPath();
   mkdirSync(dirname(pathname), { recursive: true });
   writeFileSync(pathname, `${JSON.stringify(records, null, 2)}\n`, 'utf-8');
 }

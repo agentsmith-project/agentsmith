@@ -1,9 +1,9 @@
 import { createHash, randomBytes } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
+import { resolveRegisteredWorkspaceRegistryPath } from './workspace-registry.js';
+import { readFileSync } from 'node:fs';
 
 interface AgentConnectionState {
   connected_at: string;
@@ -234,7 +234,7 @@ export class AgentResourceService {
 
   private listRegisteredWorkspaceCollections(baseCollection: string): string[] {
     const collections = new Set<string>([baseCollection]);
-    const registryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim() || join(process.cwd(), 'artifacts/system-workspaces.json');
+    const registryPath = resolveRegisteredWorkspaceRegistryPath();
     try {
       const raw = readFileSync(registryPath, 'utf-8');
       const parsed = JSON.parse(raw) as Array<{ id?: unknown }>;

@@ -32,6 +32,11 @@ const STABLE_MEMBERS = [
   { id: 'wm_owner', user_id: 'owner_1', name: 'Owner', email: 'owner@example.com' },
   { id: 'wm_admin', user_id: 'admin_1', name: 'Project Admin', email: 'admin@example.com' },
 ];
+const STABLE_PROJECT_MEMBERS = [
+  { id: 'owner_1', user_id: 'owner_1', name: 'Owner', email: 'owner@example.com' },
+  { id: 'admin_1', user_id: 'admin_1', name: 'Project Admin', email: 'admin@example.com' },
+  { id: 'member_1', user_id: 'member_1', name: 'Joined Member', email: 'member@example.com' },
+];
 
 vi.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush }),
@@ -56,6 +61,12 @@ vi.mock('@/lib/hooks/use-projects-queries', () => ({
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspaceMembers: vi.fn(() => ({
     data: STABLE_MEMBERS,
+  })),
+}));
+
+vi.mock('@/lib/hooks/use-members', () => ({
+  useMembers: vi.fn(() => ({
+    data: STABLE_PROJECT_MEMBERS,
   })),
 }));
 
@@ -239,6 +250,25 @@ describe('SettingsPage route', () => {
     await waitFor(() => {
       expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', { owner_id: 'admin_1' });
     });
+  });
+
+  it('includes joined project members in project admin options', async () => {
+    render(
+      <SettingsPage
+        params={Promise.resolve({
+          workspace: 'ws_1',
+          project: 'proj_1',
+          locale: 'en',
+        })}
+      />
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('settings__project-admins-section')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('settings__project-admin-option--member_1')).toBeInTheDocument();
+    expect(screen.getByText('Joined Member')).toBeInTheDocument();
   });
 
   it('shows permission denied when user lacks settings manage permission', async () => {

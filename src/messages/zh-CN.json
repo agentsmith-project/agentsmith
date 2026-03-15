@@ -2253,6 +2253,11 @@
       "settings": "项目设置",
       "delete": "删除项目"
     },
+    "join_request": {
+      "action": "申请加入",
+      "pending": "申请已提交",
+      "success": "加入申请已提交，等待项目 owner 或项目管理员审核。"
+    },
     "delete_confirm_title": "删除项目",
     "delete_confirm_message": "确定要删除此项目吗？此操作不可撤销。"
   },

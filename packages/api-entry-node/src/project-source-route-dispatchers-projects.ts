@@ -3,7 +3,10 @@ import {
   UpdateProjectRequestSchema,
 } from '@mbos/contracts';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
-import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
+import {
+  resolveVisibleProjectPermissionsForActor,
+  resolveVisibleProjectRoleForActor,
+} from './project-authz-engine.js';
 import type { ProjectSourceRouteContext } from './project-source-route-types.js';
 import {
   readProjectPermissionContext,
@@ -34,7 +37,13 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
     json(res, 200, {
       items: listed.items.map((item) => ({
         ...item,
-        role: item.owner_id === user.id ? 'owner' : (isProjectAdmin(item.governance_json, user.id) ? 'admin' : 'developer'),
+        role: resolveVisibleProjectRoleForActor({
+          workspaceId,
+          projectId: item.id,
+          projectOwnerId: item.owner_id,
+          projectGovernance: item.governance_json,
+          actorUserId: user.id,
+        }),
         permissions: [
           ...resolveVisibleProjectPermissionsForActor({
             workspaceId,
@@ -105,7 +114,13 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
     });
     json(res, 200, {
       ...found,
-      role: found.owner_id === user.id ? 'owner' : (isProjectAdmin(found.governance_json, user.id) ? 'admin' : 'developer'),
+      role: resolveVisibleProjectRoleForActor({
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        projectOwnerId: found.owner_id,
+        projectGovernance: found.governance_json,
+        actorUserId: user.id,
+      }),
       permissions: [
         ...resolveVisibleProjectPermissionsForActor({
           workspaceId: route.workspaceId,

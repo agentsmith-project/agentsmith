@@ -1534,6 +1534,51 @@ describe('api-entry-node projects routes', () => {
     expect(membership.permissions).toContain('project:membership:update');
   });
 
+  it('allows plain workspace users to create join requests without member governance permission', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Joinable Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests`,
+      'member-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'need access' }),
+      },
+    );
+    expect(createRes.status).toBe(201);
+
+    const ownerListRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests`,
+      'owner-token',
+    );
+    expect(ownerListRes.status).toBe(200);
+    const ownerList = (await ownerListRes.json()) as {
+      items: Array<{ user_id: string; status: string; reason: string }>;
+    };
+    expect(ownerList.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          user_id: 'user_test',
+          status: 'pending',
+          reason: 'need access',
+        }),
+      ]),
+    );
+  });
+
   it('supports minimal project members governance write endpoints', async () => {
     const deps = createDefaultNodeApiDeps();
     const project = await deps.createProjectUseCase.execute({

@@ -8,6 +8,7 @@ import {
 import { handleProjectResourcePolicyRoute } from './project-source-resource-policy.js';
 import type { ProjectSourceRouteContext } from './project-source-route-types.js';
 import { getProjectMembershipsState } from './project-memberships-store.js';
+import { getProjectJoinRequestsState } from './project-source-join-requests.js';
 
 export const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
   endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
@@ -56,25 +57,39 @@ export async function handleProjectGovernanceRoutes(context: ProjectSourceRouteC
       // when membership/governance backend is not fully wired to project repo fixtures.
     }
     const memberships = Array.from(getProjectMembershipsState(workspaceId, projectId).values());
-    const items = memberships.map((membership) => ({
-      id: membership.user_id,
-      email: membership.user_id === user.id ? user.email : `${membership.user_id}@example.com`,
-      name: membership.user_id === user.id ? user.name : membership.user_id,
-      role: membership.role,
-      permissions: membership.user_id === user.id
-        ? [
-          ...resolveVisibleProjectPermissionsForActor({
-            workspaceId,
-            projectId,
-            projectOwnerId: projectOwnerId ?? user.id,
-            projectGovernance,
-            actorUserId: user.id,
-          }),
-        ]
-        : [],
-      status: membership.status,
-      joined_at: membership.joined_at,
-    }));
+    const joinRequestsById = new Map(
+      getProjectJoinRequestsState(workspaceId, projectId).map((request) => [request.id, request]),
+    );
+    const items = memberships.map((membership) => {
+      const approvedRequest = membership.approved_via_join_request_id
+        ? joinRequestsById.get(membership.approved_via_join_request_id)
+        : undefined;
+      const resolvedEmail = membership.user_id === user.id
+        ? user.email
+        : approvedRequest?.user_email || `${membership.user_id}@example.com`;
+      const resolvedName = membership.user_id === user.id
+        ? user.name
+        : approvedRequest?.user_name || membership.user_id;
+      return {
+        id: membership.user_id,
+        email: resolvedEmail,
+        name: resolvedName,
+        role: membership.role,
+        permissions: membership.user_id === user.id
+          ? [
+            ...resolveVisibleProjectPermissionsForActor({
+              workspaceId,
+              projectId,
+              projectOwnerId: projectOwnerId ?? user.id,
+              projectGovernance,
+              actorUserId: user.id,
+            }),
+          ]
+          : [],
+        status: membership.status,
+        joined_at: membership.joined_at,
+      };
+    });
     if (!items.some((item) => item.id === (projectOwnerId ?? user.id))) {
       const ownerId = projectOwnerId ?? user.id;
       items.unshift({

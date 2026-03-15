@@ -38,6 +38,8 @@ export function ProjectsTable({
   onSettingsClick,
   onDeleteClick,
   onTogglePin,
+  onJoinRequest,
+  pendingJoinRequestIds,
   canDeleteProjectByWorkspacePermission,
   memberNameById,
   t,
@@ -47,6 +49,8 @@ export function ProjectsTable({
   onSettingsClick: (project: Project) => void;
   onDeleteClick: (project: Project) => void;
   onTogglePin: (projectId: string, e: React.MouseEvent) => void;
+  onJoinRequest: (project: Project) => void;
+  pendingJoinRequestIds: ReadonlySet<string>;
   canDeleteProjectByWorkspacePermission: boolean;
   memberNameById: Map<string, string>;
   t: ReturnType<typeof useTranslations<'projects'>>;
@@ -142,18 +146,39 @@ export function ProjectsTable({
             'project:admins:update',
             'project:lifecycle:update',
           ]);
+          const canRequestJoin =
+            !row.original.role &&
+            row.original.join_policy === 'approval_required' &&
+            row.original.status === 'active';
+          const joinRequestPending = pendingJoinRequestIds.has(row.original.id);
           return (
             <div className="flex items-center gap-1">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                onClick={() => onProjectClick(row.original)}
-                className="h-8 w-8 rounded-sm hover:bg-surface-high"
-                aria-label={t('actions.open')}
-              >
-                <Eye className="w-4 h-4 text-icon-default" />
-              </Button>
+              {canRequestJoin ? (
+                <Button
+                  type="button"
+                  variant={joinRequestPending ? 'outline' : 'primary'}
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onJoinRequest(row.original);
+                  }}
+                  disabled={joinRequestPending}
+                  data-testid={`projects__join-request-btn--${row.original.id}`}
+                >
+                  {joinRequestPending ? t('join_request.pending') : t('join_request.action')}
+                </Button>
+              ) : (
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => onProjectClick(row.original)}
+                  className="h-8 w-8 rounded-sm hover:bg-surface-high"
+                  aria-label={t('actions.open')}
+                >
+                  <Eye className="w-4 h-4 text-icon-default" />
+                </Button>
+              )}
               {canManageSettings && (
                 <Button
                   type="button"
@@ -203,7 +228,17 @@ export function ProjectsTable({
         },
       }),
     ],
-    [onProjectClick, onSettingsClick, onDeleteClick, onTogglePin, canDeleteProjectByWorkspacePermission, memberNameById, t],
+    [
+      canDeleteProjectByWorkspacePermission,
+      memberNameById,
+      onDeleteClick,
+      onJoinRequest,
+      onProjectClick,
+      onSettingsClick,
+      onTogglePin,
+      pendingJoinRequestIds,
+      t,
+    ],
   );
 
   const table = useReactTable({

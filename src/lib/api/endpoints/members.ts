@@ -44,6 +44,10 @@ export interface JoinRequest {
   reject_reason?: string;
 }
 
+export interface CreateJoinRequestInput {
+  reason?: string;
+}
+
 export interface CreateInviteRequest {
   email: string;
   group_template?: string;
@@ -128,6 +132,20 @@ export class MemberAPI {
       `/workspaces/${workspaceId}/projects/${projectId}/join-requests`
     );
     return response.items;
+  }
+
+  /**
+   * Create a join request for the current user
+   */
+  async createJoinRequest(
+    workspaceId: string,
+    projectId: string,
+    data?: CreateJoinRequestInput
+  ): Promise<void> {
+    return this.client.post<void>(
+      `/workspaces/${workspaceId}/projects/${projectId}/join-requests`,
+      data ?? {}
+    );
   }
 
   /**

@@ -11,6 +11,11 @@ type WorkspaceCardProps = {
 };
 
 export function WorkspaceCard({ locale, t, workspace, onSelect }: WorkspaceCardProps) {
+  const idpRealm = workspace.idp?.realm?.trim() || t('none');
+  const idpUrl = workspace.idp?.url?.trim() || t('none');
+  const tenantSubstrate = workspace.tenant?.substrate_label?.trim() || t('none');
+  const tenantDatabase = workspace.tenant?.database_name?.trim() || t('none');
+
   return (
     <article
       className="rounded-sm border border-subtle bg-bg-base/20 p-4"
@@ -36,13 +41,13 @@ export function WorkspaceCard({ locale, t, workspace, onSelect }: WorkspaceCardP
             </div>
             <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
               <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('workspace_idp_card_label')}</p>
-              <p className="mt-1 truncate text-sm font-medium text-foreground">{workspace.idp.realm}</p>
-              <p className="mt-1 truncate text-xs text-tertiary">{workspace.idp.url}</p>
+              <p className="mt-1 truncate text-sm font-medium text-foreground">{idpRealm}</p>
+              <p className="mt-1 truncate text-xs text-tertiary">{idpUrl}</p>
             </div>
             <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
               <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('workspace_tenant_card_label')}</p>
-              <p className="mt-1 truncate text-sm font-medium text-foreground">{workspace.tenant.substrate_label}</p>
-              <p className="mt-1 truncate text-xs text-tertiary">{workspace.tenant.database_name}</p>
+              <p className="mt-1 truncate text-sm font-medium text-foreground">{tenantSubstrate}</p>
+              <p className="mt-1 truncate text-xs text-tertiary">{tenantDatabase}</p>
             </div>
             <div className="rounded-sm border border-subtle bg-surface px-3 py-2">
               <p className="text-[11px] uppercase tracking-[0.08em] text-tertiary">{t('initialized_at_label')}</p>

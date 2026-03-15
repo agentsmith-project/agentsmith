@@ -5,14 +5,14 @@ import { Loader2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 
-import type { SettingsWorkspaceMember } from '../settings-page-types';
+import type { SettingsProjectAdminOption } from '../settings-page-types';
 
 interface ProjectAdminsSectionProps {
   canAssignProjectAdmins: boolean;
   savingProjectAdmins: boolean;
   selectedProjectAdmins: string[];
   settingsT: (key: string) => string;
-  workspaceMembers: SettingsWorkspaceMember[];
+  workspaceMembers: SettingsProjectAdminOption[];
   onCheckedChange: (userId: string, checked: boolean) => void;
   onSave: () => void;
 }

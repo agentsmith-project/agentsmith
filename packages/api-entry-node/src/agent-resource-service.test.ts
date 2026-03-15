@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentResourceService } from './agent-resource-service.js';
@@ -138,5 +138,77 @@ describe('AgentResourceService', () => {
     expect(verified?.workspace_id).toBe('ws_default');
 
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('prefers the repo registry path over a stale package-local registry when verifying agent keys', async () => {
+    const repoRoot = originalCwd;
+    const packageRoot = join(repoRoot, 'packages/api-entry-node');
+    const repoRegistryPath = join(repoRoot, 'artifacts/system-workspaces.json');
+    const packageRegistryPath = join(packageRoot, 'artifacts/system-workspaces.json');
+    const repoRegistryBackup = existsSync(repoRegistryPath) ? readFileSync(repoRegistryPath, 'utf-8') : null;
+    const packageRegistryBackup = existsSync(packageRegistryPath) ? readFileSync(packageRegistryPath, 'utf-8') : null;
+
+    try {
+      mkdirSync(join(repoRoot, 'artifacts'), { recursive: true });
+      mkdirSync(join(packageRoot, 'artifacts'), { recursive: true });
+
+      writeFileSync(
+        repoRegistryPath,
+        JSON.stringify([
+          {
+            id: 'ws_integration_mainline',
+            name: 'Integration Mainline Workspace',
+            tenant: {
+              database_name: 'agentsmith_ws_integration_mainline',
+              collection_prefix: 'ws_integration_mainline_',
+              key_prefix: 'ws_integration_mainline:',
+            },
+          },
+        ]),
+        'utf-8',
+      );
+
+      writeFileSync(
+        packageRegistryPath,
+        JSON.stringify([
+          {
+            id: 'ws_stale_package',
+            name: 'Stale Package Workspace',
+            tenant: {
+              database_name: 'agentsmith_ws_stale_package',
+              collection_prefix: 'ws_stale_package_',
+              key_prefix: 'ws_stale_package:',
+            },
+          },
+        ]),
+        'utf-8',
+      );
+
+      process.chdir(packageRoot);
+
+      const docStore = new InMemoryJsonDocStore();
+      const service = new AgentResourceService(docStore);
+      const agent = await service.createAgent('ws_integration_mainline', 'proj_1', {
+        name: 'repo-registry-agent',
+        mode: 'external',
+      });
+      const { record, key } = await service.createAgentKey('ws_integration_mainline', 'proj_1', agent.id);
+
+      const verified = await service.verifyAgentKey(agent.id, key);
+      expect(verified?.id).toBe(record.id);
+      expect(verified?.workspace_id).toBe('ws_integration_mainline');
+    } finally {
+      if (repoRegistryBackup === null) {
+        rmSync(repoRegistryPath, { force: true });
+      } else {
+        writeFileSync(repoRegistryPath, repoRegistryBackup, 'utf-8');
+      }
+
+      if (packageRegistryBackup === null) {
+        rmSync(packageRegistryPath, { force: true });
+      } else {
+        writeFileSync(packageRegistryPath, packageRegistryBackup, 'utf-8');
+      }
+    }
   });
 });

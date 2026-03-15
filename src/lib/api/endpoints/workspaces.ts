@@ -7,6 +7,13 @@
 import type { Workspace, WorkspaceMember } from '../types';
 import type { ApiClient } from '../client';
 
+export interface WorkspaceProjectCreator {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+}
+
 export class WorkspaceAPI {
   constructor(private client: ApiClient) {}
 
@@ -31,6 +38,27 @@ export class WorkspaceAPI {
   async listMembers(id: string): Promise<WorkspaceMember[]> {
     const response = await this.client.get<{ items: WorkspaceMember[]; total: number }>(
       `/workspaces/${id}/members`
+    );
+    return response.items;
+  }
+
+  /**
+   * List users who can create projects in a workspace.
+   */
+  async listProjectCreators(id: string): Promise<WorkspaceProjectCreator[]> {
+    const response = await this.client.get<{ items: WorkspaceProjectCreator[]; total: number }>(
+      `/workspaces/${id}/project-creators`
+    );
+    return response.items;
+  }
+
+  /**
+   * Update users who can create projects in a workspace.
+   */
+  async updateProjectCreators(workspaceId: string, projectCreators: string[]): Promise<WorkspaceProjectCreator[]> {
+    const response = await this.client.patch<{ items: WorkspaceProjectCreator[]; total: number }>(
+      `/workspaces/${workspaceId}/project-creators`,
+      { project_creators: projectCreators },
     );
     return response.items;
   }

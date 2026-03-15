@@ -62,7 +62,8 @@ const STABLE_PROJECTS = [
 const mockUseParams = vi.fn(() => ({ workspace: 'ws_1', locale: 'en' }));
 const mockProjectCreate = vi.fn();
 const mockProjectUpdate = vi.fn();
-const mockFetch = vi.fn<typeof fetch>();
+const mockListProjectCreators = vi.fn();
+const mockUpdateProjectCreators = vi.fn();
 const mockUseWorkspace = vi.fn<
   () => {
     data: { id: string; name: string } | undefined;
@@ -118,6 +119,10 @@ vi.mock('@/lib/api', () => ({
     create = mockProjectCreate;
     update = mockProjectUpdate;
   },
+  WorkspaceAPI: class {
+    listProjectCreators = mockListProjectCreators;
+    updateProjectCreators = mockUpdateProjectCreators;
+  },
 }));
 
 import WorkspaceSettingsPage from '../page';
@@ -141,7 +146,7 @@ function renderPage() {
 
 describe('WorkspaceSettingsPage', () => {
   afterEach(() => {
-    vi.unstubAllGlobals();
+    vi.clearAllMocks();
   });
 
   beforeEach(() => {
@@ -153,13 +158,11 @@ describe('WorkspaceSettingsPage', () => {
       id: 'proj_created',
     });
     mockProjectUpdate.mockResolvedValue(undefined);
-    mockFetch.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        items: [{ id: 'u_1', user_id: 'u_1', name: 'Dev One', email: 'dev1@example.com' }],
-      }),
-    } as Response);
-    vi.stubGlobal('fetch', mockFetch);
+    mockListProjectCreators.mockResolvedValue([{ id: 'u_1', user_id: 'u_1', name: 'Dev One', email: 'dev1@example.com' }]);
+    mockUpdateProjectCreators.mockResolvedValue([
+      { id: 'u_2', user_id: 'u_2', name: 'u_2', email: 'u_2@workspace.local' },
+      { id: 'dev3@example.com', user_id: 'dev3@example.com', name: 'dev3@example.com', email: 'dev3@example.com' },
+    ]);
     mockUseWorkspace.mockReturnValue({
       data: STABLE_WORKSPACE,
       isFetched: true,
@@ -303,14 +306,8 @@ describe('WorkspaceSettingsPage', () => {
     await user.click(screen.getByTestId('ws-settings__project-creators-save'));
 
     await waitFor(() => {
-      expect(mockFetch).toHaveBeenCalledWith('/api/v1/workspaces/ws_1/project-creators', expect.objectContaining({
-        method: 'PATCH',
-      }));
+      expect(mockUpdateProjectCreators).toHaveBeenCalledWith('ws_1', ['u_2', 'dev3@example.com']);
     });
-
-    const patchCall = mockFetch.mock.calls.find((call) => call[0] === '/api/v1/workspaces/ws_1/project-creators' && (call[1] as RequestInit | undefined)?.method === 'PATCH');
-    expect(patchCall).toBeTruthy();
-    expect((patchCall?.[1] as RequestInit).body).toBe(JSON.stringify({ project_creators: ['u_2', 'dev3@example.com'] }));
   });
 
   it('lets workspace admins transfer project ownership', async () => {

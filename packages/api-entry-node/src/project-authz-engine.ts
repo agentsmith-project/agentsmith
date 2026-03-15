@@ -143,9 +143,10 @@ function collectPermissionSources(args: {
     }
   }
 
-  // Keep current compatibility baseline until lifecycle closure fully hardens all flows.
-  for (const permission of resolveProjectPermissions(projectOwnerId, actorUserId)) {
-    addPermissionSource(byPermission, { type: 'project_default', permission });
+  if (membershipStatus === 'active') {
+    for (const permission of resolveProjectPermissions(projectOwnerId, actorUserId)) {
+      addPermissionSource(byPermission, { type: 'project_default', permission });
+    }
   }
 
   const templates = templateMap(workspaceId, projectId);
@@ -272,6 +273,23 @@ export function resolveVisibleProjectPermissionsForActor(args: {
     return [];
   }
   return snapshot.effective_permissions;
+}
+
+export function resolveVisibleProjectRoleForActor(args: {
+  workspaceId: string;
+  projectId: string;
+  projectOwnerId: string;
+  projectGovernance?: unknown;
+  actorUserId: string;
+}): 'owner' | 'admin' | 'developer' | undefined {
+  if (args.projectOwnerId === args.actorUserId) {
+    return 'owner';
+  }
+  if (isProjectAdmin(args.projectGovernance, args.actorUserId)) {
+    return 'admin';
+  }
+  const snapshot = collectPermissionSources(args);
+  return snapshot.membership_status === 'active' ? 'developer' : undefined;
 }
 
 function mapProjectActionToPermission(action: string): string | null {

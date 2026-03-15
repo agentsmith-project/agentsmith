@@ -13,6 +13,8 @@ export function ProjectCard({
   onClick,
   onSettingsClick,
   onTogglePin,
+  onJoinRequest,
+  isJoinRequestPending = false,
   adminSummary,
   t,
 }: {
@@ -20,6 +22,8 @@ export function ProjectCard({
   onClick: () => void;
   onSettingsClick?: () => void;
   onTogglePin: (e: React.MouseEvent) => void;
+  onJoinRequest?: () => void;
+  isJoinRequestPending?: boolean;
   adminSummary: string;
   t: ReturnType<typeof useTranslations<'projects'>>;
 }) {
@@ -28,6 +32,8 @@ export function ProjectCard({
     'project:admins:update',
     'project:lifecycle:update',
   ]);
+  const canRequestJoin =
+    !project.role && project.join_policy === 'approval_required' && project.status === 'active' && !!onJoinRequest;
   return (
     <div
       onClick={onClick}
@@ -89,7 +95,24 @@ export function ProjectCard({
             {adminSummary}
           </p>
         </div>
-        <StatusBadge status={project.status === 'active' ? 'active' : 'paused'}>{project.status}</StatusBadge>
+        <div className="flex items-center gap-2">
+          {canRequestJoin ? (
+            <Button
+              type="button"
+              variant={isJoinRequestPending ? 'outline' : 'primary'}
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onJoinRequest?.();
+              }}
+              disabled={isJoinRequestPending}
+              data-testid={`projects__join-request-btn--${project.id}`}
+            >
+              {isJoinRequestPending ? t('join_request.pending') : t('join_request.action')}
+            </Button>
+          ) : null}
+          <StatusBadge status={project.status === 'active' ? 'active' : 'paused'}>{project.status}</StatusBadge>
+        </div>
       </div>
     </div>
   );

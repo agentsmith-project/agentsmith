@@ -44,6 +44,7 @@ import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useQueryClient } from '@tanstack/react-query';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary, type Project } from '@/lib/projects/project-view';
+import { useCreateJoinRequest } from '@/lib/hooks/use-join-requests';
 
 export default function ProjectsPage() {
   const routeParams = useParams<{ workspace?: string; locale?: string }>();
@@ -61,12 +62,14 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
+  const [pendingJoinRequestIds, setPendingJoinRequestIds] = useState<Set<string>>(new Set());
 
   // Sync auth store from URL parameters
   useSyncAuthFromUrl();
 
   const workspaceId = validateWorkspaceParam(routeParams?.workspace);
   const locale = routeParams?.locale || 'en-US';
+  const createJoinRequest = useCreateJoinRequest(workspaceId ?? '');
 
   // Fetch workspace and projects
   const {
@@ -143,6 +146,21 @@ export default function ProjectsPage() {
     });
     setDeleteDialogProject(null);
     router.push(`/${locale}/workspaces/${workspaceId}/projects`);
+  };
+
+  const handleCreateJoinRequest = async (project: Project) => {
+    if (!workspaceId) return;
+    setPendingJoinRequestIds((current) => new Set(current).add(project.id));
+    try {
+      await createJoinRequest.mutateAsync({ projectId: project.id });
+    } catch {
+      setPendingJoinRequestIds((current) => {
+        const next = new Set(current);
+        next.delete(project.id);
+        return next;
+      });
+      return;
+    }
   };
 
   const handleCreateProjectSuccess = async (projectId: string) => {
@@ -434,6 +452,8 @@ export default function ProjectsPage() {
                       onClick={() => handleProjectClick(project)}
                       onSettingsClick={() => handleSettingsClick(project)}
                       onTogglePin={(e) => togglePin(project.id, e)}
+                      onJoinRequest={() => void handleCreateJoinRequest(project)}
+                      isJoinRequestPending={pendingJoinRequestIds.has(project.id)}
                       adminSummary={buildProjectAdminSummary(project, memberNameById)}
                       t={t}
                     />
@@ -466,6 +486,8 @@ export default function ProjectsPage() {
                 onSettingsClick={handleSettingsClick}
                 onDeleteClick={(project) => setDeleteDialogProject(project)}
                 onTogglePin={togglePin}
+                onJoinRequest={(project) => void handleCreateJoinRequest(project)}
+                pendingJoinRequestIds={pendingJoinRequestIds}
                 canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
                 memberNameById={memberNameById}
                 t={t}

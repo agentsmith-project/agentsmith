@@ -69,22 +69,34 @@ export function GroupEditorCard({
   onTemplateIdChange,
 }: GroupEditorCardProps) {
   return (
-    <div className="rounded-md border border-subtle bg-surface p-4 space-y-3">
+    <div className="space-y-4 rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+      <div className="flex flex-col gap-1">
+        <h4 className="text-sm font-semibold text-foreground">
+          {editingGroupId ? t('edit') : t('create_group')}
+        </h4>
+        <p className="text-sm leading-6 text-secondary">{t('group_templates_description')}</p>
+      </div>
+
       <div className="grid gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs text-tertiary">{t('group_name')}</label>
+          <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
+            {t('group_name')}
+          </label>
           <Input
             value={groupName}
             onChange={(event) => onGroupNameChange(event.target.value)}
             placeholder={t('group_name_placeholder')}
             disabled={!canManage}
+            className="bg-surface-high"
             data-testid="members__group-name-input"
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs text-tertiary">{t('select_template')}</label>
+          <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
+            {t('select_template')}
+          </label>
           <select
-            className="h-10 w-full rounded-md border border-subtle bg-surface-high px-3 text-sm"
+            className="h-10 w-full rounded-xl border border-subtle bg-surface-high px-3 text-sm"
             value={selectedTemplateId}
             onChange={(event) => onTemplateIdChange(event.target.value)}
             disabled={!canManage}
@@ -101,18 +113,31 @@ export function GroupEditorCard({
       </div>
 
       <div>
-        <p className="mb-1 text-xs text-tertiary">{t('select_members')}</p>
-        <div className="space-y-2 rounded-sm border border-subtle bg-surface-high p-2">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">{t('select_members')}</p>
+            <p className="mt-1 text-sm text-secondary">{t('selected_count', { count: selectedMemberIds.length })}</p>
+          </div>
+          {typeof selectedTemplatePermissionsCount === 'number' ? (
+            <div className="rounded-full border border-white/8 bg-white/[0.03] px-3 py-1 text-xs text-tertiary">
+              {t('permissions_count', { count: selectedTemplatePermissionsCount })}
+            </div>
+          ) : null}
+        </div>
+        <div className="space-y-2 rounded-[20px] border border-subtle bg-surface-high/80 p-3">
           <Input
             value={memberSearch}
             onChange={(event) => onMemberSearchChange(event.target.value)}
             placeholder={membersT('filters.search_placeholder')}
-            className="h-8 bg-surface"
+            className="h-9 bg-surface"
             data-testid="members__group-member-search"
           />
-          <div className="max-h-44 overflow-auto">
+          <div className="max-h-48 overflow-auto rounded-[16px] border border-white/6 bg-surface/80 px-2 py-1">
             {pagedMembers.map((member) => (
-              <label key={member.id} className="flex items-center gap-2 py-1 text-xs text-primary">
+              <label
+                key={member.id}
+                className="flex items-center gap-2 rounded-xl px-2 py-2 text-xs text-primary transition-colors hover:bg-white/[0.03]"
+              >
                 <input
                   type="checkbox"
                   checked={selectedMemberIds.includes(member.id)}
@@ -124,11 +149,11 @@ export function GroupEditorCard({
               </label>
             ))}
             {pagedMembers.length === 0 ? (
-              <p className="px-1 py-3 text-xs text-tertiary">{t('group_empty')}</p>
+              <p className="px-2 py-4 text-xs text-tertiary">{t('group_empty')}</p>
             ) : null}
           </div>
           <div className="flex items-center justify-between text-xs text-tertiary">
-            <span>{t('selected_count', { count: selectedMemberIds.length })}</span>
+            <span>{filteredMembersCount}</span>
             <div className="flex items-center gap-1">
               <Button
                 type="button"
@@ -186,7 +211,7 @@ export function GroupEditorCard({
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 border-t border-white/6 pt-1">
         <Button
           type="button"
           onClick={onSave}
@@ -199,11 +224,6 @@ export function GroupEditorCard({
           <Button type="button" variant="ghost" onClick={onCancelEdit}>
             {t('cancel')}
           </Button>
-        ) : null}
-        {typeof selectedTemplatePermissionsCount === 'number' ? (
-          <span className="text-xs text-tertiary">
-            {t('permissions_count', { count: selectedTemplatePermissionsCount })}
-          </span>
         ) : null}
       </div>
     </div>

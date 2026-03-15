@@ -74,7 +74,10 @@ export function AuditPageContent({
   canGoPrev,
 }: AuditPageContentProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-testid="audit__page">
+    <div
+      className="flex min-h-0 flex-1 flex-col bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_38%)]"
+      data-testid="audit__page"
+    >
       {drilldownContext}
       <AuditOverviewCards summary={overviewSummary} t={t} />
       <div className="mb-3 rounded-[20px] border border-white/6 bg-white/[0.025] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
@@ -98,7 +101,7 @@ export function AuditPageContent({
       </div>
       <div
         data-testid="audit__filters"
-        className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+        className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_20px_44px_rgba(0,0,0,0.16)]"
       >
         <AuditFilters
           filters={filters}
@@ -110,24 +113,20 @@ export function AuditPageContent({
         />
       </div>
 
-      <div className="mt-4 min-h-0 flex-1 overflow-y-auto rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-        <AuditTable
-          data={auditItems}
-          loading={isLoading}
-          onViewDetails={onViewDetails}
-          onClearFilters={onClearFilters}
-          onRefresh={onRefresh}
-        />
-        <div className="mt-4 flex items-center justify-between rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
-          <p className="text-xs text-tertiary">
-            {commonT('total_items', { count: String(totalItems) })}
-            {totalPages > 1 ? (
-              <>
-                {' · '}
-                {commonT('page_of', { page: String(currentPage), total: String(totalPages) })}
-              </>
-            ) : null}
-          </p>
+      <div className="mt-4 min-h-0 flex-1 rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_20px_44px_rgba(0,0,0,0.16)]">
+        <div className="mb-4 flex flex-col gap-3 rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">{t('title')}</p>
+            <p className="mt-1 text-sm text-secondary">
+              {commonT('total_items', { count: String(totalItems) })}
+              {totalPages > 1 ? (
+                <>
+                  {' · '}
+                  {commonT('page_of', { page: String(currentPage), total: String(totalPages) })}
+                </>
+              ) : null}
+            </p>
+          </div>
           <div className="flex items-center gap-2">
             <Button
               type="button"
@@ -148,6 +147,15 @@ export function AuditPageContent({
               {commonT('next')}
             </Button>
           </div>
+        </div>
+        <div className="min-h-0 overflow-y-auto rounded-[20px] border border-white/6 bg-background/35 p-3">
+          <AuditTable
+            data={auditItems}
+            loading={isLoading}
+            onViewDetails={onViewDetails}
+            onClearFilters={onClearFilters}
+            onRefresh={onRefresh}
+          />
         </div>
       </div>
 

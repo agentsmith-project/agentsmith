@@ -77,7 +77,8 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     return buildTemplateOptions(defaultTemplates, templates);
   }, [defaultTemplates, templates]);
 
-  const selectedTemplate = templateOptions.find((tpl) => tpl.id === templateId);
+  const selectedTemplatePermissionsCount =
+    templateOptions.find((template) => template.id === templateId)?.permissions.length ?? 0;
   const filteredMembers = React.useMemo(() => {
     const keyword = memberSearch.trim().toLowerCase();
     if (!keyword) return members;
@@ -173,7 +174,6 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const previewDiffs = React.useMemo<PreviewDiff[]>(() => {
     return buildPreviewDiffs(groups, members, previewGroupId, templateOptions);
   }, [groups, members, previewGroupId, templateOptions]);
-
   const handleApplyGroup = async (group: ProjectGroup) => {
     const result = await applyGroupTemplate.mutateAsync({ groupId: group.id });
     const failedItems = (result.results ?? []).filter((item) => item.status === 'failed');
@@ -227,72 +227,106 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
   return (
     <div className="space-y-5" data-testid="members__groups-section">
-      <div>
-        <h3 className="text-sm font-medium text-foreground">{t('group_templates')}</h3>
-        <p className="mt-1 text-xs text-tertiary">{t('group_templates_description')}</p>
+      <div className="rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <h3 className="text-sm font-semibold text-foreground">{t('group_templates')}</h3>
+            <p className="mt-1 text-sm leading-6 text-secondary">{t('group_templates_description')}</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
+                {t('group_templates')}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{groups.length}</p>
+            </div>
+            <div className="rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
+                {t('select_members')}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{members.length}</p>
+            </div>
+            <div className="rounded-[18px] border border-white/6 bg-white/[0.025] px-4 py-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-tertiary">
+                {t('select_template')}
+              </p>
+              <p className="mt-2 text-2xl font-semibold text-foreground">{templateOptions.length}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <GroupEditorCard
-        allPagedSelected={allPagedSelected}
-        canManage={canManage}
-        commonT={commonT}
-        createPending={createGroup.isPending}
-        editingGroupId={editingGroupId}
-        filteredMembersCount={filteredMembers.length}
-        groupName={name}
-        hasAnyPagedSelected={hasAnyPagedSelected}
-        memberPage={memberPage}
-        memberPageCount={memberPageCount}
-        memberSearch={memberSearch}
-        membersT={membersT}
-        pagedMembers={pagedMembers}
-        selectedMemberIds={selectedMemberIds}
-        selectedTemplateId={templateId}
-        selectedTemplatePermissionsCount={selectedTemplate?.permissions.length}
-        templateOptions={templateOptions}
-        t={t}
-        updatePending={updateGroup.isPending}
-        onCancelEdit={resetForm}
-        onClearPage={deselectAllPagedMembers}
-        onGroupNameChange={setName}
-        onMemberPageChange={setMemberPage}
-        onMemberSearchChange={(value) => {
-          setMemberSearch(value);
-          setMemberPage(1);
-        }}
-        onSave={() => {
-          void handleSaveGroup();
-        }}
-        onSelectMember={toggleMember}
-        onSelectPage={selectAllPagedMembers}
-        onTemplateIdChange={setTemplateId}
-      />
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+        <GroupEditorCard
+          allPagedSelected={allPagedSelected}
+          canManage={canManage}
+          commonT={commonT}
+          createPending={createGroup.isPending}
+          editingGroupId={editingGroupId}
+          filteredMembersCount={filteredMembers.length}
+          groupName={name}
+          hasAnyPagedSelected={hasAnyPagedSelected}
+          memberPage={memberPage}
+          memberPageCount={memberPageCount}
+          memberSearch={memberSearch}
+          membersT={membersT}
+          pagedMembers={pagedMembers}
+          selectedMemberIds={selectedMemberIds}
+          selectedTemplateId={templateId}
+          selectedTemplatePermissionsCount={selectedTemplatePermissionsCount}
+          templateOptions={templateOptions}
+          t={t}
+          updatePending={updateGroup.isPending}
+          onCancelEdit={resetForm}
+          onClearPage={deselectAllPagedMembers}
+          onGroupNameChange={setName}
+          onMemberPageChange={setMemberPage}
+          onMemberSearchChange={(value) => {
+            setMemberSearch(value);
+            setMemberPage(1);
+          }}
+          onSave={() => {
+            void handleSaveGroup();
+          }}
+          onSelectMember={toggleMember}
+          onSelectPage={selectAllPagedMembers}
+          onTemplateIdChange={setTemplateId}
+        />
 
-      <GroupList
-        applyPending={applyGroupTemplate.isPending}
-        canManage={canManage}
-        deletePending={deleteGroup.isPending}
-        groups={groups}
-        lastApplyResult={lastApplyResult}
-        memberNameMap={memberNameMap}
-        previewDiffs={previewDiffs}
-        previewGroupId={previewGroupId}
-        t={t}
-        templateNameMap={templateNameMap}
-        onApply={(group) => {
-          void handleApplyGroup(group);
-        }}
-        onCopyFailed={(groupId) => {
-          void handleCopyFailedList(groupId);
-        }}
-        onDelete={setGroupToDelete}
-        onEdit={startEdit}
-        onExportFailed={handleExportFailedList}
-        onPreviewToggle={(groupId) => setPreviewGroupId(previewGroupId === groupId ? null : groupId)}
-        onRetryFailed={(groupId, failedMemberIds) => {
-          void handleRetryFailed(groupId, failedMemberIds);
-        }}
-      />
+        <div className="space-y-3 rounded-[24px] border border-subtle bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+          <div className="flex flex-col gap-1">
+            <h4 className="text-sm font-semibold text-foreground">{t('group_templates')}</h4>
+            <p className="text-sm leading-6 text-secondary">
+              {groups.length === 0 ? t('group_empty') : t('selected_count', { count: groups.length })}
+            </p>
+          </div>
+          <GroupList
+            applyPending={applyGroupTemplate.isPending}
+            canManage={canManage}
+            deletePending={deleteGroup.isPending}
+            groups={groups}
+            lastApplyResult={lastApplyResult}
+            memberNameMap={memberNameMap}
+            previewDiffs={previewDiffs}
+            previewGroupId={previewGroupId}
+            t={t}
+            templateNameMap={templateNameMap}
+            onApply={(group) => {
+              void handleApplyGroup(group);
+            }}
+            onCopyFailed={(groupId) => {
+              void handleCopyFailedList(groupId);
+            }}
+            onDelete={setGroupToDelete}
+            onEdit={startEdit}
+            onExportFailed={handleExportFailedList}
+            onPreviewToggle={(groupId) => setPreviewGroupId(previewGroupId === groupId ? null : groupId)}
+            onRetryFailed={(groupId, failedMemberIds) => {
+              void handleRetryFailed(groupId, failedMemberIds);
+            }}
+          />
+        </div>
+      </div>
 
       <AlertDialog
         open={!!groupToDelete}

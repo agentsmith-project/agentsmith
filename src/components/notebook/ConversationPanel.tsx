@@ -108,7 +108,7 @@ export function ConversationPanel({
   };
 
   return (
-      <div className="h-full flex flex-col bg-background">
+      <div className="flex h-full flex-col overflow-hidden rounded-[22px] border border-white/6 bg-background bg-background/70">
       {connectionStatus && connectionStatus !== 'connected' && (
         <ConnectionBanner
           title={connectionTitle ?? ''}
@@ -120,13 +120,23 @@ export function ConversationPanel({
         />
       )}
       {sandboxStarting ? (
-        <div className="border-b border-subtle px-4 py-2" data-testid="notebook__sandbox-starting">
+        <div className="border-b border-subtle px-4 py-3" data-testid="notebook__sandbox-starting">
           <div className="text-xs font-medium text-primary">{t('sandbox_starting_title')}</div>
           <div className="mt-0.5 text-xs text-tertiary">{t('sandbox_starting_description')}</div>
         </div>
       ) : null}
-      <div className="border-b border-subtle px-4 py-2 flex items-center justify-between" data-testid="notebook__execution-visibility">
-        <div className="text-xs text-tertiary">{t('execution_visibility_label')}</div>
+      <div
+        className="flex items-center justify-between border-b border-subtle bg-white/[0.02] px-4 py-3"
+        data-testid="notebook__execution-visibility"
+      >
+        <div className="space-y-1">
+          <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
+            {t('execution_visibility_label')}
+          </div>
+          <div className="text-sm text-secondary">
+            {connectionStatus === 'connected' ? t('execution_visibility_show') : (connectionTitle ?? '')}
+          </div>
+        </div>
         <button
           type="button"
           className="text-xs text-primary hover:underline disabled:text-tertiary disabled:no-underline"
@@ -148,7 +158,7 @@ export function ConversationPanel({
           onRunActionClick={onRunActionClick}
         />
       ) : null}
-      <div className="flex-1 min-h-0">
+      <div className="min-h-0 flex-1 bg-[linear-gradient(180deg,rgba(255,255,255,0.018),transparent_16%)]">
         <MessageList
           messages={messages}
           streamingMessageId={streamingMessageId}
@@ -167,17 +177,19 @@ export function ConversationPanel({
           onTraceLoadMore={onTraceLoadMore}
         />
       </div>
-      <ConversationInput
-        value={inputValue}
-        onChange={setInputValue}
-        onSend={handleSend}
-        agentRunning={agentRunning}
-        pendingQueue={pendingQueue}
-        onPendingUpdate={onPendingUpdate}
-        onPendingRemove={onPendingRemove}
-        disabled={disabled}
-        sending={sending}
-      />
+      <div className="border-t border-subtle bg-white/[0.02]">
+        <ConversationInput
+          value={inputValue}
+          onChange={setInputValue}
+          onSend={handleSend}
+          agentRunning={agentRunning}
+          pendingQueue={pendingQueue}
+          onPendingUpdate={onPendingUpdate}
+          onPendingRemove={onPendingRemove}
+          disabled={disabled}
+          sending={sending}
+        />
+      </div>
     </div>
   );
 }

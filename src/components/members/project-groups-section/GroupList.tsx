@@ -44,28 +44,36 @@ export function GroupList({
   onRetryFailed,
 }: GroupListProps) {
   return (
-    <div className="space-y-2">
+    <div className="space-y-3">
       {groups.length === 0 ? (
-        <div className="rounded-md border border-dashed border-subtle p-4 text-xs text-tertiary">
+        <div className="rounded-[20px] border border-dashed border-subtle bg-white/[0.02] p-5 text-sm text-secondary">
           {t('group_empty')}
         </div>
       ) : (
         groups.map((group) => (
           <div
             key={group.id}
-            className="rounded-md border border-subtle bg-surface p-3"
+            className="rounded-[22px] border border-subtle bg-surface-high/75 p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]"
             data-testid={`members__group-row--${group.id}`}
           >
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-medium text-primary">{group.name}</p>
-                <p className="text-xs text-tertiary">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold text-primary">{group.name}</p>
+                <p className="text-sm text-secondary">
                   {templateNameMap.get(group.permission_template_id) || group.permission_template_id}
                   {' · '}
                   {t('selected_count', { count: group.member_ids.length })}
                 </p>
+                <div className="flex flex-wrap items-center gap-2 text-xs text-tertiary">
+                  <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                    {templateNameMap.get(group.permission_template_id) || group.permission_template_id}
+                  </span>
+                  <span className="rounded-full border border-white/8 bg-white/[0.03] px-2.5 py-1">
+                    {t('selected_count', { count: group.member_ids.length })}
+                  </span>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
@@ -108,8 +116,10 @@ export function GroupList({
               </div>
             </div>
             {previewGroupId === group.id ? (
-              <div className="mt-3 rounded-sm border border-subtle bg-surface-high p-3">
-                <p className="mb-2 text-xs text-tertiary">{t('group_preview_title')}</p>
+              <div className="mt-4 rounded-[18px] border border-subtle bg-surface p-3">
+                <p className="mb-2 text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
+                  {t('group_preview_title')}
+                </p>
                 <div className="space-y-1">
                   {previewDiffs.length === 0 ? (
                     <p className="text-xs text-tertiary">{t('group_preview_empty')}</p>
@@ -131,7 +141,7 @@ export function GroupList({
               </div>
             ) : null}
             {lastApplyResult?.groupId === group.id ? (
-              <div className="mt-2 rounded-sm border border-subtle bg-surface-high p-2 text-xs text-tertiary">
+              <div className="mt-3 rounded-[18px] border border-subtle bg-surface p-3 text-xs text-tertiary">
                 <p data-testid={`members__group-apply-result--${group.id}`}>
                   {t('group_apply_result', {
                     applied: lastApplyResult.appliedCount,
@@ -141,39 +151,41 @@ export function GroupList({
                 {lastApplyResult.failedDetails.length > 0 ? (
                   <div className="mt-2 space-y-1" data-testid={`members__group-apply-failed-list--${group.id}`}>
                     {lastApplyResult.failedDetails.map((item) => (
-                      <p key={item.memberId}>
+                      <p key={item.memberId} className="rounded-xl border border-white/6 bg-white/[0.02] px-3 py-2">
                         {memberNameMap.get(item.memberId) ?? item.memberId}
                         {item.message ? ` (${item.message})` : ''}
                       </p>
                     ))}
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onRetryFailed(group.id, lastApplyResult.failedMemberIds)}
-                      disabled={applyPending}
-                      data-testid={`members__group-retry-failed-btn--${group.id}`}
-                    >
-                      {t('retry_failed_members')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onCopyFailed(group.id)}
-                      data-testid={`members__group-copy-failed-btn--${group.id}`}
-                    >
-                      {t('copy_failed_members')}
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => onExportFailed(group.id)}
-                      data-testid={`members__group-export-failed-btn--${group.id}`}
-                    >
-                      {t('export_failed_members')}
-                    </Button>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onRetryFailed(group.id, lastApplyResult.failedMemberIds)}
+                        disabled={applyPending}
+                        data-testid={`members__group-retry-failed-btn--${group.id}`}
+                      >
+                        {t('retry_failed_members')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onCopyFailed(group.id)}
+                        data-testid={`members__group-copy-failed-btn--${group.id}`}
+                      >
+                        {t('copy_failed_members')}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => onExportFailed(group.id)}
+                        data-testid={`members__group-export-failed-btn--${group.id}`}
+                      >
+                        {t('export_failed_members')}
+                      </Button>
+                    </div>
                   </div>
                 ) : null}
               </div>

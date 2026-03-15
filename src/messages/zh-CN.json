@@ -1865,10 +1865,17 @@
     },
     "history": {
       "title": "变更历史",
+      "subtitle": "查看这个成员最近的权限、资源策略和访问分组变更。",
       "view_history": "查看变更历史",
       "permissions_updated": "权限已更新",
       "limit_updated": "限额覆盖",
-      "acl_updated": "资源策略已更新"
+      "acl_updated": "资源策略已更新",
+      "role_updated": "访问分组已更新",
+      "empty": "暂无变更历史",
+      "added": "新增：",
+      "removed": "移除：",
+      "updated": "更新：",
+      "by_actor": "操作人：{actor}"
     },
     "actions": {
       "edit_permissions_limit": "编辑权限和限额",

@@ -393,10 +393,28 @@ export default function ThirdPartyAccountsPage() {
           if (!open) resetForm();
         }}>
           <DialogContent className="sm:max-w-[760px]" data-testid="third-party-accounts__dialog">
-            <DialogHeader>
+            <DialogHeader className="space-y-3">
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+                <Link2 className="h-3.5 w-3.5" />
+                External Access
+              </div>
               <DialogTitle>{editing ? t('edit_title') : t('create_title')}</DialogTitle>
               <DialogDescription>{t('dialog_description')}</DialogDescription>
             </DialogHeader>
+
+            <div className="rounded-2xl border border-white/8 bg-[linear-gradient(180deg,rgba(124,160,255,0.08),rgba(124,160,255,0.02))] p-4">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                  <ShieldCheck className="h-5 w-5" />
+                </span>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">
+                    {editing ? t('edit_title') : t('create_title')}
+                  </p>
+                  <p className="text-sm leading-6 text-secondary">{t('dialog_description')}</p>
+                </div>
+              </div>
+            </div>
 
             <ConnectionFormFields
               createEmptyField={createEmptyField}

@@ -1863,10 +1863,17 @@
     },
     "history": {
       "title": "Change History",
+      "subtitle": "Review the latest permission, resource policy, and access-group changes for this member.",
       "view_history": "View Change History",
       "permissions_updated": "Permissions updated",
       "limit_updated": "Limit override",
-      "acl_updated": "Resource policy updated"
+      "acl_updated": "Resource policy updated",
+      "role_updated": "Access group updated",
+      "empty": "No change history available",
+      "added": "Added:",
+      "removed": "Removed:",
+      "updated": "Updated:",
+      "by_actor": "by {actor}"
     },
     "actions": {
       "edit_permissions_limit": "Edit Permissions & Limit",

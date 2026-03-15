@@ -4,11 +4,12 @@ import { useTranslations } from 'next-intl';
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, History, ShieldCheck } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils/formatters';
 import type { ChangeHistoryEntry } from '@/lib/api/types';
 
@@ -47,7 +48,7 @@ export function ChangeHistoryDrawer({
       case 'resource_policy':
         return t('acl_updated');
       case 'role':
-        return 'Access group updated';
+        return t('role_updated');
       default:
         return type;
     }
@@ -56,16 +57,24 @@ export function ChangeHistoryDrawer({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+        <DialogHeader className="space-y-3">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <History className="h-3.5 w-3.5" />
+            Members
+          </div>
           <DialogTitle>
             {t('title')} - {memberName}
           </DialogTitle>
+          <DialogDescription>{t('subtitle')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-3">
           {history.length === 0 ? (
-            <div className="text-center py-8 text-tertiary">
-              <p className="text-sm">No change history available</p>
+            <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] py-10 text-center text-tertiary">
+              <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.03] text-accent">
+                <ShieldCheck className="h-5 w-5" />
+              </div>
+              <p className="text-sm">{t('empty')}</p>
             </div>
           ) : (
             history.map((entry) => {
@@ -89,7 +98,7 @@ export function ChangeHistoryDrawer({
                         {getChangeTypeLabel(entry.change_type)}
                       </Badge>
                       <span className="text-sm text-tertiary">
-                        by {entry.actor_email}
+                        {t('by_actor', { actor: entry.actor_email })}
                       </span>
                       <span className="text-xs text-tertiary">
                         {formatRelativeTime(entry.timestamp)}
@@ -101,7 +110,7 @@ export function ChangeHistoryDrawer({
                     <div className="mt-4 space-y-3 pl-7">
                       {entry.changes.added && entry.changes.added.length > 0 && (
                         <div>
-                          <p className="text-xs font-medium text-success mb-2">Added:</p>
+                          <p className="text-xs font-medium text-success mb-2">{t('added')}</p>
                           <ul className="space-y-1">
                             {entry.changes.added.map((item, idx) => (
                               <li key={idx} className="text-xs text-foreground">
@@ -114,7 +123,7 @@ export function ChangeHistoryDrawer({
 
                       {entry.changes.removed && entry.changes.removed.length > 0 && (
                         <div>
-                          <p className="text-xs font-medium text-error mb-2">Removed:</p>
+                          <p className="text-xs font-medium text-error mb-2">{t('removed')}</p>
                           <ul className="space-y-1">
                             {entry.changes.removed.map((item, idx) => (
                               <li key={idx} className="text-xs text-foreground line-through">
@@ -127,7 +136,7 @@ export function ChangeHistoryDrawer({
 
                       {entry.changes.updated && Object.keys(entry.changes.updated).length > 0 && (
                         <div>
-                          <p className="text-xs font-medium text-foreground mb-2">Updated:</p>
+                          <p className="text-xs font-medium text-foreground mb-2">{t('updated')}</p>
                           <ul className="space-y-1">
                             {Object.entries(entry.changes.updated).map(([key, value]) => (
                               <li key={key} className="text-xs text-foreground">

@@ -34,16 +34,20 @@ export function CreateApiKeyDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[460px]" data-testid="api-keys__create-dialog">
-        <DialogHeader>
+        <DialogHeader className="space-y-3">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <KeyRound className="h-3.5 w-3.5" />
+            API Key
+          </div>
           <DialogTitle>{t('create')}</DialogTitle>
           <DialogDescription>
             Create a new API key. You can add an optional note and expiration.
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-4">
-          <div className="rounded-xl border border-accent/20 bg-accent/10 p-3">
+          <div className="rounded-2xl border border-accent/20 bg-accent/10 p-4">
             <div className="flex items-start gap-3">
-              <div className="mt-0.5 rounded-full bg-accent/15 p-2 text-accent">
+              <div className="mt-0.5 rounded-2xl bg-accent/15 p-2.5 text-accent">
                 <ShieldCheck className="h-4 w-4" />
               </div>
               <div className="space-y-1">
@@ -52,7 +56,7 @@ export function CreateApiKeyDialog({
               </div>
             </div>
           </div>
-          <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+          <div className="rounded-2xl border border-border/70 bg-surface-high p-4">
             <div className="mb-3 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
               <KeyRound className="h-3.5 w-3.5 text-accent" />
               {t('dialog_settings_title')}

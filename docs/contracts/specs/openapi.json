@@ -1646,10 +1646,10 @@
         }
       }
     },
-  "/api/v1/workspaces/{workspaceId}/members": {
-    "get": {
-      "tags": [
-        "Workspaces"
+    "/api/v1/workspaces/{workspaceId}/members": {
+      "get": {
+        "tags": [
+          "Workspaces"
         ],
         "operationId": "get_workspaceMembers",
         "responses": {
@@ -1667,92 +1667,132 @@
           "401": {
             "$ref": "#/components/responses/Unauthorized"
           },
-        "403": {
-          "$ref": "#/components/responses/Forbidden"
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
         }
       }
-    }
-  },
-  "/api/v1/workspaces/{workspaceId}/project-creators": {
-    "get": {
-      "tags": [
-        "Workspaces"
-      ],
-      "operationId": "get_workspaceProjectCreators",
-      "responses": {
-        "200": {
-          "description": "OK",
+    },
+    "/api/v1/workspaces/{workspaceId}/project-creators": {
+      "get": {
+        "tags": [
+          "Workspaces"
+        ],
+        "operationId": "get_workspaceProjectCreators",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Workspaces"
+        ],
+        "operationId": "patch_workspaceProjectCreators",
+        "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": true
-              }
-            }
-          }
-        },
-        "401": {
-          "$ref": "#/components/responses/Unauthorized"
-        },
-        "403": {
-          "$ref": "#/components/responses/Forbidden"
-        }
-      }
-    },
-    "patch": {
-      "tags": [
-        "Workspaces"
-      ],
-      "operationId": "patch_workspaceProjectCreators",
-      "requestBody": {
-        "required": true,
-        "content": {
-          "application/json": {
-            "schema": {
-              "type": "object",
-              "required": [
-                "project_creators"
-              ],
-              "properties": {
-                "project_creators": {
-                  "type": "array",
-                  "items": {
-                    "type": "string"
+                "required": [
+                  "project_creator_user_ids"
+                ],
+                "properties": {
+                  "project_creator_user_ids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
                   }
                 }
               }
             }
           }
-        }
-      },
-      "responses": {
-        "200": {
-          "description": "Updated",
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "additionalProperties": true
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
               }
             }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "description": "Validation error"
           }
-        },
-        "401": {
-          "$ref": "#/components/responses/Unauthorized"
-        },
-        "403": {
-          "$ref": "#/components/responses/Forbidden"
-        },
-        "422": {
-          "description": "Validation error"
         }
       }
-    }
-  },
-  "/api/v1/workspaces/{workspaceId}/projects/{projectId}": {
-    "get": {
-      "tags": [
-        "Projects"
+    },
+    "/api/v1/workspaces/{workspaceId}/directory/users": {
+      "get": {
+        "tags": [
+          "Workspaces"
+        ],
+        "operationId": "get_workspaceDirectoryUsers",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "503": {
+            "description": "Directory unavailable"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}": {
+      "get": {
+        "tags": [
+          "Projects"
         ],
         "operationId": "get_item",
         "responses": {

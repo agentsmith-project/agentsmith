@@ -5,9 +5,16 @@ import type {
 
 export type SystemWorkspaceAction = 'create' | 'update' | 'delete' | 'publish' | 'disable' | null;
 
+export type SystemWorkspaceDraftAdmin = {
+  user_id: string;
+  email: string;
+  name: string | null;
+};
+
 export type SystemWorkspaceDraft = {
   name: string;
-  admin: string;
+  adminQuery: string;
+  admin: SystemWorkspaceDraftAdmin | null;
   idpUrl: string;
   idpRealm: string;
   idpClientId: string;

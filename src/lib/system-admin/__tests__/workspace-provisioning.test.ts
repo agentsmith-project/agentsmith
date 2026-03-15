@@ -55,7 +55,15 @@ describe('workspace provisioning', () => {
       id: 'platform_ops',
       name: 'Platform Ops',
       workspace_admin: 'admin@example.com',
-      project_creators: ['creator@example.com'],
+      workspace_admin_user_id: 'kc-admin-001',
+      workspace_admin_name: 'Admin Example',
+      project_creators: [
+        {
+          user_id: 'kc-creator-001',
+          email: 'creator@example.com',
+          name: 'Creator Example',
+        },
+      ],
       idp: {
         kind: 'keycloak',
         url: 'https://idp.example.com',

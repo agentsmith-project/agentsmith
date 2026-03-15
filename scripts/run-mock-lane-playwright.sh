@@ -132,7 +132,7 @@ wait_http_ok() {
       fi
     fi
     local code
-    code="$(curl -sS -o /dev/null -w '%{http_code}' "${HEALTH_URL}" || true)"
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "${HEALTH_URL}" 2>/dev/null || true)"
     if [[ "${code}" == "200" ]]; then
       return 0
     fi

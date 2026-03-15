@@ -5,6 +5,7 @@ export type ProjectsRoute =
   | { kind: 'workspaceItem'; workspaceId: string }
   | { kind: 'workspaceMembers'; workspaceId: string }
   | { kind: 'workspaceProjectCreators'; workspaceId: string }
+  | { kind: 'workspaceDirectoryUsers'; workspaceId: string }
   | { kind: 'collection'; workspaceId: string }
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'projectAuthorize'; workspaceId: string; projectId: string }
@@ -156,6 +157,14 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     return {
       kind: 'workspaceProjectCreators',
       workspaceId: decodeURIComponent(workspaceProjectCreatorsMatched[1]),
+    };
+  }
+
+  const workspaceDirectoryUsersMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/directory\/users\/?$/);
+  if (workspaceDirectoryUsersMatched) {
+    return {
+      kind: 'workspaceDirectoryUsers',
+      workspaceId: decodeURIComponent(workspaceDirectoryUsersMatched[1]),
     };
   }
 

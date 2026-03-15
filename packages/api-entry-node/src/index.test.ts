@@ -53,6 +53,62 @@ afterEach(async () => {
 
 function startMockKeycloakServer(): { server: Server; issuerUrl: string } {
   const server = http.createServer((req, res) => {
+    const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
+    const directoryUsers = [
+      {
+        id: 'user_owner',
+        email: 'owner@example.com',
+        username: 'owner-user',
+        firstName: 'Owner',
+        lastName: 'User',
+        name: 'Owner User',
+      },
+      {
+        id: 'user_alt',
+        email: 'alt@example.com',
+        username: 'alt-user',
+        firstName: 'Alt',
+        lastName: 'User',
+        name: 'Alt User',
+      },
+      {
+        id: 'user_creator',
+        email: 'creator@example.com',
+        username: 'creator-user',
+        firstName: 'Creator',
+        lastName: 'User',
+        name: 'Creator User',
+      },
+    ];
+    if (req.method === 'POST' && requestUrl.pathname === '/realms/master/protocol/openid-connect/token') {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ access_token: 'mock-admin-token' }));
+      return;
+    }
+    if (req.headers.authorization === 'Bearer mock-admin-token' && requestUrl.pathname === '/admin/realms/mbos/users') {
+      const search = requestUrl.searchParams.get('search')?.trim().toLowerCase() ?? '';
+      const items = search
+        ? directoryUsers.filter((item) => `${item.email} ${item.username} ${item.name}`.toLowerCase().includes(search))
+        : directoryUsers;
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(items));
+      return;
+    }
+    const userItemMatch = requestUrl.pathname.match(/^\/admin\/realms\/mbos\/users\/([^/]+)$/);
+    if (req.headers.authorization === 'Bearer mock-admin-token' && userItemMatch) {
+      const found = directoryUsers.find((item) => item.id === decodeURIComponent(userItemMatch[1]));
+      if (!found) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: 'not_found' }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify(found));
+      return;
+    }
     const auth = req.headers.authorization ?? '';
     let sub = 'user_test';
     let email = 'test@example.com';
@@ -753,7 +809,7 @@ describe('api-entry-node projects routes', () => {
           project_creators: ['alt@example.com'],
           idp: {
             kind: 'keycloak',
-            url: 'http://localhost:8080',
+            url: process.env.KEYCLOAK_ISSUER_URL,
             realm: 'mbos',
             client_id: 'agentsmith-web',
           },
@@ -779,7 +835,7 @@ describe('api-entry-node projects routes', () => {
     const updateRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/project-creators', 'owner-token', {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ project_creators: ['user_alt', 'creator@example.com'] }),
+      body: JSON.stringify({ project_creator_user_ids: ['user_alt', 'user_creator'] }),
     });
     expect(updateRes.status).toBe(200);
 

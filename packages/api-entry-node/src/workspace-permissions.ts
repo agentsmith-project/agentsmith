@@ -81,6 +81,18 @@ function identifierMatches(actorId: string, actorEmail: string | undefined, iden
   return actorId.trim().toLowerCase() === normalized || actorEmail?.trim().toLowerCase() === normalized;
 }
 
+function snapshotMatchesActor(
+  actorId: string,
+  actorEmail: string | undefined,
+  snapshot: { user_id: string; email: string } | undefined,
+): boolean {
+  if (!snapshot) return false;
+  const normalizedActorId = actorId.trim().toLowerCase();
+  const normalizedActorEmail = actorEmail?.trim().toLowerCase();
+  return normalizedActorId === snapshot.user_id.trim().toLowerCase()
+    || normalizedActorEmail === snapshot.email.trim().toLowerCase();
+}
+
 export function resolveWorkspacePermissions(args: {
   workspaceId: string;
   actorId: string;
@@ -90,10 +102,16 @@ export function resolveWorkspacePermissions(args: {
   const { workspaceId, actorId, actorEmail, defaultWorkspaceId } = args;
   const registered = getRegisteredWorkspaceConfig(workspaceId);
   if (registered) {
-    if (identifierMatches(actorId, actorEmail, registered.workspace_admin)) {
+    if (
+      (registered.workspace_admin_user_id && registered.workspace_admin && snapshotMatchesActor(actorId, actorEmail, {
+        user_id: registered.workspace_admin_user_id,
+        email: registered.workspace_admin,
+      }))
+      || identifierMatches(actorId, actorEmail, registered.workspace_admin)
+    ) {
       return OWNER_WORKSPACE_PERMISSIONS;
     }
-    if ((registered.project_creators ?? []).some((entry) => identifierMatches(actorId, actorEmail, entry))) {
+    if ((registered.project_creators ?? []).some((entry) => snapshotMatchesActor(actorId, actorEmail, entry))) {
       return PROJECT_CREATOR_WORKSPACE_PERMISSIONS;
     }
     return MEMBER_WORKSPACE_PERMISSIONS;
@@ -133,15 +151,19 @@ export function buildWorkspaceMembersFromConfig(args: {
     joined_at: string;
   }>();
 
-  const pushMember = (identifier: string, role: 'admin' | 'developer', permissions: readonly string[]) => {
-    const trimmed = identifier.trim();
-    if (!trimmed) return;
-    const key = trimmed.toLowerCase();
+  const pushMember = (
+    member: { user_id: string; email: string; name: string | null },
+    role: 'admin' | 'developer',
+    permissions: readonly string[],
+  ) => {
+    const userId = member.user_id.trim();
+    if (!userId) return;
+    const key = userId.toLowerCase();
     members.set(key, {
-      id: `wm_${trimmed}`,
-      user_id: trimmed,
-      name: trimmed,
-      email: trimmed.includes('@') ? trimmed : `${trimmed}@workspace.local`,
+      id: `wm_${userId}`,
+      user_id: userId,
+      name: member.name || member.email || userId,
+      email: member.email,
       role,
       governance_group: role === 'admin' ? 'wheel' : 'user',
       permissions,
@@ -150,14 +172,34 @@ export function buildWorkspaceMembersFromConfig(args: {
     });
   };
 
-  if (registered?.workspace_admin) {
-    pushMember(registered.workspace_admin, 'admin', OWNER_WORKSPACE_PERMISSIONS);
+  if (registered?.workspace_admin_user_id && registered.workspace_admin) {
+    pushMember(
+      {
+        user_id: registered.workspace_admin_user_id,
+        email: registered.workspace_admin,
+        name: registered.workspace_admin_name ?? null,
+      },
+      'admin',
+      OWNER_WORKSPACE_PERMISSIONS,
+    );
+  } else if (registered?.workspace_admin) {
+    pushMember(
+      {
+        user_id: registered.workspace_admin,
+        email: registered.workspace_admin.includes('@')
+          ? registered.workspace_admin
+          : `${registered.workspace_admin}@workspace.local`,
+        name: registered.workspace_admin,
+      },
+      'admin',
+      OWNER_WORKSPACE_PERMISSIONS,
+    );
   }
-  for (const identifier of registered?.project_creators ?? []) {
-    if (registered?.workspace_admin && identifierMatches(identifier, undefined, registered.workspace_admin)) {
+  for (const creator of registered?.project_creators ?? []) {
+    if (registered?.workspace_admin_user_id && creator.user_id === registered.workspace_admin_user_id) {
       continue;
     }
-    pushMember(identifier, 'developer', PROJECT_CREATOR_WORKSPACE_PERMISSIONS);
+    pushMember(creator, 'developer', PROJECT_CREATOR_WORKSPACE_PERMISSIONS);
   }
 
   const actorPermissions = resolveWorkspacePermissions({

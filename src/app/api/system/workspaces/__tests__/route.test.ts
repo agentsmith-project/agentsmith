@@ -60,8 +60,7 @@ describe('/api/system/workspaces', () => {
     expect(registryModule.createSystemWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Alpha Workspace',
-        workspace_admin: 'alpha-admin@example.com',
-        project_creators: ['creator@example.com'],
+        workspace_admin_user_id: 'kc-alpha-admin',
       }),
     );
   });

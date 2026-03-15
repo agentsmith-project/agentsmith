@@ -4,6 +4,10 @@ import { matchProjectsRoute } from './projects-route-match.js';
 describe('matchProjectsRoute', () => {
   it('matches workspace and project collection routes', () => {
     expect(matchProjectsRoute('/api/v1/workspaces')).toEqual({ kind: 'workspacesCollection' });
+    expect(matchProjectsRoute('/api/v1/workspaces/ws_default/directory/users?query=dev')).toEqual({
+      kind: 'workspaceDirectoryUsers',
+      workspaceId: 'ws_default',
+    });
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects')).toEqual({
       kind: 'collection',
       workspaceId: 'ws_default',

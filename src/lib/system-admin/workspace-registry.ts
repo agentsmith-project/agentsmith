@@ -1,4 +1,5 @@
 import { initializeWorkspaceResources } from './workspace-registry/provisioning';
+import { resolveKeycloakUserById } from './keycloak-user-directory';
 import {
   buildUpdatedWorkspaceRecord,
   createWorkspaceRecord,
@@ -45,7 +46,12 @@ export async function getPublicSystemWorkspace(id: string): Promise<SystemWorksp
 
 export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): Promise<SystemWorkspaceRecord> {
   const records = await readRegistryFile();
-  const record = createWorkspaceRecord(records, input);
+  const workspaceAdmin = await resolveKeycloakUserById({
+    idpUrl: input.idp_url,
+    realm: input.idp_realm,
+    userId: input.workspace_admin_user_id,
+  });
+  const record = createWorkspaceRecord(records, input, workspaceAdmin);
   await writeRegistryFile([...records, record]);
   return record;
 }
@@ -59,7 +65,12 @@ export async function updateSystemWorkspace(
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
-  const updated = buildUpdatedWorkspaceRecord(existing, input);
+  const workspaceAdmin = await resolveKeycloakUserById({
+    idpUrl: input.idp_url,
+    realm: input.idp_realm,
+    userId: input.workspace_admin_user_id,
+  });
+  const updated = buildUpdatedWorkspaceRecord(existing, input, workspaceAdmin);
   await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));
   return updated;
 }

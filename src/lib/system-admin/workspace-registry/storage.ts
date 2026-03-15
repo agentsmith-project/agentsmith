@@ -6,16 +6,45 @@ import type {
   SystemWorkspaceIdpConfig,
   SystemWorkspaceRecord,
   UpsertSystemWorkspaceInput,
+  WorkspaceIdentitySnapshot,
 } from './types';
 
-function normalizeIdentifiers(items: string[] | undefined): string[] {
+function normalizeLegacyIdentifier(item: string): WorkspaceIdentitySnapshot {
+  const trimmed = item.trim();
+  const email = trimmed.includes('@') ? trimmed : `${trimmed}@workspace.local`;
+  return {
+    user_id: trimmed,
+    email,
+    name: trimmed,
+  };
+}
+
+function normalizeIdentitySnapshots(items: unknown): WorkspaceIdentitySnapshot[] {
   if (!Array.isArray(items)) return [];
   return Array.from(
-    new Set(
+    new Map(
       items
-        .map((item) => (typeof item === 'string' ? item.trim() : ''))
-        .filter((item) => item.length > 0),
-    ),
+        .map((item) => {
+          if (typeof item === 'string') {
+            return normalizeLegacyIdentifier(item);
+          }
+          if (typeof item !== 'object' || item === null) {
+            return null;
+          }
+          const raw = item as Record<string, unknown>;
+          const userId = typeof raw['user_id'] === 'string' ? raw['user_id'].trim() : '';
+          const email = typeof raw['email'] === 'string' ? raw['email'].trim() : '';
+          if (!userId || !email) {
+            return null;
+          }
+          const name = typeof raw['name'] === 'string' && raw['name'].trim().length > 0
+            ? raw['name'].trim()
+            : null;
+          return { user_id: userId, email, name };
+        })
+        .filter((item): item is WorkspaceIdentitySnapshot => item !== null)
+        .map((item) => [item.user_id.trim().toLowerCase(), item]),
+    ).values(),
   );
 }
 
@@ -30,9 +59,19 @@ export async function ensureRegistryDir(pathname: string): Promise<void> {
 function normalizeRecord(record: SystemWorkspaceRecord | Record<string, unknown>): SystemWorkspaceRecord {
   const raw = record as Record<string, unknown>;
   const provisioningStatus = raw['provisioning_status'];
+  const workspaceAdmin = typeof raw['workspace_admin'] === 'string' ? raw['workspace_admin'].trim() : '';
+  const workspaceAdminUserId =
+    typeof raw['workspace_admin_user_id'] === 'string' ? raw['workspace_admin_user_id'].trim() : '';
+  const workspaceAdminName =
+    typeof raw['workspace_admin_name'] === 'string' && raw['workspace_admin_name'].trim().length > 0
+      ? raw['workspace_admin_name'].trim()
+      : null;
   return {
     ...(record as SystemWorkspaceRecord),
-    project_creators: normalizeIdentifiers(Array.isArray(raw['project_creators']) ? (raw['project_creators'] as string[]) : []),
+    workspace_admin: workspaceAdmin,
+    workspace_admin_user_id: workspaceAdminUserId || undefined,
+    workspace_admin_name: workspaceAdminName,
+    project_creators: normalizeIdentitySnapshots(raw['project_creators']),
     provisioning_status:
       provisioningStatus === 'draft' ||
       provisioningStatus === 'provisioning' ||
@@ -76,7 +115,7 @@ export async function writeRegistryFile(records: SystemWorkspaceRecord[]): Promi
 export function sanitizeRecord(record: SystemWorkspaceRecord): PublicSystemWorkspaceRecord {
   return {
     ...record,
-    project_creators: [...record.project_creators],
+    project_creators: record.project_creators.map((item) => ({ ...item })),
     idp: {
       kind: record.idp.kind,
       url: record.idp.url,
@@ -90,6 +129,7 @@ export function sanitizeRecord(record: SystemWorkspaceRecord): PublicSystemWorks
 export function createWorkspaceRecord(
   existingRecords: SystemWorkspaceRecord[],
   input: UpsertSystemWorkspaceInput,
+  workspaceAdmin: WorkspaceIdentitySnapshot,
 ): SystemWorkspaceRecord {
   const tenant = buildWorkspaceTenantPreview(input.name);
   if (existingRecords.some((record) => record.id === tenant.workspace_id)) {
@@ -100,8 +140,10 @@ export function createWorkspaceRecord(
   return {
     id: tenant.workspace_id,
     name: input.name.trim(),
-    workspace_admin: input.workspace_admin.trim(),
-    project_creators: normalizeIdentifiers(input.project_creators),
+    workspace_admin: workspaceAdmin.email,
+    workspace_admin_user_id: workspaceAdmin.user_id,
+    workspace_admin_name: workspaceAdmin.name,
+    project_creators: [],
     idp: {
       kind: 'keycloak',
       url: input.idp_url.trim(),
@@ -121,10 +163,8 @@ export function createWorkspaceRecord(
 export function buildUpdatedWorkspaceRecord(
   existing: SystemWorkspaceRecord,
   input: UpsertSystemWorkspaceInput,
+  workspaceAdmin: WorkspaceIdentitySnapshot,
 ): SystemWorkspaceRecord {
-  const nextProjectCreators = input.project_creators
-    ? normalizeIdentifiers(input.project_creators)
-    : existing.project_creators;
   const nextIdp: SystemWorkspaceIdpConfig = {
     kind: 'keycloak',
     url: input.idp_url.trim(),
@@ -134,8 +174,8 @@ export function buildUpdatedWorkspaceRecord(
   };
   const requiresRepublish =
     existing.name !== input.name.trim() ||
-    existing.workspace_admin !== input.workspace_admin.trim() ||
-    JSON.stringify(existing.project_creators) !== JSON.stringify(nextProjectCreators) ||
+    existing.workspace_admin !== workspaceAdmin.email ||
+    existing.workspace_admin_user_id !== workspaceAdmin.user_id ||
     existing.idp.url !== nextIdp.url ||
     existing.idp.realm !== nextIdp.realm ||
     existing.idp.client_id !== nextIdp.client_id ||
@@ -144,8 +184,9 @@ export function buildUpdatedWorkspaceRecord(
   return {
     ...existing,
     name: input.name.trim(),
-    workspace_admin: input.workspace_admin.trim(),
-    project_creators: nextProjectCreators,
+    workspace_admin: workspaceAdmin.email,
+    workspace_admin_user_id: workspaceAdmin.user_id,
+    workspace_admin_name: workspaceAdmin.name,
     idp: nextIdp,
     provisioning_status: requiresRepublish ? 'draft' : existing.provisioning_status,
     last_initialized_at: requiresRepublish ? null : existing.last_initialized_at,

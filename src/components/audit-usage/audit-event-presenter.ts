@@ -128,6 +128,7 @@ const ERROR_MESSAGE_LABELS: Record<string, string> = {
   'access_mode and allowed_subjects are required': 'Access mode and allowed subjects are required',
   'mode is required': 'Mode is required',
   'project_creators must be an array': 'Project creators must be an array',
+  'project_creator_user_ids must be an array': 'Project creator user IDs must be an array',
   project_owner_required: 'Project owner required',
   project_owner_or_workspace_admin_required: 'Project owner or workspace administrator required',
   workspace_admin_required: 'Workspace administrator required',

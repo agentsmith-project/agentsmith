@@ -3,7 +3,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { buildWorkspaceTenantPreview } from '@/lib/system-admin/config';
 import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
-import type { SystemWorkspaceAction, SystemWorkspaceDraft, SystemWorkspaceEditorState } from './types';
+import type {
+  SystemWorkspaceAction,
+  SystemWorkspaceDraft,
+  SystemWorkspaceDraftAdmin,
+  SystemWorkspaceEditorState,
+} from './types';
 
 type UseSystemWorkspacesArgs = {
   t: (key: string, values?: Record<string, string>) => string;
@@ -13,11 +18,17 @@ type FetchResponse = { error_message?: string; id?: string };
 
 const EMPTY_DRAFT: SystemWorkspaceDraft = {
   name: '',
-  admin: '',
+  adminQuery: '',
+  admin: null,
   idpUrl: '',
   idpRealm: '',
   idpClientId: '',
   idpClientSecret: '',
+};
+
+type DirectorySearchResponse = {
+  items?: SystemWorkspaceDraftAdmin[];
+  error_message?: string;
 };
 
 async function parseJson<T>(response: Response): Promise<T | null> {
@@ -35,6 +46,9 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [draft, setDraft] = useState<SystemWorkspaceDraft>(EMPTY_DRAFT);
+  const [adminSearchResults, setAdminSearchResults] = useState<SystemWorkspaceDraftAdmin[]>([]);
+  const [adminSearchLoading, setAdminSearchLoading] = useState(false);
+  const [adminSearchError, setAdminSearchError] = useState<string | null>(null);
 
   const loadWorkspaces = async () => {
     setIsLoading(true);
@@ -78,7 +92,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     isEditingWorkspace: Boolean(selectedWorkspaceId),
     canSubmit:
       Boolean(draft.name.trim()) &&
-      Boolean(draft.admin.trim()) &&
+      Boolean(draft.admin?.user_id.trim()) &&
       Boolean(draft.idpUrl.trim()) &&
       Boolean(draft.idpRealm.trim()) &&
       Boolean(draft.idpClientId.trim()),
@@ -93,15 +107,26 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   const resetDraft = () => {
     setSelectedWorkspaceId(null);
     setDraft(EMPTY_DRAFT);
+    setAdminSearchResults([]);
+    setAdminSearchError(null);
   };
 
   const selectWorkspace = (workspace: PublicSystemWorkspaceRecord) => {
     setSelectedWorkspaceId(workspace.id);
     setSaveError(null);
     setSaveNotice(null);
+    setAdminSearchResults([]);
+    setAdminSearchError(null);
     setDraft({
       name: workspace.name,
-      admin: workspace.workspace_admin,
+      adminQuery: workspace.workspace_admin,
+      admin: workspace.workspace_admin_user_id
+        ? {
+            user_id: workspace.workspace_admin_user_id,
+            email: workspace.workspace_admin,
+            name: workspace.workspace_admin_name ?? null,
+          }
+        : null,
       idpUrl: workspace.idp.url,
       idpRealm: workspace.idp.realm,
       idpClientId: workspace.idp.client_id,
@@ -112,6 +137,44 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   const updateDraft = (patch: Partial<SystemWorkspaceDraft>) => {
     setDraft((current) => ({ ...current, ...patch }));
   };
+
+  const searchAdminDirectory = async (query: string) => {
+    const normalizedQuery = query.trim();
+    if (normalizedQuery.length < 2 || !draft.idpUrl.trim() || !draft.idpRealm.trim()) {
+      setAdminSearchResults([]);
+      setAdminSearchError(null);
+      return;
+    }
+    setAdminSearchLoading(true);
+    setAdminSearchError(null);
+    try {
+      const response = await fetch('/api/system/workspaces/directory/users', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          idp_url: draft.idpUrl,
+          idp_realm: draft.idpRealm,
+          query: normalizedQuery,
+        }),
+      });
+      const data = await parseJson<DirectorySearchResponse>(response);
+      if (!response.ok) {
+        setAdminSearchResults([]);
+        setAdminSearchError(data?.error_message || 'keycloak_directory_unavailable');
+        return;
+      }
+      setAdminSearchResults(Array.isArray(data?.items) ? data.items : []);
+    } finally {
+      setAdminSearchLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const handle = window.setTimeout(() => {
+      void searchAdminDirectory(draft.adminQuery);
+    }, 250);
+    return () => window.clearTimeout(handle);
+  }, [draft.adminQuery, draft.idpRealm, draft.idpUrl]);
 
   const runMutation = async (action: Exclude<SystemWorkspaceAction, null>, execute: () => Promise<void>) => {
     setIsSubmitting(true);
@@ -133,7 +196,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: draft.name,
-          workspace_admin: draft.admin,
+          workspace_admin_user_id: draft.admin?.user_id,
           idp_url: draft.idpUrl,
           idp_realm: draft.idpRealm,
           idp_client_id: draft.idpClientId,
@@ -150,6 +213,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         setSelectedWorkspaceId(data.id);
       }
       setDraft((current) => ({ ...current, idpClientSecret: '' }));
+      setAdminSearchResults([]);
       setSaveNotice(selectedWorkspaceId ? t('update_success') : t('draft_success'));
     });
   };
@@ -218,6 +282,10 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     resetDraft,
     selectWorkspace,
     updateDraft,
+    adminSearchResults,
+    adminSearchLoading,
+    adminSearchError,
+    searchAdminDirectory,
     submit,
     publish,
     disable,

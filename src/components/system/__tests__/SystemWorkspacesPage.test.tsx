@@ -143,6 +143,12 @@ describe('SystemWorkspacesPage', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
+        json: async () => ({
+          items: [{ user_id: 'kc-ops-admin', email: 'ops-admin@example.com', name: 'Ops Admin' }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
         json: async () => ({ id: 'ws_alpha' }),
       })
       .mockResolvedValueOnce({
@@ -188,6 +194,8 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
       target: { value: 'alpha-client-prod' },
     });
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin'));
     fireEvent.click(screen.getByTestId('system-workspaces__save'));
 
     await waitFor(() =>
@@ -255,6 +263,12 @@ describe('SystemWorkspacesPage', () => {
         }),
       })
       .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [{ user_id: 'kc-ops-admin', email: 'ops@example.com', name: 'Ops Admin' }],
+        }),
+      })
+      .mockResolvedValueOnce({
         ok: false,
         json: async () => ({ error_message: 'invalid_system_workspace_payload' }),
       });
@@ -277,6 +291,8 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
       target: { value: 'ops-client' },
     });
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin')).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin'));
     fireEvent.click(screen.getByTestId('system-workspaces__save'));
 
     await waitFor(() => {

@@ -97,11 +97,23 @@ describe('readRegisteredWorkspaces', () => {
       'utf-8',
     );
 
-    updateRegisteredWorkspaceProjectCreators('ws_ready', ['next@example.com']);
+    updateRegisteredWorkspaceProjectCreators('ws_ready', [
+      {
+        user_id: 'next-user',
+        email: 'next@example.com',
+        name: 'Next Creator',
+      },
+    ]);
 
     expect(getRegisteredWorkspaceConfig('ws_ready')).toEqual(
       expect.objectContaining({
-        project_creators: ['next@example.com'],
+        project_creators: [
+          {
+            user_id: 'next-user',
+            email: 'next@example.com',
+            name: 'Next Creator',
+          },
+        ],
         idp: expect.objectContaining({
           kind: 'keycloak',
           url: 'http://localhost:18080',

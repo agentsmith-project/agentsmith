@@ -22,6 +22,7 @@ import { buildProjectAdminSummary } from '@/lib/projects/project-view';
 import { useQueryClient } from '@tanstack/react-query';
 import { ProjectAPI, getApiClient, WorkspaceAPI } from '@/lib/api';
 import { APIError } from '@/lib/api/errors';
+import type { WorkspaceDirectoryUser } from '@/lib/api/types';
 
 export default function WorkspaceSettingsPage() {
   const params = useParams();
@@ -48,10 +49,13 @@ export default function WorkspaceSettingsPage() {
     error: projectsError,
   } = useProjects(workspaceId ?? '');
   const [createProjectOpen, setCreateProjectOpen] = React.useState(false);
-  const [projectCreators, setProjectCreators] = React.useState<Array<{ id: string; user_id: string; name: string; email: string }>>([]);
-  const [projectCreatorsDraft, setProjectCreatorsDraft] = React.useState('');
+  const [projectCreators, setProjectCreators] = React.useState<Array<{ id: string; user_id: string; name: string | null; email: string }>>([]);
   const [projectCreatorsLoading, setProjectCreatorsLoading] = React.useState(false);
   const [projectCreatorsSaving, setProjectCreatorsSaving] = React.useState(false);
+  const [projectCreatorQuery, setProjectCreatorQuery] = React.useState('');
+  const [projectCreatorSearchResults, setProjectCreatorSearchResults] = React.useState<WorkspaceDirectoryUser[]>([]);
+  const [projectCreatorSearchLoading, setProjectCreatorSearchLoading] = React.useState(false);
+  const [projectCreatorSearchError, setProjectCreatorSearchError] = React.useState<string | null>(null);
   const [ownerDraftByProject, setOwnerDraftByProject] = React.useState<Record<string, string>>({});
   const [ownerSavingByProject, setOwnerSavingByProject] = React.useState<Record<string, boolean>>({});
 
@@ -88,7 +92,6 @@ export default function WorkspaceSettingsPage() {
     try {
       const items = await workspaceAPI.listProjectCreators(workspaceId);
       setProjectCreators(items);
-      setProjectCreatorsDraft(items.map((item) => item.user_id || item.email || item.name).join('\n'));
     } finally {
       setProjectCreatorsLoading(false);
     }
@@ -102,17 +105,70 @@ export default function WorkspaceSettingsPage() {
     if (!workspaceId) return;
     setProjectCreatorsSaving(true);
     try {
-      const projectCreatorIds = projectCreatorsDraft
-        .split('\n')
-        .map((item) => item.trim())
-        .filter((item) => item.length > 0);
+      const projectCreatorIds = projectCreators.map((item) => item.user_id);
       await workspaceAPI.updateProjectCreators(workspaceId, projectCreatorIds);
       await loadProjectCreators();
       await queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'members'] });
     } finally {
       setProjectCreatorsSaving(false);
     }
-  }, [loadProjectCreators, projectCreatorsDraft, queryClient, workspaceAPI, workspaceId]);
+  }, [loadProjectCreators, projectCreators, queryClient, workspaceAPI, workspaceId]);
+
+  React.useEffect(() => {
+    if (!workspaceId || !canManageWorkspaceGovernance || projectCreatorQuery.trim().length < 2) {
+      setProjectCreatorSearchResults([]);
+      setProjectCreatorSearchError(null);
+      return;
+    }
+    let cancelled = false;
+    const timeoutHandle = window.setTimeout(async () => {
+      setProjectCreatorSearchLoading(true);
+      setProjectCreatorSearchError(null);
+      try {
+        const items = await workspaceAPI.searchDirectoryUsers(workspaceId, projectCreatorQuery);
+        if (!cancelled) {
+          setProjectCreatorSearchResults(items);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          const message = error instanceof APIError ? error.message : 'keycloak_directory_unavailable';
+          setProjectCreatorSearchResults([]);
+          setProjectCreatorSearchError(message);
+        }
+      } finally {
+        if (!cancelled) {
+          setProjectCreatorSearchLoading(false);
+        }
+      }
+    }, 250);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutHandle);
+    };
+  }, [canManageWorkspaceGovernance, projectCreatorQuery, workspaceAPI, workspaceId]);
+
+  const handleAddProjectCreator = React.useCallback((user: WorkspaceDirectoryUser) => {
+    setProjectCreators((current) => {
+      if (current.some((item) => item.user_id === user.user_id)) {
+        return current;
+      }
+      return [
+        ...current,
+        {
+          id: user.user_id,
+          user_id: user.user_id,
+          name: user.name ?? user.email,
+          email: user.email,
+        },
+      ];
+    });
+    setProjectCreatorQuery('');
+    setProjectCreatorSearchResults([]);
+  }, []);
+
+  const handleRemoveProjectCreator = React.useCallback((userId: string) => {
+    setProjectCreators((current) => current.filter((item) => item.user_id !== userId));
+  }, []);
 
   const handleSaveProjectOwner = React.useCallback(async (projectId: string) => {
     if (!workspaceId) return;
@@ -351,14 +407,66 @@ export default function WorkspaceSettingsPage() {
               <div className="mt-4 space-y-3">
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-foreground">{t('workspace_project_creators_field')}</span>
-                  <textarea
-                    value={projectCreatorsDraft}
-                    onChange={(event) => setProjectCreatorsDraft(event.target.value)}
+                  <input
+                    type="text"
+                    value={projectCreatorQuery}
+                    onChange={(event) => setProjectCreatorQuery(event.target.value)}
                     placeholder={t('workspace_project_creators_placeholder')}
-                    className="min-h-[120px] w-full rounded-sm border border-subtle bg-surface px-3 py-2 text-sm text-foreground placeholder:text-tertiary"
+                    className="h-10 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
                     data-testid="ws-settings__project-creators-input"
                   />
                 </label>
+                <div className="space-y-2" data-testid="ws-settings__project-creators-results">
+                  {projectCreatorSearchLoading ? (
+                    <p className="text-sm text-tertiary">{t('workspace_project_creators_loading')}</p>
+                  ) : null}
+                  {!projectCreatorSearchLoading && projectCreatorSearchError ? (
+                    <p className="text-sm text-error">{t('workspace_project_creators_search_error')}</p>
+                  ) : null}
+                  {!projectCreatorSearchLoading && !projectCreatorSearchError && projectCreatorQuery.trim().length >= 2 ? (
+                    projectCreatorSearchResults.length > 0 ? (
+                      projectCreatorSearchResults.map((user) => (
+                        <button
+                          key={user.user_id}
+                          type="button"
+                          className="flex w-full items-start justify-between rounded-sm border border-subtle bg-bg-base/20 px-3 py-2 text-left transition hover:border-accent/40"
+                          onClick={() => handleAddProjectCreator(user)}
+                          data-testid={`ws-settings__project-creator-option--${user.user_id}`}
+                        >
+                          <span>
+                            <span className="block text-sm font-medium text-foreground">{user.name || user.email}</span>
+                            <span className="block text-xs text-tertiary">{user.email}</span>
+                          </span>
+                          <span className="text-xs text-tertiary">{t('workspace_project_creators_add')}</span>
+                        </button>
+                      ))
+                    ) : (
+                      <p className="text-sm text-tertiary">{t('workspace_project_creators_search_empty')}</p>
+                    )
+                  ) : null}
+                </div>
+                <div className="space-y-2" data-testid="ws-settings__project-creators-selected">
+                  {projectCreators.map((creator) => (
+                    <div
+                      key={creator.user_id}
+                      className="flex items-center justify-between rounded-sm border border-subtle bg-bg-base/20 px-3 py-2"
+                    >
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{creator.name || creator.email}</p>
+                        <p className="text-xs text-tertiary">{creator.email}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleRemoveProjectCreator(creator.user_id)}
+                        data-testid={`ws-settings__project-creator-remove--${creator.user_id}`}
+                      >
+                        {t('workspace_project_creators_remove')}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm text-tertiary" data-testid="ws-settings__project-creators-summary">
                     {projectCreatorsLoading

@@ -14,6 +14,8 @@ export function makeWorkspace(overrides: WorkspaceOverrides = {}): PublicSystemW
     last_initialized_at: '2026-03-10T01:00:00.000Z',
     last_init_error: null,
     workspace_admin: `${workspaceKey}-admin@example.com`,
+    workspace_admin_user_id: `${workspaceKey}-admin-id`,
+    workspace_admin_name: `${workspaceKey} admin`,
     project_creators: [],
     idp: {
       kind: 'keycloak',

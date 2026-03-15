@@ -18,6 +18,9 @@ type WorkspaceEditorPanelProps = {
   activeAction: SystemWorkspaceAction;
   saveError: string | null;
   saveNotice: string | null;
+  adminSearchResults: Array<{ user_id: string; email: string; name: string | null }>;
+  adminSearchLoading: boolean;
+  adminSearchError: string | null;
   onDraftChange: (patch: Partial<SystemWorkspaceEditorState['draft']>) => void;
   onSubmit: () => void;
   onPublish: () => void;
@@ -35,6 +38,9 @@ export function WorkspaceEditorPanel({
   activeAction,
   saveError,
   saveNotice,
+  adminSearchResults,
+  adminSearchLoading,
+  adminSearchError,
   onDraftChange,
   onSubmit,
   onPublish,
@@ -110,13 +116,49 @@ export function WorkspaceEditorPanel({
           <span className="text-sm font-medium text-foreground">{t('workspace_admin')}</span>
           <input
             type="text"
-            value={state.draft.admin}
-            onChange={(event) => onDraftChange({ admin: event.target.value })}
+            value={state.draft.adminQuery}
+            onChange={(event) => onDraftChange({ adminQuery: event.target.value, admin: null })}
             placeholder={t('workspace_admin_placeholder')}
             className="h-9 w-full rounded-sm border border-subtle bg-surface px-3 text-sm text-foreground placeholder:text-tertiary"
             data-testid="system-workspaces__draft-admin"
           />
         </label>
+        {state.draft.admin ? (
+          <div
+            className="rounded-sm border border-success/30 bg-success/10 px-3 py-2 text-sm text-foreground"
+            data-testid="system-workspaces__selected-admin"
+          >
+            <p className="font-medium">{state.draft.admin.name || state.draft.admin.email}</p>
+            <p className="text-xs text-tertiary">{state.draft.admin.email}</p>
+          </div>
+        ) : null}
+        <div className="space-y-2" data-testid="system-workspaces__admin-search-results">
+          {adminSearchLoading ? <p className="text-sm text-tertiary">{t('workspace_admin_search_loading')}</p> : null}
+          {!adminSearchLoading && adminSearchError ? (
+            <p className="text-sm text-error">{t('workspace_admin_search_error')}</p>
+          ) : null}
+          {!adminSearchLoading && !adminSearchError && state.draft.adminQuery.trim().length >= 2 ? (
+            adminSearchResults.length > 0 ? (
+              adminSearchResults.map((user) => (
+                <button
+                  key={user.user_id}
+                  type="button"
+                  className="flex w-full items-start justify-between rounded-sm border border-subtle bg-surface px-3 py-2 text-left transition hover:border-accent/40"
+                  onClick={() => onDraftChange({ admin: user, adminQuery: user.email })}
+                  data-testid={`system-workspaces__admin-option--${user.user_id}`}
+                >
+                  <span>
+                    <span className="block text-sm font-medium text-foreground">{user.name || user.email}</span>
+                    <span className="block text-xs text-tertiary">{user.email}</span>
+                  </span>
+                  <span className="text-xs text-tertiary">{t('workspace_admin_search_select')}</span>
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-tertiary">{t('workspace_admin_search_empty')}</p>
+            )
+          ) : null}
+        </div>
       </div>
 
       <div className="space-y-3 rounded-sm border border-subtle bg-bg-base/20 p-4" data-testid="system-workspaces__idp">

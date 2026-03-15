@@ -1,4 +1,7 @@
-import { handleWorkspaceProjectCreatorsRoute } from './project-source-workspace-governance.js';
+import {
+  handleWorkspaceDirectoryUsersRoute,
+  handleWorkspaceProjectCreatorsRoute,
+} from './project-source-workspace-governance.js';
 import type { ProjectSourceRouteContext } from './project-source-route-types.js';
 import { buildWorkspaceMembersFromConfig } from './workspace-permissions.js';
 
@@ -66,6 +69,18 @@ export async function handleWorkspaceRoutes(context: ProjectSourceRouteContext):
       workspaceId: route.workspaceId,
       json,
       readBody,
+    });
+  }
+
+  if (route.kind === 'workspaceDirectoryUsers' && method === 'GET' && route.workspaceId) {
+    return handleWorkspaceDirectoryUsersRoute({
+      req,
+      res,
+      user,
+      workspaces,
+      defaultWorkspace,
+      workspaceId: route.workspaceId,
+      json,
     });
   }
 

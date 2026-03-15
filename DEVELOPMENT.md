@@ -74,6 +74,15 @@ NEXT_PUBLIC_KEYCLOAK_REALM=mbos
 NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith
 ```
 
+## Identity & Permissions
+
+- 内部用户唯一主键保持 `user_id = Keycloak sub`
+- `system 管理侧` 与工作区管理页统一按 `email` 搜索和确认用户
+- 正式权限关系最终保存 `user_id`，不把 email 当长期主键
+- 当前 system 管理侧保存的是 `工作区配置记录`，不要再把它泛化称为 `registry`
+- Keycloak 用户目录本轮只支持 `搜索选人`，不提供完整用户列表
+- 还未存在于 IdP 的用户，不能被设置成正式 `workspace admin` 或 `project creator`
+
 ## Project Structure
 
 ```

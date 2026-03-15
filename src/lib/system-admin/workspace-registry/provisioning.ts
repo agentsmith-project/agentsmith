@@ -89,7 +89,10 @@ async function writeProvisioningArtifact(args: {
         workspace_id: args.record.id,
         workspace_name: args.record.name,
         workspace_admin: args.record.workspace_admin,
-        project_creators: args.record.project_creators,
+        workspace_admin_user_id: args.record.workspace_admin_user_id ?? null,
+        workspace_admin_name: args.record.workspace_admin_name ?? null,
+        project_creators: args.record.project_creators.map((item) => item.email),
+        project_creator_user_ids: args.record.project_creators.map((item) => item.user_id),
         tenant: args.record.tenant,
         idp: {
           kind: args.record.idp.kind,
@@ -157,7 +160,7 @@ export async function initializeWorkspaceResources(
     workspace_id: record.id,
     workspace_name: record.name,
     workspace_admin: record.workspace_admin,
-    project_creators: record.project_creators,
+    project_creators: record.project_creators.map((item) => item.email),
     tenant: {
       substrate_label: record.tenant.substrate_label,
       database_name: record.tenant.database_name,

@@ -15,11 +15,19 @@ export type WorkspaceProvisioningStatus =
   | 'failed'
   | 'disabled';
 
+export interface WorkspaceIdentitySnapshot {
+  user_id: string;
+  email: string;
+  name: string | null;
+}
+
 export interface SystemWorkspaceRecord {
   id: string;
   name: string;
   workspace_admin: string;
-  project_creators: string[];
+  workspace_admin_user_id?: string;
+  workspace_admin_name?: string | null;
+  project_creators: WorkspaceIdentitySnapshot[];
   idp: SystemWorkspaceIdpConfig;
   tenant: ReturnType<typeof buildWorkspaceTenantPreview>;
   provisioning_status: WorkspaceProvisioningStatus;
@@ -37,8 +45,7 @@ export interface PublicSystemWorkspaceRecord extends Omit<SystemWorkspaceRecord,
 
 export interface UpsertSystemWorkspaceInput {
   name: string;
-  workspace_admin: string;
-  project_creators?: string[];
+  workspace_admin_user_id: string;
   idp_url: string;
   idp_realm: string;
   idp_client_id: string;

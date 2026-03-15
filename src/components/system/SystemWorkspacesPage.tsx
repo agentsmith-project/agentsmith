@@ -27,6 +27,9 @@ export function SystemWorkspacesPage() {
     saveNotice,
     preview,
     editorState,
+    adminSearchResults,
+    adminSearchLoading,
+    adminSearchError,
     setSearchQuery,
     loadWorkspaces,
     resetDraft,
@@ -147,6 +150,9 @@ export function SystemWorkspacesPage() {
                 activeAction={activeAction}
                 saveError={saveError}
                 saveNotice={saveNotice}
+                adminSearchResults={adminSearchResults}
+                adminSearchLoading={adminSearchLoading}
+                adminSearchError={adminSearchError}
                 onDraftChange={updateDraft}
                 onSubmit={() => void submit()}
                 onPublish={() => void publish()}

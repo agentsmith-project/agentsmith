@@ -52,6 +52,12 @@ export interface WorkspaceMember {
   joined_at: string;
 }
 
+export interface WorkspaceDirectoryUser {
+  user_id: string;
+  email: string;
+  name: string | null;
+}
+
 export interface Project {
   id: string;
   workspace_id: string;

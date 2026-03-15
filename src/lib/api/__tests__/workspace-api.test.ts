@@ -75,7 +75,7 @@ describe('WorkspaceAPI', () => {
 
   it('updates workspace project creators', async () => {
     const mockPatch = vi.fn().mockResolvedValue({
-      items: [{ id: 'user_2', user_id: 'user_2', name: 'user_2', email: 'user_2@workspace.local' }],
+      items: [{ id: 'user_2', user_id: 'user_2', name: 'User Two', email: 'user2@example.com' }],
     });
     const client: ApiClient = {
       setToken: () => undefined,
@@ -92,9 +92,32 @@ describe('WorkspaceAPI', () => {
     const api = new WorkspaceAPI(client);
     const creators = await api.updateProjectCreators('ws_1', ['user_2']);
 
-    expect(creators).toEqual([{ id: 'user_2', user_id: 'user_2', name: 'user_2', email: 'user_2@workspace.local' }]);
+    expect(creators).toEqual([{ id: 'user_2', user_id: 'user_2', name: 'User Two', email: 'user2@example.com' }]);
     expect(mockPatch).toHaveBeenCalledWith('/workspaces/ws_1/project-creators', {
-      project_creators: ['user_2'],
+      project_creator_user_ids: ['user_2'],
     });
+  });
+
+  it('searches workspace directory users', async () => {
+    const mockGet = vi.fn().mockResolvedValue({
+      items: [{ user_id: 'user_3', email: 'user3@example.com', name: 'User Three' }],
+    });
+    const client: ApiClient = {
+      setToken: () => undefined,
+      getToken: () => null,
+      clearToken: () => undefined,
+      get: mockGet,
+      post: vi.fn(),
+      put: vi.fn(),
+      patch: vi.fn(),
+      delete: vi.fn(),
+      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
+    };
+
+    const api = new WorkspaceAPI(client);
+    const users = await api.searchDirectoryUsers('ws_1', 'user3@example.com');
+
+    expect(users).toEqual([{ user_id: 'user_3', email: 'user3@example.com', name: 'User Three' }]);
+    expect(mockGet).toHaveBeenCalledWith('/workspaces/ws_1/directory/users?query=user3%40example.com');
   });
 });

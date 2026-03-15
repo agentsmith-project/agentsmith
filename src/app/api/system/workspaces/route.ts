@@ -38,6 +38,18 @@ export async function POST(request: Request) {
         { status: 409 },
       );
     }
+    if (code === 'DIRECTORY_USER_NOT_FOUND') {
+      return NextResponse.json(
+        { error_code: 'DIRECTORY_USER_NOT_FOUND', error_message: 'directory_user_not_found' },
+        { status: 422 },
+      );
+    }
+    if (code === 'KEYCLOAK_DIRECTORY_UNAVAILABLE') {
+      return NextResponse.json(
+        { error_code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE', error_message: 'keycloak_directory_unavailable' },
+        { status: 503 },
+      );
+    }
     throw error;
   }
 }

@@ -47,7 +47,7 @@ describe('/api/system/workspaces/[id]', () => {
       new Request('http://localhost/api/system/workspaces/ws_alpha', {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(createWorkspacePayload({ workspace_admin: 'ops-admin@example.com' })),
+        body: JSON.stringify(createWorkspacePayload({ workspace_admin_user_id: 'kc-ops-admin' })),
       }),
       { params: Promise.resolve({ id: 'ws_alpha' }) },
     );
@@ -56,8 +56,7 @@ describe('/api/system/workspaces/[id]', () => {
     expect(registryModule.updateSystemWorkspace).toHaveBeenCalledWith(
       'ws_alpha',
       expect.objectContaining({
-        workspace_admin: 'ops-admin@example.com',
-        project_creators: ['creator@example.com'],
+        workspace_admin_user_id: 'kc-ops-admin',
       }),
     );
   });

@@ -1010,9 +1010,9 @@ paths:
             schema:
               type: object
               required:
-                - project_creators
+                - project_creator_user_ids
               properties:
-                project_creators:
+                project_creator_user_ids:
                   type: array
                   items:
                     type: string
@@ -1030,6 +1030,31 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "422":
           description: Validation error
+  /api/v1/workspaces/{workspaceId}/directory/users:
+    get:
+      tags:
+        - Workspaces
+      operationId: get_workspaceDirectoryUsers
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "503":
+          description: Directory unavailable
   /api/v1/workspaces/{workspaceId}/projects/{projectId}:
     get:
       tags:

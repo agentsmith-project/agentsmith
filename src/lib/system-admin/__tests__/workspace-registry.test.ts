@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -11,6 +11,20 @@ import {
   publishSystemWorkspace,
   updateSystemWorkspace,
 } from '../workspace-registry';
+
+const keycloakDirectoryModule = vi.hoisted(() => ({
+  resolveKeycloakUserById: vi.fn(async ({ userId }: { userId: string }) => {
+    if (userId === 'kc-admin-001') {
+      return { user_id: 'kc-admin-001', email: 'admin@example.com', name: 'Admin Example' };
+    }
+    if (userId === 'kc-ops-001') {
+      return { user_id: 'kc-ops-001', email: 'ops-admin@example.com', name: 'Ops Admin' };
+    }
+    return { user_id: userId, email: `${userId}@example.com`, name: userId };
+  }),
+}));
+
+vi.mock('../keycloak-user-directory', () => keycloakDirectoryModule);
 
 describe('system workspace registry', () => {
   const originalEnv = { ...process.env };
@@ -29,8 +43,7 @@ describe('system workspace registry', () => {
   it('creates draft workspaces and only lists ready workspaces publicly', async () => {
     const created = await createSystemWorkspace({
       name: 'Platform Ops',
-      workspace_admin: 'admin@example.com',
-      project_creators: ['creator@example.com'],
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -47,7 +60,8 @@ describe('system workspace registry', () => {
         id: 'platform_ops',
         name: 'Platform Ops',
         workspace_admin: 'admin@example.com',
-        project_creators: ['creator@example.com'],
+        workspace_admin_user_id: 'kc-admin-001',
+        project_creators: [],
         idp: expect.objectContaining({
           kind: 'keycloak',
           url: 'https://idp.example.com',
@@ -62,8 +76,7 @@ describe('system workspace registry', () => {
   it('updates existing workspace configuration', async () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
-      workspace_admin: 'admin@example.com',
-      project_creators: ['creator@example.com'],
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -72,7 +85,7 @@ describe('system workspace registry', () => {
 
     const updated = await updateSystemWorkspace('platform_ops', {
       name: 'Platform Ops',
-      workspace_admin: 'ops-admin@example.com',
+      workspace_admin_user_id: 'kc-ops-001',
       idp_url: 'https://login.example.com',
       idp_realm: 'platform-prod',
       idp_client_id: 'agentsmith-platform-prod',
@@ -80,7 +93,8 @@ describe('system workspace registry', () => {
     });
 
     expect(updated.workspace_admin).toBe('ops-admin@example.com');
-    expect(updated.project_creators).toEqual(['creator@example.com']);
+    expect(updated.workspace_admin_user_id).toBe('kc-ops-001');
+    expect(updated.project_creators).toEqual([]);
     expect(updated.idp.url).toBe('https://login.example.com');
     expect(updated.idp.realm).toBe('platform-prod');
     expect(updated.idp.client_secret).toBe('secret-1');
@@ -92,7 +106,7 @@ describe('system workspace registry', () => {
   it('publishes and disables workspace visibility', async () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -163,7 +177,7 @@ describe('system workspace registry', () => {
   it('marks workspace as failed when foundation initialization preconditions are incomplete', async () => {
     await createSystemWorkspace({
       name: 'Broken Workspace',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: '',
       idp_realm: 'broken',
       idp_client_id: 'agentsmith-broken',
@@ -212,7 +226,7 @@ describe('system workspace registry', () => {
   it('appends provisioning attempt history across retries', async () => {
     await createSystemWorkspace({
       name: 'Retry Workspace',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: '',
       idp_realm: 'retry',
       idp_client_id: 'agentsmith-retry',
@@ -224,7 +238,7 @@ describe('system workspace registry', () => {
 
     await updateSystemWorkspace('retry_workspace', {
       name: 'Retry Workspace',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'retry',
       idp_client_id: 'agentsmith-retry',
@@ -273,7 +287,7 @@ describe('system workspace registry', () => {
   it('requires workspace to be disabled before deletion', async () => {
     await createSystemWorkspace({
       name: 'Delete Guard Workspace',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'delete-guard',
       idp_client_id: 'agentsmith-delete-guard',

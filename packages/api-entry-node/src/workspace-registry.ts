@@ -3,12 +3,20 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { WorkspaceRecord } from './resource-models.js';
 
+export type WorkspaceIdentitySnapshot = {
+  user_id: string;
+  email: string;
+  name: string | null;
+};
+
 type RegistryRecord = {
   id: string;
   name: string;
   provisioning_status?: string;
   workspace_admin?: string;
-  project_creators?: string[];
+  workspace_admin_user_id?: string;
+  workspace_admin_name?: string | null;
+  project_creators?: Array<string | WorkspaceIdentitySnapshot>;
   idp?: {
     kind?: string;
     url?: string;
@@ -81,7 +89,9 @@ export type RegisteredWorkspaceConfig = RegistryRecord & {
   name: string;
   provisioning_status?: string;
   workspace_admin?: string;
-  project_creators?: string[];
+  workspace_admin_user_id?: string;
+  workspace_admin_name?: string | null;
+  project_creators?: WorkspaceIdentitySnapshot[];
   idp?: {
     kind?: string;
     url?: string;
@@ -99,6 +109,48 @@ export type RegisteredWorkspaceConfig = RegistryRecord & {
   updated_at: string;
 };
 
+function normalizeLegacyIdentity(identifier: string): WorkspaceIdentitySnapshot {
+  const trimmed = identifier.trim();
+  return {
+    user_id: trimmed,
+    email: trimmed.includes('@') ? trimmed : `${trimmed}@workspace.local`,
+    name: trimmed,
+  };
+}
+
+function normalizeIdentitySnapshots(items: unknown): WorkspaceIdentitySnapshot[] {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+  return Array.from(
+    new Map(
+      items
+        .map((item) => {
+          if (typeof item === 'string') {
+            const trimmed = item.trim();
+            return trimmed ? normalizeLegacyIdentity(trimmed) : null;
+          }
+          if (typeof item !== 'object' || item === null) {
+            return null;
+          }
+          const raw = item as Record<string, unknown>;
+          const userId = typeof raw.user_id === 'string' ? raw.user_id.trim() : '';
+          const email = typeof raw.email === 'string' ? raw.email.trim() : '';
+          if (!userId || !email) {
+            return null;
+          }
+          return {
+            user_id: userId,
+            email,
+            name: typeof raw.name === 'string' && raw.name.trim().length > 0 ? raw.name.trim() : null,
+          };
+        })
+        .filter((item): item is WorkspaceIdentitySnapshot => item !== null)
+        .map((item) => [item.user_id.trim().toLowerCase(), item]),
+    ).values(),
+  );
+}
+
 function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
   try {
     const raw = readFileSync(resolveRegisteredWorkspaceRegistryPath(), 'utf-8');
@@ -115,15 +167,13 @@ function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
         provisioning_status:
           typeof item.provisioning_status === 'string' ? item.provisioning_status.trim() : undefined,
         workspace_admin: typeof item.workspace_admin === 'string' ? item.workspace_admin.trim() : undefined,
-        project_creators: Array.isArray(item.project_creators)
-          ? Array.from(
-              new Set(
-                item.project_creators
-                  .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-                  .filter((entry) => entry.length > 0),
-              ),
-            )
-          : [],
+        workspace_admin_user_id:
+          typeof item.workspace_admin_user_id === 'string' ? item.workspace_admin_user_id.trim() : undefined,
+        workspace_admin_name:
+          typeof item.workspace_admin_name === 'string' && item.workspace_admin_name.trim().length > 0
+            ? item.workspace_admin_name.trim()
+            : null,
+        project_creators: normalizeIdentitySnapshots(item.project_creators),
         idp:
           typeof item.idp === 'object' && item.idp !== null
             ? {
@@ -196,20 +246,16 @@ export function getRegisteredWorkspaceTenantConfig(workspaceId: string): Registe
   };
 }
 
-export function updateRegisteredWorkspaceProjectCreators(workspaceId: string, identifiers: string[]): RegisteredWorkspaceConfig {
+export function updateRegisteredWorkspaceProjectCreators(
+  workspaceId: string,
+  projectCreators: WorkspaceIdentitySnapshot[],
+): RegisteredWorkspaceConfig {
   const records = readRegisteredWorkspaceConfigs();
   const target = records.find((record) => record.id === workspaceId);
   if (!target) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
-  const normalized = Array.from(
-    new Set(
-      identifiers
-        .map((entry) => (typeof entry === 'string' ? entry.trim() : ''))
-        .filter((entry) => entry.length > 0),
-    ),
-  );
-  target.project_creators = normalized;
+  target.project_creators = normalizeIdentitySnapshots(projectCreators);
   target.updated_at = new Date().toISOString();
   writeRegisteredWorkspaceConfigs(records);
   return target;

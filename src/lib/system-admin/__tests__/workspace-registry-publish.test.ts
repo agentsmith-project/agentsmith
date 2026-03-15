@@ -7,7 +7,16 @@ const provisioningModule = vi.hoisted(() => ({
   initializeWorkspaceResources: vi.fn(),
 }));
 
+const keycloakDirectoryModule = vi.hoisted(() => ({
+  resolveKeycloakUserById: vi.fn(async ({ userId }: { userId: string }) => ({
+    user_id: userId,
+    email: 'admin@example.com',
+    name: 'Admin Example',
+  })),
+}));
+
 vi.mock('../workspace-registry/provisioning', () => provisioningModule);
+vi.mock('../keycloak-user-directory', () => keycloakDirectoryModule);
 
 import {
   createSystemWorkspace,
@@ -32,7 +41,7 @@ describe('publishSystemWorkspace retry semantics', () => {
   it('preserves the last successful initialization timestamp when a later publish attempt fails', async () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -73,7 +82,7 @@ describe('publishSystemWorkspace retry semantics', () => {
   it('rejects publish when the workspace is already provisioning', async () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
-      workspace_admin: 'admin@example.com',
+      workspace_admin_user_id: 'kc-admin-001',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',

@@ -13,6 +13,7 @@
 | [MVP Core Smoke Runbook](./mvp-core-smoke-runbook.md) | Real-backend MVP core regression path (chat/notebook/endpoint policy). |
 | [Workspace / Project Mainline Engineering Checklist](./workspace-project-mainline-engineering-checklist.md) | Strict gate for `system 管理侧 -> 工作区发布 -> 用户访问入口 -> 项目创建` mainline. |
 | [Governance Mainline Engineering Checklist](./governance-mainline-engineering-checklist.md) | Strict gate for `members -> resource policy -> audit/alerts` governance judgment workflow. |
+| [Identity & Permission Model](./identity-and-permission-model.md) | Current identity model baseline: email for selection, `user_id` for persisted permissions. |
 | [Audit & Usage](./audit-usage-reports.md) | Audit review and usage workflows under the current Usage/Audit MVP baseline. |
 | [Alert Center](./alert-center.md) | Alert rules and notification operations. |
 | [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |

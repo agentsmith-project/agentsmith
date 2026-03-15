@@ -214,10 +214,24 @@ export const workspaceHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/project-creators', () =>
     HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length })),
+  http.get('/api/v1/workspaces/:ws/directory/users', ({ request }) => {
+    const url = new URL(request.url);
+    const query = url.searchParams.get('query')?.trim().toLowerCase() ?? '';
+    const items = query.length < 2
+      ? []
+      : workspaceMembers
+          .filter((member) => `${member.email} ${member.name}`.toLowerCase().includes(query))
+          .map((member) => ({
+            user_id: member.user_id,
+            email: member.email,
+            name: member.name,
+          }));
+    return HttpResponse.json({ items, total: items.length });
+  }),
   http.patch('/api/v1/workspaces/:ws/project-creators', async ({ request }) => {
-    const body = (await request.json().catch(() => ({}))) as { project_creators?: string[] };
-    const nextCreators = Array.isArray(body.project_creators)
-      ? body.project_creators
+    const body = (await request.json().catch(() => ({}))) as { project_creator_user_ids?: string[] };
+    const nextCreators = Array.isArray(body.project_creator_user_ids)
+      ? body.project_creator_user_ids
           .filter((value): value is string => typeof value === 'string')
           .map((value) => value.trim())
           .filter((value) => value.length > 0)
@@ -225,12 +239,14 @@ export const workspaceHandlers = [
     workspaceProjectCreators.splice(
       0,
       workspaceProjectCreators.length,
-      ...nextCreators.map((identifier) => ({
-        id: identifier,
-        user_id: identifier,
-        name: identifier,
-        email: identifier.includes('@') ? identifier : `${identifier}@workspace.local`,
-      })),
+      ...workspaceMembers
+        .filter((member) => nextCreators.includes(member.user_id))
+        .map((member) => ({
+          id: member.user_id,
+          user_id: member.user_id,
+          name: member.name,
+          email: member.email,
+        })),
     );
     return HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length });
   }),

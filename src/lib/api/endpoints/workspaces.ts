@@ -4,14 +4,11 @@
  * Typed API functions for workspace operations.
  */
 
-import type { Workspace, WorkspaceMember } from '../types';
+import type { Workspace, WorkspaceDirectoryUser, WorkspaceMember } from '../types';
 import type { ApiClient } from '../client';
 
-export interface WorkspaceProjectCreator {
+export interface WorkspaceProjectCreator extends WorkspaceDirectoryUser {
   id: string;
-  user_id: string;
-  name: string;
-  email: string;
 }
 
 export class WorkspaceAPI {
@@ -52,13 +49,21 @@ export class WorkspaceAPI {
     return response.items;
   }
 
+  async searchDirectoryUsers(workspaceId: string, query: string): Promise<WorkspaceDirectoryUser[]> {
+    const encodedQuery = encodeURIComponent(query.trim());
+    const response = await this.client.get<{ items: WorkspaceDirectoryUser[]; total: number }>(
+      `/workspaces/${workspaceId}/directory/users?query=${encodedQuery}`
+    );
+    return response.items;
+  }
+
   /**
    * Update users who can create projects in a workspace.
    */
-  async updateProjectCreators(workspaceId: string, projectCreators: string[]): Promise<WorkspaceProjectCreator[]> {
+  async updateProjectCreators(workspaceId: string, projectCreatorUserIds: string[]): Promise<WorkspaceProjectCreator[]> {
     const response = await this.client.patch<{ items: WorkspaceProjectCreator[]; total: number }>(
       `/workspaces/${workspaceId}/project-creators`,
-      { project_creators: projectCreators },
+      { project_creator_user_ids: projectCreatorUserIds },
     );
     return response.items;
   }

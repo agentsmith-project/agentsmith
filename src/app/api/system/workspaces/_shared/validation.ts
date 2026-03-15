@@ -10,7 +10,7 @@ export function validateSystemWorkspaceInput(
 ): UpsertSystemWorkspaceInput | null {
   if (!body) return null;
   if (!body.name?.trim()) return null;
-  if (!body.workspace_admin?.trim()) return null;
+  if (!body.workspace_admin_user_id?.trim()) return null;
   if (!body.idp_url?.trim()) return null;
   if (!body.idp_realm?.trim()) return null;
   if (!body.idp_client_id?.trim()) return null;

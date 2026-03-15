@@ -64,6 +64,7 @@ const mockProjectCreate = vi.fn();
 const mockProjectUpdate = vi.fn();
 const mockListProjectCreators = vi.fn();
 const mockUpdateProjectCreators = vi.fn();
+const mockSearchDirectoryUsers = vi.fn();
 const mockUseWorkspace = vi.fn<
   () => {
     data: { id: string; name: string } | undefined;
@@ -122,6 +123,7 @@ vi.mock('@/lib/api', () => ({
   WorkspaceAPI: class {
     listProjectCreators = mockListProjectCreators;
     updateProjectCreators = mockUpdateProjectCreators;
+    searchDirectoryUsers = mockSearchDirectoryUsers;
   },
 }));
 
@@ -160,9 +162,18 @@ describe('WorkspaceSettingsPage', () => {
     mockProjectUpdate.mockResolvedValue(undefined);
     mockListProjectCreators.mockResolvedValue([{ id: 'u_1', user_id: 'u_1', name: 'Dev One', email: 'dev1@example.com' }]);
     mockUpdateProjectCreators.mockResolvedValue([
-      { id: 'u_2', user_id: 'u_2', name: 'u_2', email: 'u_2@workspace.local' },
-      { id: 'dev3@example.com', user_id: 'dev3@example.com', name: 'dev3@example.com', email: 'dev3@example.com' },
+      { id: 'u_2', user_id: 'u_2', name: 'Proj Admin', email: 'admin@example.com' },
+      { id: 'u_3', user_id: 'u_3', name: 'Dev Three', email: 'dev3@example.com' },
     ]);
+    mockSearchDirectoryUsers.mockImplementation(async (_workspaceId: string, query: string) => {
+      if (query.includes('admin')) {
+        return [{ user_id: 'u_2', email: 'admin@example.com', name: 'Proj Admin' }];
+      }
+      if (query.includes('dev3')) {
+        return [{ user_id: 'u_3', email: 'dev3@example.com', name: 'Dev Three' }];
+      }
+      return [];
+    });
     mockUseWorkspace.mockReturnValue({
       data: STABLE_WORKSPACE,
       isFetched: true,
@@ -298,15 +309,25 @@ describe('WorkspaceSettingsPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByTestId('ws-settings__project-creators-input')).toHaveValue('u_1');
+      expect(screen.getByTestId('ws-settings__project-creators-selected')).toHaveTextContent('Dev One');
     });
 
-    await user.clear(screen.getByTestId('ws-settings__project-creators-input'));
-    await user.type(screen.getByTestId('ws-settings__project-creators-input'), 'u_2{enter}dev3@example.com');
+    await user.type(screen.getByTestId('ws-settings__project-creators-input'), 'admin');
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-creator-option--u_2')).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId('ws-settings__project-creator-option--u_2'));
+
+    await user.type(screen.getByTestId('ws-settings__project-creators-input'), 'dev3');
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-settings__project-creator-option--u_3')).toBeInTheDocument();
+    });
+    await user.click(screen.getByTestId('ws-settings__project-creator-option--u_3'));
+    await user.click(screen.getByTestId('ws-settings__project-creator-remove--u_1'));
     await user.click(screen.getByTestId('ws-settings__project-creators-save'));
 
     await waitFor(() => {
-      expect(mockUpdateProjectCreators).toHaveBeenCalledWith('ws_1', ['u_2', 'dev3@example.com']);
+      expect(mockUpdateProjectCreators).toHaveBeenCalledWith('ws_1', ['u_2', 'u_3']);
     });
   });
 

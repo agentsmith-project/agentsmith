@@ -1,19 +1,13 @@
 'use client';
 import * as React from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslations } from 'next-intl';
-import { Download, Save, Copy, FileText, Image as ImageIcon, File, MoreHorizontal } from 'lucide-react';
+import { FileText, Image as ImageIcon, File } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Artifact } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { formatBytes } from '@/lib/utils/formatters';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 
 export interface ArtifactCardProps {
   artifact: Artifact;
@@ -47,6 +41,10 @@ export function ArtifactCard({
       }
     }
   };
+  const [isDetailsVisible, setIsDetailsVisible] = React.useState(false);
+  const [hoverRect, setHoverRect] = React.useState<DOMRect | null>(null);
+  const [isHoveringPanel, setIsHoveringPanel] = React.useState(false);
+  const isActionsMenuOpen = false;
 
   const compactTextPreview = React.useMemo(() => {
     if (artifact.type !== 'text' || !artifact.content) return null;
@@ -85,138 +83,141 @@ export function ArtifactCard({
     return <File className="h-4 w-4 text-icon-default" />;
   }, [artifact.content, artifact.thumbnail_url, artifact.type, title]);
 
+  const handleBlur = (event: React.FocusEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    if (!isHoveringPanel && !isActionsMenuOpen) setIsDetailsVisible(false);
+  };
+
+  const openDetails = (element: HTMLDivElement) => {
+    setHoverRect(element.getBoundingClientRect());
+    setIsDetailsVisible(true);
+  };
+
+  const closeDetails = () => {
+    if (isHoveringPanel || isActionsMenuOpen) return;
+    setIsDetailsVisible(false);
+  };
+
+  const hoverStyle = React.useMemo(() => {
+    if (!hoverRect) return undefined;
+    const width = 252;
+    const gap = 12;
+    const left = Math.max(16, hoverRect.left - width - gap);
+    const top = Math.max(16, hoverRect.top + hoverRect.height / 2 - 72);
+    return { left: `${left}px`, top: `${top}px`, width: `${width}px` };
+  }, [hoverRect]);
+
   return (
     <TooltipProvider>
       <div
-        className="rounded-lg border border-white/6 bg-surface/50 px-2 py-1.5 transition-colors hover:bg-hover/45"
+        className="group relative rounded-lg border border-white/6 bg-surface/40 px-2 py-1.5 transition-colors hover:border-white/10 hover:bg-hover/35 focus-within:border-white/10 focus-within:bg-hover/35"
         data-testid="notebook__artifact-card"
         data-artifact-id={artifact.id}
+        onMouseEnter={(event) => openDetails(event.currentTarget)}
+        onMouseLeave={closeDetails}
+        onFocus={(event) => openDetails(event.currentTarget)}
+        onBlur={handleBlur}
+        tabIndex={0}
       >
-        <div className="flex items-start gap-2">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-high/40">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md bg-surface-high/35">
             {previewNode}
           </div>
-          <div className="min-w-0 flex-1 space-y-0.5">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <div className="truncate text-[12px] font-medium text-foreground">{title}</div>
-              <span className="shrink-0 rounded-full bg-surface-high/35 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-tertiary">
-                {artifact.type}
-              </span>
-            </div>
-            {summary ? (
-              <div className="text-[10px] leading-4 text-tertiary line-clamp-2 break-words">
-                {summary}
-              </div>
-            ) : null}
-            <div className="flex items-center gap-1.5 pt-0.5">
-              {onView ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onView}
-                  disabled={disabled}
-                  className="h-6 px-1.5 text-[10px]"
-                >
-                  {tCommon('view')}
-                </Button>
-              ) : null}
-              {onAttachAsInput ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={onAttachAsInput}
-                  disabled={disabled}
-                  className="h-6 px-1.5 text-[10px]"
-                  aria-label="attach as input"
-                >
-                  {tArtifacts('actions.attach_input')}
-                </Button>
-              ) : null}
-            </div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[12px] font-medium text-foreground">{title}</div>
           </div>
-          <ArtifactActionsMenu
-            artifactType={artifact.type}
-            onCopy={artifact.type === 'text' ? handleCopy : undefined}
-            onSave={onSave}
-            onDownload={onDownload}
-            disabled={disabled}
-            copyLabel={tCommon('copy')}
-            saveLabel={tCommon('save')}
-            downloadLabel={tCommon('download')}
-            menuLabel={tCommon('actions')}
-          />
         </div>
+        {isDetailsVisible && hoverRect
+          ? createPortal(
+              <div
+                className="fixed z-[90] rounded-xl border border-white/10 bg-background/95 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.4)]"
+                style={hoverStyle}
+                data-testid="notebook__artifact-hover-panel"
+                onMouseEnter={() => setIsHoveringPanel(true)}
+                onMouseLeave={() => {
+                  setIsHoveringPanel(false);
+                  setIsDetailsVisible(false);
+                }}
+              >
+                <div className="space-y-2">
+                  <div className="flex items-center gap-1.5">
+                    <div className="truncate text-[11px] font-medium text-foreground">{title}</div>
+                    <span className="shrink-0 rounded-full bg-surface-high/35 px-1.5 py-0.5 text-[9px] uppercase tracking-[0.12em] text-tertiary">
+                      {artifact.type}
+                    </span>
+                  </div>
+                  {summary ? (
+                    <div className="text-[10px] leading-4 text-tertiary line-clamp-3 break-words">
+                      {summary}
+                    </div>
+                  ) : null}
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {onView ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onView}
+                        disabled={disabled}
+                        className="h-7 justify-start px-2 text-[10px]"
+                      >
+                        {tCommon('view')}
+                      </Button>
+                    ) : null}
+                    {onAttachAsInput ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onAttachAsInput}
+                        disabled={disabled}
+                        className="h-7 justify-start px-2 text-[10px]"
+                        aria-label="attach as input"
+                      >
+                        {tArtifacts('actions.attach_input')}
+                      </Button>
+                    ) : null}
+                    {artifact.type === 'text' ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCopy}
+                        disabled={disabled}
+                        className="h-7 justify-start px-2 text-[10px]"
+                        aria-label="copy artifact"
+                      >
+                        {tCommon('copy')}
+                      </Button>
+                    ) : null}
+                    {onSave ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onSave}
+                        disabled={disabled}
+                        className="h-7 justify-start px-2 text-[10px]"
+                        aria-label="save artifact"
+                      >
+                        {tCommon('save')}
+                      </Button>
+                    ) : null}
+                    {onDownload ? (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onDownload}
+                        disabled={disabled}
+                        className="h-7 justify-start px-2 text-[10px]"
+                        aria-label="download artifact"
+                      >
+                        {tCommon('download')}
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>,
+              document.body,
+            )
+          : null}
       </div>
     </TooltipProvider>
-  );
-}
-
-function ArtifactActionsMenu({
-  artifactType,
-  onCopy,
-  onSave,
-  onDownload,
-  disabled,
-  copyLabel,
-  saveLabel,
-  downloadLabel,
-  menuLabel,
-}: {
-  artifactType: Artifact['type'];
-  onCopy?: () => void;
-  onSave?: () => void;
-  onDownload?: () => void;
-  disabled?: boolean;
-  copyLabel: string;
-  saveLabel: string;
-  downloadLabel: string;
-  menuLabel: string;
-}) {
-  const hasMenuActions = Boolean((artifactType === 'text' && onCopy) || onSave || onDownload);
-  if (!hasMenuActions) return null;
-
-  return (
-    <DropdownMenu>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <DropdownMenuTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={disabled}
-              className="mt-0.5 h-7 w-7 shrink-0 px-0"
-              aria-label="artifact actions"
-            >
-              <MoreHorizontal className="h-3.5 w-3.5" />
-              <span className="sr-only">{menuLabel}</span>
-            </Button>
-          </DropdownMenuTrigger>
-        </TooltipTrigger>
-        <TooltipContent>{menuLabel}</TooltipContent>
-      </Tooltip>
-      <DropdownMenuContent align="end" className="min-w-[10rem]">
-        {artifactType === 'text' && onCopy ? (
-          <DropdownMenuItem onSelect={onCopy}>
-            <Copy className="h-3.5 w-3.5" />
-            {copyLabel}
-          </DropdownMenuItem>
-        ) : null}
-        {onSave ? (
-          <DropdownMenuItem onSelect={onSave}>
-            <Save className="h-3.5 w-3.5" />
-            {saveLabel}
-          </DropdownMenuItem>
-        ) : null}
-        {onDownload ? (
-          <>
-            {artifactType === 'text' && onCopy ? <DropdownMenuSeparator /> : null}
-            <DropdownMenuItem onSelect={onDownload}>
-              <Download className="h-3.5 w-3.5" />
-              {downloadLabel}
-            </DropdownMenuItem>
-          </>
-        ) : null}
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }

@@ -239,6 +239,15 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('notebook-task-detail.png', { fullPage: true });
   });
 
+  test('notebook task detail - artifact hover', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('notebook/tasks/task_001'));
+    const firstArtifact = authedPage.getByTestId('notebook__artifact-card').first();
+    await expect(firstArtifact).toBeVisible();
+    await firstArtifact.hover();
+    await expect(authedPage.getByTestId('notebook__artifact-hover-panel')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('notebook-task-detail-artifact-hover.png', { fullPage: true });
+  });
+
   test('agents', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('agents'));
     await expect(authedPage).toHaveScreenshot('agents.png', { fullPage: true });

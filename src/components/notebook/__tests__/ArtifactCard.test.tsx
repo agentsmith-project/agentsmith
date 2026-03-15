@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArtifactCard } from '../ArtifactCard';
 import type { Artifact } from '@/lib/types/task';
@@ -100,10 +100,21 @@ describe('ArtifactCard', () => {
       expect(screen.getByText('Text Artifact')).toBeInTheDocument();
     });
 
-    it('renders text artifact content preview', () => {
+    it('keeps text preview hidden until hover', () => {
       renderComponent(mockTextArtifact);
 
+      expect(screen.queryByText(/This is a text artifact/)).not.toBeInTheDocument();
+    });
+
+    it('reveals the floating detail panel on hover', () => {
+      renderComponent(mockTextArtifact);
+
+      const card = screen.getByTestId('notebook__artifact-card');
+      fireEvent.mouseEnter(card);
+      expect(screen.getByTestId('notebook__artifact-hover-panel')).toBeInTheDocument();
       expect(screen.getByText(/This is a text artifact/)).toBeInTheDocument();
+      fireEvent.mouseLeave(card);
+      expect(screen.queryByTestId('notebook__artifact-hover-panel')).not.toBeInTheDocument();
     });
 
     it('shows default title when title is missing', () => {
@@ -119,23 +130,17 @@ describe('ArtifactCard', () => {
 
     it('shows copy button for text artifacts', () => {
       renderComponent(mockTextArtifact);
-
-      expect(screen.getByRole('button', { name: /artifact actions/i })).toBeInTheDocument();
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      expect(screen.getByRole('button', { name: /copy artifact/i })).toBeInTheDocument();
     });
 
-    it('copies text content to clipboard', async () => {
-      const { toast } = await import('@/components/ui/toast');
-      const user = userEvent.setup();
-
+    it('renders copy action for text artifacts inside the hover panel', async () => {
       renderComponent(mockTextArtifact);
 
-      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
-
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       await waitFor(() => {
-        expect(screen.getByRole('menuitem', { name: /copy/i })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /copy artifact/i })).toBeInTheDocument();
       });
-      await user.click(screen.getByRole('menuitem', { name: /copy/i }));
-      expect(toast.info).toHaveBeenCalledWith('Copied!');
     });
   });
 
@@ -200,6 +205,7 @@ describe('ArtifactCard', () => {
       renderComponent(mockFileArtifact);
 
       // 1048576 bytes = 1.0 MB (binary)
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       expect(screen.getByText(/1\.0 MB/)).toBeInTheDocument();
     });
 
@@ -225,6 +231,7 @@ describe('ArtifactCard', () => {
     it('shows view button when onView is provided', () => {
       renderComponent(mockTextArtifact);
 
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       expect(screen.getByRole('button', { name: /view/i })).toBeInTheDocument();
     });
 
@@ -244,6 +251,7 @@ describe('ArtifactCard', () => {
       const user = userEvent.setup();
       renderComponent(mockImageArtifact);
 
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       const viewButton = screen.getByRole('button', { name: /view/i });
       await user.click(viewButton);
 
@@ -253,7 +261,8 @@ describe('ArtifactCard', () => {
     it('shows save button when onSave is provided', () => {
       renderComponent(mockTextArtifact);
 
-      expect(screen.getByRole('button', { name: /artifact actions/i })).toBeInTheDocument();
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      expect(screen.getByRole('button', { name: /save artifact/i })).toBeInTheDocument();
     });
 
     it('does not show save button when onSave is not provided', () => {
@@ -272,17 +281,16 @@ describe('ArtifactCard', () => {
       const user = userEvent.setup();
       renderComponent(mockTextArtifact);
 
-      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
-      const saveButton = await screen.findByRole('menuitem', { name: /save/i });
-      await user.click(saveButton);
-
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      await user.click(screen.getByRole('button', { name: /save artifact/i }));
       expect(mockOnSave).toHaveBeenCalled();
     });
 
     it('shows download button when onDownload is provided', () => {
       renderComponent(mockTextArtifact);
 
-      expect(screen.getByRole('button', { name: /artifact actions/i })).toBeInTheDocument();
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      expect(screen.getByRole('button', { name: /download artifact/i })).toBeInTheDocument();
     });
 
     it('does not show download button when onDownload is not provided', () => {
@@ -301,10 +309,8 @@ describe('ArtifactCard', () => {
       const user = userEvent.setup();
       renderComponent(mockFileArtifact);
 
-      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
-      const downloadButton = await screen.findByRole('menuitem', { name: /download/i });
-      await user.click(downloadButton);
-
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      await user.click(screen.getByRole('button', { name: /download artifact/i }));
       expect(mockOnDownload).toHaveBeenCalled();
     });
   });
@@ -322,8 +328,8 @@ describe('ArtifactCard', () => {
         />
       );
 
-      const menuButton = screen.getByRole('button', { name: /artifact actions/i });
-      expect(menuButton).toBeDisabled();
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      expect(screen.getByRole('button', { name: /copy artifact/i })).toBeDisabled();
     });
 
     it('disables view button when disabled', () => {
@@ -337,6 +343,7 @@ describe('ArtifactCard', () => {
         />
       );
 
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       const viewButton = screen.getByRole('button', { name: /view/i });
       expect(viewButton).toBeDisabled();
     });
@@ -352,8 +359,8 @@ describe('ArtifactCard', () => {
         />
       );
 
-      const menuButton = screen.getByRole('button', { name: /artifact actions/i });
-      expect(menuButton).toBeDisabled();
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      expect(screen.getByRole('button', { name: /save artifact/i })).toBeDisabled();
     });
 
     it('disables download button when disabled', () => {
@@ -367,8 +374,8 @@ describe('ArtifactCard', () => {
         />
       );
 
-      const menuButton = screen.getByRole('button', { name: /actions/i });
-      expect(menuButton).toBeDisabled();
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      expect(screen.getByRole('button', { name: /download artifact/i })).toBeDisabled();
     });
   });
 
@@ -384,13 +391,14 @@ describe('ArtifactCard', () => {
       const { container } = renderComponent(mockTextArtifact);
 
       const card = container.firstChild as HTMLElement;
-      expect(card).toHaveClass('hover:bg-hover/45');
+      expect(card.className).toContain('hover:bg-hover/35');
     });
 
     it('uses flex layout for actions', () => {
-      const { container } = renderComponent(mockTextArtifact);
+      renderComponent(mockTextArtifact);
 
-      const actions = container.querySelector('[aria-label="artifact actions"]');
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
+      const actions = screen.getByTestId('notebook__artifact-hover-panel').querySelector('.grid');
       expect(actions).toBeInTheDocument();
     });
   });
@@ -432,18 +440,15 @@ describe('ArtifactCard', () => {
       expect(screen.getByText(/This is a very long title/)).toBeInTheDocument();
     });
 
-    it('keeps secondary artifact actions inside the actions menu', async () => {
-      const user = userEvent.setup();
+    it('shows all primary artifact actions inside the hover panel', () => {
       renderComponent(mockTextArtifact);
 
+      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       expect(screen.getByRole('button', { name: /view/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /attach as input/i })).toBeInTheDocument();
-
-      await user.click(screen.getByRole('button', { name: /artifact actions/i }));
-      const menu = screen.getByRole('menu');
-      expect(within(menu).getByRole('menuitem', { name: /copy/i })).toBeInTheDocument();
-      expect(within(menu).getByRole('menuitem', { name: /save/i })).toBeInTheDocument();
-      expect(within(menu).getByRole('menuitem', { name: /download/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /copy artifact/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /save artifact/i })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /download artifact/i })).toBeInTheDocument();
     });
   });
 });

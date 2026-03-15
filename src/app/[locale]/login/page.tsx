@@ -47,44 +47,62 @@ export default function LoginEntryPage() {
                   </div>
                 </div>
 
-                <div className="mt-8 grid gap-6 md:grid-cols-2">
-                <Link
-                  href={`/${locale}/login/workspace`}
-                  className="group rounded-2xl border border-border bg-surface-high p-6 transition-colors hover:bg-hover"
-                  data-testid="login-entry__workspace"
-                >
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm bg-background">
-                    <Building2 className="h-6 w-6 text-icon-default" />
-                  </div>
-                  <h2 className="text-lg font-semibold text-foreground">{t('entry_workspace_title')}</h2>
-                  <p className="mt-2 text-sm leading-6 text-tertiary">{t('entry_workspace_description')}</p>
-                  <div className="mt-5 flex items-center justify-between gap-3 text-sm">
-                    <span className="text-secondary">{t('entry_workspace_hint')}</span>
-                    <span className="inline-flex items-center gap-1 font-medium text-accent">
-                      {t('entry_action')}
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </Link>
+                <div className="mt-8 grid gap-3 md:grid-cols-3">
+                  <EntrySummaryCard
+                    label={t('entry_workspace_title')}
+                    value={t('entry_workspace_hint')}
+                    helper={t('entry_workspace_description')}
+                  />
+                  <EntrySummaryCard
+                    label={t('entry_system_title')}
+                    value={t('entry_system_hint')}
+                    helper={t('entry_system_description')}
+                  />
+                  <EntrySummaryCard
+                    label={t('entry_action')}
+                    value={t('entry_badge')}
+                    helper={t('entry_description')}
+                  />
+                </div>
 
-                <Link
-                  href={`/${locale}/system/login`}
-                  className="group rounded-2xl border border-border bg-surface-high p-6 transition-colors hover:bg-hover"
-                  data-testid="login-entry__system"
-                >
-                  <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm bg-background">
-                    <ShieldUser className="h-6 w-6 text-icon-default" />
-                  </div>
-                  <h2 className="text-lg font-semibold text-foreground">{t('entry_system_title')}</h2>
-                  <p className="mt-2 text-sm leading-6 text-tertiary">{t('entry_system_description')}</p>
-                  <div className="mt-5 flex items-center justify-between gap-3 text-sm">
-                    <span className="text-secondary">{t('entry_system_hint')}</span>
-                    <span className="inline-flex items-center gap-1 font-medium text-accent">
-                      {t('entry_action')}
-                      <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </Link>
+                <div className="mt-8 grid gap-6 md:grid-cols-2">
+                  <Link
+                    href={`/${locale}/login/workspace`}
+                    className="group rounded-2xl border border-border bg-surface-high p-6 transition-colors hover:bg-hover"
+                    data-testid="login-entry__workspace"
+                  >
+                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm bg-background">
+                      <Building2 className="h-6 w-6 text-icon-default" />
+                    </div>
+                    <h2 className="text-lg font-semibold text-foreground">{t('entry_workspace_title')}</h2>
+                    <p className="mt-2 text-sm leading-6 text-tertiary">{t('entry_workspace_description')}</p>
+                    <div className="mt-5 flex items-center justify-between gap-3 text-sm">
+                      <span className="text-secondary">{t('entry_workspace_hint')}</span>
+                      <span className="inline-flex items-center gap-1 font-medium text-accent">
+                        {t('entry_action')}
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
+                  </Link>
+
+                  <Link
+                    href={`/${locale}/system/login`}
+                    className="group rounded-2xl border border-border bg-surface-high p-6 transition-colors hover:bg-hover"
+                    data-testid="login-entry__system"
+                  >
+                    <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-sm bg-background">
+                      <ShieldUser className="h-6 w-6 text-icon-default" />
+                    </div>
+                    <h2 className="text-lg font-semibold text-foreground">{t('entry_system_title')}</h2>
+                    <p className="mt-2 text-sm leading-6 text-tertiary">{t('entry_system_description')}</p>
+                    <div className="mt-5 flex items-center justify-between gap-3 text-sm">
+                      <span className="text-secondary">{t('entry_system_hint')}</span>
+                      <span className="inline-flex items-center gap-1 font-medium text-accent">
+                        {t('entry_action')}
+                        <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+                      </span>
+                    </div>
+                  </Link>
                 </div>
               </section>
             </div>
@@ -92,5 +110,23 @@ export default function LoginEntryPage() {
         </div>
       </PageLayout>
     </PageState>
+  );
+}
+
+function EntrySummaryCard({
+  label,
+  value,
+  helper,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
+      <div className="mt-2 text-base font-semibold text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

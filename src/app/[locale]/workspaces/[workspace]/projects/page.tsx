@@ -216,6 +216,7 @@ export default function ProjectsPage() {
   const canReadProjects = canWorkspaceRead;
   const canCreateProject = canCreateProjectByWorkspacePermissions;
   const workspaceBasePath = `/${locale}/workspaces/${workspaceId}`;
+  const workspaceName = currentWorkspace?.name || workspaceId;
 
   if (!canReadProjects) {
     return (
@@ -291,15 +292,15 @@ export default function ProjectsPage() {
               <div className="space-y-3">
                 <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
                   <Sparkles className="h-3.5 w-3.5" />
-                  Workspace Projects
+                  {t('title')}
                 </div>
                 <div className="space-y-2">
                   <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">{t('title')}</h1>
                   <p className="max-w-2xl text-sm text-secondary md:text-[15px]">
-                    {t('workspace_label')} {currentWorkspace?.name || workspaceId}
+                    {t('workspace_label')} {workspaceName}
                   </p>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-3 md:grid-cols-3">
                   <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
                     <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
                       {t('summary.total_label')}
@@ -328,32 +329,58 @@ export default function ProjectsPage() {
                       </div>
                     </div>
                   </div>
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.04] px-4 py-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                      {t('workspace_label')}
+                    </p>
+                    <div className="mt-2 flex items-center gap-3">
+                      <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-white/[0.06] text-foreground">
+                        <ArrowUpRight className="h-5 w-5" />
+                      </span>
+                      <div>
+                        <p className="text-base font-semibold text-foreground">{workspaceName}</p>
+                        <p className="text-sm text-secondary">
+                          {canCreateProject ? t('empty.description') : t('empty.read_only_description')}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto]">
-                <label className="relative block">
-                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
-                  <input
-                    type="text"
-                    placeholder={t('search_placeholder')}
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    data-testid="projects__search"
-                    className="h-11 w-full rounded-xl border border-white/6 bg-white/5 pl-10 pr-4 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                  />
-                </label>
+              <div className="rounded-[20px] border border-white/8 bg-black/15 p-4 shadow-[0_14px_32px_rgba(0,0,0,0.14)]">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-tertiary">
+                      {t('search_placeholder')}
+                    </p>
+                    <p className="mt-1 text-sm text-secondary">{t('summary.table_hint')}</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto]">
+                    <label className="relative block">
+                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
+                      <input
+                        type="text"
+                        placeholder={t('search_placeholder')}
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        data-testid="projects__search"
+                        className="h-11 w-full rounded-xl border border-white/6 bg-white/5 pl-10 pr-4 text-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
+                      />
+                    </label>
 
-                <Button
-                  variant="primary"
-                  onClick={() => setCreateDialogOpen(true)}
-                  disabled={!canCreateProject}
-                  data-testid="projects__create-btn"
-                  className="h-11 px-5"
-                >
-                  <Plus className="h-4 w-4" />
-                  {t('new_project')}
-                </Button>
+                    <Button
+                      variant="primary"
+                      onClick={() => setCreateDialogOpen(true)}
+                      disabled={!canCreateProject}
+                      data-testid="projects__create-btn"
+                      className="h-11 px-5"
+                    >
+                      <Plus className="h-4 w-4" />
+                      {t('new_project')}
+                    </Button>
+                  </div>
+                </div>
               </div>
             </div>
           </section>

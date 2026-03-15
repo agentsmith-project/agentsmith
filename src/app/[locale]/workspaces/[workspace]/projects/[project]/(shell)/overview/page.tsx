@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ArrowLeft, Sparkles } from 'lucide-react';
+import { ArrowLeft, ShieldCheck, Sparkles, Workflow, Wrench } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
@@ -86,7 +86,7 @@ export default function OverviewPage() {
             <CardContent className="border-b border-white/6 bg-[linear-gradient(180deg,rgba(124,160,255,0.10),rgba(124,160,255,0.02))] p-6 md:p-7">
               <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
                 <Sparkles className="h-3.5 w-3.5" />
-                Project Hub
+                {tNav('overview')}
               </div>
               <p className="mt-4 max-w-3xl text-sm text-secondary md:text-[15px]">
                 {tOverview('subtitle')}
@@ -99,6 +99,27 @@ export default function OverviewPage() {
               </p>
             </CardHeader>
             <CardContent className="space-y-6" data-testid="project-hub__quick-links">
+              <div className="grid gap-3 md:grid-cols-3">
+                <OverviewSummaryCard
+                  icon={<Workflow className="h-4 w-4" />}
+                  label={tWorkspace('workspace_home_projects_title')}
+                  value={String(workLinks.length)}
+                  helper={tOverview('subtitle')}
+                />
+                <OverviewSummaryCard
+                  icon={<ShieldCheck className="h-4 w-4" />}
+                  label={tWorkspace('workspace_home_admin_title')}
+                  value={String(governanceLinks.length)}
+                  helper={governanceLinks.length > 0 ? tWorkspace('workspace_home_open_settings') : tErrors('permission_denied_hint')}
+                />
+                <OverviewSummaryCard
+                  icon={<Wrench className="h-4 w-4" />}
+                  label={tNav('overview')}
+                  value={projectId}
+                  helper={workspaceId}
+                />
+              </div>
+
               <OverviewLinkSection
                 items={workLinks}
                 testId="project-hub__work-links"
@@ -117,5 +138,28 @@ export default function OverviewPage() {
         </div>
       </PageLayout>
     </PageState>
+  );
+}
+
+function OverviewSummaryCard({
+  icon,
+  label,
+  value,
+  helper,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  helper: string;
+}) {
+  return (
+    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+        {icon}
+        {label}
+      </div>
+      <div className="mt-3 text-lg font-semibold tracking-tight text-foreground">{value}</div>
+      <div className="mt-1 text-sm text-secondary">{helper}</div>
+    </div>
   );
 }

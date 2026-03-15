@@ -162,7 +162,7 @@ export default function WorkspaceLoginPage() {
                       <p className="max-w-xl text-sm leading-6 text-secondary">{t('workspace_login_description')}</p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                      <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
                         <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                           <KeyRound className="h-3.5 w-3.5 text-accent" />
                           {t('workspace_login_idp_label')}
@@ -172,7 +172,7 @@ export default function WorkspaceLoginPage() {
                         </div>
                         <p className="mt-1 text-sm text-tertiary">{t('workspace_login_idp_hint')}</p>
                       </div>
-                      <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                      <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
                         <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                           <Sparkles className="h-3.5 w-3.5 text-accent" />
                           {t('workspace_login_support_label')}
@@ -184,76 +184,82 @@ export default function WorkspaceLoginPage() {
                   </div>
 
                   <div className="rounded-2xl border border-border bg-surface-high p-6">
-                {isLoadingConfig ? (
-                  <p className="text-sm text-tertiary" data-testid="workspace-login__loading">{t('loading_workspaces')}</p>
-                ) : configError || !config ? (
-                  <div className="space-y-4" data-testid="workspace-login__error">
-                    <p className="text-sm text-error">{t('workspace_not_found')}</p>
-                    <Link href={`/${locale}/login/workspace`} className="text-sm text-accent underline">
-                      {t('back_to_workspace_select')}
-                    </Link>
-                  </div>
-                ) : (
-                  <>
-                    <Button
-                      data-testid="workspace-login__keycloak-btn"
-                      onClick={handleKeycloakLogin}
-                      disabled={isLoggingIn}
-                      variant="primary"
-                      className="mb-4 w-full"
-                    >
-                      <ArrowRight className="h-4 w-4" />
-                      {isLoggingIn ? t('keycloak_redirecting') : t('login_with_keycloak')}
-                    </Button>
-                    <p className="text-xs text-tertiary text-center mb-2">{t('keycloak_sign_in_hint')}</p>
-                    {keycloakError ? (
-                      <p className="text-xs text-error text-center mb-4" data-testid="workspace-login__keycloak-error">
-                        {keycloakError}
-                      </p>
-                    ) : null}
-
-                    {useMsw ? (
+                    {isLoadingConfig ? (
+                      <p className="text-sm text-tertiary" data-testid="workspace-login__loading">{t('loading_workspaces')}</p>
+                    ) : configError || !config ? (
+                      <div className="space-y-4" data-testid="workspace-login__error">
+                        <p className="text-sm text-error">{t('workspace_not_found')}</p>
+                        <Link href={`/${locale}/login/workspace`} className="text-sm text-accent underline">
+                          {t('back_to_workspace_select')}
+                        </Link>
+                      </div>
+                    ) : (
                       <>
-                        <div className="relative my-6">
-                          <div className="absolute inset-0 flex items-center">
-                            <div className="w-full border-t border-subtle"></div>
-                          </div>
-                          <div className="relative flex justify-center text-sm">
-                            <span className="px-2 bg-background text-tertiary">{t('or')}</span>
-                          </div>
+                        <div className="mb-4 rounded-[18px] border border-white/6 bg-white/[0.025] p-4">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
+                            {t('workspace_login_title')}
+                          </p>
+                          <p className="mt-2 text-sm text-secondary">{t('workspace_login_description')}</p>
                         </div>
+                        <Button
+                          data-testid="workspace-login__keycloak-btn"
+                          onClick={handleKeycloakLogin}
+                          disabled={isLoggingIn}
+                          variant="primary"
+                          className="mb-4 w-full"
+                        >
+                          <ArrowRight className="h-4 w-4" />
+                          {isLoggingIn ? t('keycloak_redirecting') : t('login_with_keycloak')}
+                        </Button>
+                        <p className="text-xs text-tertiary text-center mb-2">{t('keycloak_sign_in_hint')}</p>
+                        {keycloakError ? (
+                          <p className="text-xs text-error text-center mb-4" data-testid="workspace-login__keycloak-error">
+                            {keycloakError}
+                          </p>
+                        ) : null}
 
-                        <div className="space-y-4">
-                          <div className="rounded-xl border border-subtle bg-background p-4">
-                            <p className="text-sm text-tertiary mb-4 text-center">{t('dev_mode')}</p>
-                            <div className="mb-4">
-                              <label className="block text-sm font-medium text-secondary mb-2">
-                                {t('user_id_email')}
-                              </label>
-                              <input
-                                type="text"
-                                data-testid="workspace-login__email-input"
-                                value={userEmail}
-                                onChange={(event) => setUserEmail(event.target.value)}
-                                placeholder={t('user_id_placeholder')}
-                                className="w-full px-3 py-2 bg-background border border-subtle rounded-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
-                              />
+                        {useMsw ? (
+                          <>
+                            <div className="relative my-6">
+                              <div className="absolute inset-0 flex items-center">
+                                <div className="w-full border-t border-subtle"></div>
+                              </div>
+                              <div className="relative flex justify-center text-sm">
+                                <span className="px-2 bg-background text-tertiary">{t('or')}</span>
+                              </div>
                             </div>
-                            <Button
-                              data-testid="workspace-login__submit"
-                              onClick={handleQuickLogin}
-                              disabled={isLoggingIn || !userEmail.trim()}
-                              variant="action"
-                              className="w-full"
-                            >
-                              {isLoggingIn ? t('signing_in') : t('quick_login')}
-                            </Button>
-                          </div>
-                        </div>
+
+                            <div className="space-y-4">
+                              <div className="rounded-xl border border-subtle bg-background p-4">
+                                <p className="text-sm text-tertiary mb-4 text-center">{t('dev_mode')}</p>
+                                <div className="mb-4">
+                                  <label className="block text-sm font-medium text-secondary mb-2">
+                                    {t('user_id_email')}
+                                  </label>
+                                  <input
+                                    type="text"
+                                    data-testid="workspace-login__email-input"
+                                    value={userEmail}
+                                    onChange={(event) => setUserEmail(event.target.value)}
+                                    placeholder={t('user_id_placeholder')}
+                                    className="w-full px-3 py-2 bg-background border border-subtle rounded-sm text-primary placeholder:text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/50"
+                                  />
+                                </div>
+                                <Button
+                                  data-testid="workspace-login__submit"
+                                  onClick={handleQuickLogin}
+                                  disabled={isLoggingIn || !userEmail.trim()}
+                                  variant="action"
+                                  className="w-full"
+                                >
+                                  {isLoggingIn ? t('signing_in') : t('quick_login')}
+                                </Button>
+                              </div>
+                            </div>
+                          </>
+                        ) : null}
                       </>
-                    ) : null}
-                  </>
-                )}
+                    )}
                   </div>
                 </div>
               </section>

@@ -3,6 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { workspaceFixtures } from '../fixtures/workspaces';
 import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { CURRENT_USER_ID } from '../fixtures/projects';
+import { AUTH_USER_FIXTURE } from './auth';
 
 const workspaceItems = (() => {
   const fromP0 = p0.workspaces ?? [];
@@ -54,8 +55,8 @@ const workspaceMembers = (() => {
     fromP0.push({
       id: `wm_${CURRENT_USER_ID}`,
       user_id: CURRENT_USER_ID,
-      name: p0.auth.user.name,
-      email: p0.auth.user.email,
+      name: AUTH_USER_FIXTURE.name,
+      email: AUTH_USER_FIXTURE.email,
       role: 'owner',
       governance_group: 'wheel',
       permissions: [...PLATFORM_PERMISSIONS.WORKSPACE],

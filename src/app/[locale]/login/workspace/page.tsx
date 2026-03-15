@@ -43,7 +43,7 @@ export default function WorkspaceSelectPage() {
       <PageLayout>
         <div className="min-h-screen bg-background p-8">
           <div className="mx-auto max-w-5xl space-y-6">
-            <section className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+            <section className="rounded-[28px] border border-border bg-surface/95 px-5 py-5 shadow-[0_22px_50px_rgba(0,0,0,0.18)] md:px-6">
               <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
                 <div className="max-w-2xl space-y-2">
                   <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
@@ -71,7 +71,7 @@ export default function WorkspaceSelectPage() {
               </div>
 
               <div className="grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                     <Building2 className="h-3.5 w-3.5 text-accent" />
                     {t('workspace_select_summary_ready')}
@@ -79,7 +79,7 @@ export default function WorkspaceSelectPage() {
                   <div className="mt-3 text-2xl font-semibold text-foreground">{(workspaces ?? []).length}</div>
                   <p className="mt-1 text-sm text-tertiary">{t('workspace_select_summary_ready_hint')}</p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                     <Sparkles className="h-3.5 w-3.5 text-accent" />
                     {t('workspace_select_summary_route')}
@@ -87,7 +87,7 @@ export default function WorkspaceSelectPage() {
                   <div className="mt-3 text-base font-semibold text-foreground">{t('workspace_select_summary_route_value')}</div>
                   <p className="mt-1 text-sm text-tertiary">{t('workspace_select_summary_route_hint')}</p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-surface-high p-4">
+                <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
                   <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
                     <ArrowRight className="h-3.5 w-3.5 text-accent" />
                     {t('workspace_select_summary_next')}
@@ -98,7 +98,7 @@ export default function WorkspaceSelectPage() {
               </div>
             </section>
 
-            <div className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+            <div className="rounded-[24px] border border-border bg-surface/95 px-5 py-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:px-6">
               <div className="mb-5">
                 <h2 className="text-sm font-semibold uppercase tracking-[0.18em] text-secondary">
                   {t('workspace_select_list_title')}
@@ -174,10 +174,10 @@ function WorkspaceCard({ workspace, onSelect }: WorkspaceCardProps) {
       type="button"
       data-testid={`workspace-select__card--${workspace.id}`}
       onClick={onSelect}
-      className="group relative cursor-pointer rounded-xl border border-border bg-surface-high p-6 text-left transition-colors duration-200 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
+                  className="group relative cursor-pointer rounded-[22px] border border-border bg-surface-high p-6 text-left transition-colors duration-200 hover:bg-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/50"
     >
       <div className="mb-4 flex items-center gap-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-sm bg-surface-high">
+        <div className="flex h-12 w-12 items-center justify-center rounded-[16px] bg-surface-high">
           <Building2 className="h-6 w-6 text-icon-default" />
         </div>
         <div>

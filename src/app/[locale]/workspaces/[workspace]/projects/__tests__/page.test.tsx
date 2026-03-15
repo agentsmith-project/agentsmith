@@ -249,7 +249,7 @@ describe('ProjectsPage route', () => {
     await waitFor(() => {
       expect(screen.getByText('empty.title')).toBeInTheDocument();
     });
-    expect(screen.getByText('empty.description')).toBeInTheDocument();
+    expect(screen.getAllByText('empty.description').length).toBeGreaterThan(0);
     expect(screen.getByRole('button', { name: 'empty.create_first' })).toBeInTheDocument();
   });
 
@@ -262,7 +262,7 @@ describe('ProjectsPage route', () => {
     await waitFor(() => {
       expect(screen.getByText('empty.title')).toBeInTheDocument();
     });
-    expect(screen.getByText('empty.read_only_description')).toBeInTheDocument();
+    expect(screen.getAllByText('empty.read_only_description').length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'empty.create_first' })).not.toBeInTheDocument();
   });
 });

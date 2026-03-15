@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import type { Artifact } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { formatBytes } from '@/lib/utils/formatters';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 
 export interface ArtifactCardProps {
   artifact: Artifact;
@@ -109,69 +110,90 @@ export function ArtifactCard({
   };
 
   return (
-    <div className="rounded-xl border border-white/6 bg-surface/55 p-2.5 transition-colors hover:bg-hover hover:bg-hover/60" data-testid="notebook__artifact-card" data-artifact-id={artifact.id}>
-      {renderContent()}
-      <div className="mt-2 flex flex-wrap items-center gap-1">
-        {artifact.type === 'text' && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCopy}
-            disabled={disabled}
-            className="h-6 px-2 text-[11px]"
-          >
-            <Copy className="h-3 w-3 mr-1" />
-            {tCommon('copy')}
-          </Button>
-        )}
-        {onView && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onView}
-            disabled={disabled}
-            className="h-6 px-2 text-[11px]"
-          >
-            <Eye className="h-3 w-3 mr-1" />
-            {tCommon('view')}
-          </Button>
-        )}
-        {onSave && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onSave}
-            disabled={disabled}
-            className="h-6 px-2 text-[11px]"
-          >
-            <Save className="h-3 w-3 mr-1" />
-            {tCommon('save')}
-          </Button>
-        )}
-        {onDownload && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onDownload}
-            disabled={disabled}
-            className="h-6 px-2 text-[11px]"
-          >
-            <Download className="h-3 w-3 mr-1" />
-            {tCommon('download')}
-          </Button>
-        )}
-        {onAttachAsInput && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onAttachAsInput}
-            disabled={disabled}
-            className="h-6 px-2 text-[11px]"
-          >
-            {tArtifacts('actions.attach_input')}
-          </Button>
-        )}
+    <TooltipProvider>
+      <div className="rounded-xl border border-white/6 bg-surface/55 p-2 transition-colors hover:bg-hover hover:bg-hover/60" data-testid="notebook__artifact-card" data-artifact-id={artifact.id}>
+        <div className="flex items-start gap-2.5">
+          <div className="min-w-0 flex-1">
+            {renderContent()}
+          </div>
+          <div className="flex shrink-0 flex-col gap-1">
+            {artifact.type === 'text' && (
+              <IconActionButton
+                label={tCommon('copy')}
+                icon={<Copy className="h-3 w-3" />}
+                onClick={handleCopy}
+                disabled={disabled}
+              />
+            )}
+            {onView && (
+              <IconActionButton
+                label={tCommon('view')}
+                icon={<Eye className="h-3 w-3" />}
+                onClick={onView}
+                disabled={disabled}
+              />
+            )}
+            {onSave && (
+              <IconActionButton
+                label={tCommon('save')}
+                icon={<Save className="h-3 w-3" />}
+                onClick={onSave}
+                disabled={disabled}
+              />
+            )}
+            {onDownload && (
+              <IconActionButton
+                label={tCommon('download')}
+                icon={<Download className="h-3 w-3" />}
+                onClick={onDownload}
+                disabled={disabled}
+              />
+            )}
+            {onAttachAsInput && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onAttachAsInput}
+                disabled={disabled}
+                className="h-6 px-1.5 text-[10px]"
+              >
+                {tArtifacts('actions.attach_input')}
+              </Button>
+            )}
+          </div>
+        </div>
       </div>
-    </div>
+    </TooltipProvider>
+  );
+}
+
+function IconActionButton({
+  label,
+  icon,
+  onClick,
+  disabled,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onClick}
+          disabled={disabled}
+          className="h-6 w-6 px-0"
+          aria-label={label}
+        >
+          {icon}
+          <span className="sr-only">{label}</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
   );
 }

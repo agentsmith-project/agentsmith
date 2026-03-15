@@ -22,13 +22,13 @@ export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: 
   }
 
   return (
-    <div className="grid grid-cols-1 gap-2">
+    <div className="grid grid-cols-1 gap-1.5">
       {artifacts.map((artifact) => (
-        <div key={artifact.id} className="rounded-xl border border-white/6 bg-surface/55 p-2">
-          <div className="flex items-start gap-2.5">
+        <div key={artifact.id} className="rounded-xl border border-white/6 bg-surface/55 p-1.5">
+          <div className="flex items-start gap-2">
             <button
               onClick={() => onImageClick(artifact)}
-              className="relative h-16 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-surface-high/40 transition-colors hover:ring-1 hover:ring-accent/35"
+              className="relative h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-surface-high/40 transition-colors hover:ring-1 hover:ring-accent/35"
             >
               {artifact.thumbnail_url ? (
                 <img
@@ -51,17 +51,17 @@ export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: 
               )}
             </button>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-medium text-foreground">
+              <div className="truncate text-[12px] font-medium text-foreground">
                 {artifact.title || 'Image artifact'}
               </div>
-              <div className="mt-1 text-[11px] text-tertiary">
+              <div className="mt-0.5 text-[10px] text-tertiary">
                 {tArtifacts('filter.image')}
               </div>
-              <div className="mt-2 flex flex-wrap items-center gap-1">
+              <div className="mt-1.5 flex flex-wrap items-center gap-1">
                 <button
                   type="button"
                   onClick={() => onImageClick(artifact)}
-                  className="h-6 rounded-md px-2 text-[11px] text-primary hover:bg-hover transition-colors"
+                  className="h-6 rounded-md px-1.5 text-[10px] text-primary hover:bg-hover transition-colors"
                 >
                   {tCommon('view')}
                 </button>
@@ -69,7 +69,7 @@ export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: 
                   <button
                     type="button"
                     onClick={() => onAttachAsInput(artifact)}
-                    className="h-6 rounded-md px-2 text-[11px] text-primary hover:bg-hover transition-colors"
+                    className="h-6 rounded-md px-1.5 text-[10px] text-primary hover:bg-hover transition-colors"
                   >
                     {tArtifacts('actions.attach_input')}
                   </button>

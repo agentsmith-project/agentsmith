@@ -91,7 +91,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   if (isFeatureBlocked) {
     return (
       <PageState state="success">
-        <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+        <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} variant="compact" />}>
           <div className="mx-auto w-full max-w-4xl p-4">
             <FeatureAvailabilityBanner availability={featureAvailability} />
           </div>

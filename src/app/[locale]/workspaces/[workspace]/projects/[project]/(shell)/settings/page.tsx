@@ -30,7 +30,6 @@ import {
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useMembers } from '@/lib/hooks/use-members';
-import { ShieldCheck, Users, FolderKanban } from 'lucide-react';
 import { GeneralSettingsSection } from './_components/GeneralSettingsSection';
 import { GovernanceSection } from './_components/GovernanceSection';
 import { ProjectAdminsSection } from './_components/ProjectAdminsSection';
@@ -301,30 +300,25 @@ export default function SettingsPage({ params }: SettingsPageProps) {
           <PageHeader
             title={settingsT('title')}
             subtitle={settingsT('subtitle')}
+            variant="compact"
             className="[&>div>h1]:flex [&>div>h1]:items-center [&>div>h1]:gap-2"
           />
         )}
       >
         <div className="w-full space-y-6">
-          <div className="grid gap-3 md:grid-cols-3">
-            <SettingsSummaryCard
-              icon={<FolderKanban className="h-4 w-4" />}
-              label={settingsT('project_name')}
-              value={currentProject.name}
-              helper={`${settingsT('join_policy')}: ${joinPolicyLabel}`}
-            />
-            <SettingsSummaryCard
-              icon={<Users className="h-4 w-4" />}
-              label={settingsT('project_admins_title')}
-              value={String(projectAdminCount)}
-              helper={visibilityLabel}
-            />
-            <SettingsSummaryCard
-              icon={<ShieldCheck className="h-4 w-4" />}
-              label={settingsT('workspace_project_owner_label')}
-              value={ownerDisplayName}
-              helper={settingsT('ownership_lifecycle_title')}
-            />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {visibilityLabel}
+            </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {settingsT('join_policy')}: {joinPolicyLabel}
+            </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {settingsT('project_admins_title')}: {projectAdminCount}
+            </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {settingsT('workspace_project_owner_label')}: {ownerDisplayName}
+            </div>
           </div>
 
           <GovernanceSection
@@ -431,28 +425,5 @@ export default function SettingsPage({ params }: SettingsPageProps) {
         </div>
       </PageLayout>
     </PageState>
-  );
-}
-
-function SettingsSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 text-lg font-semibold text-foreground break-all">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

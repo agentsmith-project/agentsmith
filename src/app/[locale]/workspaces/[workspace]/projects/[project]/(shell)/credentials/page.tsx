@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
-import { KeyRound, Plus, RotateCcw, ShieldCheck } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { CredentialsAPI, getApiClient } from '@/lib/api';
 import type { Credential } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -162,6 +162,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
+            variant="compact"
             actions={(
               <CredentialsHeaderActions
                 basePath={basePath}
@@ -174,6 +175,15 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         )}
         toolbar={(
           <PageToolbar>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {credentialList.length} {t('title').toLowerCase()}
+            </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {rotatedCount} {t('rotate.title').toLowerCase()}
+            </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {credentialTypeCount} {t('fingerprint').toLowerCase()}
+            </div>
             <Button
               onClick={() => setCreateDialogOpen(true)}
               disabled={!canManageCredentials}
@@ -187,27 +197,6 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         )}
       >
         <div className="w-full space-y-4">
-          <div className="grid gap-3 md:grid-cols-3">
-            <CredentialsSummaryCard
-              icon={<KeyRound className="h-4 w-4" />}
-              label={t('table.name')}
-              value={String(credentialList.length)}
-              helper={t('create')}
-            />
-            <CredentialsSummaryCard
-              icon={<RotateCcw className="h-4 w-4" />}
-              label={t('rotate.title')}
-              value={String(rotatedCount)}
-              helper={t('table.last_rotated')}
-            />
-            <CredentialsSummaryCard
-              icon={<ShieldCheck className="h-4 w-4" />}
-              label={t('fingerprint')}
-              value={String(credentialTypeCount)}
-              helper={t('table.last_rotated')}
-            />
-          </div>
-
           <CredentialsContent
             isLoading={isLoading}
             credentials={credentials}
@@ -245,28 +234,5 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
         />
       </PageLayout>
     </PageState>
-  );
-}
-
-function CredentialsSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

@@ -148,6 +148,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
+            variant="compact"
           />
         )}
       >
@@ -233,6 +234,7 @@ export function AuditPage({ workspaceId, projectId, defaultEndUserId, locale = '
           <PageHeader
             title={t('title')}
             subtitle={t('subtitle')}
+            variant="compact"
           />
         )}
       >

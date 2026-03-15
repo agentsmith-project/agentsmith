@@ -56,7 +56,6 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
   const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
   const peopleCount = contextValue.members.length;
   const joinRequestCount = Array.isArray(joinRequests) ? joinRequests.length : 0;
-  const selectedCount = contextValue.selectedMemberIds.length;
   const tabFocusTitle = t(`tab_focus.${activeTab}.title`);
   const tabFocusDescription = t(`tab_focus.${activeTab}.description`);
 
@@ -74,6 +73,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
           <PageHeader
             title={t('title')}
             subtitle={t('description')}
+            variant="compact"
             actions={(
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -112,20 +112,6 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
           />
         )}
       >
-        <div className="grid gap-3 md:grid-cols-3">
-          <MembersSummaryCard label={t('tabs.people')} value={String(peopleCount)} helper={t('summary.people_helper')} />
-          <MembersSummaryCard
-            label={t('tabs.requests')}
-            value={String(joinRequestCount)}
-            helper={isLoadingRequests ? t('limit_history.loading') : t('summary.requests_helper')}
-          />
-          <MembersSummaryCard
-            label={t('permissions.title')}
-            value={String(selectedCount)}
-            helper={t('summary.permissions_helper')}
-          />
-        </div>
-
         {drilldownContext ? (
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
@@ -141,8 +127,27 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
               <p className="text-sm text-secondary">{tabFocusDescription}</p>
             </div>
             <TabsList className="flex-shrink-0 rounded-[18px] border border-white/6 bg-white/[0.04] p-1">
-              <TabsTrigger value="people">{t('tabs.people')}</TabsTrigger>
-              <TabsTrigger value="requests">{t('tabs.requests')}</TabsTrigger>
+              <TabsTrigger value="people">
+                <span className="inline-flex items-center gap-2">
+                  <span>{t('tabs.people')}</span>
+                  <span className="rounded-full border border-white/8 bg-white/[0.06] px-2 py-0.5 text-[11px] text-tertiary">
+                    {peopleCount}
+                  </span>
+                </span>
+              </TabsTrigger>
+              <TabsTrigger value="requests">
+                <span className="inline-flex items-center gap-2">
+                  <span>{t('tabs.requests')}</span>
+                  {joinRequestCount > 0 ? (
+                    <span
+                      className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] text-accent"
+                      data-testid="members__requests-badge"
+                    >
+                      {joinRequestCount}
+                    </span>
+                  ) : null}
+                </span>
+              </TabsTrigger>
               <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
             </TabsList>
           </div>
@@ -254,22 +259,4 @@ function RemoveMemberAlertDialog() {
 
 export function MembersPage(props: MembersPageProps) {
   return <MembersPageContent {...props} />;
-}
-
-function MembersSummaryCard({
-  label,
-  value,
-  helper,
-}: {
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
-      <div className="mt-2 text-2xl font-semibold text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
-  );
 }

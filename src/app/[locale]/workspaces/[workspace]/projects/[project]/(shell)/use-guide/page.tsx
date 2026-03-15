@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
-import { BookOpen, KeySquare, Waypoints } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
@@ -125,29 +124,8 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
 
   return (
     <PageState state="success">
-      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} />}>
+      <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} variant="compact" />}>
         <div className="space-y-4" data-testid="use-guide__page">
-          <div className="grid gap-3 md:grid-cols-3">
-            <UseGuideSummaryCard
-              icon={<BookOpen className="h-4 w-4" />}
-              label={t('steps.title')}
-              value={t('quick_links.title')}
-              helper={t('subtitle')}
-            />
-            <UseGuideSummaryCard
-              icon={<Waypoints className="h-4 w-4" />}
-              label={t('gateway.title')}
-              value={gatewayBaseUrl}
-              helper={t('gateway.description')}
-            />
-            <UseGuideSummaryCard
-              icon={<KeySquare className="h-4 w-4" />}
-              label={t('quick_links.api_keys')}
-              value={t('claude.title')}
-              helper={t('codex.title')}
-            />
-          </div>
-
           <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('steps.title')}</CardTitle>
@@ -240,28 +218,5 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
         </div>
       </PageLayout>
     </PageState>
-  );
-}
-
-function UseGuideSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 break-all text-sm font-semibold text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

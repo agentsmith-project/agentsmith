@@ -10,7 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
-import { Gauge, ShieldCheck, Users } from 'lucide-react';
+import { ShieldCheck } from 'lucide-react';
 import { AuditAPI, EndpointAPI, MemberAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
@@ -426,6 +426,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
             <PageHeader
               title={tNav('resource_policy')}
               subtitle={tResource('subtitle')}
+              variant="compact"
               actions={(
                 <ResourcePolicyHeaderActions
                   basePath={basePath}
@@ -460,6 +461,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           <PageHeader
             title={tNav('resource_policy')}
             subtitle={tResource('subtitle')}
+            variant="compact"
             actions={(
               <ResourcePolicyHeaderActions
                 basePath={basePath}
@@ -475,39 +477,22 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
           <GovernanceDrilldownBanner context={drilldownContext} locale={locale} />
         ) : null}
         <div className="space-y-4">
-          <div className="rounded-[22px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))] p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:p-5">
-            <div className="mb-4 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-              <div>
-                <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
-                  <ShieldCheck className="h-3.5 w-3.5" />
-                  {tNav('resource_policy')}
-                </div>
-                <p className="mt-3 max-w-2xl text-sm text-secondary">{tResource('subtitle')}</p>
-              </div>
-              <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-sm text-secondary">
-                {tResource('resource_type.endpoint')} {groupedRows.endpoint.length}
-              </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-accent">
+              <ShieldCheck className="h-3.5 w-3.5" />
+              {groupedRows.endpoint.length} {tResource('resource_type.endpoint').toLowerCase()}
             </div>
-            <div className="grid gap-3 md:grid-cols-3">
-              <ResourcePolicySummaryCard
-                icon={<Gauge className="h-4 w-4" />}
-                label={tResource('resource_type.endpoint')}
-                value={String(groupedRows.endpoint.length)}
-                helper={tResource('default_model_hint')}
-              />
-              <ResourcePolicySummaryCard
-                icon={<ShieldCheck className="h-4 w-4" />}
-                label={tResource('access_mode.label')}
-                value={selectedResource?.name ?? tResource('select_resource')}
-                helper={selectedResource ? tResource(`resource_type.${selectedResource.type}`) : tResource('loading_policy')}
-              />
-              <ResourcePolicySummaryCard
-                icon={<Users className="h-4 w-4" />}
-                label={tResource('subjects.title')}
-                value={String(validSubjects.length)}
-                helper={accessMode === 'allow_list' ? tResource('access_mode.allow_list') : tResource('access_mode.allow_all_members')}
-              />
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {tResource('access_mode.label')}: {accessMode === 'allow_list' ? tResource('access_mode.allow_list') : tResource('access_mode.allow_all_members')}
             </div>
+            <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+              {tResource('subjects.title')}: {validSubjects.length}
+            </div>
+            {selectedResource ? (
+              <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
+                {selectedResource.name}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-[22px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
@@ -575,28 +560,5 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
         </div>
       </PageLayout>
     </PageState>
-  );
-}
-
-function ResourcePolicySummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[18px] border border-white/6 bg-black/15 p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 truncate text-lg font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

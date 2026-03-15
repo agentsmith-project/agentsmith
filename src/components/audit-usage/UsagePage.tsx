@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Gauge, RefreshCw, Wallet } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { UsageView } from './UsageView';
@@ -173,49 +173,38 @@ export function UsagePage({
   return (
     <PageLayout
       header={(
-        <PageHeader
-          title={t('title')}
-          subtitle={t('subtitle')}
-          actions={(
-            <Button variant="outline" onClick={handleRefresh} disabled={usageLoading}>
+          <PageHeader
+            title={t('title')}
+            subtitle={t('subtitle')}
+            variant="compact"
+            actions={(
+              <Button variant="outline" onClick={handleRefresh} disabled={usageLoading}>
               <RefreshCw className={`mr-2 h-4 w-4 ${usageLoading ? 'animate-spin' : ''}`} />
               {commonT('refresh')}
             </Button>
           )}
         />
       )}
-      toolbar={(
-        <PageToolbar className="w-full">
-          <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2 text-xs text-tertiary" data-testid="usage__my-scope-badge">
-            {t('scope_my_usage')}
-          </div>
-        </PageToolbar>
-      )}
-    >
-      <div className="grid gap-3 md:grid-cols-3">
-        <UsageSummaryCard
-          icon={<Gauge className="h-4 w-4" />}
-          label={t('title')}
-          value={String(endpointOptions.length)}
-          helper={t('view.panel_title')}
-        />
-        <UsageSummaryCard
-          icon={<Wallet className="h-4 w-4" />}
-          label={t('view.limits_section_title')}
-          value={String(totalLimitCards)}
-          helper={t('view.rate_limit_title')}
-        />
-        <UsageSummaryCard
-          icon={<RefreshCw className="h-4 w-4" />}
-          label={t('scope_my_usage')}
-          value={periodHours === 48 ? '48h' : '24h'}
-          helper={commonT('refresh')}
-        />
-      </div>
-
-      <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-        <UsageView
-          records={usageData?.items ?? []}
+        toolbar={(
+          <PageToolbar className="w-full">
+            <div className="rounded-md border border-subtle bg-bg-base/20 px-3 py-2 text-xs text-tertiary" data-testid="usage__my-scope-badge">
+              {t('scope_my_usage')}
+            </div>
+            <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__endpoint-count">
+              {endpointOptions.length} {t('view.panel_title').toLowerCase()}
+            </div>
+            <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__limits-count">
+              {totalLimitCards} {t('view.limits_section_title').toLowerCase()}
+            </div>
+            <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__period-badge">
+              {periodHours}h
+            </div>
+          </PageToolbar>
+        )}
+      >
+        <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+          <UsageView
+            records={usageData?.items ?? []}
           loading={usageLoading}
           periodHours={periodHours}
           onPeriodChange={setPeriodHours}
@@ -226,28 +215,5 @@ export function UsagePage({
         />
       </div>
     </PageLayout>
-  );
-}
-
-function UsageSummaryCard({
-  icon,
-  label,
-  value,
-  helper,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  helper: string;
-}) {
-  return (
-    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
-      <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-        {icon}
-        {label}
-      </div>
-      <div className="mt-3 text-2xl font-semibold tracking-tight text-foreground">{value}</div>
-      <div className="mt-1 text-sm text-secondary">{helper}</div>
-    </div>
   );
 }

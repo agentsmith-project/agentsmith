@@ -10,6 +10,11 @@ const mockCreateTemplateMutateAsync = vi.fn().mockResolvedValue({
   name: 'Custom Template',
   permissions: ['project:endpoint:use', 'project:membership:update'],
 });
+const mockUpdateTemplateMutateAsync = vi.fn().mockResolvedValue({
+  id: 'tpl_custom',
+  name: 'Custom Template',
+  permissions: ['project:endpoint:use', 'project:membership:update'],
+});
 const mockUpdateMutateAsync = vi.fn().mockResolvedValue({});
 const mockDeleteMutateAsync = vi.fn().mockResolvedValue({});
 const mockRefetchMembers = vi.fn().mockResolvedValue(undefined);
@@ -65,6 +70,10 @@ vi.mock('@/lib/hooks/use-members', () => ({
     mutateAsync: mockCreateTemplateMutateAsync,
     isPending: false,
   })),
+  useUpdatePermissionTemplate: vi.fn(() => ({
+    mutateAsync: mockUpdateTemplateMutateAsync,
+    isPending: false,
+  })),
   useCreateProjectGroup: vi.fn(() => ({
     mutateAsync: mockCreateMutateAsync,
     isPending: false,
@@ -108,11 +117,19 @@ describe('ProjectGroupsSection', () => {
       name: 'Custom Template',
       permissions: ['project:endpoint:use', 'project:membership:update'],
     });
+    mockUpdateTemplateMutateAsync.mockResolvedValue({
+      id: 'tpl_custom',
+      name: 'Custom Template',
+      permissions: ['project:endpoint:use', 'project:membership:update'],
+    });
   });
 
   it('creates a group with template and selected members', async () => {
     const user = userEvent.setup();
     render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('members__group-template-permissions')).toBeInTheDocument();
+    expect(screen.getByText('project:endpoint:use')).toBeInTheDocument();
 
     await user.type(screen.getByTestId('members__group-name-input'), 'qa-team');
     await user.selectOptions(screen.getByTestId('members__group-template-select'), 'developer');
@@ -235,6 +252,12 @@ describe('ProjectGroupsSection', () => {
     });
 
     expect(screen.getByTestId('members__group-template-select')).toHaveValue('tpl_custom');
+  });
+
+  it('shows a visible action to configure permissions for the selected template', () => {
+    render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.getByTestId('members__group-create-template-btn')).toBeInTheDocument();
   });
 
   it('renders group management controls as read-only for project admins', () => {

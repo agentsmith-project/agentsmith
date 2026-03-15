@@ -26,14 +26,17 @@ interface GroupEditorCardProps {
   membersT: (key: string) => string;
   pagedMembers: GroupMemberLike[];
   selectedMemberIds: string[];
+  selectedTemplate: GroupTemplateOption | null;
   selectedTemplatePermissionsCount?: number;
   selectedTemplateId: string;
   templateOptions: GroupTemplateOption[];
   t: (key: string, values?: Record<string, string | number>) => string;
+  updateTemplatePending: boolean;
   updatePending: boolean;
   onCancelEdit: () => void;
   onClearPage: () => void;
   onCreateTemplate: () => void;
+  onEditTemplate: () => void;
   onGroupNameChange: (value: string) => void;
   onMemberPageChange: (nextPage: number) => void;
   onMemberSearchChange: (value: string) => void;
@@ -61,14 +64,17 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
   membersT,
   pagedMembers,
   selectedMemberIds,
+  selectedTemplate,
   selectedTemplatePermissionsCount,
   selectedTemplateId,
   templateOptions,
   t,
+  updateTemplatePending,
   updatePending,
   onCancelEdit,
   onClearPage,
   onCreateTemplate,
+  onEditTemplate,
   onGroupNameChange,
   onMemberPageChange,
   onMemberSearchChange,
@@ -120,17 +126,6 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
             <label className="block text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
               {t('select_template')}
             </label>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-7 px-2 text-[11px]"
-              disabled={!canManage || createTemplatePending}
-              onClick={onCreateTemplate}
-              data-testid="members__group-create-template-btn"
-            >
-              {t('create_template')}
-            </Button>
           </div>
           <select
             className="h-10 w-full rounded-xl border border-subtle bg-surface-high px-3 text-sm"
@@ -147,6 +142,68 @@ export const GroupEditorCard = React.forwardRef<HTMLDivElement, GroupEditorCardP
             ))}
           </select>
         </div>
+      </div>
+
+      <div className="space-y-3 rounded-[20px] border border-subtle bg-surface-high/70 p-4">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="space-y-1">
+            <p className="text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
+              {t('permissions_list')}
+            </p>
+            <p className="text-sm text-secondary">
+              {selectedTemplate
+                ? t('group_template_permissions_hint', {
+                    name: selectedTemplate.name,
+                    count: selectedTemplatePermissionsCount ?? 0,
+                  })
+                : t('group_template_permissions_empty')}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-2"
+              disabled={!canManage || createTemplatePending}
+              onClick={onCreateTemplate}
+              data-testid="members__group-create-template-btn"
+            >
+              {t('group_create_template_cta')}
+            </Button>
+            {selectedTemplate && !selectedTemplate.is_default ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="gap-2"
+                disabled={!canManage || updateTemplatePending}
+                onClick={onEditTemplate}
+                data-testid="members__group-edit-template-btn"
+              >
+                {t('group_edit_template_cta')}
+              </Button>
+            ) : null}
+          </div>
+        </div>
+
+        {selectedTemplate ? (
+          <div className="space-y-2" data-testid="members__group-template-permissions">
+            {selectedTemplate.description ? (
+              <p className="text-xs leading-5 text-tertiary">{selectedTemplate.description}</p>
+            ) : null}
+            <div className="flex flex-wrap gap-2">
+              {selectedTemplate.permissions.map((permission) => (
+                <span
+                  key={permission}
+                  className="rounded-full border border-white/8 bg-white/[0.04] px-2.5 py-1 text-[11px] text-secondary"
+                >
+                  {permission}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <div>

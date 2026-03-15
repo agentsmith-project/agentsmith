@@ -21,6 +21,7 @@ import {
   useMembers,
   usePermissionTemplates,
   useProjectGroups,
+  useUpdatePermissionTemplate,
   useUpdateProjectGroup,
 } from '@/lib/hooks/use-members';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
@@ -30,6 +31,7 @@ import { toast } from '@/components/ui/toast';
 import { GroupEditorCard } from './project-groups-section/GroupEditorCard';
 import { GroupList } from './project-groups-section/GroupList';
 import { CreateTemplateDrawer } from './CreateTemplateDrawer';
+import { EditTemplateDrawer } from './EditTemplateDrawer';
 import type { PreviewDiff } from './project-groups-section/types';
 import {
   buildDefaultTemplates,
@@ -68,6 +70,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const [previewGroupId, setPreviewGroupId] = React.useState<string | null>(null);
   const [groupToDelete, setGroupToDelete] = React.useState<ProjectGroup | null>(null);
   const [createTemplateOpen, setCreateTemplateOpen] = React.useState(false);
+  const [editTemplateOpen, setEditTemplateOpen] = React.useState(false);
   const [lastApplyResult, setLastApplyResult] = React.useState<{
     groupId: string;
     appliedCount: number;
@@ -76,6 +79,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   } | null>(null);
   const editorCardRef = React.useRef<HTMLDivElement | null>(null);
   const groupNameInputRef = React.useRef<HTMLInputElement | null>(null);
+  const updatePermissionTemplate = useUpdatePermissionTemplate(workspaceId, projectId, templateId);
 
   const defaultTemplates = React.useMemo(
     () => buildDefaultTemplates(t),
@@ -88,6 +92,10 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
   const selectedTemplatePermissionsCount =
     templateOptions.find((template) => template.id === templateId)?.permissions.length ?? 0;
+  const selectedTemplate = React.useMemo(
+    () => templateOptions.find((template) => template.id === templateId) ?? null,
+    [templateId, templateOptions],
+  );
   const filteredMembers = React.useMemo(() => {
     const keyword = memberSearch.trim().toLowerCase();
     if (!keyword) return members;
@@ -195,6 +203,27 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
       return [...prev, created];
     });
     setTemplateId(created.id);
+  };
+
+  const handleEditTemplate = async (data: {
+    name: string;
+    description?: string;
+    permissions: string[];
+  }) => {
+    if (!selectedTemplate || selectedTemplate.is_default) return;
+    await updatePermissionTemplate.mutateAsync(data);
+    setInlineTemplates((prev) =>
+      prev.map((template) =>
+        template.id === selectedTemplate.id
+          ? {
+              ...template,
+              name: data.name,
+              description: data.description,
+              permissions: data.permissions,
+            }
+          : template,
+      ),
+    );
   };
 
   React.useEffect(() => {
@@ -312,15 +341,18 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
           membersT={membersT}
           pagedMembers={pagedMembers}
           selectedMemberIds={selectedMemberIds}
+          selectedTemplate={selectedTemplate}
           selectedTemplateId={templateId}
           selectedTemplatePermissionsCount={selectedTemplatePermissionsCount}
           templateOptions={templateOptions}
           t={t}
           updatePending={updateGroup.isPending}
           createTemplatePending={createPermissionTemplate.isPending}
+          updateTemplatePending={updatePermissionTemplate.isPending}
           onCancelEdit={resetForm}
           onClearPage={deselectAllPagedMembers}
           onCreateTemplate={() => setCreateTemplateOpen(true)}
+          onEditTemplate={() => setEditTemplateOpen(true)}
           onGroupNameChange={setName}
           onMemberPageChange={setMemberPage}
           onMemberSearchChange={(value) => {
@@ -410,6 +442,22 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
         onOpenChange={setCreateTemplateOpen}
         onSubmit={handleCreateTemplate}
       />
+
+      {selectedTemplate && !selectedTemplate.is_default ? (
+        <EditTemplateDrawer
+          open={editTemplateOpen}
+          onOpenChange={setEditTemplateOpen}
+          template={{
+            id: selectedTemplate.id,
+            name: selectedTemplate.name,
+            description: selectedTemplate.description,
+            permissions: selectedTemplate.permissions,
+            is_default: false,
+            is_readonly: false,
+          }}
+          onSubmit={handleEditTemplate}
+        />
+      ) : null}
     </div>
   );
 }

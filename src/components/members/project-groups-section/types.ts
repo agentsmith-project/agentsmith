@@ -17,6 +17,7 @@ export type ApplyResultState = {
 export type GroupTemplateOption = {
   id: string;
   name: string;
+  description?: string;
   permissions: string[];
   is_default?: boolean;
 };

@@ -10,10 +10,34 @@ import type {
 
 export function buildDefaultTemplates(t: (key: string) => string): GroupTemplateOption[] {
   return [
-    { id: 'owner', name: t('default_templates.owner'), permissions: [...GROUP_TEMPLATES.owner], is_default: true },
-    { id: 'admin', name: t('default_templates.admin'), permissions: [...GROUP_TEMPLATES.admin], is_default: true },
-    { id: 'developer', name: t('default_templates.developer'), permissions: [...GROUP_TEMPLATES.developer], is_default: true },
-    { id: 'user', name: t('default_templates.user'), permissions: [...GROUP_TEMPLATES.user], is_default: true },
+    {
+      id: 'owner',
+      name: t('default_templates.owner'),
+      description: t('default_templates.owner_description'),
+      permissions: [...GROUP_TEMPLATES.owner],
+      is_default: true,
+    },
+    {
+      id: 'admin',
+      name: t('default_templates.admin'),
+      description: t('default_templates.admin_description'),
+      permissions: [...GROUP_TEMPLATES.admin],
+      is_default: true,
+    },
+    {
+      id: 'developer',
+      name: t('default_templates.developer'),
+      description: t('default_templates.developer_description'),
+      permissions: [...GROUP_TEMPLATES.developer],
+      is_default: true,
+    },
+    {
+      id: 'user',
+      name: t('default_templates.user'),
+      description: t('default_templates.user_description'),
+      permissions: [...GROUP_TEMPLATES.user],
+      is_default: true,
+    },
   ];
 }
 

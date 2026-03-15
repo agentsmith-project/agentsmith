@@ -1,5 +1,9 @@
 import type { WorkspaceRecord } from './resource-models.js';
 import { getRegisteredWorkspaceConfig, readRegisteredWorkspaces } from './workspace-registry.js';
+import {
+  WORKSPACE_BUILT_IN_GROUPS,
+  WORKSPACE_BUILT_IN_TEMPLATE_IDS,
+} from './workspace-governance-model.js';
 
 export const OWNER_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
@@ -131,8 +135,13 @@ export function buildWorkspaceMembersFromConfig(args: {
   user_id: string;
   name: string;
   email: string;
-  role: 'owner' | 'admin' | 'developer' | 'user';
-  governance_group: 'wheel' | 'user';
+  groups: Array<{
+    id: string;
+    name: string;
+    permission_template_id: string;
+    built_in: boolean;
+    system_key?: string;
+  }>;
   permissions: readonly string[];
   status: 'active';
   joined_at: string;
@@ -144,8 +153,13 @@ export function buildWorkspaceMembersFromConfig(args: {
     user_id: string;
     name: string;
     email: string;
-    role: 'owner' | 'admin' | 'developer' | 'user';
-    governance_group: 'wheel' | 'user';
+    groups: Array<{
+      id: string;
+      name: string;
+      permission_template_id: string;
+      built_in: boolean;
+      system_key?: string;
+    }>;
     permissions: readonly string[];
     status: 'active';
     joined_at: string;
@@ -153,7 +167,7 @@ export function buildWorkspaceMembersFromConfig(args: {
 
   const pushMember = (
     member: { user_id: string; email: string; name: string | null },
-    role: 'admin' | 'developer',
+    group: typeof WORKSPACE_BUILT_IN_GROUPS.owner | typeof WORKSPACE_BUILT_IN_GROUPS.projectCreators,
     permissions: readonly string[],
   ) => {
     const userId = member.user_id.trim();
@@ -164,8 +178,13 @@ export function buildWorkspaceMembersFromConfig(args: {
       user_id: userId,
       name: member.name || member.email || userId,
       email: member.email,
-      role,
-      governance_group: role === 'admin' ? 'wheel' : 'user',
+      groups: [{
+        id: group.id,
+        name: group.name,
+        permission_template_id: group.permission_template_id,
+        built_in: true,
+        system_key: group.system_key,
+      }],
       permissions,
       status: 'active',
       joined_at: workspaceCreatedAt,
@@ -179,7 +198,7 @@ export function buildWorkspaceMembersFromConfig(args: {
         email: registered.workspace_admin,
         name: registered.workspace_admin_name ?? null,
       },
-      'admin',
+      WORKSPACE_BUILT_IN_GROUPS.owner,
       OWNER_WORKSPACE_PERMISSIONS,
     );
   } else if (registered?.workspace_admin) {
@@ -191,7 +210,7 @@ export function buildWorkspaceMembersFromConfig(args: {
           : `${registered.workspace_admin}@workspace.local`,
         name: registered.workspace_admin,
       },
-      'admin',
+      WORKSPACE_BUILT_IN_GROUPS.owner,
       OWNER_WORKSPACE_PERMISSIONS,
     );
   }
@@ -199,7 +218,7 @@ export function buildWorkspaceMembersFromConfig(args: {
     if (registered?.workspace_admin_user_id && creator.user_id === registered.workspace_admin_user_id) {
       continue;
     }
-    pushMember(creator, 'developer', PROJECT_CREATOR_WORKSPACE_PERMISSIONS);
+    pushMember(creator, WORKSPACE_BUILT_IN_GROUPS.projectCreators, PROJECT_CREATOR_WORKSPACE_PERMISSIONS);
   }
 
   const actorPermissions = resolveWorkspacePermissions({
@@ -214,12 +233,29 @@ export function buildWorkspaceMembersFromConfig(args: {
     user_id: actorId,
     name: actorName,
     email: actorEmail,
-    role: actorPermissions.includes('workspace:governance:update')
-      ? 'admin'
+    groups: actorPermissions.includes('workspace:governance:update')
+      ? [{
+          id: WORKSPACE_BUILT_IN_GROUPS.owner.id,
+          name: WORKSPACE_BUILT_IN_GROUPS.owner.name,
+          permission_template_id: WORKSPACE_BUILT_IN_TEMPLATE_IDS.owner,
+          built_in: true,
+          system_key: 'owner',
+        }]
       : actorPermissions.includes('workspace:project:create')
-        ? 'developer'
-        : 'user',
-    governance_group: actorPermissions.includes('workspace:governance:update') ? 'wheel' : 'user',
+        ? [{
+            id: WORKSPACE_BUILT_IN_GROUPS.projectCreators.id,
+            name: WORKSPACE_BUILT_IN_GROUPS.projectCreators.name,
+            permission_template_id: WORKSPACE_BUILT_IN_TEMPLATE_IDS.projectCreator,
+            built_in: true,
+            system_key: 'project_creators',
+          }]
+        : [{
+            id: WORKSPACE_BUILT_IN_GROUPS.members.id,
+            name: WORKSPACE_BUILT_IN_GROUPS.members.name,
+            permission_template_id: WORKSPACE_BUILT_IN_TEMPLATE_IDS.member,
+            built_in: true,
+            system_key: 'members',
+          }],
     permissions: actorPermissions,
     status: 'active',
     joined_at: workspaceCreatedAt,

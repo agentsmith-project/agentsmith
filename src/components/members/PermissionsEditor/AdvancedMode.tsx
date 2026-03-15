@@ -12,7 +12,7 @@ export interface AdvancedModeProps {
   selectedPermissions: Set<string>;
   onPermissionToggle: (permission: string, checked: boolean) => void;
   onReset?: () => void;
-  initialTemplate?: 'owner' | 'admin' | 'developer' | 'user' | null;
+  initialTemplate?: string | null;
 }
 
 export function AdvancedMode({

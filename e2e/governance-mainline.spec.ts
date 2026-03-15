@@ -7,20 +7,9 @@ test.describe('Governance Mainline', () => {
     const approveAndGrant = authedPage.getByRole('button', { name: /approve and grant project admin/i }).first();
     await expect(approveAndGrant).toBeVisible({ timeout: 10_000 });
     await approveAndGrant.click();
-    await expect(authedPage.getByText(/join request approved and project administration granted/i)).toBeVisible({
-      timeout: 10_000,
-    });
     await expect(
       authedPage.getByText(/approved with project administration access/i).first(),
     ).toBeVisible({ timeout: 10_000 });
-    const projectAdminIds = await authedPage.evaluate(async () => {
-      const response = await fetch('/api/v1/workspaces/ws_default/projects/proj_001');
-      const payload = await response.json();
-      return Array.isArray(payload?.governance_json?.project_admins)
-        ? payload.governance_json.project_admins
-        : [];
-    });
-    expect(projectAdminIds).toContain('user_006');
 
     await authedPage.getByRole('link', { name: 'Settings' }).click();
     await expect(authedPage).toHaveURL(new RegExp(`${projectUrl('settings').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`));

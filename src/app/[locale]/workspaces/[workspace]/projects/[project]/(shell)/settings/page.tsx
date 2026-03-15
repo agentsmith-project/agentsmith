@@ -29,11 +29,12 @@ import {
 } from '@/lib/hooks/use-permissions';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
-import { useMembers } from '@/lib/hooks/use-members';
+import { useMembers, useProjectGroups, useUpdateProjectGroup } from '@/lib/hooks/use-members';
 import { GeneralSettingsSection } from './_components/GeneralSettingsSection';
 import { GovernanceSection } from './_components/GovernanceSection';
 import { ProjectAdminsSection } from './_components/ProjectAdminsSection';
 import { ProjectOwnerSection } from './_components/ProjectOwnerSection';
+import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 import type {
   ResolvedProjectSettingsParams,
   SettingsProjectAdminOption,
@@ -95,6 +96,14 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     resolvedParams?.workspace ?? '',
     resolvedParams?.project ?? ''
   );
+  const { data: projectGroups = [] } = useProjectGroups(
+    resolvedParams?.workspace ?? '',
+    resolvedParams?.project ?? '',
+  );
+  const updateProjectGroup = useUpdateProjectGroup(
+    resolvedParams?.workspace ?? '',
+    resolvedParams?.project ?? '',
+  );
   const [selectedProjectAdmins, setSelectedProjectAdmins] = useState<string[]>([]);
   const [savingProjectAdmins, setSavingProjectAdmins] = useState(false);
   const [selectedProjectOwner, setSelectedProjectOwner] = useState('');
@@ -102,17 +111,28 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
   useEffect(() => {
     if (currentProject) {
-      setName(currentProject.name);
-      setDescription(currentProject.description ?? '');
-      setVisibility(currentProject.visibility || 'private');
-      setJoinPolicy(currentProject.join_policy || 'approval_required');
-      const rawAdmins = currentProject.governance_json?.['project_admins'];
-      setSelectedProjectAdmins(
-        Array.isArray(rawAdmins) ? rawAdmins.filter((value): value is string => typeof value === 'string') : [],
-      );
-      setSelectedProjectOwner(currentProject.owner_id);
+      const adminGroup = projectGroups.find((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins);
+      const nextAdminIds = adminGroup?.member_ids ?? [];
+      setName((current) => (current === currentProject.name ? current : currentProject.name));
+      setDescription((current) => (current === (currentProject.description ?? '') ? current : (currentProject.description ?? '')));
+      setVisibility((current) => (current === (currentProject.visibility || 'private') ? current : (currentProject.visibility || 'private')));
+      setJoinPolicy((current) => (
+        current === (currentProject.join_policy || 'approval_required')
+          ? current
+          : (currentProject.join_policy || 'approval_required')
+      ));
+      setSelectedProjectAdmins((current) => {
+        if (
+          current.length === nextAdminIds.length
+          && current.every((value, index) => value === nextAdminIds[index])
+        ) {
+          return current;
+        }
+        return [...nextAdminIds];
+      });
+      setSelectedProjectOwner((current) => (current === currentProject.owner_id ? current : currentProject.owner_id));
     }
-  }, [currentProject]);
+  }, [currentProject, projectGroups]);
 
   const selectableProjectAdminMembers = useMemo<SettingsProjectAdminOption[]>(() => {
     const merged = new Map<string, SettingsProjectAdminOption>();
@@ -182,17 +202,21 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     if (!resolvedParams || !currentProject || !canAssignProjectAdmins) return;
     setSavingProjectAdmins(true);
     try {
-      await projectAPI.update(resolvedParams.workspace!, resolvedParams.project!, {
-        governance_json: {
-          ...(currentProject.governance_json ?? {}),
-          project_admins: selectedProjectAdmins,
-        },
+      await updateProjectGroup.mutateAsync({
+        groupId: PROJECT_BUILT_IN_GROUP_IDS.admins,
+        data: { member_ids: selectedProjectAdmins },
       });
       queryClient.invalidateQueries({
         queryKey: ['workspaces', resolvedParams.workspace, 'projects', resolvedParams.project],
       });
       queryClient.invalidateQueries({
         queryKey: ['workspaces', resolvedParams.workspace, 'projects'],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['project-groups', resolvedParams.workspace, resolvedParams.project],
+      });
+      queryClient.invalidateQueries({
+        queryKey: ['members', resolvedParams.workspace, resolvedParams.project],
       });
       toast.success(commonT('refreshed_data'));
     } catch (error) {

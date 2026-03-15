@@ -8,10 +8,12 @@ import {
   useHasPermission,
   useCanReadProjectSettings,
 } from '@/lib/hooks/use-permissions';
+import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 
 const mockPush = vi.fn();
 const mockProjectUpdate = vi.fn();
 const mockProjectDelete = vi.fn();
+const mockUpdateProjectGroup = vi.fn();
 
 const STABLE_PROJECT = {
   id: 'proj_1',
@@ -36,6 +38,13 @@ const STABLE_PROJECT_MEMBERS = [
   { id: 'owner_1', user_id: 'owner_1', name: 'Owner', email: 'owner@example.com' },
   { id: 'admin_1', user_id: 'admin_1', name: 'Project Admin', email: 'admin@example.com' },
   { id: 'member_1', user_id: 'member_1', name: 'Joined Member', email: 'member@example.com' },
+];
+const STABLE_PROJECT_GROUPS = [
+  {
+    id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+    name: 'Project Admins',
+    member_ids: ['admin_1'],
+  },
 ];
 
 vi.mock('next/navigation', () => ({
@@ -67,6 +76,13 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
 vi.mock('@/lib/hooks/use-members', () => ({
   useMembers: vi.fn(() => ({
     data: STABLE_PROJECT_MEMBERS,
+  })),
+  useProjectGroups: vi.fn(() => ({
+    data: STABLE_PROJECT_GROUPS,
+  })),
+  useUpdateProjectGroup: vi.fn(() => ({
+    mutateAsync: mockUpdateProjectGroup,
+    isPending: false,
   })),
 }));
 
@@ -139,6 +155,7 @@ describe('SettingsPage route', () => {
     mockAuthUser.mockReturnValue({ id: 'owner_1' });
     mockProjectUpdate.mockResolvedValue(undefined);
     mockProjectDelete.mockResolvedValue(undefined);
+    mockUpdateProjectGroup.mockResolvedValue(undefined);
   });
 
   it('renders settings page when params and permission are valid', async () => {

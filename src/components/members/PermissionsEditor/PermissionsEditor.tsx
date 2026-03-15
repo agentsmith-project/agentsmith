@@ -22,6 +22,13 @@ import {
   ALL_PLATFORM_PERMISSIONS,
   type PlatformPermission,
 } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
+
+const BUILT_IN_TEMPLATE_PERMISSIONS = {
+  [PROJECT_BUILT_IN_TEMPLATE_IDS.owner]: GROUP_TEMPLATES.owner,
+  [PROJECT_BUILT_IN_TEMPLATE_IDS.admin]: GROUP_TEMPLATES.admin,
+  [PROJECT_BUILT_IN_TEMPLATE_IDS.member]: GROUP_TEMPLATES.user,
+} as const;
 
 export interface PermissionsEditorProps {
   initialPermissions: string[];
@@ -46,7 +53,7 @@ export function PermissionsEditor({
   );
   // Default to advanced when member has custom permissions (no matching template)
   const initialMode = React.useMemo(() => {
-    for (const [, perms] of Object.entries(GROUP_TEMPLATES)) {
+    for (const perms of Object.values(BUILT_IN_TEMPLATE_PERMISSIONS)) {
       const templateSet = new Set(perms);
       const currentSet = new Set(expandedInitial);
       if (templateSet.size === currentSet.size && Array.from(templateSet).every((p) => currentSet.has(p))) {
@@ -56,7 +63,7 @@ export function PermissionsEditor({
     return 'advanced';
   }, [expandedInitial]);
   const [mode, setMode] = React.useState<'template' | 'advanced'>(initialMode);
-  const [selectedTemplate, setSelectedTemplate] = React.useState<'owner' | 'admin' | 'developer' | 'user' | null>(null);
+  const [selectedTemplate, setSelectedTemplate] = React.useState<string | null>(null);
   const [selectedPermissions, setSelectedPermissions] = React.useState<Set<string>>(
     () => new Set(expandedInitial)
   );
@@ -79,12 +86,12 @@ export function PermissionsEditor({
 
   // Detect initial template (use expanded initial for comparison)
   React.useEffect(() => {
-    for (const [template, perms] of Object.entries(GROUP_TEMPLATES)) {
+    for (const [template, perms] of Object.entries(BUILT_IN_TEMPLATE_PERMISSIONS)) {
       const templateSet = new Set(perms);
       const currentSet = new Set(expandedInitial);
       if (templateSet.size === currentSet.size &&
           Array.from(templateSet).every((p) => currentSet.has(p))) {
-        setSelectedTemplate(template as 'owner' | 'admin' | 'developer' | 'user');
+        setSelectedTemplate(template);
         return;
       }
     }
@@ -116,23 +123,29 @@ export function PermissionsEditor({
     });
     // If template mode, mark as custom when permission diverges from template
     if (selectedTemplate) {
-      const templatePerms = new Set<string>(GROUP_TEMPLATES[selectedTemplate]);
+      const templatePerms = new Set<string>(
+        BUILT_IN_TEMPLATE_PERMISSIONS[selectedTemplate as keyof typeof BUILT_IN_TEMPLATE_PERMISSIONS] ?? [],
+      );
       if (checked ? !templatePerms.has(permission) : templatePerms.has(permission)) {
         setSelectedTemplate(null);
       }
     }
   }, [selectedTemplate]);
 
-  const handleTemplateChange = React.useCallback((template: 'owner' | 'admin' | 'developer' | 'user' | null) => {
+  const handleTemplateChange = React.useCallback((template: string | null) => {
     setSelectedTemplate(template);
     if (template) {
-      setSelectedPermissions(new Set(GROUP_TEMPLATES[template]));
+      setSelectedPermissions(
+        new Set(BUILT_IN_TEMPLATE_PERMISSIONS[template as keyof typeof BUILT_IN_TEMPLATE_PERMISSIONS] ?? []),
+      );
     }
   }, []);
 
   const handleReset = React.useCallback(() => {
     if (selectedTemplate) {
-      setSelectedPermissions(new Set(GROUP_TEMPLATES[selectedTemplate]));
+      setSelectedPermissions(
+        new Set(BUILT_IN_TEMPLATE_PERMISSIONS[selectedTemplate as keyof typeof BUILT_IN_TEMPLATE_PERMISSIONS] ?? []),
+      );
     }
   }, [selectedTemplate]);
 

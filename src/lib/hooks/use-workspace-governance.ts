@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { useWorkspaceMembers, useUpdateWorkspaceMemberGovernanceGroup } from '@/lib/hooks/use-workspaces';
+import { getWorkspaceAccessGroupLabel } from '@/lib/governance/member-groups';
 
 type GovernanceGroup = 'wheel' | 'user';
 export function useWorkspaceGovernance(workspaceId: string) {
@@ -12,15 +13,20 @@ export function useWorkspaceGovernance(workspaceId: string) {
     (
       member: {
         id: string;
-        role: 'owner' | 'admin' | 'developer' | 'user';
-        governance_group?: GovernanceGroup;
+        groups?: Array<{ id: string; name?: string; permission_template_id?: string; system_key?: string }>;
         permissions?: string[];
       }
     ) => {
-      // Use API governance_group when present; fallback inferred from permissions until backend returns it (see workspace-governance-backend-contract.md).
-      if (member.governance_group) return member.governance_group;
-      const permissions = new Set(member.permissions ?? []);
-      return permissions.has('workspace:governance:update') ? 'wheel' : 'user';
+      const accessGroup = getWorkspaceAccessGroupLabel({
+        groups: member.groups?.map((group) => ({
+          id: group.id,
+          name: group.name ?? group.id,
+          permission_template_id: group.permission_template_id ?? '',
+          system_key: group.system_key,
+        })),
+        permissions: member.permissions,
+      });
+      return accessGroup === 'owner' ? 'wheel' : 'user';
     },
     []
   );

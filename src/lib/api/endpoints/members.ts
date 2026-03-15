@@ -12,6 +12,7 @@ import type {
   ResourcePolicy,
   PermissionTemplate,
   ChangeHistoryEntry,
+  MemberGroupSummary,
 } from '../types';
 
 export interface Member {
@@ -19,15 +20,11 @@ export interface Member {
   email: string;
   name: string;
   avatar?: string;
-  role: 'owner' | 'admin' | 'developer' | 'user'; // project access group id (template key)
+  role?: 'owner' | 'admin' | 'developer' | 'user';
+  groups?: MemberGroupSummary[];
   permissions: string[]; // 平台层权限点
   status: 'active' | 'removed';
   joined_at: string;
-}
-
-export interface UpdateMemberGroupRequest {
-  role: 'owner' | 'admin' | 'developer' | 'user'; // access group id
-  permissions: string[];
 }
 
 export interface JoinRequest {
@@ -69,7 +66,8 @@ export interface JoinInviteActionResponse {
 export interface Membership {
   project_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'developer' | 'user'; // access group id
+  role?: 'owner' | 'admin' | 'developer' | 'user';
+  groups?: MemberGroupSummary[];
   permissions: string[];
   status: 'active' | 'pending' | 'suspended';
   joined_at: string;
@@ -82,6 +80,10 @@ export interface ProjectGroup {
   description?: string;
   permission_template_id: string;
   member_ids: string[];
+  built_in?: boolean;
+  system_key?: string;
+  membership_mode?: 'system_managed' | 'manual';
+  deletable?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -97,22 +99,6 @@ export class MemberAPI {
       `/workspaces/${workspaceId}/projects/${projectId}/members`
     );
     return response.items;
-  }
-
-  /**
-   * Update member access group and resolved permissions.
-   * Backend contract path keeps `/role` for now.
-   */
-  async updateMemberGroup(
-    workspaceId: string,
-    projectId: string,
-    memberId: string,
-    data: UpdateMemberGroupRequest
-  ): Promise<void> {
-    return this.client.put<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/members/${memberId}/role`,
-      data
-    );
   }
 
   /**
@@ -274,7 +260,11 @@ export class MemberAPI {
     const response = await this.client.get<{ items: PermissionTemplate[] }>(
       `/workspaces/${workspaceId}/projects/${projectId}/permission-templates`
     );
-    return response.items;
+    return (response.items ?? []).map((template) => ({
+      ...template,
+      is_default: template.is_default ?? template.built_in ?? false,
+      is_readonly: template.is_readonly ?? (template.editable === false || template.built_in === true),
+    }));
   }
 
   /**

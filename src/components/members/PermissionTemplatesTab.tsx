@@ -19,12 +19,13 @@ import {
   useBatchApplyPermissionTemplate,
   useMembers,
 } from '@/lib/hooks/use-members';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { getProjectBuiltInTemplateOptions } from '@/lib/governance/member-groups';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { CreateTemplateDrawer } from './CreateTemplateDrawer';
 import { ApplyTemplateDialog } from './ApplyTemplateDialog';
 import { EditTemplateDrawer } from './EditTemplateDrawer';
 import type { PermissionTemplate } from '@/lib/api/types';
+import { buildTemplateOptions } from './project-groups-section/utils';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,45 +63,11 @@ export function PermissionTemplatesTab({
   const [templateToDelete, setTemplateToDelete] = React.useState<PermissionTemplate | null>(null);
 
   const defaultTemplates = React.useMemo((): PermissionTemplate[] => {
-    return [
-      {
-        id: 'owner',
-        name: t('default_templates.owner'),
-        description: t('default_templates.owner_description'),
-        permissions: [...GROUP_TEMPLATES.owner],
-        is_default: true,
-        is_readonly: true,
-      },
-      {
-        id: 'admin',
-        name: t('default_templates.admin'),
-        description: t('default_templates.admin_description'),
-        permissions: [...GROUP_TEMPLATES.admin],
-        is_default: true,
-        is_readonly: true,
-      },
-      {
-        id: 'developer',
-        name: t('default_templates.developer'),
-        description: t('default_templates.developer_description'),
-        permissions: [...GROUP_TEMPLATES.developer],
-        is_default: true,
-        is_readonly: true,
-      },
-      {
-        id: 'user',
-        name: t('default_templates.user'),
-        description: t('default_templates.user_description'),
-        permissions: [...GROUP_TEMPLATES.user],
-        is_default: true,
-        is_readonly: true,
-      },
-    ];
+    return getProjectBuiltInTemplateOptions(t);
   }, [t]);
 
   const allTemplates = React.useMemo(() => {
-    if (!templates) return defaultTemplates;
-    return [...defaultTemplates, ...templates.filter((t) => !t.is_default)];
+    return buildTemplateOptions(defaultTemplates, templates ?? []) as PermissionTemplate[];
   }, [templates, defaultTemplates]);
 
   const customTemplates = allTemplates.filter((t) => !t.is_default);

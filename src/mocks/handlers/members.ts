@@ -3,6 +3,10 @@ import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
 import { ensureWorkspaceMember } from './workspace';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import {
+  PROJECT_BUILT_IN_GROUP_IDS,
+  PROJECT_BUILT_IN_TEMPLATE_IDS,
+} from '@/lib/governance/member-groups';
 import type { ChangeHistoryEntry } from '@/lib/api/types';
 import { projects } from './projects';
 
@@ -29,6 +33,10 @@ type ProjectGroup = {
   member_ids: string[];
   created_at: string;
   updated_at: string;
+  built_in?: boolean;
+  system_key?: string;
+  membership_mode?: 'manual' | 'system_managed';
+  deletable?: boolean;
 };
 
 type ResourcePolicy = {
@@ -52,8 +60,119 @@ const memberChangeHistoryStore: Record<string, ChangeHistoryEntry[]> = {};
 
 const joinRequests = [...joinRequestFixtures];
 
+type BuiltInProjectGroupState = {
+  owner: string[];
+  admins: string[];
+  members: string[];
+};
+
 function memberProjectKey(projectId: string, memberId: string): string {
   return `${projectId}:${memberId}`;
+}
+
+function buildInitialBuiltInProjectGroupState(projectId: string): BuiltInProjectGroupState {
+  const project = projects.find((item) => item.id === projectId);
+  const memberships = memberProjectMembershipFixtures.filter(
+    (item) => item.project_id === projectId && item.status === 'active',
+  );
+  const owner = project?.owner_id ? [project.owner_id] : [];
+  const admins = memberships
+    .filter((item) => item.user_id !== project?.owner_id && item.role === 'admin')
+    .map((item) => item.user_id);
+  const members = memberships.map((item) => item.user_id);
+  return { owner, admins, members };
+}
+
+const builtInProjectGroupsState = new Map<string, BuiltInProjectGroupState>();
+
+function getBuiltInProjectGroupState(projectId: string): BuiltInProjectGroupState {
+  const existing = builtInProjectGroupsState.get(projectId);
+  if (existing) {
+    return existing;
+  }
+  const seeded = buildInitialBuiltInProjectGroupState(projectId);
+  builtInProjectGroupsState.set(projectId, seeded);
+  return seeded;
+}
+
+function buildBuiltInProjectGroups(projectId: string): ProjectGroup[] {
+  const state = getBuiltInProjectGroupState(projectId);
+  const now = new Date().toISOString();
+  return [
+    {
+      id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+      project_id: projectId,
+      name: 'Project Owner',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+      member_ids: [...state.owner],
+      created_at: now,
+      updated_at: now,
+      built_in: true,
+      system_key: 'owner',
+      membership_mode: 'system_managed',
+      deletable: false,
+    },
+    {
+      id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+      project_id: projectId,
+      name: 'Project Admins',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
+      member_ids: [...state.admins],
+      created_at: now,
+      updated_at: now,
+      built_in: true,
+      system_key: 'admins',
+      membership_mode: 'system_managed',
+      deletable: false,
+    },
+    {
+      id: PROJECT_BUILT_IN_GROUP_IDS.members,
+      project_id: projectId,
+      name: 'Project Members',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+      member_ids: [...state.members],
+      created_at: now,
+      updated_at: now,
+      built_in: true,
+      system_key: 'members',
+      membership_mode: 'system_managed',
+      deletable: false,
+    },
+  ];
+}
+
+function syncMembershipPermissionsFromBuiltInGroups(projectId: string): void {
+  const state = getBuiltInProjectGroupState(projectId);
+  const ownerIds = new Set(state.owner);
+  const adminIds = new Set(state.admins);
+  const memberIds = new Set(state.members);
+  for (const membership of memberProjectMembershipFixtures) {
+    if (membership.project_id !== projectId) continue;
+    if (ownerIds.has(membership.user_id)) {
+      membership.role = 'owner';
+      membership.permissions = [...GROUP_TEMPLATES.owner];
+      continue;
+    }
+    if (adminIds.has(membership.user_id)) {
+      membership.role = 'admin';
+      membership.permissions = [...GROUP_TEMPLATES.admin];
+      continue;
+    }
+    if (memberIds.has(membership.user_id)) {
+      membership.role = 'user';
+      membership.permissions = [...GROUP_TEMPLATES.user];
+    }
+  }
+}
+
+function getResolvedProjectGroupIdsForUser(projectId: string, userId: string): string[] {
+  const builtIns = buildBuiltInProjectGroups(projectId)
+    .filter((group) => group.member_ids.includes(userId))
+    .map((group) => group.id);
+  const custom = projectGroups
+    .filter((group) => group.project_id === projectId && group.member_ids.includes(userId))
+    .map((group) => group.id);
+  return [...new Set([...builtIns, ...custom])];
 }
 
 function appendMemberChangeHistory(projectId: string, memberId: string, entry: Omit<ChangeHistoryEntry, 'id' | 'timestamp'>): void {
@@ -107,24 +226,25 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
 }
 
 function getDefaultProjectGroupIdsForUser(projectId: string, userId: string): string[] {
-  const ids = new Set<string>();
-  const membership = memberProjectMembershipFixtures.find(
-    (item) => item.project_id === projectId && item.user_id === userId && item.status === 'active',
-  );
-  if (membership?.role && ['owner', 'admin', 'developer', 'user'].includes(membership.role)) {
-    ids.add(membership.role);
-  }
-  const project = projects.find((item) => item.id === projectId);
-  if (project?.owner_id === userId) {
-    ids.add('owner');
-  }
-  return [...ids];
+  return buildBuiltInProjectGroups(projectId)
+    .filter((group) => group.member_ids.includes(userId))
+    .map((group) => group.id);
 }
 
 export const memberHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects/:prj/members', () =>
-    HttpResponse.json({ items: members }),
-  ),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/members', ({ params }) => {
+    const projectId = String(params.prj ?? '');
+    const items = members.map((member) => ({
+      ...member,
+      groups: getResolvedProjectGroupIdsForUser(projectId, member.id).map((groupId) => {
+        const group =
+          buildBuiltInProjectGroups(projectId).find((item) => item.id === groupId)
+          ?? projectGroups.find((item) => item.project_id === projectId && item.id === groupId);
+        return { id: groupId, name: group?.name ?? groupId };
+      }),
+    }));
+    return HttpResponse.json({ items });
+  }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/members', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const email = typeof body.email === 'string' ? body.email : 'new@example.com';
@@ -188,6 +308,10 @@ export const memberHandlers = [
         status: 'active',
         joined_at: request.reviewed_at,
       });
+    }
+    const builtInState = getBuiltInProjectGroupState(projectId);
+    if (!builtInState.members.includes(request.user_id)) {
+      builtInState.members.push(request.user_id);
     }
     return HttpResponse.json({ ok: true });
   }),
@@ -287,7 +411,15 @@ export const memberHandlers = [
       (item) => item.project_id === projectId && item.user_id === params.id
     );
     if (!membership) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    return HttpResponse.json(membership);
+    return HttpResponse.json({
+      ...membership,
+      groups: getResolvedProjectGroupIdsForUser(projectId, membership.user_id).map((groupId) => {
+        const group =
+          buildBuiltInProjectGroups(projectId).find((item) => item.id === groupId)
+          ?? projectGroups.find((item) => item.project_id === projectId && item.id === groupId);
+        return { id: groupId, name: group?.name ?? groupId };
+      }),
+    });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/resources/:type/:id/policy', ({ params }) => {
     const projectId = String(params.prj ?? '');
@@ -456,7 +588,9 @@ export const memberHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/groups', ({ params }) => {
     const projectId = String(params.prj ?? '');
-    return HttpResponse.json({ items: projectGroups.filter((item) => item.project_id === projectId) });
+    return HttpResponse.json({
+      items: [...buildBuiltInProjectGroups(projectId), ...projectGroups.filter((item) => item.project_id === projectId)],
+    });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/groups', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as {
@@ -483,12 +617,32 @@ export const memberHandlers = [
     return HttpResponse.json(group, { status: 201 });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/groups/:id', async ({ params, request }) => {
+    const projectId = String(params.prj ?? '');
     const body = (await request.json().catch(() => ({}))) as {
       name?: string;
       description?: string;
       permission_template_id?: string;
       member_ids?: string[];
     };
+    if (params.id === PROJECT_BUILT_IN_GROUP_IDS.admins) {
+      const state = getBuiltInProjectGroupState(projectId);
+      state.admins = Array.isArray(body.member_ids)
+        ? [...new Set(body.member_ids.filter((value): value is string => typeof value === 'string'))]
+        : state.admins;
+      state.members = Array.from(
+        new Set([
+          ...state.members,
+          ...state.owner,
+          ...state.admins,
+          ...memberProjectMembershipFixtures
+            .filter((item) => item.project_id === projectId && item.status === 'active')
+            .map((item) => item.user_id),
+        ]),
+      );
+      syncMembershipPermissionsFromBuiltInGroups(projectId);
+      const updatedGroup = buildBuiltInProjectGroups(projectId).find((group) => group.id === params.id);
+      return HttpResponse.json(updatedGroup);
+    }
     const group = projectGroups.find((item) => item.id === params.id);
     if (!group) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     if (typeof body.name === 'string') group.name = body.name;
@@ -499,6 +653,13 @@ export const memberHandlers = [
     return HttpResponse.json(group);
   }),
   http.delete('/api/v1/workspaces/:ws/projects/:prj/groups/:id', ({ params }) => {
+    if (
+      params.id === PROJECT_BUILT_IN_GROUP_IDS.owner
+      || params.id === PROJECT_BUILT_IN_GROUP_IDS.admins
+      || params.id === PROJECT_BUILT_IN_GROUP_IDS.members
+    ) {
+      return HttpResponse.json({ error: 'built_in_group_cannot_be_deleted' }, { status: 400 });
+    }
     const index = projectGroups.findIndex((item) => item.id === params.id);
     if (index === -1) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
     projectGroups.splice(index, 1);

@@ -11,13 +11,13 @@ import { CheckCircle, ShieldCheck, XCircle, Clock, UserPlus } from 'lucide-react
 import { formatRelativeTime } from '@/lib/utils/formatters';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { useApproveJoinRequest, useRejectJoinRequest } from '@/lib/hooks/use-join-requests';
-import { useProject } from '@/lib/hooks/use-projects-queries';
+import { useProjectGroups, useUpdateProjectGroup } from '@/lib/hooks/use-members';
 import { projectKeys } from '@/lib/hooks/use-projects-queries';
 import { queryKeys } from '@/lib/query-keys';
-import { ProjectAPI, getApiClient } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
 import type { JoinRequest } from '@/lib/api/endpoints/members';
+import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 
 export interface JoinRequestsTabProps {
   workspaceId: string;
@@ -39,33 +39,30 @@ export function JoinRequestsTab({
   const t = useTranslations('members.join_requests');
   const canApprove = useCanManageMemberGovernance();
   const queryClient = useQueryClient();
-  const { data: currentProject } = useProject(workspaceId, projectId);
+  const { data: projectGroups = [] } = useProjectGroups(workspaceId, projectId);
+  const updateProjectGroup = useUpdateProjectGroup(workspaceId, projectId);
   const approveMutation = useApproveJoinRequest(workspaceId, projectId);
   const rejectMutation = useRejectJoinRequest(workspaceId, projectId);
-  const projectAPI = React.useMemo(() => new ProjectAPI(getApiClient()), []);
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState('');
   const [rejectTarget, setRejectTarget] = React.useState<JoinRequest | null>(null);
   const [elevatingRequestId, setElevatingRequestId] = React.useState<string | null>(null);
+  const projectAdminGroup = React.useMemo(
+    () => projectGroups.find((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins) ?? null,
+    [projectGroups],
+  );
   const currentProjectAdmins = React.useMemo(
-    () =>
-      new Set(
-        Array.isArray(currentProject?.governance_json?.project_admins)
-          ? currentProject.governance_json.project_admins.filter((value): value is string => typeof value === 'string')
-          : [],
-      ),
-    [currentProject?.governance_json?.project_admins],
+    () => new Set(projectAdminGroup?.member_ids ?? []),
+    [projectAdminGroup],
   );
 
   const grantProjectAdminMutation = useMutation({
     mutationFn: async (userId: string) => {
       const currentAdmins = Array.from(currentProjectAdmins);
       const nextAdmins = Array.from(new Set([...currentAdmins, userId]));
-      return projectAPI.update(workspaceId, projectId, {
-        governance_json: {
-          ...(currentProject?.governance_json ?? {}),
-          project_admins: nextAdmins,
-        },
+      return updateProjectGroup.mutateAsync({
+        groupId: PROJECT_BUILT_IN_GROUP_IDS.admins,
+        data: { member_ids: nextAdmins },
       });
     },
     onSuccess: () => {
@@ -74,6 +71,7 @@ export function JoinRequestsTab({
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(workspaceId, projectId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(workspaceId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projectGroups.list(workspaceId, projectId) });
       toast.success(t('approve_and_grant_success'));
     },
     onError: (error) => handleErrorForToast(error, 'useGrantProjectAdminFromJoinRequests'),

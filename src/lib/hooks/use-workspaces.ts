@@ -108,13 +108,11 @@ export function useUpdateWorkspaceMemberGovernanceGroup(workspaceId: string) {
     onMutate: async ({ memberId, governanceGroup }) => {
       const key = workspaceKeys.members(workspaceId);
       await queryClient.cancelQueries({ queryKey: key });
-      const previous = queryClient.getQueryData<Array<{ id: string; governance_group?: 'wheel' | 'user' }>>(key);
+      const previous = queryClient.getQueryData<Array<{ id: string }>>(key);
       if (previous) {
         queryClient.setQueryData(
           key,
-          previous.map((member) =>
-            member.id === memberId ? { ...member, governance_group: governanceGroup } : member
-          )
+          previous.map((member) => (member.id === memberId ? { ...member } : member))
         );
       }
       return { previous };

@@ -1,4 +1,4 @@
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { getProjectBuiltInTemplateOptions } from '@/lib/governance/member-groups';
 
 import type {
   ApplyResultState,
@@ -9,36 +9,7 @@ import type {
 } from './types';
 
 export function buildDefaultTemplates(t: (key: string) => string): GroupTemplateOption[] {
-  return [
-    {
-      id: 'owner',
-      name: t('default_templates.owner'),
-      description: t('default_templates.owner_description'),
-      permissions: [...GROUP_TEMPLATES.owner],
-      is_default: true,
-    },
-    {
-      id: 'admin',
-      name: t('default_templates.admin'),
-      description: t('default_templates.admin_description'),
-      permissions: [...GROUP_TEMPLATES.admin],
-      is_default: true,
-    },
-    {
-      id: 'developer',
-      name: t('default_templates.developer'),
-      description: t('default_templates.developer_description'),
-      permissions: [...GROUP_TEMPLATES.developer],
-      is_default: true,
-    },
-    {
-      id: 'user',
-      name: t('default_templates.user'),
-      description: t('default_templates.user_description'),
-      permissions: [...GROUP_TEMPLATES.user],
-      is_default: true,
-    },
-  ];
+  return getProjectBuiltInTemplateOptions(t);
 }
 
 export function buildTemplateOptions(
@@ -48,7 +19,11 @@ export function buildTemplateOptions(
   const deduped = new Map<string, GroupTemplateOption>();
   for (const template of defaultTemplates) deduped.set(template.id, template);
   for (const template of templates) {
-    if (!deduped.has(template.id)) deduped.set(template.id, template);
+    deduped.set(template.id, {
+      ...deduped.get(template.id),
+      ...template,
+      is_default: template.is_default ?? deduped.get(template.id)?.is_default,
+    });
   }
   return Array.from(deduped.values());
 }
@@ -58,9 +33,7 @@ export function getTemplatePermissions(
   templateOptions: GroupTemplateOption[],
 ): string[] {
   const custom = templateOptions.find((template) => template.id === templateIdValue);
-  if (custom) return custom.permissions;
-  const roleKey = templateIdValue as keyof typeof GROUP_TEMPLATES;
-  return roleKey in GROUP_TEMPLATES ? [...GROUP_TEMPLATES[roleKey]] : [];
+  return custom?.permissions ?? [];
 }
 
 export function buildPreviewDiffs(

@@ -32,6 +32,7 @@ import {
   getGovernanceReasonLabel,
   getGovernanceSourceLabel,
 } from '@/lib/governance-explainability-presenter';
+import { getMemberAccessGroupLabel } from '@/lib/governance/member-groups';
 
 export interface MemberDetailDrawerProps {
   open: boolean;
@@ -75,6 +76,17 @@ function formatGroupAlias(role: string): string {
     default:
       return role;
   }
+}
+
+function resolveMemberAccessLabel(member: Member): string {
+  return formatGroupAlias(
+    getMemberAccessGroupLabel({
+      groups: member.groups,
+      fallback: Array.isArray(member.permissions) && member.permissions.includes('project:governance:update')
+        ? 'manager'
+        : 'member',
+    }),
+  );
 }
 
 export function MemberDetailDrawer({
@@ -151,7 +163,7 @@ export function MemberDetailDrawer({
           </div>
           <div className="flex items-center gap-2">
             <Badge variant="outline">
-              {t('table.access_group')}: {formatGroupAlias(member.role)}
+              {t('table.access_group')}: {resolveMemberAccessLabel(member)}
             </Badge>
             {onViewHistory && (
               <Button
@@ -199,7 +211,23 @@ export function MemberDetailDrawer({
                   <p className="text-xs font-medium uppercase tracking-wide text-tertiary">
                     {t('effective_access.role_label')}
                   </p>
-                  <p className="mt-2 text-sm text-foreground">{formatGroupAlias(member.role)}</p>
+                  <p className="mt-2 text-sm text-foreground">{resolveMemberAccessLabel(member)}</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-2">
+                <p className="text-xs font-medium uppercase tracking-wide text-tertiary">
+                  {t('table.access_group')}
+                </p>
+                <div className="flex flex-wrap gap-2" data-testid="member-detail__groups">
+                  {(member.groups ?? []).map((group) => (
+                    <Badge key={group.id} variant="outline">
+                      {group.name}
+                    </Badge>
+                  ))}
+                  {(member.groups ?? []).length === 0 ? (
+                    <span className="text-sm text-tertiary">{t('effective_access.no_permissions')}</span>
+                  ) : null}
                 </div>
               </div>
 

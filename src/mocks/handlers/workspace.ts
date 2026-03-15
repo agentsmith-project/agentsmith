@@ -204,6 +204,16 @@ export const workspaceHandlers = [
     const { merged } = await readAvailableWorkspaces(request);
     return HttpResponse.json({ items: merged });
   }),
+  http.get('/api/public/workspaces', async ({ request }) => {
+    const { merged } = await readAvailableWorkspaces(request);
+    return HttpResponse.json({
+      items: merged.map((workspace) => ({
+        id: workspace.id,
+        name: workspace.name,
+      })),
+      total: merged.length,
+    });
+  }),
   http.get('/api/public/workspaces/:id', async ({ params, request }) => {
     const workspaceId = String(params.id ?? '');
     const workspace = workspaceItems.find((item) => item.id === workspaceId);

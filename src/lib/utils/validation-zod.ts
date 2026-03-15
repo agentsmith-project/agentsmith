@@ -39,6 +39,13 @@ export const ProjectWithMembershipSchema = z.object({
   // Optional membership fields
   role: z.enum(['owner', 'admin', 'developer', 'user']).optional(),
   permissions: z.array(z.string()).optional(),
+  groups: z.array(z.object({
+    id: z.string(),
+    name: z.string(),
+    permission_template_id: z.string(),
+    built_in: z.boolean().optional(),
+    system_key: z.string().optional(),
+  })).optional(),
 });
 
 /**

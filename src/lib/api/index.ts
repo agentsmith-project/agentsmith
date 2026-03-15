@@ -65,7 +65,6 @@ export type {
   UpdateAgentRequest,
   CreateEndpointRequest,
   UpdateEndpointRequest,
-  UpdateMemberGroupRequest,
   JoinRequest,
   Member,
   CreateUserKeyRequest,

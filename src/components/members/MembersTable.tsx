@@ -23,6 +23,7 @@ import { MoreHorizontal, Trash2, History } from 'lucide-react';
 import { EmptyState } from '@/components/ui/loading';
 import type { Member } from '@/lib/api/endpoints/members';
 import { formatRelativeTime } from '@/lib/utils/formatters';
+import { getMemberAccessGroupLabel } from '@/lib/governance/member-groups';
 
 const columnHelper = createColumnHelper<Member>();
 
@@ -53,6 +54,15 @@ function getGroupBadgeVariant(groupAlias: string): 'default' | 'secondary' | 'ou
     default:
       return 'outline';
   }
+}
+
+function resolveMemberAccessGroup(member: Member): string {
+  return getMemberAccessGroupLabel({
+    groups: member.groups,
+    fallback: Array.isArray(member.permissions) && member.permissions.includes('project:governance:update')
+      ? 'manager'
+      : 'member',
+  });
 }
 
 function formatStatus(status: string): string {
@@ -166,10 +176,11 @@ export function MembersTable({
           );
         },
       }),
-      columnHelper.accessor('role', {
+      columnHelper.display({
+        id: 'access_group',
         header: t('table.access_group'),
-        cell: (info) => {
-          const accessGroup = info.getValue();
+        cell: ({ row }) => {
+          const accessGroup = resolveMemberAccessGroup(row.original);
           return (
             <Badge variant={getGroupBadgeVariant(accessGroup)} className="text-xs font-medium">
               {formatGroupAlias(accessGroup)}

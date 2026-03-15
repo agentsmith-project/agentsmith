@@ -21,6 +21,7 @@ import {
 } from '@/components/ui/select';
 import { Copy, Loader2, Check, UserPlus } from 'lucide-react';
 import { useCreateInvite } from '@/lib/hooks/use-members';
+import { PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface InviteMemberDialogProps {
   open: boolean;
@@ -38,7 +39,7 @@ export function InviteMemberDialog({
   const t = useTranslations('members.invite');
   const locale = useLocale();
   const [email, setEmail] = React.useState('');
-  const [groupTemplate, setGroupTemplate] = React.useState<'admin' | 'developer' | 'user'>('user');
+  const [groupTemplate, setGroupTemplate] = React.useState<string>(PROJECT_BUILT_IN_TEMPLATE_IDS.member);
   const [expiresInHours, setExpiresInHours] = React.useState<number>(168); // 7 days
   const [inviteUrl, setInviteUrl] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -47,7 +48,7 @@ export function InviteMemberDialog({
 
   const resetForm = React.useCallback(() => {
     setEmail('');
-    setGroupTemplate('user');
+    setGroupTemplate(PROJECT_BUILT_IN_TEMPLATE_IDS.member);
     setExpiresInHours(168);
     setInviteUrl(null);
     setCopied(false);
@@ -185,16 +186,15 @@ export function InviteMemberDialog({
               <Label htmlFor="invite-group">{t('group_label')}</Label>
               <Select
                 value={groupTemplate}
-                onValueChange={(v) => setGroupTemplate(v as 'admin' | 'developer' | 'user')}
+                onValueChange={setGroupTemplate}
                 disabled={createInvite.isPending}
               >
                 <SelectTrigger id="invite-group" className="rounded-lg">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="admin">{t('group_admin')}</SelectItem>
-                  <SelectItem value="developer">{t('group_developer')}</SelectItem>
-                  <SelectItem value="user">{t('group_user')}</SelectItem>
+                  <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.admin}>{t('group_admin')}</SelectItem>
+                  <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.member}>{t('group_user')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

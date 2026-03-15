@@ -45,8 +45,8 @@ export interface WorkspaceMember {
   user_id: string;
   name: string;
   email: string;
-  role: 'owner' | 'admin' | 'developer' | 'user';
-  governance_group?: 'wheel' | 'user';
+  role?: 'owner' | 'admin' | 'developer' | 'user';
+  groups?: MemberGroupSummary[];
   permissions?: string[];
   status: 'active' | 'removed';
   joined_at: string;
@@ -77,7 +77,8 @@ export interface Project {
 export interface ProjectMembership {
   project_id: string;
   user_id: string;
-  role: 'owner' | 'admin' | 'developer' | 'user';
+  role?: 'owner' | 'admin' | 'developer' | 'user';
+  groups?: MemberGroupSummary[];
   permissions: string[];
   status: 'active' | 'removed';
   joined_at: string;
@@ -968,8 +969,18 @@ export interface PermissionTemplate {
   name: string;
   description?: string;
   permissions: string[];
+  built_in?: boolean;
+  editable?: boolean;
   is_default: boolean;
   is_readonly: boolean;
+}
+
+export interface MemberGroupSummary {
+  id: string;
+  name: string;
+  permission_template_id: string;
+  built_in?: boolean;
+  system_key?: string;
 }
 
 export interface ChangeHistoryEntry {

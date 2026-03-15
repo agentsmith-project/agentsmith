@@ -30,7 +30,7 @@ export type {
   OpenAICompatibleImportItem,
   ImportOpenAICompatibleRequest,
 } from './endpoints';
-export type { UpdateMemberGroupRequest, JoinRequest, Member } from './members';
+export type { JoinRequest, Member } from './members';
 export type { CreateUserKeyRequest } from './user-keys';
 export type {
   CreateUserExternalConnectionRequest,

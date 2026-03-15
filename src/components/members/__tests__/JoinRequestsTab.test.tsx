@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { JoinRequestsTab } from '../JoinRequestsTab';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
@@ -14,13 +15,23 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useCanManageMemberGovernance: vi.fn(),
 }));
 
-const { useProject: mockUseProject, projectKeys: mockProjectKeys } = vi.hoisted(() => ({
-  useProject: vi.fn(() => ({
-    data: {
-      id: 'proj_1',
-      governance_json: { project_admins: ['owner_1'] },
-    },
+const {
+  useProjectGroups: mockUseProjectGroups,
+  useUpdateProjectGroup: mockUseUpdateProjectGroup,
+} = vi.hoisted(() => ({
+  useProjectGroups: vi.fn(() => ({
+    data: [
+      {
+        id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+        name: 'Project Admins',
+        member_ids: ['owner_1'],
+      },
+    ],
   })),
+  useUpdateProjectGroup: vi.fn(),
+}));
+
+const { projectKeys: mockProjectKeys } = vi.hoisted(() => ({
   projectKeys: {
     detail: (workspaceId: string, projectId: string) => ['workspaces', workspaceId, 'projects', projectId] as const,
     all: (workspaceId: string) => ['workspaces', workspaceId, 'projects'] as const,
@@ -28,19 +39,14 @@ const { useProject: mockUseProject, projectKeys: mockProjectKeys } = vi.hoisted(
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
-  useProject: mockUseProject,
   projectKeys: mockProjectKeys,
 }));
 
-const mockProjectUpdate = vi.fn();
+const mockUpdateProjectGroup = vi.fn();
 
-vi.mock('@/lib/api', () => ({
-  getApiClient: vi.fn(() => ({})),
-  ProjectAPI: vi.fn().mockImplementation(function () {
-    return {
-      update: mockProjectUpdate,
-    };
-  }),
+vi.mock('@/lib/hooks/use-members', () => ({
+  useProjectGroups: mockUseProjectGroups,
+  useUpdateProjectGroup: mockUseUpdateProjectGroup,
 }));
 
 vi.mock('@/components/ui/toast', () => ({
@@ -78,12 +84,19 @@ const mockRequests = [
 describe('JoinRequestsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockProjectUpdate.mockResolvedValue(undefined);
-    mockUseProject.mockReturnValue({
-      data: {
-        id: 'proj_1',
-        governance_json: { project_admins: ['owner_1'] },
-      },
+    mockUpdateProjectGroup.mockResolvedValue(undefined);
+    mockUseUpdateProjectGroup.mockReturnValue({
+      mutateAsync: mockUpdateProjectGroup,
+      isPending: false,
+    });
+    mockUseProjectGroups.mockReturnValue({
+      data: [
+        {
+          id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+          name: 'Project Admins',
+          member_ids: ['owner_1'],
+        },
+      ],
     });
   });
 
@@ -140,9 +153,10 @@ describe('JoinRequestsTab', () => {
 
     await user.click(screen.getByRole('button', { name: 'approve_and_grant' }));
 
-    expect(mockProjectUpdate).toHaveBeenCalledWith('ws_1', 'proj_1', {
-      governance_json: {
-        project_admins: ['owner_1', 'user_alt'],
+    expect(mockUpdateProjectGroup).toHaveBeenCalledWith({
+      groupId: PROJECT_BUILT_IN_GROUP_IDS.admins,
+      data: {
+        member_ids: ['owner_1', 'user_alt'],
       },
     });
   });
@@ -164,11 +178,14 @@ describe('JoinRequestsTab', () => {
 
   it('shows approved requests with project admin outcome when the user is already a project admin', () => {
     vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
-    mockUseProject.mockReturnValue({
-      data: {
-        id: 'proj_1',
-        governance_json: { project_admins: ['owner_1', 'user_alt'] },
-      },
+    mockUseProjectGroups.mockReturnValue({
+      data: [
+        {
+          id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+          name: 'Project Admins',
+          member_ids: ['owner_1', 'user_alt'],
+        },
+      ],
     });
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },

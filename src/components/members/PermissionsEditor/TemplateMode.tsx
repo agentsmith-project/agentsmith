@@ -9,12 +9,12 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
 import { Check } from 'lucide-react';
+import { getProjectBuiltInTemplateOptions, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface TemplateModeProps {
-  selectedTemplate: 'owner' | 'admin' | 'developer' | 'user' | null;
-  onTemplateChange: (template: 'owner' | 'admin' | 'developer' | 'user' | null) => void;
+  selectedTemplate: string | null;
+  onTemplateChange: (template: string | null) => void;
   currentPermissions: string[];
 }
 
@@ -24,10 +24,14 @@ export function TemplateMode({
   currentPermissions,
 }: TemplateModeProps) {
   const t = useTranslations('members.permissions');
+  const templateOptions = React.useMemo(
+    () => getProjectBuiltInTemplateOptions((key) => t(key)),
+    [t],
+  );
   const templatePermissions = React.useMemo(() => {
     if (!selectedTemplate) return [];
-    return GROUP_TEMPLATES[selectedTemplate];
-  }, [selectedTemplate]);
+    return templateOptions.find((template) => template.id === selectedTemplate)?.permissions ?? [];
+  }, [selectedTemplate, templateOptions]);
 
   const isCustom = React.useMemo(() => {
     if (!selectedTemplate) return true;
@@ -50,7 +54,7 @@ export function TemplateMode({
             if (value === 'custom') {
               onTemplateChange(null);
             } else {
-              onTemplateChange(value as 'owner' | 'admin' | 'developer' | 'user');
+              onTemplateChange(value);
             }
           }}
         >
@@ -58,10 +62,9 @@ export function TemplateMode({
             <SelectValue placeholder={t('select_template')} />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="owner">{t('template.owner')}</SelectItem>
-            <SelectItem value="admin">{t('template.admin')}</SelectItem>
-            <SelectItem value="developer">{t('template.developer')}</SelectItem>
-            <SelectItem value="user">{t('template.user')}</SelectItem>
+            <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.owner}>{t('template.owner')}</SelectItem>
+            <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.admin}>{t('template.admin')}</SelectItem>
+            <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.member}>{t('template.user')}</SelectItem>
             <SelectItem value="custom">{t('template.custom')}</SelectItem>
           </SelectContent>
         </Select>
@@ -71,7 +74,7 @@ export function TemplateMode({
         <div className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-sm text-tertiary">
-              {t(`template.${selectedTemplate}`)} {t('template_mode')}
+              {(templateOptions.find((template) => template.id === selectedTemplate)?.name ?? selectedTemplate)} {t('template_mode')}
             </span>
             {isCustom && (
               <Badge variant="outline" className="text-xs">
@@ -106,7 +109,7 @@ export function TemplateMode({
 
           {selectedTemplate && (
             <p className="text-xs text-tertiary">
-              {t(`template_description.${selectedTemplate}`)}
+              {templateOptions.find((template) => template.id === selectedTemplate)?.description ?? ''}
             </p>
           )}
         </div>

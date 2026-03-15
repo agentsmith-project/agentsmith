@@ -37,19 +37,6 @@ export function useCurrentPermissions() {
   }, [currentProject, workspaceId, projectId]);
 }
 
-export function useCurrentProjectRole(): ProjectWithMembership['role'] | null {
-  const { workspace, project } = useParams();
-  const workspaceId = validateWorkspaceParam(workspace);
-  const projectId = validateProjectParam(project);
-  const { data: currentProject } = useProject(workspaceId ?? '', projectId ?? '');
-
-  return useMemo(() => {
-    if (!workspaceId || !projectId) return null;
-    const validated = currentProject ? validateProjectWithMembership(currentProject) : null;
-    return validated?.role ?? null;
-  }, [currentProject, projectId, workspaceId]);
-}
-
 export function useCurrentWorkspacePermissions() {
   const { workspace } = useParams();
   const workspaceId = validateWorkspaceParam(workspace);

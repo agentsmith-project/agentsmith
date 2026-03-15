@@ -296,7 +296,19 @@ export async function handleProjectGroupsRoute(args: {
       return true;
     }
     if (isBuiltInProjectGroupId(groupId)) {
-      json(res, 409, { error_code: 'CONFLICT', message: 'Built-in groups cannot be modified from this route' });
+      if (groupId !== 'grp_project_admins') {
+        json(res, 409, { error_code: 'CONFLICT', message: 'Built-in groups cannot be modified from this route' });
+        return true;
+      }
+      if (!Array.isArray(body.member_ids)) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'member_ids are required for built-in admin group updates' });
+        return true;
+      }
+      const nextMemberIds = Array.from(new Set(body.member_ids.filter((v): v is string => typeof v === 'string')));
+      setProjectAdminGroupMembers(workspaceId, projectId, nextMemberIds);
+      const updatedGroups = getProjectGroupsState(workspaceId, projectId);
+      const updatedGroup = updatedGroups.find((item) => item.id === groupId);
+      json(res, 200, updatedGroup ?? group);
       return true;
     }
     if (typeof body.name === 'string') group.name = body.name;

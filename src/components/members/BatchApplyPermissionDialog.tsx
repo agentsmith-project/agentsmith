@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { PermissionTemplate } from '@/lib/api/types';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { getProjectBuiltInTemplateOptions, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface BatchApplyPermissionDialogProps {
   open: boolean;
@@ -28,8 +28,6 @@ export interface BatchApplyPermissionDialogProps {
   selectedCount: number;
   onApply: (templateId: string, permissions: string[], template?: string | null) => Promise<void>;
 }
-
-const DEFAULT_TEMPLATE_IDS = ['owner', 'admin', 'developer', 'user'];
 
 export function BatchApplyPermissionDialog({
   open,
@@ -42,24 +40,27 @@ export function BatchApplyPermissionDialog({
   const [selectedTemplateId, setSelectedTemplateId] = React.useState<string>('');
   const [submitting, setSubmitting] = React.useState(false);
 
-  const defaultTemplates = React.useMemo((): PermissionTemplate[] => {
-    return [
-      { id: 'owner', name: t('default_templates.owner'), permissions: [...GROUP_TEMPLATES.owner], is_default: true, is_readonly: true },
-      { id: 'admin', name: t('default_templates.admin'), permissions: [...GROUP_TEMPLATES.admin], is_default: true, is_readonly: true },
-      { id: 'developer', name: t('default_templates.developer'), permissions: [...GROUP_TEMPLATES.developer], is_default: true, is_readonly: true },
-      { id: 'user', name: t('default_templates.user'), permissions: [...GROUP_TEMPLATES.user], is_default: true, is_readonly: true },
-    ];
-  }, [t]);
+  const defaultTemplates = React.useMemo(
+    () => getProjectBuiltInTemplateOptions((key) => t(key)),
+    [t],
+  );
 
   const allTemplates = React.useMemo(() => {
-    return [...defaultTemplates, ...templates.filter((tpl) => !DEFAULT_TEMPLATE_IDS.includes(tpl.id))];
+    return [
+      ...defaultTemplates,
+      ...templates.filter((tpl) => !defaultTemplates.some((builtIn) => builtIn.id === tpl.id)),
+    ];
   }, [defaultTemplates, templates]);
 
   const selectedTemplate = allTemplates.find((tpl) => tpl.id === selectedTemplateId);
 
   const handleApply = React.useCallback(async () => {
     if (!selectedTemplate) return;
-    const templateId = DEFAULT_TEMPLATE_IDS.includes(selectedTemplate.id) ? selectedTemplate.id : null;
+    const templateId = Object.values(PROJECT_BUILT_IN_TEMPLATE_IDS).includes(
+      selectedTemplate.id as (typeof PROJECT_BUILT_IN_TEMPLATE_IDS)[keyof typeof PROJECT_BUILT_IN_TEMPLATE_IDS],
+    )
+      ? selectedTemplate.id
+      : null;
     setSubmitting(true);
     try {
       await onApply(selectedTemplate.id, selectedTemplate.permissions, templateId);

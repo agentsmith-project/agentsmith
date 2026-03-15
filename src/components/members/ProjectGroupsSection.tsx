@@ -39,6 +39,7 @@ import {
   buildPreviewDiffs,
   buildTemplateOptions,
 } from './project-groups-section/utils';
+import { PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface ProjectGroupsSectionProps {
   workspaceId: string;
@@ -60,7 +61,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const applyGroupTemplate = useApplyProjectGroupTemplate(workspaceId, projectId);
 
   const [name, setName] = React.useState('');
-  const [templateId, setTemplateId] = React.useState<string>('user');
+  const [templateId, setTemplateId] = React.useState<string>(PROJECT_BUILT_IN_TEMPLATE_IDS.member);
   const [selectedMemberIds, setSelectedMemberIds] = React.useState<string[]>([]);
   const [inlineTemplates, setInlineTemplates] = React.useState<PermissionTemplate[]>([]);
   const [memberSearch, setMemberSearch] = React.useState('');
@@ -136,7 +137,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
 
   const resetForm = () => {
     setName('');
-    setTemplateId('user');
+    setTemplateId(PROJECT_BUILT_IN_TEMPLATE_IDS.member);
     setSelectedMemberIds([]);
     setMemberSearch('');
     setMemberPage(1);

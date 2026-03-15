@@ -141,7 +141,7 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
           </div>
 
           <TabsContent value="people" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-            <PeopleTab workspaceId={workspaceId} projectId={projectId} />
+            <PeopleTab workspaceId={workspaceId} projectId={projectId} locale={locale} />
           </TabsContent>
 
           <TabsContent value="requests" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">

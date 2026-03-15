@@ -1617,6 +1617,7 @@
     },
     "subtitle": "统一配置资源策略基线与按主体覆盖规则。",
     "open_members": "打开成员",
+    "open_member_access": "打开成员访问",
     "open_credentials": "打开凭据",
     "open_audit": "打开审计",
     "default_model_hint": "默认模型：所有成员可访问资源。新资源继承项目默认策略。",

@@ -310,6 +310,24 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('members-join-requests-tab.png', { fullPage: true });
   });
 
+  test('members - effective access drawer', async ({ authedPage }) => {
+    await stableNavigate(authedPage, `${projectPath('members')}?member_tab=people`);
+    await authedPage.getByRole('row', { name: /Charlie Wilson/i }).click();
+    const memberSurface = await authedPage.getByRole('dialog').isVisible().catch(() => false)
+      ? authedPage.getByRole('dialog')
+      : authedPage;
+    const authorizationCheck = memberSurface.getByTestId('member-detail__authorization-check').first();
+    const authorizeResourceId = memberSurface.getByTestId('member-detail__authorize-resource-id').first();
+    const authorizeRun = memberSurface.getByTestId('member-detail__authorize-run').first();
+    const authorizeResult = memberSurface.getByTestId('member-detail__authorize-result').first();
+    await expect(authorizationCheck).toBeVisible();
+    await authorizeResourceId.fill('endpoint_001');
+    await authorizeRun.click();
+    await expect(authorizeResult).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('members-effective-access-drawer.png', { fullPage: true });
+  });
+
   test('audit detail drawer', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('audit'));
     const table = authedPage.getByTestId('audit__table');

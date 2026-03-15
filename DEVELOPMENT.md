@@ -214,6 +214,30 @@ npm run test:mainline:strict:real
 
 This real-lane variant auto starts integration dependencies, API, and frontend on dedicated ports.
 
+## Governance Mainline Strict Gate
+
+When the current work touches
+
+1. `Members`
+2. `Resource Policy`
+3. `Audit`
+4. `Alerts`
+5. governance explainability or drilldown links
+
+run:
+
+```bash
+npm run test:governance:strict
+```
+
+This gate bundles:
+
+1. contract checks
+2. lint + typecheck for governance explainability surfaces
+3. targeted frontend/backend tests for authorization explainability
+4. mock lane E2E for `members -> resource policy -> members`
+5. targeted visual checks for governance pages and overlays
+
 ## API 合约与文档入口
 
 后端提供统一文档入口：

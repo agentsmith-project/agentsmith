@@ -1,13 +1,19 @@
 'use client';
 
+import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
 import type { ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
+import {
+  getGovernanceReasonLabel,
+  getGovernanceSourceLabel,
+} from '@/lib/governance-explainability-presenter';
 
 import type { SubjectOption } from '../resource-policy-page-types';
 
 interface ResourcePolicyExplainabilityPanelProps {
   authorizationResult: GovernanceAuthorizationResponse | null;
+  basePath: string;
   explainAction: string;
   explainChecking: boolean;
   explainMatchedPolicy: GovernanceAuthorizationResponse['matched_policy'];
@@ -24,6 +30,7 @@ interface ResourcePolicyExplainabilityPanelProps {
 
 export function ResourcePolicyExplainabilityPanel({
   authorizationResult,
+  basePath,
   explainAction,
   explainChecking,
   explainMatchedPolicy,
@@ -37,6 +44,10 @@ export function ResourcePolicyExplainabilityPanel({
   onExplainSubjectTypeChange,
   onRunExplain,
 }: ResourcePolicyExplainabilityPanelProps) {
+  const memberAccessHref = explainSubjectType === 'user' && explainSubjectId
+    ? `${basePath}/members?member_tab=people&member_id=${encodeURIComponent(explainSubjectId)}&authorize_resource_type=${selectedResource.type}&authorize_resource_id=${encodeURIComponent(selectedResource.id)}&authorize_action=${encodeURIComponent(explainAction || 'invoke')}`
+    : null;
+
   return (
     <div className="rounded-sm border border-subtle bg-surface p-3 space-y-3" data-testid="resource-policy__explainability">
       <div className="space-y-1">
@@ -100,17 +111,34 @@ export function ResourcePolicyExplainabilityPanel({
       </div>
       {authorizationResult ? (
         <div className="rounded-sm border border-subtle bg-bg-base/10 p-3 space-y-2" data-testid="resource-policy__explain-result">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs text-tertiary">
+              {tResource('explainability.decision')}:{' '}
+              <span className="text-primary">
+                {authorizationResult.allowed ? tResource('explainability.allowed') : tResource('explainability.denied')}
+              </span>
+            </p>
+            {memberAccessHref ? (
+              <Link
+                href={memberAccessHref}
+                className="text-xs text-primary underline-offset-2 hover:underline"
+                data-testid="resource-policy__open-member-access"
+              >
+                {tResource('open_member_access')}
+              </Link>
+            ) : null}
+          </div>
           <p className="text-xs text-tertiary">
-            {tResource('explainability.decision')}:{' '}
+            {tResource('explainability.source')}:{' '}
             <span className="text-primary">
-              {authorizationResult.allowed ? tResource('explainability.allowed') : tResource('explainability.denied')}
+              {getGovernanceSourceLabel(authorizationResult.decision.source) ?? authorizationResult.decision.source}
             </span>
           </p>
           <p className="text-xs text-tertiary">
-            {tResource('explainability.source')}: <span className="text-primary">{authorizationResult.decision.source}</span>
-          </p>
-          <p className="text-xs text-tertiary">
-            {tResource('explainability.reason')}: <span className="text-primary">{authorizationResult.decision.reason}</span>
+            {tResource('explainability.reason')}:{' '}
+            <span className="text-primary">
+              {getGovernanceReasonLabel(authorizationResult.decision.reason) ?? authorizationResult.decision.reason}
+            </span>
           </p>
           {explainMatchedPolicy ? (
             <div className="rounded-sm border border-subtle bg-surface px-3 py-2 text-xs text-tertiary" data-testid="resource-policy__matched-policy">

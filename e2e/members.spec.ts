@@ -272,7 +272,7 @@ test.describe('Members Page', () => {
   test('join request approve action sends approve request', async ({ authedPage }) => {
     await authedPage.getByRole('tab', { name: /join requests/i }).click();
 
-    const approveBtn = authedPage.getByRole('button', { name: /approve/i }).first();
+    const approveBtn = authedPage.getByRole('button', { name: /^approve$/i }).first();
     if (!(await approveBtn.isVisible().catch(() => false))) {
       await expect(authedPage.getByText(/pending requests/i)).toBeVisible();
       return;

@@ -1615,6 +1615,7 @@
     },
     "subtitle": "Unified resource policy baseline and per-subject overrides.",
     "open_members": "Open Members",
+    "open_member_access": "Open Member Access",
     "open_credentials": "Open Credentials",
     "open_audit": "Open Audit",
     "default_model_hint": "Default model: all members can access resources. New resources inherit project defaults.",

@@ -40,6 +40,7 @@
     "test:e2e:integration:chat:real:with-api": "INTEGRATION_REAL_COMPLETION_E2E=true bash scripts/run-integration-e2e-with-api.sh e2e/integration-chat.spec.ts --grep \"real deepseek\"",
     "test:mainline:strict": "bash scripts/workspace-project-mainline-gate.sh",
     "test:mainline:strict:real": "bash scripts/workspace-project-mainline-gate.sh --with-real-lane",
+    "test:governance:strict": "bash scripts/governance-mainline-gate.sh",
     "test:smoke:real:notebook-mainline": "bash scripts/system-notebook-real-smoke-gate.sh",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",

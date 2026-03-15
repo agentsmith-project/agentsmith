@@ -197,6 +197,31 @@ describe('ResourcePolicyPage', () => {
     expect(within(header).getByTestId('resource-policy__open-audit')).toHaveAttribute('href', '/en-US/workspaces/ws_1/projects/prj_1/audit');
   });
 
+  it('renders explainability result with readable labels and member drilldown link', async () => {
+    const user = userEvent.setup();
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__explain-subject-id')).toBeInTheDocument();
+    });
+
+    await user.selectOptions(screen.getByTestId('resource-policy__explain-subject-id'), 'user_123');
+    await user.click(screen.getByTestId('resource-policy__explain-run'));
+
+    const result = await screen.findByTestId('resource-policy__explain-result');
+    expect(result).toHaveTextContent('Resource Policy');
+    expect(result).toHaveTextContent('Subject is not on the current allow list');
+    expect(screen.getByTestId('resource-policy__open-member-access')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/projects/prj_1/members?member_tab=people&member_id=user_123&authorize_resource_type=endpoint&authorize_resource_id=ep_1&authorize_action=invoke',
+    );
+  });
+
   it('shows permission denied without policy permission', async () => {
     mockUseHasPermission.mockReturnValue(false);
     render(

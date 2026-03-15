@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import {
   Sheet,
@@ -27,6 +28,10 @@ import type {
   GovernanceEffectiveAccessSnapshot,
   GovernanceMatchedPolicy,
 } from '@/lib/api/endpoints/governance-explainability';
+import {
+  getGovernanceReasonLabel,
+  getGovernanceSourceLabel,
+} from '@/lib/governance-explainability-presenter';
 
 export interface MemberDetailDrawerProps {
   open: boolean;
@@ -36,6 +41,7 @@ export interface MemberDetailDrawerProps {
   projectGovernance?: Record<string, unknown>;
   _workspaceId?: string;
   _projectId?: string;
+  locale?: string;
   permissionTemplates?: PermissionTemplate[];
   effectiveAccessSnapshot?: GovernanceEffectiveAccessSnapshot | null;
   authorizationCheckResult?: GovernanceAuthorizationResponse | null;
@@ -76,12 +82,15 @@ export function MemberDetailDrawer({
   onOpenChange,
   member,
   permissions,
+  _workspaceId,
+  _projectId,
   effectiveAccessSnapshot,
   authorizationCheckResult,
   isCheckingAuthorization = false,
   onRunAuthorizationCheck,
   onViewHistory,
   initialAuthorization,
+  locale = 'en-US',
   embedded = false,
   className,
 }: MemberDetailDrawerProps) {
@@ -105,6 +114,24 @@ export function MemberDetailDrawer({
       action: authorizeAction.trim() || 'read',
     });
   }, [authorizeAction, authorizeResourceId, authorizeResourceType, member, onRunAuthorizationCheck]);
+
+  const basePath = _workspaceId && _projectId
+    ? `/${locale}/workspaces/${_workspaceId}/projects/${_projectId}`
+    : null;
+  const explainResourceType = authorizationCheckResult?.matched_policy?.resource_type ?? authorizeResourceType;
+  const explainResourceId =
+    authorizationCheckResult?.matched_policy?.resource_id
+    || authorizeResourceId.trim()
+    || initialAuthorization?.resourceId
+    || '';
+  const explainActionValue = authorizeAction.trim() || initialAuthorization?.action || 'invoke';
+  const resourcePolicyHref = basePath && explainResourceId
+    ? `${basePath}/resource-policy?resource_type=${explainResourceType}&resource_id=${encodeURIComponent(
+      explainResourceId,
+    )}&explain_subject_type=user&explain_subject_id=${encodeURIComponent(member?.id ?? '')}&explain_action=${encodeURIComponent(
+      explainActionValue,
+    )}`
+    : null;
 
   if (!member) return null;
 
@@ -256,12 +283,23 @@ export function MemberDetailDrawer({
                     <Badge variant={authorizationCheckResult.allowed ? 'outline' : 'destructive'}>
                       {authorizationCheckResult.allowed ? t('effective_access.allowed') : t('effective_access.denied')}
                     </Badge>
+                    {resourcePolicyHref ? (
+                      <Link
+                        href={resourcePolicyHref}
+                        className="text-xs text-primary underline-offset-2 hover:underline"
+                        data-testid="member-detail__open-resource-policy"
+                      >
+                        {t('open_resource_policy')}
+                      </Link>
+                    ) : null}
                     <span className="text-sm text-primary">
-                      {t('effective_access.reason_label')}: {authorizationCheckResult.decision.reason}
+                      {t('effective_access.reason_label')}:{' '}
+                      {getGovernanceReasonLabel(authorizationCheckResult.decision.reason) ?? authorizationCheckResult.decision.reason}
                     </span>
                   </div>
                   <p className="mt-2 text-sm text-tertiary">
-                    {t('effective_access.source_label')}: {authorizationCheckResult.decision.source}
+                    {t('effective_access.source_label')}:{' '}
+                    {getGovernanceSourceLabel(authorizationCheckResult.decision.source) ?? authorizationCheckResult.decision.source}
                     {authorizationCheckResult.decision.rule_id ? ` · ${authorizationCheckResult.decision.rule_id}` : ''}
                   </p>
                   {authorizationCheckResult.matched_policy ? (

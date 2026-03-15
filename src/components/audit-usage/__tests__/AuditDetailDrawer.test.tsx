@@ -104,6 +104,7 @@ describe('AuditDetailDrawer', () => {
           action: 'members.update',
           resource_type: 'project',
           resource_id: 'proj_1',
+          end_user_id: 'user_2',
           result: 'error',
           error_code: 'FORBIDDEN',
           error_message: 'forbidden',
@@ -126,6 +127,10 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('Permission Denied')).toBeInTheDocument();
     expect(governance).toHaveTextContent('project:membership:update');
     expect(governance).toHaveTextContent('Suspended');
+    expect(screen.getByTestId('audit__detail-open-member-access')).toHaveAttribute(
+      'href',
+      expect.stringContaining('/members?member_tab=people'),
+    );
     expect(governance).not.toHaveTextContent('detail.governance_kind');
     expect(screen.getByText('gdec_2')).toBeInTheDocument();
     expect(screen.queryByTestId('audit__detail-open-resource-policy')).not.toBeInTheDocument();

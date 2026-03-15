@@ -65,6 +65,7 @@ export interface MembersTableProps {
   enableSelection?: boolean;
   selectedMemberIds?: string[];
   onSelectionChange?: (ids: string[]) => void;
+  onViewMember?: (member: Member) => void;
   onRemove?: (member: Member) => void;
   onViewHistory?: (member: Member) => void;
 }
@@ -75,6 +76,7 @@ export function MembersTable({
   enableSelection = false,
   selectedMemberIds = [],
   onSelectionChange,
+  onViewMember,
   onRemove,
   onViewHistory,
 }: MembersTableProps) {
@@ -271,5 +273,13 @@ export function MembersTable({
     );
   }
 
-  return <DataTable table={table} testId="members__table" compact />;
+  return (
+    <DataTable
+      table={table}
+      testId="members__table"
+      compact
+      onRowClick={onViewMember}
+      isRowClickable={(member) => member.status === 'active'}
+    />
+  );
 }

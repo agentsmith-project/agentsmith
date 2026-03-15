@@ -7,7 +7,6 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
@@ -16,7 +15,6 @@ import { AuditAPI, EndpointAPI, MemberAPI, getApiClient } from '@/lib/api';
 import type { Member, ProjectGroup } from '@/lib/api/endpoints/members';
 import type {
   Endpoint,
-  PolicyRule,
   PolicyRuleKey,
   ResourcePolicy,
   ResourcePolicyUpdateRequest,
@@ -28,7 +26,6 @@ import { PageLoading } from '@/components/ui/loading';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
 import { GovernanceDrilldownBanner } from '@/components/ui/GovernanceDrilldownBanner';
 import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
-import { buttonVariants } from '@/components/ui/button';
 import { useMembers, useProjectGroups, useResourcePolicy, useUpdateResourcePolicy } from '@/lib/hooks/use-members';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { useAuthorizationCheck } from '@/lib/hooks/use-governance-explainability';
@@ -48,7 +45,6 @@ import {
   createSubjectRowId,
 } from '@/lib/resource-policy/editor-utils';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
-import { cn } from '@/lib/utils';
 import { parseGovernanceDrilldownContext } from '@/lib/governance-drilldown-context';
 import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/governance-explainability';
 import { ResourcePolicyHeaderActions } from './_components/ResourcePolicyHeaderActions';
@@ -526,6 +522,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
               getRowPolicyState={getRowPolicyState}
             />
             <ResourcePolicyEditor
+              basePath={basePath}
               tResource={tResource}
               selectedResource={selectedResource}
               policyLoading={policyLoading}

@@ -13,6 +13,7 @@ import { MemberDetailDrawer } from './MemberDetailDrawer';
 export interface PeopleTabProps {
   workspaceId: string;
   projectId: string;
+  locale?: string;
 }
 
 function getMemberAccessProfile(member: { permissions?: string[] }) {
@@ -36,7 +37,7 @@ function getMemberAccessProfile(member: { permissions?: string[] }) {
   return 'access_only';
 }
 
-export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
+export function PeopleTab({ workspaceId, projectId, locale = 'en-US' }: PeopleTabProps) {
   const PAGE_SIZE = 20;
   const t = useTranslations('members');
   const context = useMembersContext();
@@ -153,6 +154,10 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
               enableSelection={canManageMembers}
               selectedMemberIds={context.selectedMemberIds}
               onSelectionChange={context.setSelectedMemberIds}
+              onViewMember={(member) => {
+                context.setSelectedMember(member);
+                context.setDrawerOpen(true);
+              }}
               onRemove={canManageMembers ? context.handleRemove : undefined}
               onViewHistory={context.handleViewHistory}
             />
@@ -202,6 +207,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             projectGovernance={context.project?.governance_json as Record<string, unknown> | undefined}
             _workspaceId={workspaceId}
             _projectId={projectId}
+            locale={locale}
             effectiveAccessSnapshot={context.effectiveAccessSnapshot}
             authorizationCheckResult={context.authorizationCheckResult}
             isCheckingAuthorization={context.isCheckingAuthorization}
@@ -231,6 +237,7 @@ export function PeopleTab({ workspaceId, projectId }: PeopleTabProps) {
             projectGovernance={context.project?.governance_json as Record<string, unknown> | undefined}
             _workspaceId={workspaceId}
             _projectId={projectId}
+            locale={locale}
             effectiveAccessSnapshot={context.effectiveAccessSnapshot}
             authorizationCheckResult={context.authorizationCheckResult}
             isCheckingAuthorization={context.isCheckingAuthorization}

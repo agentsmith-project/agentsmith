@@ -6,14 +6,9 @@ import type { GovernanceAuthorizationResponse } from '@/lib/api/endpoints/govern
 import type { PolicyRule, PolicyRuleKey, ResourcePolicy } from '@/lib/api/types';
 import {
   getRuleDefinitionsForResource,
-  getRuleLabel,
 } from '@/lib/constants/resource-policy';
-import {
-  buildRuleSetFromDraft,
-  formatRuleValue,
-} from '@/lib/resource-policy/editor-utils';
+import { buildRuleSetFromDraft } from '@/lib/resource-policy/editor-utils';
 import type { ResourceRow } from '@/components/resource-policy/ResourcePolicyTable';
-import { renderRuleSummary } from '../resource-policy-page-utils';
 import type { EditableSubject, SubjectOption } from '../resource-policy-page-types';
 import { ResourcePolicyEffectiveSummary } from './ResourcePolicyEffectiveSummary';
 import { ResourcePolicyExplainabilityPanel } from './ResourcePolicyExplainabilityPanel';
@@ -21,6 +16,7 @@ import { ResourcePolicyGovernanceAuditPanel } from './ResourcePolicyGovernanceAu
 import { ResourcePolicySubjectEditor } from './ResourcePolicySubjectEditor';
 
 export function ResourcePolicyEditor(args: {
+  basePath: string;
   tResource: (key: string) => string;
   selectedResource: ResourceRow | null;
   policyLoading: boolean;
@@ -71,6 +67,7 @@ export function ResourcePolicyEditor(args: {
   }>;
 }) {
   const {
+    basePath,
     tResource,
     selectedResource,
     policyLoading,
@@ -240,6 +237,7 @@ export function ResourcePolicyEditor(args: {
       />
 
       <ResourcePolicyExplainabilityPanel
+        basePath={basePath}
         tResource={tResource}
         selectedResource={selectedResource}
         explainSubjectType={explainSubjectType}

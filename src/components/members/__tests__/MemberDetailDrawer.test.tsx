@@ -65,6 +65,14 @@ describe('MemberDetailDrawer', () => {
         open
         onOpenChange={() => {}}
         member={baseMember}
+        _workspaceId="ws_1"
+        _projectId="proj_1"
+        locale="en-US"
+        initialAuthorization={{
+          resourceType: 'endpoint',
+          resourceId: 'endpoint_1',
+          action: 'invoke',
+        }}
         permissions={{ platform_permissions: ['project:endpoint:use'] }}
         effectiveAccessSnapshot={{
           membership: {
@@ -101,6 +109,12 @@ describe('MemberDetailDrawer', () => {
     expect(screen.getByTestId('member-detail__membership-status')).toHaveTextContent('effective_access.membership_status.suspended');
     expect(screen.getByTestId('member-detail__effective-permissions')).toHaveTextContent('project:endpoint:use');
     expect(screen.getByTestId('member-detail__authorize-result')).toBeInTheDocument();
+    expect(screen.getByTestId('member-detail__authorize-result')).toHaveTextContent('Resource Policy');
+    expect(screen.getByTestId('member-detail__authorize-result')).toHaveTextContent('Resource Policy Denied');
     expect(screen.getByTestId('member-detail__matched-policy')).toHaveTextContent('endpoint/endpoint_1');
+    expect(screen.getByTestId('member-detail__open-resource-policy')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_1/projects/proj_1/resource-policy?resource_type=endpoint&resource_id=endpoint_1&explain_subject_type=user&explain_subject_id=u_1&explain_action=invoke',
+    );
   });
 });

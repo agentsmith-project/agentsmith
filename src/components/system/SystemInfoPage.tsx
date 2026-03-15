@@ -160,7 +160,10 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
               />
             </div>
 
-            <section className="rounded-[18px] border border-dashed border-subtle bg-bg-base/20 p-4" data-testid="system-info__notice">
+            <section
+              className="rounded-[22px] border border-dashed border-subtle bg-bg-base/20 p-5 shadow-[0_12px_28px_rgba(0,0,0,0.1)]"
+              data-testid="system-info__notice"
+            >
               <p className="text-sm text-tertiary">{t('info_notice')}</p>
             </section>
           </div>
@@ -180,14 +183,19 @@ function InfoCard({
   rows: Array<{ label: string; value: string }>;
 }) {
   return (
-    <section className="rounded-[20px] border border-subtle bg-surface/95 p-5 shadow-[0_14px_32px_rgba(0,0,0,0.14)]">
+    <section className="rounded-[22px] border border-subtle bg-surface/95 p-5 shadow-[0_16px_34px_rgba(0,0,0,0.14)]">
       <div className="flex items-center gap-2 text-sm font-medium text-foreground">
-        {icon}
-        {title}
+        <div className="flex h-9 w-9 items-center justify-center rounded-[14px] border border-white/6 bg-white/[0.03]">
+          {icon}
+        </div>
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">Config</p>
+          <p>{title}</p>
+        </div>
       </div>
       <div className="mt-4 space-y-3">
         {rows.map((row) => (
-          <div key={row.label} className="space-y-1 rounded-2xl border border-white/5 bg-white/[0.025] p-3">
+          <div key={row.label} className="space-y-1 rounded-[18px] border border-white/5 bg-white/[0.025] p-3">
             <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{row.label}</p>
             <code className="block break-all text-sm text-foreground">{row.value}</code>
           </div>
@@ -210,12 +218,12 @@ function SummaryCard({
     <div
       className={
         tone === 'positive'
-          ? 'rounded-[18px] border border-emerald-400/20 bg-emerald-400/10 p-4'
-          : 'rounded-[18px] border border-white/6 bg-black/15 p-4'
+          ? 'rounded-[20px] border border-emerald-400/20 bg-emerald-400/10 p-4 shadow-[0_12px_24px_rgba(16,185,129,0.08)]'
+          : 'rounded-[20px] border border-white/6 bg-black/15 p-4 shadow-[0_12px_24px_rgba(0,0,0,0.12)]'
       }
     >
       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
-      <div className="mt-2 text-lg font-semibold text-foreground">{value}</div>
+      <div className="mt-2 text-xl font-semibold text-foreground">{value}</div>
     </div>
   );
 }

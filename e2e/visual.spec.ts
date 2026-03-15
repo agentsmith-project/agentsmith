@@ -359,9 +359,11 @@ test.describe('Visual - Overlays', () => {
 
   test('files - rename dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
-    const row = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
-    await expect(row).toBeVisible();
-    await row.getByRole('button').click();
+    await authedPage.getByTestId('files__library-item--lib_shared_default').click();
+    await authedPage.getByTestId('files__search').fill('README');
+    const fileButton = authedPage.getByRole('button', { name: 'README.txt' }).first();
+    await expect(fileButton).toBeVisible({ timeout: 10_000 });
+    await fileButton.click();
     await authedPage.getByTestId('files__rename').click();
     await expect(authedPage.getByTestId('files__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
@@ -370,9 +372,11 @@ test.describe('Visual - Overlays', () => {
 
   test('files - selection with details panel', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
-    const row = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
-    await expect(row).toBeVisible();
-    await row.click();
+    await authedPage.getByTestId('files__library-item--lib_shared_default').click();
+    await authedPage.getByTestId('files__search').fill('README');
+    const fileButton = authedPage.getByRole('button', { name: 'README.txt' }).first();
+    await expect(fileButton).toBeVisible({ timeout: 10_000 });
+    await fileButton.click();
     await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible();
     await expect(authedPage.getByTestId('files__details-panel')).toBeVisible();
     await authedPage.waitForTimeout(400);

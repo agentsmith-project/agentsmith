@@ -129,7 +129,7 @@ export function FilesPageContent({
   const selectedLibrary = libraries.find((library) => library.id === selectedLibraryId) ?? null;
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.04),_transparent_40%)]">
       <div className="grid gap-3 md:grid-cols-3">
         <FilesSummaryCard
           label={t('file_manager.libraries')}
@@ -238,7 +238,7 @@ function FilesSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
       <div className="text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">{label}</div>
       <div className="mt-2 truncate text-xl font-semibold tracking-tight text-foreground">{value}</div>
       <div className="mt-1 truncate text-sm text-secondary">{helper}</div>

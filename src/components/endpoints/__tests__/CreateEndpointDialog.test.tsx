@@ -45,6 +45,11 @@ const mockTranslations = {
       catalog_input_price: 'Input Price',
       catalog_output_price: 'Output Price',
       name_conflict: 'Name conflict',
+      guided_setup_action: 'Use guided setup',
+      show_manual_form_action: 'Use manual form instead',
+      hide_manual_form_action: 'Hide manual form',
+      guided_setup_title: 'Guided setup is recommended',
+      guided_setup_description: 'Use the guided setup first',
     },
     custom_wizard: {
       use_default: 'Use default',
@@ -212,14 +217,18 @@ describe('CreateEndpointDialog', () => {
   it('shows custom endpoint entry as an external button', async () => {
     renderDialog();
     await waitFor(() => {
-      expect(screen.getByRole('button', { name: 'Open Wizard' })).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Use guided setup' })).toBeInTheDocument();
     });
-    fireEvent.click(screen.getByRole('button', { name: 'Open Wizard' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Use guided setup' }));
     expect(screen.getByTestId('custom-endpoint-wizard')).toBeInTheDocument();
   });
 
   it('shows base-url input in provider catalog flow', async () => {
     renderDialog();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Use manual form instead' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use manual form instead' }));
     await waitFor(() => {
       expect(screen.getByText('Catalog Models')).toBeInTheDocument();
     });
@@ -230,6 +239,10 @@ describe('CreateEndpointDialog', () => {
 
   it('auto-selects a catalog model and keeps create disabled before credential selection', async () => {
     renderDialog();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Use manual form instead' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use manual form instead' }));
 
     await waitFor(() => {
       expect(screen.getByLabelText('Name *')).toBeInTheDocument();
@@ -246,6 +259,10 @@ describe('CreateEndpointDialog', () => {
 
   it('updates base url when provider changes', async () => {
     renderDialog();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Use manual form instead' })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Use manual form instead' }));
 
     await waitFor(() => {
       expect(screen.getByLabelText('Base URL *')).toHaveValue('https://api.openai.com/v1');

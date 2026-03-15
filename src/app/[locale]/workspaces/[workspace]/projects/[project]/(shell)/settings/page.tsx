@@ -146,6 +146,17 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const canAssignProjectAdmins = canManageProjectAdminsPermission;
   const canTransferProjectOwner = canManageProjectLifecyclePermission;
   const projectAdminCount = selectedProjectAdmins.length;
+  const ownerDisplayName = useMemo(() => {
+    const ownerId = selectedProjectOwner || currentProject?.owner_id || '';
+    const fromWorkspace = workspaceMembers.find((member) => member.user_id === ownerId);
+    return fromWorkspace?.name || fromWorkspace?.email || ownerId;
+  }, [currentProject?.owner_id, selectedProjectOwner, workspaceMembers]);
+  const visibilityLabel = visibility === 'public'
+    ? settingsT('visibility_public')
+    : settingsT('visibility_private');
+  const joinPolicyLabel = joinPolicy === 'approval_required'
+    ? settingsT('join_policy_approval_required')
+    : settingsT('join_policy_open');
 
   const handleProjectAdminCheckedChange = (userId: string, checked: boolean) => {
     setSelectedProjectAdmins((current) => {
@@ -286,19 +297,19 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               icon={<FolderKanban className="h-4 w-4" />}
               label={settingsT('project_name')}
               value={currentProject.name}
-              helper={projectT(`visibility.${visibility}`)}
+              helper={`${settingsT('join_policy')}: ${joinPolicyLabel}`}
             />
             <SettingsSummaryCard
               icon={<Users className="h-4 w-4" />}
               label={settingsT('project_admins_title')}
               value={String(projectAdminCount)}
-              helper={settingsT('workspace_projects_admin_summary')}
+              helper={visibilityLabel}
             />
             <SettingsSummaryCard
               icon={<ShieldCheck className="h-4 w-4" />}
               label={settingsT('workspace_project_owner_label')}
-              value={selectedProjectOwner || currentProject.owner_id}
-              helper={settingsT(`join_policy.${joinPolicy}`)}
+              value={ownerDisplayName}
+              helper={settingsT('ownership_lifecycle_title')}
             />
           </div>
 

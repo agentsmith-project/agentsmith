@@ -61,6 +61,7 @@ export function CreateEndpointDialog({
 
   // Custom wizard state
   const [showCustomWizard, setShowCustomWizard] = React.useState(false);
+  const [showManualForm, setShowManualForm] = React.useState(false);
 
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
   const credentialsAPI = React.useMemo(() => new CredentialsAPI(getApiClient()), []);
@@ -166,6 +167,7 @@ export function CreateEndpointDialog({
     setCapability('chat_completion');
     setCredentialRef('');
     setBaseUrl('');
+    setShowManualForm(false);
   };
 
   React.useEffect(() => {
@@ -273,48 +275,93 @@ export function CreateEndpointDialog({
                   <p className="text-sm leading-6 text-secondary">
                     {t('create_dialog.description')}
                   </p>
+                  <div className="flex flex-wrap gap-2 pt-3">
+                    <Button
+                      type="button"
+                      variant="primary"
+                      size="sm"
+                      onClick={() => setShowCustomWizard(true)}
+                      disabled={createMutation.isPending}
+                    >
+                      <Sparkles className="mr-1 h-4 w-4" />
+                      {t('create_dialog.guided_setup_action')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowManualForm((current) => !current)}
+                      disabled={createMutation.isPending}
+                    >
+                      {showManualForm
+                        ? t('create_dialog.hide_manual_form_action')
+                        : t('create_dialog.show_manual_form_action')}
+                    </Button>
+                  </div>
                 </div>
               </div>
             </div>
           </div>
 
-          <EndpointBasicsForm
-            baseUrl={baseUrl}
-            capability={capability}
-            commonT={commonT}
-            createPending={createMutation.isPending}
-            credentialRef={credentialRef}
-            credentials={credentials}
-            description={description}
-            duplicateNameExists={duplicateNameExists}
-            locale={locale}
-            name={name}
-            projectId={projectId}
-            provider={provider}
-            providerModels={providerModels}
-            providerOptions={providerOptions}
-            selectedCatalogModel={selectedCatalogModel ?? null}
-            selectedModel={selectedModel}
-            selectedProvider={selectedProvider}
-            t={t}
-            workspaceId={workspaceId}
-            onBaseUrlChange={setBaseUrl}
-            onCapabilityChange={setCapability}
-            onCredentialRefChange={setCredentialRef}
-            onDescriptionChange={setDescription}
-            onNameChange={setName}
-            onOpenWizard={() => setShowCustomWizard(true)}
-            onProviderChange={setProvider}
-            onSelectedModelChange={setSelectedModel}
-          />
+          {showManualForm ? (
+            <EndpointBasicsForm
+              baseUrl={baseUrl}
+              capability={capability}
+              commonT={commonT}
+              createPending={createMutation.isPending}
+              credentialRef={credentialRef}
+              credentials={credentials}
+              description={description}
+              duplicateNameExists={duplicateNameExists}
+              locale={locale}
+              name={name}
+              projectId={projectId}
+              provider={provider}
+              providerModels={providerModels}
+              providerOptions={providerOptions}
+              selectedCatalogModel={selectedCatalogModel ?? null}
+              selectedModel={selectedModel}
+              selectedProvider={selectedProvider}
+              t={t}
+              workspaceId={workspaceId}
+              onBaseUrlChange={setBaseUrl}
+              onCapabilityChange={setCapability}
+              onCredentialRefChange={setCredentialRef}
+              onDescriptionChange={setDescription}
+              onNameChange={setName}
+              onOpenWizard={() => setShowCustomWizard(true)}
+              onProviderChange={setProvider}
+              onSelectedModelChange={setSelectedModel}
+            />
+          ) : (
+            <div className="flex-1 px-6 py-6">
+              <div className="rounded-2xl border border-dashed border-subtle bg-surface-low p-5 text-sm text-secondary">
+                <p className="font-medium text-foreground">{t('create_dialog.guided_setup_title')}</p>
+                <p className="mt-2 leading-6">{t('create_dialog.guided_setup_description')}</p>
+              </div>
+            </div>
+          )}
 
-          <EndpointDialogFooter
-            canSubmit={canSubmit}
-            createPending={createMutation.isPending}
-            hasCredentials={credentials.length > 0}
-            commonT={commonT}
-            onCancel={() => handleOpenChange(false)}
-          />
+          {showManualForm ? (
+            <EndpointDialogFooter
+              canSubmit={canSubmit}
+              createPending={createMutation.isPending}
+              hasCredentials={credentials.length > 0}
+              commonT={commonT}
+              onCancel={() => handleOpenChange(false)}
+            />
+          ) : (
+            <div className="flex flex-shrink-0 justify-end gap-2 border-t border-subtle px-6 py-4">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => handleOpenChange(false)}
+                disabled={createMutation.isPending}
+              >
+                {commonT('cancel')}
+              </Button>
+            </div>
+          )}
         </form>
       </SheetContent>
     </Sheet>

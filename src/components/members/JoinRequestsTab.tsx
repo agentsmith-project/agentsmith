@@ -1,15 +1,21 @@
 'use client';
 import * as React from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { EmptyState } from '@/components/ui/loading';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, XCircle, Clock, UserPlus } from 'lucide-react';
+import { CheckCircle, ShieldCheck, XCircle, Clock, UserPlus } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils/formatters';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import { useApproveJoinRequest, useRejectJoinRequest } from '@/lib/hooks/use-join-requests';
+import { useProject } from '@/lib/hooks/use-projects-queries';
+import { queryKeys } from '@/lib/query-keys';
+import { ProjectAPI, getApiClient } from '@/lib/api';
+import { toast } from '@/components/ui/toast';
+import { handleErrorForToast } from '@/lib/api/errors';
 import type { JoinRequest } from '@/lib/api/endpoints/members';
 
 export interface JoinRequestsTabProps {
@@ -31,11 +37,37 @@ export function JoinRequestsTab({
 }: JoinRequestsTabProps) {
   const t = useTranslations('members.join_requests');
   const canApprove = useCanManageMemberGovernance();
+  const queryClient = useQueryClient();
+  const { data: currentProject } = useProject(workspaceId, projectId);
   const approveMutation = useApproveJoinRequest(workspaceId, projectId);
   const rejectMutation = useRejectJoinRequest(workspaceId, projectId);
+  const projectAPI = React.useMemo(() => new ProjectAPI(getApiClient()), []);
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false);
   const [rejectReason, setRejectReason] = React.useState('');
   const [rejectTarget, setRejectTarget] = React.useState<JoinRequest | null>(null);
+  const [elevatingRequestId, setElevatingRequestId] = React.useState<string | null>(null);
+
+  const grantProjectAdminMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const currentAdmins = Array.isArray(currentProject?.governance_json?.project_admins)
+        ? currentProject.governance_json.project_admins.filter((value): value is string => typeof value === 'string')
+        : [];
+      const nextAdmins = Array.from(new Set([...currentAdmins, userId]));
+      return projectAPI.update(workspaceId, projectId, {
+        governance_json: {
+          ...(currentProject?.governance_json ?? {}),
+          project_admins: nextAdmins,
+        },
+      });
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(workspaceId, projectId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(workspaceId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.members.list(workspaceId, projectId) });
+      toast.success(t('approve_and_grant_success'));
+    },
+    onError: (error) => handleErrorForToast(error, 'useGrantProjectAdminFromJoinRequests'),
+  });
 
   const handleApprove = React.useCallback((requestId: string) => {
     if (onApprove) {
@@ -62,6 +94,16 @@ export function JoinRequestsTab({
     rejectMutation.mutate({ requestId: rejectTarget.id, reason: rejectReason.trim() });
     setRejectDialogOpen(false);
   };
+
+  const handleApproveAndGrantProjectAdmin = React.useCallback(async (request: JoinRequest) => {
+    setElevatingRequestId(request.id);
+    try {
+      await approveMutation.mutateAsync(request.id);
+      await grantProjectAdminMutation.mutateAsync(request.user_id);
+    } finally {
+      setElevatingRequestId(null);
+    }
+  }, [approveMutation, grantProjectAdminMutation]);
 
   if (loading) {
     return (
@@ -99,8 +141,14 @@ export function JoinRequestsTab({
                 request={request}
                 canApprove={canApprove}
                 onApprove={() => handleApprove(request.id)}
+                onApproveAndGrantProjectAdmin={() => void handleApproveAndGrantProjectAdmin(request)}
                 onReject={() => handleReject(request.id)}
-                isProcessing={approveMutation.isPending || rejectMutation.isPending}
+                isProcessing={
+                  approveMutation.isPending
+                  || rejectMutation.isPending
+                  || grantProjectAdminMutation.isPending
+                }
+                isApprovingAndGranting={elevatingRequestId === request.id}
               />
             ))}
           </div>
@@ -163,16 +211,20 @@ interface JoinRequestCardProps {
   request: JoinRequest;
   canApprove: boolean;
   onApprove?: () => void;
+  onApproveAndGrantProjectAdmin?: () => void;
   onReject?: () => void;
   isProcessing?: boolean;
+  isApprovingAndGranting?: boolean;
 }
 
 function JoinRequestCard({
   request,
   canApprove,
   onApprove,
+  onApproveAndGrantProjectAdmin,
   onReject,
   isProcessing = false,
+  isApprovingAndGranting = false,
 }: JoinRequestCardProps) {
   const t = useTranslations('members.join_requests');
 
@@ -259,6 +311,16 @@ function JoinRequestCard({
           >
             <CheckCircle className="h-4 w-4" />
             {t('approve')}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onApproveAndGrantProjectAdmin}
+            disabled={isProcessing}
+            className="flex-1 gap-2"
+          >
+            <ShieldCheck className="h-4 w-4" />
+            {isApprovingAndGranting ? t('approve_and_grant_pending') : t('approve_and_grant')}
           </Button>
           <Button
             variant="outline"

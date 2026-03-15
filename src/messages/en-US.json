@@ -799,6 +799,10 @@
       "accepted_mime_types": "Accepted MIME types (comma-separated)",
       "max_file_count": "Max files per message",
       "max_total_bytes": "Max total bytes per message",
+      "external_recommended_defaults": "For notebook work, start with the default external agent settings.",
+      "external_recommended_summary": "Default limits are already suitable for the notebook mainline flow. Open advanced controls only if this agent needs custom file handling or multimodal input.",
+      "show_advanced_capabilities": "Show advanced controls",
+      "hide_advanced_capabilities": "Hide advanced controls",
       "success": "Agent created successfully"
     },
     "edit": "Edit",
@@ -965,6 +969,11 @@
       "catalog_input_price": "Input Price (USD / 1M)",
       "catalog_output_price": "Output Price (USD / 1M)",
       "open_wizard_button": "Open Wizard",
+      "guided_setup_action": "Use guided setup",
+      "show_manual_form_action": "Use manual form instead",
+      "hide_manual_form_action": "Hide manual form",
+      "guided_setup_title": "Guided setup is recommended",
+      "guided_setup_description": "Use the guided setup for new model connections. Open the manual form only when you already know the exact provider, model, base URL, and credential mapping.",
       "wizard_description": "Create custom OpenAI or Anthropic compatible endpoints with validation.",
       "compatibility_interface": "Compatibility Interface"
     },
@@ -1442,6 +1451,10 @@
     "ownership_lifecycle_help": "This section covers ownership and lifecycle actions, including lifecycle settings, administrator assignment, ownership transfer, and deletion.",
     "ownership_lifecycle_read_only_help": "You can review ownership and lifecycle settings here, but changing them requires ownership permissions.",
     "project_admins_save": "Save project administrators",
+    "visibility_public": "Public project visibility",
+    "visibility_private": "Private project visibility",
+    "join_policy_approval_required": "Join requests require approval",
+    "join_policy_open": "Anyone in this workspace can join",
     "project_owner_title": "Project ownership",
     "project_owner_help": "Transfer ownership to another workspace member while retaining project administration access for the previous owner.",
     "project_owner_read_only_help": "Transferring project ownership requires ownership permissions.",
@@ -2016,6 +2029,8 @@
       "pending_requests": "Pending Requests",
       "reviewed_requests": "Reviewed Requests",
       "approve": "Approve",
+      "approve_and_grant": "Approve and grant project admin",
+      "approve_and_grant_pending": "Approving and granting...",
       "reject": "Reject",
       "reject_title": "Reject Join Request",
       "reject_description": "Please provide a reason so the requester understands the decision.",
@@ -2036,6 +2051,7 @@
         "description": "No pending or reviewed join requests"
       },
       "approve_success": "Join request approved successfully",
+      "approve_and_grant_success": "Join request approved and project administration granted",
       "reject_success": "Join request rejected successfully"
     },
     "effective_access": {

@@ -4,6 +4,7 @@ import { useTranslations } from 'next-intl';
 import {
   Sheet,
   SheetContent,
+  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
@@ -85,7 +86,7 @@ export function CreateTemplateDrawer({
           <SheetTitle className="text-base font-semibold text-foreground">
             {t('create_template')}
           </SheetTitle>
-          <p className="text-sm text-tertiary mt-1">{t('empty_custom_description')}</p>
+          <SheetDescription className="mt-1">{t('empty_custom_description')}</SheetDescription>
         </SheetHeader>
 
         <div className="flex-1 min-h-0 overflow-y-auto px-6 py-4 space-y-4">

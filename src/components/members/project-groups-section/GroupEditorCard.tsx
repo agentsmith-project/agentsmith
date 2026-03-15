@@ -11,6 +11,7 @@ interface GroupEditorCardProps {
   allPagedSelected: boolean;
   canManage: boolean;
   commonT: (key: string) => string;
+  createTemplatePending: boolean;
   createPending: boolean;
   editingGroupId: string | null;
   filteredMembersCount: number;
@@ -29,6 +30,7 @@ interface GroupEditorCardProps {
   updatePending: boolean;
   onCancelEdit: () => void;
   onClearPage: () => void;
+  onCreateTemplate: () => void;
   onGroupNameChange: (value: string) => void;
   onMemberPageChange: (nextPage: number) => void;
   onMemberSearchChange: (value: string) => void;
@@ -42,6 +44,7 @@ export function GroupEditorCard({
   allPagedSelected,
   canManage,
   commonT,
+  createTemplatePending,
   createPending,
   editingGroupId,
   filteredMembersCount,
@@ -60,6 +63,7 @@ export function GroupEditorCard({
   updatePending,
   onCancelEdit,
   onClearPage,
+  onCreateTemplate,
   onGroupNameChange,
   onMemberPageChange,
   onMemberSearchChange,
@@ -92,9 +96,22 @@ export function GroupEditorCard({
           />
         </div>
         <div>
-          <label className="mb-1.5 block text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
-            {t('select_template')}
-          </label>
+          <div className="mb-1.5 flex items-center justify-between gap-3">
+            <label className="block text-xs font-medium uppercase tracking-[0.14em] text-tertiary">
+              {t('select_template')}
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-7 px-2 text-[11px]"
+              disabled={!canManage || createTemplatePending}
+              onClick={onCreateTemplate}
+              data-testid="members__group-create-template-btn"
+            >
+              {t('create_template')}
+            </Button>
+          </div>
           <select
             className="h-10 w-full rounded-xl border border-subtle bg-surface-high px-3 text-sm"
             value={selectedTemplateId}

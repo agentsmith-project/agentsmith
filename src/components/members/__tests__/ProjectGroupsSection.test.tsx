@@ -5,6 +5,11 @@ import { ProjectGroupsSection } from '../ProjectGroupsSection';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 
 const mockCreateMutateAsync = vi.fn().mockResolvedValue({});
+const mockCreateTemplateMutateAsync = vi.fn().mockResolvedValue({
+  id: 'tpl_custom',
+  name: 'Custom Template',
+  permissions: ['project:endpoint:use', 'project:membership:update'],
+});
 const mockUpdateMutateAsync = vi.fn().mockResolvedValue({});
 const mockDeleteMutateAsync = vi.fn().mockResolvedValue({});
 const mockRefetchMembers = vi.fn().mockResolvedValue(undefined);
@@ -56,6 +61,10 @@ vi.mock('@/lib/hooks/use-members', () => ({
       },
     ],
   })),
+  useCreatePermissionTemplate: vi.fn(() => ({
+    mutateAsync: mockCreateTemplateMutateAsync,
+    isPending: false,
+  })),
   useCreateProjectGroup: vi.fn(() => ({
     mutateAsync: mockCreateMutateAsync,
     isPending: false,
@@ -94,6 +103,11 @@ describe('ProjectGroupsSection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockRefetchMembers.mockResolvedValue(undefined);
+    mockCreateTemplateMutateAsync.mockResolvedValue({
+      id: 'tpl_custom',
+      name: 'Custom Template',
+      permissions: ['project:endpoint:use', 'project:membership:update'],
+    });
   });
 
   it('creates a group with template and selected members', async () => {
@@ -165,6 +179,52 @@ describe('ProjectGroupsSection', () => {
     await waitFor(() => {
       expect(mockDeleteMutateAsync).toHaveBeenCalledWith('grp_1');
     });
+  });
+
+  it('resets editing state after deleting the group being edited so the next save creates a new group', async () => {
+    const user = userEvent.setup();
+    render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.click(screen.getByTestId('members__group-edit-btn--grp_1'));
+    await user.click(screen.getByTestId('members__group-delete-btn--grp_1'));
+    await user.click(screen.getByTestId('members__group-delete-confirm-btn'));
+
+    await waitFor(() => {
+      expect(mockDeleteMutateAsync).toHaveBeenCalledWith('grp_1');
+    });
+
+    await user.clear(screen.getByTestId('members__group-name-input'));
+    await user.type(screen.getByTestId('members__group-name-input'), 'new-group');
+    await user.selectOptions(screen.getByTestId('members__group-template-select'), 'developer');
+    await user.click(screen.getByTestId('members__group-save-btn'));
+
+    await waitFor(() => {
+      expect(mockCreateMutateAsync).toHaveBeenCalledWith({
+        name: 'new-group',
+        permission_template_id: 'developer',
+        member_ids: [],
+      });
+    });
+    expect(mockUpdateMutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('creates a permission template inline and selects it for the group form', async () => {
+    const user = userEvent.setup();
+    render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
+
+    await user.click(screen.getByTestId('members__group-create-template-btn'));
+    await user.type(screen.getByLabelText('template_name'), 'Custom Template');
+    await user.click(screen.getAllByRole('button', { name: 'create_template' }).at(-1)!);
+
+    await waitFor(() => {
+      expect(mockCreateTemplateMutateAsync).toHaveBeenCalledWith({
+        name: 'Custom Template',
+        description: undefined,
+        permissions: [],
+      });
+    });
+
+    expect(screen.getByTestId('members__group-template-select')).toHaveValue('tpl_custom');
   });
 
   it('renders group management controls as read-only for project admins', () => {

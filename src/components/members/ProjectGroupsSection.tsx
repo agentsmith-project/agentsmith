@@ -14,6 +14,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import {
+  useCreatePermissionTemplate,
   useApplyProjectGroupTemplate,
   useCreateProjectGroup,
   useDeleteProjectGroup,
@@ -24,9 +25,11 @@ import {
 } from '@/lib/hooks/use-members';
 import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
 import type { ProjectGroup } from '@/lib/api/endpoints/members';
+import type { PermissionTemplate } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { GroupEditorCard } from './project-groups-section/GroupEditorCard';
 import { GroupList } from './project-groups-section/GroupList';
+import { CreateTemplateDrawer } from './CreateTemplateDrawer';
 import type { PreviewDiff } from './project-groups-section/types';
 import {
   buildDefaultTemplates,
@@ -48,6 +51,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const { data: groups = [] } = useProjectGroups(workspaceId, projectId);
   const { data: members = [], refetch: refetchMembers } = useMembers(workspaceId, projectId);
   const { data: templates = [] } = usePermissionTemplates(workspaceId, projectId);
+  const createPermissionTemplate = useCreatePermissionTemplate(workspaceId, projectId);
   const createGroup = useCreateProjectGroup(workspaceId, projectId);
   const updateGroup = useUpdateProjectGroup(workspaceId, projectId);
   const deleteGroup = useDeleteProjectGroup(workspaceId, projectId);
@@ -56,11 +60,13 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const [name, setName] = React.useState('');
   const [templateId, setTemplateId] = React.useState<string>('user');
   const [selectedMemberIds, setSelectedMemberIds] = React.useState<string[]>([]);
+  const [inlineTemplates, setInlineTemplates] = React.useState<PermissionTemplate[]>([]);
   const [memberSearch, setMemberSearch] = React.useState('');
   const [memberPage, setMemberPage] = React.useState(1);
   const [editingGroupId, setEditingGroupId] = React.useState<string | null>(null);
   const [previewGroupId, setPreviewGroupId] = React.useState<string | null>(null);
   const [groupToDelete, setGroupToDelete] = React.useState<ProjectGroup | null>(null);
+  const [createTemplateOpen, setCreateTemplateOpen] = React.useState(false);
   const [lastApplyResult, setLastApplyResult] = React.useState<{
     groupId: string;
     appliedCount: number;
@@ -74,8 +80,8 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   );
 
   const templateOptions = React.useMemo(() => {
-    return buildTemplateOptions(defaultTemplates, templates);
-  }, [defaultTemplates, templates]);
+    return buildTemplateOptions(defaultTemplates, [...templates, ...inlineTemplates]);
+  }, [defaultTemplates, inlineTemplates, templates]);
 
   const selectedTemplatePermissionsCount =
     templateOptions.find((template) => template.id === templateId)?.permissions.length ?? 0;
@@ -124,6 +130,8 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     setMemberSearch('');
     setMemberPage(1);
     setEditingGroupId(null);
+    setPreviewGroupId(null);
+    setLastApplyResult(null);
   };
 
   const handleSaveGroup = async () => {
@@ -158,6 +166,21 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
     setTemplateId(group.permission_template_id);
     setSelectedMemberIds(group.member_ids);
     setMemberPage(1);
+  };
+
+  const handleCreateTemplate = async (data: {
+    name: string;
+    description?: string;
+    permissions: string[];
+  }) => {
+    const created = await createPermissionTemplate.mutateAsync(data);
+    setInlineTemplates((prev) => {
+      if (prev.some((template) => template.id === created.id)) {
+        return prev;
+      }
+      return [...prev, created];
+    });
+    setTemplateId(created.id);
   };
 
   React.useEffect(() => {
@@ -277,8 +300,10 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
           templateOptions={templateOptions}
           t={t}
           updatePending={updateGroup.isPending}
+          createTemplatePending={createPermissionTemplate.isPending}
           onCancelEdit={resetForm}
           onClearPage={deselectAllPagedMembers}
+          onCreateTemplate={() => setCreateTemplateOpen(true)}
           onGroupNameChange={setName}
           onMemberPageChange={setMemberPage}
           onMemberSearchChange={(value) => {
@@ -347,7 +372,11 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
               onClick={(event) => {
                 event.preventDefault();
                 if (!groupToDelete) return;
-                void deleteGroup.mutateAsync(groupToDelete.id);
+                const deletedGroupId = groupToDelete.id;
+                void deleteGroup.mutateAsync(deletedGroupId);
+                if (editingGroupId === deletedGroupId || previewGroupId === deletedGroupId) {
+                  resetForm();
+                }
                 setGroupToDelete(null);
               }}
               disabled={deleteGroup.isPending}
@@ -358,6 +387,12 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <CreateTemplateDrawer
+        open={createTemplateOpen}
+        onOpenChange={setCreateTemplateOpen}
+        onSubmit={handleCreateTemplate}
+      />
     </div>
   );
 }

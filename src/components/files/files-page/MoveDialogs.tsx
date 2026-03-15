@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { Folder } from 'lucide-react';
+import { Folder, FolderPlus, PencilLine } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -97,16 +97,25 @@ export function MoveDialogs({
     <>
       <Dialog open={createFolderOpen} onOpenChange={onSetCreateFolderOpen}>
         <DialogContent className="sm:max-w-[480px]" data-testid="files__dialog__new-folder">
-          <DialogHeader>
+          <DialogHeader className="space-y-3">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+              <FolderPlus className="h-3.5 w-3.5" />
+              Files
+            </div>
             <DialogTitle>{t('file_manager.new_folder')}</DialogTitle>
           </DialogHeader>
-          <div className="space-y-2">
-            <div className="text-xs text-tertiary">{t('file_manager.folder_name_hint')}</div>
-            <Input
-              value={folderName}
-              onChange={(event) => onSetFolderName(event.target.value)}
-              placeholder={t('file_manager.folder_name_placeholder')}
-            />
+          <div className="space-y-3">
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-sm leading-6 text-secondary">{t('file_manager.folder_name_hint')}</p>
+            </div>
+            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
+              <div className="text-xs text-tertiary">{t('file_manager.folder_name_hint')}</div>
+              <Input
+                value={folderName}
+                onChange={(event) => onSetFolderName(event.target.value)}
+                placeholder={t('file_manager.folder_name_placeholder')}
+              />
+            </div>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onSetCreateFolderOpen(false)}>
@@ -121,7 +130,11 @@ export function MoveDialogs({
 
       <Dialog open={moveOpen} onOpenChange={onSetMoveOpen}>
         <DialogContent className="sm:max-w-[560px]" data-testid="files__dialog__move">
-          <DialogHeader>
+          <DialogHeader className="space-y-3">
+            <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+              <PencilLine className="h-3.5 w-3.5" />
+              Files
+            </div>
             <DialogTitle>{t('file_manager.rename')}</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">

@@ -8,6 +8,7 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import { PlugZap, Settings2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { CredentialsAPI, EndpointAPI, ModelConfigAPI, getApiClient } from '@/lib/api';
 import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
@@ -221,12 +222,32 @@ export function EditEndpointDialog({
         className="flex h-full flex-col gap-0 overflow-hidden p-0"
         data-testid="endpoints__edit-dialog"
       >
-        <SheetHeader className="border-b border-subtle px-6 py-4">
+        <SheetHeader className="border-b border-subtle px-6 py-5">
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-accent">
+            <PlugZap className="h-3.5 w-3.5" />
+            Endpoint
+          </div>
           <SheetTitle>{t('edit_dialog.title')}</SheetTitle>
           <SheetDescription>{t('edit_dialog.description')}</SheetDescription>
         </SheetHeader>
 
         <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+          <div className="border-b border-white/6 px-6 py-4">
+            <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+              <div className="flex items-start gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                  <Settings2 className="h-5 w-5" />
+                </span>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-foreground">{endpoint.name}</p>
+                  <p className="text-sm leading-6 text-secondary">
+                    {t('edit_dialog.description')}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <EditEndpointForm
             baseUrl={baseUrl}
             cacheReadDiscountRatio={cacheReadDiscountRatio}

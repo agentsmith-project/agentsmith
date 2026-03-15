@@ -43,6 +43,7 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { cn } from '@/lib/utils';
+import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { ChatDialogs } from './_components/ChatDialogs';
 import { ChatHeaderActions } from './_components/ChatHeaderActions';
 import {
@@ -79,8 +80,8 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const workspaceId = resolvedParams?.workspace ?? '';
-  const projectId = resolvedParams?.project ?? '';
+  const workspaceId = validateWorkspaceParam(resolvedParams?.workspace) ?? '';
+  const projectId = validateProjectParam(resolvedParams?.project) ?? '';
   const locale = resolvedParams?.locale ?? 'en-US';
   const { layoutMode } = useProjectLayoutMode();
 

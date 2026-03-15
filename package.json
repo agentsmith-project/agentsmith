@@ -38,6 +38,8 @@
     "test:e2e:integration:notebook-external:with-api": "bash scripts/run-integration-e2e-with-api.sh e2e/integration-notebook-external.spec.ts",
     "test:e2e:integration:endpoints-capabilities:with-api": "bash scripts/run-integration-e2e-with-api.sh e2e/integration-endpoint-capabilities.spec.ts",
     "test:e2e:integration:chat:real:with-api": "INTEGRATION_REAL_COMPLETION_E2E=true bash scripts/run-integration-e2e-with-api.sh e2e/integration-chat.spec.ts --grep \"real deepseek\"",
+    "test:mainline:strict": "bash scripts/workspace-project-mainline-gate.sh",
+    "test:mainline:strict:real": "bash scripts/workspace-project-mainline-gate.sh --with-real-lane",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "integration:deps:up": "docker compose -f infra/integration/docker-compose.yml up -d",

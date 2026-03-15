@@ -982,6 +982,54 @@ paths:
           $ref: "#/components/responses/Unauthorized"
         "403":
           $ref: "#/components/responses/Forbidden"
+  /api/v1/workspaces/{workspaceId}/project-creators:
+    get:
+      tags:
+        - Workspaces
+      operationId: get_workspaceProjectCreators
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    patch:
+      tags:
+        - Workspaces
+      operationId: patch_workspaceProjectCreators
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - project_creators
+              properties:
+                project_creators:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Validation error
   /api/v1/workspaces/{workspaceId}/projects/{projectId}:
     get:
       tags:

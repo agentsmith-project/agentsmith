@@ -183,6 +183,37 @@ CI runs the same command and fails the pipeline on missing coverage.
 
 Before merge/engineering acceptance: ensure `npm run contracts:check`, `npm run contracts:check-openapi`, and `npm run openapi:check-generated` all pass on main.
 
+## Workspace / Project Mainline Strict Gate
+
+When the current work touches the mainline business chain
+
+1. `system 管理侧`
+2. `工作区发布状态`
+3. `用户访问入口`
+4. `项目创建与进入`
+
+run:
+
+```bash
+npm run test:mainline:strict
+```
+
+This gate bundles:
+
+1. contract checks
+2. lint + typecheck
+3. targeted frontend/backend tests for workspace publish, project creators, and project creation
+4. mock lane E2E for `system -> workspace -> project`
+5. targeted visual checks for the mainline entry pages
+
+If release-oriented verification also needs the real backend lane:
+
+```bash
+npm run test:mainline:strict:real
+```
+
+This real-lane variant auto starts integration dependencies, API, and frontend on dedicated ports.
+
 ## API 合约与文档入口
 
 后端提供统一文档入口：

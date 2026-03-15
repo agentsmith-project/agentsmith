@@ -25,11 +25,10 @@ function findWorkspaceRecord(args: {
 function listWorkspaceProjectCreators(args: {
   workspaceId: string;
   user: AuthenticatedUser;
-  workspaces: WorkspaceRecordLike[];
   defaultWorkspace?: WorkspaceRecordLike;
   workspaceCreatedAt: string;
 }) {
-  const { workspaceId, user, workspaces, defaultWorkspace, workspaceCreatedAt } = args;
+  const { workspaceId, user, defaultWorkspace, workspaceCreatedAt } = args;
   return buildWorkspaceMembersFromConfig({
     workspaceId,
     actorId: user.id,
@@ -95,7 +94,6 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
     const items = listWorkspaceProjectCreators({
       workspaceId,
       user,
-      workspaces,
       defaultWorkspace,
       workspaceCreatedAt: workspaceRecord.created_at,
     });
@@ -108,7 +106,6 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
     const currentItems = listWorkspaceProjectCreators({
       workspaceId,
       user,
-      workspaces,
       defaultWorkspace,
       workspaceCreatedAt: workspaceRecord.created_at,
     }).map((member) => member.user_id);

@@ -11,6 +11,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/members",
     "method": "get"
   },
+  "workspaceProjectCreators": {
+    "path": "/api/v1/workspaces/{workspaceId}/project-creators",
+    "method": "get"
+  },
   "collection": {
     "path": "/api/v1/workspaces/{workspaceId}/projects",
     "method": "get"

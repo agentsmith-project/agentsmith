@@ -148,7 +148,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
             />
           </div>
 
-          <Card>
+          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('steps.title')}</CardTitle>
             </CardHeader>
@@ -161,61 +161,61 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('gateway.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-tertiary">
               <p>{t('gateway.description')}</p>
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__gateway-base-url">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__gateway-base-url">
                 {gatewayBaseUrl}
               </pre>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('claude.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__claude-sample">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-sample">
                 {claudeEnvSample}
               </pre>
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__claude-json-sample">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-json-sample">
                 {claudeJsonSample}
               </pre>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('codex.title')}</CardTitle>
             </CardHeader>
             <CardContent>
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__codex-sample">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__codex-sample">
                 {codexSample}
               </pre>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('api_examples.title')}</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__openai-chat-curl">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__openai-chat-curl">
                 {openAiCompletionCurl}
               </pre>
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__openai-responses-curl">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__openai-responses-curl">
                 {openAiResponsesCurl}
               </pre>
-              <pre className="overflow-x-auto rounded-md border border-subtle bg-bg-base/40 p-3 text-xs text-foreground" data-testid="use-guide__anthropic-curl">
+              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__anthropic-curl">
                 {anthropicCurl}
               </pre>
             </CardContent>
           </Card>
 
-          <Card>
+          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
               <CardTitle className="text-base">{t('quick_links.title')}</CardTitle>
             </CardHeader>
@@ -255,7 +255,7 @@ function UseGuideSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
         {icon}
         {label}

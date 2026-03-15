@@ -171,21 +171,23 @@ export function AlertCenterPage({
         />
       </div>
 
-      <AlertCenterTabs
-        activeTab={activeTab}
-        alerts={alerts}
-        canManageAlerts={canManageAlerts}
-        rules={rules}
-        t={t}
-        onAlertDismiss={handleDismiss}
-        onAlertMarkAsRead={handleMarkAsRead}
-        onCreateOpen={() => setIsCreateDialogOpen(true)}
-        onRuleDelete={handleDeleteRule}
-        onRuleEdit={handleEditRule}
-        onRuleTest={handleTestRule}
-        onRuleToggle={handleToggleRule}
-        onTabChange={setActiveTab}
-      />
+      <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <AlertCenterTabs
+          activeTab={activeTab}
+          alerts={alerts}
+          canManageAlerts={canManageAlerts}
+          rules={rules}
+          t={t}
+          onAlertDismiss={handleDismiss}
+          onAlertMarkAsRead={handleMarkAsRead}
+          onCreateOpen={() => setIsCreateDialogOpen(true)}
+          onRuleDelete={handleDeleteRule}
+          onRuleEdit={handleEditRule}
+          onRuleTest={handleTestRule}
+          onRuleToggle={handleToggleRule}
+          onTabChange={setActiveTab}
+        />
+      </div>
 
       <AlertRuleFormDialog
         open={isCreateDialogOpen}
@@ -219,7 +221,7 @@ function AlertCenterSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
         {icon}
         {label}

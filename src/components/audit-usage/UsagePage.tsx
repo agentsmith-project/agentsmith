@@ -213,16 +213,18 @@ export function UsagePage({
         />
       </div>
 
-      <UsageView
-        records={usageData?.items ?? []}
-        loading={usageLoading}
-        periodHours={periodHours}
-        onPeriodChange={setPeriodHours}
-        endpointOptions={endpointOptions}
-        selectedEndpointId={selectedEndpointId}
-        onEndpointChange={setSelectedEndpointId}
-        limitsOverview={limitsOverview}
-      />
+      <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
+        <UsageView
+          records={usageData?.items ?? []}
+          loading={usageLoading}
+          periodHours={periodHours}
+          onPeriodChange={setPeriodHours}
+          endpointOptions={endpointOptions}
+          selectedEndpointId={selectedEndpointId}
+          onEndpointChange={setSelectedEndpointId}
+          limitsOverview={limitsOverview}
+        />
+      </div>
     </PageLayout>
   );
 }
@@ -239,7 +241,7 @@ function UsageSummaryCard({
   helper: string;
 }) {
   return (
-    <div className="rounded-[18px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_10px_24px_rgba(0,0,0,0.12)]">
+    <div className="rounded-[20px] border border-white/6 bg-white/[0.03] p-4 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
       <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
         {icon}
         {label}

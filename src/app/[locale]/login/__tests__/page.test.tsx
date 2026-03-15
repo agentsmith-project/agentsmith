@@ -1,10 +1,14 @@
 import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+const mockPush = vi.fn();
 const mockReplace = vi.fn();
+const mockRefetch = vi.fn();
+const mockClearAuth = vi.fn();
+const mockUseWorkspaces = vi.fn();
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ replace: mockReplace }),
+  useRouter: () => ({ push: mockPush, replace: mockReplace }),
   useParams: () => ({ locale: 'en-US' }),
 }));
 
@@ -12,23 +16,37 @@ vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => key,
 }));
 
+vi.mock('@/lib/hooks/use-workspaces', () => ({
+  useWorkspaces: () => mockUseWorkspaces(),
+}));
+
 vi.mock('@/lib/stores/authStore', () => ({
-  useAuthStoreHydration: () => true,
-  useAuthStore: () => ({ isAuthenticated: false }),
+  useAuthStore: () => ({ clearAuth: mockClearAuth }),
 }));
 
 import LoginEntryPage from '../page';
 
 describe('LoginEntryPage', () => {
   beforeEach(() => {
+    mockPush.mockClear();
     mockReplace.mockClear();
+    mockRefetch.mockClear();
+    mockClearAuth.mockClear();
   });
 
-  it('renders workspace and system entry actions', () => {
+  it('renders workspace selection as the default login experience', () => {
+    mockUseWorkspaces.mockReturnValue({
+      data: [{ id: 'ws_1', name: 'Workspace One' }],
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch: mockRefetch,
+    });
+
     render(<LoginEntryPage />);
 
-    expect(screen.getByTestId('login-entry__heading')).toBeInTheDocument();
-    expect(screen.getByTestId('login-entry__workspace')).toHaveAttribute('href', '/en-US/login/workspace');
-    expect(screen.getByTestId('login-entry__system')).toHaveAttribute('href', '/en-US/system/login');
+    expect(screen.getByTestId('workspace-select__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-select__card--ws_1')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-select__system-link')).toHaveAttribute('href', '/en-US/system/login');
   });
 });

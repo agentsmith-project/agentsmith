@@ -12,7 +12,7 @@ import { Logo } from '@/components/app-shell/Logo';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
-import { ArrowRight, Building2, KeyRound, Sparkles } from 'lucide-react';
+import { ArrowRight } from 'lucide-react';
 
 type WorkspaceLoginConfig = {
   id: string;
@@ -141,49 +141,20 @@ export default function WorkspaceLoginPage() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="min-h-screen bg-background flex flex-col">
-          <main className="flex-1 flex items-center justify-center p-4">
-            <div className="w-full max-w-4xl">
-              <section className="rounded-3xl border border-border bg-surface px-6 py-8 shadow-[0_24px_60px_rgba(0,0,0,0.22)]">
-                <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_420px] lg:items-start">
-                  <div className="space-y-5">
-                    <div className="flex justify-center lg:justify-start">
-                      <Logo className="scale-150" />
-                    </div>
-                    <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-                      <Building2 className="h-3.5 w-3.5" />
-                      {t('workspace_login_badge')}
-                    </div>
-                    <div className="space-y-3">
-                      <h1 className="text-2xl font-semibold text-foreground" data-testid="workspace-login__heading">
-                        {config?.name || t('workspace_login_title')}
-                      </h1>
-                      <p className="text-sm leading-6 text-tertiary">{t('workspace_login_subtitle')}</p>
-                      <p className="max-w-xl text-sm leading-6 text-secondary">{t('workspace_login_description')}</p>
-                    </div>
-                    <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
-                        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                          <KeyRound className="h-3.5 w-3.5 text-accent" />
-                          {t('workspace_login_idp_label')}
-                        </div>
-                        <div className="mt-3 text-base font-semibold text-foreground">
-                          {config?.idp?.realm || t('workspace_login_idp_pending')}
-                        </div>
-                        <p className="mt-1 text-sm text-tertiary">{t('workspace_login_idp_hint')}</p>
-                      </div>
-                      <div className="rounded-[18px] border border-border/70 bg-surface-high p-4">
-                        <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                          <Sparkles className="h-3.5 w-3.5 text-accent" />
-                          {t('workspace_login_support_label')}
-                        </div>
-                        <div className="mt-3 text-base font-semibold text-foreground">{t('workspace_login_support_value')}</div>
-                        <p className="mt-1 text-sm text-tertiary">{t('workspace_login_support_hint')}</p>
-                      </div>
-                    </div>
-                  </div>
+        <div className="min-h-screen bg-background p-4">
+          <main className="mx-auto flex min-h-screen w-full max-w-md items-center justify-center">
+            <section className="w-full rounded-[28px] border border-border bg-surface px-6 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
+              <div className="mb-6 flex justify-center">
+                <Logo className="scale-150" />
+              </div>
+              <div className="mb-6 space-y-2 text-center">
+                <h1 className="text-2xl font-semibold text-foreground" data-testid="workspace-login__heading">
+                  {config?.name || t('workspace_login_title')}
+                </h1>
+                <p className="text-sm leading-6 text-secondary">{t('workspace_login_minimal_description')}</p>
+              </div>
 
-                  <div className="rounded-2xl border border-border bg-surface-high p-6">
+              <div className="rounded-[22px] border border-border bg-surface-high p-6">
                     {isLoadingConfig ? (
                       <p className="text-sm text-tertiary" data-testid="workspace-login__loading">{t('loading_workspaces')}</p>
                     ) : configError || !config ? (
@@ -195,12 +166,6 @@ export default function WorkspaceLoginPage() {
                       </div>
                     ) : (
                       <>
-                        <div className="mb-4 rounded-[18px] border border-white/6 bg-white/[0.025] p-4">
-                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary">
-                            {t('workspace_login_title')}
-                          </p>
-                          <p className="mt-2 text-sm text-secondary">{t('workspace_login_description')}</p>
-                        </div>
                         <Button
                           data-testid="workspace-login__keycloak-btn"
                           onClick={handleKeycloakLogin}
@@ -258,12 +223,20 @@ export default function WorkspaceLoginPage() {
                             </div>
                           </>
                         ) : null}
+
+                        <div className="mt-6 text-center">
+                          <Link
+                            href={`/${locale}/login`}
+                            className="text-xs text-tertiary transition-colors hover:text-secondary"
+                            data-testid="workspace-login__back-to-selection"
+                          >
+                            {t('back_to_workspace_select')}
+                          </Link>
+                        </div>
                       </>
                     )}
-                  </div>
-                </div>
-              </section>
-            </div>
+              </div>
+            </section>
           </main>
         </div>
       </PageLayout>

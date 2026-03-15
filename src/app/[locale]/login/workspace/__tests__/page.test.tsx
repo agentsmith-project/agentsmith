@@ -47,7 +47,7 @@ describe('WorkspaceSelectPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_1/login');
   });
 
-  it('renders entry link to workspace overview page', () => {
+  it('keeps the system 管理侧入口 as a low-emphasis footer link', () => {
     mockUseWorkspaces.mockReturnValue({
       data: [{ id: 'ws_1', name: 'Workspace One' }],
       isLoading: false,
@@ -57,7 +57,7 @@ describe('WorkspaceSelectPage', () => {
     });
 
     render(<WorkspaceSelectPage />);
-    expect(screen.getByTestId('workspace-select__open-workspaces')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-select__system-link')).toHaveAttribute('href', '/en-US/system/login');
   });
 
   it('shows session-expired state on 401 and can clear auth then redirect', () => {

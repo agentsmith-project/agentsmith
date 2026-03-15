@@ -8,7 +8,6 @@ import { PageState } from '@/components/layout/PageState';
 import { Logo } from '@/components/app-shell/Logo';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { LockKeyhole, ShieldCheck } from 'lucide-react';
 
 export default function SystemLoginPage() {
   const params = useParams();
@@ -45,47 +44,19 @@ export default function SystemLoginPage() {
     <PageState state="success">
       <PageLayout>
         <div className="flex min-h-screen items-center justify-center bg-background p-4">
-          <div className="w-full max-w-4xl">
-            <section className="rounded-3xl border border-border bg-surface px-6 py-8 shadow-[0_24px_60px_rgba(0,0,0,0.22)]">
-              <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-start">
-                <div className="space-y-5 text-center lg:text-left">
-                  <div className="flex justify-center lg:justify-start">
-                    <Logo className="scale-150" />
-                  </div>
-                  <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    {t('login_badge')}
-                  </div>
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('eyebrow')}</p>
-                    <h1 className="mt-2 text-2xl font-semibold text-foreground" data-testid="system-login__heading">
-                      {t('login_title')}
-                    </h1>
-                    <p className="mt-2 text-sm leading-6 text-tertiary">{t('login_subtitle')}</p>
-                    <p className="mt-3 max-w-xl text-sm leading-6 text-secondary">{t('login_description')}</p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <div className="rounded-xl border border-border/70 bg-surface-high p-4 text-left">
-                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                        <ShieldCheck className="h-3.5 w-3.5 text-accent" />
-                        {t('login_scope_label')}
-                      </div>
-                      <div className="mt-3 text-base font-semibold text-foreground">{t('login_scope_value')}</div>
-                      <p className="mt-1 text-sm text-tertiary">{t('login_scope_hint')}</p>
-                    </div>
-                    <div className="rounded-xl border border-border/70 bg-surface-high p-4 text-left">
-                      <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
-                        <LockKeyhole className="h-3.5 w-3.5 text-accent" />
-                        {t('login_access_label')}
-                      </div>
-                      <div className="mt-3 text-base font-semibold text-foreground">{t('login_access_value')}</div>
-                      <p className="mt-1 text-sm text-tertiary">{t('login_access_hint')}</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-2xl border border-border bg-surface-high p-6">
-              <div className="space-y-4">
+          <div className="w-full max-w-md">
+            <section className="rounded-[28px] border border-border bg-surface px-6 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
+              <div className="mb-6 flex justify-center">
+                <Logo className="scale-150" />
+              </div>
+              <div className="mb-6 space-y-2 text-center">
+                <h1 className="text-2xl font-semibold text-foreground" data-testid="system-login__heading">
+                  {t('login_title')}
+                </h1>
+                <p className="text-sm leading-6 text-secondary">{t('login_subtitle')}</p>
+              </div>
+              <div className="rounded-[22px] border border-border bg-surface-high p-6">
+                <div className="space-y-4">
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-foreground">{t('username')}</span>
                   <Input
@@ -121,7 +92,6 @@ export default function SystemLoginPage() {
                 >
                   {isSubmitting ? t('logging_in') : t('login_submit')}
                 </Button>
-              </div>
                 </div>
               </div>
             </section>

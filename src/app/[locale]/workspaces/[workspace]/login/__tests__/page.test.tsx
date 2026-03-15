@@ -84,6 +84,7 @@ describe('WorkspaceLoginPage', () => {
 
     expect(await screen.findByTestId('workspace-login__heading')).toHaveTextContent('Alpha Workspace');
     expect(fetchMock).toHaveBeenCalledWith('/api/public/workspaces/ws_alpha', { cache: 'no-store' });
+    expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
   });
 
   it('redirects to workspace home after mock quick login', async () => {
@@ -123,5 +124,12 @@ describe('WorkspaceLoginPage', () => {
 
     expect(await screen.findByTestId('workspace-login__error')).toBeInTheDocument();
     expect(screen.getByText('workspace_not_found')).toBeInTheDocument();
+  });
+
+  it('keeps only a back link to workspace selection on the direct workspace login page', async () => {
+    render(<WorkspaceLoginPage />);
+
+    expect(await screen.findByTestId('workspace-login__back-to-selection')).toHaveAttribute('href', '/en-US/login');
+    expect(screen.queryByText('system_login_link')).not.toBeInTheDocument();
   });
 });

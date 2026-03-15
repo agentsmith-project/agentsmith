@@ -5,8 +5,9 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getApiClient } from '@/lib/api/client';
+import { createApiClient, getApiClient } from '@/lib/api/client';
 import { WorkspaceAPI } from '@/lib/api/endpoints/workspaces';
+import type { Workspace } from '@/lib/api/types';
 import { useAuthStore } from '@/lib/stores/authStore';
 
 // Query keys factory
@@ -25,14 +26,28 @@ interface WorkspaceQueryOptions {
  */
 export function useWorkspaces(options?: WorkspaceQueryOptions) {
   const token = useAuthStore((state) => state.token);
+  const isPublic = options?.public === true;
   return useQuery({
-    queryKey: workspaceKeys.all,
+    queryKey: [...workspaceKeys.all, isPublic ? 'public' : 'private'],
     queryFn: async () => {
+      if (isPublic) {
+        const response = await fetch('/api/public/workspaces', { cache: 'no-store' });
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          const message = typeof body?.error_message === 'string'
+            ? body.error_message
+            : 'workspace_directory_unavailable';
+          throw new Error(message);
+        }
+        const body = await response.json() as { items?: Workspace[] };
+        return body.items ?? [];
+      }
+
       const client = getApiClient();
       const api = new WorkspaceAPI(client);
       return api.list();
     },
-    enabled: options?.public ? true : Boolean(token),
+    enabled: isPublic ? true : Boolean(token),
     staleTime: 60_000, // 1 minute
   });
 }

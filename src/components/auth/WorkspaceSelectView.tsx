@@ -29,12 +29,12 @@ export function WorkspaceSelectView() {
   const isUnauthorized = isError && error instanceof APIError && error.statusCode === 401;
 
   const handleWorkspaceSelect = (workspaceId: string) => {
-    router.push(`/workspaces/${workspaceId}/login`);
+    router.push(`/${locale}/workspaces/${workspaceId}/login`);
   };
 
   const handleReLogin = useCallback(() => {
     clearAuth();
-    router.replace('/login/workspace');
+    router.replace(`/${locale}/login/workspace`);
   }, [clearAuth, locale, router]);
 
   return (

@@ -326,9 +326,9 @@ export class AgentExecutionService {
         }),
       );
 
-      ws.on('message', (data) => this.handleAgentMessage(agentId, data));
-      ws.on('close', () => this.handleSocketClose(agentId));
-      ws.on('error', () => this.handleSocketClose(agentId));
+      ws.on('message', (data) => this.handleAgentMessage(agentId, ws, data));
+      ws.on('close', () => this.handleSocketClose(agentId, ws));
+      ws.on('error', () => this.handleSocketClose(agentId, ws));
     });
   }
 
@@ -504,9 +504,10 @@ export class AgentExecutionService {
     };
   }
 
-  private handleSocketClose(agentId: string): void {
+  private handleSocketClose(agentId: string, ws: WebSocket): void {
     const socket = this.socketsByAgentId.get(agentId);
     if (!socket) return;
+    if (socket.ws !== ws) return;
     for (const pending of socket.pendingByRequestId.values()) {
       if (pending.cancelTimeout) {
         clearTimeout(pending.cancelTimeout);
@@ -530,9 +531,10 @@ export class AgentExecutionService {
     ));
   }
 
-  private handleAgentMessage(agentId: string, raw: RawData): void {
+  private handleAgentMessage(agentId: string, ws: WebSocket, raw: RawData): void {
     const socket = this.socketsByAgentId.get(agentId);
     if (!socket) return;
+    if (socket.ws !== ws) return;
 
     let payload: {
       type?: string;

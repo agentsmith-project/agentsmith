@@ -149,6 +149,34 @@ describe('AgentExecutionService', () => {
     });
   });
 
+  it('keeps replacement websocket online when the previous runner connection closes', async () => {
+    const { agentResourceService, executionService, agent, ws, wsBase } = await setupExecutionService();
+    const firstSocket = ws;
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    const replacement = new WebSocket(
+      `${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
+      { headers: { Authorization: `Bearer ${keyPair.key}` } },
+    );
+    sockets.push(replacement);
+
+    await new Promise<void>((resolve, reject) => {
+      replacement.once('open', () => resolve());
+      replacement.once('error', reject);
+    });
+
+    await new Promise<void>((resolve) => {
+      firstSocket.once('close', () => resolve());
+      firstSocket.close();
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(executionService.getAgentOnlineState(agent.id)).toBe(true);
+    const updated = await agentResourceService.getAgent('ws_default', 'proj_1', agent.id);
+    expect(updated?.presence).toBe('online');
+  });
+
   it('emits protocol error when agent delta payload is invalid', async () => {
     const { executionService, agent, ws } = await setupExecutionService();
     ws.on('message', (raw) => {

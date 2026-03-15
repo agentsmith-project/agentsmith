@@ -56,6 +56,11 @@ import type {
   VectorChunkUpsert,
   VectorStorePort,
 } from '@mbos/ports';
+import {
+  buildAiReadyJobCacheKey,
+  buildSourceLibrariesCacheKey,
+  buildSourcesCacheKey,
+} from './cache-keys';
 
 export interface CreateProjectCommand {
   workspaceId: string;
@@ -314,14 +319,6 @@ export class DeleteProjectUseCase {
   }
 }
 
-function sourcesCacheKey(workspaceId: string, projectId: string, libraryId?: string): string {
-  return `sources:${workspaceId}:${projectId}:${libraryId ?? 'all'}`;
-}
-
-function sourceLibrariesCacheKey(workspaceId: string, projectId: string): string {
-  return `source_libraries:${workspaceId}:${projectId}`;
-}
-
 function sourceLibraryTuple(workspaceId: string, projectId: string, libraryId: string): {
   objectPrefix: string;
   docNamespace: string;
@@ -423,7 +420,7 @@ export class ListSourcesUseCase {
   ) {}
 
   async execute(command: ListSourcesCommand): Promise<ListSourcesResponse> {
-    const cacheKey = sourcesCacheKey(command.workspaceId, command.projectId, command.libraryId);
+    const cacheKey = buildSourcesCacheKey(command.workspaceId, command.projectId, command.libraryId);
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       return JSON.parse(cached) as ListSourcesResponse;
@@ -480,9 +477,9 @@ export class CreateSourceUseCase {
     };
 
     await this.sourceRepo.save(source);
-    await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
     if (input.library_id) {
-      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, input.library_id));
+      await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, input.library_id));
     }
     return source;
   }
@@ -524,9 +521,9 @@ export class DeleteSourceUseCase {
 
     await this.objectStore.deleteObject(this.bucket, existing.object_key);
     await this.sourceRepo.delete(command.workspaceId, command.projectId, command.sourceId);
-    await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
     if (existing.library_id) {
-      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, existing.library_id));
+      await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, existing.library_id));
     }
   }
 }
@@ -592,7 +589,7 @@ export class ListSourceLibrariesUseCase {
   ) {}
 
   async execute(command: ListSourceLibrariesCommand): Promise<ListSourceLibrariesResponse> {
-    const cacheKey = sourceLibrariesCacheKey(command.workspaceId, command.projectId);
+    const cacheKey = buildSourceLibrariesCacheKey(command.workspaceId, command.projectId);
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       return JSON.parse(cached) as ListSourceLibrariesResponse;
@@ -638,7 +635,7 @@ export class CreateSourceLibraryUseCase {
     };
 
     await this.sourceLibraryRepo.save(library);
-    await this.cache.del(sourceLibrariesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourceLibrariesCacheKey(command.workspaceId, command.projectId));
     return library;
   }
 }
@@ -672,7 +669,7 @@ export class UpdateSourceLibraryUseCase {
       throw new Error('source_library_not_found');
     }
 
-    await this.cache.del(sourceLibrariesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourceLibrariesCacheKey(command.workspaceId, command.projectId));
     return updated;
   }
 }
@@ -709,7 +706,7 @@ export class DeleteSourceLibraryUseCase {
       throw new Error('source_library_not_found');
     }
 
-    await this.cache.del(sourceLibrariesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourceLibrariesCacheKey(command.workspaceId, command.projectId));
   }
 }
 
@@ -1086,9 +1083,9 @@ export class StartSourceAIReadyUseCase {
       vectordb_bytes: vectordbBytes,
       updated_at: now,
     });
-    await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
     if (source.library_id) {
-      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, source.library_id));
+      await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, source.library_id));
     }
     return buildSourceJob(command.sourceId, now, 'ready');
   }
@@ -1113,9 +1110,9 @@ export class CancelSourceAIReadyUseCase {
       vectordb_bytes: 0,
       updated_at: now,
     });
-    await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
     if (source.library_id) {
-      await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, source.library_id));
+      await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, source.library_id));
     }
     return buildSourceJob(command.sourceId, now, 'cancelled');
   }
@@ -1161,10 +1158,6 @@ export class BatchCancelSourceAIReadyUseCase {
     );
     return { jobs };
   }
-}
-
-function aiReadyJobsCacheKey(workspaceId: string, projectId: string, libraryId: string): string {
-  return `ai_ready_job:${workspaceId}:${projectId}:${libraryId}`;
 }
 
 function buildAIReadyJobId(libraryId: string, nowIso: string): string {
@@ -1228,7 +1221,7 @@ export class CreateAIReadyJobUseCase {
       libraryId: command.libraryId,
       type: 'document_ingest',
     });
-    await this.cache.del(aiReadyJobsCacheKey(command.workspaceId, command.projectId, command.libraryId));
+    await this.cache.del(buildAiReadyJobCacheKey(command.workspaceId, command.projectId, command.libraryId));
     return job;
   }
 }
@@ -1240,7 +1233,12 @@ export class GetAIReadyJobUseCase {
   ) {}
 
   async execute(command: GetAIReadyJobCommand): Promise<AIReadyJobDTO> {
-    const cacheKey = `${aiReadyJobsCacheKey(command.workspaceId, command.projectId, command.libraryId)}:${command.jobId}`;
+    const cacheKey = buildAiReadyJobCacheKey(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+      command.jobId,
+    );
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       return JSON.parse(cached) as AIReadyJobDTO;
@@ -1281,7 +1279,12 @@ export class CancelAIReadyJobUseCase {
     if (!updated) {
       throw new Error('ai_ready_job_not_found');
     }
-    const cacheKey = `${aiReadyJobsCacheKey(command.workspaceId, command.projectId, command.libraryId)}:${command.jobId}`;
+    const cacheKey = buildAiReadyJobCacheKey(
+      command.workspaceId,
+      command.projectId,
+      command.libraryId,
+      command.jobId,
+    );
     await this.cache.del(cacheKey);
     return updated;
   }
@@ -1394,8 +1397,8 @@ export class RunQueuedAIReadyJobUseCase {
           updated_at: now,
         });
 
-        await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId));
-        await this.cache.del(sourcesCacheKey(command.workspaceId, command.projectId, command.libraryId));
+        await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
+        await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, command.libraryId));
       }
 
       const finishedAt = this.clock.nowIso();

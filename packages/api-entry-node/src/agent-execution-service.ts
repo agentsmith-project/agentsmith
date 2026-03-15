@@ -292,6 +292,9 @@ function mergeExecutionPreferences(
 
 export class AgentExecutionService {
   private readonly wsServer: WebSocketServer;
+  // Runtime sockets are indexed by agentId for the current MVP. The trusted
+  // workspace/project boundary still comes from the verified agent key record,
+  // and every dispatched request is checked against that scope again.
   private readonly socketsByAgentId = new Map<string, AgentSocketState>();
 
   constructor(private readonly agentResourceService: AgentResourceService) {

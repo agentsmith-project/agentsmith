@@ -214,6 +214,9 @@ export class AgentResourceService {
 
   async verifyAgentKey(agentId: string, token: string): Promise<AgentServiceKeyRecord | null> {
     const hash = this.hashKey(token);
+    // Keys are discovered across registered workspace collections, then bound
+    // back to the matched workspace_id/project_id. That bound scope is what the
+    // websocket layer later enforces for notebook execution requests.
     const allActiveKeys = await Promise.all(
       this.listRegisteredWorkspaceCollections(AgentResourceService.agentKeysCollection).map((collection) =>
         this.docStore.list<AgentServiceKeyRecord>(collection, {

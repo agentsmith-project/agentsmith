@@ -191,6 +191,7 @@ test.describe('Visual - System Pages', () => {
     await seedSystemWorkspaces(request, 'with_disabled_workspace');
     await loginAsSystemAdmin(page);
     await page.getByTestId('system-workspaces__configure--ws_seeded').click();
+    await expect(page.getByTestId('system-workspaces__delete')).toBeEnabled();
     await page.getByTestId('system-workspaces__delete').click();
     await expect(page.getByTestId('system-workspaces__delete-dialog')).toBeVisible();
     await expect(page).toHaveScreenshot('system-workspaces-delete-confirmation.png', { fullPage: true });

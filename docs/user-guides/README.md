@@ -16,6 +16,7 @@
 | [Release Readiness Checklist](./release-readiness-checklist.md) | Final release verification order for contracts, strict gates, real notebook flow, and full visual coverage. |
 | Real Visual Review Artifacts | Generated locally under `artifacts/release-real-visual/<run-id>/` by `npm run test:visual:real:review`. |
 | [Identity & Permission Model](./identity-and-permission-model.md) | Current identity model baseline: email for selection, `user_id` for persisted permissions. |
+| [Workspace Isolation Model](./workspace-isolation-model.md) | Current MVP workspace isolation baseline: shared infrastructure with namespace and scope boundaries. |
 | [Audit & Usage](./audit-usage-reports.md) | Audit review and usage workflows under the current Usage/Audit MVP baseline. |
 | [Alert Center](./alert-center.md) | Alert rules and notification operations. |
 | [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |

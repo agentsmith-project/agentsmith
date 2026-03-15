@@ -180,12 +180,33 @@ export default function WorkspaceSettingsPage() {
           <Topbar />
 
           <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-4 md:px-5 md:py-5 space-y-5">
-            <div className="space-y-2">
-              <h1 className="text-2xl font-semibold text-foreground flex items-center gap-2">
-                <SettingsIcon className="w-6 h-6 text-icon-default" />
-                {t('workspace_title')}
-              </h1>
-            </div>
+            <section className="rounded-2xl border border-border bg-surface px-5 py-5 shadow-sm shadow-black/10 md:px-6">
+              <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                <div className="max-w-3xl space-y-2">
+                  <div className="inline-flex items-center gap-2 rounded-full border border-accent/20 bg-accent/10 px-3 py-1 text-xs font-medium text-accent">
+                    <SettingsIcon className="h-3.5 w-3.5" />
+                    {t('workspace_settings_badge')}
+                  </div>
+                  <div>
+                    <h1 className="flex items-center gap-2 text-2xl font-semibold text-foreground">
+                      <SettingsIcon className="w-6 h-6 text-icon-default" />
+                      {t('workspace_title')}
+                    </h1>
+                    <p className="mt-1 text-sm text-tertiary">{t('workspace_settings_description')}</p>
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  data-testid="ws-settings__create-project"
+                  onClick={() => setCreateProjectOpen(true)}
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  {t('workspace_create_project')}
+                </Button>
+              </div>
+            </section>
 
             <section className="rounded-xl border border-border bg-surface p-5" data-testid="ws-settings__workspace">
               <SectionHeading
@@ -223,17 +244,8 @@ export default function WorkspaceSettingsPage() {
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <SectionHeading
                   title={t('workspace_projects_title')}
+                  subtitle={t('workspace_projects_description')}
                 />
-                <Button
-                  type="button"
-                  variant="primary"
-                  size="sm"
-                  data-testid="ws-settings__create-project"
-                  onClick={() => setCreateProjectOpen(true)}
-                >
-                  <Plus className="mr-2 h-4 w-4" />
-                  {t('workspace_create_project')}
-                </Button>
               </div>
 
               {projects.length === 0 ? (
@@ -334,7 +346,10 @@ export default function WorkspaceSettingsPage() {
             </section>
 
             <section className="rounded-xl border border-border bg-surface p-5" data-testid="ws-settings__project-creators">
-              <SectionHeading title={t('workspace_project_creators_title')} />
+              <SectionHeading
+                title={t('workspace_project_creators_title')}
+                subtitle={t('workspace_project_creators_description')}
+              />
               <div className="mt-4 space-y-3">
                 <label className="block space-y-2">
                   <span className="text-sm font-medium text-foreground">{t('workspace_project_creators_field')}</span>

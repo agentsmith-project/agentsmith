@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderKanban, Plus, Settings as SettingsIcon, Sparkles } from 'lucide-react';
+import { FolderKanban, Plus, Settings as SettingsIcon, Sparkles, ShieldCheck, ArrowRight } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -118,7 +118,7 @@ export default function WorkspaceHomePage() {
                     {workspaceId}
                   </div>
                   <p className="mt-2 text-sm text-secondary">
-                    {t('workspace_home_projects_title')}
+                    {t('workspace_home_workspace_summary')}
                   </p>
                 </div>
                 {canManageWorkspaceGovernance ? (
@@ -142,27 +142,63 @@ export default function WorkspaceHomePage() {
                 ) : null}
               </div>
 
-              <div className="grid gap-4 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
                 <section
                   className="rounded-[18px] border border-white/6 bg-black/15 p-5 space-y-4"
                   data-testid="workspace-home__projects-section"
                 >
                   <div className="space-y-1">
                     <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_projects_title')}</h2>
-                    <p className="text-sm text-secondary">{t('workspace_open_projects')}</p>
+                    <p className="text-sm text-secondary">{t('workspace_home_projects_description')}</p>
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
-                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_open_projects')}</div>
-                      <div className="mt-2 text-sm text-primary">{workspaceName}</div>
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_home_projects_card_title')}</div>
+                      <div className="mt-2 text-sm text-primary">{t('workspace_home_projects_card_value')}</div>
+                      <p className="mt-2 text-xs leading-5 text-tertiary">{t('workspace_home_projects_card_hint')}</p>
                     </div>
                     <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
-                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_create_project')}</div>
+                      <div className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_home_create_card_title')}</div>
                       <div className="mt-2 text-sm text-primary">
-                        {canCreateProjects ? t('workspace_create_project') : t('workspace_home_admin_title')}
+                        {canCreateProjects ? t('workspace_home_create_card_value') : t('workspace_home_create_card_fallback')}
                       </div>
+                      <p className="mt-2 text-xs leading-5 text-tertiary">{t('workspace_home_create_card_hint')}</p>
                     </div>
                   </div>
+                </section>
+
+                <section className="rounded-[18px] border border-white/6 bg-black/15 p-5 space-y-4">
+                  <div className="space-y-1">
+                    <h2 className="text-sm font-semibold text-foreground">{t('workspace_home_next_steps_title')}</h2>
+                    <p className="text-sm text-secondary">{t('workspace_home_next_steps_description')}</p>
+                  </div>
+                  <div className="space-y-3">
+                    <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <FolderKanban className="h-4 w-4 text-accent" />
+                        {t('workspace_open_projects')}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-secondary">{t('workspace_home_next_steps_projects')}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/6 bg-white/[0.03] p-4">
+                      <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+                        <ShieldCheck className="h-4 w-4 text-accent" />
+                        {canManageWorkspaceGovernance ? t('workspace_home_open_settings') : t('workspace_home_next_steps_access_title')}
+                      </div>
+                      <p className="mt-2 text-sm leading-6 text-secondary">
+                        {canManageWorkspaceGovernance
+                          ? t('workspace_home_next_steps_settings')
+                          : t('workspace_home_next_steps_access')}
+                      </p>
+                    </div>
+                  </div>
+                  <Link
+                    href={`${workspaceBasePath}/projects`}
+                    className={cn(buttonVariants({ variant: 'outline' }), 'justify-start')}
+                  >
+                    <ArrowRight className="mr-2 h-4 w-4" />
+                    {t('workspace_open_projects')}
+                  </Link>
                 </section>
               </div>
             </section>

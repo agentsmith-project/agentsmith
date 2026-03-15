@@ -87,11 +87,6 @@ function projectPath(section: string) {
 // ─── Public Pages ───────────────────────────────────────────────────────────
 
 test.describe('Visual - Public Pages', () => {
-  test('login page', async ({ page }) => {
-    await stableNavigate(page, '/en-US/login');
-    await expect(page).toHaveScreenshot('login.png', { fullPage: true });
-  });
-
   test('join page', async ({ page }) => {
     await stableNavigate(page, '/en-US/join');
     await expect(page).toHaveScreenshot('join.png', { fullPage: true });
@@ -129,6 +124,7 @@ test.describe('Visual - Workspace Pages', () => {
 
   test('workspace selection', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/login/workspace');
+    await expect(authedPage.getByTestId('workspace-select__card--ws_default')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('workspace-select.png', { fullPage: true });
   });
 

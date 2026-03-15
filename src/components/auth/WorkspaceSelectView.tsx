@@ -40,18 +40,17 @@ export function WorkspaceSelectView() {
   return (
     <PageState state="success">
       <PageLayout>
-        <div className="min-h-screen bg-background p-4 md:p-8">
-          <div className="mx-auto max-w-4xl space-y-5">
-            <section className="rounded-[28px] border border-border bg-surface px-5 py-6 shadow-[0_22px_50px_rgba(0,0,0,0.18)] md:px-6">
-              <div className="max-w-2xl space-y-2">
+        <div className="min-h-screen bg-background p-4">
+          <div className="mx-auto flex min-h-screen max-w-3xl items-center justify-center">
+            <section className="w-full rounded-[28px] border border-border bg-surface px-6 py-7 shadow-[0_24px_60px_rgba(0,0,0,0.2)]">
+              <div className="mb-6 space-y-2">
                 <h1 data-testid="workspace-select__heading" className="text-2xl font-semibold text-foreground">
                   {t('select_your_workspace')}
                 </h1>
                 <p className="text-sm leading-6 text-secondary">{t('workspace_select_minimal_description')}</p>
               </div>
-            </section>
 
-            <section className="rounded-[24px] border border-border bg-surface px-5 py-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)] md:px-6">
+              <div className="rounded-[22px] border border-border bg-surface-high p-5">
               {isLoading ? (
                 <p className="text-sm text-tertiary" data-testid="workspace-select__loading">
                   {t('loading_workspaces')}
@@ -99,17 +98,18 @@ export function WorkspaceSelectView() {
                   ))}
                 </div>
               )}
-            </section>
+              </div>
 
-            <div className="flex justify-center">
-              <Link
-                href={`/${locale}/system/login`}
-                className="text-xs text-tertiary transition-colors hover:text-secondary"
-                data-testid="workspace-select__system-link"
-              >
-                {t('system_login_link')}
-              </Link>
-            </div>
+              <div className="mt-5 flex justify-center">
+                <Link
+                  href={`/${locale}/system/login`}
+                  className="text-xs text-tertiary transition-colors hover:text-secondary"
+                  data-testid="workspace-select__system-link"
+                >
+                  {t('system_login_link')}
+                </Link>
+              </div>
+            </section>
           </div>
         </div>
       </PageLayout>

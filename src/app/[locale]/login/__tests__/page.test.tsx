@@ -1,52 +1,19 @@
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
-const mockPush = vi.fn();
-const mockReplace = vi.fn();
-const mockRefetch = vi.fn();
-const mockClearAuth = vi.fn();
-const mockUseWorkspaces = vi.fn();
+const { mockRedirect } = vi.hoisted(() => ({
+  mockRedirect: vi.fn(),
+}));
 
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: mockPush, replace: mockReplace }),
-  useParams: () => ({ locale: 'en-US' }),
-}));
-
-vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => key,
-}));
-
-vi.mock('@/lib/hooks/use-workspaces', () => ({
-  useWorkspaces: () => mockUseWorkspaces(),
-}));
-
-vi.mock('@/lib/stores/authStore', () => ({
-  useAuthStore: () => ({ clearAuth: mockClearAuth }),
+  redirect: mockRedirect,
 }));
 
 import LoginEntryPage from '../page';
 
 describe('LoginEntryPage', () => {
-  beforeEach(() => {
-    mockPush.mockClear();
-    mockReplace.mockClear();
-    mockRefetch.mockClear();
-    mockClearAuth.mockClear();
-  });
+  it('redirects the default login entry to workspace selection', async () => {
+    await LoginEntryPage({ params: Promise.resolve({ locale: 'en-US' }) });
 
-  it('renders workspace selection as the default login experience', () => {
-    mockUseWorkspaces.mockReturnValue({
-      data: [{ id: 'ws_1', name: 'Workspace One' }],
-      isLoading: false,
-      isError: false,
-      error: null,
-      refetch: mockRefetch,
-    });
-
-    render(<LoginEntryPage />);
-
-    expect(screen.getByTestId('workspace-select__heading')).toBeInTheDocument();
-    expect(screen.getByTestId('workspace-select__card--ws_1')).toBeInTheDocument();
-    expect(screen.getByTestId('workspace-select__system-link')).toHaveAttribute('href', '/en-US/system/login');
+    expect(mockRedirect).toHaveBeenCalledWith('/en-US/login/workspace');
   });
 });

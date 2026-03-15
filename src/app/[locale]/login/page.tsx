@@ -1,7 +1,10 @@
-'use client';
+import { redirect } from 'next/navigation';
 
-import { WorkspaceSelectView } from '@/components/auth/WorkspaceSelectView';
+interface LoginPageProps {
+  params: Promise<{ locale: string }>;
+}
 
-export default function LoginPage() {
-  return <WorkspaceSelectView />;
+export default async function LoginPage({ params }: LoginPageProps) {
+  const { locale } = await params;
+  redirect(`/${locale}/login/workspace`);
 }

@@ -13,37 +13,27 @@ test.describe('Login Entry', () => {
     await clearAuth(page);
   });
 
-  test('shows workspace and system entry actions in English', async ({ page }) => {
+  test('redirects default login entry to workspace selection in English', async ({ page }) => {
     await page.goto('/en-US/login');
-    await waitForPageReady(page);
+    await page.waitForURL(/\/en-US\/login\/workspace/, { timeout: 10_000 });
 
     await expect(page.getByTestId('page-state__success')).toBeVisible();
-    await expect(page.getByTestId('login-entry__heading')).toBeVisible();
-    await expect(page.getByTestId('login-entry__workspace')).toBeVisible();
-    await expect(page.getByTestId('login-entry__system')).toBeVisible();
+    await expect(page.getByTestId('workspace-select__heading')).toBeVisible();
+    await expect(page.getByTestId('workspace-select__system-link')).toBeVisible();
   });
 
   test('shows login entry heading in Chinese', async ({ page }) => {
     await page.goto('/zh-CN/login');
-    await waitForPageReady(page);
+    await page.waitForURL(/\/zh-CN\/login\/workspace/, { timeout: 10_000 });
 
-    await expect(page.getByText('选择进入 AgentSmith 的方式')).toBeVisible();
+    await expect(page.getByText('选择您的工作空间')).toBeVisible();
   });
 
-  test('workspace entry opens workspace selection', async ({ page }) => {
+  test('system 管理侧入口仍然可以从工作区选择页进入', async ({ page }) => {
     await page.goto('/en-US/login');
-    await waitForPageReady(page);
-
-    await page.getByTestId('login-entry__workspace').click();
     await page.waitForURL(/\/en-US\/login\/workspace/, { timeout: 10_000 });
-    await expect(page.getByTestId('workspace-select__heading')).toBeVisible();
-  });
 
-  test('system entry opens system login', async ({ page }) => {
-    await page.goto('/en-US/login');
-    await waitForPageReady(page);
-
-    await page.getByTestId('login-entry__system').click();
+    await page.getByTestId('workspace-select__system-link').click();
     await page.waitForURL(/\/en-US\/system\/login/, { timeout: 10_000 });
     await expect(page.getByTestId('system-login__heading')).toBeVisible();
   });
@@ -84,5 +74,14 @@ test.describe('Workspace Login Journey', () => {
     await page.waitForURL(/\/en-US\/workspaces\/ws_default$/, { timeout: 15_000 });
     await expect(page.getByTestId('workspace-home__page')).toBeVisible();
     await expect(page.getByTestId('workspace-home__open-projects')).toBeVisible();
+  });
+
+  test('workspace-scoped login does not expose the system 管理侧入口', async ({ page }) => {
+    await page.goto('/en-US/login/workspace');
+    await waitForPageReady(page);
+
+    await page.getByTestId('workspace-select__card--ws_default').click();
+    await page.waitForURL(/\/en-US\/workspaces\/ws_default\/login/, { timeout: 10_000 });
+    await expect(page.getByText('System administration')).toHaveCount(0);
   });
 });

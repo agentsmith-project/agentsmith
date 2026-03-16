@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PORT_WEB="${PORT_WEB:-3001}"
 BASE_URL="http://127.0.0.1:${PORT_WEB}"
 HEALTH_URL="${BASE_URL}/zh-CN/login"
+WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview'
 
 PID_FILE="/tmp/agentsmith_mock_lane_web.pid"
 LOG_FILE="/tmp/agentsmith_mock_lane_web.log"
@@ -156,6 +157,58 @@ wait_http_ok() {
   return 1
 }
 
+wait_for_stable_health() {
+  local consecutive_target="${1:-2}"
+  local consecutive=0
+  local max_checks="${2:-30}"
+  local i
+  for i in $(seq 1 "${max_checks}"); do
+    local code
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "${HEALTH_URL}" 2>/dev/null || true)"
+    if [[ "${code}" == "200" ]]; then
+      consecutive=$((consecutive + 1))
+      if [[ "${consecutive}" -ge "${consecutive_target}" ]]; then
+        return 0
+      fi
+    else
+      consecutive=0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+warm_route() {
+  local route="$1"
+  local attempts="${2:-5}"
+  local i
+  for i in $(seq 1 "${attempts}"); do
+    local code
+    code="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}${route}" 2>/dev/null || true)"
+    if [[ "${code}" == "200" ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+warm_routes() {
+  local warm_routes_raw="${MOCK_LANE_WARM_URLS:-${WARM_URLS_DEFAULT}}"
+  local warmed_any=0
+  while IFS= read -r route; do
+    [[ -z "${route}" ]] && continue
+    warmed_any=1
+    info "warming route ${route}"
+    warm_route "${route}" || return 1
+  done <<< "${warm_routes_raw}"
+
+  if [[ "${warmed_any}" == "1" ]]; then
+    info "verifying mock web stability after route warm-up"
+    wait_for_stable_health 2 20 || return 1
+  fi
+}
+
 start_mock_server() {
   local launch_attempt=1
   while [[ "${launch_attempt}" -le 3 ]]; do
@@ -191,6 +244,14 @@ start_mock_server() {
     STARTED_BY_SCRIPT=1
 
     if wait_http_ok 120; then
+      if ! warm_routes; then
+        info "mock web responded to health checks but did not stabilize after route warm-up"
+      else
+        return 0
+      fi
+    fi
+
+    if wait_http_ok 20 && warm_routes; then
       return 0
     fi
 

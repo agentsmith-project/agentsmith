@@ -63,13 +63,15 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   'packages/api-entry-node/src/index.test.ts' \
   -t 'lets workspace admins manage project creators and exposes creator permissions in workspace members|forbids plain workspace members from creating projects while allowing project creators|does not expose disabled registered workspaces in runtime workspace list'"
 
-run_cmd "bash scripts/run-mock-lane-playwright.sh \
+run_cmd "MOCK_LANE_WARM_URLS=\$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
+bash scripts/run-mock-lane-playwright.sh \
   e2e/system-workspace-mainline.spec.ts \
   e2e/workspace-settings.spec.ts \
   --project=chromium \
   --workers=1"
 
-run_cmd "bash scripts/run-mock-lane-playwright.sh \
+run_cmd "MOCK_LANE_WARM_URLS=\$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/login\n/en-US/workspaces/ws_default/projects\n/en-US/workspaces/ws_test/projects\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
+bash scripts/run-mock-lane-playwright.sh \
   e2e/visual.spec.ts \
   --project=visual \
   --workers=1 \

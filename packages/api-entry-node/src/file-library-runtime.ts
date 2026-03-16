@@ -1,0 +1,605 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import net from 'node:net';
+import { Client as PgClient } from 'pg';
+import { Client as MinioClient } from 'minio';
+import type {
+  FileLibraryGatewayManager,
+  EnsureFileLibraryGatewayInput,
+  EnsureFileLibraryGatewayResult,
+  FileLibraryGatewayHealth,
+} from './file-library-gateway-manager.js';
+import type {
+  FileLibraryDeleteInput,
+  FileLibraryOrchestrator,
+  FileLibraryProvisioningInput,
+  FileLibraryProvisioningResult,
+} from './file-library-orchestrator.js';
+
+type GatewaySession = EnsureFileLibraryGatewayResult & {
+  child?: ChildProcessWithoutNullStreams;
+  metadataUrl?: string;
+  lastError?: string;
+};
+
+interface FileLibraryRuntimeConfig {
+  juicefsBin: string;
+  mcBin: string;
+  pgAdminUrl: string;
+  pgPublicHost: string;
+  pgPublicPort: number;
+  pgPublicSslMode?: string;
+  minioAdminEndPoint: string;
+  minioAdminPort: number;
+  minioAdminUseSSL: boolean;
+  minioAdminAccessKey: string;
+  minioAdminSecretKey: string;
+  minioPublicEndpoint: string;
+  minioRegion: string;
+  gatewayPortBase: number;
+  gatewayRootUserPrefix: string;
+  gatewayRootPasswordSeed: string;
+  gatewayLogDir: string;
+}
+
+function envNumber(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function envBoolean(name: string, fallback: boolean): boolean {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  return raw === '1' || raw.toLowerCase() === 'true';
+}
+
+function envString(name: string): string | undefined {
+  const raw = process.env[name]?.trim();
+  return raw ? raw : undefined;
+}
+
+function requireEnv(name: string): string {
+  const value = envString(name);
+  if (!value) {
+    throw new Error(`file_library_env_missing_${name.toLowerCase()}`);
+  }
+  return value;
+}
+
+function detectDefaultJuicefsBin(): string {
+  return envString('JUICEFS_BIN') || 'juicefs';
+}
+
+function detectDefaultMcBin(): string {
+  return envString('MC_BIN') || join(process.env.HOME ?? '', '.local/bin/mc');
+}
+
+async function ensureExecutable(pathLike: string): Promise<void> {
+  await access(pathLike);
+}
+
+function sanitizeSlug(input: string, fallback: string): string {
+  const cleaned = input.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return (cleaned || fallback).slice(0, 48);
+}
+
+function deterministicDbName(libraryId: string): string {
+  return `jfs_lib_${sanitizeSlug(libraryId, 'library')}`.slice(0, 63);
+}
+
+function deterministicDbUser(libraryId: string): string {
+  return `jfsu_${sanitizeSlug(libraryId, 'library')}`.slice(0, 63);
+}
+
+function deterministicBucket(libraryId: string): string {
+  return `jfs-lib-${sanitizeSlug(libraryId, 'library').replace(/_/g, '-')}`.slice(0, 63);
+}
+
+function deterministicMinioUser(libraryId: string): string {
+  return `jfsm_${sanitizeSlug(libraryId, 'library')}`.slice(0, 40);
+}
+
+function deterministicPolicyName(libraryId: string): string {
+  return `jfs-policy-${sanitizeSlug(libraryId, 'library').replace(/_/g, '-')}`.slice(0, 64);
+}
+
+function deterministicGatewayUser(libraryId: string, prefix: string): string {
+  return `${prefix}${sanitizeSlug(libraryId, 'library').replace(/_/g, '').slice(0, 12)}`.slice(0, 20);
+}
+
+function deriveSecret(seed: string, namespace: string, libraryId: string, size = 32): string {
+  const digest = createHash('sha256')
+    .update(`${seed}:${namespace}:${libraryId}`)
+    .digest('base64url');
+  return digest.slice(0, size);
+}
+
+export function getFileLibraryGatewayInternalCredentials(
+  libraryId: string,
+  options?: { prefix?: string; seed?: string },
+): { accessKey: string; secretKey: string } {
+  const prefix = options?.prefix || envString('FILE_LIBRARY_GATEWAY_ROOT_USER_PREFIX') || 'flgw';
+  const seed =
+    options?.seed
+    || envString('FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED')
+    || envString('AGENTSMITH_SECRET_KEY')
+    || 'agentsmith-file-library-gateway-seed';
+  return {
+    accessKey: deterministicGatewayUser(libraryId, prefix),
+    secretKey: deriveSecret(seed, 'gateway-root', libraryId, 24),
+  };
+}
+
+function buildPublicMetadataUrl(config: FileLibraryRuntimeConfig, dbUser: string, dbPassword: string, dbName: string): string {
+  const url = new URL(`postgres://${encodeURIComponent(dbUser)}:${encodeURIComponent(dbPassword)}@${config.pgPublicHost}:${config.pgPublicPort}/${dbName}`);
+  if (config.pgPublicSslMode) {
+    url.searchParams.set('sslmode', config.pgPublicSslMode);
+  }
+  return url.toString();
+}
+
+function buildMcHost(config: FileLibraryRuntimeConfig): string {
+  const scheme = config.minioAdminUseSSL ? 'https' : 'http';
+  return `${scheme}://${encodeURIComponent(config.minioAdminAccessKey)}:${encodeURIComponent(config.minioAdminSecretKey)}@${config.minioAdminEndPoint}:${config.minioAdminPort}`;
+}
+
+async function execCommand(cmd: string, args: string[], options?: { env?: NodeJS.ProcessEnv }): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: {
+        ...process.env,
+        ...options?.env,
+      },
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => {
+      stdout += String(chunk);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      const message = stderr.trim() || stdout.trim() || `${cmd}_failed`;
+      reject(new Error(message));
+    });
+  });
+}
+
+async function findFreePort(base: number): Promise<number> {
+  for (let offset = 0; offset < 200; offset += 1) {
+    const candidate = base + offset;
+    const ok = await new Promise<boolean>((resolve) => {
+      const server = net.createServer();
+      server.once('error', () => resolve(false));
+      server.listen(candidate, '127.0.0.1', () => {
+        server.close(() => resolve(true));
+      });
+    });
+    if (ok) return candidate;
+  }
+  throw new Error('file_library_gateway_port_unavailable');
+}
+
+async function waitForGateway(url: string, timeoutMs = 15000): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(url, { method: 'GET' });
+      if (response.status > 0) {
+        return;
+      }
+    } catch {
+      // retry
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error('file_library_gateway_start_timeout');
+}
+
+function buildRuntimeConfig(): FileLibraryRuntimeConfig {
+  const pgAdminUrl = requireEnv('DATABASE_URL');
+  const parsedPg = new URL(pgAdminUrl);
+  const minioAdminEndPoint = requireEnv('MINIO_ENDPOINT');
+  const minioAdminPort = envNumber('MINIO_PORT', 19000);
+  const minioAdminUseSSL = envBoolean('MINIO_USE_SSL', false);
+  return {
+    juicefsBin: detectDefaultJuicefsBin(),
+    mcBin: detectDefaultMcBin(),
+    pgAdminUrl,
+    pgPublicHost: envString('FILE_LIBRARY_POSTGRES_PUBLIC_HOST') || parsedPg.hostname,
+    pgPublicPort: envNumber('FILE_LIBRARY_POSTGRES_PUBLIC_PORT', Number(parsedPg.port || '5432')),
+    pgPublicSslMode: envString('FILE_LIBRARY_POSTGRES_PUBLIC_SSLMODE'),
+    minioAdminEndPoint,
+    minioAdminPort,
+    minioAdminUseSSL,
+    minioAdminAccessKey: requireEnv('MINIO_ACCESS_KEY'),
+    minioAdminSecretKey: requireEnv('MINIO_SECRET_KEY'),
+    minioPublicEndpoint:
+      envString('FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT')
+      || `${minioAdminUseSSL ? 'https' : 'http'}://${minioAdminEndPoint}:${minioAdminPort}`,
+    minioRegion: envString('FILE_LIBRARY_MINIO_REGION') || 'us-east-1',
+    gatewayPortBase: envNumber('FILE_LIBRARY_GATEWAY_PORT_BASE', 39000),
+    gatewayRootUserPrefix: envString('FILE_LIBRARY_GATEWAY_ROOT_USER_PREFIX') || 'flgw',
+    gatewayRootPasswordSeed:
+      envString('FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED')
+      || envString('AGENTSMITH_SECRET_KEY')
+      || 'agentsmith-file-library-gateway-seed',
+    gatewayLogDir: envString('FILE_LIBRARY_GATEWAY_LOG_DIR') || join(process.cwd(), 'artifacts/file-library-gateway'),
+  };
+}
+
+async function createPgDatabase(config: FileLibraryRuntimeConfig, libraryId: string): Promise<{ dbName: string; dbUser: string; dbPassword: string }> {
+  const client = new PgClient({ connectionString: config.pgAdminUrl });
+  const dbName = deterministicDbName(libraryId);
+  const dbUser = deterministicDbUser(libraryId);
+  const dbPassword = randomUUID().replace(/-/g, '');
+  await client.connect();
+  try {
+    await client.query(`CREATE ROLE "${dbUser}" LOGIN PASSWORD '${dbPassword.replace(/'/g, "''")}'`);
+    await client.query(`CREATE DATABASE "${dbName}" OWNER "${dbUser}"`);
+  } catch (error) {
+    try {
+      await client.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+    } catch {
+      // ignore cleanup failures
+    }
+    try {
+      await client.query(`DROP ROLE IF EXISTS "${dbUser}"`);
+    } catch {
+      // ignore cleanup failures
+    }
+    throw error;
+  } finally {
+    await client.end();
+  }
+  return { dbName, dbUser, dbPassword };
+}
+
+async function dropPgDatabase(config: FileLibraryRuntimeConfig, libraryId: string): Promise<void> {
+  const client = new PgClient({ connectionString: config.pgAdminUrl });
+  const dbName = deterministicDbName(libraryId);
+  const dbUser = deterministicDbUser(libraryId);
+  await client.connect();
+  try {
+    await client.query(
+      `SELECT pg_terminate_backend(pid)
+       FROM pg_stat_activity
+       WHERE datname = $1 AND pid <> pg_backend_pid()`,
+      [dbName],
+    );
+    await client.query(`DROP DATABASE IF EXISTS "${dbName}"`);
+    await client.query(`DROP ROLE IF EXISTS "${dbUser}"`);
+  } finally {
+    await client.end();
+  }
+}
+
+async function createMinioResources(config: FileLibraryRuntimeConfig, libraryId: string): Promise<{ bucket: string }> {
+  const bucket = deterministicBucket(libraryId);
+  const bucketPolicyName = deterministicPolicyName(libraryId);
+  const bucketUser = deterministicMinioUser(libraryId);
+  const bucketPassword = deriveSecret(config.gatewayRootPasswordSeed, 'minio-backend-user', libraryId, 32);
+  const minio = new MinioClient({
+    endPoint: config.minioAdminEndPoint,
+    port: config.minioAdminPort,
+    useSSL: config.minioAdminUseSSL,
+    accessKey: config.minioAdminAccessKey,
+    secretKey: config.minioAdminSecretKey,
+  });
+  const exists = await minio.bucketExists(bucket).catch(() => false);
+  if (!exists) {
+    await minio.makeBucket(bucket, config.minioRegion);
+  }
+
+  const policyDoc = {
+    Version: '2012-10-17',
+    Statement: [
+      {
+        Effect: 'Allow',
+        Action: ['s3:*'],
+        Resource: [`arn:aws:s3:::${bucket}`, `arn:aws:s3:::${bucket}/*`],
+      },
+    ],
+  };
+
+  const tempDir = await mkdtemp(join(tmpdir(), 'agentsmith-jfs-policy-'));
+  const policyPath = join(tempDir, `${bucketPolicyName}.json`);
+  try {
+    await writeFile(policyPath, JSON.stringify(policyDoc), 'utf8');
+    const mcEnv = { MC_HOST_fladmin: buildMcHost(config) };
+    await execCommand(config.mcBin, ['mb', '--ignore-existing', `fladmin/${bucket}`], { env: mcEnv });
+    await execCommand(config.mcBin, ['admin', 'user', 'add', 'fladmin', bucketUser, bucketPassword], { env: mcEnv });
+    await execCommand(config.mcBin, ['admin', 'policy', 'create', 'fladmin', bucketPolicyName, policyPath], { env: mcEnv });
+    await execCommand(config.mcBin, ['admin', 'policy', 'attach', 'fladmin', bucketPolicyName, '--user', bucketUser], { env: mcEnv });
+  } catch (error) {
+    await deleteMinioResources(config, libraryId).catch(() => undefined);
+    throw error;
+  } finally {
+    await rm(tempDir, { recursive: true, force: true });
+  }
+  return { bucket };
+}
+
+async function deleteMinioResources(config: FileLibraryRuntimeConfig, libraryId: string): Promise<void> {
+  const bucket = deterministicBucket(libraryId);
+  const bucketPolicyName = deterministicPolicyName(libraryId);
+  const bucketUser = deterministicMinioUser(libraryId);
+  const mcEnv = { MC_HOST_fladmin: buildMcHost(config) };
+
+  await execCommand(config.mcBin, ['rm', '--recursive', '--force', `fladmin/${bucket}`], { env: mcEnv }).catch(() => undefined);
+  await execCommand(config.mcBin, ['rb', '--force', `fladmin/${bucket}`], { env: mcEnv }).catch(() => undefined);
+  await execCommand(config.mcBin, ['admin', 'policy', 'detach', 'fladmin', bucketPolicyName, '--user', bucketUser], { env: mcEnv }).catch(() => undefined);
+  await execCommand(config.mcBin, ['admin', 'policy', 'remove', 'fladmin', bucketPolicyName], { env: mcEnv }).catch(() => undefined);
+  await execCommand(config.mcBin, ['admin', 'user', 'remove', 'fladmin', bucketUser], { env: mcEnv }).catch(() => undefined);
+}
+
+async function formatJuicefs(config: FileLibraryRuntimeConfig, metadataUrl: string, filesystemName: string, libraryId: string): Promise<void> {
+  const bucket = deterministicBucket(libraryId);
+  const accessKey = deterministicMinioUser(libraryId);
+  const secretKey = deriveSecret(config.gatewayRootPasswordSeed, 'minio-backend-user', libraryId, 32);
+  const bucketUrl = `${config.minioPublicEndpoint.replace(/\/+$/, '')}/${bucket}`;
+  await execCommand(config.juicefsBin, [
+    'format',
+    metadataUrl,
+    filesystemName,
+    '--storage',
+    's3',
+    '--bucket',
+    bucketUrl,
+    '--access-key',
+    accessKey,
+    '--secret-key',
+    secretKey,
+  ]);
+}
+
+export class InMemoryFileLibraryOrchestrator implements FileLibraryOrchestrator {
+  async provisionLibrary(input: FileLibraryProvisioningInput): Promise<FileLibraryProvisioningResult> {
+    const host = process.env.FILE_LIBRARY_POSTGRES_PUBLIC_HOST?.trim() || 'localhost';
+    const port = envNumber('FILE_LIBRARY_POSTGRES_PUBLIC_PORT', 15432);
+    const dbName = deterministicDbName(input.libraryId);
+    const dbUser = deterministicDbUser(input.libraryId);
+    const dbPassword = randomUUID().replace(/-/g, '');
+    const bucket = deterministicBucket(input.libraryId);
+    const minioEndpoint = process.env.FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT?.trim() || 'http://localhost:19000';
+    const region = process.env.FILE_LIBRARY_MINIO_REGION?.trim() || 'us-east-1';
+    return {
+      filesystemName: input.filesystemName,
+      metadataUrl: `postgres://${encodeURIComponent(dbUser)}:${encodeURIComponent(dbPassword)}@${host}:${port}/${dbName}`,
+      postgres: {
+        host,
+        port,
+        database: dbName,
+        username: dbUser,
+      },
+      minio: {
+        endpoint: minioEndpoint,
+        bucket,
+        region,
+      },
+    };
+  }
+
+  async deleteLibrary(_input: FileLibraryDeleteInput): Promise<void> {
+    return;
+  }
+}
+
+export class RealFileLibraryOrchestrator implements FileLibraryOrchestrator {
+  constructor(private readonly config: FileLibraryRuntimeConfig = buildRuntimeConfig()) {}
+
+  async provisionLibrary(input: FileLibraryProvisioningInput): Promise<FileLibraryProvisioningResult> {
+    await ensureExecutable(this.config.juicefsBin);
+    await ensureExecutable(this.config.mcBin);
+
+    const { dbName, dbUser, dbPassword } = await createPgDatabase(this.config, input.libraryId);
+    try {
+      const { bucket } = await createMinioResources(this.config, input.libraryId);
+      const metadataUrl = buildPublicMetadataUrl(this.config, dbUser, dbPassword, dbName);
+      await formatJuicefs(this.config, metadataUrl, input.filesystemName, input.libraryId);
+      return {
+        filesystemName: input.filesystemName,
+        metadataUrl,
+        postgres: {
+          host: this.config.pgPublicHost,
+          port: this.config.pgPublicPort,
+          database: dbName,
+          username: dbUser,
+        },
+        minio: {
+          endpoint: this.config.minioPublicEndpoint,
+          bucket,
+          region: this.config.minioRegion,
+        },
+      };
+    } catch (error) {
+      await deleteMinioResources(this.config, input.libraryId).catch(() => undefined);
+      await dropPgDatabase(this.config, input.libraryId).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  async deleteLibrary(input: FileLibraryDeleteInput): Promise<void> {
+    await ensureExecutable(this.config.mcBin);
+    await deleteMinioResources(this.config, input.libraryId);
+    await dropPgDatabase(this.config, input.libraryId);
+  }
+}
+
+export class UnavailableFileLibraryOrchestrator implements FileLibraryOrchestrator {
+  async provisionLibrary(): Promise<FileLibraryProvisioningResult> {
+    throw new Error('file_library_backend_unavailable');
+  }
+
+  async deleteLibrary(): Promise<void> {
+    throw new Error('file_library_backend_unavailable');
+  }
+}
+
+export class InMemoryFileLibraryGatewayManager implements FileLibraryGatewayManager {
+  private readonly sessions = new Map<string, GatewaySession>();
+
+  async ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult> {
+    const existing = this.sessions.get(input.libraryId);
+    if (existing) {
+      return existing;
+    }
+    const port = envNumber('FILE_LIBRARY_GATEWAY_PORT_BASE', 39000) + this.sessions.size + 1;
+    const created: GatewaySession = {
+      loopbackUrl: `http://127.0.0.1:${port}`,
+      port,
+      status: 'ready',
+      lastStartedAt: new Date().toISOString(),
+      metadataUrl: input.metadataUrl,
+    };
+    this.sessions.set(input.libraryId, created);
+    return created;
+  }
+
+  async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
+    const existing = this.sessions.get(libraryId);
+    if (!existing) {
+      return {
+        status: 'stopped',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      status: existing.status === 'ready' ? 'ready' : existing.status === 'degraded' ? 'degraded' : 'failed',
+      checkedAt: new Date().toISOString(),
+      lastError: existing.lastError,
+    };
+  }
+
+  async stopGateway(libraryId: string): Promise<void> {
+    this.sessions.delete(libraryId);
+  }
+}
+
+export class RealFileLibraryGatewayManager implements FileLibraryGatewayManager {
+  private readonly sessions = new Map<string, GatewaySession>();
+
+  constructor(private readonly config: FileLibraryRuntimeConfig = buildRuntimeConfig()) {}
+
+  async ensureGateway(input: EnsureFileLibraryGatewayInput): Promise<EnsureFileLibraryGatewayResult> {
+    await ensureExecutable(this.config.juicefsBin);
+    const existing = this.sessions.get(input.libraryId);
+    if (existing?.child && existing.child.exitCode === null) {
+      return existing;
+    }
+
+    await mkdir(this.config.gatewayLogDir, { recursive: true });
+    const port = await findFreePort(this.config.gatewayPortBase);
+    const loopbackUrl = `http://127.0.0.1:${port}`;
+    const logPath = join(this.config.gatewayLogDir, `${input.libraryId}.log`);
+    await mkdir(dirname(logPath), { recursive: true });
+    const rootUser = deterministicGatewayUser(input.libraryId, this.config.gatewayRootUserPrefix);
+    const rootPassword = deriveSecret(this.config.gatewayRootPasswordSeed, 'gateway-root', input.libraryId, 24);
+    const child = spawn(
+      this.config.juicefsBin,
+      [
+        'gateway',
+        input.metadataUrl,
+        `127.0.0.1:${port}`,
+        '--log',
+        logPath,
+        '--no-banner',
+      ],
+      {
+        env: {
+          ...process.env,
+          MINIO_ROOT_USER: rootUser,
+          MINIO_ROOT_PASSWORD: rootPassword,
+        },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+
+    const created: GatewaySession = {
+      loopbackUrl,
+      port,
+      status: 'starting',
+      lastStartedAt: new Date().toISOString(),
+      child,
+      metadataUrl: input.metadataUrl,
+    };
+    this.sessions.set(input.libraryId, created);
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+      created.lastError = stderr.trim().slice(-2000);
+    });
+    child.on('exit', (code) => {
+      if (code !== 0 && created.status !== 'ready') {
+        created.status = 'failed';
+      } else if (code !== 0) {
+        created.status = 'degraded';
+      } else {
+        created.status = 'stopped';
+      }
+    });
+
+    try {
+      await waitForGateway(`${loopbackUrl}/`);
+      created.status = 'ready';
+      return created;
+    } catch (error) {
+      created.status = 'failed';
+      created.lastError = error instanceof Error ? error.message : 'file_library_gateway_start_failed';
+      child.kill('SIGTERM');
+      throw error;
+    }
+  }
+
+  async getHealth(libraryId: string): Promise<FileLibraryGatewayHealth> {
+    const existing = this.sessions.get(libraryId);
+    if (!existing) {
+      return {
+        status: 'stopped',
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    if (!existing.child || existing.child.exitCode !== null) {
+      return {
+        status: existing.status === 'failed' ? 'failed' : 'stopped',
+        checkedAt: new Date().toISOString(),
+        lastError: existing.lastError,
+      };
+    }
+    try {
+      const response = await fetch(`${existing.loopbackUrl}/`, { method: 'GET' });
+      return {
+        status: response.status > 0 ? 'ready' : 'degraded',
+        checkedAt: new Date().toISOString(),
+        lastError: existing.lastError,
+      };
+    } catch (error) {
+      existing.lastError = error instanceof Error ? error.message : 'file_library_gateway_health_failed';
+      return {
+        status: 'degraded',
+        checkedAt: new Date().toISOString(),
+        lastError: existing.lastError,
+      };
+    }
+  }
+
+  async stopGateway(libraryId: string): Promise<void> {
+    const existing = this.sessions.get(libraryId);
+    if (existing?.child && existing.child.exitCode === null) {
+      existing.child.kill('SIGTERM');
+    }
+    this.sessions.delete(libraryId);
+  }
+}

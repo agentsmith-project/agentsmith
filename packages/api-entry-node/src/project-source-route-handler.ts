@@ -1,6 +1,7 @@
 import type http from 'node:http';
 import {
   handleProjectCrudRoutes,
+  handleFileLibraryRoutes,
   handleProjectGovernanceRoutes,
   handleSourceDomainRoutes,
   handleWorkspaceRoutes,
@@ -71,6 +72,10 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (await handleProjectGovernanceRoutes(context)) {
+    return true;
+  }
+
+  if (await handleFileLibraryRoutes(context)) {
     return true;
   }
 

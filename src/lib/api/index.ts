@@ -56,6 +56,7 @@ export {
   AlertAPI,
   ModelConfigAPI,
   GovernanceExplainabilityAPI,
+  FileLibrariesAPI,
 } from './endpoints';
 
 export type {

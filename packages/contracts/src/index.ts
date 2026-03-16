@@ -93,7 +93,6 @@ export const SourceLibrarySchema = z.object({
   visibility: z.literal('shared'),
   provider: z.literal('s3').optional(),
   bucket: z.string().min(1).optional(),
-  system_managed_kind: z.enum(['default_personal_uploads']).optional(),
   object_prefix: z.string().min(1).optional(),
   doc_namespace: z.string().min(1).optional(),
   vector_namespace: z.string().min(1).optional(),
@@ -110,7 +109,6 @@ export const CreateSourceLibraryRequestSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
   visibility: z.literal('shared').default('shared'),
-  system_managed_kind: z.enum(['default_personal_uploads']).optional(),
 });
 
 export const UpdateSourceLibraryRequestSchema = z
@@ -226,6 +224,154 @@ export const SourceObjectShareLinkResponseSchema = z.object({
   url: z.string().url(),
   expires_at: z.string().datetime(),
   expires_in_seconds: z.number().int().min(60).max(604800),
+});
+
+export const FileLibraryStatusSchema = z.enum([
+  'creating',
+  'ready',
+  'degraded',
+  'failed',
+  'deleting',
+]);
+
+export const FileLibrarySchema = z.object({
+  id: z.string().min(1),
+  workspace_id: z.string().min(1),
+  project_id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  status: FileLibraryStatusSchema,
+  filesystem_name: z.string().min(1),
+  created_by_user_id: z.string().min(1),
+  created_at: z.string().datetime(),
+  updated_at: z.string().datetime(),
+});
+
+export const ListFileLibrariesResponseSchema = z.object({
+  items: z.array(FileLibrarySchema),
+});
+
+export const CreateFileLibraryRequestSchema = z.object({
+  name: z.string().min(1).max(255),
+  description: z.string().max(1000).optional(),
+});
+
+export const UpdateFileLibraryRequestSchema = z.object({
+  name: z.string().min(1).max(255).optional(),
+  description: z.string().max(1000).optional(),
+}).refine((value) => Object.keys(value).length > 0, {
+  message: 'at_least_one_field_required',
+});
+
+export const FileLibraryGatewayStatusSchema = z.enum([
+  'not_started',
+  'starting',
+  'ready',
+  'degraded',
+  'failed',
+  'stopped',
+]);
+
+export const FileLibraryBackendSchema = z.object({
+  library_id: z.string().min(1),
+  filesystem_name: z.string().min(1),
+  provisioning_status: FileLibraryStatusSchema,
+  gateway_status: FileLibraryGatewayStatusSchema,
+  postgres: z.object({
+    host: z.string().min(1),
+    port: z.number().int().positive(),
+    database: z.string().min(1),
+    username: z.string().min(1),
+  }),
+  minio: z.object({
+    endpoint: z.string().min(1),
+    bucket: z.string().min(1),
+    region: z.string().min(1).optional(),
+  }),
+  gateway: z.object({
+    loopback_url: z.string().url().optional(),
+    port: z.number().int().positive().optional(),
+    last_started_at: z.string().datetime().optional(),
+  }).optional(),
+  last_error: z.string().optional(),
+});
+
+export const FileLibraryEntrySchema = z.union([
+  z.object({
+    kind: z.literal('directory'),
+    path: z.string().min(1),
+    name: z.string().min(1),
+    modified_at: z.string().datetime().optional(),
+  }),
+  z.object({
+    kind: z.literal('file'),
+    path: z.string().min(1),
+    name: z.string().min(1),
+    size_bytes: z.number().int().nonnegative(),
+    content_type: z.string().min(1).optional(),
+    modified_at: z.string().datetime(),
+    etag: z.string().optional(),
+  }),
+]);
+
+export const ListFileLibraryEntriesQuerySchema = z.object({
+  path: z.string().optional(),
+  page_size: z.coerce.number().int().min(1).max(1000).optional(),
+  continuation_token: z.string().optional(),
+  search: z.string().trim().min(1).max(256).optional(),
+  sort_by: z.enum(['name', 'size_bytes', 'modified_at']).default('name'),
+  sort_order: z.enum(['asc', 'desc']).default('asc'),
+});
+
+export const ListFileLibraryEntriesResponseSchema = z.object({
+  path: z.string(),
+  items: z.array(FileLibraryEntrySchema),
+  next_continuation_token: z.string().nullable(),
+});
+
+export const CreateFileLibraryFolderRequestSchema = z.object({
+  path: z.string().min(1),
+});
+
+export const DeleteFileLibraryEntriesRequestSchema = z.object({
+  paths: z.array(z.string().min(1)).min(1),
+});
+
+export const DeleteFileLibraryEntriesResponseSchema = z.object({
+  results: z.array(z.object({
+    path: z.string().min(1),
+    status: z.enum(['deleted', 'not_found', 'error']),
+    error_code: z.string().optional(),
+    message: z.string().optional(),
+  })),
+});
+
+export const MoveFileLibraryEntryRequestSchema = z.object({
+  from_path: z.string().min(1),
+  to_path: z.string().min(1),
+  overwrite: z.boolean().optional(),
+});
+
+export const FileLibraryDownloadQuerySchema = z.object({
+  path: z.string().min(1),
+});
+
+export const CreateFileLibraryShareLinkRequestSchema = z.object({
+  path: z.string().min(1),
+  expires_in_seconds: z.number().int().positive().max(60 * 60 * 24 * 7).optional(),
+});
+
+export const StorageCredentialExchangeResponseSchema = z.object({
+  filesystem_name: z.string().min(1),
+  metadata_url: z.string().min(1),
+  recommended_mount_path: z.string().min(1),
+  platform_notes: z.array(z.string().min(1)).default([]),
+  recommended_mount_commands: z.object({
+    linux: z.string().min(1),
+    macos: z.string().min(1),
+    windows: z.string().min(1),
+  }),
+  created_at: z.string().datetime(),
 });
 
 export const AIReadyJobTypeSchema = z.enum(['document_ingest']);
@@ -344,6 +490,20 @@ export type SourceObjectMetaResponse = z.infer<typeof SourceObjectMetaResponseSc
 export type SourceObjectDownloadQuery = z.infer<typeof SourceObjectDownloadQuerySchema>;
 export type SourceObjectShareLinkCreateRequest = z.infer<typeof SourceObjectShareLinkCreateRequestSchema>;
 export type SourceObjectShareLinkResponse = z.infer<typeof SourceObjectShareLinkResponseSchema>;
+export type FileLibraryDTO = z.infer<typeof FileLibrarySchema>;
+export type ListFileLibrariesResponse = z.infer<typeof ListFileLibrariesResponseSchema>;
+export type CreateFileLibraryRequest = z.infer<typeof CreateFileLibraryRequestSchema>;
+export type UpdateFileLibraryRequest = z.infer<typeof UpdateFileLibraryRequestSchema>;
+export type FileLibraryBackendDTO = z.infer<typeof FileLibraryBackendSchema>;
+export type ListFileLibraryEntriesQuery = z.infer<typeof ListFileLibraryEntriesQuerySchema>;
+export type ListFileLibraryEntriesResponse = z.infer<typeof ListFileLibraryEntriesResponseSchema>;
+export type CreateFileLibraryFolderRequest = z.infer<typeof CreateFileLibraryFolderRequestSchema>;
+export type DeleteFileLibraryEntriesRequest = z.infer<typeof DeleteFileLibraryEntriesRequestSchema>;
+export type DeleteFileLibraryEntriesResponse = z.infer<typeof DeleteFileLibraryEntriesResponseSchema>;
+export type MoveFileLibraryEntryRequest = z.infer<typeof MoveFileLibraryEntryRequestSchema>;
+export type FileLibraryDownloadQuery = z.infer<typeof FileLibraryDownloadQuerySchema>;
+export type CreateFileLibraryShareLinkRequest = z.infer<typeof CreateFileLibraryShareLinkRequestSchema>;
+export type StorageCredentialExchangeResponse = z.infer<typeof StorageCredentialExchangeResponseSchema>;
 export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
 export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;
 export type WorkspaceFoundationInitializationRequest = z.infer<typeof WorkspaceFoundationInitializationRequestSchema>;

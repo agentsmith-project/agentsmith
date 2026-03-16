@@ -58,7 +58,7 @@ import type {
 } from '@mbos/ports';
 import {
   buildAiReadyJobCacheKey,
-  buildSourceLibrariesCacheKey,
+  buildFileLibrariesCacheKey,
   buildSourcesCacheKey,
 } from './cache-keys';
 
@@ -589,7 +589,7 @@ export class ListSourceLibrariesUseCase {
   ) {}
 
   async execute(command: ListSourceLibrariesCommand): Promise<ListSourceLibrariesResponse> {
-    const cacheKey = buildSourceLibrariesCacheKey(command.workspaceId, command.projectId);
+    const cacheKey = buildFileLibrariesCacheKey(command.workspaceId, command.projectId);
     const cached = await this.cache.get(cacheKey);
     if (cached) {
       return JSON.parse(cached) as ListSourceLibrariesResponse;
@@ -625,7 +625,6 @@ export class CreateSourceLibraryUseCase {
       name: input.name.trim(),
       description: input.description?.trim() || undefined,
       visibility: 'shared',
-      system_managed_kind: input.system_managed_kind,
       object_prefix: tuple.objectPrefix,
       doc_namespace: tuple.docNamespace,
       vector_namespace: tuple.vectorNamespace,
@@ -635,7 +634,7 @@ export class CreateSourceLibraryUseCase {
     };
 
     await this.sourceLibraryRepo.save(library);
-    await this.cache.del(buildSourceLibrariesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildFileLibrariesCacheKey(command.workspaceId, command.projectId));
     return library;
   }
 }
@@ -669,7 +668,7 @@ export class UpdateSourceLibraryUseCase {
       throw new Error('source_library_not_found');
     }
 
-    await this.cache.del(buildSourceLibrariesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildFileLibrariesCacheKey(command.workspaceId, command.projectId));
     return updated;
   }
 }
@@ -706,7 +705,7 @@ export class DeleteSourceLibraryUseCase {
       throw new Error('source_library_not_found');
     }
 
-    await this.cache.del(buildSourceLibrariesCacheKey(command.workspaceId, command.projectId));
+    await this.cache.del(buildFileLibrariesCacheKey(command.workspaceId, command.projectId));
   }
 }
 

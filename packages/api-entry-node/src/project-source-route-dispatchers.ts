@@ -6,3 +6,4 @@ export {
   handleProjectGovernanceRoutes,
 } from './project-source-route-dispatchers-governance.js';
 export { handleSourceDomainRoutes } from './project-source-route-dispatchers-sources.js';
+export { handleFileLibraryRoutes } from './project-source-route-dispatchers-file-libraries.js';

@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  defaultPersonalLibraryScopeKey,
-  dedupeDefaultPersonalLibraries,
-  pickCanonicalDefaultPersonalLibrary,
   projectScopedKey,
   readProjectPermissionContext,
   readRequestId,
@@ -18,7 +15,6 @@ describe('project-source-route-handler utils', () => {
 
   it('builds scoped keys', () => {
     expect(projectScopedKey('ws', 'proj')).toBe('ws:proj');
-    expect(defaultPersonalLibraryScopeKey('ws', 'proj', 'user')).toBe('ws:proj:user');
   });
 
   it('validates resource policy rules against allowed keys', () => {
@@ -52,17 +48,6 @@ describe('project-source-route-handler utils', () => {
         allowedLimitKeys,
       }),
     ).toEqual({ ok: false, message: 'rate_limits_rule_key_invalid' });
-  });
-
-  it('chooses and dedupes canonical default personal libraries', () => {
-    const items = [
-      { id: 'b', created_by_user_id: 'user-1', name: 'My Uploads', created_at: '2026-03-03T00:00:00Z' },
-      { id: 'a', created_by_user_id: 'user-1', name: 'My Uploads', system_managed_kind: 'default_personal_uploads', created_at: '2026-03-04T00:00:00Z' },
-      { id: 'c', created_by_user_id: 'user-2', name: 'My Uploads', created_at: '2026-03-02T00:00:00Z' },
-    ];
-
-    expect(pickCanonicalDefaultPersonalLibrary(items, 'user-1')?.id).toBe('a');
-    expect(dedupeDefaultPersonalLibraries(items, 'user-1').map((item) => item.id)).toEqual(['a', 'c']);
   });
 
   it('reads project permission context and falls back to null on lookup error', async () => {

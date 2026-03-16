@@ -37,7 +37,7 @@ Scope: `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/chat`
 - Backend must fail fast with `422 VALIDATION_ERROR` (`chat_attachment_image_data_url_unavailable`) when image attachment bytes cannot be resolved to a data URL.
 - Supported attachment entry points:
   - local file picker
-  - source-library picker
+  - file-library picker
   - drag-and-drop into composer
   - paste files/images into composer textarea
 - Attachments are message-scoped snapshots and are persisted with the user message before stream send.

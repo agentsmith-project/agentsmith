@@ -25,6 +25,7 @@ import type {
 import { API_BASE, USE_MSW } from '../client';
 import type { ApiClient } from '../client';
 import { APIError } from '../errors';
+import { ensureDefaultUploadLibrary } from '@/lib/files/default-library';
 
 interface BackendSourceItem {
   id: string;
@@ -183,7 +184,11 @@ export class FilesAPI {
   ): Promise<FileItem> {
     if (!USE_MSW) {
       const effectiveLibraryId = libraryId
-        ?? (await this.ensureDefaultPersonalLibrary(workspaceId, projectId)).id;
+        ?? (await ensureDefaultUploadLibrary({
+          sourcesAPI: this,
+          workspaceId,
+          projectId,
+        })).id;
       const response = await this.client.post<BackendSourceItem>(
         `/workspaces/${workspaceId}/projects/${projectId}/sources`,
         {
@@ -381,7 +386,7 @@ export class FilesAPI {
 
   async listLibraries(workspaceId: string, projectId: string): Promise<{ items: FileLibrary[] }> {
     return this.client.get<{ items: FileLibrary[] }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries`,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries`,
     );
   }
 
@@ -391,14 +396,11 @@ export class FilesAPI {
     payload: { name: string; description?: string; visibility?: 'shared' | 'private' },
   ): Promise<FileLibrary> {
     return this.client.post<FileLibrary>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries`,
-      payload,
-    );
-  }
-
-  async ensureDefaultPersonalLibrary(workspaceId: string, projectId: string): Promise<FileLibrary> {
-    return this.client.get<FileLibrary>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/default-personal`,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries`,
+      {
+        name: payload.name,
+        description: payload.description,
+      },
     );
   }
 
@@ -409,14 +411,14 @@ export class FilesAPI {
     payload: { name?: string; description?: string },
   ): Promise<FileLibrary> {
     return this.client.patch<FileLibrary>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}`,
       payload,
     );
   }
 
   async deleteLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<void> {
     return this.client.delete<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}`,
     );
   }
 
@@ -431,17 +433,55 @@ export class FilesAPI {
     params?: FileObjectsListParams,
   ): Promise<FileObjectsListResponse> {
     const searchParams = new URLSearchParams();
-    if (params?.prefix) searchParams.set('prefix', params.prefix);
-    searchParams.set('delimiter', '/');
+    if (params?.prefix) searchParams.set('path', params.prefix);
     if (params?.page_size) searchParams.set('page_size', String(params.page_size));
     if (params?.continuation_token) searchParams.set('continuation_token', params.continuation_token);
     if (params?.search) searchParams.set('search', params.search);
-    if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
+    if (params?.sort_by) {
+      searchParams.set(
+        'sort_by',
+        params.sort_by === 'last_modified' ? 'modified_at' : params.sort_by,
+      );
+    }
     if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
     const query = searchParams.toString();
-    return this.client.get<FileObjectsListResponse>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects${query ? `?${query}` : ''}`,
-    );
+    return this.client.get<{
+      path: string;
+      items: Array<
+        | { kind: 'directory'; path: string; name: string; modified_at?: string }
+        | {
+            kind: 'file';
+            path: string;
+            name: string;
+            size_bytes: number;
+            content_type?: string;
+            modified_at: string;
+            etag?: string;
+          }
+      >;
+      next_continuation_token: string | null;
+    }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/entries${query ? `?${query}` : ''}`,
+    ).then((response) => ({
+      prefix: response.path,
+      items: response.items.map((item) =>
+        item.kind === 'directory'
+          ? {
+              kind: 'prefix' as const,
+              prefix: item.path.endsWith('/') ? item.path : `${item.path}/`,
+              name: item.name,
+            }
+          : {
+              kind: 'object' as const,
+              key: item.path,
+              name: item.name,
+              size_bytes: item.size_bytes,
+              content_type: item.content_type ?? 'application/octet-stream',
+              etag: item.etag,
+              last_modified: item.modified_at,
+            }),
+      next_continuation_token: response.next_continuation_token ?? null,
+    }));
   }
 
   async createFolder(
@@ -451,8 +491,8 @@ export class FilesAPI {
     prefix: string,
   ): Promise<void> {
     return this.client.post<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/folders`,
-      { prefix },
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/folders`,
+      { path: prefix },
     );
   }
 
@@ -466,7 +506,7 @@ export class FilesAPI {
     signal?: AbortSignal,
     onProgress?: (progress: number) => void,
   ): Promise<FileObjectItem> {
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/upload`;
+    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/upload`;
     const token = this.client.getToken();
 
     return new Promise<FileObjectItem>((resolve, reject) => {
@@ -488,9 +528,25 @@ export class FilesAPI {
       xhr.addEventListener('load', () => {
         if (xhr.status >= 200 && xhr.status < 300) {
           try {
-            const parsed = JSON.parse(xhr.responseText) as FileObjectItem;
+            const parsed = JSON.parse(xhr.responseText) as {
+              kind: 'file';
+              path: string;
+              name: string;
+              size_bytes: number;
+              content_type?: string;
+              modified_at: string;
+              etag?: string;
+            };
             if (onProgress) onProgress(100);
-            resolve(parsed);
+            resolve({
+              kind: 'object',
+              key: parsed.path,
+              name: parsed.name,
+              size_bytes: parsed.size_bytes,
+              content_type: parsed.content_type ?? 'application/octet-stream',
+              etag: parsed.etag,
+              last_modified: parsed.modified_at,
+            });
           } catch {
             reject(new Error('Failed to parse response'));
           }
@@ -538,7 +594,7 @@ export class FilesAPI {
     libraryId: string,
     key: string,
   ): Promise<Blob> {
-    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/download?key=${encodeURIComponent(key)}`;
+    const url = `${API_BASE}/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/download?path=${encodeURIComponent(key)}`;
     const token = this.client.getToken();
 
     const headers: Record<string, string> = {};
@@ -562,10 +618,17 @@ export class FilesAPI {
     libraryId: string,
     keys: string[],
   ): Promise<{ results: Array<{ key: string; status: 'deleted' | 'failed' | 'not_found' | 'error'; error_code?: string; message?: string }> }> {
-    return this.client.post<{ results: Array<{ key: string; status: 'deleted' | 'failed' | 'not_found' | 'error'; error_code?: string; message?: string }> }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/delete`,
-      { keys },
-    );
+    return this.client.post<{ results: Array<{ path: string; status: 'deleted' | 'not_found' | 'error'; error_code?: string; message?: string }> }>(
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/delete`,
+      { paths: keys },
+    ).then((response) => ({
+      results: response.results.map((item) => ({
+        key: item.path,
+        status: item.status,
+        error_code: item.error_code,
+        message: item.message,
+      })),
+    }));
   }
 
   async moveObject(
@@ -575,8 +638,12 @@ export class FilesAPI {
     payload: { from_key: string; to_key: string; overwrite?: boolean },
   ): Promise<void> {
     return this.client.post<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/move`,
-      payload,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/move`,
+      {
+        from_path: payload.from_key,
+        to_path: payload.to_key,
+        overwrite: payload.overwrite,
+      },
     );
   }
 
@@ -587,7 +654,7 @@ export class FilesAPI {
     key: string,
   ): Promise<FileObjectMeta> {
     return this.client.get<FileObjectMeta>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/meta?key=${encodeURIComponent(key)}`,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/meta?path=${encodeURIComponent(key)}`,
     );
   }
 
@@ -598,8 +665,11 @@ export class FilesAPI {
     payload: { key: string; expires_in_seconds?: number },
   ): Promise<FileObjectShareLink> {
     return this.client.post<FileObjectShareLink>(
-      `/workspaces/${workspaceId}/projects/${projectId}/source-libraries/${libraryId}/objects/share-link`,
-      payload,
+      `/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${libraryId}/share-link`,
+      {
+        path: payload.key,
+        expires_in_seconds: payload.expires_in_seconds,
+      },
     );
   }
 }

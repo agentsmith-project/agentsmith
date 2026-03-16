@@ -1070,12 +1070,22 @@ describe('api-entry-node projects routes', () => {
 
   it('supports create and list sources flow', async () => {
     const { baseUrl } = startServer();
-    const defaultLibraryRes = await apiFetch(
+    const createLibraryRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          name: 'Project Uploads',
+          visibility: 'shared',
+        }),
+      },
     );
-    expect(defaultLibraryRes.status).toBe(200);
-    const defaultLibrary = (await defaultLibraryRes.json()) as { id: string };
+    expect(createLibraryRes.status).toBe(201);
+    const defaultLibrary = (await createLibraryRes.json()) as { id: string };
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
     expect(listBefore.status).toBe(200);
@@ -1286,12 +1296,17 @@ describe('api-entry-node projects routes', () => {
 
   it('lists attached source details for a notebook task', async () => {
     const { baseUrl } = startServer();
-    const defaultLibraryRes = await apiFetch(
+    const createLibraryRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Project Uploads', visibility: 'shared' }),
+      },
     );
-    expect(defaultLibraryRes.status).toBe(200);
-    const defaultLibrary = (await defaultLibraryRes.json()) as { id: string };
+    expect(createLibraryRes.status).toBe(201);
+    const defaultLibrary = (await createLibraryRes.json()) as { id: string };
 
     const createSourceRes = await apiFetch(
       baseUrl,
@@ -1395,15 +1410,13 @@ describe('api-entry-node projects routes', () => {
     expect(attachedDetails[0]?.source_id).toBe(createdSource.id);
   });
 
-  it('supports source libraries CRUD flow', async () => {
+  it('supports legacy source libraries CRUD flow', async () => {
     const { baseUrl } = startServer();
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
     expect(listBefore.status).toBe(200);
-    const listBeforeBody = (await listBefore.json()) as { items: Array<{ name: string; system_managed_kind?: string }> };
-    expect(listBeforeBody.items).toHaveLength(1);
-    expect(listBeforeBody.items[0]?.name).toBe('My Uploads');
-    expect(listBeforeBody.items[0]?.system_managed_kind).toBe('default_personal_uploads');
+    const listBeforeBody = (await listBefore.json()) as { items: Array<{ name: string }> };
+    expect(listBeforeBody.items).toHaveLength(0);
 
     const createRes = await apiFetch(
       baseUrl,
@@ -1444,7 +1457,7 @@ describe('api-entry-node projects routes', () => {
     const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
     const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
     expect(listAfter.status).toBe(200);
-    expect(listed.items).toHaveLength(2);
+    expect(listed.items).toHaveLength(1);
     expect(listed.items.some((item) => item.id === created.id)).toBe(true);
 
     const deleteRes = await apiFetch(
@@ -1455,84 +1468,78 @@ describe('api-entry-node projects routes', () => {
     expect(deleteRes.status).toBe(204);
   });
 
-  it('ensures a default personal source library idempotently', async () => {
+  it('supports file libraries CRUD flow', async () => {
     const { baseUrl } = startServer();
 
-    const firstRes = await apiFetch(
+    const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries');
+    expect(listBefore.status).toBe(200);
+    const listBeforeBody = (await listBefore.json()) as { items: Array<{ id: string }> };
+    expect(Array.isArray(listBeforeBody.items)).toBe(true);
+    expect(listBeforeBody.items).toHaveLength(0);
+
+    const createRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Project Uploads', description: 'default uploads library' }),
+      },
     );
-    expect(firstRes.status).toBe(200);
-    const first = (await firstRes.json()) as {
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as {
       id: string;
       name: string;
-      created_by_user_id: string;
-      workspace_id: string;
-      project_id: string;
-      system_managed_kind?: string;
+      description?: string;
+      status: string;
+      filesystem_name: string;
     };
-    expect(first.name).toBe('My Uploads');
-    expect(first.created_by_user_id).toBeTruthy();
-    expect(first.workspace_id).toBe('ws_default');
-    expect(first.project_id).toBe('proj_1');
-    expect(first.system_managed_kind).toBe('default_personal_uploads');
+    expect(created.id).toContain('flib_');
+    expect(created.name).toBe('Project Uploads');
+    expect(created.description).toBe('default uploads library');
+    expect(created.status).toBe('ready');
+    expect(created.filesystem_name).toContain('flib-');
 
-    const secondRes = await apiFetch(
+    const updateRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
-    );
-    expect(secondRes.status).toBe(200);
-    const second = (await secondRes.json()) as { id: string };
-    expect(second.id).toBe(first.id);
-
-    const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
-    expect(listRes.status).toBe(200);
-    const listed = (await listRes.json()) as { items: Array<{ id: string }> };
-    expect(listed.items.filter((item) => item.id === first.id)).toHaveLength(1);
-
-    const createReservedRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'My Uploads', visibility: 'shared' }),
-      },
-    );
-    expect(createReservedRes.status).toBe(409);
-
-    const createManagedMarkerRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Anything',
-          visibility: 'shared',
-          system_managed_kind: 'default_personal_uploads',
-        }),
-      },
-    );
-    expect(createManagedMarkerRes.status).toBe(422);
-
-    const patchDefaultRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${first.id}`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
       {
         method: 'PATCH',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ description: 'should fail' }),
+        body: JSON.stringify({ description: 'managed upload library' }),
       },
     );
-    expect(patchDefaultRes.status).toBe(409);
+    expect(updateRes.status).toBe(200);
+    const updated = (await updateRes.json()) as { description?: string };
+    expect(updated.description).toBe('managed upload library');
 
-    const deleteDefaultRes = await apiFetch(
+    const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries');
+    expect(listAfter.status).toBe(200);
+    const listed = (await listAfter.json()) as { items: Array<{ id: string; name: string }> };
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0]?.id).toBe(created.id);
+    expect(listed.items[0]?.name).toBe('Project Uploads');
+
+    const deleteRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${first.id}`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${created.id}`,
       { method: 'DELETE' },
     );
-    expect(deleteDefaultRes.status).toBe(409);
+    expect(deleteRes.status).toBe(204);
+  });
+
+  it('rejects the removed default personal source-library endpoint', async () => {
+    const { baseUrl } = startServer();
+
+    const res = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
+    );
+    expect(res.status).toBe(405);
+    expect(await res.json()).toEqual({
+      error_code: 'METHOD_NOT_ALLOWED',
+      message: 'Method not allowed',
+    });
   });
 
   it('serves minimal project members governance read endpoints', async () => {
@@ -2645,7 +2652,7 @@ describe('api-entry-node projects routes', () => {
     });
   });
 
-  it('supports source library object browser routes', async () => {
+  it('supports legacy source library object browser routes', async () => {
     const { baseUrl } = startServer();
 
     const createLibraryRes = await apiFetch(

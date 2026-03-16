@@ -21,6 +21,9 @@ Current status:
   `POST /api/v1/workspaces/:ws/projects/:prj/source-libraries/:libraryId/ai-ready-jobs/:jobId:cancel`.
   - Node entry now runs an in-process worker that drains queued `document_ingest` jobs and updates status to `running/succeeded/failed`.
   - In local development, worker execution also runs opportunistically when querying job status endpoint.
+- Files mainline now runs on JuiceFS-backed project `file-libraries`.
+- Legacy `source-libraries` routes are retained only for old source-processing and AI-ready
+  endpoints that have not yet been migrated; they are not the current Files product path.
 - Node API entry serves endpoint/credential and proxy APIs:
   - `GET/POST /api/v1/workspaces/:ws/projects/:prj/credentials`
   - `POST /api/v1/workspaces/:ws/projects/:prj/credentials/:credentialId/rotate`

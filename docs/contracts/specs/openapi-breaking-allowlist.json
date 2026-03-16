@@ -1,5 +1,7 @@
 {
   "operations": [
+    "parameters /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal",
+    "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal",
     "delete /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId}",
     "delete /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{provider}/models/{modelId}",
     "delete /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/aliases/{alias}",
@@ -89,6 +91,7 @@
     "put /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/routing/combos/{combo}"
   ],
   "responses": [
+    "get /api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal -> 200",
     "delete /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId} -> 204",
     "delete /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId} -> 401",
     "delete /api/v1/workspaces/{workspaceId}/projects/{projectId}/runtime/providers/{providerConnectionId} -> 403",

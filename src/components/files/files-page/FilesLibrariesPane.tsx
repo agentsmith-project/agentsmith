@@ -6,11 +6,13 @@ import type { FileLibrary } from '@/lib/api/types';
 type FilesLibrariesPaneProps = {
   t: (key: string, values?: Record<string, string>) => string;
   canManage: boolean;
+  canExchangeCredentials: boolean;
   libsLoading: boolean;
   libraries: FileLibrary[];
   selectedLibraryId: string | null;
   onSelectLibrary: (libraryId: string) => void;
   onCreateLibrary: () => void;
+  onOpenMountAccess: (library: FileLibrary) => void;
   onRenameLibrary: (library: FileLibrary) => void;
   onDeleteLibrary: (library: FileLibrary) => void;
 };
@@ -18,11 +20,13 @@ type FilesLibrariesPaneProps = {
 export function FilesLibrariesPane({
   t,
   canManage,
+  canExchangeCredentials,
   libsLoading,
   libraries,
   selectedLibraryId,
   onSelectLibrary,
   onCreateLibrary,
+  onOpenMountAccess,
   onRenameLibrary,
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
@@ -78,8 +82,24 @@ export function FilesLibrariesPane({
                     <div className="truncate text-sm">{library.name}</div>
                     {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
                   </div>
-                  {canManage ? (
+                  {canManage || canExchangeCredentials ? (
                     <div className="flex items-center gap-1 shrink-0">
+                      {canExchangeCredentials ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-7 px-2 text-[11px]"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onOpenMountAccess(library);
+                          }}
+                          data-testid={`files__library-mount-access--${library.id}`}
+                        >
+                          {t('file_manager.mount_access')}
+                        </Button>
+                      ) : null}
                       <Button
                         type="button"
                         size="icon"

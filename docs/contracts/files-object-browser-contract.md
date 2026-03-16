@@ -1,4 +1,12 @@
-# Files Object Browser Contract (MinIO-like) (2026-02-10)
+# Files Object Browser Contract (Legacy Source-Library Model) (2026-02-10)
+
+This document is now a **legacy reference** for the old `source-libraries` object-prefix model.
+The active file management architecture has moved to project-level JuiceFS-backed
+`file-libraries`; see [juicefs-file-libraries-architecture.md](/home/percy/works/mbos-v1/agentsmith/docs/contracts/juicefs-file-libraries-architecture.md).
+
+Do not use this document for new Files frontend or backend work. The current release
+mainline is the `file-libraries` contract and runtime. Keep this file only for
+old source-processing and AI-ready paths that have not been migrated yet.
 
 This document defines the **backend API contract** that the frontend Files module relies on when implementing
 a MinIO Console-like object browser and file manager.

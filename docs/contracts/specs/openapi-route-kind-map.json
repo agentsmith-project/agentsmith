@@ -35,6 +35,54 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources",
     "method": "get"
   },
+  "fileLibraries": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries",
+    "method": "get"
+  },
+  "fileLibraryItem": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}",
+    "method": "get"
+  },
+  "fileLibraryBackend": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/backend",
+    "method": "get"
+  },
+  "fileLibraryStorageCredentialExchange": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/storage-credential-exchange",
+    "method": "post"
+  },
+  "fileLibraryEntries": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/entries",
+    "method": "get"
+  },
+  "fileLibraryFolders": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/folders",
+    "method": "post"
+  },
+  "fileLibraryDelete": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/delete",
+    "method": "post"
+  },
+  "fileLibraryMove": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/move",
+    "method": "post"
+  },
+  "fileLibraryUpload": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/upload",
+    "method": "post"
+  },
+  "fileLibraryDownload": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/download",
+    "method": "get"
+  },
+  "fileLibraryMeta": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/meta",
+    "method": "get"
+  },
+  "fileLibraryShareLink": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link",
+    "method": "post"
+  },
   "audit": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit",
     "method": "get"
@@ -105,10 +153,6 @@
   },
   "sourceLibraries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries",
-    "method": "get"
-  },
-  "sourceLibrariesDefaultPersonal": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal",
     "method": "get"
   },
   "sourceLibraryItem": {

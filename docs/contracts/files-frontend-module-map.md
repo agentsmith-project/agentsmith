@@ -3,6 +3,7 @@
 Terminology note:
 - Product name: `Files`
 - Canonical route: `/files`
+- Top-level resource: `file library`
 
 Applies to:
 `src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/files`
@@ -15,62 +16,68 @@ Applies to:
   - renders `FilesPage`
 - Composition root
   - `src/components/files/FilesPage.tsx`
-  - orchestrates libraries list, object browser, details panel, dialogs
+  - orchestrates file library list, browser surface, details panel, dialogs
 - State and behavior hooks
-  - `src/lib/hooks/use-files-url-state.ts`
-  - `src/components/files/hooks/use-file-library-manager.ts`
-  - `src/components/files/hooks/use-file-folder-move-manager.ts`
-  - `src/components/files/hooks/use-file-upload-manager.ts`
-  - `src/components/files/hooks/use-file-batch-operations.ts`
+  - URL state
+  - file library CRUD
+  - file entry browsing and mutation
+  - local mount instructions and credential exchange
 
 ## 2. Functional Contract
 
-- Module scope is object storage management only.
-- Library is the top-level grouping concept.
+- Module scope is file library management and file browsing.
+- A file library is a project-scoped JuiceFS filesystem.
 - Supported capabilities:
-  - library create/rename/delete
-  - folder navigation (prefix-based)
+  - file library create/update/delete
+  - browse directories and files
   - upload/download
   - rename/move
   - delete (single/batch)
   - multi-select
-  - detail panel + preview + share-link
+  - view file library runtime status
+  - reveal local mount instructions
+  - request storage credential exchange
 - Out of scope:
   - AIReady
-  - indexing/docdb/vectordb
+  - docdb/vectordb workflows
   - plugin processing
+  - backend credential rotation
 
 ## 3. State Contract
 
-- `library_id` is URL-synced source of truth.
+- `file_library_id` is the URL-synced source of truth.
 - browse/search/sort/selection are session-scoped and in-memory.
-- Switching libraries in the current session restores in-session library state.
-- Refresh or leaving the module resets browse/search/sort/selection.
+- switching libraries in the current session restores in-session file browser state.
+- refresh or leaving the module resets browser-local state.
+- file library runtime state (`creating`, `ready`, `degraded`, `failed`, `deleting`) is backend-owned truth.
 
 ## 4. UX Contract
 
-- Object browser is the primary interaction surface.
+- File library list is the entry surface.
+- File browser is the primary interaction surface once a library is selected.
 - Sorting is header-click driven (`name`, `size`, `modified_at`).
-- Search is scoped to current folder.
+- Search is scoped to the current folder.
 - Multi-select is explicit:
   - `Ctrl/Cmd + click` and `Shift + click` for range
   - `Esc` exits multi-select
 - Batch action row must not cause layout jump.
-- Details panel uses non-technical wording (`object path`).
+- The module must expose a clear mount panel for Linux/macOS/Windows local mount commands.
 
 ## 5. Backend Contract Linkage
 
-- API and payload rules are defined in:
-  - `docs/contracts/files-object-browser-contract.md`
-- Frontend behavior must stay aligned with that contract.
+- Architecture and runtime truth:
+  - `docs/contracts/juicefs-file-libraries-architecture.md`
+- The frontend must align with file library APIs and credential exchange, not legacy `source-library` routes.
 
 ## 6. Test Contract
 
 - Unit tests:
   - route validation and permission checks
-  - manager hooks for mutation orchestration and failure handling
+  - file library CRUD orchestration
+  - credential exchange panel behavior
 - Integration/E2E:
-  - MinIO-backed flows for create folder, upload, rename/move, delete, download
+  - file library create/delete lifecycle
+  - browse/upload/rename/move/delete/download
   - UTF-8 filename integrity
-  - nested prefix correctness
-  - share-link generation and copy
+  - nested directory correctness
+  - degraded/failed runtime state handling

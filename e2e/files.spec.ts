@@ -1,17 +1,29 @@
 /**
- * Files Page – E2E Tests (Object Browser)
+ * Files Page – E2E Tests (File Library Browser)
  *
- * This suite validates the MinIO-like file manager UX over MSW:
- * - libraries list
- * - browse folder via prefix rows and breadcrumb
+ * This suite validates the current project file-library UX over MSW:
+ * - file-library list
+ * - browse folders via prefix rows and breadcrumb
  * - create folder
- * - upload / rename / delete / download object
+ * - upload / rename / delete / download objects
  */
 
 import { test, expect, goToProject } from './fixtures/test-base';
 
-test.describe('Files Page (object browser)', () => {
+test.describe('Files Page (file library browser)', () => {
   const multiSelectModifier: 'Control' | 'Meta' = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+  const activateLibrary = async (authedPage: import('@playwright/test').Page, libraryId: string) => {
+    const library = authedPage.getByTestId(`files__library-item--${libraryId}`);
+    await library.focus();
+    await library.press('Enter');
+  };
+
+  const clickSortHeader = async (authedPage: import('@playwright/test').Page, column: 'name' | 'size_bytes') => {
+    const header = authedPage.getByTestId(`files__sort-header--${column}`);
+    await expect(header).toBeVisible();
+    await header.click();
+  };
 
   const locateFile = async (authedPage: import('@playwright/test').Page, keyword: string) => {
     await authedPage.getByTestId('files__search').fill(keyword);
@@ -35,6 +47,21 @@ test.describe('Files Page (object browser)', () => {
     await expect(authedPage.getByTestId('files__object-row').first()).toBeVisible();
   });
 
+  test('opens local mount access dialog for a file library', async ({ authedPage }) => {
+    await authedPage.getByTestId('files__library-mount-access--lib_shared_default').click();
+
+    const dialog = authedPage.getByTestId('files__dialog__library-mount-access');
+    await expect(dialog).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-mount__filesystem-name')).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-mount__path')).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-mount__metadata-url')).toHaveValue('••••••••••••••••••••');
+
+    await dialog.getByRole('button', { name: /reveal|显示/i }).click();
+    await expect(authedPage.getByTestId('files__library-mount__metadata-url')).not.toHaveValue(
+      '••••••••••••••••••••',
+    );
+  });
+
   test('shows build header actions', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('files__open-chat')).toHaveAttribute('href', /\/chat$/);
     await expect(authedPage.getByTestId('files__open-notebook')).toHaveAttribute('href', /\/notebook$/);
@@ -50,10 +77,10 @@ test.describe('Files Page (object browser)', () => {
   });
 
   test('resets sort preference after refresh', async ({ authedPage }) => {
-    await authedPage.getByTestId('files__sort-header--size_bytes').click();
+    await clickSortHeader(authedPage, 'size_bytes');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-order', 'asc');
-    await authedPage.getByTestId('files__sort-header--size_bytes').click();
+    await clickSortHeader(authedPage, 'size_bytes');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
 
     await authedPage.reload();
@@ -71,7 +98,8 @@ test.describe('Files Page (object browser)', () => {
   });
 
   test('persists selected library in url and after refresh', async ({ authedPage }) => {
-    await authedPage.getByTestId('files__library-item--lib_large_bench').click();
+    await activateLibrary(authedPage, 'lib_large_bench');
+    await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
     await expect(authedPage).toHaveURL(/library_id=lib_large_bench/);
 
     await authedPage.reload();
@@ -97,18 +125,18 @@ test.describe('Files Page (object browser)', () => {
     await authedPage.getByTestId('files__search').fill('README');
     await expect(authedPage.getByTestId('files__search')).toHaveValue('README');
 
-    await authedPage.getByTestId('files__sort-header--size_bytes').click();
-    await authedPage.getByTestId('files__sort-header--size_bytes').click();
+    await clickSortHeader(authedPage, 'size_bytes');
+    await clickSortHeader(authedPage, 'size_bytes');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
 
     await multiSelectRowByText(authedPage, 'README.txt');
     await expect(authedPage.getByTestId('files__selection-summary')).toContainText('1');
 
-    await authedPage.getByTestId('files__library-item--lib_large_bench').click();
+    await activateLibrary(authedPage, 'lib_large_bench');
     await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
 
-    await authedPage.getByTestId('files__library-item--lib_shared_default').click();
+    await activateLibrary(authedPage, 'lib_shared_default');
     await expect(authedPage.getByTestId('files__search')).toHaveValue('README');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-active', 'true');
     await expect(authedPage.getByTestId('files__sort-header--size_bytes')).toHaveAttribute('data-order', 'desc');
@@ -116,7 +144,7 @@ test.describe('Files Page (object browser)', () => {
   });
 
   test('handles large directory pagination and search responsiveness', async ({ authedPage }) => {
-    await authedPage.getByTestId('files__library-item--lib_large_bench').click();
+    await activateLibrary(authedPage, 'lib_large_bench');
     await expect(authedPage.getByTestId('files__load-more')).toBeVisible();
     const targetRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'bulk-0250.txt' }).first();
     for (let attempt = 0; attempt < 12; attempt += 1) {
@@ -195,7 +223,7 @@ test.describe('Files Page (object browser)', () => {
     await expect(dialog).toBeVisible();
     await dialog.getByTestId('files__move__name').fill('e2e-renamed.txt');
     const moveResponse = authedPage.waitForResponse((response) => {
-      return response.url().includes('/objects/move') && response.status() === 200;
+      return response.url().includes('/file-libraries/') && response.url().includes('/move') && response.status() === 204;
     });
     await dialog.getByTestId('files__move__submit').click();
     await moveResponse;
@@ -273,7 +301,7 @@ test.describe('Files Page (object browser)', () => {
     await row.getByRole('button').click();
 
     const respPromise = authedPage.waitForResponse((resp) => {
-      return resp.url().includes('/objects/download') && resp.status() === 200;
+      return resp.url().includes('/file-libraries/') && resp.url().includes('/download') && resp.status() === 200;
     });
     await authedPage.getByTestId('files__download').click();
     await respPromise;
@@ -341,7 +369,7 @@ test.describe('Files Page (object browser)', () => {
 
     let downloadResponses = 0;
     const handler = (resp: { url: () => string; status: () => number }) => {
-      if (resp.url().includes('/objects/download') && resp.status() === 200) {
+      if (resp.url().includes('/file-libraries/') && resp.url().includes('/download') && resp.status() === 200) {
         downloadResponses += 1;
       }
     };

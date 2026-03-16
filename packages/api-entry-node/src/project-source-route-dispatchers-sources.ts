@@ -4,7 +4,6 @@ import type { ProjectSourceRouteContext } from './project-source-route-types.js'
 const SOURCE_LIBRARY_ROUTE_KINDS = new Set([
   'sources',
   'sourceLibraries',
-  'sourceLibrariesDefaultPersonal',
   'sourceLibraryObjects',
   'sourceLibraryFolders',
   'sourceLibraryObjectsUpload',

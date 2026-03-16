@@ -10,8 +10,19 @@ export type ProjectsRoute =
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'projectAuthorize'; workspaceId: string; projectId: string }
   | { kind: 'sources'; workspaceId: string; projectId: string }
+  | { kind: 'fileLibraries'; workspaceId: string; projectId: string }
+  | { kind: 'fileLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryBackend'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryStorageCredentialExchange'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryEntries'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryFolders'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryDelete'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryMove'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryUpload'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryDownload'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryMeta'; workspaceId: string; projectId: string; libraryId: string }
+  | { kind: 'fileLibraryShareLink'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraries'; workspaceId: string; projectId: string }
-  | { kind: 'sourceLibrariesDefaultPersonal'; workspaceId: string; projectId: string }
   | { kind: 'sourceLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryObjects'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'sourceLibraryFolders'; workspaceId: string; projectId: string; libraryId: string }
@@ -197,6 +208,143 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'sources',
       workspaceId: decodeURIComponent(sourcesMatched[1]),
       projectId: decodeURIComponent(sourcesMatched[2]),
+    };
+  }
+
+  const fileLibrariesMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/?$/);
+  if (fileLibrariesMatched) {
+    return {
+      kind: 'fileLibraries',
+      workspaceId: decodeURIComponent(fileLibrariesMatched[1]),
+      projectId: decodeURIComponent(fileLibrariesMatched[2]),
+    };
+  }
+
+  const fileLibraryItemMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/?$/);
+  if (fileLibraryItemMatched) {
+    return {
+      kind: 'fileLibraryItem',
+      workspaceId: decodeURIComponent(fileLibraryItemMatched[1]),
+      projectId: decodeURIComponent(fileLibraryItemMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryItemMatched[3]),
+    };
+  }
+
+  const fileLibraryBackendMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/backend\/?$/);
+  if (fileLibraryBackendMatched) {
+    return {
+      kind: 'fileLibraryBackend',
+      workspaceId: decodeURIComponent(fileLibraryBackendMatched[1]),
+      projectId: decodeURIComponent(fileLibraryBackendMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryBackendMatched[3]),
+    };
+  }
+
+  const fileLibraryStorageCredentialExchangeMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/storage-credential-exchange\/?$/,
+  );
+  if (fileLibraryStorageCredentialExchangeMatched) {
+    return {
+      kind: 'fileLibraryStorageCredentialExchange',
+      workspaceId: decodeURIComponent(fileLibraryStorageCredentialExchangeMatched[1]),
+      projectId: decodeURIComponent(fileLibraryStorageCredentialExchangeMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryStorageCredentialExchangeMatched[3]),
+    };
+  }
+
+  const fileLibraryEntriesMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/entries\/?$/,
+  );
+  if (fileLibraryEntriesMatched) {
+    return {
+      kind: 'fileLibraryEntries',
+      workspaceId: decodeURIComponent(fileLibraryEntriesMatched[1]),
+      projectId: decodeURIComponent(fileLibraryEntriesMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryEntriesMatched[3]),
+    };
+  }
+
+  const fileLibraryFoldersMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/folders\/?$/,
+  );
+  if (fileLibraryFoldersMatched) {
+    return {
+      kind: 'fileLibraryFolders',
+      workspaceId: decodeURIComponent(fileLibraryFoldersMatched[1]),
+      projectId: decodeURIComponent(fileLibraryFoldersMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryFoldersMatched[3]),
+    };
+  }
+
+  const fileLibraryDeleteMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/delete\/?$/,
+  );
+  if (fileLibraryDeleteMatched) {
+    return {
+      kind: 'fileLibraryDelete',
+      workspaceId: decodeURIComponent(fileLibraryDeleteMatched[1]),
+      projectId: decodeURIComponent(fileLibraryDeleteMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryDeleteMatched[3]),
+    };
+  }
+
+  const fileLibraryMoveMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/move\/?$/,
+  );
+  if (fileLibraryMoveMatched) {
+    return {
+      kind: 'fileLibraryMove',
+      workspaceId: decodeURIComponent(fileLibraryMoveMatched[1]),
+      projectId: decodeURIComponent(fileLibraryMoveMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryMoveMatched[3]),
+    };
+  }
+
+  const fileLibraryUploadMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/upload\/?$/,
+  );
+  if (fileLibraryUploadMatched) {
+    return {
+      kind: 'fileLibraryUpload',
+      workspaceId: decodeURIComponent(fileLibraryUploadMatched[1]),
+      projectId: decodeURIComponent(fileLibraryUploadMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryUploadMatched[3]),
+    };
+  }
+
+  const fileLibraryDownloadMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/download\/?$/,
+  );
+  if (fileLibraryDownloadMatched) {
+    return {
+      kind: 'fileLibraryDownload',
+      workspaceId: decodeURIComponent(fileLibraryDownloadMatched[1]),
+      projectId: decodeURIComponent(fileLibraryDownloadMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryDownloadMatched[3]),
+    };
+  }
+
+  const fileLibraryMetaMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/meta\/?$/,
+  );
+  if (fileLibraryMetaMatched) {
+    return {
+      kind: 'fileLibraryMeta',
+      workspaceId: decodeURIComponent(fileLibraryMetaMatched[1]),
+      projectId: decodeURIComponent(fileLibraryMetaMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryMetaMatched[3]),
+    };
+  }
+
+  const fileLibraryShareLinkMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/file-libraries\/([^/]+)\/share-link\/?$/,
+  );
+  if (fileLibraryShareLinkMatched) {
+    return {
+      kind: 'fileLibraryShareLink',
+      workspaceId: decodeURIComponent(fileLibraryShareLinkMatched[1]),
+      projectId: decodeURIComponent(fileLibraryShareLinkMatched[2]),
+      libraryId: decodeURIComponent(fileLibraryShareLinkMatched[3]),
     };
   }
 
@@ -432,17 +580,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'sourceLibraries',
       workspaceId: decodeURIComponent(sourceLibrariesMatched[1]),
       projectId: decodeURIComponent(sourceLibrariesMatched[2]),
-    };
-  }
-
-  const sourceLibrariesDefaultPersonalMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/source-libraries\/default-personal\/?$/,
-  );
-  if (sourceLibrariesDefaultPersonalMatched) {
-    return {
-      kind: 'sourceLibrariesDefaultPersonal',
-      workspaceId: decodeURIComponent(sourceLibrariesDefaultPersonalMatched[1]),
-      projectId: decodeURIComponent(sourceLibrariesDefaultPersonalMatched[2]),
     };
   }
 

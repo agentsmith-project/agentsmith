@@ -296,26 +296,16 @@ describe('useFileLibraries', () => {
     expect(result.current.data).toEqual({ items: [] });
   });
 
-  it('should dedupe duplicated default personal libraries', async () => {
+  it('should return project file libraries without legacy default-library dedupe', async () => {
     mockListLibraries.mockResolvedValueOnce({
       items: [
         {
-          id: 'lib_new',
-          name: 'My Uploads',
-          scope: 'personal',
+          id: 'lib_uploads',
+          name: 'Project Uploads',
+          scope: 'shared',
           owner_user_id: 'u1',
-          system_managed_kind: 'default_personal_uploads',
           created_at: '2026-03-06T10:00:00.000Z',
           updated_at: '2026-03-06T10:00:00.000Z',
-        },
-        {
-          id: 'lib_old',
-          name: 'My Uploads',
-          scope: 'personal',
-          owner_user_id: 'u1',
-          system_managed_kind: 'default_personal_uploads',
-          created_at: '2026-03-01T10:00:00.000Z',
-          updated_at: '2026-03-01T10:00:00.000Z',
         },
         {
           id: 'lib_shared',
@@ -333,7 +323,7 @@ describe('useFileLibraries', () => {
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.items.map((x: any) => x.id)).toEqual(['lib_old', 'lib_shared']);
+    expect(result.current.data?.items.map((x: any) => x.id)).toEqual(['lib_uploads', 'lib_shared']);
   });
 });
 

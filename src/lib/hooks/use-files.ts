@@ -11,21 +11,6 @@ import { queryKeys } from '@/lib/query-keys';
 import type { FilesListParams } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { APIError, handleErrorForToast, resolveApiErrorPresentation } from '@/lib/api/errors';
-import type { FileLibrary } from '@/lib/api/types';
-
-function dedupeDefaultPersonalLibraries(items: FileLibrary[]): FileLibrary[] {
-  const defaults = items.filter((item) => item.system_managed_kind === 'default_personal_uploads');
-  if (defaults.length <= 1) return items;
-  const canonical = [...defaults].sort((a, b) => {
-    const aAt = Date.parse(a.created_at);
-    const bAt = Date.parse(b.created_at);
-    const aScore = Number.isFinite(aAt) ? aAt : Number.MAX_SAFE_INTEGER;
-    const bScore = Number.isFinite(bAt) ? bAt : Number.MAX_SAFE_INTEGER;
-    if (aScore !== bScore) return aScore - bScore;
-    return a.id.localeCompare(b.id);
-  })[0];
-  return items.filter((item) => item.system_managed_kind !== 'default_personal_uploads' || item.id === canonical.id);
-}
 
 /**
  * Hook to query files list
@@ -121,13 +106,7 @@ export function useFileLibraries(workspaceId: string, projectId: string) {
 
   return useQuery({
     queryKey: queryKeys.fileLibraries.list(workspaceId, projectId),
-    queryFn: async () => {
-      const listed = await filesAPI.listLibraries(workspaceId, projectId);
-      return {
-        ...listed,
-        items: dedupeDefaultPersonalLibraries(listed.items),
-      };
-    },
+    queryFn: () => filesAPI.listLibraries(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId,
     staleTime: 10000,
   });

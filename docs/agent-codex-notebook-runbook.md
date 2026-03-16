@@ -28,7 +28,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - allow-list matching supports user and group subjects
   - endpoint `requests_per_minute` rate limiting is enforced
   - endpoint `daily_token_limit` limit enforcement is enforced
-  - `source_library.max_total_files` and `source_library.max_file_size_bytes` are enforced on create/upload flows
+  - legacy `source_library.max_total_files` and `source_library.max_file_size_bytes` remain enforced on old source-processing create/upload flows; the current Files mainline uses project `file-libraries`
 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.
@@ -165,20 +165,19 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - This runbook is the current **single place** for notebook/external-agent execution switches.
   - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
 
-### 5.3.3 Default Personal Upload Library (Chat object-first attachments)
+### 5.3.3 Default Project Upload Library (Chat object-first attachments)
 - Chat local uploads now use an object-first flow:
-  1. ensure backend default personal library (`GET /source-libraries/default-personal`)
+  1. ensure backend project upload file library (`GET /file-libraries`, create `Project Uploads` when missing)
   2. upload object under `chat/<session_id>/uploads/`
   3. create chat attachment from the library object
 - Current local backend policy:
-  - deterministic library name: `My Uploads`
-  - per-user + per-project
-  - ensure route is idempotent (create or return existing)
-  - default personal library is protected from rename/delete on standard library routes
-  - default personal library is marked with `system_managed_kind=default_personal_uploads`
+  - deterministic library name: `Project Uploads`
+  - project-level shared library
+  - ensure flow is idempotent (reuse existing or create once)
+  - uploads land in the new JuiceFS-backed project file library model
 
 ### 5.3.4 Notebook URL Inputs (object-first)
-- Notebook "Add URL" now stores the generated URL note file in the backend default personal library, then attaches it as a first-class `url` input ref (with imported object provenance) to the task.
+- Notebook "Add URL" now stores the generated URL note file in the backend project upload file library, then attaches it as a first-class `url` input ref (with imported object provenance) to the task.
 - This keeps notebook URL inputs aligned with the object-first input architecture while preserving URL semantics in `attached_inputs`.
 
 ### 5.3.5 Notebook Artifact Inputs (output-to-input loop)
@@ -187,7 +186,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 
 ### 5.3.6 Notebook Local Upload Inputs (object-first)
 - Notebook local file uploads now follow the same object-first flow as Chat uploads:
-  1. ensure backend default personal library
+  1. ensure backend project upload file library
   2. upload local files as library objects under `notebook/<task_id>/inputs/`
   3. attach task inputs as `library_object` refs
 - Notebook local uploads no longer create `source` records directly.

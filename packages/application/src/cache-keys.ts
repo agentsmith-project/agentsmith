@@ -18,8 +18,8 @@ export function buildSourcesCacheKey(workspaceId: string, projectId: string, lib
   return buildWorkspaceProjectCacheKey('sources', workspaceId, projectId, libraryId ?? 'all');
 }
 
-export function buildSourceLibrariesCacheKey(workspaceId: string, projectId: string): string {
-  return buildWorkspaceProjectCacheKey('source-libraries', workspaceId, projectId);
+export function buildFileLibrariesCacheKey(workspaceId: string, projectId: string): string {
+  return buildWorkspaceProjectCacheKey('file-libraries', workspaceId, projectId);
 }
 
 export function buildAiReadyJobCacheKey(
@@ -36,4 +36,3 @@ export function buildAiReadyJobCacheKey(
     ...(jobId ? [jobId] : []),
   );
 }
-

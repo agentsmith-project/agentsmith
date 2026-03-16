@@ -14,12 +14,14 @@ import { useTranslations } from 'next-intl';
 
 import { PageLayout } from '@/components/layout/PageLayout';
 import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
+import { toast } from '@/components/ui/toast';
 import { FilesPageContent } from '@/components/files/files-page/FilesPageContent';
+import { LibraryAccessDialog } from '@/components/files/files-page/LibraryAccessDialog';
 import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
 import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
 import { ObjectOperationDialogs } from '@/components/files/files-page/ObjectOperationDialogs';
 
-import type { FileObjectsListItem } from '@/lib/api/types';
+import type { FileLibrary, FileObjectsListItem, StorageCredentialExchangeResponse } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import {
   useCreateFileLibrary,
@@ -35,6 +37,7 @@ import {
   useUploadFileObject,
 } from '@/lib/hooks/use-file-objects';
 import { FileSortBy, FileSortOrder, useFilesUrlState } from '@/lib/hooks/use-files-url-state';
+import { useFileLibraryStorageCredentialExchange } from '@/lib/hooks/use-file-libraries-v2';
 import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
 import { useFileUploadManager } from '@/components/files/hooks/use-file-upload-manager';
 import { useFileBatchOperations } from '@/components/files/hooks/use-file-batch-operations';
@@ -58,6 +61,10 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
   const canManage = useHasPermission('project:files:update');
+  const canExchangeCredentialsViaDedicatedPermission = useHasPermission('project:file_library:credential_exchange');
+  const canExchangeCredentialsViaFilesPermission = useHasPermission('project:files:update');
+  const canExchangeCredentials =
+    canExchangeCredentialsViaDedicatedPermission || canExchangeCredentialsViaFilesPermission;
   const { layoutMode } = useProjectLayoutMode();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
@@ -107,8 +114,13 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const uploadObject = useUploadFileObject();
   const deleteObjects = useDeleteFileObjects();
   const moveObject = useMoveFileObject();
+  const exchangeStorageCredentials = useFileLibraryStorageCredentialExchange();
 
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+  const [libraryAccessOpen, setLibraryAccessOpen] = React.useState(false);
+  const [libraryAccessTarget, setLibraryAccessTarget] = React.useState<FileLibrary | null>(null);
+  const [libraryMountAccess, setLibraryMountAccess] = React.useState<StorageCredentialExchangeResponse | null>(null);
+  const [revealMetadataUrl, setRevealMetadataUrl] = React.useState(false);
 
   const crumbs = React.useMemo(() => buildCrumbs(prefix), [prefix]);
   const {
@@ -323,6 +335,24 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     }
   }, [objectsQuery]);
 
+  const openMountAccessDialog = React.useCallback(async (library: FileLibrary) => {
+    setLibraryAccessTarget(library);
+    setLibraryAccessOpen(true);
+    setRevealMetadataUrl(false);
+    setLibraryMountAccess(null);
+    try {
+      const result = await exchangeStorageCredentials.mutateAsync({
+        workspaceId,
+        projectId,
+        libraryId: library.id,
+      });
+      setLibraryMountAccess(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t('file_manager.mount_access_failed');
+      toast.error(`${t('file_manager.mount_access_failed')}: ${message}`);
+    }
+  }, [exchangeStorageCredentials, projectId, t, workspaceId]);
+
   return (
     <PageLayout
       density="immersive"
@@ -379,6 +409,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
       <FilesPageContent
         allSelected={allSelected}
         canManage={canManage}
+        canExchangeCredentials={canExchangeCredentials}
         crumbs={crumbs}
         fileInputRef={fileInputRef}
         filteredItems={filteredItems}
@@ -421,6 +452,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         onCreateFolder={() => setCreateFolderOpen(true)}
         onCreateLibrary={openCreateLibraryDialog}
         onDeleteLibrary={openDeleteLibraryDialog}
+        onOpenMountAccess={openMountAccessDialog}
         onGoUp={() => navigateToPrefix(parentPrefixForPrefix(prefix))}
         onNavigateToPrefix={navigateToPrefix}
         onRenameLibrary={openRenameLibraryDialog}
@@ -446,6 +478,17 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         uploadQueueCompleted={uploadQueueCompleted}
         uploadQueueTotal={uploadQueueTotal}
         workspaceId={workspaceId}
+      />
+
+      <LibraryAccessDialog
+        exchangePending={exchangeStorageCredentials.isPending}
+        mountAccess={libraryMountAccess}
+        open={libraryAccessOpen}
+        revealMetadataUrl={revealMetadataUrl}
+        targetLibrary={libraryAccessTarget}
+        t={t}
+        onOpenChange={setLibraryAccessOpen}
+        onToggleRevealMetadataUrl={() => setRevealMetadataUrl((value) => !value)}
       />
 
       <LibraryDialogs

@@ -213,13 +213,6 @@ describe('matchProjectsRoute', () => {
 
   it('matches source library object browser routes', () => {
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal'),
-    ).toEqual({
-      kind: 'sourceLibrariesDefaultPersonal',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-    });
-    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/lib_1/objects'),
     ).toEqual({
       kind: 'sourceLibraryObjects',
@@ -282,6 +275,170 @@ describe('matchProjectsRoute', () => {
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       libraryId: 'lib_1',
+    });
+  });
+
+  it('matches file library control plane and browser routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries'),
+    ).toEqual({
+      kind: 'fileLibraries',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1'),
+    ).toEqual({
+      kind: 'fileLibraryItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/backend'),
+    ).toEqual({
+      kind: 'fileLibraryBackend',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/storage-credential-exchange'),
+    ).toEqual({
+      kind: 'fileLibraryStorageCredentialExchange',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/entries'),
+    ).toEqual({
+      kind: 'fileLibraryEntries',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/folders'),
+    ).toEqual({
+      kind: 'fileLibraryFolders',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/delete'),
+    ).toEqual({
+      kind: 'fileLibraryDelete',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/move'),
+    ).toEqual({
+      kind: 'fileLibraryMove',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/upload'),
+    ).toEqual({
+      kind: 'fileLibraryUpload',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/download'),
+    ).toEqual({
+      kind: 'fileLibraryDownload',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/meta'),
+    ).toEqual({
+      kind: 'fileLibraryMeta',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/lib_1/share-link'),
+    ).toEqual({
+      kind: 'fileLibraryShareLink',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'lib_1',
+    });
+  });
+
+  it('matches file library control plane routes', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries'),
+    ).toEqual({
+      kind: 'fileLibraries',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1'),
+    ).toEqual({
+      kind: 'fileLibraryItem',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/backend'),
+    ).toEqual({
+      kind: 'fileLibraryBackend',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/storage-credential-exchange'),
+    ).toEqual({
+      kind: 'fileLibraryStorageCredentialExchange',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/entries'),
+    ).toEqual({
+      kind: 'fileLibraryEntries',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/folders'),
+    ).toEqual({
+      kind: 'fileLibraryFolders',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/delete'),
+    ).toEqual({
+      kind: 'fileLibraryDelete',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
+    });
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/flib_1/move'),
+    ).toEqual({
+      kind: 'fileLibraryMove',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: 'flib_1',
     });
   });
 

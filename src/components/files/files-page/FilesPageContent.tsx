@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils';
 interface FilesPageContentProps {
   allSelected: React.ComponentProps<typeof FilesBrowserPane>['allSelected'];
   canManage: boolean;
+  canExchangeCredentials: boolean;
   crumbs: React.ComponentProps<typeof FilesBrowserPane>['crumbs'];
   fileInputRef: React.ComponentProps<typeof FilesBrowserPane>['fileInputRef'];
   filteredItems: React.ComponentProps<typeof FilesBrowserPane>['filteredItems'];
@@ -41,6 +42,7 @@ interface FilesPageContentProps {
   onCreateFolder: React.ComponentProps<typeof FilesBrowserPane>['onCreateFolder'];
   onCreateLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onCreateLibrary'];
   onDeleteLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onDeleteLibrary'];
+  onOpenMountAccess: React.ComponentProps<typeof FilesLibrariesPane>['onOpenMountAccess'];
   onGoUp: React.ComponentProps<typeof FilesBrowserPane>['onGoUp'];
   onNavigateToPrefix: React.ComponentProps<typeof FilesBrowserPane>['onNavigateToPrefix'];
   onRenameLibrary: React.ComponentProps<typeof FilesLibrariesPane>['onRenameLibrary'];
@@ -71,6 +73,7 @@ interface FilesPageContentProps {
 export function FilesPageContent({
   allSelected,
   canManage,
+  canExchangeCredentials,
   crumbs,
   fileInputRef,
   filteredItems,
@@ -100,6 +103,7 @@ export function FilesPageContent({
   onCreateFolder,
   onCreateLibrary,
   onDeleteLibrary,
+  onOpenMountAccess,
   onGoUp,
   onNavigateToPrefix,
   onRenameLibrary,
@@ -145,11 +149,13 @@ export function FilesPageContent({
         <FilesLibrariesPane
           t={t}
           canManage={canManage}
+          canExchangeCredentials={canExchangeCredentials}
           libsLoading={libsLoading}
           libraries={libraries}
           selectedLibraryId={selectedLibraryId}
           onSelectLibrary={onSelectLibrary}
           onCreateLibrary={onCreateLibrary}
+          onOpenMountAccess={onOpenMountAccess}
           onRenameLibrary={onRenameLibrary}
           onDeleteLibrary={onDeleteLibrary}
         />

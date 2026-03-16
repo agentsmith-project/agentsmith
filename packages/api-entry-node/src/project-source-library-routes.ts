@@ -22,68 +22,8 @@ import {
   checkProjectSourceLibraryLimitLimits,
 } from './project-resource-policy-enforcer.js';
 import { getProjectResourcePolicyOrDefault } from './project-resource-policy-store.js';
-import {
-  dedupeDefaultPersonalLibraries,
-  pickCanonicalDefaultPersonalLibrary,
-} from './project-source-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
-
-const DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME = 'My Uploads';
-const DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE = new Map<string, Promise<void>>();
-
-function defaultPersonalLibraryScopeKey(workspaceId: string, projectId: string, userId: string): string {
-  return `${workspaceId}:${projectId}:${userId}`;
-}
-
-function isDefaultPersonalLibraryForUser(
-  library: { name: string; created_by_user_id: string; system_managed_kind?: string },
-  userId: string,
-) {
-  return (
-    library.created_by_user_id === userId
-    && (
-      library.system_managed_kind === 'default_personal_uploads'
-      || library.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME
-    )
-  );
-}
-
-async function ensureDefaultPersonalLibraryForUser(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  deps: NodeApiDeps;
-}): Promise<void> {
-  const scopeKey = defaultPersonalLibraryScopeKey(args.workspaceId, args.projectId, args.userId);
-  const inFlight = DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE.get(scopeKey);
-  if (inFlight) {
-    await inFlight;
-    return;
-  }
-  const runner = (async () => {
-    const listed = await args.deps.listSourceLibrariesUseCase.execute({
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-    });
-    const exists = listed.items.some((item) => isDefaultPersonalLibraryForUser(item, args.userId));
-    if (exists) return;
-    await args.deps.createSourceLibraryUseCase.execute({
-      workspaceId: args.workspaceId,
-      projectId: args.projectId,
-      actorId: args.userId,
-      input: {
-        name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
-        visibility: 'shared',
-        system_managed_kind: 'default_personal_uploads',
-      },
-    });
-  })().finally(() => {
-    DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE.delete(scopeKey);
-  });
-  DEFAULT_PERSONAL_LIBRARY_ENSURE_BY_SCOPE.set(scopeKey, runner);
-  await runner;
-}
 
 async function parseUploadAndExecute(
   req: http.IncomingMessage,
@@ -181,7 +121,6 @@ export async function handleProjectSourceLibraryRoutes(args: {
   routeKind:
     | 'sources'
     | 'sourceLibraries'
-    | 'sourceLibrariesDefaultPersonal'
     | 'sourceLibraryObjects'
     | 'sourceLibraryFolders'
     | 'sourceLibraryObjectsUpload'
@@ -258,21 +197,12 @@ export async function handleProjectSourceLibraryRoutes(args: {
   } = args;
 
   if (routeKind === 'sources' && method === 'GET') {
-    await ensureDefaultPersonalLibraryForUser({
-      workspaceId,
-      projectId,
-      userId: user.id,
-      deps,
-    });
     const requestedLibraryId = requestUrl.searchParams.get('library_id') ?? undefined;
     const libraries = await deps.listSourceLibrariesUseCase.execute({
       workspaceId,
       projectId,
     });
-    const ownedLibraries = dedupeDefaultPersonalLibraries(
-      libraries.items.filter((item) => item.created_by_user_id === user.id),
-      user.id,
-    );
+    const ownedLibraries = libraries.items.filter((item) => item.created_by_user_id === user.id);
     const effectiveLibraryId = requestedLibraryId ?? ownedLibraries[0]?.id;
     if (!effectiveLibraryId) {
       json(res, 200, { items: [] });
@@ -330,78 +260,17 @@ export async function handleProjectSourceLibraryRoutes(args: {
   }
 
   if (routeKind === 'sourceLibraries' && method === 'GET') {
-    await ensureDefaultPersonalLibraryForUser({
-      workspaceId,
-      projectId,
-      userId: user.id,
-      deps,
-    });
     const listed = await deps.listSourceLibrariesUseCase.execute({
       workspaceId,
       projectId,
     });
-    const owned = listed.items.filter((item) => item.created_by_user_id === user.id);
-    json(res, 200, {
-      ...listed,
-      items: dedupeDefaultPersonalLibraries(owned, user.id),
-    });
-    return true;
-  }
-
-  if (routeKind === 'sourceLibrariesDefaultPersonal' && method === 'GET') {
-    const listed = await deps.listSourceLibrariesUseCase.execute({
-      workspaceId,
-      projectId,
-    });
-    const existing = pickCanonicalDefaultPersonalLibrary(listed.items, user.id);
-    if (existing) {
-      json(res, 200, existing);
-      return true;
-    }
-    const created = await deps.createSourceLibraryUseCase.execute({
-      workspaceId,
-      projectId,
-      actorId: user.id,
-      input: {
-        name: DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME,
-        visibility: 'shared',
-        system_managed_kind: 'default_personal_uploads',
-      },
-    });
-    json(res, 200, created);
+    json(res, 200, listed);
     return true;
   }
 
   if (routeKind === 'sourceLibraries' && method === 'POST') {
     const raw = await readBody(req);
-    if (
-      raw
-      && typeof raw === 'object'
-      && 'system_managed_kind' in (raw as Record<string, unknown>)
-      && (raw as Record<string, unknown>).system_managed_kind !== undefined
-    ) {
-      json(res, 422, {
-        error_code: 'VALIDATION_ERROR',
-        message: 'system_managed_kind_not_allowed',
-      });
-      return true;
-    }
     const input = CreateSourceLibraryRequestSchema.parse(raw);
-    if (input.name === DEFAULT_PERSONAL_UPLOAD_LIBRARY_NAME) {
-      const listed = await deps.listSourceLibrariesUseCase.execute({
-        workspaceId,
-        projectId,
-      });
-      const existingDefault = listed.items.find((item) => isDefaultPersonalLibraryForUser(item, user.id));
-      if (existingDefault) {
-        json(res, 409, {
-          error_code: 'RESOURCE_CONFLICT',
-          message: 'default_personal_library_reserved',
-          details: { library_id: existingDefault.id },
-        });
-        return true;
-      }
-    }
     const created = await deps.createSourceLibraryUseCase.execute({
       workspaceId,
       projectId,
@@ -696,13 +565,6 @@ export async function handleProjectSourceLibraryRoutes(args: {
       });
       return true;
     }
-    if (isDefaultPersonalLibraryForUser(target, user.id)) {
-      json(res, 409, {
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'default_personal_library_protected',
-      });
-      return true;
-    }
     const raw = await readBody(req);
     const input = UpdateSourceLibraryRequestSchema.parse(raw);
     const updated = await deps.updateSourceLibraryUseCase.execute({
@@ -725,13 +587,6 @@ export async function handleProjectSourceLibraryRoutes(args: {
       json(res, 403, {
         error_code: 'FORBIDDEN',
         message: 'source_library_not_visible',
-      });
-      return true;
-    }
-    if (isDefaultPersonalLibraryForUser(target, user.id)) {
-      json(res, 409, {
-        error_code: 'RESOURCE_CONFLICT',
-        message: 'default_personal_library_protected',
       });
       return true;
     }

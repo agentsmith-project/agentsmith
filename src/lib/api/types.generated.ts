@@ -1117,6 +1117,245 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listFileLibraries"];
+        put?: never;
+        post: operations["createFileLibraryV2"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFileLibrary"];
+        put?: never;
+        post?: never;
+        delete: operations["deleteFileLibraryV2"];
+        options?: never;
+        head?: never;
+        patch: operations["updateFileLibraryV2"];
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/backend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFileLibraryBackend"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/delete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["deleteFileLibraryEntries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/download": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["downloadFileLibraryEntry"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/entries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["listFileLibraryEntries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/folders": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFileLibraryFolder"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/meta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get: operations["getFileLibraryEntryMeta"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["moveFileLibraryEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFileLibraryShareLink"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/storage-credential-exchange": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["exchangeFileLibraryStorageCredentials"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["uploadFileLibraryEntry"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/groups": {
         parameters: {
             query?: never;
@@ -1508,8 +1747,16 @@ export interface paths {
             };
             cookie?: never;
         };
+        /**
+         * @deprecated
+         * @description Legacy source-library list route. Files mainline now uses project-level `file-libraries`.
+         */
         get: operations["listSourceLibraries"];
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library create route retained for old source-processing flows.
+         */
         post: operations["createFileLibrary"];
         delete?: never;
         options?: never;
@@ -1524,6 +1771,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @deprecated
+         * @description Legacy source-library item route.
+         */
         get: operations["get_sourceLibraryItem"];
         put?: never;
         post?: never;
@@ -1540,6 +1791,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @deprecated
+         * @description Legacy source-processing AI-ready jobs route.
+         */
         get: operations["get_sourceLibraryAIReadyJobs"];
         put?: never;
         post?: never;
@@ -1556,6 +1811,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /**
+         * @deprecated
+         * @description Legacy source-processing AI-ready job status route.
+         */
         get: operations["get_sourceLibraryAIReadyJobItem"];
         put?: never;
         post?: never;
@@ -1574,6 +1833,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-processing AI-ready job cancel route.
+         */
         post: operations["post_sourceLibraryAIReadyJobCancel"];
         delete?: never;
         options?: never;
@@ -1590,6 +1853,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library folder route.
+         */
         post: operations["post_sourceLibraryFolders"];
         delete?: never;
         options?: never;
@@ -1608,6 +1875,10 @@ export interface paths {
             };
             cookie?: never;
         };
+        /**
+         * @deprecated
+         * @description Legacy object-browser route for source libraries. Files mainline now uses `file-libraries/{id}/entries`.
+         */
         get: operations["listLibraryObjects"];
         put?: never;
         post?: never;
@@ -1626,6 +1897,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library delete route.
+         */
         post: operations["post_sourceLibraryObjectsDelete"];
         delete?: never;
         options?: never;
@@ -1642,6 +1917,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library download route.
+         */
         post: operations["post_sourceLibraryObjectsDownload"];
         delete?: never;
         options?: never;
@@ -1658,6 +1937,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library meta route.
+         */
         post: operations["post_sourceLibraryObjectsMeta"];
         delete?: never;
         options?: never;
@@ -1674,6 +1957,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library move route.
+         */
         post: operations["post_sourceLibraryObjectsMove"];
         delete?: never;
         options?: never;
@@ -1690,6 +1977,10 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library share-link route.
+         */
         post: operations["post_sourceLibraryObjectsShareLink"];
         delete?: never;
         options?: never;
@@ -1710,26 +2001,11 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * @deprecated
+         * @description Legacy source-library upload route retained for old source-processing paths.
+         */
         post: operations["uploadLibraryObject"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        get: operations["ensureDefaultPersonalFileLibrary"];
-        put?: never;
-        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2723,11 +2999,31 @@ export interface components {
             name: string;
             provider: string;
         };
+        CreateFileLibraryFolderRequest: {
+            path: string;
+        };
         CreateFileLibraryRequest: {
+            description?: string;
             name: string;
+        };
+        CreateFileLibraryShareLinkRequest: {
+            expires_in_seconds?: number;
+            path: string;
         };
         CreateProjectRequest: {
             name: string;
+        };
+        DeleteFileLibraryEntriesRequest: {
+            paths: string[];
+        };
+        DeleteFileLibraryEntriesResponse: {
+            results: {
+                error_code?: string;
+                message?: string;
+                path: string;
+                /** @enum {string} */
+                status: "deleted" | "not_found" | "error";
+            }[];
         };
         Endpoint: {
             base_url: string;
@@ -2744,8 +3040,63 @@ export interface components {
             limits: components["schemas"]["LimitRuleSnapshot"][];
         };
         FileLibrary: {
+            /** Format: date-time */
+            created_at: string;
+            created_by_user_id: string;
+            description?: string;
+            filesystem_name: string;
             id: string;
             name: string;
+            project_id: string;
+            /** @enum {string} */
+            status: "creating" | "ready" | "degraded" | "failed" | "deleting";
+            /** Format: date-time */
+            updated_at: string;
+            workspace_id: string;
+        };
+        FileLibraryBackend: {
+            filesystem_name: string;
+            gateway?: {
+                /** Format: date-time */
+                last_started_at?: string;
+                loopback_url?: string;
+                port?: number;
+            };
+            /** @enum {string} */
+            gateway_status: "not_started" | "starting" | "ready" | "degraded" | "failed" | "stopped";
+            last_error?: string;
+            library_id: string;
+            minio: {
+                bucket: string;
+                endpoint: string;
+                region?: string;
+            };
+            postgres: {
+                database: string;
+                host: string;
+                port: number;
+                username: string;
+            };
+            /** @enum {string} */
+            provisioning_status: "creating" | "ready" | "degraded" | "failed" | "deleting";
+        };
+        FileLibraryEntry: {
+            /** @enum {string} */
+            kind: "directory";
+            /** Format: date-time */
+            modified_at?: string;
+            name: string;
+            path: string;
+        } | {
+            content_type?: string;
+            etag?: string;
+            /** @enum {string} */
+            kind: "file";
+            /** Format: date-time */
+            modified_at: string;
+            name: string;
+            path: string;
+            size_bytes: number;
         };
         LimitCheckRequest: {
             /** @description Estimated tokens/bytes for the operation */
@@ -2787,6 +3138,14 @@ export interface components {
             used: number;
             /** @enum {string} */
             window: "minute" | "5h" | "day" | "current";
+        };
+        ListFileLibrariesResponse: {
+            items: components["schemas"]["FileLibrary"][];
+        };
+        ListFileLibraryEntriesResponse: {
+            items: components["schemas"]["FileLibraryEntry"][];
+            next_continuation_token: string | null;
+            path: string;
         };
         ModelCatalogEntry: {
             capabilities: string[];
@@ -2929,6 +3288,11 @@ export interface components {
             max_hops: number;
             retryable_error_classes: string[];
         };
+        MoveFileLibraryEntryRequest: {
+            from_path: string;
+            overwrite?: boolean;
+            to_path: string;
+        };
         Project: {
             id: string;
             name: string;
@@ -2987,6 +3351,19 @@ export interface components {
             sso_url: string;
             /** @description Short-lived token (UUID) */
             ticket: string;
+        };
+        StorageCredentialExchangeResponse: {
+            /** Format: date-time */
+            created_at: string;
+            filesystem_name: string;
+            metadata_url: string;
+            platform_notes: string[];
+            recommended_mount_commands: {
+                linux: string;
+                macos: string;
+                windows: string;
+            };
+            recommended_mount_path: string;
         };
         TaskTraceEvent: {
             /** Format: date-time */
@@ -3054,6 +3431,10 @@ export interface components {
             title?: string;
         };
         UpdateEndpointRequest: components["schemas"]["CreateEndpointRequest"];
+        UpdateFileLibraryRequest: {
+            description?: string;
+            name?: string;
+        };
         UsageDataPoint: {
             bytes_in?: number;
             bytes_out?: number;
@@ -3309,8 +3690,6 @@ export interface components {
         Workspace: {
             id: string;
             name: string;
-            /** @enum {string} */
-            system_managed_kind?: "default_personal_uploads";
         };
     };
     responses: {
@@ -5588,6 +5967,395 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
+    listFileLibraries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File library list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListFileLibrariesResponse"];
+                };
+            };
+        };
+    };
+    createFileLibraryV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileLibraryRequest"];
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibrary"];
+                };
+            };
+        };
+    };
+    getFileLibrary: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File library */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibrary"];
+                };
+            };
+        };
+    };
+    deleteFileLibraryV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    updateFileLibraryV2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateFileLibraryRequest"];
+            };
+        };
+        responses: {
+            /** @description Updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibrary"];
+                };
+            };
+        };
+    };
+    getFileLibraryBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File library backend summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryBackend"];
+                };
+            };
+        };
+    };
+    deleteFileLibraryEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeleteFileLibraryEntriesRequest"];
+            };
+        };
+        responses: {
+            /** @description Delete results */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteFileLibraryEntriesResponse"];
+                };
+            };
+        };
+    };
+    downloadFileLibraryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Download payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": string;
+                };
+            };
+        };
+    };
+    listFileLibraryEntries: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File library entries */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListFileLibraryEntriesResponse"];
+                };
+            };
+        };
+    };
+    createFileLibraryFolder: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileLibraryFolderRequest"];
+            };
+        };
+        responses: {
+            /** @description Folder created */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    getFileLibraryEntryMeta: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description File metadata */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    moveFileLibraryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MoveFileLibraryEntryRequest"];
+            };
+        };
+        responses: {
+            /** @description Move completed */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    createFileLibraryShareLink: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateFileLibraryShareLinkRequest"];
+            };
+        };
+        responses: {
+            /** @description Share link */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    exchangeFileLibraryStorageCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Mount access profile */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StorageCredentialExchangeResponse"];
+                };
+            };
+        };
+    };
+    uploadFileLibraryEntry: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": {
+                    /** Format: binary */
+                    file: string;
+                    overwrite?: boolean;
+                    prefix?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Uploaded entry */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryEntry"];
+                };
+            };
+        };
+    };
     get_projectGroups: {
         parameters: {
             query?: never;
@@ -6985,29 +7753,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourceObject"];
-                };
-            };
-        };
-    };
-    ensureDefaultPersonalFileLibrary: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                projectId: components["parameters"]["projectId"];
-                workspaceId: components["parameters"]["workspaceId"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Ensured default personal library */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["FileLibrary"];
                 };
             };
         };

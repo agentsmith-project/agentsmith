@@ -39,6 +39,24 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
   useHasPermission: () => true,
 }));
 
+vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
+  useFileLibraryStorageCredentialExchange: () => ({
+    mutateAsync: vi.fn().mockResolvedValue({
+      filesystem_name: 'flib-ws-default-proj-001-shared-docs',
+      metadata_url: 'postgres://user:password@localhost:5432/jfs_lib_1',
+      recommended_mount_path: '~/JuiceFS/shared-docs',
+      platform_notes: ['Install JuiceFS before mounting.'],
+      recommended_mount_commands: {
+        linux: 'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 ~/JuiceFS/shared-docs',
+        macos: 'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 ~/JuiceFS/shared-docs',
+        windows: 'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 X:',
+      },
+      created_at: '2026-03-16T08:00:00.000Z',
+    }),
+    isPending: false,
+  }),
+}));
+
 vi.mock('@/lib/hooks/use-files', () => ({
   useFileLibraries: () => ({
     data: {
@@ -138,5 +156,15 @@ describe('FilesPage (object browser)', () => {
 
     fireEvent.dragLeave(dropzone);
     expect(screen.queryByTestId('files__dropzone-overlay')).not.toBeInTheDocument();
+  });
+
+  it('opens mount access dialog for a library', async () => {
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-mount-access--lib_1'));
+
+    expect(await screen.findByTestId('files__dialog__library-mount-access')).toBeInTheDocument();
+    expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
   });
 });

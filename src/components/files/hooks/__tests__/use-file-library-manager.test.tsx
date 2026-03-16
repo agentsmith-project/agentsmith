@@ -22,6 +22,8 @@ const sampleLibrary: FileLibrary = {
   visibility: 'shared',
   provider: 's3',
   bucket: 'bucket',
+  status: 'ready',
+  filesystem_name: 'flib_ws_default_proj_001_lib_a',
   created_by_user_id: 'u_001',
   created_at: '2026-02-01T00:00:00Z',
   updated_at: '2026-02-01T00:00:00Z',

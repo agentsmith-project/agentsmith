@@ -36,8 +36,8 @@ Backend enforces `401/403`; frontend applies route/component gates.
 | projects list | delete project | `project:lifecycle:update` | `DELETE /workspaces/{ws}/projects/{project}` | destructive dialog fails gracefully |
 | chat | access chat page and stream completion | `project:endpoint:use` | `/chat/sessions`, `/messages`, `/attachments`, stream routes | page-level permission denied |
 | notebook list/detail | access notebook page and task operations | `project:endpoint:use` | `GET/POST/PATCH/DELETE /tasks*`, `GET /tasks/{id}/events` | page-level permission denied |
-| files | view/use personal file libraries | `project:endpoint:use` | `GET /sources*`, `GET /source-libraries*` | page-level permission denied |
-| files | create/update/delete file or library | `project:files:update` | `POST/PATCH/DELETE /sources*`, `POST/PATCH/DELETE /source-libraries*` | mutating controls disabled |
+| files | view/use project file libraries | `project:endpoint:use` | `GET /file-libraries*` | page-level permission denied |
+| files | create/update/delete file or library | `project:files:update` | `POST/PATCH/DELETE /file-libraries*` | mutating controls disabled |
 | agents | view/use visible agents | `project:agent:manage` | `GET /agents*`, `GET /agents/{id}/execution-config`, `GET /agents/{id}/connection-info` | page-level permission denied |
 | agents | create/update/delete own agent and keys | `project:agent:manage` | `POST/PATCH/DELETE /agents*`, `POST/DELETE /agents/{id}/keys*` | mutating controls disabled |
 | agents | publish/unpublish agent to project | `project:agent:public` | `PATCH /agents/{id}` (visibility/public flags) | publish controls disabled |
@@ -62,6 +62,8 @@ Backend enforces `401/403`; frontend applies route/component gates.
 7. `GET /limits/summary` should support endpoint-level limit projection for Usage UI:
    - return `endpoints[].limits[]` with canonical fields: `kind/window/metric/policy_key/used/max/remaining/usage_pct/reset_at`.
    - return `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
+8. Files mainline now runs on JuiceFS-backed project `file-libraries`.
+   Legacy `source-libraries` remain only for old AI-ready/source processing paths until those jobs are migrated.
 
 ## Target Migration (Accepted)
 
@@ -82,4 +84,3 @@ Backend enforces `401/403`; frontend applies route/component gates.
   - delete project
   - owner transfer
   - other lifecycle settings
-

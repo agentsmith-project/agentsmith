@@ -1482,6 +1482,8 @@
           "Sources"
         ],
         "operationId": "listSourceLibraries",
+        "deprecated": true,
+        "description": "Legacy source-library list route. Files mainline now uses project-level `file-libraries`.",
         "responses": {
           "200": {
             "description": "Library list",
@@ -1503,6 +1505,8 @@
           "Sources"
         ],
         "operationId": "createFileLibrary",
+        "deprecated": true,
+        "description": "Legacy source-library create route retained for old source-processing flows.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1527,6 +1531,496 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "listFileLibraries",
+        "responses": {
+          "200": {
+            "description": "File library list",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFileLibrariesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "createFileLibraryV2",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFileLibraryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibrary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "getFileLibrary",
+        "responses": {
+          "200": {
+            "description": "File library",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibrary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "updateFileLibraryV2",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFileLibraryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibrary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "deleteFileLibraryV2",
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/backend": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "getFileLibraryBackend",
+        "responses": {
+          "200": {
+            "description": "File library backend summary",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryBackend"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/storage-credential-exchange": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "exchangeFileLibraryStorageCredentials",
+        "responses": {
+          "200": {
+            "description": "Mount access profile",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StorageCredentialExchangeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/entries": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "listFileLibraryEntries",
+        "responses": {
+          "200": {
+            "description": "File library entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListFileLibraryEntriesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/folders": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "createFileLibraryFolder",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFileLibraryFolderRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Folder created"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/delete": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "deleteFileLibraryEntries",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeleteFileLibraryEntriesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Delete results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteFileLibraryEntriesResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/move": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "moveFileLibraryEntry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MoveFileLibraryEntryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Move completed"
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/upload": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "uploadFileLibraryEntry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file"
+                ],
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary"
+                  },
+                  "prefix": {
+                    "type": "string"
+                  },
+                  "overwrite": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Uploaded entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryEntry"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/download": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "downloadFileLibraryEntry",
+        "responses": {
+          "200": {
+            "description": "Download payload",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/meta": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "get": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "getFileLibraryEntryMeta",
+        "responses": {
+          "200": {
+            "description": "File metadata",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "createFileLibraryShareLink",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateFileLibraryShareLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Share link",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects": {
       "parameters": [
         {
@@ -1544,6 +2038,8 @@
           "Sources"
         ],
         "operationId": "listLibraryObjects",
+        "deprecated": true,
+        "description": "Legacy object-browser route for source libraries. Files mainline now uses `file-libraries/{id}/entries`.",
         "responses": {
           "200": {
             "description": "Object list",
@@ -1583,6 +2079,8 @@
           "Sources"
         ],
         "operationId": "uploadLibraryObject",
+        "deprecated": true,
+        "description": "Legacy source-library upload route retained for old source-processing paths.",
         "requestBody": {
           "required": true,
           "content": {
@@ -1912,6 +2410,8 @@
           "Sources"
         ],
         "operationId": "get_sourceLibraryItem",
+        "deprecated": true,
+        "description": "Legacy source-library item route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -1939,6 +2439,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryFolders",
+        "deprecated": true,
+        "description": "Legacy source-library folder route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -1977,6 +2479,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryObjectsDownload",
+        "deprecated": true,
+        "description": "Legacy source-library download route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2015,6 +2519,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryObjectsDelete",
+        "deprecated": true,
+        "description": "Legacy source-library delete route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2053,6 +2559,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryObjectsMove",
+        "deprecated": true,
+        "description": "Legacy source-library move route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2091,6 +2599,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryObjectsMeta",
+        "deprecated": true,
+        "description": "Legacy source-library meta route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2129,6 +2639,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryObjectsShareLink",
+        "deprecated": true,
+        "description": "Legacy source-library share-link route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2167,6 +2679,8 @@
           "Sources"
         ],
         "operationId": "get_sourceLibraryAIReadyJobs",
+        "deprecated": true,
+        "description": "Legacy source-processing AI-ready jobs route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2194,6 +2708,8 @@
           "Sources"
         ],
         "operationId": "get_sourceLibraryAIReadyJobItem",
+        "deprecated": true,
+        "description": "Legacy source-processing AI-ready job status route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -2221,6 +2737,8 @@
           "Sources"
         ],
         "operationId": "post_sourceLibraryAIReadyJobCancel",
+        "deprecated": true,
+        "description": "Legacy source-processing AI-ready job cancel route.",
         "responses": {
           "200": {
             "description": "OK",
@@ -4201,34 +4719,6 @@
           },
           "403": {
             "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/default-personal": {
-      "parameters": [
-        {
-          "$ref": "#/components/parameters/workspaceId"
-        },
-        {
-          "$ref": "#/components/parameters/projectId"
-        }
-      ],
-      "get": {
-        "tags": [
-          "Sources"
-        ],
-        "operationId": "ensureDefaultPersonalFileLibrary",
-        "responses": {
-          "200": {
-            "description": "Ensured default personal library",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/FileLibrary"
-                }
-              }
-            }
           }
         }
       }
@@ -7976,12 +8466,6 @@
           },
           "name": {
             "type": "string"
-          },
-          "system_managed_kind": {
-            "type": "string",
-            "enum": [
-              "default_personal_uploads"
-            ]
           }
         }
       },
@@ -8424,14 +8908,68 @@
         "type": "object",
         "required": [
           "id",
-          "name"
+          "workspace_id",
+          "project_id",
+          "name",
+          "status",
+          "filesystem_name",
+          "created_by_user_id",
+          "created_at",
+          "updated_at"
         ],
         "properties": {
           "id": {
             "type": "string"
           },
+          "workspace_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "ready",
+              "degraded",
+              "failed",
+              "deleting"
+            ]
+          },
+          "filesystem_name": {
+            "type": "string"
+          },
+          "created_by_user_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ListFileLibrariesResponse": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileLibrary"
+            }
           }
         }
       },
@@ -8443,6 +8981,354 @@
         "properties": {
           "name": {
             "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "UpdateFileLibraryRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryBackend": {
+        "type": "object",
+        "required": [
+          "library_id",
+          "filesystem_name",
+          "provisioning_status",
+          "gateway_status",
+          "postgres",
+          "minio"
+        ],
+        "properties": {
+          "library_id": {
+            "type": "string"
+          },
+          "filesystem_name": {
+            "type": "string"
+          },
+          "provisioning_status": {
+            "type": "string",
+            "enum": [
+              "creating",
+              "ready",
+              "degraded",
+              "failed",
+              "deleting"
+            ]
+          },
+          "gateway_status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "starting",
+              "ready",
+              "degraded",
+              "failed",
+              "stopped"
+            ]
+          },
+          "postgres": {
+            "type": "object",
+            "required": [
+              "host",
+              "port",
+              "database",
+              "username"
+            ],
+            "properties": {
+              "host": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "database": {
+                "type": "string"
+              },
+              "username": {
+                "type": "string"
+              }
+            }
+          },
+          "minio": {
+            "type": "object",
+            "required": [
+              "endpoint",
+              "bucket"
+            ],
+            "properties": {
+              "endpoint": {
+                "type": "string"
+              },
+              "bucket": {
+                "type": "string"
+              },
+              "region": {
+                "type": "string"
+              }
+            }
+          },
+          "gateway": {
+            "type": "object",
+            "properties": {
+              "loopback_url": {
+                "type": "string"
+              },
+              "port": {
+                "type": "integer"
+              },
+              "last_started_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          "last_error": {
+            "type": "string"
+          }
+        }
+      },
+      "FileLibraryEntry": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "directory"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "modified_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "required": [
+              "kind",
+              "path",
+              "name",
+              "size_bytes",
+              "modified_at"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "file"
+                ]
+              },
+              "path": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "size_bytes": {
+                "type": "integer"
+              },
+              "content_type": {
+                "type": "string"
+              },
+              "modified_at": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "etag": {
+                "type": "string"
+              }
+            }
+          }
+        ]
+      },
+      "ListFileLibraryEntriesResponse": {
+        "type": "object",
+        "required": [
+          "path",
+          "items",
+          "next_continuation_token"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FileLibraryEntry"
+            }
+          },
+          "next_continuation_token": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "CreateFileLibraryFolderRequest": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          }
+        }
+      },
+      "DeleteFileLibraryEntriesRequest": {
+        "type": "object",
+        "required": [
+          "paths"
+        ],
+        "properties": {
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "DeleteFileLibraryEntriesResponse": {
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "status"
+              ],
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "enum": [
+                    "deleted",
+                    "not_found",
+                    "error"
+                  ]
+                },
+                "error_code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      },
+      "MoveFileLibraryEntryRequest": {
+        "type": "object",
+        "required": [
+          "from_path",
+          "to_path"
+        ],
+        "properties": {
+          "from_path": {
+            "type": "string"
+          },
+          "to_path": {
+            "type": "string"
+          },
+          "overwrite": {
+            "type": "boolean"
+          }
+        }
+      },
+      "CreateFileLibraryShareLinkRequest": {
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "expires_in_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "StorageCredentialExchangeResponse": {
+        "type": "object",
+        "required": [
+          "filesystem_name",
+          "metadata_url",
+          "recommended_mount_path",
+          "platform_notes",
+          "recommended_mount_commands",
+          "created_at"
+        ],
+        "properties": {
+          "filesystem_name": {
+            "type": "string"
+          },
+          "metadata_url": {
+            "type": "string"
+          },
+          "recommended_mount_path": {
+            "type": "string"
+          },
+          "platform_notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recommended_mount_commands": {
+            "type": "object",
+            "required": [
+              "linux",
+              "macos",
+              "windows"
+            ],
+            "properties": {
+              "linux": {
+                "type": "string"
+              },
+              "macos": {
+                "type": "string"
+              },
+              "windows": {
+                "type": "string"
+              }
+            }
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

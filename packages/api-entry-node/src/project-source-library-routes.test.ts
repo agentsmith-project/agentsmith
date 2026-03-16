@@ -29,7 +29,7 @@ describe('project-source-library-routes', () => {
     drainJobQueue.mockResolvedValue(undefined);
   });
 
-  it('lists only owned source libraries while preserving default-personal dedupe', async () => {
+  it('lists source libraries without default-personal dedupe semantics', async () => {
     const json = vi.fn();
     const res = {} as never;
     const deps = {
@@ -38,15 +38,7 @@ describe('project-source-library-routes', () => {
           .fn()
           .mockResolvedValueOnce({
             items: [
-              { id: 'default-1', created_by_user_id: 'user-1', name: 'My Uploads' },
-              { id: 'default-2', created_by_user_id: 'user-1', name: 'My Uploads', system_managed_kind: 'default_personal_uploads', created_at: '2026-03-02T00:00:00Z' },
-              { id: 'shared-1', created_by_user_id: 'user-1', name: 'Docs' },
-            ],
-          })
-          .mockResolvedValueOnce({
-            items: [
-              { id: 'default-1', created_by_user_id: 'user-1', name: 'My Uploads' },
-              { id: 'default-2', created_by_user_id: 'user-1', name: 'My Uploads', system_managed_kind: 'default_personal_uploads', created_at: '2026-03-02T00:00:00Z' },
+              { id: 'default-1', created_by_user_id: 'user-1', name: 'Project Uploads' },
               { id: 'shared-1', created_by_user_id: 'user-1', name: 'Docs' },
               { id: 'other-1', created_by_user_id: 'user-2', name: 'Other' },
             ],
@@ -81,16 +73,25 @@ describe('project-source-library-routes', () => {
       200,
       expect.objectContaining({
         items: [
-          expect.objectContaining({ id: 'default-2' }),
+          expect.objectContaining({ id: 'default-1' }),
           expect.objectContaining({ id: 'shared-1' }),
+          expect.objectContaining({ id: 'other-1' }),
         ],
       }),
     );
   });
 
-  it('rejects manual creation of system managed source libraries', async () => {
+  it('creates source libraries without system-managed markers', async () => {
     const json = vi.fn();
     const res = {} as never;
+    const deps = {
+      createSourceLibraryUseCase: {
+        execute: vi.fn().mockResolvedValue({
+          id: 'lib_1',
+          name: 'Docs',
+        }),
+      },
+    } as never;
 
     await expect(handleProjectSourceLibraryRoutes({
       routeKind: 'sourceLibraries',
@@ -100,70 +101,20 @@ describe('project-source-library-routes', () => {
       req: { headers: {} } as never,
       res,
       requestUrl: new URL('http://localhost'),
-      deps: {} as never,
+      deps,
       user: { id: 'user-1', email: 'user-1@example.com', name: 'User One' },
       requestId: 'req-1',
       json,
       readBody: vi.fn().mockResolvedValue({
-        name: 'Bad',
-        system_managed_kind: 'default_personal_uploads',
+        name: 'Docs',
       }),
       enforceSourceLibraryPreflight: vi.fn(),
       enforceSourceLibraryLimit: vi.fn(),
       enforceSourceLibraryAccessBySourceId: vi.fn(),
     })).resolves.toBe(true);
 
-    expect(json).toHaveBeenCalledWith(
-      res,
-      422,
-      { error_code: 'VALIDATION_ERROR', message: 'system_managed_kind_not_allowed' },
-    );
+    expect(deps.createSourceLibraryUseCase.execute).toHaveBeenCalled();
+    expect(json).toHaveBeenCalledWith(res, 201, expect.objectContaining({ id: 'lib_1', name: 'Docs' }));
   });
 
-  it('protects default personal libraries from deletion', async () => {
-    const json = vi.fn();
-    const res = { end: vi.fn(), statusCode: 200 } as never;
-    const deps = {
-      listSourceLibrariesUseCase: {
-        execute: vi.fn().mockResolvedValue({
-          items: [
-            {
-              id: 'lib-default',
-              created_by_user_id: 'user-1',
-              name: 'My Uploads',
-              system_managed_kind: 'default_personal_uploads',
-            },
-          ],
-        }),
-      },
-      deleteSourceLibraryUseCase: {
-        execute: vi.fn(),
-      },
-    } as never;
-
-    await expect(handleProjectSourceLibraryRoutes({
-      routeKind: 'sourceLibraryItem',
-      method: 'DELETE',
-      workspaceId: 'ws-1',
-      projectId: 'proj-1',
-      libraryId: 'lib-default',
-      req: { headers: {} } as never,
-      res,
-      requestUrl: new URL('http://localhost'),
-      deps,
-      user: { id: 'user-1', email: 'user-1@example.com', name: 'User One' },
-      requestId: 'req-1',
-      json,
-      readBody: vi.fn(),
-      enforceSourceLibraryPreflight: vi.fn(),
-      enforceSourceLibraryLimit: vi.fn(),
-      enforceSourceLibraryAccessBySourceId: vi.fn(),
-    })).resolves.toBe(true);
-
-    expect(json).toHaveBeenCalledWith(
-      res,
-      409,
-      { error_code: 'RESOURCE_CONFLICT', message: 'default_personal_library_protected' },
-    );
-  });
 });

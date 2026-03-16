@@ -433,9 +433,9 @@ test.describe('Visual - Overlays', () => {
     await authedPage.waitForTimeout(1500);
     await authedPage.getByTestId('files__library-item--lib_shared_default').click();
     await authedPage.getByTestId('files__search').fill('README');
-    const fileButton = authedPage.getByRole('button', { name: 'README.txt' }).first();
-    await expect(fileButton).toBeVisible({ timeout: 10_000 });
-    await fileButton.click();
+    const fileRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
+    await expect(fileRow).toBeVisible({ timeout: 10_000 });
+    await fileRow.getByRole('button').click();
     await authedPage.getByTestId('files__rename').click();
     await expect(authedPage.getByTestId('files__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
@@ -449,13 +449,24 @@ test.describe('Visual - Overlays', () => {
     await authedPage.waitForTimeout(1500);
     await authedPage.getByTestId('files__library-item--lib_shared_default').click();
     await authedPage.getByTestId('files__search').fill('README');
-    const fileButton = authedPage.getByRole('button', { name: 'README.txt' }).first();
-    await expect(fileButton).toBeVisible({ timeout: 10_000 });
-    await fileButton.click();
+    const fileRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
+    await expect(fileRow).toBeVisible({ timeout: 10_000 });
+    await fileRow.getByRole('button').click();
     await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible();
     await expect(authedPage.getByTestId('files__details-panel')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('files-selection-details.png', { fullPage: true });
+  });
+
+  test('files - mount access dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
+    await authedPage.waitForTimeout(1500);
+    await authedPage.getByTestId('files__library-mount-access--lib_shared_default').click();
+    await expect(authedPage.getByTestId('files__dialog__library-mount-access')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('dialog-files-mount-access.png');
   });
 
   test('create API key dialog', async ({ authedPage }) => {

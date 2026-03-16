@@ -61,6 +61,13 @@ import { AgentExecutionService } from './agent-execution-service.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import { SandboxManagerClient } from './sandbox-manager-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
+import {
+  InMemoryFileLibraryGatewayManager,
+  InMemoryFileLibraryOrchestrator,
+  RealFileLibraryGatewayManager,
+  RealFileLibraryOrchestrator,
+  UnavailableFileLibraryOrchestrator,
+} from './file-library-runtime.js';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
@@ -178,6 +185,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     updateProjectUseCase: new UpdateProjectUseCase(projectRepo, new SystemClock()),
     cancelAIReadyJobUseCase: new CancelAIReadyJobUseCase(aiReadyJobRepo, clock, cache),
     runQueuedAIReadyJobUseCase,
+    fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
+    fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
   };
 }
 
@@ -186,6 +195,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   lifecycle: Pick<ProjectRepoFactoryResult, 'shutdown'>;
   repoMode: 'postgres' | 'memory';
 } {
+  const canEnableRealFileLibraries = Boolean(
+    env.DATABASE_URL
+      && env.MINIO_ENDPOINT
+      && env.MINIO_ACCESS_KEY
+      && env.MINIO_SECRET_KEY,
+  );
   const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
@@ -368,6 +383,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       updateProjectUseCase: new UpdateProjectUseCase(factory.projectRepo, new SystemClock()),
       cancelAIReadyJobUseCase: new CancelAIReadyJobUseCase(aiReadyJobRepo, clock, cache),
       runQueuedAIReadyJobUseCase,
+      fileLibraryOrchestrator: canEnableRealFileLibraries
+        ? new RealFileLibraryOrchestrator()
+        : new UnavailableFileLibraryOrchestrator(),
+      fileLibraryGatewayManager: canEnableRealFileLibraries
+        ? new RealFileLibraryGatewayManager()
+        : new InMemoryFileLibraryGatewayManager(),
     },
     lifecycle: factory,
     repoMode: env.DATABASE_URL ? 'postgres' : 'memory',

@@ -40,12 +40,12 @@ async function main() {
     let res;
     if (item.kind === 'library_object' && item.library_id && item.key) {
       res = await fetch(
-        `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/source-libraries/${encodeURIComponent(item.library_id)}/objects/download?key=${encodeURIComponent(item.key)}`,
+        `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/file-libraries/${encodeURIComponent(item.library_id)}/download?path=${encodeURIComponent(item.key)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
     } else if (item.kind === 'url' && item.imported_library_id && item.imported_key) {
       res = await fetch(
-        `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/source-libraries/${encodeURIComponent(item.imported_library_id)}/objects/download?key=${encodeURIComponent(item.imported_key)}`,
+        `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/file-libraries/${encodeURIComponent(item.imported_library_id)}/download?path=${encodeURIComponent(item.imported_key)}`,
         { headers: { Authorization: `Bearer ${token}` } },
       );
     } else if (item.kind === 'artifact' && item.task_id && item.artifact_id) {

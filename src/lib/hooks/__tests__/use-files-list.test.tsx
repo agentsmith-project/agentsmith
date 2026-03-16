@@ -28,16 +28,6 @@ vi.mock('../use-files', () => ({
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
   })),
-  useBatchAIReadyActions: vi.fn(() => ({
-    batchStart: {
-      mutate: vi.fn(),
-      isPending: false,
-    },
-    batchCancel: {
-      mutate: vi.fn(),
-      isPending: false,
-    },
-  })),
   useFileLibraries: vi.fn(() => ({
     data: { items: [] },
     isLoading: false,
@@ -148,8 +138,6 @@ describe('useFilesList', () => {
     expect(result.current.page).toBe(1);
     expect(result.current.pageSize).toBe(20);
     expect(result.current.search).toBe('');
-    expect(result.current.status).toBe('all');
-    expect(result.current.aiReadyOnly).toBe(false);
     expect(result.current.selectedLibraryId).toBe('all');
     expect(result.current.libraries).toEqual([]);
     expect(result.current.selectedFileIds).toEqual([]);
@@ -224,71 +212,6 @@ describe('useFilesList', () => {
       });
 
       expect(result.current.search).toBe('');
-    });
-  });
-
-  describe('status filter', () => {
-    it('should update status filter', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      act(() => {
-        result.current.setStatus('ready');
-      });
-
-      expect(result.current.status).toBe('ready');
-    });
-
-    it('should accept "all" status', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      act(() => {
-        result.current.setStatus('all');
-      });
-
-      expect(result.current.status).toBe('all');
-    });
-  });
-
-  describe('aiReadyOnly filter', () => {
-    it('should update aiReadyOnly filter', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      act(() => {
-        result.current.setAIReadyOnly(true);
-      });
-
-      expect(result.current.aiReadyOnly).toBe(true);
-    });
-
-    it('should toggle aiReadyOnly filter', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      act(() => {
-        result.current.setAIReadyOnly(true);
-        result.current.setAIReadyOnly(false);
-      });
-
-      expect(result.current.aiReadyOnly).toBe(false);
     });
   });
 
@@ -514,13 +437,11 @@ describe('useFilesList', () => {
       act(() => {
         result.current.setFilesToDelete({
           ids: ['file1', 'file2'],
-          hasAIReady: true,
         });
       });
 
       expect(result.current.filesToDelete).toEqual({
         ids: ['file1', 'file2'],
-        hasAIReady: true,
       });
     });
   });
@@ -576,30 +497,6 @@ describe('useFilesList', () => {
       expect(typeof result.current.handleConfirmDelete).toBe('function');
     });
 
-    it('should have handleBatchStartAIReady function', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      expect(result.current.handleBatchStartAIReady).toBeDefined();
-      expect(typeof result.current.handleBatchStartAIReady).toBe('function');
-    });
-
-    it('should have handleBatchCancelAIReady function', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      expect(result.current.handleBatchCancelAIReady).toBeDefined();
-      expect(typeof result.current.handleBatchCancelAIReady).toBe('function');
-    });
-
     it('should have handleDownload function', () => {
       const { result } = renderHook(
         () => useFilesList({ workspaceId, projectId }),
@@ -636,27 +533,6 @@ describe('useFilesList', () => {
       expect(result.current.deleting).toBe(false);
     });
 
-    it('should track batch start pending state', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      expect(result.current.batchStartPending).toBe(false);
-    });
-
-    it('should track batch cancel pending state', () => {
-      const { result } = renderHook(
-        () => useFilesList({ workspaceId, projectId }),
-        {
-          wrapper: createTestWrapper(),
-        }
-      );
-
-      expect(result.current.batchCancelPending).toBe(false);
-    });
   });
 
   describe('upload progress and errors', () => {

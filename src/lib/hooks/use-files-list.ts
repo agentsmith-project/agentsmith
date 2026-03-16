@@ -4,10 +4,10 @@
  * Business logic for files page:
  * - Fetch sources and limit summary data
  * - Manage local state (selection, filters, pagination, dialogs)
- * - Handle file actions (upload, delete, download, AI ready batch operations)
+ * - Handle file actions (upload, delete, download)
  */
 
-import { useCallback, useMemo, useEffect } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import {
@@ -15,7 +15,6 @@ import {
   useLimitSummary,
   useUploadFile,
   useDeleteFile,
-  useBatchAIReadyActions,
   useFileLibraries,
   useCreateFileLibrary,
   useUpdateFileLibrary,
@@ -62,10 +61,6 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
     setSearch,
     selectedLibraryId,
     setSelectedLibraryId,
-    status,
-    setStatus,
-    aiReadyOnly,
-    setAIReadyOnly,
     sortBy,
     setSortBy,
     sortOrder,
@@ -97,8 +92,6 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
   const { data: filesData, isLoading: filesLoading } = useFiles(workspaceId, projectId, {
     search: search || undefined,
     library_id: selectedLibraryId === 'all' ? undefined : selectedLibraryId,
-    status: status !== 'all' ? status : undefined,
-    ai_ready_only: aiReadyOnly || undefined,
     sort_by: sortBy,
     sort_order: sortOrder,
     page,
@@ -108,30 +101,9 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
   // Mutations
   const uploadMutation = useUploadFile();
   const deleteMutation = useDeleteFile();
-  const batchActions = useBatchAIReadyActions();
   const createLibraryMutation = useCreateFileLibrary();
   const updateLibraryMutation = useUpdateFileLibrary();
   const deleteLibraryMutation = useDeleteFileLibrary();
-
-  // Check if there are any preparing files for polling
-  const hasPreparingFiles = useMemo(() => {
-    return filesData?.items.some(
-      (file) => file.ai_ready?.status === 'preparing',
-    ) || false;
-  }, [filesData]);
-
-  // Poll for preparing files
-  useEffect(() => {
-    if (!hasPreparingFiles) return;
-
-    const interval = setInterval(() => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.files.list(workspaceId, projectId),
-      });
-    }, 3000); // Poll every 3 seconds
-
-    return () => clearInterval(interval);
-  }, [hasPreparingFiles, queryClient, workspaceId, projectId]);
 
   // Handle file upload
   const handleUpload = useCallback(async (files: File[]) => {
@@ -196,13 +168,11 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
   // Handle delete (single or batch)
   const handleDeleteClick = useCallback(() => {
     if (selectedFileIds.length === 0) return;
-    const files = filesData?.items.filter((f) => selectedFileIds.includes(f.id)) ?? [];
-    const hasAIReady = files.some((f) => !!f.ai_ready);
-    setFilesToDelete({ ids: selectedFileIds, hasAIReady });
+    setFilesToDelete({ ids: selectedFileIds });
     setDeleteDialogOpen(true);
-  }, [selectedFileIds, filesData, setFilesToDelete, setDeleteDialogOpen]);
+  }, [selectedFileIds, setFilesToDelete, setDeleteDialogOpen]);
 
-  const handleConfirmDelete = useCallback(async (deleteAIReady: boolean) => {
+  const handleConfirmDelete = useCallback(async () => {
     if (!filesToDelete) return;
     let failed = 0;
     for (const fileId of filesToDelete.ids) {
@@ -211,7 +181,6 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
           workspaceId,
           projectId,
           fileId,
-          deleteAIReady,
         });
       } catch {
         failed += 1;
@@ -245,20 +214,6 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
       exceededTypes,
     };
   }, [limitSummaryData]);
-
-  const handleBatchStartAIReady = useCallback(() => {
-    if (selectedFileIds.length > 0 && limitStatus.canStart) {
-      batchActions.batchStart.mutate({ workspaceId, projectId, fileIds: selectedFileIds });
-      setSelectedFileIds([]);
-    }
-  }, [selectedFileIds, limitStatus.canStart, batchActions.batchStart, workspaceId, projectId, setSelectedFileIds]);
-
-  const handleBatchCancelAIReady = useCallback(() => {
-    if (selectedFileIds.length > 0) {
-      batchActions.batchCancel.mutate({ workspaceId, projectId, fileIds: selectedFileIds });
-      setSelectedFileIds([]);
-    }
-  }, [selectedFileIds, batchActions.batchCancel, workspaceId, projectId, setSelectedFileIds]);
 
   // Handle download
   const handleDownload = useCallback(async (fileId: string) => {
@@ -390,14 +345,10 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
     // Filters
     search,
     selectedLibraryId,
-    status,
-    aiReadyOnly,
     sortBy,
     sortOrder,
     setSearch,
     setSelectedLibraryId,
-    setStatus,
-    setAIReadyOnly,
     setSortBy,
     setSortOrder,
 
@@ -425,8 +376,6 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
 
     // Mutation states
     deleting: deleteMutation.isPending,
-    batchStartPending: batchActions.batchStart.isPending,
-    batchCancelPending: batchActions.batchCancel.isPending,
 
     // Limit status
     limitStatus,
@@ -441,8 +390,6 @@ export function useFilesList({ workspaceId, projectId }: UseFilesListOptions) {
     handleUpload,
     handleDeleteClick,
     handleConfirmDelete,
-    handleBatchStartAIReady,
-    handleBatchCancelAIReady,
     handleDownload,
     handleCreateLibrary,
     handleRenameLibrary,

@@ -148,13 +148,6 @@
       "save_success": "Saved successfully",
       "save_failed": "Failed to save",
       "unexpected_error": "An unexpected error occurred",
-      "ai_ready_started": "AIReady started",
-      "ai_ready_cancelled": "AIReady cancelled",
-      "ai_ready_retry_started": "AIReady retry started",
-      "ai_ready_batch_started": "Started AIReady for {{count}} file(s)",
-      "ai_ready_batch_failed": "Failed to start batch AIReady: {{error}}",
-      "ai_ready_batch_cancelled": "Cancelled AIReady for {{successCount}} file(s), {{failedCount}} failed",
-      "ai_ready_batch_cancelled_success": "Cancelled AIReady for {{count}} file(s)",
       "files_added_to_task": "Added {{count}} file(s) to task",
       "file_removed_from_task": "Source removed from task",
       "artifact_saved_to_library": "Artifact saved to library",
@@ -744,13 +737,13 @@
       },
       "save_dialog": {
         "title": "Save Artifact to Library",
-        "description": "Save this artifact to your file library. You'll need to start AIReady processing separately if you want to use it in tasks.",
+        "description": "Save this artifact to your file library so it can be reused later.",
         "filename_optional": "Filename (optional)",
         "filename_placeholder": "Enter filename",
         "description_optional": "Description (optional)",
         "description_placeholder": "Enter description",
         "note_title": "Note:",
-        "note_body": "Saved files need to be processed with AIReady before they can be used in tasks.",
+        "note_body": "Saved files become available in the selected file library after the save completes.",
         "confirm": "Save to Library"
       },
       "image_viewer": {
@@ -2679,30 +2672,11 @@
         "failed": "Failed",
         "cancelled": "Cancelled"
       },
-      "ai_ready": {
-        "all": "All Files",
-        "only": "AIReady Only"
-      },
       "sort": {
         "updated_at": "Updated",
         "file_size": "Size",
         "status": "Status"
       }
-    },
-    "status": {
-      "idle": "Not Ready",
-      "preparing": "Preparing",
-      "ready": "Ready",
-      "failed": "Failed",
-      "cancelled": "Cancelled"
-    },
-    "ai_ready": {
-      "start": "Start AIReady",
-      "cancel": "Cancel AIReady",
-      "retry": "Retry",
-      "progress": "Processing...",
-      "queued": "Queued",
-      "error": "Error: {message}"
     },
     "limit": {
       "storage": "Storage",
@@ -2713,22 +2687,18 @@
       "exceeded": "Limit Exceeded"
     },
     "batch": {
-      "selected": "{count} selected",
-      "start_ai_ready": "Start AIReady",
-      "cancel_ai_ready": "Cancel AIReady"
+      "selected": "{count} selected"
     },
     "table": {
       "filename": "Filename",
       "size": "Size",
       "updated_at": "Updated",
-      "ai_ready_status": "AIReady Status",
       "usage": "Usage",
       "actions": "Actions"
     },
     "delete": {
       "title": "Delete File",
       "message": "Are you sure you want to delete this file?",
-      "delete_ai_ready": "Also delete AIReady artifacts",
       "confirm": "Delete",
       "cancelling": "Deleting..."
     },
@@ -2766,7 +2736,6 @@
     "error": {
       "upload_failed": "Upload failed",
       "process_failed": "Processing failed",
-      "spending_limit_exceeded": "Limit exceeded. Cannot start AIReady.",
       "delete_failed": "Delete failed"
     },
     "filter_status_all": "All",
@@ -2780,13 +2749,10 @@
     "action_attach": "Attach",
     "action_detach": "Detach",
     "action_download": "Download",
-    "action_start_ai_ready": "Start AIReady",
-    "action_cancel_ai_ready": "Remove AIReady",
     "action_processing": "Processing...",
     "selection_bar_label": "Selection actions",
     "selection_count": "file(s) selected",
     "selection_clear": "Clear",
-    "spending_limit_exceeded_hint": "Limit exceeded. Cannot start AIReady.",
     "action_clear_attachments": "Clear Attachments",
     "action_retry": "Retry",
     "action_delete": "Delete",

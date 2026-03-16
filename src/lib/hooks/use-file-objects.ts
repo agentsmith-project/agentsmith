@@ -1,7 +1,7 @@
 /**
  * File Objects Hooks (MinIO-like object browser)
  *
- * This is the Files contract direction. It intentionally does NOT include AIReady.
+ * This is the current Files contract direction.
  */
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';

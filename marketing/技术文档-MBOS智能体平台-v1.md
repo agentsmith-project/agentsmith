@@ -120,7 +120,7 @@ MBOS（Microservices-based Agent Platform）是一套面向智能体（Agent）�
 | `.../audit` | 审计日志 | 11-audit.png |
 | `.../usage` | 用量统计 | 12-usage.png |
 | `.../settings` | 常规、治理、限额 | 13-settings-general.png |
-| `.../sources` | 文件管理、AIReady | 14-sources.png |
+| `.../sources` | 文件管理 | 14-sources.png |
 | `.../credentials` | 项目凭据、API Key | 15-credentials.png |
 | `/user/profile` | 用户资料 | 16-user-profile.png |
 | `/user/api-keys` | 用户 API Key（usk-） | 17-user-api-keys.png |

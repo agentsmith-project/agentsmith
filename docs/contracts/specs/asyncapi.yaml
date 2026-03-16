@@ -270,8 +270,6 @@ components:
                         file_size:
                           type: integer
                           minimum: 0
-                        ai_ready_status:
-                          type: string
                   credential_files:
                     type: array
                     items:

@@ -63,16 +63,7 @@ Current chat integration verification scope:
   - delete endpoint credential and verify stream error shows `chat_endpoint_credential_missing`
   - switch endpoint to healthy one and recover in same thread
 
-Current AIReady API status:
-
-- New library-scoped job APIs are available:
-  - `POST /api/v1/workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs`
-  - `GET /api/v1/workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}`
-  - `POST /api/v1/workspaces/{ws}/projects/{project}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel`
-- Legacy source-scoped APIs are still kept for compatibility during migration.
-- Current worker behavior (Node entry):
-  - job status transitions: `queued -> running -> succeeded|failed` (cancel path supported)
-  - in-process queue + worker for minimal validation, without external MQ yet
+Legacy source-processing APIs are no longer part of the current integration surface.
 
 ## Quick start
 

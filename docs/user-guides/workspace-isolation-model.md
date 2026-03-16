@@ -70,7 +70,6 @@
 | PostgreSQL | `projects` | `workspace_id` / `project_id` | No | Shared database, shared table |
 | Mongo | `source_libraries` | `workspace_id` / `project_id` | No | Shared collection |
 | Mongo | `sources` | `workspace_id` / `project_id` | No | Shared collection |
-| Mongo | `ai_ready_jobs` | `workspace_id` / `project_id` | No | Shared collection |
 | PostgreSQL / pgvector | `source_embeddings` | `workspace_id` / `project_id` | No | Shared database, shared table |
 | Object storage | `workspaces/{workspaceId}/projects/{projectId}/...` | Path prefix | N/A | Shared bucket |
 

@@ -15,7 +15,6 @@ export type NotebookTaskInput = {
   filename?: string;
   file_type?: string;
   file_size?: number;
-  ai_ready_status?: string;
 };
 
 export type NotebookExecutionContext = {
@@ -113,7 +112,6 @@ export async function prepareNotebookWorkspaceAssets(args: {
           filename: typeof item?.filename === 'string' ? item.filename : undefined,
           file_type: typeof item?.file_type === 'string' ? item.file_type : undefined,
           file_size: typeof item?.file_size === 'number' ? item.file_size : undefined,
-          ai_ready_status: typeof item?.ai_ready_status === 'string' ? item.ai_ready_status : undefined,
         })),
       },
       null,

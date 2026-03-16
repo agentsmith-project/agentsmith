@@ -4,7 +4,7 @@
  * This page intentionally focuses on the file manager UX:
  * libraries (bucket-like) + folders (prefixes) + objects (keys).
  *
- * AIReady / plugin processing is out of scope for this phase.
+ * This page focuses on project file libraries and filesystem browsing.
  */
 
 'use client';

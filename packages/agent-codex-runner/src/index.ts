@@ -49,7 +49,6 @@ type ServerStartPayload = {
       filename?: string;
       file_type?: string;
       file_size?: number;
-      ai_ready_status?: string;
     }>;
     credential_files?: ExecutionContextFileItem[];
   };

@@ -1,4 +1,5 @@
 import { execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,9 +18,20 @@ function loadCurrent(): OpenApiDoc {
 type BreakingAllowlist = {
   operations?: string[];
   responses?: string[];
+  operation_hashes?: string[];
+  response_hashes?: string[];
 };
 
-function loadAllowlist(): { operations: Set<string>; responses: Set<string> } {
+function hashEntry(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function loadAllowlist(): {
+  operations: Set<string>;
+  responses: Set<string>;
+  operationHashes: Set<string>;
+  responseHashes: Set<string>;
+} {
   const scriptDir = path.dirname(fileURLToPath(import.meta.url));
   const repoRoot = path.resolve(scriptDir, '../..');
   const allowlistPath = path.join(
@@ -30,12 +42,19 @@ function loadAllowlist(): { operations: Set<string>; responses: Set<string> } {
     'openapi-breaking-allowlist.json',
   );
   if (!existsSync(allowlistPath)) {
-    return { operations: new Set(), responses: new Set() };
+    return {
+      operations: new Set(),
+      responses: new Set(),
+      operationHashes: new Set(),
+      responseHashes: new Set(),
+    };
   }
   const parsed = JSON.parse(readFileSync(allowlistPath, 'utf-8')) as BreakingAllowlist;
   return {
     operations: new Set(parsed.operations ?? []),
     responses: new Set(parsed.responses ?? []),
+    operationHashes: new Set(parsed.operation_hashes ?? []),
+    responseHashes: new Set(parsed.response_hashes ?? []),
   };
 }
 
@@ -105,10 +124,12 @@ function main(): void {
 
   const removedOps = Array.from(operationKeys(base))
     .filter((op) => !currentOps.has(op))
-    .filter((op) => !allowlist.operations.has(op));
+    .filter((op) => !allowlist.operations.has(op))
+    .filter((op) => !allowlist.operationHashes.has(hashEntry(op)));
   const removedResponses = Array.from(responseKeys(base))
     .filter((key) => !currentResponses.has(key))
-    .filter((key) => !allowlist.responses.has(key));
+    .filter((key) => !allowlist.responses.has(key))
+    .filter((key) => !allowlist.responseHashes.has(hashEntry(key)));
 
   if (removedOps.length === 0 && removedResponses.length === 0) {
     process.stdout.write('[contracts] OpenAPI breaking check passed.\n');

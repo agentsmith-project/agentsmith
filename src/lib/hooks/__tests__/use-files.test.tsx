@@ -33,23 +33,12 @@ vi.mock('@/lib/api/endpoints/files', () => {
     filename: 'uploaded.pdf',
   });
   const mockDelete = vi.fn().mockResolvedValue(undefined);
-  const mockStartAIReady = vi.fn().mockResolvedValue({ id: 'job1' });
-  const mockCancelAIReady = vi.fn().mockResolvedValue(undefined);
-  const mockRetryAIReady = vi.fn().mockResolvedValue({ id: 'job1' });
-  const mockBatchStart = vi.fn().mockResolvedValue({ jobs: [] });
-  const mockBatchCancel = vi.fn().mockResolvedValue({ jobs: [] });
-
   class MockFilesAPI {
     list = mockList;
     get = mockGet;
     getLimits = mockGetLimitSummary;
     upload = mockUpload;
     delete = mockDelete;
-    startAIReady = mockStartAIReady;
-    cancelAIReady = mockCancelAIReady;
-    retryAIReady = mockRetryAIReady;
-    batchStartAIReady = mockBatchStart;
-    batchCancelAIReady = mockBatchCancel;
     listLibraries = mockListLibraries;
   }
 
@@ -89,11 +78,6 @@ vi.mock('@/lib/api', () => ({
         filename: 'uploaded.pdf',
       }),
       delete: vi.fn().mockResolvedValue(undefined),
-      startAIReady: vi.fn().mockResolvedValue({ id: 'job1' }),
-      cancelAIReady: vi.fn().mockResolvedValue(undefined),
-      retryAIReady: vi.fn().mockResolvedValue({ id: 'job1' }),
-      batchStartAIReady: vi.fn().mockResolvedValue({ jobs: [] }),
-      batchCancelAIReady: vi.fn().mockResolvedValue({ jobs: [] }),
       listLibraries: mockListLibraries,
     };
   }),
@@ -147,8 +131,6 @@ import {
   useUploadFile,
   useDeleteFile,
   useFileLibraries,
-  useAIReadyActions,
-  useBatchAIReadyActions,
 } from '../use-files';
 
 // Test constants
@@ -205,8 +187,6 @@ describe('useFiles', () => {
     const { result } = renderHook(
       () => useFiles(workspaceId, projectId, {
         search: 'test',
-        status: 'ready',
-        ai_ready_only: true,
         sort_by: 'file_size',
         sort_order: 'asc',
         page: 2,
@@ -373,150 +353,10 @@ describe('useDeleteFile', () => {
         workspaceId,
         projectId,
         fileId,
-        deleteAIReady: true,
       });
     });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
   });
 
-  it('should delete file without AIReady artifacts', async () => {
-    const { result } = renderHook(() => useDeleteFile(), {
-      wrapper: createTestWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.mutateAsync({
-        workspaceId,
-        projectId,
-        fileId,
-        deleteAIReady: false,
-      });
-    });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-  });
-});
-
-describe('useAIReadyActions', () => {
-  it('should start AIReady process successfully', async () => {
-    const { result } = renderHook(() => useAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.start.mutateAsync({
-        workspaceId,
-        projectId,
-        fileId,
-      });
-    });
-
-    await waitFor(() => expect(result.current.start.isSuccess).toBe(true));
-  });
-
-  it('should cancel AIReady process successfully', async () => {
-    const { result } = renderHook(() => useAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.cancel.mutateAsync({
-        workspaceId,
-        projectId,
-        fileId,
-      });
-    });
-
-    await waitFor(() => expect(result.current.cancel.isSuccess).toBe(true));
-  });
-
-  it('should retry AIReady process successfully', async () => {
-    const { result } = renderHook(() => useAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.retry.mutateAsync({
-        workspaceId,
-        projectId,
-        fileId,
-      });
-    });
-
-    await waitFor(() => expect(result.current.retry.isSuccess).toBe(true));
-  });
-
-  it('should provide all three actions', () => {
-    const { result } = renderHook(() => useAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    expect(result.current.start).toBeDefined();
-    expect(result.current.cancel).toBeDefined();
-    expect(result.current.retry).toBeDefined();
-  });
-});
-
-describe('useBatchAIReadyActions', () => {
-  it('should batch start AIReady successfully', async () => {
-    const { result } = renderHook(() => useBatchAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    const fileIds = ['file1', 'file2'];
-
-    await act(async () => {
-      await result.current.batchStart.mutateAsync({
-        workspaceId,
-        projectId,
-        fileIds,
-      });
-    });
-
-    await waitFor(() => expect(result.current.batchStart.isSuccess).toBe(true));
-  });
-
-  it('should batch cancel AIReady successfully', async () => {
-    const { result } = renderHook(() => useBatchAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    const fileIds = ['file1', 'file2'];
-
-    await act(async () => {
-      await result.current.batchCancel.mutateAsync({
-        workspaceId,
-        projectId,
-        fileIds,
-      });
-    });
-
-    await waitFor(() => expect(result.current.batchCancel.isSuccess).toBe(true));
-  });
-
-  it('should handle single file in batch start', async () => {
-    const { result } = renderHook(() => useBatchAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    await act(async () => {
-      await result.current.batchStart.mutateAsync({
-        workspaceId,
-        projectId,
-        fileIds: [fileId],
-      });
-    });
-
-    await waitFor(() => expect(result.current.batchStart.isSuccess).toBe(true));
-  });
-
-  it('should provide both batch actions', () => {
-    const { result } = renderHook(() => useBatchAIReadyActions(), {
-      wrapper: createTestWrapper(),
-    });
-
-    expect(result.current.batchStart).toBeDefined();
-    expect(result.current.batchCancel).toBeDefined();
-  });
 });

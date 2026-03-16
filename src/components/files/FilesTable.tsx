@@ -12,8 +12,6 @@ import {
 import { DataTable } from '@/components/ui/data-table';
 import { Checkbox } from '@/components/ui/checkbox';
 import { File } from 'lucide-react';
-import { AIReadyStatusBadge } from './AIReadyStatusBadge';
-import { AIReadyProgress } from './AIReadyProgress';
 import { EmptyState } from '@/components/ui/loading';
 import { FilesTableSkeleton } from './FilesTableSkeleton';
 import {
@@ -22,18 +20,18 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import type { FileItemWithAIReady } from '@/lib/api/types';
+import type { FileItem } from '@/lib/api/types';
 
 import { formatBytes, formatRelativeTime } from '@/lib/utils/formatters';
 
-const columnHelper = createColumnHelper<FileItemWithAIReady>();
+const columnHelper = createColumnHelper<FileItem>();
 
 function getFileIcon(_fileType: string) {
   return File;
 }
 
 export interface FilesTableProps {
-  data: FileItemWithAIReady[];
+  data: FileItem[];
   loading?: boolean;
   compact?: boolean;
   /** Controlled selection: pass selected IDs to sync (e.g. when clearing from parent) */
@@ -141,45 +139,6 @@ export function FilesTable({
             {formatRelativeTime(info.getValue())}
           </span>
         ),
-      }),
-      // AIReady status column
-      columnHelper.display({
-        id: 'ai_ready_status',
-        header: t('table.ai_ready_status'),
-        cell: (info) => {
-          const file = info.row.original;
-          const aiReady = file.ai_ready;
-          const status = aiReady?.status || 'idle';
-
-          return (
-            <div className="flex flex-col gap-1">
-              <AIReadyStatusBadge status={status} />
-              {status === 'preparing' && (
-                <AIReadyProgress
-                  progress={aiReady?.progress}
-                  isQueued={aiReady?.progress === undefined}
-                />
-              )}
-            </div>
-          );
-        },
-      }),
-      // Usage column
-      columnHelper.display({
-        id: 'usage',
-        header: t('table.usage'),
-        cell: (info) => {
-          const file = info.row.original;
-          const usage = file.ai_ready_usage;
-          if (!usage) return <span className="text-tertiary text-xs">-</span>;
-
-          return (
-            <div className="text-xs text-tertiary">
-              <div>DocDB: {formatBytes(usage.docdb_bytes)}</div>
-              <div>VDB: {formatBytes(usage.vectordb_bytes)}</div>
-            </div>
-          );
-        },
       }),
     ],
     [t],

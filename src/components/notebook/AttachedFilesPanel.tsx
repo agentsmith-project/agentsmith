@@ -4,7 +4,6 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Link2, Plus, Upload, X, File as FileIcon } from 'lucide-react';
 import { useRemoveFile, useTaskAttachedFiles } from '@/lib/hooks/use-task';
-import { AIReadyStatusBadge } from '@/components/files/AIReadyStatusBadge';
 import { InputRefBadge } from '@/components/inputs/InputRefBadge';
 import { EmptyState } from '@/components/ui/loading';
 import { formatBytes } from '@/lib/utils/formatters';
@@ -114,7 +113,6 @@ interface AttachedFileItemProps {
 function AttachedFileItem({ file, onRemove, removing }: AttachedFileItemProps) {
   const t = useTranslations('notebook.attached_files.tooltip');
   const FileIcon = getFileIcon(file.file_type);
-  const aiReadyStatus = file.kind === 'source' ? file.ai_ready?.status : undefined;
 
   return (
     <div className="group flex items-start gap-2 rounded-lg px-1.5 py-1.5 transition-colors hover:bg-white/[0.03]">
@@ -125,9 +123,6 @@ function AttachedFileItem({ file, onRemove, removing }: AttachedFileItemProps) {
         <div className="truncate text-[12px] leading-4 text-foreground">{file.filename}</div>
         <div className="mt-0.5 flex flex-wrap items-center gap-1">
           <span className="text-[10px] text-tertiary">{formatBytes(file.file_size)}</span>
-          {aiReadyStatus && (
-            <AIReadyStatusBadge status={aiReadyStatus} />
-          )}
           <InputRefBadge label={getTaskAttachedInputKindLabel(file)} />
         </div>
       </div>

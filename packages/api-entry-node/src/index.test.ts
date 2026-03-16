@@ -1142,15 +1142,6 @@ describe('api-entry-node projects routes', () => {
     const detail = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`);
     expect(detail.status).toBe(200);
 
-    const aiReadyStart = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}/ai-ready/start`,
-      { method: 'POST' },
-    );
-    expect(aiReadyStart.status).toBe(200);
-    const aiReadyJob = (await aiReadyStart.json()) as { status: string };
-    expect(aiReadyJob.status).toBe('ready');
-
     const download = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}/download`);
     expect(download.status).toBe(200);
     const text = await download.text();

@@ -15,7 +15,6 @@ const NOT_FOUND_ERRORS = new Set([
   'file_library_not_found',
   'file_library_backend_not_found',
   'file_library_mount_access_not_found',
-  'ai_ready_job_not_found',
   'object_not_found',
   'library_not_found',
 ]);

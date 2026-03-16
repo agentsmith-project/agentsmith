@@ -242,21 +242,4 @@ export const auditEventFixtures: AuditEvent[] = [
       file_size: 456000,
     },
   },
-  {
-    id: 'audit_014',
-    timestamp: '2026-01-28T16:10:00Z',
-    workspace_id: 'ws_001',
-    project_id: 'proj_001',
-    actor_type: 'user',
-    actor_id: 'user_002',
-    action: 'source.ai_ready.start',
-    resource_type: 'ai_ready_job',
-    resource_id: 'ai_ready_001',
-    end_user_id: 'user_002',
-    result: 'ok',
-    request_id: 'req-***qrs678',
-    metadata_json: {
-      source_file_id: 'src_001',
-    },
-  },
 ];

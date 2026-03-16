@@ -2,7 +2,6 @@ export type SourceInputRef = {
   kind: 'source';
   source_id: string;
   name?: string;
-  ai_ready_status?: 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
 };
 
 export type LibraryObjectInputRef = {

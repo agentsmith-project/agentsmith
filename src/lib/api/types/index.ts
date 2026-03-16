@@ -821,10 +821,8 @@ export interface UserExternalConnectionOAuthStartResponse {
 }
 
 // ============================================================
-// Files (File Management & AIReady)
+// Files (File Management)
 // ============================================================
-
-export type AIReadyStatus = 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
 
 export interface FileItem {
   id: string;
@@ -846,28 +844,6 @@ export interface FileItem {
   updated_at: string; // ISO 8601
 }
 
-export interface AIReadyJob {
-  id: string;
-  source_file_id: string;
-  status: AIReadyStatus;
-  progress?: number; // 0-100, optional
-  error_message?: string; // failure reason
-  created_at: string;
-  updated_at: string;
-}
-
-export interface AIReadyUsage {
-  docdb_bytes: number;
-  vectordb_bytes: number;
-  chunks_count: number;
-  embedding_tokens?: number;
-}
-
-export interface FileItemWithAIReady extends FileItem {
-  ai_ready?: AIReadyJob;
-  ai_ready_usage?: AIReadyUsage;
-}
-
 export interface LimitSummary {
   storage: {
     used: number; // bytes
@@ -886,13 +862,11 @@ export interface LimitSummary {
 export interface FilesListParams extends PaginationParams {
   search?: string;
   library_id?: string;
-  status?: AIReadyStatus | 'all';
-  ai_ready_only?: boolean;
   sort_by?: 'updated_at' | 'file_size' | 'status';
   sort_order?: 'asc' | 'desc';
 }
 
-export type FilesListResponse = PaginatedResponse<FileItemWithAIReady>;
+export type FilesListResponse = PaginatedResponse<FileItem>;
 
 // ============================================================
 // Files (Object Browser / MinIO-like File Manager)

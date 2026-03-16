@@ -43,8 +43,7 @@ export function FileSelectDialog({
   const [attachingObjectKey, setAttachingObjectKey] = React.useState<string | null>(null);
 
   // Fetch task-selectable files from the file library.
-  // Do not hard-filter to AI Ready only: users should be able to see newly uploaded files
-  // and decide whether to attach them based on visible status badges.
+  // Newly uploaded files should be immediately selectable without extra preprocessing gates.
   const { data: filesData, isLoading } = useFiles(workspaceId, projectId, {
     page_size: 1000, // Demo-friendly upper bound for selectable files
   });

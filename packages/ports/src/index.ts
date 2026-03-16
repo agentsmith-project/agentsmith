@@ -1,4 +1,4 @@
-import type { AIReadyJobDTO, ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
 import type { ReadableStream } from 'node:stream/web';
 
 export interface ProjectRepoPort {
@@ -144,36 +144,6 @@ export interface VectorStorePort {
   ): Promise<void>;
   search(query: VectorSearchQuery): Promise<VectorSearchResult[]>;
   countByLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<number>;
-}
-
-export interface JobQueueItem {
-  jobId: string;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  type: 'document_ingest';
-}
-
-export interface JobQueuePort {
-  enqueue(item: JobQueueItem): Promise<void>;
-  dequeue(): Promise<JobQueueItem | null>;
-}
-
-export interface AIReadyJobRepoPort {
-  save(job: AIReadyJobDTO): Promise<void>;
-  getById(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    jobId: string,
-  ): Promise<AIReadyJobDTO | null>;
-  update(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    jobId: string,
-    patch: Partial<AIReadyJobDTO>,
-  ): Promise<AIReadyJobDTO | null>;
 }
 
 export interface DocumentParserPort {

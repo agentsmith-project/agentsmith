@@ -34,9 +34,6 @@ const mockSources: TaskAttachedInputDetail[] = [
     filename: 'document1.txt',
     file_type: 'text/plain',
     file_size: 1024,
-    ai_ready: {
-      status: 'ready',
-    },
   },
   {
     id: 'in_src_2',
@@ -45,9 +42,6 @@ const mockSources: TaskAttachedInputDetail[] = [
     filename: 'document2.pdf',
     file_type: 'application/pdf',
     file_size: 2048000,
-    ai_ready: {
-      status: 'preparing',
-    },
   },
   {
     id: 'in_src_3',
@@ -56,9 +50,6 @@ const mockSources: TaskAttachedInputDetail[] = [
     filename: 'document3.docx',
     file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     file_size: 512000,
-    ai_ready: {
-      status: 'failed',
-    },
   },
 ];
 const STABLE_REMOVE_SOURCE_RESULT = {
@@ -86,12 +77,6 @@ vi.mock('@/components/ui/loading', () => ({
       <div data-testid="empty-title">{title}</div>
       <div data-testid="empty-description">{description}</div>
     </div>
-  ),
-}));
-
-vi.mock('@/components/files/AIReadyStatusBadge', () => ({
-  AIReadyStatusBadge: ({ status }: any) => (
-    <div data-testid={`ai-ready-${status}`}>AI Ready: {status}</div>
   ),
 }));
 
@@ -195,23 +180,6 @@ describe('AttachedFilesPanel', () => {
       expect(screen.getByText('1.0 KB')).toBeInTheDocument();
     });
 
-    it('displays AI ready status badge', () => {
-      renderComponent(['source-1']);
-
-      expect(screen.getByTestId('ai-ready-ready')).toBeInTheDocument();
-    });
-
-    it('shows preparing status', () => {
-      renderComponent(['source-2']);
-
-      expect(screen.getByTestId('ai-ready-preparing')).toBeInTheDocument();
-    });
-
-    it('shows failed status', () => {
-      renderComponent(['source-3']);
-
-      expect(screen.getByTestId('ai-ready-failed')).toBeInTheDocument();
-    });
   });
 
   describe('Remove Source', () => {
@@ -269,14 +237,14 @@ describe('AttachedFilesPanel', () => {
     it('has right border', () => {
       const { container } = renderComponent();
 
-      const panel = container.querySelector('.border-r');
+      const panel = container.querySelector('.border-b');
       expect(panel).toBeInTheDocument();
     });
 
     it('has correct background', () => {
       const { container } = renderComponent();
 
-      const panel = container.querySelector('.bg-surface');
+      const panel = container.querySelector('.bg-transparent');
       expect(panel).toBeInTheDocument();
     });
   });
@@ -285,7 +253,7 @@ describe('AttachedFilesPanel', () => {
     it('displays file icon', () => {
       renderComponent(['source-1']);
 
-      const iconContainer = document.querySelector('.w-8.h-8');
+      const iconContainer = document.querySelector('.w-6.h-6');
       expect(iconContainer).toBeInTheDocument();
     });
 

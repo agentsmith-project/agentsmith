@@ -1,8 +1,5 @@
 import type http from 'node:http';
-import {
-  CreateAIReadyJobRequestSchema,
-  CreateSourceRequestSchema,
-} from '@mbos/contracts';
+import { CreateSourceRequestSchema } from '@mbos/contracts';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
@@ -12,11 +9,6 @@ type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknow
 export async function handleProjectSourceLibraryRoutes(args: {
   routeKind:
     | 'sources'
-    | 'sourceAIReadyStart'
-    | 'sourceAIReadyCancel'
-    | 'sourceAIReadyRetry'
-    | 'sourceBatchAIReadyStart'
-    | 'sourceBatchAIReadyCancel'
     | 'sourceItem'
     | 'sourceDownload';
   method: string;
@@ -135,89 +127,6 @@ export async function handleProjectSourceLibraryRoutes(args: {
       input,
     });
     json(res, 201, created);
-    return true;
-  }
-
-  if (routeKind === 'sourceAIReadyStart' && method === 'POST' && sourceId) {
-    if (!(await enforceSourceLibraryAccessBySourceId({ workspaceId, projectId, sourceId, routeKind }))) {
-      return true;
-    }
-    const job = await deps.startSourceAIReadyUseCase.execute({
-      workspaceId,
-      projectId,
-      sourceId,
-    });
-    json(res, 200, job);
-    return true;
-  }
-
-  if (routeKind === 'sourceAIReadyCancel' && method === 'POST' && sourceId) {
-    if (!(await enforceSourceLibraryAccessBySourceId({ workspaceId, projectId, sourceId, routeKind }))) {
-      return true;
-    }
-    const job = await deps.cancelSourceAIReadyUseCase.execute({
-      workspaceId,
-      projectId,
-      sourceId,
-    });
-    json(res, 200, job);
-    return true;
-  }
-
-  if (routeKind === 'sourceAIReadyRetry' && method === 'POST' && sourceId) {
-    if (!(await enforceSourceLibraryAccessBySourceId({ workspaceId, projectId, sourceId, routeKind }))) {
-      return true;
-    }
-    const job = await deps.retrySourceAIReadyUseCase.execute({
-      workspaceId,
-      projectId,
-      sourceId,
-    });
-    json(res, 200, job);
-    return true;
-  }
-
-  if (routeKind === 'sourceBatchAIReadyStart' && method === 'POST') {
-    const raw = (await readBody(req)) as { file_ids?: string[] };
-    const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
-    for (const currentSourceId of sourceIds) {
-      if (!(await enforceSourceLibraryAccessBySourceId({
-        workspaceId,
-        projectId,
-        sourceId: currentSourceId,
-        routeKind,
-      }))) {
-        return true;
-      }
-    }
-    const jobs = await deps.batchStartSourceAIReadyUseCase.execute({
-      workspaceId,
-      projectId,
-      sourceIds,
-    });
-    json(res, 200, jobs);
-    return true;
-  }
-
-  if (routeKind === 'sourceBatchAIReadyCancel' && method === 'POST') {
-    const raw = (await readBody(req)) as { file_ids?: string[] };
-    const sourceIds = Array.isArray(raw.file_ids) ? raw.file_ids : [];
-    for (const currentSourceId of sourceIds) {
-      if (!(await enforceSourceLibraryAccessBySourceId({
-        workspaceId,
-        projectId,
-        sourceId: currentSourceId,
-        routeKind,
-      }))) {
-        return true;
-      }
-    }
-    const jobs = await deps.batchCancelSourceAIReadyUseCase.execute({
-      workspaceId,
-      projectId,
-      sourceIds,
-    });
-    json(res, 200, jobs);
     return true;
   }
 

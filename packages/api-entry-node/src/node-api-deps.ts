@@ -1,11 +1,6 @@
 import type {
-  BatchCancelSourceAIReadyUseCase,
-  BatchStartSourceAIReadyUseCase,
-  CancelAIReadyJobUseCase,
-  CancelSourceAIReadyUseCase,
   CreateSourceFolderUseCase,
   CreateSourceObjectShareLinkUseCase,
-  CreateAIReadyJobUseCase,
   CreateProjectUseCase,
   CreateSourceLibraryUseCase,
   CreateSourceUseCase,
@@ -15,7 +10,6 @@ import type {
   DeleteSourceUseCase,
   DownloadSourceObjectUseCase,
   DownloadSourceUseCase,
-  GetAIReadyJobUseCase,
   GetProjectUseCase,
   GetSourceObjectMetaUseCase,
   GetSourceUseCase,
@@ -25,14 +19,10 @@ import type {
   ListSourceLibrariesUseCase,
   ListSourcesUseCase,
   MoveSourceObjectUseCase,
-  RetrySourceAIReadyUseCase,
-  RunQueuedAIReadyJobUseCase,
-  StartSourceAIReadyUseCase,
   UploadSourceObjectUseCase,
   UpdateProjectUseCase,
   UpdateSourceLibraryUseCase,
 } from '@mbos/application';
-import type { InMemoryJobQueue } from '@mbos/adapters-private';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { ChatResourceService } from './chat-resource-service.js';
 import type { EndpointResourceService } from './endpoint-resource-service.js';
@@ -55,8 +45,6 @@ export interface NodeApiDeps {
   agentExecutionService: AgentExecutionService;
   internalAgentPodManager?: InternalAgentPodManager;
   sourceBucket: string;
-  aiReadyJobQueue: InMemoryJobQueue;
-  createAIReadyJobUseCase: CreateAIReadyJobUseCase;
   createSourceLibraryUseCase: CreateSourceLibraryUseCase;
   createSourceFolderUseCase: CreateSourceFolderUseCase;
   createSourceObjectShareLinkUseCase: CreateSourceObjectShareLinkUseCase;
@@ -71,13 +59,7 @@ export interface NodeApiDeps {
   downloadSourceUseCase: DownloadSourceUseCase;
   getSourceObjectMetaUseCase: GetSourceObjectMetaUseCase;
   getSourceUseCase: GetSourceUseCase;
-  getAIReadyJobUseCase: GetAIReadyJobUseCase;
   getSourcesLimitUseCase: GetSourcesLimitUseCase;
-  startSourceAIReadyUseCase: StartSourceAIReadyUseCase;
-  cancelSourceAIReadyUseCase: CancelSourceAIReadyUseCase;
-  retrySourceAIReadyUseCase: RetrySourceAIReadyUseCase;
-  batchStartSourceAIReadyUseCase: BatchStartSourceAIReadyUseCase;
-  batchCancelSourceAIReadyUseCase: BatchCancelSourceAIReadyUseCase;
   deleteProjectUseCase: DeleteProjectUseCase;
   getProjectUseCase: GetProjectUseCase;
   listProjectsUseCase: ListProjectsUseCase;
@@ -86,8 +68,6 @@ export interface NodeApiDeps {
   listSourcesUseCase: ListSourcesUseCase;
   updateSourceLibraryUseCase: UpdateSourceLibraryUseCase;
   updateProjectUseCase: UpdateProjectUseCase;
-  cancelAIReadyJobUseCase: CancelAIReadyJobUseCase;
-  runQueuedAIReadyJobUseCase: RunQueuedAIReadyJobUseCase;
   governanceRunner?: GovernanceRunnerController;
   fileLibraryOrchestrator?: FileLibraryOrchestrator;
   fileLibraryGatewayManager?: FileLibraryGatewayManager;

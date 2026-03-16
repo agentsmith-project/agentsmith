@@ -6,11 +6,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useLocale } from 'next-intl';
 import { Input } from '@/components/ui/input';
-import { AIReadyStatusBadge } from '@/components/files/AIReadyStatusBadge';
 import { useFiles } from '@/lib/hooks/use-files';
 import { PageLoading } from '@/components/ui/loading';
 import { formatBytes } from '@/lib/utils/formatters';
-import type { FileItemWithAIReady } from '@/lib/api/types';
+import type { FileItem } from '@/lib/api/types';
 
 export interface FilesPanelProps {
   workspaceId: string;
@@ -39,14 +38,13 @@ export function FilesPanel({
     return () => clearTimeout(timer);
   }, [search]);
 
-  // Query sources - only show ready files by default in sidebar
+  // Query project files for sidebar preview
   const { data: filesData, isLoading } = useFiles(workspaceId, projectId, {
     search: debouncedSearch || undefined,
-    status: 'ready', // Only show ready files in sidebar
     page_size: 20, // Limit to 20 files in sidebar
   });
 
-  const handleFileClick = (file: FileItemWithAIReady) => {
+  const handleFileClick = (file: FileItem) => {
     if (attachedFileIds.includes(file.id)) {
       onDetach?.(file.id);
     } else {
@@ -115,12 +113,6 @@ export function FilesPanel({
                     <p className="text-sm text-foreground truncate">{file.filename}</p>
                     <div className="flex items-center gap-2 mt-1">
                       <span className="text-xs text-tertiary">{formatBytes(file.file_size)}</span>
-                      {file.ai_ready && (
-                        <AIReadyStatusBadge
-                          status={file.ai_ready.status}
-                          className="text-[10px] px-1.5 py-0.5"
-                        />
-                      )}
                     </div>
                   </div>
                 </div>

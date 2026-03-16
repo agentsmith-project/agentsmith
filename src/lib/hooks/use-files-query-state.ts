@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-import type { AIReadyStatus } from '@/lib/api/types';
-
 export function useFilesQueryState() {
   // Pagination
   const [page, setPage] = useState(1);
@@ -10,8 +8,6 @@ export function useFilesQueryState() {
   // Filters
   const [search, setSearch] = useState('');
   const [selectedLibraryId, setSelectedLibraryId] = useState('all');
-  const [status, setStatus] = useState<AIReadyStatus | 'all'>('all');
-  const [aiReadyOnly, setAIReadyOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'updated_at' | 'file_size' | 'status'>('updated_at');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -21,7 +17,7 @@ export function useFilesQueryState() {
   // Dialogs
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [filesToDelete, setFilesToDelete] = useState<{ ids: string[]; hasAIReady: boolean } | null>(null);
+  const [filesToDelete, setFilesToDelete] = useState<{ ids: string[] } | null>(null);
 
   // Upload state
   const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
@@ -48,10 +44,6 @@ export function useFilesQueryState() {
     setSearch,
     selectedLibraryId,
     setSelectedLibraryId,
-    status,
-    setStatus,
-    aiReadyOnly,
-    setAIReadyOnly,
     sortBy,
     setSortBy,
     sortOrder,

@@ -356,6 +356,9 @@
                     "endpoint_id": {
                       "type": "string"
                     },
+                    "api_base": {
+                      "type": "string"
+                    },
                     "user_bearer_token": {
                       "type": "string"
                     },
@@ -390,15 +393,31 @@
                           "file_size": {
                             "type": "integer",
                             "minimum": 0
-                          },
-                          "ai_ready_status": {
-                            "type": "string"
                           }
                         }
                       }
                     },
-                    "api_base": {
-                      "type": "string"
+                    "credential_files": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "relative_path",
+                          "content"
+                        ],
+                        "properties": {
+                          "relative_path": {
+                            "type": "string"
+                          },
+                          "content": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          }
+                        }
+                      }
                     }
                   }
                 }

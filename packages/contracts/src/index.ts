@@ -54,7 +54,6 @@ export const ErrorResponseSchema = z.object({
 });
 
 export const SourceStatusSchema = z.enum(['ready', 'deleted']);
-export const AIReadyStatusSchema = z.enum(['idle', 'preparing', 'ready', 'failed', 'cancelled']);
 
 export const SourceSchema = z.object({
   id: z.string().min(1),
@@ -66,9 +65,6 @@ export const SourceSchema = z.object({
   content_type: z.string().min(1),
   size_bytes: z.number().int().nonnegative(),
   status: SourceStatusSchema,
-  ai_ready_status: AIReadyStatusSchema.optional(),
-  docdb_bytes: z.number().int().nonnegative().optional(),
-  vectordb_bytes: z.number().int().nonnegative().optional(),
   created_at: z.string().datetime(),
   updated_at: z.string().datetime(),
 });
@@ -374,38 +370,6 @@ export const StorageCredentialExchangeResponseSchema = z.object({
   created_at: z.string().datetime(),
 });
 
-export const AIReadyJobTypeSchema = z.enum(['document_ingest']);
-export const AIReadyJobStatusSchema = z.enum([
-  'queued',
-  'running',
-  'retrying',
-  'succeeded',
-  'failed',
-  'cancelled',
-  'dead_lettered',
-]);
-
-export const AIReadyJobSchema = z.object({
-  id: z.string().min(1),
-  workspace_id: z.string().min(1),
-  project_id: z.string().min(1),
-  library_id: z.string().min(1),
-  type: AIReadyJobTypeSchema,
-  status: AIReadyJobStatusSchema,
-  source_ids: z.array(z.string().min(1)),
-  idempotency_key: z.string().min(1),
-  retry_count: z.number().int().nonnegative(),
-  error_code: z.string().optional(),
-  error_message: z.string().optional(),
-  created_by_user_id: z.string().min(1),
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-});
-
-export const CreateAIReadyJobRequestSchema = z.object({
-  source_ids: z.array(z.string().min(1)).min(1),
-});
-
 export const WorkspaceFoundationInitializationRequestSchema = z.object({
   workspace_id: z.string().min(1),
   workspace_name: z.string().min(1),
@@ -504,7 +468,5 @@ export type MoveFileLibraryEntryRequest = z.infer<typeof MoveFileLibraryEntryReq
 export type FileLibraryDownloadQuery = z.infer<typeof FileLibraryDownloadQuerySchema>;
 export type CreateFileLibraryShareLinkRequest = z.infer<typeof CreateFileLibraryShareLinkRequestSchema>;
 export type StorageCredentialExchangeResponse = z.infer<typeof StorageCredentialExchangeResponseSchema>;
-export type AIReadyJobDTO = z.infer<typeof AIReadyJobSchema>;
-export type CreateAIReadyJobRequest = z.infer<typeof CreateAIReadyJobRequestSchema>;
 export type WorkspaceFoundationInitializationRequest = z.infer<typeof WorkspaceFoundationInitializationRequestSchema>;
 export type WorkspaceFoundationInitializationResult = z.infer<typeof WorkspaceFoundationInitializationResultSchema>;

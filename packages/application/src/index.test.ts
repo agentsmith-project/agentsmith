@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { AIReadyJobDTO, ProjectDTO } from '@mbos/contracts';
+import type { ProjectDTO } from '@mbos/contracts';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
-  CancelAIReadyJobUseCase,
-  CreateAIReadyJobUseCase,
   CreateSourceLibraryUseCase,
   CreateProjectUseCase,
   CreateSourceUseCase,
@@ -14,8 +12,6 @@ import {
   GetSourceUseCase,
   GetSourcesLimitUseCase,
   GetProjectUseCase,
-  RunQueuedAIReadyJobUseCase,
-  GetAIReadyJobUseCase,
   ListSourceLibraryObjectsUseCase,
   ListSourceLibrariesUseCase,
   ListProjectsUseCase,
@@ -24,20 +20,13 @@ import {
   UpdateProjectUseCase,
 } from './index';
 import type {
-  AIReadyJobRepoPort,
   CachePort,
   ClockPort,
-  DocumentParserPort,
-  EmbeddingProviderPort,
   IdGeneratorPort,
-  JobQueueItem,
-  JobQueuePort,
   ObjectStorePort,
   ProjectRepoPort,
   SourceRepoPort,
   SourceLibraryRepoPort,
-  TextChunkerPort,
-  VectorStorePort,
 } from '@mbos/ports';
 import type { SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
 
@@ -369,64 +358,6 @@ class FakeSourceLibraryRepo implements SourceLibraryRepoPort {
     }
     this.items.splice(index, 1);
     return true;
-  }
-}
-
-class FakeAIReadyJobRepo implements AIReadyJobRepoPort {
-  readonly items: AIReadyJobDTO[] = [];
-
-  async save(job: AIReadyJobDTO): Promise<void> {
-    this.items.push(job);
-  }
-
-  async getById(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    jobId: string,
-  ): Promise<AIReadyJobDTO | null> {
-    return (
-      this.items.find(
-        (item) =>
-          item.workspace_id === workspaceId &&
-          item.project_id === projectId &&
-          item.library_id === libraryId &&
-          item.id === jobId,
-      ) ?? null
-    );
-  }
-
-  async update(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    jobId: string,
-    patch: Partial<AIReadyJobDTO>,
-  ): Promise<AIReadyJobDTO | null> {
-    const index = this.items.findIndex(
-      (item) =>
-        item.workspace_id === workspaceId &&
-        item.project_id === projectId &&
-        item.library_id === libraryId &&
-        item.id === jobId,
-    );
-    if (index < 0) {
-      return null;
-    }
-    this.items[index] = { ...this.items[index], ...patch };
-    return this.items[index];
-  }
-}
-
-class FakeJobQueue implements JobQueuePort {
-  readonly items: JobQueueItem[] = [];
-
-  async enqueue(item: JobQueueItem): Promise<void> {
-    this.items.push(item);
-  }
-
-  async dequeue(): Promise<JobQueueItem | null> {
-    return this.items.shift() ?? null;
   }
 }
 
@@ -941,157 +872,4 @@ describe('Project use cases', () => {
     }
   });
 
-  it('creates, gets, and cancels library-scoped ai-ready job', async () => {
-    const sourceRepo = new FakeSourceRepo();
-    const libraryRepo = new FakeSourceLibraryRepo();
-    const jobRepo = new FakeAIReadyJobRepo();
-    const queue = new FakeJobQueue();
-    const cache = new InMemoryCache();
-    const clock = new FixedClock();
-
-    libraryRepo.items.push({
-      id: 'lib_a',
-      workspace_id: 'ws_a',
-      project_id: 'proj_1',
-      name: 'Library A',
-      visibility: 'shared',
-      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_a',
-      doc_namespace: 'doc_ws_a_proj_1_lib_a',
-      vector_namespace: 'vec_ws_a_proj_1_lib_a',
-      created_by_user_id: 'user_1',
-      created_at: clock.nowIso(),
-      updated_at: clock.nowIso(),
-    });
-    sourceRepo.items.push({
-      id: 'src_1',
-      workspace_id: 'ws_a',
-      project_id: 'proj_1',
-      library_id: 'lib_a',
-      name: 'a.txt',
-      object_key: 'a.txt',
-      content_type: 'text/plain',
-      size_bytes: 3,
-      status: 'ready',
-      created_at: clock.nowIso(),
-      updated_at: clock.nowIso(),
-    });
-
-    const created = await new CreateAIReadyJobUseCase(
-      sourceRepo,
-      libraryRepo,
-      jobRepo,
-      queue,
-      clock,
-      cache,
-    ).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-      actorId: 'user_1',
-      input: { source_ids: ['src_1'] },
-      idempotencyKey: 'idem_1',
-    });
-    expect(created.status).toBe('queued');
-    expect(created.type).toBe('document_ingest');
-    expect(queue.items).toHaveLength(1);
-
-    const got = await new GetAIReadyJobUseCase(jobRepo, cache).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-      jobId: created.id,
-    });
-    expect(got.id).toBe(created.id);
-
-    const cancelled = await new CancelAIReadyJobUseCase(jobRepo, clock, cache).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-      jobId: created.id,
-    });
-    expect(cancelled.status).toBe('cancelled');
-  });
-
-  it('runs queued ai-ready document ingest job and marks source ready', async () => {
-    const sourceRepo = new FakeSourceRepo();
-    const libraryRepo = new FakeSourceLibraryRepo();
-    const jobRepo = new FakeAIReadyJobRepo();
-    const queue = new FakeJobQueue();
-    const cache = new InMemoryCache();
-    const clock = new FixedClock();
-    const objectStore = new FakeObjectStore();
-    const vectorStore = new FakeVectorStore();
-
-    libraryRepo.items.push({
-      id: 'lib_a',
-      workspace_id: 'ws_a',
-      project_id: 'proj_1',
-      name: 'Library A',
-      visibility: 'shared',
-      object_prefix: 'workspaces/ws_a/projects/proj_1/libraries/lib_a',
-      doc_namespace: 'doc_ws_a_proj_1_lib_a',
-      vector_namespace: 'vec_ws_a_proj_1_lib_a',
-      created_by_user_id: 'user_1',
-      created_at: clock.nowIso(),
-      updated_at: clock.nowIso(),
-    });
-    sourceRepo.items.push({
-      id: 'src_1',
-      workspace_id: 'ws_a',
-      project_id: 'proj_1',
-      library_id: 'lib_a',
-      name: 'doc.txt',
-      object_key: 'src_1_doc.txt',
-      content_type: 'text/plain',
-      size_bytes: 5,
-      status: 'ready',
-      created_at: clock.nowIso(),
-      updated_at: clock.nowIso(),
-    });
-    await objectStore.putObject(
-      'mbos-dev',
-      'src_1_doc.txt',
-      new TextEncoder().encode('hello vector world'),
-    );
-
-    const created = await new CreateAIReadyJobUseCase(
-      sourceRepo,
-      libraryRepo,
-      jobRepo,
-      queue,
-      clock,
-      cache,
-    ).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-      actorId: 'user_1',
-      input: { source_ids: ['src_1'] },
-    });
-
-    const completed = await new RunQueuedAIReadyJobUseCase(
-      sourceRepo,
-      libraryRepo,
-      jobRepo,
-      objectStore,
-      new FakeParser(),
-      new FakeChunker(),
-      new FakeEmbeddings(),
-      vectorStore,
-      clock,
-      cache,
-      'mbos-dev',
-    ).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-      jobId: created.id,
-    });
-
-    expect(completed.status).toBe('succeeded');
-    const source = await sourceRepo.getById('ws_a', 'proj_1', 'src_1');
-    expect(source?.ai_ready_status).toBe('ready');
-    expect(source?.vectordb_bytes).toBeGreaterThan(0);
-    expect(vectorStore.chunks.length).toBeGreaterThan(0);
-  });
 });

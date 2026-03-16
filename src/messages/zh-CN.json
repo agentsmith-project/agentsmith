@@ -148,13 +148,6 @@
       "save_success": "保存成功",
       "save_failed": "保存失败",
       "unexpected_error": "发生意外错误",
-      "ai_ready_started": "AIReady 已启动",
-      "ai_ready_cancelled": "AIReady 已取消",
-      "ai_ready_retry_started": "AIReady 重试已启动",
-      "ai_ready_batch_started": "已为 {{count}} 个文件启动 AIReady",
-      "ai_ready_batch_failed": "批量启动 AIReady 失败: {{error}}",
-      "ai_ready_batch_cancelled": "已为 {{successCount}} 个文件取消 AIReady，{{failedCount}} 个失败",
-      "ai_ready_batch_cancelled_success": "已为 {{count}} 个文件取消 AIReady",
       "files_added_to_task": "已添加 {{count}} 个文件到任务",
       "file_removed_from_task": "已从任务中移除文件",
       "artifact_saved_to_library": "已保存制品到库",
@@ -746,13 +739,13 @@
       },
       "save_dialog": {
         "title": "保存生成物到文件库",
-        "description": "将该生成物保存到文件库。如需在任务中使用，仍需单独执行 AIReady 处理。",
+        "description": "将该生成物保存到文件库，便于后续继续使用。",
         "filename_optional": "文件名（可选）",
         "filename_placeholder": "输入文件名",
         "description_optional": "描述（可选）",
         "description_placeholder": "输入描述",
         "note_title": "说明：",
-        "note_body": "保存后的文件需要先完成 AIReady 处理，才能用于任务上下文。",
+        "note_body": "保存完成后，文件会出现在所选文件库中。",
         "confirm": "保存到文件库"
       },
       "image_viewer": {
@@ -2682,30 +2675,11 @@
         "failed": "失败",
         "cancelled": "已取消"
       },
-      "ai_ready": {
-        "all": "全部文件",
-        "only": "仅 AIReady"
-      },
       "sort": {
         "updated_at": "更新时间",
         "file_size": "文件大小",
         "status": "状态"
       }
-    },
-    "status": {
-      "idle": "未就绪",
-      "preparing": "准备中",
-      "ready": "就绪",
-      "failed": "失败",
-      "cancelled": "已取消"
-    },
-    "ai_ready": {
-      "start": "启动 AIReady",
-      "cancel": "取消 AIReady",
-      "retry": "重试",
-      "progress": "处理中...",
-      "queued": "排队中",
-      "error": "错误：{message}"
     },
     "limit": {
       "storage": "存储",
@@ -2716,22 +2690,18 @@
       "exceeded": "限额超限"
     },
     "batch": {
-      "selected": "已选择 {count} 个",
-      "start_ai_ready": "启动 AIReady",
-      "cancel_ai_ready": "取消 AIReady"
+      "selected": "已选择 {count} 个"
     },
     "table": {
       "filename": "文件名",
       "size": "大小",
       "updated_at": "更新时间",
-      "ai_ready_status": "AIReady 状态",
       "usage": "占用",
       "actions": "操作"
     },
     "delete": {
       "title": "删除文件",
       "message": "确定要删除此文件吗？",
-      "delete_ai_ready": "同时删除 AIReady 产物",
       "confirm": "删除",
       "cancelling": "删除中..."
     },
@@ -2769,7 +2739,6 @@
     "error": {
       "upload_failed": "上传失败",
       "process_failed": "处理失败",
-      "spending_limit_exceeded": "限额超限，无法启动 AIReady。",
       "delete_failed": "删除失败"
     },
     "filter_status_all": "全部",
@@ -2783,13 +2752,10 @@
     "action_attach": "附加",
     "action_detach": "移除",
     "action_download": "下载",
-    "action_start_ai_ready": "启动 AIReady",
-    "action_cancel_ai_ready": "移除 AIReady",
     "action_processing": "处理中...",
     "selection_bar_label": "已选操作",
     "selection_count": "个文件已选",
     "selection_clear": "清除选择",
-    "spending_limit_exceeded_hint": "限额超限，无法启动 AIReady。",
     "action_clear_attachments": "清空附件",
     "action_retry": "重试",
     "action_delete": "删除",

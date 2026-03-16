@@ -1,7 +1,7 @@
 /**
  * Files API Endpoints
  *
- * Typed API functions for file operations and AIReady management.
+ * Typed API functions for file operations.
  *
  * Runtime mode is controlled by NEXT_PUBLIC_USE_MSW only:
  * - true: MSW contract (frontend-oriented payload shape)
@@ -10,9 +10,7 @@
 
 import type {
   FileItem,
-  FileItemWithAIReady,
   FileLibrary,
-  AIReadyJob,
   LimitSummary,
   FilesListParams,
   FilesListResponse,
@@ -37,9 +35,6 @@ interface BackendSourceItem {
   content_type: string;
   size_bytes: number;
   status: 'ready' | 'deleted';
-  ai_ready_status?: 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
-  docdb_bytes?: number;
-  vectordb_bytes?: number;
   created_at: string;
   updated_at: string;
 }
@@ -51,7 +46,7 @@ interface BackendFilesResponse {
 export class FilesAPI {
   constructor(private client: ApiClient) {}
 
-  private mapBackendSource(item: BackendSourceItem): FileItemWithAIReady {
+  private mapBackendSource(item: BackendSourceItem): FileItem {
     return {
       id: item.id,
       workspace_id: item.workspace_id,
@@ -68,23 +63,6 @@ export class FilesAPI {
       version: 1,
       created_at: item.created_at,
       updated_at: item.updated_at,
-      ai_ready_usage: item.docdb_bytes || item.vectordb_bytes
-        ? {
-            docdb_bytes: item.docdb_bytes ?? 0,
-            vectordb_bytes: item.vectordb_bytes ?? 0,
-            chunks_count: 0,
-          }
-        : undefined,
-      ai_ready: item.ai_ready_status
-        ? {
-            id: `ai_ready_${item.id}`,
-            source_file_id: item.id,
-            status: item.ai_ready_status,
-            progress: item.ai_ready_status === 'ready' ? 100 : undefined,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-          }
-        : undefined,
     };
   }
 
@@ -114,11 +92,9 @@ export class FilesAPI {
     if (params?.page) searchParams.set('page', params.page.toString());
     if (params?.page_size) searchParams.set('page_size', params.page_size.toString());
     if (params?.search) searchParams.set('search', params.search);
-    if (params?.status && params.status !== 'all') searchParams.set('status', params.status);
     if ('library_id' in (params ?? {}) && params?.library_id) {
       searchParams.set('library_id', params.library_id);
     }
-    if (params?.ai_ready_only) searchParams.set('ai_ready_only', 'true');
     if (params?.sort_by) searchParams.set('sort_by', params.sort_by);
     if (params?.sort_order) searchParams.set('sort_order', params.sort_order);
 
@@ -159,9 +135,9 @@ export class FilesAPI {
   /**
    * Get a file by ID
    */
-  async get(workspaceId: string, projectId: string, fileId: string): Promise<FileItemWithAIReady> {
+  async get(workspaceId: string, projectId: string, fileId: string): Promise<FileItem> {
     if (USE_MSW) {
-      return this.client.get<FileItemWithAIReady>(
+      return this.client.get<FileItem>(
         `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}`,
       );
     }
@@ -294,74 +270,9 @@ export class FilesAPI {
     workspaceId: string,
     projectId: string,
     fileId: string,
-    deleteAIReady?: boolean,
   ): Promise<void> {
-    const searchParams = new URLSearchParams();
-    if (deleteAIReady !== undefined) {
-      searchParams.set('delete_ai_ready', deleteAIReady.toString());
-    }
-
-    const query = searchParams.toString();
     return this.client.delete<void>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}${query ? `?${query}` : ''}`,
-    );
-  }
-
-  /**
-   * Start AIReady processing for a file
-   */
-  async startAIReady(workspaceId: string, projectId: string, fileId: string): Promise<AIReadyJob> {
-    return this.client.post<AIReadyJob>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}/ai-ready/start`,
-      {},
-    );
-  }
-
-  /**
-   * Cancel AIReady processing for a file
-   */
-  async cancelAIReady(workspaceId: string, projectId: string, fileId: string): Promise<AIReadyJob> {
-    return this.client.post<AIReadyJob>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}/ai-ready/cancel`,
-      {},
-    );
-  }
-
-  /**
-   * Retry AIReady processing for a failed file
-   */
-  async retryAIReady(workspaceId: string, projectId: string, fileId: string): Promise<AIReadyJob> {
-    return this.client.post<AIReadyJob>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}/ai-ready/retry`,
-      {},
-    );
-  }
-
-  /**
-   * Batch start AIReady for multiple files
-   */
-  async batchStartAIReady(
-    workspaceId: string,
-    projectId: string,
-    fileIds: string[],
-  ): Promise<{ jobs: AIReadyJob[] }> {
-    return this.client.post<{ jobs: AIReadyJob[] }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/batch/ai-ready/start`,
-      { file_ids: fileIds },
-    );
-  }
-
-  /**
-   * Batch cancel AIReady for multiple files
-   */
-  async batchCancelAIReady(
-    workspaceId: string,
-    projectId: string,
-    fileIds: string[],
-  ): Promise<{ jobs: AIReadyJob[] }> {
-    return this.client.post<{ jobs: AIReadyJob[] }>(
-      `/workspaces/${workspaceId}/projects/${projectId}/sources/batch/ai-ready/cancel`,
-      { file_ids: fileIds },
+      `/workspaces/${workspaceId}/projects/${projectId}/sources/${fileId}`,
     );
   }
 

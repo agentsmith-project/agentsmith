@@ -15,9 +15,6 @@ Current status:
   `GET /api/v1/workspaces/:ws/projects/:prj/sources/limits`,
   `GET/DELETE /api/v1/workspaces/:ws/projects/:prj/sources/:sourceId`,
   `GET /api/v1/workspaces/:ws/projects/:prj/sources/:sourceId/download`.
-- Node API entry serves library-scoped AIReady job endpoints for the remaining source-processing path.
-  - Node entry now runs an in-process worker that drains queued `document_ingest` jobs and updates status to `running/succeeded/failed`.
-  - In local development, worker execution also runs opportunistically when querying job status endpoint.
 - Files mainline now runs on JuiceFS-backed project `file-libraries`.
 - Removed `source-libraries` public CRUD/object-browser routes are no longer part of the current Files product path.
 - Node API entry serves endpoint/credential and proxy APIs:
@@ -65,8 +62,4 @@ Quick start:
 - Use full private stack:
   `DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos REDIS_URL=redis://localhost:16379 MONGO_URL=mongodb://mbos:mbos_dev_password@localhost:17017/admin MONGO_DB_NAME=mbos MINIO_ENDPOINT=localhost MINIO_PORT=19000 MINIO_ACCESS_KEY=mbos MINIO_SECRET_KEY=mbos_dev_password MINIO_BUCKET=mbos-dev npm run api:node:dev`
 
-AIReady execution tuning:
-
-- `AIREADY_CHUNK_SIZE` (default `1000`)
-- `AIREADY_CHUNK_OVERLAP` (default `100`)
-- `AIREADY_EMBEDDING_DIMENSIONS` (default `1536`)
+Source-processing tuning is no longer part of the current package mainline.

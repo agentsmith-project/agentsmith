@@ -3,11 +3,6 @@ import type { ProjectSourceRouteContext } from './project-source-route-types.js'
 
 const SOURCE_LIBRARY_ROUTE_KINDS = new Set([
   'sources',
-  'sourceAIReadyStart',
-  'sourceAIReadyCancel',
-  'sourceAIReadyRetry',
-  'sourceBatchAIReadyStart',
-  'sourceBatchAIReadyCancel',
   'sourceItem',
   'sourceDownload',
 ]);

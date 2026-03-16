@@ -22,11 +22,6 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryDownload'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryMeta'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryShareLink'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'sourceAIReadyStart'; workspaceId: string; projectId: string; sourceId: string }
-  | { kind: 'sourceAIReadyCancel'; workspaceId: string; projectId: string; sourceId: string }
-  | { kind: 'sourceAIReadyRetry'; workspaceId: string; projectId: string; sourceId: string }
-  | { kind: 'sourceBatchAIReadyStart'; workspaceId: string; projectId: string }
-  | { kind: 'sourceBatchAIReadyCancel'; workspaceId: string; projectId: string }
   | { kind: 'sourceItem'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'tasks'; workspaceId: string; projectId: string }
@@ -556,64 +551,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       projectId: decodeURIComponent(projectResourcePolicyMatched[2]),
       resourceType: decodeURIComponent(projectResourcePolicyMatched[3]),
       resourceId: decodeURIComponent(projectResourcePolicyMatched[4]),
-    };
-  }
-
-  const sourceAIReadyStartMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/ai-ready\/start\/?$/,
-  );
-  if (sourceAIReadyStartMatched) {
-    return {
-      kind: 'sourceAIReadyStart',
-      workspaceId: decodeURIComponent(sourceAIReadyStartMatched[1]),
-      projectId: decodeURIComponent(sourceAIReadyStartMatched[2]),
-      sourceId: decodeURIComponent(sourceAIReadyStartMatched[3]),
-    };
-  }
-
-  const sourceAIReadyCancelMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/ai-ready\/cancel\/?$/,
-  );
-  if (sourceAIReadyCancelMatched) {
-    return {
-      kind: 'sourceAIReadyCancel',
-      workspaceId: decodeURIComponent(sourceAIReadyCancelMatched[1]),
-      projectId: decodeURIComponent(sourceAIReadyCancelMatched[2]),
-      sourceId: decodeURIComponent(sourceAIReadyCancelMatched[3]),
-    };
-  }
-
-  const sourceAIReadyRetryMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/ai-ready\/retry\/?$/,
-  );
-  if (sourceAIReadyRetryMatched) {
-    return {
-      kind: 'sourceAIReadyRetry',
-      workspaceId: decodeURIComponent(sourceAIReadyRetryMatched[1]),
-      projectId: decodeURIComponent(sourceAIReadyRetryMatched[2]),
-      sourceId: decodeURIComponent(sourceAIReadyRetryMatched[3]),
-    };
-  }
-
-  const sourceBatchAIReadyStartMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/batch\/ai-ready\/start\/?$/,
-  );
-  if (sourceBatchAIReadyStartMatched) {
-    return {
-      kind: 'sourceBatchAIReadyStart',
-      workspaceId: decodeURIComponent(sourceBatchAIReadyStartMatched[1]),
-      projectId: decodeURIComponent(sourceBatchAIReadyStartMatched[2]),
-    };
-  }
-
-  const sourceBatchAIReadyCancelMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/batch\/ai-ready\/cancel\/?$/,
-  );
-  if (sourceBatchAIReadyCancelMatched) {
-    return {
-      kind: 'sourceBatchAIReadyCancel',
-      workspaceId: decodeURIComponent(sourceBatchAIReadyCancelMatched[1]),
-      projectId: decodeURIComponent(sourceBatchAIReadyCancelMatched[2]),
     };
   }
 

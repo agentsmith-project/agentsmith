@@ -49,7 +49,6 @@ export type NotebookTaskInput =
       filename: string;
       file_type?: string;
       file_size?: number;
-      ai_ready_status?: string;
     }
   | {
       kind: 'library_object';
@@ -86,7 +85,6 @@ export type NotebookTaskInputDetail =
       filename: string;
       file_type: string;
       file_size: number;
-      ai_ready?: { status: string };
     }
   | {
       id: string;
@@ -217,7 +215,6 @@ export async function buildNotebookTaskInputs(args: {
         sourceId: inputRef.source_id,
       });
       const src = asObject(source);
-      const aiReady = asObject(src.ai_ready);
       return {
         kind: 'source',
         source_id: inputRef.source_id,
@@ -226,7 +223,6 @@ export async function buildNotebookTaskInputs(args: {
           ? { file_type: readString(src.file_type) ?? readString(src.content_type) }
           : {}),
         ...(readNumber(src.file_size) !== undefined ? { file_size: readNumber(src.file_size) } : {}),
-        ...(readString(aiReady.status) ? { ai_ready_status: readString(aiReady.status) } : {}),
       } satisfies NotebookTaskInput;
     } catch (error) {
       debugLog?.('task_input_source_lookup_failed', {
@@ -255,7 +251,6 @@ export async function resolveNotebookTaskInputDetails(args: {
           projectId,
           sourceId: inputRef.source_id,
         }));
-        const aiReady = asObject(source.ai_ready);
         return {
           id: inputRef.id,
           kind: 'source',
@@ -263,7 +258,6 @@ export async function resolveNotebookTaskInputDetails(args: {
           filename: typeof source.filename === 'string' ? source.filename : (typeof source.name === 'string' ? source.name : inputRef.source_id),
           file_type: typeof source.file_type === 'string' ? source.file_type : (typeof source.content_type === 'string' ? source.content_type : 'application/octet-stream'),
           file_size: typeof source.file_size === 'number' ? source.file_size : (typeof source.size_bytes === 'number' ? source.size_bytes : 0),
-          ...(typeof aiReady.status === 'string' ? { ai_ready: { status: aiReady.status } } : {}),
         };
       } catch {
         return null;

@@ -1,13 +1,10 @@
-import type { AIReadyJobDTO, ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
 import type {
-  AIReadyJobRepoPort,
   CachePort,
   ClockPort,
   DocumentParserPort,
   EmbeddingProviderPort,
   IdGeneratorPort,
-  JobQueueItem,
-  JobQueuePort,
   JsonDocStorePort,
   ObjectStorePort,
   ProjectRepoPort,
@@ -1199,71 +1196,6 @@ export class JsonDocSourceLibraryRepo implements SourceLibraryRepoPort {
   }
 }
 
-export class JsonDocAIReadyJobRepo implements AIReadyJobRepoPort {
-  private static readonly collection = 'ai_ready_jobs';
-
-  constructor(private readonly docStore: JsonDocStorePort) {}
-
-  async save(job: AIReadyJobDTO): Promise<void> {
-    await this.docStore.upsert<AIReadyJobDTO>(JsonDocAIReadyJobRepo.collection, job.id, job);
-  }
-
-  async getById(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    jobId: string,
-  ): Promise<AIReadyJobDTO | null> {
-    const job = await this.docStore.get<AIReadyJobDTO>(JsonDocAIReadyJobRepo.collection, jobId);
-    if (!job) {
-      return null;
-    }
-    if (
-      job.workspace_id !== workspaceId ||
-      job.project_id !== projectId ||
-      job.library_id !== libraryId
-    ) {
-      return null;
-    }
-    return job;
-  }
-
-  async update(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    jobId: string,
-    patch: Partial<AIReadyJobDTO>,
-  ): Promise<AIReadyJobDTO | null> {
-    const existing = await this.getById(workspaceId, projectId, libraryId, jobId);
-    if (!existing) {
-      return null;
-    }
-
-    const updated: AIReadyJobDTO = {
-      ...existing,
-      ...patch,
-    };
-    await this.save(updated);
-    return updated;
-  }
-}
-
-export class InMemoryJobQueue implements JobQueuePort {
-  private readonly items: JobQueueItem[] = [];
-
-  async enqueue(item: JobQueueItem): Promise<void> {
-    this.items.push(item);
-  }
-
-  async dequeue(): Promise<JobQueueItem | null> {
-    return this.items.shift() ?? null;
-  }
-
-  get size(): number {
-    return this.items.length;
-  }
-}
 
 export class Utf8DocumentParser implements DocumentParserPort {
   async parse(body: Uint8Array): Promise<string> {

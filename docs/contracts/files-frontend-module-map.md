@@ -38,7 +38,6 @@ Applies to:
   - reveal local mount instructions
   - request storage credential exchange
 - Out of scope:
-  - AIReady
   - docdb/vectordb workflows
   - plugin processing
   - backend credential rotation

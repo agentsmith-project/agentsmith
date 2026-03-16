@@ -190,7 +190,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   2. upload local files as library objects under `notebook/<task_id>/inputs/`
   3. attach task inputs as `library_object` refs
 - Notebook local uploads no longer create `source` records directly.
-- `source` inputs remain supported, but are treated as a derived/processed input type (for example AI-ready/indexed content), not the primary raw file ingestion path.
+- `source` inputs remain supported as a legacy derived input type, but they are not the primary raw file ingestion path.
 
 ### 5.4 Local commands
 ```bash

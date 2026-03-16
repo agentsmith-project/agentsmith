@@ -18,7 +18,7 @@ import type {
   TaskTraceEvent,
   TaskAttachedInputDetail,
 } from '../../types/task';
-import type { FileItem, FileItemWithAIReady } from '../types';
+import type { FileItem } from '../types';
 import type { ApiClient } from '../client';
 import { API_BASE } from '../client';
 
@@ -290,5 +290,5 @@ export type {
   TaskListParams,
   TaskListResponse,
   TaskTraceEvent,
-  FileItemWithAIReady,
+  FileItem,
 };

@@ -14,7 +14,7 @@ This directory contains frontend-specific type definitions that are not part of 
 
 **Examples**:
 - `UsageRecord`, `AuditEvent` (from backend API)
-- `FileItemWithAIReady` (matches backend schema)
+- `FileItem` (matches backend schema)
 - `PaginationParams`, `PaginatedResponse` (API contract)
 
 ### `lib/types/`

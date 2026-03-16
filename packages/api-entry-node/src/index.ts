@@ -1,6 +1,5 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { drainJobQueue } from '@mbos/application';
 import type { ProjectRepoFactoryResult } from '@mbos/adapters-private';
 import { ACTIVE_CHAT_STREAMS } from './chat-stream-state';
 import {
@@ -41,17 +40,6 @@ export function createNodeApiServer(
     deps.agentExecutionService.handleUpgrade(req, socket, head);
   });
 
-  const jobWorkerInterval = setInterval(() => {
-    void drainJobQueue(deps.aiReadyJobQueue, async (item) => {
-      await deps.runQueuedAIReadyJobUseCase.execute({
-        workspaceId: item.workspaceId,
-        projectId: item.projectId,
-        libraryId: item.libraryId,
-        jobId: item.jobId,
-      });
-    });
-  }, 200);
-
   const feishuRefreshEnabled = process.env.FEISHU_OAUTH_REFRESH_RUNNER_ENABLED !== 'false';
   const feishuRefreshIntervalMs = Number.parseInt(process.env.FEISHU_OAUTH_REFRESH_RUNNER_INTERVAL_MS ?? '300000', 10);
   const feishuRefreshInterval = feishuRefreshEnabled
@@ -65,14 +53,12 @@ export function createNodeApiServer(
 
   if (lifecycle) {
     server.on('close', () => {
-      clearInterval(jobWorkerInterval);
       if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
       ACTIVE_CHAT_STREAMS.clear();
       void lifecycle.shutdown();
     });
   } else {
     server.on('close', () => {
-      clearInterval(jobWorkerInterval);
       if (feishuRefreshInterval) clearInterval(feishuRefreshInterval);
       ACTIVE_CHAT_STREAMS.clear();
     });

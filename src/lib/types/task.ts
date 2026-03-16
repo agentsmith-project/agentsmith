@@ -50,9 +50,6 @@ export type TaskAttachedInputDetail =
       filename: string;
       file_type: string;
       file_size: number;
-      ai_ready?: {
-        status: 'idle' | 'preparing' | 'ready' | 'failed' | 'cancelled';
-      };
     }
   | {
       id: string;

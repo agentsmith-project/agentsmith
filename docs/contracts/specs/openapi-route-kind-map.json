@@ -151,26 +151,6 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/memberships/{userId}",
     "method": "get"
   },
-  "sourceAIReadyStart": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start",
-    "method": "post"
-  },
-  "sourceAIReadyCancel": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/cancel",
-    "method": "post"
-  },
-  "sourceAIReadyRetry": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/retry",
-    "method": "post"
-  },
-  "sourceBatchAIReadyStart": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/start",
-    "method": "post"
-  },
-  "sourceBatchAIReadyCancel": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/batch/ai-ready/cancel",
-    "method": "post"
-  },
   "sourceItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}",
     "method": "get"

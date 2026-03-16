@@ -151,58 +151,6 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/memberships/{userId}",
     "method": "get"
   },
-  "sourceLibraries": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries",
-    "method": "get"
-  },
-  "sourceLibraryItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}",
-    "method": "get"
-  },
-  "sourceLibraryObjects": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects",
-    "method": "get"
-  },
-  "sourceLibraryFolders": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/folders",
-    "method": "post"
-  },
-  "sourceLibraryObjectsUpload": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/upload",
-    "method": "post"
-  },
-  "sourceLibraryObjectsDownload": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/download",
-    "method": "post"
-  },
-  "sourceLibraryObjectsDelete": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/delete",
-    "method": "post"
-  },
-  "sourceLibraryObjectsMove": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/move",
-    "method": "post"
-  },
-  "sourceLibraryObjectsMeta": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/meta",
-    "method": "post"
-  },
-  "sourceLibraryObjectsShareLink": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/objects/share-link",
-    "method": "post"
-  },
-  "sourceLibraryAIReadyJobs": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs",
-    "method": "get"
-  },
-  "sourceLibraryAIReadyJobItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}",
-    "method": "get"
-  },
-  "sourceLibraryAIReadyJobCancel": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/source-libraries/{libraryId}/ai-ready-jobs/{jobId}:cancel",
-    "method": "post"
-  },
   "sourceAIReadyStart": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/ai-ready/start",
     "method": "post"

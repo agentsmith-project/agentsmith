@@ -1069,23 +1069,16 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('supports create and list sources flow', async () => {
-    const { baseUrl } = startServer();
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'Project Uploads',
-          visibility: 'shared',
-        }),
+    const { baseUrl, deps } = startServer();
+    const defaultLibrary = await deps.createSourceLibraryUseCase.execute({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      actorId: 'user_test',
+      input: {
+        name: 'Project Uploads',
+        visibility: 'shared',
       },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const defaultLibrary = (await createLibraryRes.json()) as { id: string };
+    });
 
     const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
     expect(listBefore.status).toBe(200);
@@ -1176,137 +1169,17 @@ describe('api-entry-node projects routes', () => {
     expect(listedAfterDelete.items).toHaveLength(1);
   });
 
-  it('enforces source_library policy on source ai-ready routes', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'AIReady Policy Library', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const createSourceRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'ai-ready-policy.txt',
-          library_id: library.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('policy', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(createSourceRes.status).toBe(201);
-    const source = (await createSourceRes.json()) as { id: string };
-
-    const patchDenyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_list',
-          allowed_subjects: [{ subject_type: 'user', subject_id: 'someone_else' }],
-        }),
-      },
-    );
-    expect(patchDenyRes.status).toBe(204);
-
-    const deniedStartRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${source.id}/ai-ready/start`,
-      { method: 'POST' },
-    );
-    expect(deniedStartRes.status).toBe(403);
-    expect(await deniedStartRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_DENIED',
-      resource_type: 'source_library',
-      resource_id: library.id,
-    });
-
-    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.access_denied&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
-    );
-    expect(auditRes.status).toBe(200);
-    const auditBody = (await auditRes.json()) as {
-      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
-    };
-    expect(
-      auditBody.items.some(
-        (item) =>
-          item.action === 'resource_policy.access_denied'
-          && item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.error_code === 'RESOURCE_POLICY_DENIED',
-      ),
-    ).toBe(true);
-
-    const usageRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=source_library&resource_id=${library.id}&end_user_id=user_test&group_by=hour&page=1&page_size=50`,
-    );
-    expect(usageRes.status).toBe(200);
-    const usageBody = (await usageRes.json()) as {
-      items: Array<{ resource_type: string; resource_id?: string; end_user_id?: string; requests: number }>;
-    };
-    expect(
-      usageBody.items.some(
-        (item) =>
-          item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.end_user_id === 'user_test'
-          && item.requests >= 1,
-      ),
-    ).toBe(true);
-
-    const patchAllowRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_list',
-          allowed_subjects: [{ subject_type: 'user', subject_id: 'user_test' }],
-        }),
-      },
-    );
-    expect(patchAllowRes.status).toBe(204);
-
-    const allowedStartRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${source.id}/ai-ready/start`,
-      { method: 'POST' },
-    );
-    expect(allowedStartRes.status).toBe(200);
-  });
-
   it('lists attached source details for a notebook task', async () => {
-    const { baseUrl } = startServer();
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Project Uploads', visibility: 'shared' }),
+    const { baseUrl, deps } = startServer();
+    const defaultLibrary = await deps.createSourceLibraryUseCase.execute({
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      actorId: 'user_test',
+      input: {
+        name: 'Project Uploads',
+        visibility: 'shared',
       },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const defaultLibrary = (await createLibraryRes.json()) as { id: string };
+    });
 
     const createSourceRes = await apiFetch(
       baseUrl,
@@ -1410,64 +1283,6 @@ describe('api-entry-node projects routes', () => {
     expect(attachedDetails[0]?.source_id).toBe(createdSource.id);
   });
 
-  it('supports legacy source libraries CRUD flow', async () => {
-    const { baseUrl } = startServer();
-
-    const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
-    expect(listBefore.status).toBe(200);
-    const listBeforeBody = (await listBefore.json()) as { items: Array<{ name: string }> };
-    expect(listBeforeBody.items).toHaveLength(0);
-
-    const createRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Shared Docs', visibility: 'shared' }),
-      },
-    );
-    expect(createRes.status).toBe(201);
-    const created = (await createRes.json()) as {
-      id: string;
-      name: string;
-      object_prefix?: string;
-      doc_namespace?: string;
-      vector_namespace?: string;
-    };
-    expect(created.id).toContain('lib_');
-    expect(created.name).toBe('Shared Docs');
-    expect(created.object_prefix).toContain(`/libraries/${created.id}`);
-    expect(created.doc_namespace).toContain(created.id);
-    expect(created.vector_namespace).toContain(created.id);
-
-    const updateRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${created.id}`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ description: 'policy docs' }),
-      },
-    );
-    expect(updateRes.status).toBe(200);
-    const updated = (await updateRes.json()) as { description?: string };
-    expect(updated.description).toBe('policy docs');
-
-    const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries');
-    const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
-    expect(listAfter.status).toBe(200);
-    expect(listed.items).toHaveLength(1);
-    expect(listed.items.some((item) => item.id === created.id)).toBe(true);
-
-    const deleteRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${created.id}`,
-      { method: 'DELETE' },
-    );
-    expect(deleteRes.status).toBe(204);
-  });
-
   it('supports file libraries CRUD flow', async () => {
     const { baseUrl } = startServer();
 
@@ -1475,7 +1290,7 @@ describe('api-entry-node projects routes', () => {
     expect(listBefore.status).toBe(200);
     const listBeforeBody = (await listBefore.json()) as { items: Array<{ id: string }> };
     expect(Array.isArray(listBeforeBody.items)).toBe(true);
-    expect(listBeforeBody.items).toHaveLength(0);
+    const initialCount = listBeforeBody.items.length;
 
     const createRes = await apiFetch(
       baseUrl,
@@ -1516,9 +1331,8 @@ describe('api-entry-node projects routes', () => {
     const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries');
     expect(listAfter.status).toBe(200);
     const listed = (await listAfter.json()) as { items: Array<{ id: string; name: string }> };
-    expect(listed.items).toHaveLength(1);
-    expect(listed.items[0]?.id).toBe(created.id);
-    expect(listed.items[0]?.name).toBe('Project Uploads');
+    expect(listed.items).toHaveLength(initialCount + 1);
+    expect(listed.items.some((item) => item.id === created.id && item.name === 'Project Uploads')).toBe(true);
 
     const deleteRes = await apiFetch(
       baseUrl,
@@ -1526,20 +1340,6 @@ describe('api-entry-node projects routes', () => {
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
-  });
-
-  it('rejects the removed default personal source-library endpoint', async () => {
-    const { baseUrl } = startServer();
-
-    const res = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/default-personal',
-    );
-    expect(res.status).toBe(405);
-    expect(await res.json()).toEqual({
-      error_code: 'METHOD_NOT_ALLOWED',
-      message: 'Method not allowed',
-    });
   });
 
   it('serves minimal project members governance read endpoints', async () => {
@@ -1889,7 +1689,16 @@ describe('api-entry-node projects routes', () => {
       'owner-token',
     );
     expect(listBeforeRes.status).toBe(200);
-    expect(await listBeforeRes.json()).toEqual({ items: [] });
+    const listBefore = (await listBeforeRes.json()) as {
+      items: Array<{ id: string; built_in?: boolean }>;
+    };
+    expect(listBefore.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'tpl_project_owner', built_in: true }),
+        expect.objectContaining({ id: 'tpl_project_admin', built_in: true }),
+        expect.objectContaining({ id: 'tpl_project_member', built_in: true }),
+      ]),
+    );
 
     const createRes = await apiFetchWithToken(
       baseUrl,
@@ -2649,664 +2458,6 @@ describe('api-entry-node projects routes', () => {
     expect(await patchInvalidSubjectRateKeyRes.json()).toMatchObject({
       error_code: 'VALIDATION_ERROR',
       message: 'rate_limits_rule_key_invalid',
-    });
-  });
-
-  it('supports legacy source library object browser routes', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Obj Docs', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const createFolderRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/folders`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prefix: 'docs/' }),
-      },
-    );
-    expect(createFolderRes.status).toBe(201);
-
-    const form = buildMultipartBody(
-      [{ name: 'prefix', value: 'docs/' }],
-      {
-        fieldName: 'file',
-        filename: 'readme.txt',
-        contentType: 'text/plain',
-        content: new TextEncoder().encode('hello object'),
-      },
-    );
-    const uploadRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
-      {
-        method: 'POST',
-        headers: { 'content-type': form.contentType },
-        body: Buffer.from(form.body),
-      },
-    );
-    expect(uploadRes.status).toBe(201);
-    const uploaded = (await uploadRes.json()) as { key: string; content_type: string };
-    expect(uploaded.key).toBe('docs/readme.txt');
-    expect(uploaded.content_type).toBe('text/plain');
-
-    const cnForm = buildMultipartBody(
-      [{ name: 'prefix', value: 'docs/' }],
-      {
-        fieldName: 'file',
-        filename: '敲冰块.nes',
-        contentType: 'application/octet-stream',
-        content: new TextEncoder().encode('binary'),
-      },
-    );
-    const cnUploadRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
-      {
-        method: 'POST',
-        headers: { 'content-type': cnForm.contentType },
-        body: Buffer.from(cnForm.body),
-      },
-    );
-    expect(cnUploadRes.status).toBe(201);
-    const cnUploaded = (await cnUploadRes.json()) as { key: string };
-    expect(cnUploaded.key).toBe('docs/敲冰块.nes');
-
-    const listRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=/`,
-    );
-    expect(listRes.status).toBe(200);
-    const listed = (await listRes.json()) as {
-      items: Array<{ kind: string; key?: string; prefix?: string }>;
-    };
-    expect(listed.items.some((item) => item.kind === 'object' && item.key === 'docs/readme.txt')).toBe(true);
-
-    const searchedListRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=/&search=readme&sort_by=name&sort_order=asc`,
-    );
-    expect(searchedListRes.status).toBe(200);
-    const searchedListed = (await searchedListRes.json()) as {
-      items: Array<{ kind: string; key?: string; name?: string }>;
-    };
-    const searchedObjects = searchedListed.items.filter((item) => item.kind === 'object');
-    expect(searchedObjects).toHaveLength(1);
-    expect(searchedObjects[0]?.key).toBe('docs/readme.txt');
-
-    const invalidDelimiterRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=docs/&delimiter=.`,
-    );
-    expect(invalidDelimiterRes.status).toBe(400);
-
-    const metaRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/meta?key=${encodeURIComponent('docs/readme.txt')}`,
-    );
-    expect(metaRes.status).toBe(200);
-    const meta = (await metaRes.json()) as { key: string; size_bytes: number };
-    expect(meta.key).toBe('docs/readme.txt');
-    expect(meta.size_bytes).toBeGreaterThan(0);
-
-    const shareRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/share-link`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          key: 'docs/readme.txt',
-          expires_in_seconds: 600,
-        }),
-      },
-    );
-    expect(shareRes.status).toBe(200);
-    const shared = (await shareRes.json()) as {
-      key: string;
-      url: string;
-      expires_in_seconds: number;
-      expires_at: string;
-    };
-    expect(shared.key).toBe('docs/readme.txt');
-    expect(shared.url).toContain(encodeURIComponent('readme.txt'));
-    expect(shared.expires_in_seconds).toBe(600);
-    expect(new Date(shared.expires_at).toString()).not.toBe('Invalid Date');
-
-    const moveRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/move`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          from_key: 'docs/readme.txt',
-          to_key: 'docs/readme-renamed.txt',
-          overwrite: false,
-        }),
-      },
-    );
-    expect(moveRes.status).toBe(200);
-
-    const downloadRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/download?key=${encodeURIComponent('docs/readme-renamed.txt')}`,
-    );
-    expect(downloadRes.status).toBe(200);
-    expect(await downloadRes.text()).toBe('hello object');
-
-    const downloadMissingKeyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/download`,
-    );
-    expect(downloadMissingKeyRes.status).toBe(400);
-    const downloadMissingKeyBody = (await downloadMissingKeyRes.json()) as { error_code: string; message: string };
-    expect(downloadMissingKeyBody.error_code).toBe('invalid_key');
-
-    const deleteObjectsRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/delete`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ keys: ['docs/readme-renamed.txt', 'docs/'] }),
-      },
-    );
-    expect(deleteObjectsRes.status).toBe(200);
-
-    const deleteLibraryRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}`,
-      { method: 'DELETE' },
-    );
-    expect(deleteLibraryRes.status).toBe(204);
-  });
-
-  it('supports library scoped ai-ready-jobs create/get/cancel flow', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'RAG Docs', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const createSourceRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'rag.txt',
-          library_id: library.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('rag-source', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(createSourceRes.status).toBe(201);
-    const source = (await createSourceRes.json()) as { id: string };
-
-    const createJobRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/ai-ready-jobs`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'idempotency-key': 'idem-job-1' },
-        body: JSON.stringify({ source_ids: [source.id] }),
-      },
-    );
-    expect(createJobRes.status).toBe(201);
-    const job = (await createJobRes.json()) as { id: string; status: string; type: string };
-    expect(job.type).toBe('document_ingest');
-    expect(['queued', 'running', 'succeeded']).toContain(job.status);
-
-    let found: { id: string; source_ids: string[]; status: string } | null = null;
-    for (let attempt = 0; attempt < 20; attempt += 1) {
-      const getJobRes = await apiFetch(
-        baseUrl,
-        `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/ai-ready-jobs/${job.id}`,
-      );
-      expect(getJobRes.status).toBe(200);
-      found = (await getJobRes.json()) as { id: string; source_ids: string[]; status: string };
-      if (found.status === 'succeeded') {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    }
-    expect(found?.id).toBe(job.id);
-    expect(found?.source_ids).toEqual([source.id]);
-    expect(found?.status).toBe('succeeded');
-
-    const cancelRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/ai-ready-jobs/${job.id}:cancel`,
-      { method: 'POST' },
-    );
-    expect(cancelRes.status).toBe(200);
-    const cancelled = (await cancelRes.json()) as { status: string };
-    expect(cancelled.status).toBe('cancelled');
-  });
-
-  it('enforces source_library resource policy allow-list and records governance evidence', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Policy Docs', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const patchDenyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_list',
-          allowed_subjects: [{ subject_type: 'user', subject_id: 'someone_else' }],
-        }),
-      },
-    );
-    expect(patchDenyRes.status).toBe(204);
-
-    const deniedListRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
-    );
-    expect(deniedListRes.status).toBe(403);
-    expect(await deniedListRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_DENIED',
-      resource_type: 'source_library',
-      resource_id: library.id,
-    });
-
-    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.access_denied&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
-    );
-    expect(auditRes.status).toBe(200);
-    const auditBody = (await auditRes.json()) as {
-      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
-    };
-    expect(
-      auditBody.items.some(
-        (item) =>
-          item.action === 'resource_policy.access_denied'
-          && item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.error_code === 'RESOURCE_POLICY_DENIED',
-      ),
-    ).toBe(true);
-
-    const usageRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=source_library&resource_id=${library.id}&end_user_id=user_test&group_by=hour&page=1&page_size=50`,
-    );
-    expect(usageRes.status).toBe(200);
-    const usageBody = (await usageRes.json()) as {
-      items: Array<{ resource_type: string; resource_id?: string; end_user_id?: string; requests: number }>;
-    };
-    expect(
-      usageBody.items.some(
-        (item) =>
-          item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.end_user_id === 'user_test'
-          && item.requests >= 1,
-      ),
-    ).toBe(true);
-
-    const patchAllowRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_list',
-          allowed_subjects: [{ subject_type: 'user', subject_id: 'user_test' }],
-        }),
-      },
-    );
-    expect(patchAllowRes.status).toBe(204);
-
-    const allowedListRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
-    );
-    expect(allowedListRes.status).toBe(200);
-
-    const createGroupRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/groups',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'source-library-operators',
-          permission_template_id: 'perm_tpl_default',
-          member_ids: ['user_test'],
-        }),
-      },
-    );
-    expect(createGroupRes.status).toBe(200);
-    const createdGroup = (await createGroupRes.json()) as { id: string };
-
-    const patchGroupAllowRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_list',
-          allowed_subjects: [{ subject_type: 'group', subject_id: createdGroup.id }],
-        }),
-      },
-    );
-    expect(patchGroupAllowRes.status).toBe(204);
-
-    const groupAllowedListRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
-    );
-    expect(groupAllowedListRes.status).toBe(200);
-  });
-
-  it('enforces source_library resource policy rate limit and records governance evidence', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Source Library Rate Limited', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const patchRatePolicyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_all_members',
-          allowed_subjects: [],
-          rate_limits: { rules: [{ key: 'source_library.requests_per_minute', value: 1 }] },
-        }),
-      },
-    );
-    expect(patchRatePolicyRes.status).toBe(204);
-
-    const firstListRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
-    );
-    expect(firstListRes.status).toBe(200);
-
-    const secondListRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects?prefix=&delimiter=/`,
-    );
-    expect(secondListRes.status).toBe(429);
-    const secondBody = (await secondListRes.json()) as {
-      error_code?: string;
-      message?: string;
-      resource_type?: string;
-      resource_id?: string;
-      retry_after_seconds?: number;
-    };
-    expect(secondBody).toMatchObject({
-      error_code: 'RESOURCE_POLICY_RATE_LIMITED',
-      resource_type: 'source_library',
-      resource_id: library.id,
-    });
-    expect(typeof secondBody.retry_after_seconds).toBe('number');
-
-    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.rate_limited&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
-    );
-    expect(auditRes.status).toBe(200);
-    const auditBody = (await auditRes.json()) as {
-      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string }>;
-    };
-    expect(
-      auditBody.items.some(
-        (item) => item.action === 'resource_policy.rate_limited'
-          && item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.error_code === 'RESOURCE_POLICY_RATE_LIMITED',
-      ),
-    ).toBe(true);
-
-    const usageRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/usage?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&resource_type=source_library&resource_id=${library.id}&end_user_id=user_test&group_by=hour&page=1&page_size=50`,
-    );
-    expect(usageRes.status).toBe(200);
-    const usageBody = (await usageRes.json()) as {
-      items: Array<{ resource_type: string; resource_id?: string; end_user_id?: string; requests: number }>;
-    };
-    expect(
-      usageBody.items.some(
-        (item) =>
-          item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.end_user_id === 'user_test'
-          && item.requests >= 1,
-      ),
-    ).toBe(true);
-  });
-
-  it('enforces source_library limit limits on source create and records governance evidence', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Limit Policy Library', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const patchPolicyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_all_members',
-          allowed_subjects: [],
-          spending_limits: {
-            rules: [
-              { key: 'source_library.max_total_files', value: 1 },
-              { key: 'source_library.max_file_size_bytes', value: 4 },
-            ],
-          },
-        }),
-      },
-    );
-    expect(patchPolicyRes.status).toBe(204);
-
-    const oversizedRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'too-large.txt',
-          library_id: library.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(oversizedRes.status).toBe(429);
-    expect(await oversizedRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
-      resource_type: 'source_library',
-      resource_id: library.id,
-      limit_key: 'source_library.max_file_size_bytes',
-    });
-
-    const allowedRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'fits.txt',
-          library_id: library.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('1234', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(allowedRes.status).toBe(201);
-
-    const tooManyRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'too-many.txt',
-          library_id: library.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('1', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(tooManyRes.status).toBe(429);
-    expect(await tooManyRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
-      resource_type: 'source_library',
-      resource_id: library.id,
-      limit_key: 'source_library.max_total_files',
-    });
-
-    const evidenceStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-    const evidenceEnd = new Date(Date.now() + 5 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(evidenceStart)}&end_time=${encodeURIComponent(evidenceEnd)}&action=resource_policy.limit_exceeded&resource_type=source_library&resource_id=${library.id}&page=1&page_size=20`,
-    );
-    expect(auditRes.status).toBe(200);
-    const auditBody = (await auditRes.json()) as {
-      items: Array<{ action: string; resource_type?: string; resource_id?: string; error_code?: string; metadata_json?: Record<string, unknown> }>;
-    };
-    expect(
-      auditBody.items.filter(
-        (item) =>
-          item.action === 'resource_policy.limit_exceeded'
-          && item.resource_type === 'source_library'
-          && item.resource_id === library.id
-          && item.error_code === 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
-      ),
-    ).toHaveLength(2);
-  });
-
-  it('enforces source_library max_file_size_bytes on multipart upload', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibraryRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Upload Limit Library', visibility: 'shared' }),
-      },
-    );
-    expect(createLibraryRes.status).toBe(201);
-    const library = (await createLibraryRes.json()) as { id: string };
-
-    const patchPolicyRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/resources/source_library/${library.id}/policy`,
-      {
-        method: 'PATCH',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          access_mode: 'allow_all_members',
-          allowed_subjects: [],
-          spending_limits: {
-            rules: [{ key: 'source_library.max_file_size_bytes', value: 4 }],
-          },
-        }),
-      },
-    );
-    expect(patchPolicyRes.status).toBe(204);
-
-    const form = buildMultipartBody(
-      [{ name: 'prefix', value: '' }],
-      {
-        fieldName: 'file',
-        filename: 'oversized.txt',
-        contentType: 'text/plain',
-        content: new TextEncoder().encode('hello'),
-      },
-    );
-
-    const uploadRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
-      {
-        method: 'POST',
-        headers: { 'content-type': form.contentType },
-        body: Buffer.from(form.body),
-      },
-    );
-    expect(uploadRes.status).toBe(429);
-    expect(await uploadRes.json()).toMatchObject({
-      error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
-      resource_type: 'source_library',
-      resource_id: library.id,
-      limit_key: 'source_library.max_file_size_bytes',
     });
   });
 
@@ -6413,11 +5564,11 @@ describe('api-entry-node projects routes', () => {
 
     const createLibraryRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'Chat Inputs' }),
+        body: JSON.stringify({ name: 'Chat Inputs', description: 'chat attachment inputs' }),
       },
     );
     expect(createLibraryRes.status).toBe(201);
@@ -6434,7 +5585,7 @@ describe('api-entry-node projects routes', () => {
     );
     const uploadImageRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/file-libraries/${library.id}/upload`,
       {
         method: 'POST',
         headers: { 'content-type': imageForm.contentType },
@@ -6836,120 +5987,6 @@ describe('api-entry-node projects routes', () => {
         (item) => item.action === 'chat.attachment.created' && item.resource_type === 'chat_attachment',
       ),
     ).toBe(true);
-  });
-
-  it('normalizes chat attachment metadata from library object input refs', async () => {
-    const { baseUrl } = startServer();
-
-    const createLibrary = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/source-libraries',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ name: 'chat-attach-meta-lib' }),
-      },
-    );
-    expect(createLibrary.status).toBe(201);
-    const library = (await createLibrary.json()) as { id: string };
-
-    const form = buildMultipartBody(
-      [{ name: 'prefix', value: 'chat/s1/uploads/' }],
-      {
-        fieldName: 'file',
-        filename: 'real-name.txt',
-        contentType: 'text/plain',
-        content: new TextEncoder().encode('hello'),
-      },
-    );
-    const uploadObject = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/source-libraries/${library.id}/objects/upload`,
-      {
-        method: 'POST',
-        headers: { 'content-type': form.contentType },
-        body: Buffer.from(form.body),
-      },
-    );
-    expect(uploadObject.status).toBe(201);
-
-    const createCredential = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'chat-inputref-meta-key',
-          type: 'api_key',
-          value: 'sk-chat',
-        }),
-      },
-    );
-    expect(createCredential.status).toBe(201);
-    const credential = (await createCredential.json()) as { id: string };
-
-    const createEndpoint = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'chat-inputref-meta-endpoint',
-          model: 'gpt-4o-mini',
-          type: 'openai',
-          mode: 'openai',
-          base_url: 'https://api.example.com/v1',
-          credential_ref: credential.id,
-          provider_family: 'openai',
-          protocol: 'openai_compatible',
-          capabilities: [{ type: 'text_completion', enabled: true, default_model_id: 'gpt-4o-mini' }],
-          models: [{ capability: 'text_completion', model_id: 'gpt-4o-mini' }],
-          defaults: { text_model_id: 'gpt-4o-mini' },
-        }),
-      },
-    );
-    expect(createEndpoint.status).toBe(201);
-    const endpoint = (await createEndpoint.json()) as { id: string };
-
-    const createSession = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ endpoint_id: endpoint.id, model: 'gpt-4o-mini' }),
-      },
-    );
-    expect(createSession.status).toBe(201);
-    const session = (await createSession.json()) as { id: string };
-
-    const initAttachment = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/chat/sessions/${session.id}/attachments/init`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          file_name: 'wrong.txt',
-          file_type: 'application/octet-stream',
-          file_size: 999,
-          input_ref: {
-            kind: 'library_object',
-            library_id: library.id,
-            key: 'chat/s1/uploads/real-name.txt',
-          },
-        }),
-      },
-    );
-    expect(initAttachment.status).toBe(200);
-    const body = (await initAttachment.json()) as {
-      attachment: { file_name: string; file_type: string; file_size: number };
-    };
-    expect(body.attachment.file_name).toBe('real-name.txt');
-    expect(body.attachment.file_type).toBe('text/plain');
-    expect(body.attachment.file_size).toBe(5);
   });
 
   it('rejects attachment stream when endpoint is not multimodal', async () => {

@@ -34,7 +34,6 @@
 - `chat-frontend-module-map.md`
 - `notebook-frontend-module-map.md`
 - `files-frontend-module-map.md`
-- `files-object-browser-contract.md`
 - `endpoints-frontend-module-map.md`
 - `endpoints-capability-contract.md`
 - `endpoint-proxy-protocol-bridge-contract.md`

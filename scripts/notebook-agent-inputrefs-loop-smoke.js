@@ -190,12 +190,12 @@ async function runScenario() {
 
   async function uploadObject(libraryId, fileName, content, prefix) {
     const res = await fetchWithAuthRetry(
-      `POST source-libraries/${libraryId}/objects/upload`,
+      `POST file-libraries/${libraryId}/upload`,
       () => {
         const fd = new FormData();
         fd.append('file', new Blob([content], { type: 'text/plain' }), fileName);
         if (prefix) fd.append('prefix', prefix);
-        return fetch(`${base}/source-libraries/${libraryId}/objects/upload`, {
+        return fetch(`${base}/file-libraries/${libraryId}/upload`, {
           method: 'POST',
           headers: authHeaders(),
           body: fd,
@@ -204,9 +204,20 @@ async function runScenario() {
     );
     if (!res.ok) {
       const text = await res.text();
-      throw new Error(`POST source-libraries/${libraryId}/objects/upload -> ${res.status}: ${text.slice(0, 500)}`);
+      throw new Error(`POST file-libraries/${libraryId}/upload -> ${res.status}: ${text.slice(0, 500)}`);
     }
     return asJson(res, 'uploadObject');
+  }
+
+  async function ensureProjectUploadsLibrary() {
+    const existing = await get('/file-libraries');
+    const items = Array.isArray(existing.items) ? existing.items : [];
+    const match = items.find((item) => item?.name === 'Project Uploads');
+    if (match) return match;
+    return post('/file-libraries', {
+      name: 'Project Uploads',
+      description: 'System-managed project upload library',
+    });
   }
 
   async function waitTaskTerminal(taskId) {
@@ -317,9 +328,9 @@ async function runScenario() {
   const taskId = task.id;
   process.stdout.write(`[inputrefs-loop] task_id=${taskId}\n`);
 
-  const defaultLibrary = await get('/source-libraries/default-personal');
+  const defaultLibrary = await ensureProjectUploadsLibrary();
   process.stdout.write(
-    `[inputrefs-loop] default library=${defaultLibrary.id} kind=${defaultLibrary.system_managed_kind || 'n/a'}\n`,
+    `[inputrefs-loop] upload library=${defaultLibrary.id} name=${defaultLibrary.name || 'Project Uploads'}\n`,
   );
 
   const uniqueUrlNoteName = `url-input-${taskId}.txt`;

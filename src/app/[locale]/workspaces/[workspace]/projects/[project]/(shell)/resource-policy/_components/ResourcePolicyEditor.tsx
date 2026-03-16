@@ -17,7 +17,7 @@ import { ResourcePolicySubjectEditor } from './ResourcePolicySubjectEditor';
 
 export function ResourcePolicyEditor(args: {
   basePath: string;
-  tResource: (key: string) => string;
+  tResource: (key: string, values?: Record<string, string | number>) => string;
   selectedResource: ResourceRow | null;
   policyLoading: boolean;
   selectedPolicy?: ResourcePolicy;
@@ -198,9 +198,15 @@ export function ResourcePolicyEditor(args: {
               value={rootDraftRules[rule.key] ?? ''}
               onChange={(event) => onRootDraftRuleChange(rule.key, event.target.value)}
               disabled={!canUpdatePolicy}
+              placeholder={rule.suggestedValue ? String(rule.suggestedValue) : undefined}
               className="h-9 w-full rounded-sm border border-subtle bg-surface-high px-3 text-sm text-foreground"
               data-testid={rule.rootTestId}
             />
+            {rule.suggestedValue ? (
+              <p className="text-[11px] text-tertiary" data-testid={`${rule.rootTestId}__suggested-default`}>
+                {tResource('suggested_default', { value: rule.suggestedValue })}
+              </p>
+            ) : null}
           </div>
         ))}
       </div>

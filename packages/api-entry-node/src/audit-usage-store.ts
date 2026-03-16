@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import type { JsonDocStorePort } from '@mbos/ports';
+import { listProjectResourcePolicies } from './project-resource-policy-store.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export type AuditEventRecord = {
@@ -825,7 +826,6 @@ export async function getLimitsSummary(
     usdMinute: number;
     usd5h: number;
     usdDay: number;
-    usdCurrent: number;
   }>();
   for (const fact of facts) {
     if (fact.resource_type !== 'endpoint') {
@@ -859,15 +859,28 @@ export async function getLimitsSummary(
     byEndpoint.set(endpointId, existing);
   }
 
-  const rateLimitMax = {
-    minute: 120,
-    fiveHours: 6_000,
-    day: 20_000,
+  const policies = listProjectResourcePolicies(query.workspaceId, query.projectId, 'endpoint');
+
+  type PolicyRuleRecord = {
+    key: string;
+    value: number;
   };
-  const spendingLimitMax = {
-    minute: 5,
-    fiveHours: 100,
-    day: 400,
+
+  const readPolicyRules = (input: unknown): PolicyRuleRecord[] => {
+    if (!input || typeof input !== 'object') return [];
+    const rules = (input as { rules?: unknown }).rules;
+    if (!Array.isArray(rules)) return [];
+    return rules.flatMap((rule) => {
+      if (!rule || typeof rule !== 'object') return [];
+      const key = typeof (rule as { key?: unknown }).key === 'string'
+        ? (rule as { key: string }).key
+        : null;
+      const value = typeof (rule as { value?: unknown }).value === 'number'
+        ? (rule as { value: number }).value
+        : null;
+      if (!key || value === null || !Number.isFinite(value)) return [];
+      return [{ key, value }];
+    });
   };
 
   const toRule = (args: {
@@ -896,67 +909,103 @@ export async function getLimitsSummary(
     };
   };
 
+  const endpointIds = new Set<string>([
+    ...Array.from(byEndpoint.keys()),
+    ...policies.map((policy) => policy.resource_id),
+  ]);
+
   const endpoints: EndpointLimitSummary[] = [];
-  for (const item of byEndpoint.values()) {
-    endpoints.push({
-      endpoint_id: item.endpointId,
-      endpoint_name: item.endpointId,
-      limits: [
-        toRule({
+  for (const endpointId of endpointIds) {
+    const item = byEndpoint.get(endpointId) ?? {
+      endpointId,
+      requestsMinute: 0,
+      requests5h: 0,
+      requestsDay: 0,
+      usdMinute: 0,
+      usd5h: 0,
+      usdDay: 0,
+    };
+    const policy = policies.find((entry) => entry.resource_id === endpointId) ?? null;
+    const rateRules = readPolicyRules(policy?.rate_limits);
+    const spendingRules = readPolicyRules(policy?.spending_limits);
+    const limits: LimitRuleSnapshot[] = [];
+
+    for (const rule of rateRules) {
+      if (rule.key === 'endpoint.requests_per_minute') {
+        limits.push(toRule({
           kind: 'rate_limit',
           window: 'minute',
           metric: 'requests',
-          policyKey: 'endpoint.requests_per_minute',
+          policyKey: rule.key,
           used: item.requestsMinute,
-          max: rateLimitMax.minute,
+          max: rule.value,
           resetAt: minuteResetAt,
-        }),
-        toRule({
+        }));
+      }
+      if (rule.key === 'endpoint.requests_per_5_hours') {
+        limits.push(toRule({
           kind: 'rate_limit',
           window: '5h',
           metric: 'requests',
-          policyKey: 'endpoint.requests_per_5_hours',
+          policyKey: rule.key,
           used: item.requests5h,
-          max: rateLimitMax.fiveHours,
+          max: rule.value,
           resetAt: fiveHoursResetAt,
-        }),
-        toRule({
+        }));
+      }
+      if (rule.key === 'endpoint.requests_per_day') {
+        limits.push(toRule({
           kind: 'rate_limit',
           window: 'day',
           metric: 'requests',
-          policyKey: 'endpoint.requests_per_day',
+          policyKey: rule.key,
           used: item.requestsDay,
-          max: rateLimitMax.day,
+          max: rule.value,
           resetAt: dayResetAt,
-        }),
-        toRule({
+        }));
+      }
+    }
+
+    for (const rule of spendingRules) {
+      if (rule.key === 'endpoint.spending_usd_per_minute') {
+        limits.push(toRule({
           kind: 'spending_limit',
           window: 'minute',
           metric: 'usd',
-          policyKey: 'endpoint.spending_usd_per_minute',
+          policyKey: rule.key,
           used: item.usdMinute,
-          max: spendingLimitMax.minute,
+          max: rule.value,
           resetAt: minuteResetAt,
-        }),
-        toRule({
+        }));
+      }
+      if (rule.key === 'endpoint.spending_usd_per_5_hours') {
+        limits.push(toRule({
           kind: 'spending_limit',
           window: '5h',
           metric: 'usd',
-          policyKey: 'endpoint.spending_usd_per_5_hours',
+          policyKey: rule.key,
           used: item.usd5h,
-          max: spendingLimitMax.fiveHours,
+          max: rule.value,
           resetAt: fiveHoursResetAt,
-        }),
-        toRule({
+        }));
+      }
+      if (rule.key === 'endpoint.spending_usd_per_day') {
+        limits.push(toRule({
           kind: 'spending_limit',
           window: 'day',
           metric: 'usd',
-          policyKey: 'endpoint.spending_usd_per_day',
+          policyKey: rule.key,
           used: item.usdDay,
-          max: spendingLimitMax.day,
+          max: rule.value,
           resetAt: dayResetAt,
-        }),
-      ],
+        }));
+      }
+    }
+
+    endpoints.push({
+      endpoint_id: endpointId,
+      endpoint_name: endpointId,
+      limits,
     });
   }
 

@@ -1669,6 +1669,7 @@
       "remove": "移除"
     },
     "allow_list_required": "allow_list 至少需要一个主体。",
+    "suggested_default": "建议默认值：{value}",
     "save_policy": "保存策略",
     "saving": "保存中...",
     "effective_summary": {

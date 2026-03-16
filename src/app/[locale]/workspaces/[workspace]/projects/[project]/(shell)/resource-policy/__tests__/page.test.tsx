@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import userEvent from '@testing-library/user-event';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useResourcePolicy } from '@/lib/hooks/use-members';
 
 const mockSearchParams = new URLSearchParams();
 
@@ -177,6 +178,37 @@ describe('ResourcePolicyPage', () => {
         },
       }),
     );
+  });
+
+  it('shows suggested default values when a rule is not configured yet', async () => {
+    const emptyPolicy = {
+      resource_type: 'endpoint',
+      resource_id: 'ep_1',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      rate_limits: { rules: [] },
+      spending_limits: { rules: [] },
+    };
+
+    vi.mocked(useResourcePolicy).mockReturnValueOnce({
+      data: emptyPolicy,
+      isLoading: false,
+    } as unknown as ReturnType<typeof useResourcePolicy>);
+
+    render(
+      <ResourcePolicyPage
+        params={Promise.resolve({ workspace: 'ws_1', project: 'prj_1', locale: 'en-US' })}
+      />,
+      { wrapper: createWrapper() },
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('resource-policy__endpoint-requests-per-day')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('resource-policy__endpoint-requests-per-day')).toHaveAttribute('placeholder', '20000');
+    expect(screen.getByTestId('resource-policy__endpoint-requests-per-day__suggested-default')).toBeInTheDocument();
+    expect(screen.getByTestId('resource-policy__endpoint-spending-usd-per-day')).toHaveAttribute('placeholder', '400');
   });
 
   it('renders governance header actions', async () => {

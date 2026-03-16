@@ -1667,6 +1667,7 @@
       "remove": "Remove"
     },
     "allow_list_required": "allow_list requires at least one subject.",
+    "suggested_default": "Suggested default: {value}",
     "save_policy": "Save policy",
     "saving": "Saving...",
     "effective_summary": {

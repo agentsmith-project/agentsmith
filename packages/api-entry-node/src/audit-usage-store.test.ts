@@ -5,12 +5,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
   getUsageRecordsSummary,
+  getLimitsSummary,
   getUsageOperationsSummary,
   listAuditEvents,
   listUsageFactRecords,
   recordAuditEvent,
   recordUsageFact,
 } from './audit-usage-store.js';
+import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 
 describe('audit-usage-store usage records summary', () => {
   afterEach(() => {
@@ -251,6 +253,60 @@ describe('audit-usage-store usage records summary', () => {
     expect(rows.items[0]?.resource_type).toBe('governance_incident');
     expect(rows.items[0]?.error_code).toBe('UPSTREAM_429');
     expect(rows.items[0]?.action).toBe('request_delivery_failed');
+  });
+
+  it('only returns endpoint limits that are explicitly configured in resource policy', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_limits';
+    const projectId = 'proj_limits';
+    const now = new Date().toISOString();
+
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'ep_usage_only',
+      requests: 3,
+      result: 'ok',
+      request_id: 'req_usage_only',
+      metadata_json: { provider: 'openai', resolved_model: 'gpt-4.1', estimated_cost: 0.12 },
+    });
+
+    upsertProjectResourcePolicy(workspaceId, projectId, {
+      resource_type: 'endpoint',
+      resource_id: 'ep_with_policy',
+      access_mode: 'allow_all_members',
+      allowed_subjects: [],
+      rate_limits: {
+        rules: [{ key: 'endpoint.requests_per_5_hours', value: 6000 }],
+      },
+      spending_limits: {
+        rules: [{ key: 'endpoint.spending_usd_per_day', value: 400 }],
+      },
+    });
+
+    const summary = await getLimitsSummary(store, { workspaceId, projectId });
+    const usageOnly = summary.endpoints.find((item) => item.endpoint_id === 'ep_usage_only');
+    const withPolicy = summary.endpoints.find((item) => item.endpoint_id === 'ep_with_policy');
+
+    expect(usageOnly?.limits ?? []).toEqual([]);
+    expect(withPolicy?.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'rate_limit',
+          window: '5h',
+          policy_key: 'endpoint.requests_per_5_hours',
+          max: 6000,
+        }),
+        expect.objectContaining({
+          kind: 'spending_limit',
+          window: 'day',
+          policy_key: 'endpoint.spending_usd_per_day',
+          max: 400,
+        }),
+      ]),
+    );
   });
 
   it('filters usage facts by request provider, model, and error class', async () => {

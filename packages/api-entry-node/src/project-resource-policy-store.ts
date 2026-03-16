@@ -46,6 +46,18 @@ export function getProjectResourcePolicy(
   return getProjectPolicyState(workspaceId, projectId).get(policyKey(resourceType, resourceId)) ?? null;
 }
 
+export function listProjectResourcePolicies(
+  workspaceId: string,
+  projectId: string,
+  resourceType?: ResourceType,
+): ProjectResourcePolicyRecord[] {
+  const policies = Array.from(getProjectPolicyState(workspaceId, projectId).values());
+  if (!resourceType) {
+    return policies;
+  }
+  return policies.filter((policy) => policy.resource_type === resourceType);
+}
+
 export function upsertProjectResourcePolicy(
   workspaceId: string,
   projectId: string,

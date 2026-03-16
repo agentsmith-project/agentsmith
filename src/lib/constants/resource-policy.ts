@@ -33,6 +33,7 @@ export interface ResourcePolicyRuleDefinition {
   bucket: PolicyRuleBucket;
   labelKey: string;
   window?: 'day' | null;
+  suggestedValue?: number;
   rootInputId: string;
   rootTestId: string;
   subjectPlaceholderKey: string;
@@ -44,6 +45,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       key: 'endpoint.requests_per_minute',
       bucket: 'rate',
       labelKey: 'rules.endpoint.requests_per_minute',
+      suggestedValue: 120,
       rootInputId: 'resource-policy-endpoint-requests-per-minute',
       rootTestId: 'resource-policy__endpoint-requests-per-minute',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_minute',
@@ -52,6 +54,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       key: 'endpoint.requests_per_5_hours',
       bucket: 'rate',
       labelKey: 'rules.endpoint.requests_per_5_hours',
+      suggestedValue: 6000,
       rootInputId: 'resource-policy-endpoint-requests-per-5-hours',
       rootTestId: 'resource-policy__endpoint-requests-per-5-hours',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_5_hours',
@@ -61,6 +64,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       bucket: 'rate',
       labelKey: 'rules.endpoint.requests_per_day',
       window: 'day',
+      suggestedValue: 20000,
       rootInputId: 'resource-policy-endpoint-requests-per-day',
       rootTestId: 'resource-policy__endpoint-requests-per-day',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.requests_per_day',
@@ -69,6 +73,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       key: 'endpoint.spending_usd_per_minute',
       bucket: 'spending',
       labelKey: 'rules.endpoint.spending_usd_per_minute',
+      suggestedValue: 5,
       rootInputId: 'resource-policy-endpoint-spending-usd-per-minute',
       rootTestId: 'resource-policy__endpoint-spending-usd-per-minute',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.spending_usd_per_minute',
@@ -77,6 +82,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       key: 'endpoint.spending_usd_per_5_hours',
       bucket: 'spending',
       labelKey: 'rules.endpoint.spending_usd_per_5_hours',
+      suggestedValue: 100,
       rootInputId: 'resource-policy-endpoint-spending-usd-per-5-hours',
       rootTestId: 'resource-policy__endpoint-spending-usd-per-5-hours',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.spending_usd_per_5_hours',
@@ -86,6 +92,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       bucket: 'spending',
       labelKey: 'rules.endpoint.spending_usd_per_day',
       window: 'day',
+      suggestedValue: 400,
       rootInputId: 'resource-policy-endpoint-spending-usd-per-day',
       rootTestId: 'resource-policy__endpoint-spending-usd-per-day',
       subjectPlaceholderKey: 'subject_placeholders.endpoint.spending_usd_per_day',

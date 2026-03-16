@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps, createNodeApiServer } from './index.js';
+import { setProjectAdminGroupMembers } from './project-groups-store.js';
 import { recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
 import type { GovernanceRunnerController } from './governance-runner.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
@@ -1011,22 +1012,19 @@ describe('api-entry-node projects routes', () => {
         join_policy: 'approval_required',
       },
     });
-    await deps.updateProjectUseCase.execute({
+    setProjectAdminGroupMembers({
       workspaceId: 'ws_default',
       projectId: created.id,
-      input: {
-        governance_json: {
-          project_admins: ['user_test'],
-        },
-      },
+      projectOwnerId: created.owner_id,
+      memberIds: ['user_test'],
     });
     const { baseUrl } = startServerWithDeps(deps);
 
     const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
     expect(getRes.status).toBe(200);
-    const got = (await getRes.json()) as { owner_id: string; role: string; permissions: string[] };
+    const got = (await getRes.json()) as { owner_id: string; admin_member_ids?: string[]; permissions: string[] };
     expect(got.owner_id).toBe('user_external');
-    expect(got.role).toBe('admin');
+    expect(got.admin_member_ids).toContain('user_test');
     expect(got.permissions).toContain('project:endpoint:use');
     expect(got.permissions).toContain('project:agent:manage');
     expect(got.permissions).toContain('project:governance:update');
@@ -1034,10 +1032,10 @@ describe('api-entry-node projects routes', () => {
     const listRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects');
     expect(listRes.status).toBe(200);
     const listBody = (await listRes.json()) as {
-      items: Array<{ id: string; role: string; permissions: string[] }>;
+      items: Array<{ id: string; admin_member_ids?: string[]; permissions: string[] }>;
     };
     const listed = listBody.items.find((item) => item.id === created.id);
-    expect(listed?.role).toBe('admin');
+    expect(listed?.admin_member_ids).toContain('user_test');
     expect(listed?.permissions).toContain('project:governance:update');
   });
 
@@ -8486,7 +8484,7 @@ describe('api-entry-node projects routes', () => {
       && item.error_message === 'project_not_found')).toBe(true);
   });
 
-  it('records project admin assignment updates in audit events', async () => {
+  it('rejects legacy project_admins updates', async () => {
     const { baseUrl } = startServer();
 
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
@@ -8515,32 +8513,11 @@ describe('api-entry-node projects routes', () => {
         },
       }),
     });
-    expect(updateRes.status).toBe(200);
+    expect(updateRes.status).toBe(422);
 
-    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=project.update&page=1&page_size=20`,
-    );
-    expect(auditRes.status).toBe(200);
-    const audit = (await auditRes.json()) as {
-      items: Array<{
-        action: string;
-        request_id: string;
-        result: string;
-        metadata_json?: { updated_fields?: string[] };
-      }>;
-    };
-    expect(audit.items.some((item) =>
-      item.action === 'project.update'
-      && item.request_id === 'req_project_admin_assignment'
-      && item.result === 'ok'
-      && Array.isArray(item.metadata_json?.updated_fields)
-      && item.metadata_json?.updated_fields?.includes('governance_json'))).toBe(true);
   });
 
-  it('rejects project admin assignment changes from non-owners and records audit errors', async () => {
+  it('rejects project admin assignment changes from non-owners via the removed legacy field', async () => {
     const { baseUrl } = startServer();
 
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
@@ -8557,18 +8534,12 @@ describe('api-entry-node projects routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    const ownerAssignRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        governance_json: {
-          project_admins: ['user_alt'],
-        },
-      }),
+    setProjectAdminGroupMembers({
+      workspaceId: 'ws_default',
+      projectId: created.id,
+      projectOwnerId: 'user_test',
+      memberIds: ['user_alt'],
     });
-    expect(ownerAssignRes.status).toBe(200);
 
     const forbiddenAssignRes = await apiFetchWithToken(
       baseUrl,
@@ -8587,34 +8558,12 @@ describe('api-entry-node projects routes', () => {
         }),
       },
     );
-    expect(forbiddenAssignRes.status).toBe(403);
+    expect(forbiddenAssignRes.status).toBe(422);
     await expect(forbiddenAssignRes.json()).resolves.toMatchObject({
-      error_code: 'PERMISSION_DENIED',
-      message: 'project_owner_required',
+      error_code: 'VALIDATION_ERROR',
+      message: 'project_admins_field_removed_use_project_admin_group',
     });
 
-    const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
-    const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
-    const auditRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/${created.id}/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&action=project.update&page=1&page_size=20&result=error`,
-    );
-    expect(auditRes.status).toBe(200);
-    const audit = (await auditRes.json()) as {
-      items: Array<{
-        action: string;
-        request_id: string;
-        result: string;
-        error_code?: string;
-        error_message?: string;
-      }>;
-    };
-    expect(audit.items.some((item) =>
-      item.action === 'project.update'
-      && item.request_id === 'req_project_admin_forbidden'
-      && item.result === 'error'
-      && item.error_code === 'PERMISSION_DENIED'
-      && item.error_message === 'project_owner_required')).toBe(true);
   });
 
   it('rejects member permission updates from project admins and records audit errors', async () => {
@@ -8634,18 +8583,12 @@ describe('api-entry-node projects routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    const assignAdminRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        governance_json: {
-          project_admins: ['user_alt'],
-        },
-      }),
+    setProjectAdminGroupMembers({
+      workspaceId: 'ws_default',
+      projectId: created.id,
+      projectOwnerId: 'user_test',
+      memberIds: ['user_alt'],
     });
-    expect(assignAdminRes.status).toBe(200);
 
     const forbiddenPermissionsRes = await apiFetchWithToken(
       baseUrl,
@@ -8726,9 +8669,6 @@ describe('api-entry-node projects routes', () => {
     expect(transferRes.status).toBe(200);
     await expect(transferRes.json()).resolves.toMatchObject({
       owner_id: 'user_alt',
-      governance_json: {
-        project_admins: ['user_test'],
-      },
     });
 
     const previousOwnerViewRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
@@ -8739,11 +8679,8 @@ describe('api-entry-node projects routes', () => {
     expect(previousOwnerViewRes.status).toBe(200);
     await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
       owner_id: 'user_alt',
-      role: 'admin',
+      admin_member_ids: expect.arrayContaining(['user_test']),
       permissions: expect.arrayContaining(['project:governance:update']),
-      governance_json: {
-        project_admins: ['user_test'],
-      },
     });
 
     const auditRes = await apiFetchWithToken(
@@ -8773,7 +8710,7 @@ describe('api-entry-node projects routes', () => {
       && item.metadata_json?.previous_owner_retained_admin === true)).toBe(true);
   });
 
-  it('lets workspace admins force ownership transfer and rejects project admins', async () => {
+  it('rejects forced ownership transfer when actor lacks the built-in workspace owner group', async () => {
     const { baseUrl } = startServer();
 
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
@@ -8790,18 +8727,12 @@ describe('api-entry-node projects routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    const assignAdminRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        governance_json: {
-          project_admins: ['user_alt'],
-        },
-      }),
+    setProjectAdminGroupMembers({
+      workspaceId: 'ws_default',
+      projectId: created.id,
+      projectOwnerId: 'user_test',
+      memberIds: ['user_alt'],
     });
-    expect(assignAdminRes.status).toBe(200);
 
     const forbiddenTransferRes = await apiFetchWithToken(
       baseUrl,
@@ -8839,27 +8770,10 @@ describe('api-entry-node projects routes', () => {
         }),
       },
     );
-    expect(forcedTransferRes.status).toBe(200);
+    expect(forcedTransferRes.status).toBe(403);
     await expect(forcedTransferRes.json()).resolves.toMatchObject({
-      owner_id: 'user_owner',
-      governance_json: {
-        project_admins: ['user_alt', 'user_test'],
-      },
-    });
-
-    const previousOwnerViewRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
-      headers: {
-        authorization: 'Bearer test-token',
-      },
-    });
-    expect(previousOwnerViewRes.status).toBe(200);
-    await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
-      owner_id: 'user_owner',
-      role: 'admin',
-      permissions: expect.arrayContaining(['project:governance:update']),
-      governance_json: {
-        project_admins: ['user_alt', 'user_test'],
-      },
+      error_code: 'FORBIDDEN',
+      message: 'forbidden',
     });
 
     const auditRes = await apiFetchWithToken(
@@ -8885,16 +8799,7 @@ describe('api-entry-node projects routes', () => {
     expect(audit.items.some((item) =>
       item.action === 'project.owner.transferred'
       && item.request_id === 'req_project_owner_transfer_forbidden'
-      && item.result === 'error'
-      && item.error_code === 'PERMISSION_DENIED'
-      && item.error_message === 'project_owner_or_workspace_admin_required')).toBe(true);
-    expect(audit.items.some((item) =>
-      item.action === 'project.owner.transferred'
-      && item.request_id === 'req_project_owner_transfer_forced'
-      && item.result === 'ok'
-      && item.metadata_json?.previous_owner_id === 'user_test'
-      && item.metadata_json?.next_owner_id === 'user_owner'
-      && item.metadata_json?.previous_owner_retained_admin === true)).toBe(true);
+      && item.result === 'error')).toBe(true);
   });
 
   it('rejects project deletion from non-owners and records audit errors', async () => {
@@ -8914,18 +8819,12 @@ describe('api-entry-node projects routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    const ownerAssignRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
-      method: 'PATCH',
-      headers: {
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        governance_json: {
-          project_admins: ['user_alt'],
-        },
-      }),
+    setProjectAdminGroupMembers({
+      workspaceId: 'ws_default',
+      projectId: created.id,
+      projectOwnerId: 'user_test',
+      memberIds: ['user_alt'],
     });
-    expect(ownerAssignRes.status).toBe(200);
 
     const forbiddenDeleteRes = await apiFetchWithToken(
       baseUrl,

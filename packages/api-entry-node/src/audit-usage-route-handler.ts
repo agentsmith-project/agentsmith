@@ -188,7 +188,7 @@ export async function handleAuditUsageRoute({
     const resourceTypeRaw = requestUrl.searchParams.get('resource_type');
     const resourceType = (
       resourceTypeRaw === 'endpoint'
-      || resourceTypeRaw === 'source_library'
+      || resourceTypeRaw === 'file_library'
       || resourceTypeRaw === 'agent'
     ) ? resourceTypeRaw : null;
     const payload = await getUsageTimeseries(deps.docStore, {

@@ -22,7 +22,7 @@ export const RESOURCE_POLICY_RULE_MATRIX: Record<
       'endpoint.spending_usd_per_day',
     ],
   },
-  source_library: { rate: [], spending: [] },
+  file_library: { rate: [], spending: [] },
   agent: { rate: [], spending: [] },
 };
 
@@ -98,7 +98,7 @@ export const RESOURCE_POLICY_RULE_DEFINITIONS: Record<PolicyResourceType, Resour
       subjectPlaceholderKey: 'subject_placeholders.endpoint.spending_usd_per_day',
     },
   ],
-  source_library: [],
+  file_library: [],
   agent: [],
 };
 

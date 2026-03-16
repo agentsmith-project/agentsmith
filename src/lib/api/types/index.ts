@@ -487,7 +487,7 @@ export interface ChatAttachmentSnapshot {
   file_size: number;
   input_ref?: ChatAttachmentInputRef;
   source_type?: 'local_upload' | 'library_import';
-  source_library_id?: string;
+  file_library_id?: string;
   source_object_key?: string;
 }
 
@@ -525,7 +525,7 @@ export interface Attachment {
   error_message?: string;
   input_ref?: ChatAttachmentInputRef;
   source_type?: 'local_upload' | 'library_import';
-  source_library_id?: string;
+  file_library_id?: string;
   source_object_key?: string;
   preview_url?: string;
 }
@@ -950,7 +950,7 @@ export interface LimitOverride {
   endpoint?: {
     daily_token_limit?: number;
   };
-  source_library?: {
+  file_library?: {
     max_total_files?: number;
     max_file_size_bytes?: number;
   };
@@ -959,7 +959,7 @@ export interface LimitOverride {
   };
 }
 
-export type PolicyResourceType = 'endpoint' | 'source_library' | 'agent';
+export type PolicyResourceType = 'endpoint' | 'file_library' | 'agent';
 export type PolicySubjectType = 'group' | 'user';
 
 export type PolicyRuleKey =
@@ -969,9 +969,9 @@ export type PolicyRuleKey =
   | 'endpoint.spending_usd_per_minute'
   | 'endpoint.spending_usd_per_5_hours'
   | 'endpoint.spending_usd_per_day'
-  | 'source_library.requests_per_minute'
-  | 'source_library.max_total_files'
-  | 'source_library.max_file_size_bytes';
+  | 'file_library.requests_per_minute'
+  | 'file_library.max_total_files'
+  | 'file_library.max_file_size_bytes';
 
 export interface PolicyRule<K extends PolicyRuleKey = PolicyRuleKey> {
   key: K;
@@ -1037,14 +1037,14 @@ export interface ProjectGovernanceDefaults {
       >;
     };
   };
-  source_library: {
+  file_library: {
     access_mode: 'allow_all_members' | 'allow_list';
     rate_limits?: {
-      rules: PolicyRule<'source_library.requests_per_minute'>[];
+      rules: PolicyRule<'file_library.requests_per_minute'>[];
     };
     spending_limits?: {
       rules: Array<
-        PolicyRule<'source_library.max_total_files'> | PolicyRule<'source_library.max_file_size_bytes'>
+        PolicyRule<'file_library.max_total_files'> | PolicyRule<'file_library.max_file_size_bytes'>
       >;
     };
   };

@@ -2,21 +2,15 @@ import { describe, expect, it } from 'vitest';
 import type { ProjectDTO } from '@mbos/contracts';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
 import {
-  CreateSourceLibraryUseCase,
+  CreateFileLibraryCatalogUseCase,
   CreateProjectUseCase,
-  CreateSourceUseCase,
-  DeleteSourceLibraryUseCase,
-  DeleteSourceUseCase,
+  DeleteFileLibraryCatalogUseCase,
   DeleteProjectUseCase,
-  DownloadSourceUseCase,
-  GetSourceUseCase,
-  GetSourcesLimitUseCase,
   GetProjectUseCase,
-  ListSourceLibraryObjectsUseCase,
-  ListSourceLibrariesUseCase,
+  ListFileLibraryObjectsUseCase,
+  ListFileLibraryCatalogsUseCase,
   ListProjectsUseCase,
-  ListSourcesUseCase,
-  UpdateSourceLibraryUseCase,
+  UpdateFileLibraryCatalogUseCase,
   UpdateProjectUseCase,
 } from './index';
 import type {
@@ -25,10 +19,9 @@ import type {
   IdGeneratorPort,
   ObjectStorePort,
   ProjectRepoPort,
-  SourceRepoPort,
-  SourceLibraryRepoPort,
+  FileLibraryCatalogRepoPort,
 } from '@mbos/ports';
-import type { SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { FileLibraryCatalogDTO } from '@mbos/contracts';
 
 class FakeProjectRepo implements ProjectRepoPort {
   private readonly projects: ProjectDTO[];
@@ -228,81 +221,10 @@ class FakeObjectStore implements ObjectStorePort {
   }
 }
 
-class FakeSourceRepo implements SourceRepoPort {
-  readonly items: SourceDTO[] = [];
+class FakeFileLibraryCatalogRepo implements FileLibraryCatalogRepoPort {
+  readonly items: FileLibraryCatalogDTO[] = [];
 
-  async listByProject(
-    workspaceId: string,
-    projectId: string,
-    options?: { libraryId?: string },
-  ): Promise<SourceDTO[]> {
-    const scoped = this.items.filter(
-      (item) => item.workspace_id === workspaceId && item.project_id === projectId,
-    );
-    if (!options?.libraryId) {
-      return scoped;
-    }
-    return scoped.filter((item) => item.library_id === options.libraryId);
-  }
-
-  async save(source: SourceDTO): Promise<void> {
-    this.items.push(source);
-  }
-
-  async update(
-    workspaceId: string,
-    projectId: string,
-    sourceId: string,
-    patch: Partial<SourceDTO>,
-  ): Promise<SourceDTO | null> {
-    const index = this.items.findIndex(
-      (item) =>
-        item.workspace_id === workspaceId &&
-        item.project_id === projectId &&
-        item.id === sourceId,
-    );
-    if (index < 0) {
-      return null;
-    }
-    this.items[index] = { ...this.items[index], ...patch };
-    return this.items[index];
-  }
-
-  async getById(
-    workspaceId: string,
-    projectId: string,
-    sourceId: string,
-  ): Promise<SourceDTO | null> {
-    return (
-      this.items.find(
-        (item) =>
-          item.workspace_id === workspaceId &&
-          item.project_id === projectId &&
-          item.id === sourceId,
-      ) ?? null
-    );
-  }
-
-  async delete(workspaceId: string, projectId: string, sourceId: string): Promise<boolean> {
-    const index = this.items.findIndex(
-      (item) =>
-        item.workspace_id === workspaceId &&
-        item.project_id === projectId &&
-        item.id === sourceId,
-    );
-    if (index < 0) {
-      return false;
-    }
-
-    this.items.splice(index, 1);
-    return true;
-  }
-}
-
-class FakeSourceLibraryRepo implements SourceLibraryRepoPort {
-  readonly items: SourceLibraryDTO[] = [];
-
-  async listByProject(workspaceId: string, projectId: string): Promise<SourceLibraryDTO[]> {
+  async listByProject(workspaceId: string, projectId: string): Promise<FileLibraryCatalogDTO[]> {
     return this.items.filter(
       (item) => item.workspace_id === workspaceId && item.project_id === projectId,
     );
@@ -312,7 +234,7 @@ class FakeSourceLibraryRepo implements SourceLibraryRepoPort {
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<SourceLibraryDTO | null> {
+  ): Promise<FileLibraryCatalogDTO | null> {
     return (
       this.items.find(
         (item) =>
@@ -323,7 +245,7 @@ class FakeSourceLibraryRepo implements SourceLibraryRepoPort {
     );
   }
 
-  async save(library: SourceLibraryDTO): Promise<void> {
+  async save(library: FileLibraryCatalogDTO): Promise<void> {
     this.items.push(library);
   }
 
@@ -331,8 +253,8 @@ class FakeSourceLibraryRepo implements SourceLibraryRepoPort {
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    patch: Partial<SourceLibraryDTO>,
-  ): Promise<SourceLibraryDTO | null> {
+    patch: Partial<FileLibraryCatalogDTO>,
+  ): Promise<FileLibraryCatalogDTO | null> {
     const index = this.items.findIndex(
       (item) =>
         item.workspace_id === workspaceId &&
@@ -358,64 +280,6 @@ class FakeSourceLibraryRepo implements SourceLibraryRepoPort {
     }
     this.items.splice(index, 1);
     return true;
-  }
-}
-
-class FakeParser implements DocumentParserPort {
-  async parse(body: Uint8Array): Promise<string> {
-    return new TextDecoder().decode(body);
-  }
-}
-
-class FakeChunker implements TextChunkerPort {
-  chunk(text: string) {
-    return [{ content: text, metadata: { one: true } }];
-  }
-}
-
-class FakeEmbeddings implements EmbeddingProviderPort {
-  dimensions(): number {
-    return 4;
-  }
-
-  async embed(texts: string[]): Promise<number[][]> {
-    return texts.map(() => [1, 0, 0, 0]);
-  }
-}
-
-class FakeVectorStore implements VectorStorePort {
-  readonly chunks: Array<{ libraryId: string; sourceId: string; chunkId: string }> = [];
-
-  async upsertChunks(
-    _workspaceId: string,
-    _projectId: string,
-    libraryId: string,
-    chunks: Array<{ sourceId: string; chunkId: string }>,
-  ): Promise<void> {
-    for (const chunk of chunks) {
-      this.chunks.push({
-        libraryId,
-        sourceId: chunk.sourceId,
-        chunkId: chunk.chunkId,
-      });
-    }
-  }
-
-  async deleteBySource(
-    _workspaceId: string,
-    _projectId: string,
-    _libraryId: string,
-    _sourceId: string,
-  ): Promise<void> {
-    return undefined;
-  }
-
-  async search(): Promise<Array<{ chunkId: string; sourceId: string; content: string; score: number }>> {
-    return [];
-  }
-
-  async countByLibrary(): Promise<number> {
-    return this.chunks.length;
   }
 }
 
@@ -573,118 +437,12 @@ describe('Project use cases', () => {
     ).rejects.toThrowError('project_not_found');
   });
 
-  it('creates source and lists it with cache behavior', async () => {
-    const sourceRepo = new FakeSourceRepo();
-    const cache = new InMemoryCache();
-    const objectStore = new FakeObjectStore();
-    const create = new CreateSourceUseCase(
-      sourceRepo,
-      objectStore,
-      new FixedIdGenerator(),
-      new FixedClock(),
-      cache,
-      'mbos-dev',
-    );
-    const list = new ListSourcesUseCase(sourceRepo, cache);
-
-    const created = await create.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      input: {
-        name: 'a.txt',
-        library_id: 'lib_a',
-        content_type: 'text/plain',
-        content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
-      },
-    });
-    expect(created.id).toBe('src_fixed_001');
-
-    const createdSecond = await create.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      input: {
-        name: 'b.txt',
-        library_id: 'lib_b',
-        content_type: 'text/plain',
-        content_base64: Buffer.from('hi', 'utf-8').toString('base64'),
-      },
-    });
-
-    const firstList = await list.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-    });
-    expect(firstList.items).toHaveLength(2);
-    const libAList = await list.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-    });
-    expect(libAList.items).toHaveLength(1);
-    expect(libAList.items[0].library_id).toBe('lib_a');
-
-    sourceRepo.items.length = 0;
-    const secondList = await list.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-    });
-    expect(secondList.items).toHaveLength(2);
-    sourceRepo.items.push(created);
-    sourceRepo.items.push(createdSecond);
-    const found = await new GetSourceUseCase(sourceRepo).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      sourceId: created.id,
-    });
-    expect(found.id).toBe(created.id);
-
-    const limit = await new GetSourcesLimitUseCase(sourceRepo).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-    });
-    expect(limit.storage.used).toBe(7);
-    const limitLibA = await new GetSourcesLimitUseCase(sourceRepo).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      libraryId: 'lib_a',
-    });
-    expect(limitLibA.storage.used).toBe(5);
-
-    const downloaded = await new DownloadSourceUseCase(
-      sourceRepo,
-      objectStore,
-      'mbos-dev',
-    ).execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      sourceId: created.id,
-    });
-    expect(downloaded.body.byteLength).toBe(5);
-
-    const remove = new DeleteSourceUseCase(
-      sourceRepo,
-      objectStore,
-      cache,
-      'mbos-dev',
-    );
-    await remove.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-      sourceId: created.id,
-    });
-    const afterDelete = await list.execute({
-      workspaceId: 'ws_a',
-      projectId: 'proj_1',
-    });
-    expect(afterDelete.items).toHaveLength(1);
-  });
-
-  it('creates, updates, lists, and deletes source library', async () => {
-    const libraryRepo = new FakeSourceLibraryRepo();
+  it('creates, updates, lists, and deletes file library catalog', async () => {
+    const libraryRepo = new FakeFileLibraryCatalogRepo();
     const objectStore = new FakeObjectStore();
     const cache = new InMemoryCache();
 
-    const create = new CreateSourceLibraryUseCase(
+    const create = new CreateFileLibraryCatalogUseCase(
       libraryRepo,
       new FixedIdGenerator(),
       new FixedClock(),
@@ -707,7 +465,7 @@ describe('Project use cases', () => {
     expect(created.doc_namespace).toBe('doc_ws_a_proj_1_lib_fixed_001');
     expect(created.vector_namespace).toBe('vec_ws_a_proj_1_lib_fixed_001');
 
-    const updated = await new UpdateSourceLibraryUseCase(
+    const updated = await new UpdateFileLibraryCatalogUseCase(
       libraryRepo,
       new FixedClock(),
       cache,
@@ -719,18 +477,18 @@ describe('Project use cases', () => {
     });
     expect(updated.description).toBe('docs');
 
-    const listed = await new ListSourceLibrariesUseCase(libraryRepo, cache).execute({
+    const listed = await new ListFileLibraryCatalogsUseCase(libraryRepo, cache).execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
     });
     expect(listed.items).toHaveLength(1);
 
-    await new DeleteSourceLibraryUseCase(libraryRepo, objectStore, cache, 'mbos-dev').execute({
+    await new DeleteFileLibraryCatalogUseCase(libraryRepo, objectStore, cache, 'mbos-dev').execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       libraryId: created.id,
     });
-    const afterDelete = await new ListSourceLibrariesUseCase(libraryRepo, cache).execute({
+    const afterDelete = await new ListFileLibraryCatalogsUseCase(libraryRepo, cache).execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
     });
@@ -738,7 +496,7 @@ describe('Project use cases', () => {
   });
 
   it('lists objects with existing library prefix (without trailing slash) correctly', async () => {
-    const libraryRepo = new FakeSourceLibraryRepo();
+    const libraryRepo = new FakeFileLibraryCatalogRepo();
     const objectStore = new FakeObjectStore();
     const clock = new FixedClock();
     libraryRepo.items.push({
@@ -761,7 +519,7 @@ describe('Project use cases', () => {
       new TextEncoder().encode('hello'),
     );
 
-    const listed = await new ListSourceLibraryObjectsUseCase(
+    const listed = await new ListFileLibraryObjectsUseCase(
       libraryRepo,
       objectStore,
       'mbos-dev',
@@ -782,7 +540,7 @@ describe('Project use cases', () => {
   });
 
   it('hides folder marker objects from object rows', async () => {
-    const libraryRepo = new FakeSourceLibraryRepo();
+    const libraryRepo = new FakeFileLibraryCatalogRepo();
     const objectStore = new FakeObjectStore();
     const clock = new FixedClock();
     libraryRepo.items.push({
@@ -805,7 +563,7 @@ describe('Project use cases', () => {
       new TextEncoder().encode('hello'),
     );
 
-    const listed = await new ListSourceLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
+    const listed = await new ListFileLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       libraryId: 'lib_marker',
@@ -820,7 +578,7 @@ describe('Project use cases', () => {
   });
 
   it('filters and sorts listed objects by search/sort options', async () => {
-    const libraryRepo = new FakeSourceLibraryRepo();
+    const libraryRepo = new FakeFileLibraryCatalogRepo();
     const objectStore = new FakeObjectStore();
     const clock = new FixedClock();
     libraryRepo.items.push({
@@ -852,7 +610,7 @@ describe('Project use cases', () => {
       new TextEncoder().encode('12'),
     );
 
-    const listed = await new ListSourceLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
+    const listed = await new ListFileLibraryObjectsUseCase(libraryRepo, objectStore, 'mbos-dev').execute({
       workspaceId: 'ws_a',
       projectId: 'proj_1',
       libraryId: 'lib_search_sort',

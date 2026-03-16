@@ -290,8 +290,8 @@ export const taskFixtures: Task[] = [
     agent_name: 'AgentA',
     status: 'active',
     attached_inputs: [
-      { id: 'in_src_001', kind: 'source', source_id: 'src_001' },
-      { id: 'in_src_002', kind: 'source', source_id: 'src_002' },
+      { id: 'in_lib_001', kind: 'library_object', library_id: 'lib_shared_docs', key: 'product-specs.md', name: 'product-specs.md', content_type: 'text/markdown', size_bytes: 445000 },
+      { id: 'in_lib_002', kind: 'library_object', library_id: 'lib_shared_docs', key: 'user-guide.pdf', name: 'user-guide.pdf', content_type: 'application/pdf', size_bytes: 125000 },
     ],
     created_at: '2026-01-28T10:00:00Z',
     updated_at: '2026-01-28T14:30:00Z',
@@ -306,7 +306,7 @@ export const taskFixtures: Task[] = [
     agent_id: 'agent_002',
     agent_name: 'AgentB',
     status: 'active',
-    attached_inputs: [{ id: 'in_src_003', kind: 'source', source_id: 'src_003' }],
+    attached_inputs: [{ id: 'in_lib_003', kind: 'library_object', library_id: 'lib_shared_docs', key: 'api-reference.md', name: 'api-reference.md', content_type: 'text/markdown', size_bytes: 98000 }],
     created_at: '2026-01-28T11:15:00Z',
     updated_at: '2026-01-28T13:45:00Z',
     last_activity_at: '2026-01-28T13:45:00Z',
@@ -320,7 +320,6 @@ export const taskMessageFixtures: TaskMessage[] = [
     role: 'user',
     content: 'Analyze the product specifications and create a summary',
     created_at: '2026-01-28T10:05:00Z',
-    referenced_source_ids: ['src_001'],
   },
   {
     id: 'msg_task_001_002',
@@ -328,7 +327,6 @@ export const taskMessageFixtures: TaskMessage[] = [
     role: 'agent',
     content: 'Based on the product specifications document, here is a comprehensive summary:\n\n**Key Features:**\n- Advanced AI capabilities\n- Real-time processing\n- Scalable architecture\n\n**Technical Specifications:**\n- Supports multiple data formats\n- High-performance processing engine\n- Enterprise-grade security',
     created_at: '2026-01-28T10:08:00Z',
-    referenced_source_ids: ['src_001'],
   },
   {
     id: 'msg_task_001_003',
@@ -343,7 +341,6 @@ export const taskMessageFixtures: TaskMessage[] = [
     role: 'user',
     content: 'Generate API documentation from the reference file',
     created_at: '2026-01-28T11:20:00Z',
-    referenced_source_ids: ['src_003'],
   },
 ];
 

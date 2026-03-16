@@ -68,10 +68,13 @@
 | Mongo | `notebook_task_trace_events` | `collection_prefix + baseCollection` | Yes | Workspace-scoped collection |
 | Mongo | `governance_policy_overrides` | `collection_prefix + baseCollection` | Yes | Workspace-scoped collection |
 | PostgreSQL | `projects` | `workspace_id` / `project_id` | No | Shared database, shared table |
-| Mongo | `source_libraries` | `workspace_id` / `project_id` | No | Shared collection |
-| Mongo | `sources` | `workspace_id` / `project_id` | No | Shared collection |
-| PostgreSQL / pgvector | `source_embeddings` | `workspace_id` / `project_id` | No | Shared database, shared table |
 | Object storage | `workspaces/{workspaceId}/projects/{projectId}/...` | Path prefix | N/A | Shared bucket |
+
+JuiceFS 文件库当前使用：
+- 每个文件库独立 PostgreSQL metadata database
+- 每个文件库独立 MinIO bucket
+- Web 端通过 JuiceFS Gateway 访问
+- 本地通过 `juicefs mount` 访问
 
 ## 发布与排障建议
 

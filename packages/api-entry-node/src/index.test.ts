@@ -1068,212 +1068,6 @@ describe('api-entry-node projects routes', () => {
     expect(body.message).toBe('project_not_found');
   });
 
-  it('supports create and list sources flow', async () => {
-    const { baseUrl, deps } = startServer();
-    const defaultLibrary = await deps.createSourceLibraryUseCase.execute({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      actorId: 'user_test',
-      input: {
-        name: 'Project Uploads',
-        visibility: 'shared',
-      },
-    });
-
-    const listBefore = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
-    expect(listBefore.status).toBe(200);
-    expect(await listBefore.json()).toEqual({ items: [] });
-
-    const createdRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'hello.txt',
-          library_id: defaultLibrary.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(createdRes.status).toBe(201);
-    const created = (await createdRes.json()) as { id: string; name: string; size_bytes: number };
-    expect(created.id).toContain('src_');
-    expect(created.name).toBe('hello.txt');
-    expect(created.size_bytes).toBe(5);
-
-    const secondRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: 'readme.txt',
-          library_id: defaultLibrary.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('abc', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(secondRes.status).toBe(201);
-
-    const listAfter = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
-    expect(listAfter.status).toBe(200);
-    const listed = (await listAfter.json()) as { items: Array<{ id: string }> };
-    expect(listed.items).toHaveLength(2);
-    expect(listed.items[0].id).toBe(created.id);
-
-    const listLibA = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/sources?library_id=${defaultLibrary.id}`,
-    );
-    expect(listLibA.status).toBe(200);
-    const listedLibA = (await listLibA.json()) as { items: Array<{ id: string; library_id?: string }> };
-    expect(listedLibA.items).toHaveLength(2);
-    expect(listedLibA.items.every((item) => item.library_id === defaultLibrary.id)).toBe(true);
-
-    const detail = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`);
-    expect(detail.status).toBe(200);
-
-    const download = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}/download`);
-    expect(download.status).toBe(200);
-    const text = await download.text();
-    expect(text).toBe('hello');
-
-    const deleteRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/sources/${created.id}`,
-      { method: 'DELETE' },
-    );
-    expect(deleteRes.status).toBe(204);
-
-    const listAfterDelete = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/sources');
-    expect(listAfterDelete.status).toBe(200);
-    const listedAfterDelete = (await listAfterDelete.json()) as { items: Array<{ id: string }> };
-    expect(listedAfterDelete.items).toHaveLength(1);
-  });
-
-  it('lists attached source details for a notebook task', async () => {
-    const { baseUrl, deps } = startServer();
-    const defaultLibrary = await deps.createSourceLibraryUseCase.execute({
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      actorId: 'user_test',
-      input: {
-        name: 'Project Uploads',
-        visibility: 'shared',
-      },
-    });
-
-    const createSourceRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/sources',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'notebook-input.txt',
-          library_id: defaultLibrary.id,
-          content_type: 'text/plain',
-          content_base64: Buffer.from('hello', 'utf-8').toString('base64'),
-        }),
-      },
-    );
-    expect(createSourceRes.status).toBe(201);
-    const createdSource = (await createSourceRes.json()) as { id: string; name: string };
-
-    const createCredentialRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'attached-sources-test-key',
-          type: 'api_key',
-          value: 'sk-test',
-        }),
-      },
-    );
-    expect(createCredentialRes.status).toBe(201);
-    const credential = (await createCredentialRes.json()) as { id: string };
-
-    const createEndpointRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          name: 'attached-sources-endpoint',
-          model: 'gpt-5-codex',
-          type: 'openai',
-          mode: 'openai',
-          base_url: 'http://upstream.invalid/v1',
-          credential_ref: credential.id,
-        }),
-      },
-    );
-    expect(createEndpointRes.status).toBe(201);
-    const endpoint = (await createEndpointRes.json()) as { id: string };
-
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'notebook-agent-for-attached-sources',
-          mode: 'external',
-          interaction_mode: 'notebook',
-          execution_preferences: {
-            notebook: {
-              endpoint_id: endpoint.id,
-              wire_api: 'chat',
-              model: 'gpt-5-codex',
-            },
-          },
-          capabilities: { streaming_completion: true, multimodal_completion: false },
-        }),
-      },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
-
-    const createTaskRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          title: 'Task with source',
-          agent_id: agent.id,
-          initial_inputs: [{ kind: 'source', source_id: createdSource.id }],
-        }),
-      },
-    );
-    expect(createTaskRes.status).toBe(201);
-    const task = (await createTaskRes.json()) as { id: string };
-
-    const attachedDetailsRes = await apiFetch(
-      baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/inputs`,
-    );
-    expect(attachedDetailsRes.status).toBe(200);
-    const attachedDetails = (await attachedDetailsRes.json()) as Array<{ id: string; source_id?: string; filename?: string }>;
-    expect(attachedDetails).toHaveLength(1);
-    expect(attachedDetails[0]?.source_id).toBe(createdSource.id);
-  });
-
   it('supports file libraries CRUD flow', async () => {
     const { baseUrl } = startServer();
 
@@ -2417,7 +2211,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           access_mode: 'allow_all_members',
           allowed_subjects: [],
-          rate_limits: { rules: [{ key: 'source_library.requests_per_minute', value: 1 }] },
+          rate_limits: { rules: [{ key: 'file_library.requests_per_minute', value: 1 }] },
         }),
       },
     );
@@ -5608,7 +5402,7 @@ describe('api-entry-node projects routes', () => {
     const attachmentBody = (await initAttachment.json()) as {
       attachment: {
         id: string;
-        source_library_id?: string;
+        file_library_id?: string;
         source_object_key?: string;
         input_ref?: { kind?: 'library_object' | 'url'; library_id?: string; key?: string };
       };
@@ -5623,10 +5417,10 @@ describe('api-entry-node projects routes', () => {
             library_id: attachmentBody.attachment.input_ref.library_id,
             key: attachmentBody.attachment.input_ref.key,
           }
-        : attachmentBody.attachment.source_library_id && attachmentBody.attachment.source_object_key
+        : attachmentBody.attachment.file_library_id && attachmentBody.attachment.source_object_key
           ? {
               kind: 'library_object' as const,
-              library_id: attachmentBody.attachment.source_library_id,
+              library_id: attachmentBody.attachment.file_library_id,
               key: attachmentBody.attachment.source_object_key,
             }
           : undefined;
@@ -5950,7 +5744,7 @@ describe('api-entry-node projects routes', () => {
       attachment: {
         input_ref?: { kind?: string; library_id?: string; key?: string };
         source_type?: string;
-        source_library_id?: string;
+        file_library_id?: string;
         source_object_key?: string;
       };
     };
@@ -5960,7 +5754,7 @@ describe('api-entry-node projects routes', () => {
       key: 'chat/s1/uploads/doc.txt',
     });
     expect(body.attachment.source_type).toBe('library_import');
-    expect(body.attachment.source_library_id).toBe('lib_123');
+    expect(body.attachment.file_library_id).toBe('lib_123');
     expect(body.attachment.source_object_key).toBe('chat/s1/uploads/doc.txt');
 
     const auditStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();

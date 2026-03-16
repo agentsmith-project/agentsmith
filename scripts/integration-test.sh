@@ -77,7 +77,7 @@ for locale in "${LOCALES[@]}"; do
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/audit" "Audit Log" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/usage" "Usage Analytics" 200
   test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/settings" "Settings" 200
-  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/sources" "Sources" 200
+  test_url "$BASE_URL/$locale/workspaces/$WORKSPACE_ID/projects/$PROJECT_ID/files" "Files" 200
 done
 
 # Test 404 handling

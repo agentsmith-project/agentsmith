@@ -56,7 +56,7 @@ describe('GovernanceExplainabilityAPI', () => {
 
     await api.checkLimits('ws_1', 'proj_1', {
       subject_id: 'user_1',
-      resource_type: 'source_library',
+      resource_type: 'file_library',
       resource_id: 'lib_1',
       operation: 'upload',
       estimated_cost: 4096,
@@ -64,7 +64,7 @@ describe('GovernanceExplainabilityAPI', () => {
 
     expect(mock.post).toHaveBeenCalledWith('/workspaces/ws_1/projects/proj_1/spending-limits/check', {
       subject_id: 'user_1',
-      resource_type: 'source_library',
+      resource_type: 'file_library',
       resource_id: 'lib_1',
       operation: 'upload',
       estimated_cost: 4096,
@@ -112,13 +112,13 @@ describe('GovernanceExplainabilityAPI', () => {
       {
         error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
         message: 'resource_policy_spending_limit_exceeded',
-        resource_type: 'source_library',
+        resource_type: 'file_library',
         resource_id: 'lib_1',
-        limit_key: 'source_library.max_file_size_bytes',
+        limit_key: 'file_library.max_file_size_bytes',
       },
     );
 
-    expect(getGovernanceLimitExceededDetails(error)?.limit_key).toBe('source_library.max_file_size_bytes');
+    expect(getGovernanceLimitExceededDetails(error)?.limit_key).toBe('file_library.max_file_size_bytes');
   });
 
   it('keeps spending-limit payload fields normalized to limit semantics', () => {

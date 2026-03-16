@@ -5,7 +5,7 @@ import {
   checkAndConsumeProjectResourceRateLimitsForUser,
   checkProjectEndpointRateLimitsForUser,
   checkProjectEndpointSpendingLimitsForUser,
-  checkProjectSourceLibraryLimitLimits,
+  checkProjectFileLibraryLimitRules,
 } from './project-resource-policy-enforcer.js';
 import { getProjectGroupsState, setProjectAdminGroupMembers } from './project-groups-store.js';
 import { upsertProjectMembership } from './project-memberships-store.js';
@@ -126,21 +126,21 @@ describe('project-resource-policy-enforcer', () => {
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
   });
 
-  it('enforces source_library requests_per_minute at policy root', () => {
+  it('enforces file_library requests_per_minute at policy root', () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const policy: ProjectResourcePolicyRecord = {
-      resource_type: 'source_library',
+      resource_type: 'file_library',
       resource_id: 'lib_1',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
       rate_limits: {
-        rules: [{ key: 'source_library.requests_per_minute', value: 1 }],
+        rules: [{ key: 'file_library.requests_per_minute', value: 1 }],
       },
     };
     const first = checkAndConsumeProjectResourceRateLimitsForUser({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
-      resourceType: 'source_library',
+      resourceType: 'file_library',
       resourceId: 'lib_1',
       userId: 'user_1',
       policy,
@@ -149,7 +149,7 @@ describe('project-resource-policy-enforcer', () => {
     const second = checkAndConsumeProjectResourceRateLimitsForUser({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
-      resourceType: 'source_library',
+      resourceType: 'file_library',
       resourceId: 'lib_1',
       userId: 'user_1',
       policy,
@@ -243,21 +243,21 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
-  it('enforces source library file count and file size limits', () => {
+  it('enforces file library file count and file size limits', () => {
     const policy: ProjectResourcePolicyRecord = {
-      resource_type: 'source_library',
+      resource_type: 'file_library',
       resource_id: 'lib_limit',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
       spending_limits: {
         rules: [
-          { key: 'source_library.max_total_files', value: 1 },
-          { key: 'source_library.max_file_size_bytes', value: 4 },
+          { key: 'file_library.max_total_files', value: 1 },
+          { key: 'file_library.max_file_size_bytes', value: 4 },
         ],
       },
     };
 
-    const oversized = checkProjectSourceLibraryLimitLimits({
+    const oversized = checkProjectFileLibraryLimitRules({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',
@@ -267,13 +267,13 @@ describe('project-resource-policy-enforcer', () => {
     });
     expect(oversized).toMatchObject({
       allowed: false,
-      limit_key: 'source_library.max_file_size_bytes',
+      limit_key: 'file_library.max_file_size_bytes',
       effective_max_file_size_bytes: 4,
       current_file_size_bytes: 5,
       usage_unit: 'bytes',
     });
 
-    const tooMany = checkProjectSourceLibraryLimitLimits({
+    const tooMany = checkProjectFileLibraryLimitRules({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',
@@ -283,7 +283,7 @@ describe('project-resource-policy-enforcer', () => {
     });
     expect(tooMany).toMatchObject({
       allowed: false,
-      limit_key: 'source_library.max_total_files',
+      limit_key: 'file_library.max_total_files',
       effective_max_total_files: 1,
       current_total_files: 1,
       usage_unit: 'files',

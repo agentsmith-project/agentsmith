@@ -36,8 +36,7 @@ type ServerStartPayload = {
     model?: string;
     notebook_mode?: boolean;
     task_inputs?: Array<{
-      kind?: 'source' | 'library_object' | 'artifact' | 'url';
-      source_id?: string;
+      kind?: 'library_object' | 'artifact' | 'url';
       library_id?: string;
       key?: string;
       task_id?: string;

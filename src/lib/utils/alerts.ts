@@ -32,7 +32,7 @@ export function generateAlertId(): string {
 export function createLimitAlert(params: {
   workspace_id: string;
   project_id: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   resource_name: string;
   used: number;
@@ -77,7 +77,7 @@ export function createLimitAlert(params: {
 export function createRateLimitAlert(params: {
   workspace_id: string;
   project_id: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   resource_name: string;
   rate_limit: number;
@@ -106,7 +106,7 @@ export function createRateLimitAlert(params: {
 export function createPolicyDeniedAlert(params: {
   workspace_id: string;
   project_id: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   resource_name: string;
   subject_type: 'user' | 'group';

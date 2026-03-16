@@ -53,34 +53,7 @@ export const ErrorResponseSchema = z.object({
   request_id: z.string().optional(),
 });
 
-export const SourceStatusSchema = z.enum(['ready', 'deleted']);
-
-export const SourceSchema = z.object({
-  id: z.string().min(1),
-  workspace_id: z.string().min(1),
-  project_id: z.string().min(1),
-  library_id: z.string().min(1).optional(),
-  name: z.string().min(1),
-  object_key: z.string().min(1),
-  content_type: z.string().min(1),
-  size_bytes: z.number().int().nonnegative(),
-  status: SourceStatusSchema,
-  created_at: z.string().datetime(),
-  updated_at: z.string().datetime(),
-});
-
-export const CreateSourceRequestSchema = z.object({
-  name: z.string().min(1).max(255),
-  content_type: z.string().min(1).max(255),
-  content_base64: z.string().min(1),
-  library_id: z.string().min(1).max(255),
-});
-
-export const ListSourcesResponseSchema = z.object({
-  items: z.array(SourceSchema),
-});
-
-export const SourceLibrarySchema = z.object({
+export const FileLibraryCatalogSchema = z.object({
   id: z.string().min(1),
   workspace_id: z.string().min(1),
   project_id: z.string().min(1),
@@ -97,17 +70,17 @@ export const SourceLibrarySchema = z.object({
   updated_at: z.string().datetime(),
 });
 
-export const ListSourceLibrariesResponseSchema = z.object({
-  items: z.array(SourceLibrarySchema),
+export const ListFileLibraryCatalogsResponseSchema = z.object({
+  items: z.array(FileLibraryCatalogSchema),
 });
 
-export const CreateSourceLibraryRequestSchema = z.object({
+export const CreateFileLibraryCatalogRequestSchema = z.object({
   name: z.string().min(1).max(255),
   description: z.string().max(1000).optional(),
   visibility: z.literal('shared').default('shared'),
 });
 
-export const UpdateSourceLibraryRequestSchema = z
+export const UpdateFileLibraryCatalogRequestSchema = z
   .object({
     name: z.string().min(1).max(255).optional(),
     description: z.string().max(1000).optional(),
@@ -116,13 +89,13 @@ export const UpdateSourceLibraryRequestSchema = z
     message: 'at_least_one_field_required',
   });
 
-export const SourceObjectListPrefixItemSchema = z.object({
+export const FileLibraryObjectListPrefixItemSchema = z.object({
   kind: z.literal('prefix'),
   prefix: z.string().min(1),
   name: z.string().min(1),
 });
 
-export const SourceObjectListObjectItemSchema = z.object({
+export const FileLibraryObjectListObjectItemSchema = z.object({
   kind: z.literal('object'),
   key: z.string().min(1),
   name: z.string().min(1),
@@ -132,18 +105,18 @@ export const SourceObjectListObjectItemSchema = z.object({
   last_modified: z.string().datetime(),
 });
 
-export const SourceObjectListItemSchema = z.union([
-  SourceObjectListPrefixItemSchema,
-  SourceObjectListObjectItemSchema,
+export const FileLibraryObjectListItemSchema = z.union([
+  FileLibraryObjectListPrefixItemSchema,
+  FileLibraryObjectListObjectItemSchema,
 ]);
 
-export const ListSourceObjectsResponseSchema = z.object({
+export const ListFileLibraryObjectsResponseSchema = z.object({
   prefix: z.string(),
-  items: z.array(SourceObjectListItemSchema),
+  items: z.array(FileLibraryObjectListItemSchema),
   next_continuation_token: z.string().nullable(),
 });
 
-export const ListSourceObjectsQuerySchema = z.object({
+export const ListFileLibraryObjectsQuerySchema = z.object({
   prefix: z.string().optional(),
   delimiter: z.literal('/').default('/'),
   page_size: z
@@ -159,11 +132,11 @@ export const ListSourceObjectsQuerySchema = z.object({
   sort_order: z.enum(['asc', 'desc']).default('asc'),
 });
 
-export const CreateSourceFolderRequestSchema = z.object({
+export const CreateFileLibraryObjectFolderRequestSchema = z.object({
   prefix: z.string().min(1),
 });
 
-export const UploadSourceObjectResponseSchema = z.object({
+export const UploadFileLibraryObjectResponseSchema = z.object({
   key: z.string().min(1),
   size_bytes: z.number().int().nonnegative(),
   content_type: z.string().min(1),
@@ -171,11 +144,11 @@ export const UploadSourceObjectResponseSchema = z.object({
   last_modified: z.string().datetime(),
 });
 
-export const DeleteSourceObjectsRequestSchema = z.object({
+export const DeleteFileLibraryObjectsRequestSchema = z.object({
   keys: z.array(z.string().min(1)).min(1),
 });
 
-export const DeleteSourceObjectsResponseSchema = z.object({
+export const DeleteFileLibraryObjectsResponseSchema = z.object({
   results: z.array(
     z.object({
       key: z.string().min(1),
@@ -186,13 +159,13 @@ export const DeleteSourceObjectsResponseSchema = z.object({
   ),
 });
 
-export const MoveSourceObjectRequestSchema = z.object({
+export const MoveFileLibraryObjectRequestSchema = z.object({
   from_key: z.string().min(1),
   to_key: z.string().min(1),
   overwrite: z.boolean().optional(),
 });
 
-export const SourceObjectMetaResponseSchema = z.object({
+export const FileLibraryObjectMetaResponseSchema = z.object({
   key: z.string().min(1),
   size_bytes: z.number().int().nonnegative(),
   content_type: z.string().min(1),
@@ -201,11 +174,11 @@ export const SourceObjectMetaResponseSchema = z.object({
   user_metadata: z.record(z.string(), z.string()).optional(),
 });
 
-export const SourceObjectDownloadQuerySchema = z.object({
+export const FileLibraryObjectDownloadQuerySchema = z.object({
   key: z.string().min(1),
 });
 
-export const SourceObjectShareLinkCreateRequestSchema = z.object({
+export const FileLibraryObjectShareLinkCreateRequestSchema = z.object({
   key: z.string().min(1),
   expires_in_seconds: z
     .number()
@@ -215,7 +188,7 @@ export const SourceObjectShareLinkCreateRequestSchema = z.object({
     .optional(),
 });
 
-export const SourceObjectShareLinkResponseSchema = z.object({
+export const FileLibraryObjectShareLinkResponseSchema = z.object({
   key: z.string().min(1),
   url: z.string().url(),
   expires_at: z.string().datetime(),
@@ -436,24 +409,21 @@ export type CreateProjectRequest = z.infer<typeof CreateProjectRequestSchema>;
 export type UpdateProjectRequest = z.infer<typeof UpdateProjectRequestSchema>;
 export type ListProjectsResponse = z.infer<typeof ListProjectsResponseSchema>;
 export type ErrorResponse = z.infer<typeof ErrorResponseSchema>;
-export type SourceDTO = z.infer<typeof SourceSchema>;
-export type CreateSourceRequest = z.infer<typeof CreateSourceRequestSchema>;
-export type ListSourcesResponse = z.infer<typeof ListSourcesResponseSchema>;
-export type SourceLibraryDTO = z.infer<typeof SourceLibrarySchema>;
-export type ListSourceLibrariesResponse = z.infer<typeof ListSourceLibrariesResponseSchema>;
-export type CreateSourceLibraryRequest = z.infer<typeof CreateSourceLibraryRequestSchema>;
-export type UpdateSourceLibraryRequest = z.infer<typeof UpdateSourceLibraryRequestSchema>;
-export type ListSourceObjectsResponse = z.infer<typeof ListSourceObjectsResponseSchema>;
-export type ListSourceObjectsQuery = z.infer<typeof ListSourceObjectsQuerySchema>;
-export type CreateSourceFolderRequest = z.infer<typeof CreateSourceFolderRequestSchema>;
-export type UploadSourceObjectResponse = z.infer<typeof UploadSourceObjectResponseSchema>;
-export type DeleteSourceObjectsRequest = z.infer<typeof DeleteSourceObjectsRequestSchema>;
-export type DeleteSourceObjectsResponse = z.infer<typeof DeleteSourceObjectsResponseSchema>;
-export type MoveSourceObjectRequest = z.infer<typeof MoveSourceObjectRequestSchema>;
-export type SourceObjectMetaResponse = z.infer<typeof SourceObjectMetaResponseSchema>;
-export type SourceObjectDownloadQuery = z.infer<typeof SourceObjectDownloadQuerySchema>;
-export type SourceObjectShareLinkCreateRequest = z.infer<typeof SourceObjectShareLinkCreateRequestSchema>;
-export type SourceObjectShareLinkResponse = z.infer<typeof SourceObjectShareLinkResponseSchema>;
+export type FileLibraryCatalogDTO = z.infer<typeof FileLibraryCatalogSchema>;
+export type ListFileLibraryCatalogsResponse = z.infer<typeof ListFileLibraryCatalogsResponseSchema>;
+export type CreateFileLibraryCatalogRequest = z.infer<typeof CreateFileLibraryCatalogRequestSchema>;
+export type UpdateFileLibraryCatalogRequest = z.infer<typeof UpdateFileLibraryCatalogRequestSchema>;
+export type ListFileLibraryObjectsResponse = z.infer<typeof ListFileLibraryObjectsResponseSchema>;
+export type ListFileLibraryObjectsQuery = z.infer<typeof ListFileLibraryObjectsQuerySchema>;
+export type CreateFileLibraryObjectFolderRequest = z.infer<typeof CreateFileLibraryObjectFolderRequestSchema>;
+export type UploadFileLibraryObjectResponse = z.infer<typeof UploadFileLibraryObjectResponseSchema>;
+export type DeleteFileLibraryObjectsRequest = z.infer<typeof DeleteFileLibraryObjectsRequestSchema>;
+export type DeleteFileLibraryObjectsResponse = z.infer<typeof DeleteFileLibraryObjectsResponseSchema>;
+export type MoveFileLibraryObjectRequest = z.infer<typeof MoveFileLibraryObjectRequestSchema>;
+export type FileLibraryObjectMetaResponse = z.infer<typeof FileLibraryObjectMetaResponseSchema>;
+export type FileLibraryObjectDownloadQuery = z.infer<typeof FileLibraryObjectDownloadQuerySchema>;
+export type FileLibraryObjectShareLinkCreateRequest = z.infer<typeof FileLibraryObjectShareLinkCreateRequestSchema>;
+export type FileLibraryObjectShareLinkResponse = z.infer<typeof FileLibraryObjectShareLinkResponseSchema>;
 export type FileLibraryDTO = z.infer<typeof FileLibrarySchema>;
 export type ListFileLibrariesResponse = z.infer<typeof ListFileLibrariesResponseSchema>;
 export type CreateFileLibraryRequest = z.infer<typeof CreateFileLibraryRequestSchema>;

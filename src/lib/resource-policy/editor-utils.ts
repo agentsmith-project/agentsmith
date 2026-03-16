@@ -73,10 +73,10 @@ export function formatRuleValue(rule: PolicyRule, tResource: (key: string) => st
   ) {
     return `$${rule.value} ${tResource(`units.${rule.key.replace('endpoint.', '')}`)}`;
   }
-  if (rule.key === 'source_library.max_total_files') {
+  if (rule.key === 'file_library.max_total_files') {
     return `${rule.value} ${tResource('units.files')}`;
   }
-  if (rule.key === 'source_library.max_file_size_bytes') {
+  if (rule.key === 'file_library.max_file_size_bytes') {
     return formatBytes(rule.value, tResource);
   }
   return `${rule.value} ${tResource('units.sessions')}`;

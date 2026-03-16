@@ -151,7 +151,7 @@ export type UsageTimeseriesPoint = {
 export type UsageResourceBreakdownItem = {
   resource_id: string;
   resource_name: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   requests: number;
   tokens?: number;
   estimated_cost: number;
@@ -687,7 +687,7 @@ export async function getUsageTimeseries(
     endTime: string;
     granularity?: 'hour' | 'day' | 'week' | 'month';
     metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
-    resourceType?: 'endpoint' | 'source_library' | 'agent' | null;
+    resourceType?: 'endpoint' | 'file_library' | 'agent' | null;
     resourceId?: string | null;
     endUserId?: string | null;
   },
@@ -740,7 +740,7 @@ export async function getUsageTimeseries(
 
     if (
       fact.resource_type === 'endpoint'
-      || fact.resource_type === 'source_library'
+      || fact.resource_type === 'file_library'
       || fact.resource_type === 'agent'
     ) {
       const key = `${fact.resource_type}:${fact.resource_id ?? 'unknown'}`;

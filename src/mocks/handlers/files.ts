@@ -2,7 +2,6 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import type { FileLibrary } from '@/lib/api/types';
 
-const sources = [...(p0.sources ?? [])];
 type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
   | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; etag?: string; last_modified: string; content?: string };
@@ -217,10 +216,6 @@ function listObjects(
 }
 
 export const fileHandlers = [
-  http.get('/api/v1/workspaces/:ws/projects/:prj/sources', ({ params }) => {
-    const projectId = String(params.prj ?? '');
-    return HttpResponse.json({ items: sources.filter((item) => item.project_id === projectId) });
-  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries', ({ params }) => {
     const projectId = String(params.prj ?? '');
     const workspaceId = String(params.ws ?? '');

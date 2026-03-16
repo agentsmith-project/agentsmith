@@ -29,8 +29,7 @@ async function main() {
     if (!inputIdArg) throw new Error('input_id_required');
     const item = inputs.find((x) =>
       x && (
-        x.source_id === inputIdArg
-        || (x.library_id && x.key && `${x.library_id}:${x.key}` === inputIdArg)
+        (x.library_id && x.key && `${x.library_id}:${x.key}` === inputIdArg)
         || (x.task_id && x.artifact_id && `${x.task_id}:${x.artifact_id}` === inputIdArg)
         || (x.kind === 'artifact' && x.artifact_id === inputIdArg)
         || (x.imported_library_id && x.imported_key && `${x.imported_library_id}:${x.imported_key}` === inputIdArg)
@@ -58,11 +57,7 @@ async function main() {
     } else if (item.kind === 'url') {
       throw new Error('url_input_has_no_imported_object');
     } else {
-      const sourceId = item.source_id || inputIdArg;
-      res = await fetch(
-        `${apiBase}/api/v1/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/sources/${encodeURIComponent(sourceId)}/download`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      throw new Error('unsupported_legacy_input_kind');
     }
     if (!res.ok) {
       const text = await res.text().catch(() => '');
@@ -71,8 +66,7 @@ async function main() {
     const ab = await res.arrayBuffer();
     await mkdir('./inputs', { recursive: true });
     const fallbackName =
-      item.source_id
-      || (item.key ? String(item.key).split('/').pop() : null)
+      (item.key ? String(item.key).split('/').pop() : null)
       || (item.task_relative_path ? String(item.task_relative_path).split('/').pop() : null)
       || (item.imported_key ? String(item.imported_key).split('/').pop() : null)
       || `${inputIdArg}.bin`;

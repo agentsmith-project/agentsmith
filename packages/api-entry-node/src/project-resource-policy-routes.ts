@@ -6,10 +6,10 @@ import {
   getProjectResourcePolicyOrDefault,
   upsertProjectResourcePolicy,
 } from './project-resource-policy-store.js';
-import { readRequestId, validatePolicyRuleKeys } from './project-source-route-handler-utils.js';
+import { readRequestId, validatePolicyRuleKeys } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
-type ManagedPolicyResourceType = 'endpoint' | 'source_library' | 'agent';
+type ManagedPolicyResourceType = 'endpoint' | 'file_library' | 'agent';
 
 type PolicyRulePayload = {
   access_mode?: 'allow_all_members' | 'allow_list';
@@ -24,7 +24,7 @@ type PolicyRulePayload = {
 };
 
 function isManagedPolicyResourceType(resourceType: string): resourceType is ManagedPolicyResourceType {
-  return resourceType === 'endpoint' || resourceType === 'source_library' || resourceType === 'agent';
+  return resourceType === 'endpoint' || resourceType === 'file_library' || resourceType === 'agent';
 }
 
 export async function handleProjectResourcePolicyRoute(args: {

@@ -381,7 +381,7 @@
                         "type": "object",
                         "additionalProperties": false,
                         "properties": {
-                          "source_id": {
+                          "library_id": {
                             "type": "string"
                           },
                           "filename": {

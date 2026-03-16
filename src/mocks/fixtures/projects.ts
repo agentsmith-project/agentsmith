@@ -13,7 +13,7 @@ const defaultGovernance = {
     endpoint: {
       daily_token_limit: 200000,
     },
-    source_library: {
+    file_library: {
       max_total_files: 2000,
       max_file_size_bytes: 104857600,
     },

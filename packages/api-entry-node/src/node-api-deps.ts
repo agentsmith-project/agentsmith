@@ -1,27 +1,21 @@
 import type {
-  CreateSourceFolderUseCase,
-  CreateSourceObjectShareLinkUseCase,
+  CreateFileLibraryFolderUseCase,
+  CreateFileLibraryObjectShareLinkUseCase,
   CreateProjectUseCase,
-  CreateSourceLibraryUseCase,
-  CreateSourceUseCase,
-  DeleteSourceObjectsUseCase,
+  CreateFileLibraryCatalogUseCase,
+  DeleteFileLibraryObjectsUseCase,
   DeleteProjectUseCase,
-  DeleteSourceLibraryUseCase,
-  DeleteSourceUseCase,
-  DownloadSourceObjectUseCase,
-  DownloadSourceUseCase,
+  DeleteFileLibraryCatalogUseCase,
+  DownloadFileLibraryObjectUseCase,
   GetProjectUseCase,
-  GetSourceObjectMetaUseCase,
-  GetSourceUseCase,
-  GetSourcesLimitUseCase,
+  GetFileLibraryObjectMetaUseCase,
   ListProjectsUseCase,
-  ListSourceLibraryObjectsUseCase,
-  ListSourceLibrariesUseCase,
-  ListSourcesUseCase,
-  MoveSourceObjectUseCase,
-  UploadSourceObjectUseCase,
+  ListFileLibraryObjectsUseCase,
+  ListFileLibraryCatalogsUseCase,
+  MoveFileLibraryObjectUseCase,
+  UploadFileLibraryObjectUseCase,
   UpdateProjectUseCase,
-  UpdateSourceLibraryUseCase,
+  UpdateFileLibraryCatalogUseCase,
 } from '@mbos/application';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { ChatResourceService } from './chat-resource-service.js';
@@ -44,29 +38,23 @@ export interface NodeApiDeps {
   agentResourceService: AgentResourceService;
   agentExecutionService: AgentExecutionService;
   internalAgentPodManager?: InternalAgentPodManager;
-  sourceBucket: string;
-  createSourceLibraryUseCase: CreateSourceLibraryUseCase;
-  createSourceFolderUseCase: CreateSourceFolderUseCase;
-  createSourceObjectShareLinkUseCase: CreateSourceObjectShareLinkUseCase;
+  fileLibraryBucket: string;
+  createFileLibraryCatalogUseCase: CreateFileLibraryCatalogUseCase;
+  createFileLibraryFolderUseCase: CreateFileLibraryFolderUseCase;
+  createFileLibraryObjectShareLinkUseCase: CreateFileLibraryObjectShareLinkUseCase;
   createProjectUseCase: CreateProjectUseCase;
-  createSourceUseCase: CreateSourceUseCase;
-  uploadSourceObjectUseCase: UploadSourceObjectUseCase;
-  deleteSourceLibraryUseCase: DeleteSourceLibraryUseCase;
-  deleteSourceObjectsUseCase: DeleteSourceObjectsUseCase;
-  deleteSourceUseCase: DeleteSourceUseCase;
-  moveSourceObjectUseCase: MoveSourceObjectUseCase;
-  downloadSourceObjectUseCase: DownloadSourceObjectUseCase;
-  downloadSourceUseCase: DownloadSourceUseCase;
-  getSourceObjectMetaUseCase: GetSourceObjectMetaUseCase;
-  getSourceUseCase: GetSourceUseCase;
-  getSourcesLimitUseCase: GetSourcesLimitUseCase;
+  uploadFileLibraryObjectUseCase: UploadFileLibraryObjectUseCase;
+  deleteFileLibraryCatalogUseCase: DeleteFileLibraryCatalogUseCase;
+  deleteFileLibraryObjectsUseCase: DeleteFileLibraryObjectsUseCase;
+  moveFileLibraryObjectUseCase: MoveFileLibraryObjectUseCase;
+  downloadFileLibraryObjectUseCase: DownloadFileLibraryObjectUseCase;
+  getFileLibraryObjectMetaUseCase: GetFileLibraryObjectMetaUseCase;
   deleteProjectUseCase: DeleteProjectUseCase;
   getProjectUseCase: GetProjectUseCase;
   listProjectsUseCase: ListProjectsUseCase;
-  listSourceLibrariesUseCase: ListSourceLibrariesUseCase;
-  listSourceLibraryObjectsUseCase: ListSourceLibraryObjectsUseCase;
-  listSourcesUseCase: ListSourcesUseCase;
-  updateSourceLibraryUseCase: UpdateSourceLibraryUseCase;
+  listFileLibraryCatalogsUseCase: ListFileLibraryCatalogsUseCase;
+  listFileLibraryObjectsUseCase: ListFileLibraryObjectsUseCase;
+  updateFileLibraryCatalogUseCase: UpdateFileLibraryCatalogUseCase;
   updateProjectUseCase: UpdateProjectUseCase;
   governanceRunner?: GovernanceRunnerController;
   fileLibraryOrchestrator?: FileLibraryOrchestrator;

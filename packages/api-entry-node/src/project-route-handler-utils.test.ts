@@ -4,9 +4,9 @@ import {
   readProjectPermissionContext,
   readRequestId,
   validatePolicyRuleKeys,
-} from './project-source-route-handler-utils.js';
+} from './project-route-handler-utils.js';
 
-describe('project-source-route-handler utils', () => {
+describe('project-route-handler utils', () => {
   it('reads request ids from string and array headers', () => {
     expect(readRequestId({ headers: { 'x-request-id': ' req-1 ' } } as never)).toBe('req-1');
     expect(readRequestId({ headers: { 'x-request-id': [' ', 'req-2'] } } as never)).toBe('req-2');
@@ -20,12 +20,12 @@ describe('project-source-route-handler utils', () => {
   it('validates resource policy rules against allowed keys', () => {
     const allowedRateKeys = {
       endpoint: ['endpoint.requests_per_minute'],
-      source_library: ['source_library.requests_per_minute'],
+      file_library: ['file_library.requests_per_minute'],
       agent: [],
     } as const;
     const allowedLimitKeys = {
       endpoint: ['endpoint.spending_usd_per_day'],
-      source_library: ['source_library.max_total_files'],
+      file_library: ['file_library.max_total_files'],
       agent: [],
     } as const;
 

@@ -15,7 +15,7 @@ import type { GovernanceDrilldownContext } from '@/lib/governance-drilldown-cont
 
 describe('classifyGovernanceEvidenceFocus', () => {
   it('classifies limit-related reasons', () => {
-    expect(classifyGovernanceEvidenceFocus('missing_source_library_limit')).toBe('limit');
+    expect(classifyGovernanceEvidenceFocus('missing_file_library_limit')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('rate_limit_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('spending_limit_exceeded')).toBe('limit');
     expect(classifyGovernanceEvidenceFocus('max_total_files_reached')).toBe('limit');

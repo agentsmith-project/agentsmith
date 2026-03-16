@@ -18,9 +18,9 @@ vi.mock('./project-memberships-store.js', () => ({
   upsertProjectMembership,
 }));
 
-vi.mock('./project-source-route-handler-utils.js', async () => {
-  const actual = await vi.importActual<typeof import('./project-source-route-handler-utils.js')>(
-    './project-source-route-handler-utils.js',
+vi.mock('./project-route-handler-utils.js', async () => {
+  const actual = await vi.importActual<typeof import('./project-route-handler-utils.js')>(
+    './project-route-handler-utils.js',
   );
   return {
     ...actual,
@@ -32,9 +32,9 @@ import {
   getProjectJoinRequestsState,
   handleProjectJoinRequestsRoute,
   resetProjectJoinRequestsState,
-} from './project-source-join-requests.js';
+} from './project-join-request-routes.js';
 
-describe('project-source-join-requests', () => {
+describe('project-join-request-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeProjectAuditEvent.mockResolvedValue(undefined);

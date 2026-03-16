@@ -202,7 +202,7 @@ export class MemberAPI {
   async getResourcePolicy(
     workspaceId: string,
     projectId: string,
-    resourceType: 'endpoint' | 'source_library' | 'agent',
+    resourceType: 'endpoint' | 'file_library' | 'agent',
     resourceId: string
   ): Promise<ResourcePolicy> {
     return this.client.get<ResourcePolicy>(
@@ -216,7 +216,7 @@ export class MemberAPI {
   async updateResourcePolicy(
     workspaceId: string,
     projectId: string,
-    resourceType: 'endpoint' | 'source_library' | 'agent',
+    resourceType: 'endpoint' | 'file_library' | 'agent',
     resourceId: string,
     data: ResourcePolicyUpdateRequest
   ): Promise<void> {

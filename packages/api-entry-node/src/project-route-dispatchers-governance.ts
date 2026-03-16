@@ -1,33 +1,33 @@
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
-import { handleProjectJoinRequestsRoute } from './project-source-join-requests.js';
+import { handleProjectJoinRequestsRoute } from './project-join-request-routes.js';
 import {
   handleProjectGroupsRoute,
   handleProjectMembershipGovernanceRoute,
   handleProjectPermissionTemplatesRoute,
-} from './project-source-member-governance.js';
-import { handleProjectResourcePolicyRoute } from './project-source-resource-policy.js';
-import type { ProjectSourceRouteContext } from './project-source-route-types.js';
+} from './project-member-governance-routes.js';
+import { handleProjectResourcePolicyRoute } from './project-resource-policy-routes.js';
+import type { ProjectRouteContext } from './project-route-types.js';
 import { getProjectGroupsState } from './project-groups-store.js';
 import { getProjectMembershipsState } from './project-memberships-store.js';
-import { getProjectJoinRequestsState } from './project-source-join-requests.js';
+import { getProjectJoinRequestsState } from './project-join-request-routes.js';
 
-export const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
+export const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'file_library' | 'agent', readonly string[]> = {
   endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
-  source_library: ['source_library.requests_per_minute'],
+  file_library: ['file_library.requests_per_minute'],
   agent: [],
 };
 
-export const RESOURCE_POLICY_ALLOWED_LIMIT_KEYS: Record<'endpoint' | 'source_library' | 'agent', readonly string[]> = {
+export const RESOURCE_POLICY_ALLOWED_LIMIT_KEYS: Record<'endpoint' | 'file_library' | 'agent', readonly string[]> = {
   endpoint: [
     'endpoint.spending_usd_per_minute',
     'endpoint.spending_usd_per_5_hours',
     'endpoint.spending_usd_per_day',
   ],
-  source_library: ['source_library.max_total_files', 'source_library.max_file_size_bytes'],
+  file_library: ['file_library.max_total_files', 'file_library.max_file_size_bytes'],
   agent: [],
 };
 
-export async function handleProjectGovernanceRoutes(context: ProjectSourceRouteContext): Promise<boolean> {
+export async function handleProjectGovernanceRoutes(context: ProjectRouteContext): Promise<boolean> {
   const {
     route,
     method,

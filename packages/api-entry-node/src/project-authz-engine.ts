@@ -16,7 +16,7 @@ import {
   PROJECT_BUILT_IN_GROUP_IDS,
 } from './project-governance-model.js';
 
-type ResourceType = 'project' | 'endpoint' | 'source_library' | 'agent';
+type ResourceType = 'project' | 'endpoint' | 'file_library' | 'agent';
 type SubjectType = 'user' | 'group' | 'agent';
 
 export type ProjectAuthzPermissionSource =
@@ -62,7 +62,7 @@ export type ResourcePolicyDecision = {
   allowed: boolean;
   matched_policy?: {
     id: string;
-    resource_type: 'endpoint' | 'source_library' | 'agent';
+    resource_type: 'endpoint' | 'file_library' | 'agent';
     resource_id: string;
     access_mode: 'allow_all_members' | 'allow_list';
     matched_subject?: {
@@ -291,7 +291,7 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
       ? 'project:endpoint:use'
       : 'project:governance:update';
   }
-  if (resourceType === 'source_library') {
+  if (resourceType === 'file_library') {
     return /read|list|download|browse/i.test(action)
       ? 'project:endpoint:use'
       : 'project:files:update';

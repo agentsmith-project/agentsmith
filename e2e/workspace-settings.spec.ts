@@ -42,6 +42,8 @@ test.describe('Workspace Settings Page', () => {
   test('workspace manager can transfer project ownership', async ({ authedPage }) => {
     const projectCard = authedPage.getByTestId('ws-settings__project--proj_001');
     const ownerSelect = authedPage.getByTestId('ws-settings__project-owner-select--proj_001');
+    await expect(projectCard).toBeVisible();
+    await expect(ownerSelect).toBeVisible();
     const optionValues = await ownerSelect.locator('option').evaluateAll((options) =>
       options.map((option) => ({ value: option.getAttribute('value') ?? '', label: option.textContent ?? '' })),
     );

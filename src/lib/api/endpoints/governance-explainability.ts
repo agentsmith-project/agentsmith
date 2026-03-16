@@ -4,7 +4,7 @@ import type { MemberPermissions } from '../types';
 import type { Membership } from './members';
 
 export type GovernanceSubjectType = 'user' | 'group' | 'agent';
-export type GovernanceResourceType = 'project' | 'endpoint' | 'source_library' | 'agent';
+export type GovernanceResourceType = 'project' | 'endpoint' | 'file_library' | 'agent';
 export type GovernanceMembershipStatus = 'active' | 'pending' | 'suspended' | 'none';
 
 export interface GovernanceAuthorizationRequest {
@@ -22,7 +22,7 @@ export interface GovernanceAuthorizationDecision {
 
 export interface GovernanceMatchedPolicy {
   id: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   access_mode: 'allow_all_members' | 'allow_list';
   matched_subject?: { type: 'user' | 'group'; id: string };
@@ -36,7 +36,7 @@ export interface GovernanceAuthorizationResponse {
 
 export interface GovernanceLimitCheckRequest {
   subject_id: string;
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   operation: 'invoke' | 'upload' | 'create';
   estimated_cost?: number;
@@ -54,7 +54,7 @@ export interface GovernanceLimitCheckResponse {
 export interface GovernanceLimitExceededDetails {
   error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED';
   message: string;
-  resource_type?: 'endpoint' | 'source_library' | 'agent';
+  resource_type?: 'endpoint' | 'file_library' | 'agent';
   resource_id?: string;
   limit_key?: string;
   retry_after_seconds?: number;

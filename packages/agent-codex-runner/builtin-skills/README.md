@@ -7,7 +7,7 @@ Current builtin set (MVP):
 - `.system`
 - `feishu-docs`
 - `jira-ops`
-- `source-read`
+- `file-read`
 
 Default runner behavior:
 

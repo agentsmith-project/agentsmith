@@ -222,12 +222,12 @@ async function main() {
       await capture(page, '13c-settings-limits', 'settings');
     }
 
-    // 14. Sources
-    await page.goto(`${BASE_URL}/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/sources`, {
+    // 14. Files
+    await page.goto(`${BASE_URL}/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/files`, {
       waitUntil: 'networkidle',
     });
     await page.waitForTimeout(800);
-    await capture(page, '14-sources');
+    await capture(page, '14-files');
 
     // 15. Credentials (API Keys)
     await page.goto(`${BASE_URL}/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`, {

@@ -127,7 +127,7 @@ export function toChatAttachmentSnapshots(attachments: ChatAttachmentRecord[]): 
   file_size: number;
   input_ref?: ChatAttachmentRecord['input_ref'];
   source_type?: ChatAttachmentRecord['source_type'];
-  source_library_id?: ChatAttachmentRecord['source_library_id'];
+  file_library_id?: ChatAttachmentRecord['file_library_id'];
   source_object_key?: ChatAttachmentRecord['source_object_key'];
 }> {
   return attachments.map((attachment) => ({
@@ -137,7 +137,7 @@ export function toChatAttachmentSnapshots(attachments: ChatAttachmentRecord[]): 
     file_size: attachment.file_size,
     input_ref: attachment.input_ref,
     source_type: attachment.source_type,
-    source_library_id: attachment.source_library_id,
+    file_library_id: attachment.file_library_id,
     source_object_key: attachment.source_object_key,
   }));
 }

@@ -2155,177 +2155,6 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources": {
-      "get": {
-        "tags": [
-          "Sources"
-        ],
-        "operationId": "get_sources",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      },
-      "post": {
-        "tags": [
-          "Sources"
-        ],
-        "operationId": "post_sources",
-        "responses": {
-          "201": {
-            "description": "Created",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "name",
-                  "content_type",
-                  "content_base64",
-                  "library_id"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
-                  },
-                  "content_type": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
-                  },
-                  "content_base64": {
-                    "type": "string",
-                    "minLength": 1
-                  },
-                  "library_id": {
-                    "type": "string",
-                    "minLength": 1,
-                    "maxLength": 255
-                  }
-                },
-                "additionalProperties": false
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/limits": {
-      "get": {
-        "tags": [
-          "Sources"
-        ],
-        "operationId": "get_sourcesLimit",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}": {
-      "get": {
-        "tags": [
-          "Sources"
-        ],
-        "operationId": "get_sourceItem",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download": {
-      "get": {
-        "tags": [
-          "Sources"
-        ],
-        "operationId": "get_sourceDownload",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "additionalProperties": true
-                }
-              }
-            }
-          },
-          "401": {
-            "$ref": "#/components/responses/Unauthorized"
-          },
-          "403": {
-            "$ref": "#/components/responses/Forbidden"
-          }
-        }
-      }
-    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/chat/sessions/{sessionId}/messages/{messageId}": {
       "patch": {
         "tags": [
@@ -5723,7 +5552,7 @@
               "type": "string",
               "enum": [
                 "endpoint",
-                "source_library",
+                "file_library",
                 "agent"
               ]
             }
@@ -5787,7 +5616,7 @@
               "type": "string",
               "enum": [
                 "endpoint",
-                "source_library",
+                "file_library",
                 "agent"
               ]
             }
@@ -5856,7 +5685,7 @@
                                       "endpoint.requests_per_minute",
                                       "endpoint.requests_per_5_hours",
                                       "endpoint.requests_per_day",
-                                      "source_library.requests_per_minute"
+                                      "file_library.requests_per_minute"
                                     ]
                                   },
                                   "value": {
@@ -5888,8 +5717,8 @@
                                       "endpoint.spending_usd_per_minute",
                                       "endpoint.spending_usd_per_5_hours",
                                       "endpoint.spending_usd_per_day",
-                                      "source_library.max_total_files",
-                                      "source_library.max_file_size_bytes"
+                                      "file_library.max_total_files",
+                                      "file_library.max_file_size_bytes"
                                     ]
                                   },
                                   "value": {
@@ -5925,7 +5754,7 @@
                                 "endpoint.requests_per_minute",
                                 "endpoint.requests_per_5_hours",
                                 "endpoint.requests_per_day",
-                                "source_library.requests_per_minute"
+                                "file_library.requests_per_minute"
                               ]
                             },
                             "value": {
@@ -5957,8 +5786,8 @@
                                 "endpoint.spending_usd_per_minute",
                                 "endpoint.spending_usd_per_5_hours",
                                 "endpoint.spending_usd_per_day",
-                                "source_library.max_total_files",
-                                "source_library.max_file_size_bytes"
+                                "file_library.max_total_files",
+                                "file_library.max_file_size_bytes"
                               ]
                             },
                             "value": {
@@ -6386,7 +6215,7 @@
               "type": "string",
               "enum": [
                 "endpoint",
-                "source_library",
+                "file_library",
                 "agent"
               ]
             }
@@ -8540,7 +8369,7 @@
           }
         }
       },
-      "SourceObject": {
+      "FileLibraryObject": {
         "type": "object",
         "required": [
           "key",
@@ -8755,7 +8584,7 @@
                 "enum": [
                   "project",
                   "endpoint",
-                  "source_library",
+                  "file_library",
                   "agent"
                 ]
               },
@@ -8866,7 +8695,7 @@
             "type": "string",
             "enum": [
               "endpoint",
-              "source_library",
+              "file_library",
               "agent"
             ]
           },

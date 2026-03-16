@@ -40,7 +40,7 @@ export function classifyGovernanceEvidenceFocus(reason: string | undefined): Gov
     'rate limit',
     'max_total_files',
     'max_file_size',
-    'missing_source_library_limit',
+    'missing_file_library_limit',
     'spending_limit',
     'spending_limit_exceeded',
     'limit_reached',

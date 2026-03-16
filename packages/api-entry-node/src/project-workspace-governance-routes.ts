@@ -10,12 +10,12 @@ import {
   buildWorkspaceMembersFromConfig,
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
-import type { WorkspaceRecordLike } from './project-source-handler-types.js';
+import type { WorkspaceRecordLike } from './project-handler-types.js';
 import {
   getRegisteredWorkspaceConfig,
   updateRegisteredWorkspaceProjectCreators,
 } from './workspace-registry.js';
-import { readRequestId } from './project-source-route-handler-utils.js';
+import { readRequestId } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 

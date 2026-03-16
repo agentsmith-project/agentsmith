@@ -11,7 +11,7 @@
 export type PolicyDecision = 'allow' | 'deny' | 'rate_limited' | 'spending_limit_exceeded';
 
 export interface PolicyEvaluationContext {
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   subject_id: string;
   subject_type: 'user' | 'group';

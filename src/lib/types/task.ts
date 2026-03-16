@@ -9,11 +9,6 @@ export type TaskStatus = 'active' | 'archived';
 export type TaskInputRef =
   | {
       id: string;
-      kind: 'source';
-      source_id: string;
-    }
-  | {
-      id: string;
       kind: 'library_object';
       library_id: string;
       key: string;
@@ -43,14 +38,6 @@ export type TaskInputRef =
     };
 
 export type TaskAttachedInputDetail =
-  | {
-      id: string;
-      kind: 'source';
-      source_id: string;
-      filename: string;
-      file_type: string;
-      file_size: number;
-    }
   | {
       id: string;
       kind: 'library_object';
@@ -110,7 +97,6 @@ export interface TaskMessage {
   role: 'user' | 'agent';
   content: string;
   created_at: string; // ISO 8601
-  referenced_source_ids?: string[]; // Source files referenced by agent
   turn_id?: string; // Associated turn ID (if any)
 }
 
@@ -160,7 +146,6 @@ export interface CreateTaskRequest {
   title: string;
   agent_id: string;
   initial_inputs?: Array<
-    | { kind: 'source'; source_id: string }
     | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
     | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
     | { kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }

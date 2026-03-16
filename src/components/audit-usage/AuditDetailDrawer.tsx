@@ -90,7 +90,7 @@ function getOwnershipTransferContext(event: AuditEvent): {
 }
 
 function getDefaultGovernanceAction(resourceType?: string): string {
-  if (resourceType === 'source_library') return 'upload';
+  if (resourceType === 'file_library') return 'upload';
   if (resourceType === 'project') return 'read';
   return 'invoke';
 }
@@ -135,7 +135,7 @@ export function AuditDetailDrawer({
     })}`
     : null;
   const resourcePolicyHref = basePath && event.resource_id
-    && (event.resource_type === 'endpoint' || event.resource_type === 'source_library' || event.resource_type === 'agent')
+    && (event.resource_type === 'endpoint' || event.resource_type === 'file_library' || event.resource_type === 'agent')
     ? `${basePath}/resource-policy${buildSharedOpsFilterQuery({}, {
       resource_type: event.resource_type,
       resource_id: event.resource_id,

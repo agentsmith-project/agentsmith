@@ -1737,70 +1737,6 @@ export interface paths {
         patch: operations["update_projectResourcePolicy"];
         trace?: never;
     };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_sources"];
-        put?: never;
-        post: operations["post_sources"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_sourceItem"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_sourceDownload"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/limits": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["get_sourcesLimit"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/spending-limit-templates": {
         parameters: {
             query?: never;
@@ -2505,7 +2441,7 @@ export interface components {
             resource: {
                 id: string;
                 /** @enum {string} */
-                type: "project" | "endpoint" | "source_library" | "agent";
+                type: "project" | "endpoint" | "file_library" | "agent";
             };
             subject: {
                 id: string;
@@ -2711,6 +2647,12 @@ export interface components {
             path: string;
             size_bytes: number;
         };
+        FileLibraryObject: {
+            content_type?: string;
+            key: string;
+            name: string;
+            size_bytes?: number;
+        };
         LimitCheckRequest: {
             /** @description Estimated tokens/bytes for the operation */
             estimated_cost?: number;
@@ -2718,7 +2660,7 @@ export interface components {
             operation: "invoke" | "upload" | "create";
             resource_id: string;
             /** @enum {string} */
-            resource_type: "endpoint" | "source_library" | "agent";
+            resource_type: "endpoint" | "file_library" | "agent";
             /** @description User ID, group ID, or agent ID */
             subject_id: string;
         };
@@ -2936,12 +2878,6 @@ export interface components {
         SilenceNotificationRequest: {
             /** @description Duration in minutes. If omitted, silence indefinitely. */
             duration_minutes?: number;
-        };
-        SourceObject: {
-            content_type?: string;
-            key: string;
-            name: string;
-            size_bytes?: number;
         };
         SSETicketRequest: {
             /** @enum {string} */
@@ -6875,7 +6811,7 @@ export interface operations {
             path: {
                 projectId: string;
                 resourceId: string;
-                resourceType: "endpoint" | "source_library" | "agent";
+                resourceType: "endpoint" | "file_library" | "agent";
                 workspaceId: string;
             };
             cookie?: never;
@@ -6904,7 +6840,7 @@ export interface operations {
             path: {
                 projectId: string;
                 resourceId: string;
-                resourceType: "endpoint" | "source_library" | "agent";
+                resourceType: "endpoint" | "file_library" | "agent";
                 workspaceId: string;
             };
             cookie?: never;
@@ -6918,7 +6854,7 @@ export interface operations {
                         rate_limits?: {
                             rules?: ({
                                 /** @enum {string} */
-                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute";
+                                key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "file_library.requests_per_minute";
                                 value: number;
                             } & {
                                 [key: string]: unknown;
@@ -6929,7 +6865,7 @@ export interface operations {
                         spending_limits?: {
                             rules?: ({
                                 /** @enum {string} */
-                                key: "endpoint.spending_usd_per_minute" | "endpoint.spending_usd_per_5_hours" | "endpoint.spending_usd_per_day" | "source_library.max_total_files" | "source_library.max_file_size_bytes";
+                                key: "endpoint.spending_usd_per_minute" | "endpoint.spending_usd_per_5_hours" | "endpoint.spending_usd_per_day" | "file_library.max_total_files" | "file_library.max_file_size_bytes";
                                 value: number;
                             } & {
                                 [key: string]: unknown;
@@ -6946,7 +6882,7 @@ export interface operations {
                     rate_limits?: {
                         rules?: ({
                             /** @enum {string} */
-                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "source_library.requests_per_minute";
+                            key: "endpoint.requests_per_minute" | "endpoint.requests_per_5_hours" | "endpoint.requests_per_day" | "file_library.requests_per_minute";
                             value: number;
                         } & {
                             [key: string]: unknown;
@@ -6957,7 +6893,7 @@ export interface operations {
                     spending_limits?: {
                         rules?: ({
                             /** @enum {string} */
-                            key: "endpoint.spending_usd_per_minute" | "endpoint.spending_usd_per_5_hours" | "endpoint.spending_usd_per_day" | "source_library.max_total_files" | "source_library.max_file_size_bytes";
+                            key: "endpoint.spending_usd_per_minute" | "endpoint.spending_usd_per_5_hours" | "endpoint.spending_usd_per_day" | "file_library.max_total_files" | "file_library.max_file_size_bytes";
                             value: number;
                         } & {
                             [key: string]: unknown;
@@ -6975,135 +6911,6 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    get_sources: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    post_sources: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    content_base64: string;
-                    content_type: string;
-                    library_id: string;
-                    name: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Created */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    get_sourceItem: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    get_sourceDownload: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-            401: components["responses"]["Unauthorized"];
-            403: components["responses"]["Forbidden"];
-        };
-    };
-    get_sourcesLimit: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
@@ -7854,7 +7661,7 @@ export interface operations {
                 /** @description Metric type to retrieve */
                 metric?: "tokens" | "requests" | "cost" | "bytes";
                 /** @description Filter by resource type */
-                resource_type?: "endpoint" | "source_library" | "agent";
+                resource_type?: "endpoint" | "file_library" | "agent";
                 /** @description Start time in ISO 8601 format */
                 start_time: string;
             };

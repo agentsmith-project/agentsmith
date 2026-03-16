@@ -583,6 +583,9 @@
         "confirm": "添加选中",
         "no_files": "您的文件库中暂无可用文件",
         "from_library": "来自您的文件库",
+        "legacy_source_title": "Source 输入",
+        "legacy_source_description": "Source 选择功能已暂时停用。这里先保留界面，后续会用新的 notebook source 方案重做。",
+        "legacy_source_footer": "Notebook Source 选择暂时不可用。",
         "library_objects_title": "文件库对象",
         "library_objects_empty": "暂无文件库",
         "library_objects_no_items": "该文件库中暂无文件",
@@ -1356,7 +1359,7 @@
     "all_types": "全部资源类型",
     "type_endpoint": "端点",
     "type_agent": "Agent",
-    "type_source_library": "资料库",
+    "type_file_library": "资料库",
     "filter_by_resource_id": "按资源 ID 筛选",
     "top_resources": "资源 Top",
     "top_users": "用户 Top",
@@ -1374,7 +1377,7 @@
     "resource_type": {
       "endpoint": "端点",
       "agent": "Agent",
-      "source_library": "资料库"
+      "file_library": "资料库"
     }
   },
   "settings": {
@@ -1641,12 +1644,12 @@
     },
     "resource_type": {
       "endpoint": "端点",
-      "source_library": "文件库",
+      "file_library": "文件库",
       "agent": "智能体"
     },
     "editor_hint": {
       "endpoint": "配置该模型端点的访问范围与 token 限额。",
-      "source_library": "配置该文件库的可访问主体与文件限额约束。",
+      "file_library": "配置该文件库的可访问主体与文件限额约束。",
       "agent": "配置该智能体的可访问主体与每分钟请求限制。"
     },
     "subjects": {
@@ -1710,7 +1713,7 @@
         "spending_usd_per_5_hours": "端点每 5 小时费用上限（USD）",
         "spending_usd_per_day": "端点每日费用上限（USD）"
       },
-      "source_library": {
+      "file_library": {
         "requests_per_minute": "文件库每分钟请求数上限",
         "max_total_files": "文件库最大文件总数",
         "max_file_size_bytes": "文件库单文件最大大小（字节）"
@@ -1728,7 +1731,7 @@
         "spending_usd_per_5_hours": "主体每 5 小时费用上限（USD）",
         "spending_usd_per_day": "主体每日费用上限（USD）"
       },
-      "source_library": {
+      "file_library": {
         "requests_per_minute": "主体每分钟请求数上限",
         "max_total_files": "主体最大文件总数",
         "max_file_size_bytes": "主体单文件最大大小（字节）"
@@ -1862,15 +1865,15 @@
       "sections": {
         "endpoint_title": "Endpoint 限额",
         "endpoint_description": "控制用户在 Endpoint 调用中的每日 token 用量。",
-        "source_library_title": "文件库限额",
-        "source_library_description": "控制用户在文件库中的文件数量与单文件大小。",
+        "file_library_title": "文件库限额",
+        "file_library_description": "控制用户在文件库中的文件数量与单文件大小。",
         "agent_title": "Agent 限额",
         "agent_description": "控制用户可并发执行的 Agent 数量。"
       },
       "fields": {
         "endpoint_daily_token_limit": "Endpoint 每日 token 上限",
-        "source_library_max_total_files": "文件库总文件数上限",
-        "source_library_max_file_size_bytes": "文件库单文件大小上限",
+        "file_library_max_total_files": "文件库总文件数上限",
+        "file_library_max_file_size_bytes": "文件库单文件大小上限",
         "agent_max_concurrency": "Agent 最大并发数"
       },
       "units": {

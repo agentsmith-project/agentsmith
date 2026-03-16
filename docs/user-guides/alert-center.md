@@ -63,7 +63,7 @@ Example: "Alert when daily cost exceeds $10"
 Notify when resource usage nears limits:
 
 - **Endpoint Limit**: API request count vs. limit
-- **Source Library Limit**: Storage usage vs. limit
+- **File Library Limit**: Storage usage vs. limit
 - **Agent Limit**: Agent execution count vs. limit
 
 Example: "Alert when endpoint usage exceeds 80% of limit"

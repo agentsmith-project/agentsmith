@@ -31,10 +31,6 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/authorize",
     "method": "post"
   },
-  "sources": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources",
-    "method": "get"
-  },
   "fileLibraries": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries",
     "method": "get"
@@ -149,14 +145,6 @@
   },
   "projectMembershipItem": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/memberships/{userId}",
-    "method": "get"
-  },
-  "sourceItem": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}",
-    "method": "get"
-  },
-  "sourceDownload": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/sources/{sourceId}/download",
     "method": "get"
   },
   "chatSessions": {

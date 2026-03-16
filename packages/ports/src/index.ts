@@ -1,4 +1,4 @@
-import type { ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { ProjectDTO, FileLibraryCatalogDTO } from '@mbos/contracts';
 import type { ReadableStream } from 'node:stream/web';
 
 export interface ProjectRepoPort {
@@ -104,92 +104,15 @@ export interface ObjectStorePort {
   deleteMany(bucket: string, keys: string[]): Promise<void>;
 }
 
-export interface VectorChunkUpsert {
-  chunkId: string;
-  sourceId: string;
-  content: string;
-  embedding: number[];
-  metadata?: Record<string, unknown>;
-}
-
-export interface VectorSearchResult {
-  chunkId: string;
-  sourceId: string;
-  content: string;
-  metadata?: Record<string, unknown>;
-  score: number;
-}
-
-export interface VectorSearchQuery {
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  queryEmbedding: number[];
-  topK: number;
-  minScore?: number;
-}
-
-export interface VectorStorePort {
-  upsertChunks(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    chunks: VectorChunkUpsert[],
-  ): Promise<void>;
-  deleteBySource(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    sourceId: string,
-  ): Promise<void>;
-  search(query: VectorSearchQuery): Promise<VectorSearchResult[]>;
-  countByLibrary(workspaceId: string, projectId: string, libraryId: string): Promise<number>;
-}
-
-export interface DocumentParserPort {
-  parse(body: Uint8Array, contentType: string): Promise<string>;
-}
-
-export interface TextChunk {
-  content: string;
-  metadata?: Record<string, unknown>;
-}
-
-export interface TextChunkerPort {
-  chunk(text: string): TextChunk[];
-}
-
-export interface EmbeddingProviderPort {
-  dimensions(): number;
-  embed(texts: string[]): Promise<number[][]>;
-}
-
-export interface SourceRepoPort {
-  listByProject(
-    workspaceId: string,
-    projectId: string,
-    options?: { libraryId?: string },
-  ): Promise<SourceDTO[]>;
-  getById(workspaceId: string, projectId: string, sourceId: string): Promise<SourceDTO | null>;
-  save(source: SourceDTO): Promise<void>;
-  update(
-    workspaceId: string,
-    projectId: string,
-    sourceId: string,
-    patch: Partial<SourceDTO>,
-  ): Promise<SourceDTO | null>;
-  delete(workspaceId: string, projectId: string, sourceId: string): Promise<boolean>;
-}
-
-export interface SourceLibraryRepoPort {
-  listByProject(workspaceId: string, projectId: string): Promise<SourceLibraryDTO[]>;
-  getById(workspaceId: string, projectId: string, libraryId: string): Promise<SourceLibraryDTO | null>;
-  save(library: SourceLibraryDTO): Promise<void>;
+export interface FileLibraryCatalogRepoPort {
+  listByProject(workspaceId: string, projectId: string): Promise<FileLibraryCatalogDTO[]>;
+  getById(workspaceId: string, projectId: string, libraryId: string): Promise<FileLibraryCatalogDTO | null>;
+  save(library: FileLibraryCatalogDTO): Promise<void>;
   update(
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    patch: Partial<SourceLibraryDTO>,
-  ): Promise<SourceLibraryDTO | null>;
+    patch: Partial<FileLibraryCatalogDTO>,
+  ): Promise<FileLibraryCatalogDTO | null>;
   delete(workspaceId: string, projectId: string, libraryId: string): Promise<boolean>;
 }

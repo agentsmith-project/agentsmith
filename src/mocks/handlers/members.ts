@@ -54,7 +54,7 @@ type ProjectGroup = {
 };
 
 type ResourcePolicy = {
-  resource_type: 'endpoint' | 'source_library' | 'agent';
+  resource_type: 'endpoint' | 'file_library' | 'agent';
   resource_id: string;
   access_mode: 'allow_all_members' | 'allow_list';
   allowed_subjects: Array<{
@@ -219,7 +219,7 @@ function appendMemberChangeHistory(projectId: string, memberId: string, entry: O
   memberChangeHistoryStore[key] = history.slice(0, 100);
 }
 
-function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent', resourceId: string): ResourcePolicy {
+function getDefaultPolicy(resourceType: 'endpoint' | 'file_library' | 'agent', resourceId: string): ResourcePolicy {
   if (resourceType === 'agent') {
     return {
       resource_type: resourceType,
@@ -229,19 +229,19 @@ function getDefaultPolicy(resourceType: 'endpoint' | 'source_library' | 'agent',
     };
   }
 
-  if (resourceType === 'source_library') {
+  if (resourceType === 'file_library') {
     return {
       resource_type: resourceType,
       resource_id: resourceId,
       access_mode: 'allow_all_members',
       allowed_subjects: [],
       rate_limits: {
-        rules: [{ key: 'source_library.requests_per_minute', value: 120 }],
+        rules: [{ key: 'file_library.requests_per_minute', value: 120 }],
       },
       spending_limits: {
         rules: [
-          { key: 'source_library.max_total_files', value: 2000 },
-          { key: 'source_library.max_file_size_bytes', value: 104857600 },
+          { key: 'file_library.max_total_files', value: 2000 },
+          { key: 'file_library.max_file_size_bytes', value: 104857600 },
         ],
       },
     };
@@ -464,7 +464,7 @@ export const memberHandlers = [
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/resources/:type/:id/policy', ({ params }) => {
     const projectId = String(params.prj ?? '');
-    const resourceType = String(params.type ?? '') as 'endpoint' | 'source_library' | 'agent';
+    const resourceType = String(params.type ?? '') as 'endpoint' | 'file_library' | 'agent';
     const resourceId = String(params.id ?? '');
     const key = `${projectId}:${resourceType}:${resourceId}`;
     if (!resourcePolicyStore[key]) {
@@ -474,7 +474,7 @@ export const memberHandlers = [
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/resources/:type/:id/policy', async ({ params, request }) => {
     const projectId = String(params.prj ?? '');
-    const resourceType = String(params.type ?? '') as 'endpoint' | 'source_library' | 'agent';
+    const resourceType = String(params.type ?? '') as 'endpoint' | 'file_library' | 'agent';
     const resourceId = String(params.id ?? '');
     const key = `${projectId}:${resourceType}:${resourceId}`;
     const body = (await request.json().catch(() => ({}))) as Omit<ResourcePolicy, 'resource_type' | 'resource_id'>;
@@ -492,7 +492,7 @@ export const memberHandlers = [
     const projectId = String(params.prj ?? '');
     const body = (await request.json().catch(() => ({}))) as {
       subject?: { type?: 'user' | 'group'; id?: string };
-      resource?: { type?: 'endpoint' | 'source_library' | 'agent'; id?: string };
+      resource?: { type?: 'endpoint' | 'file_library' | 'agent'; id?: string };
       action?: string;
     };
     const resourceType = body.resource?.type;

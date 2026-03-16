@@ -9,21 +9,21 @@ vi.mock('./audit-usage-recorders.js', () => ({
 }));
 
 import { getProjectResourcePolicyOrDefault } from './project-resource-policy-store.js';
-import { handleProjectResourcePolicyRoute } from './project-source-resource-policy.js';
+import { handleProjectResourcePolicyRoute } from './project-resource-policy-routes.js';
 
 const allowedRateKeys = {
   endpoint: ['endpoint.requests_per_minute'],
-  source_library: ['source_library.requests_per_minute'],
+  file_library: ['file_library.requests_per_minute'],
   agent: [],
 } as const;
 
 const allowedLimitKeys = {
   endpoint: ['endpoint.spending_usd_per_day'],
-  source_library: ['source_library.max_total_files'],
+  file_library: ['file_library.max_total_files'],
   agent: [],
 } as const;
 
-describe('project-source-resource-policy', () => {
+describe('project-resource-policy-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeProjectAuditEvent.mockResolvedValue(undefined);
@@ -107,7 +107,7 @@ describe('project-source-resource-policy', () => {
       method: 'PATCH',
       workspaceId: 'ws-2',
       projectId: 'proj-2',
-      resourceType: 'source_library',
+      resourceType: 'file_library',
       resourceId: 'lib-1',
       req: { headers: { 'x-request-id': 'req-2' } } as never,
       res,
@@ -121,19 +121,19 @@ describe('project-source-resource-policy', () => {
             subject_type: 'user',
             subject_id: 'user-1',
             rate_limits: {
-              rules: [{ key: 'source_library.requests_per_minute', value: 5 }],
+              rules: [{ key: 'file_library.requests_per_minute', value: 5 }],
             },
           },
         ],
         spending_limits: {
-          rules: [{ key: 'source_library.max_total_files', value: 100 }],
+          rules: [{ key: 'file_library.max_total_files', value: 100 }],
         },
       }),
       allowedRateKeys,
       allowedLimitKeys,
     })).resolves.toBe(true);
 
-    const saved = getProjectResourcePolicyOrDefault('ws-2', 'proj-2', 'source_library', 'lib-1');
+    const saved = getProjectResourcePolicyOrDefault('ws-2', 'proj-2', 'file_library', 'lib-1');
     expect(saved).toEqual(expect.objectContaining({
       access_mode: 'allow_list',
       allowed_subjects: [
@@ -149,7 +149,7 @@ describe('project-source-resource-policy', () => {
         action: 'resource_policy.updated',
         requestId: 'req-2',
         metadata: expect.objectContaining({
-          governed_resource_type: 'source_library',
+          governed_resource_type: 'file_library',
           governed_resource_id: 'lib-1',
         }),
       }),

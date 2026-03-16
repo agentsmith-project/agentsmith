@@ -1,7 +1,7 @@
 import { getImportedLibraryObjectRef } from './input-ref-resolver.js';
 
-export type SourceObjectMetaDeps = {
-  getSourceObjectMetaUseCase: {
+export type FileLibraryObjectMetaDeps = {
+  getFileLibraryObjectMetaUseCase: {
     execute(args: { workspaceId: string; projectId: string; libraryId: string; key: string }): Promise<{
       key: string;
       content_type?: string;
@@ -16,14 +16,6 @@ export type ArtifactLookupRecord = {
   mime_type?: string;
   file_size?: number;
   task_relative_path?: string;
-};
-
-export type ResolvedSourceInputRef = {
-  kind: 'source';
-  source_id: string;
-  filename: string;
-  file_type?: string;
-  file_size?: number;
 };
 
 export type ResolvedLibraryObjectInputRef = {
@@ -56,14 +48,13 @@ export type ResolvedArtifactInputRef = {
 };
 
 export type ResolvedInputRef =
-  | ResolvedSourceInputRef
   | ResolvedLibraryObjectInputRef
   | ResolvedUrlInputRef
   | ResolvedArtifactInputRef;
 
 type ResolveInputLibraryObjectArgs = {
   kind: 'library_object';
-  deps: SourceObjectMetaDeps;
+  deps: FileLibraryObjectMetaDeps;
   workspaceId: string;
   projectId: string;
   input: {
@@ -76,7 +67,7 @@ type ResolveInputLibraryObjectArgs = {
 };
 type ResolveInputUrlArgs = {
   kind: 'url';
-  deps: SourceObjectMetaDeps;
+  deps: FileLibraryObjectMetaDeps;
   workspaceId: string;
   projectId: string;
   input: {
@@ -131,7 +122,7 @@ export async function resolveInputRef(args: ResolveInputArgs): Promise<ResolveIn
 }
 
 export async function resolveLibraryObjectInputMeta(args: {
-  deps: SourceObjectMetaDeps;
+  deps: FileLibraryObjectMetaDeps;
   workspaceId: string;
   projectId: string;
   input: {
@@ -149,7 +140,7 @@ export async function resolveLibraryObjectInputMeta(args: {
 }> {
   const { deps, workspaceId, projectId, input } = args;
   try {
-    const meta = await deps.getSourceObjectMetaUseCase.execute({
+    const meta = await deps.getFileLibraryObjectMetaUseCase.execute({
       workspaceId,
       projectId,
       libraryId: input.library_id,
@@ -172,7 +163,7 @@ export async function resolveLibraryObjectInputMeta(args: {
 }
 
 export async function resolveUrlInputMeta(args: {
-  deps: SourceObjectMetaDeps;
+  deps: FileLibraryObjectMetaDeps;
   workspaceId: string;
   projectId: string;
   input: {
@@ -194,7 +185,7 @@ export async function resolveUrlInputMeta(args: {
   const importedObjectRef = getImportedLibraryObjectRef(input);
   if (importedObjectRef) {
     try {
-      const meta = await deps.getSourceObjectMetaUseCase.execute({
+      const meta = await deps.getFileLibraryObjectMetaUseCase.execute({
         workspaceId,
         projectId,
         libraryId: importedObjectRef.library_id,

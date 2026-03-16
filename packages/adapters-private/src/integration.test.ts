@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   MinioObjectStore,
   MongoJsonDocStore,
-  PgVectorStore,
   PostgresProjectRepo,
   RedisCache,
 } from './index.js';
@@ -110,62 +109,5 @@ describe('adapters-private integration', () => {
     expect(signedUrl.pathname).toContain(`/${key}`);
 
     await store.deleteObject(MINIO_BUCKET, key);
-  });
-
-  it('pgvector store upsert/search/delete works against real postgres', async () => {
-    const store = new PgVectorStore({
-      databaseUrl: POSTGRES_URL,
-      embeddingDimensions: 4,
-      tableName: 'source_embeddings_it',
-    });
-    await store.ensureSchema();
-
-    const workspaceId = 'ws_it';
-    const projectId = 'proj_it';
-    const libraryId = 'lib_it';
-    const sourceId = `src_it_${Date.now()}`;
-
-    await store.upsertChunks(workspaceId, projectId, libraryId, [
-      {
-        chunkId: 'c1',
-        sourceId,
-        content: 'hello world',
-        embedding: [1, 0, 0, 0],
-        metadata: { order: 1 },
-      },
-      {
-        chunkId: 'c2',
-        sourceId,
-        content: 'goodbye world',
-        embedding: [0, 1, 0, 0],
-        metadata: { order: 2 },
-      },
-    ]);
-
-    const count = await store.countByLibrary(workspaceId, projectId, libraryId);
-    expect(count).toBeGreaterThanOrEqual(2);
-
-    const results = await store.search({
-      workspaceId,
-      projectId,
-      libraryId,
-      queryEmbedding: [1, 0, 0, 0],
-      topK: 2,
-    });
-    expect(results).toHaveLength(2);
-    expect(results[0].chunkId).toBe('c1');
-    expect(results[0].score).toBeGreaterThanOrEqual(results[1].score);
-
-    await store.deleteBySource(workspaceId, projectId, libraryId, sourceId);
-    const afterDelete = await store.search({
-      workspaceId,
-      projectId,
-      libraryId,
-      queryEmbedding: [1, 0, 0, 0],
-      topK: 2,
-    });
-    expect(afterDelete.find((item) => item.sourceId === sourceId)).toBeUndefined();
-
-    await store.close();
   });
 });

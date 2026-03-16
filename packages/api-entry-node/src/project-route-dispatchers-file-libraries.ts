@@ -1,5 +1,5 @@
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
-import type { ProjectSourceRouteContext } from './project-source-route-types.js';
+import type { ProjectRouteContext } from './project-route-types.js';
 
 const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraries',
@@ -16,7 +16,7 @@ const FILE_LIBRARY_ROUTE_KINDS = new Set([
   'fileLibraryShareLink',
 ]);
 
-export async function handleFileLibraryRoutes(context: ProjectSourceRouteContext): Promise<boolean> {
+export async function handleFileLibraryRoutes(context: ProjectRouteContext): Promise<boolean> {
   const {
     route,
     method,

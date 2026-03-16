@@ -5,7 +5,7 @@ import { TaskHeader } from './TaskHeader';
 import { useTask, useTaskMessages, useTaskArtifacts, useSendMessage, useAddFiles, useUpdateTask } from '@/lib/hooks/use-task';
 import { useTaskSSE } from '@/lib/hooks/use-task-sse';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
-import { TaskAPI, FilesAPI } from '@/lib/api';
+import { TaskAPI } from '@/lib/api';
 import { getApiClient } from '@/lib/api';
 import type { Artifact, TaskMessage } from '@/lib/types/task';
 import { useRouter, useParams } from 'next/navigation';
@@ -69,7 +69,6 @@ export function TaskPage({
 
   const queryClient = useQueryClient();
   const { handleError } = useErrorHandler();
-  const filesAPI = React.useMemo(() => new FilesAPI(getApiClient()), []);
   const taskAPI = React.useMemo(() => new TaskAPI(getApiClient()), []);
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const pendingFlushInFlightRef = React.useRef(false);
@@ -169,10 +168,7 @@ export function TaskPage({
     setUrlInput,
     addingInput,
     selectedArtifact,
-    localFileInputRef,
-    handleAddFiles,
     handleAttachArtifactAsInput,
-    handleLocalInputChange,
     handleSubmitUrlInput,
     handleViewArtifact,
     handleSaveArtifact,
@@ -182,9 +178,7 @@ export function TaskPage({
     workspaceId,
     projectId,
     taskId,
-    filesAPI,
     taskAPI,
-    queryClient,
     addFiles,
     handleError,
   });
@@ -593,7 +587,6 @@ export function TaskPage({
         handleViewArtifact={handleViewArtifact}
         isDisabled={isDisabled}
         loadMoreTracesForMessage={loadMoreTracesForMessage}
-        localFileInputRef={localFileInputRef}
         messages={messages || []}
         onRunActionClick={(action) => {
           if (!action.traceName || !activeTraceMessageId) return;
@@ -641,7 +634,6 @@ export function TaskPage({
         editDialogOpen={editDialogOpen}
         fileSelectOpen={fileSelectOpen}
         imageViewerOpen={imageViewerOpen}
-        localFileInputRef={localFileInputRef}
         projectId={projectId}
         saveDialogOpen={saveDialogOpen}
         savingTask={updateTask.isPending}
@@ -651,14 +643,12 @@ export function TaskPage({
         task={task}
         urlInput={urlInput}
         workspaceId={workspaceId}
-        onAddFilesConfirm={handleAddFiles}
         onArtifactDownload={handleDownloadArtifact}
         onArtifactSaveToLibrary={handleSaveArtifactToLibrary}
         onEditDialogOpenChange={setEditDialogOpen}
         onFileSelectOpenChange={setFileSelectOpen}
         onHandleTaskUpdated={handleTaskUpdated}
         onImageViewerOpenChange={setImageViewerOpen}
-        onLocalInputChange={handleLocalInputChange}
         onSaveDialogOpenChange={setSaveDialogOpen}
         onSetAddUrlOpen={setAddUrlOpen}
         onSetCreateDialogOpen={setCreateDialogOpen}

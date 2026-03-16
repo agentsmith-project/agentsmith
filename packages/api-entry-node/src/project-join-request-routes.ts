@@ -3,7 +3,7 @@ import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { upsertProjectMembership } from './project-memberships-store.js';
-import { projectScopedKey, readProjectPermissionContext } from './project-source-route-handler-utils.js';
+import { projectScopedKey, readProjectPermissionContext } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 

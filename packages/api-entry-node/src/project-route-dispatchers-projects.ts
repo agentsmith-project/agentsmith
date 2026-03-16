@@ -6,11 +6,11 @@ import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import {
   resolveVisibleProjectPermissionsForActor,
 } from './project-authz-engine.js';
-import type { ProjectSourceRouteContext } from './project-source-route-types.js';
+import type { ProjectRouteContext } from './project-route-types.js';
 import {
   readProjectPermissionContext,
   readRequestId,
-} from './project-source-route-handler-utils.js';
+} from './project-route-handler-utils.js';
 import {
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
@@ -27,7 +27,7 @@ function readProjectAdminMemberIds(workspaceId: string, projectId: string, owner
   return adminGroup ? [...adminGroup.member_ids] : [];
 }
 
-export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext): Promise<boolean> {
+export async function handleProjectCrudRoutes(context: ProjectRouteContext): Promise<boolean> {
   const {
     route,
     method,

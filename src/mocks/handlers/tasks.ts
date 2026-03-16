@@ -3,7 +3,6 @@ import {
   taskFixtures,
   taskMessageFixtures,
   artifactFixtures,
-  sourceFileFixtures,
   taskTraceFixtures,
 } from '../fixtures/notebook';
 
@@ -85,12 +84,18 @@ export const taskHandlers = [
     const body: any = await request.json().catch(() => ({}));
     const inputs = Array.isArray(body?.inputs) ? body.inputs : [];
     const existing = new Set((task.attached_inputs ?? []).map((item: any) =>
-      item?.kind === 'library_object' ? `library_object:${item.library_id}:${item.key}` : `source:${item.source_id}`));
+      item?.kind === 'library_object'
+        ? `library_object:${item.library_id}:${item.key}`
+        : item?.kind === 'artifact'
+          ? `artifact:${item.task_id}:${item.artifact_id}`
+          : `url:${item.url}`));
     for (const rawInput of inputs) {
       const item = rawInput ?? {};
       const dedupeKey = item.kind === 'library_object'
         ? `library_object:${item.library_id}:${item.key}`
-        : `source:${item.source_id}`;
+        : item.kind === 'artifact'
+          ? `artifact:${item.task_id}:${item.artifact_id}`
+          : `url:${item.url}`;
       if (existing.has(dedupeKey)) continue;
       existing.add(dedupeKey);
       (task.attached_inputs ??= []).push({
@@ -119,22 +124,37 @@ export const taskHandlers = [
           file_size: input.size_bytes ?? 0,
         };
       }
-      const source = sourceFileFixtures.find((f) => f.id === input.source_id);
-      if (!source) return null;
-      return {
-        id: input.id,
-        kind: 'source',
-        source_id: input.source_id,
-        filename: source.file_name,
-        file_type: source.file_type,
-        file_size: source.file_size,
-      };
+      if (input.kind === 'artifact') {
+        return {
+          id: input.id,
+          kind: 'artifact',
+          task_id: input.task_id,
+          artifact_id: input.artifact_id,
+          filename: input.name ?? input.task_relative_path ?? 'artifact',
+          file_type: input.content_type ?? 'application/octet-stream',
+          file_size: input.size_bytes ?? 0,
+          ...(input.task_relative_path ? { task_relative_path: input.task_relative_path } : {}),
+        };
+      }
+      if (input.kind === 'url') {
+        return {
+          id: input.id,
+          kind: 'url',
+          url: input.url,
+          filename: input.name ?? input.url ?? 'url_input.url.txt',
+          file_type: input.content_type ?? 'text/plain',
+          file_size: input.size_bytes ?? 0,
+          ...(input.imported_library_id ? { imported_library_id: input.imported_library_id } : {}),
+          ...(input.imported_key ? { imported_key: input.imported_key } : {}),
+        };
+      }
+      return null;
     }).filter(Boolean);
     return HttpResponse.json(items);
   }),
-  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs/:sourceId', ({ params }) => {
+  http.delete('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/inputs/:inputId', ({ params }) => {
     const taskId = params.id as string;
-    const inputId = params.sourceId as string;
+    const inputId = params.inputId as string;
     const task = tasks.find((r) => r.id === taskId);
     if (!task) {
       return HttpResponse.json({ error: 'task_not_found' }, { status: 404 });
@@ -208,7 +228,6 @@ export const taskHandlers = [
       role: body?.role ?? 'user',
       content: body?.content ?? '',
       created_at: now,
-      referenced_source_ids: body?.referenced_source_ids ?? [],
     };
     taskMessages.push(message);
     return HttpResponse.json(message);
@@ -224,13 +243,12 @@ export const taskHandlers = [
     if (!artifact) {
       return HttpResponse.json({ error: 'artifact_not_found' }, { status: 404 });
     }
-    const file = sourceFileFixtures[0];
     return HttpResponse.json({
-      id: file.id,
-      project_id: file.project_id,
-      file_name: file.file_name,
-      file_type: file.file_type,
-      file_size: file.file_size,
+      id: `saved_${artifact.id}`,
+      project_id: params.prj as string,
+      file_name: artifact.title ?? 'artifact.txt',
+      file_type: artifact.mime_type ?? 'application/octet-stream',
+      file_size: artifact.file_size ?? 0,
       status: 'ready',
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),

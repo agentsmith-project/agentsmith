@@ -9,7 +9,6 @@ export type ProjectsRoute =
   | { kind: 'collection'; workspaceId: string }
   | { kind: 'item'; workspaceId: string; projectId: string }
   | { kind: 'projectAuthorize'; workspaceId: string; projectId: string }
-  | { kind: 'sources'; workspaceId: string; projectId: string }
   | { kind: 'fileLibraries'; workspaceId: string; projectId: string }
   | { kind: 'fileLibraryItem'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryBackend'; workspaceId: string; projectId: string; libraryId: string }
@@ -22,8 +21,6 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryDownload'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryMeta'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'fileLibraryShareLink'; workspaceId: string; projectId: string; libraryId: string }
-  | { kind: 'sourceItem'; workspaceId: string; projectId: string; sourceId: string }
-  | { kind: 'sourceDownload'; workspaceId: string; projectId: string; sourceId: string }
   | { kind: 'tasks'; workspaceId: string; projectId: string }
   | { kind: 'taskItem'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskInputs'; workspaceId: string; projectId: string; taskId: string }
@@ -181,15 +178,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'projectAuthorize',
       workspaceId: decodeURIComponent(projectAuthorizeMatched[1]),
       projectId: decodeURIComponent(projectAuthorizeMatched[2]),
-    };
-  }
-
-  const sourcesMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/?$/);
-  if (sourcesMatched) {
-    return {
-      kind: 'sources',
-      workspaceId: decodeURIComponent(sourcesMatched[1]),
-      projectId: decodeURIComponent(sourcesMatched[2]),
     };
   }
 
@@ -551,30 +539,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       projectId: decodeURIComponent(projectResourcePolicyMatched[2]),
       resourceType: decodeURIComponent(projectResourcePolicyMatched[3]),
       resourceId: decodeURIComponent(projectResourcePolicyMatched[4]),
-    };
-  }
-
-  const sourceItemMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/?$/,
-  );
-  if (sourceItemMatched) {
-    return {
-      kind: 'sourceItem',
-      workspaceId: decodeURIComponent(sourceItemMatched[1]),
-      projectId: decodeURIComponent(sourceItemMatched[2]),
-      sourceId: decodeURIComponent(sourceItemMatched[3]),
-    };
-  }
-
-  const sourceDownloadMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/sources\/([^/]+)\/download\/?$/,
-  );
-  if (sourceDownloadMatched) {
-    return {
-      kind: 'sourceDownload',
-      workspaceId: decodeURIComponent(sourceDownloadMatched[1]),
-      projectId: decodeURIComponent(sourceDownloadMatched[2]),
-      sourceId: decodeURIComponent(sourceDownloadMatched[3]),
     };
   }
 

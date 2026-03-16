@@ -12,9 +12,9 @@ vi.mock('./audit-usage-recorders.js', () => ({
   writeProjectAuditEvent,
 }));
 
-vi.mock('./project-source-route-handler-utils.js', async () => {
-  const actual = await vi.importActual<typeof import('./project-source-route-handler-utils.js')>(
-    './project-source-route-handler-utils.js',
+vi.mock('./project-route-handler-utils.js', async () => {
+  const actual = await vi.importActual<typeof import('./project-route-handler-utils.js')>(
+    './project-route-handler-utils.js',
   );
   return {
     ...actual,
@@ -31,9 +31,9 @@ import {
   handleProjectGroupsRoute,
   handleProjectMembershipGovernanceRoute,
   handleProjectPermissionTemplatesRoute,
-} from './project-source-member-governance.js';
+} from './project-member-governance-routes.js';
 
-describe('project-source-member-governance', () => {
+describe('project-member-governance-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeProjectAuditEvent.mockResolvedValue(undefined);

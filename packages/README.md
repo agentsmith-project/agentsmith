@@ -10,13 +10,14 @@ Current status:
 
 - Minimal `project list/create` flow is implemented in shared layers.
 - Node API entry serves `GET/POST /api/v1/workspaces/:ws/projects` and `GET/PATCH/DELETE /api/v1/workspaces/:ws/projects/:id`.
-- Node API entry serves:
-  `GET/POST /api/v1/workspaces/:ws/projects/:prj/sources`,
-  `GET /api/v1/workspaces/:ws/projects/:prj/sources/limits`,
-  `GET/DELETE /api/v1/workspaces/:ws/projects/:prj/sources/:sourceId`,
-  `GET /api/v1/workspaces/:ws/projects/:prj/sources/:sourceId/download`.
 - Files mainline now runs on JuiceFS-backed project `file-libraries`.
-- Removed `source-libraries` public CRUD/object-browser routes are no longer part of the current Files product path.
+- Node API entry serves file-library APIs:
+  - `GET/POST /api/v1/workspaces/:ws/projects/:prj/file-libraries`
+  - `GET/PATCH/DELETE /api/v1/workspaces/:ws/projects/:prj/file-libraries/:libraryId`
+  - `GET /api/v1/workspaces/:ws/projects/:prj/file-libraries/:libraryId/entries`
+  - `POST /api/v1/workspaces/:ws/projects/:prj/file-libraries/:libraryId/upload`
+  - `GET /api/v1/workspaces/:ws/projects/:prj/file-libraries/:libraryId/download`
+- Current Files public CRUD/object-browser routes are based on `file-libraries`.
 - Node API entry serves endpoint/credential and proxy APIs:
   - `GET/POST /api/v1/workspaces/:ws/projects/:prj/credentials`
   - `POST /api/v1/workspaces/:ws/projects/:prj/credentials/:credentialId/rotate`
@@ -49,9 +50,7 @@ Current status:
       - when `branch_leaf_message_id` already points to the same user input, stream reuses it (no duplicate user message)
 - `@mbos/adapters-private` contains `InMemoryProjectRepo` and `PostgresProjectRepo`.
 - `@mbos/adapters-private` contains Redis/Mongo/MinIO adapters and integration tests.
-- `@mbos/adapters-private` contains `PgVectorStore` (`pgvector`) and `NoopVectorStore`.
 - Postgres table bootstrap SQL: `packages/adapters-private/sql/projects.sql`
-- Pgvector bootstrap SQL: `packages/adapters-private/sql/source_embeddings.sql`
 - Cloudflare entry is still a stub and should be wired next.
 
 Quick start:

@@ -40,7 +40,7 @@ run_cmd "npx eslint \
   'src/components/projects/CreateProjectDialog.tsx' \
   'src/components/system/SystemWorkspacesPage.tsx' \
   'src/lib/system-admin/**/*.ts' \
-  'packages/api-entry-node/src/project-source-workspace-governance.ts' \
+  'packages/api-entry-node/src/project-workspace-governance-routes.ts' \
   'packages/api-entry-node/src/workspace-registry.ts'"
 run_cmd "npx tsc --noEmit"
 
@@ -58,7 +58,7 @@ run_cmd "npm run test:run -- \
   'src/components/projects/__tests__/CreateProjectDialog.test.tsx'"
 
 run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
-  'packages/api-entry-node/src/project-source-workspace-governance.test.ts' \
+  'packages/api-entry-node/src/project-workspace-governance-routes.test.ts' \
   'packages/api-entry-node/src/workspace-registry.test.ts' \
   'packages/api-entry-node/src/index.test.ts' \
   -t 'lets workspace admins manage project creators and exposes creator permissions in workspace members|forbids plain workspace members from creating projects while allowing project creators|does not expose disabled registered workspaces in runtime workspace list'"

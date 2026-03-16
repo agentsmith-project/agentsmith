@@ -28,7 +28,7 @@ export const AUDIT_RESOURCE_TYPE_OPTIONS = [
   'member',
   'agent',
   'endpoint',
-  'source_library',
+  'file_library',
   'source_file',
   'resource_policy',
   'credential',
@@ -36,7 +36,7 @@ export const AUDIT_RESOURCE_TYPE_OPTIONS = [
 
 export const USAGE_RESOURCE_TYPE_OPTIONS = [
   'endpoint',
-  'source_library',
+  'file_library',
   'agent',
 ] as const;
 

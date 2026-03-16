@@ -1,11 +1,11 @@
 import {
   handleWorkspaceDirectoryUsersRoute,
   handleWorkspaceProjectCreatorsRoute,
-} from './project-source-workspace-governance.js';
-import type { ProjectSourceRouteContext } from './project-source-route-types.js';
+} from './project-workspace-governance-routes.js';
+import type { ProjectRouteContext } from './project-route-types.js';
 import { buildWorkspaceMembersFromConfig } from './workspace-permissions.js';
 
-export async function handleWorkspaceRoutes(context: ProjectSourceRouteContext): Promise<boolean> {
+export async function handleWorkspaceRoutes(context: ProjectRouteContext): Promise<boolean> {
   const {
     route,
     method,

@@ -120,7 +120,7 @@ function readAttachmentIdsFromInput(rawAttachments: unknown): string[] | null {
   return out;
 }
 
-async function toDataUrlFromAttachmentOrSourceObject(
+async function toDataUrlFromAttachmentOrFileLibraryObject(
   deps: ChatStreamHandlerArgs['deps'],
   route: { workspaceId: string; projectId: string },
   attachment: ChatAttachmentRecord,
@@ -128,12 +128,12 @@ async function toDataUrlFromAttachmentOrSourceObject(
 ): Promise<string | null> {
   const inline = toDataUrl(attachment, mimeType);
   if (inline) return inline;
-  if (!mimeType || !attachment.source_library_id || !attachment.source_object_key) return null;
+  if (!mimeType || !attachment.file_library_id || !attachment.source_object_key) return null;
   try {
-    const downloaded = await deps.downloadSourceObjectUseCase.execute({
+    const downloaded = await deps.downloadFileLibraryObjectUseCase.execute({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
-      libraryId: attachment.source_library_id,
+      libraryId: attachment.file_library_id,
       key: attachment.source_object_key,
     });
     const nodeStream = Readable.fromWeb(downloaded.body as unknown as Parameters<typeof Readable.fromWeb>[0]);
@@ -342,7 +342,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       file_size: number;
       input_ref?: ChatAttachmentRecord['input_ref'];
       source_type?: 'local_upload' | 'library_import';
-      source_library_id?: string;
+      file_library_id?: string;
       source_object_key?: string;
     }> = [];
     if (inputRefs.length > 0 || attachmentIdsFromInput.length > 0) {
@@ -485,7 +485,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       const attachment = attachmentById.get(snapshot.id);
       const imageMimeType = resolveImageMimeType(snapshot.file_type, snapshot.file_name);
       const dataUrl = attachment
-        ? await toDataUrlFromAttachmentOrSourceObject(
+        ? await toDataUrlFromAttachmentOrFileLibraryObject(
             deps,
             { workspaceId: route.workspaceId, projectId: route.projectId },
             attachment,

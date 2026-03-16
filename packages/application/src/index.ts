@@ -1,37 +1,33 @@
 import {
-  CreateSourceFolderRequestSchema,
+  CreateFileLibraryObjectFolderRequestSchema,
   CreateProjectRequestSchema,
-  CreateSourceLibraryRequestSchema,
-  CreateSourceRequestSchema,
-  DeleteSourceObjectsRequestSchema,
-  ListSourceObjectsResponseSchema,
-  MoveSourceObjectRequestSchema,
-  SourceObjectShareLinkCreateRequestSchema,
-  SourceObjectShareLinkResponseSchema,
-  SourceObjectMetaResponseSchema,
-  UploadSourceObjectResponseSchema,
-  UpdateSourceLibraryRequestSchema,
+  CreateFileLibraryCatalogRequestSchema,
+  DeleteFileLibraryObjectsRequestSchema,
+  ListFileLibraryObjectsResponseSchema,
+  MoveFileLibraryObjectRequestSchema,
+  FileLibraryObjectShareLinkCreateRequestSchema,
+  FileLibraryObjectShareLinkResponseSchema,
+  FileLibraryObjectMetaResponseSchema,
+  UploadFileLibraryObjectResponseSchema,
+  UpdateFileLibraryCatalogRequestSchema,
   UpdateProjectRequestSchema,
-  type CreateSourceFolderRequest,
-  type CreateSourceLibraryRequest,
+  type CreateFileLibraryObjectFolderRequest,
+  type CreateFileLibraryCatalogRequest,
   type CreateProjectRequest,
-  type CreateSourceRequest,
-  type DeleteSourceObjectsRequest,
-  type DeleteSourceObjectsResponse,
-  type ListSourceObjectsResponse,
-  type MoveSourceObjectRequest,
+  type DeleteFileLibraryObjectsRequest,
+  type DeleteFileLibraryObjectsResponse,
+  type ListFileLibraryObjectsResponse,
+  type MoveFileLibraryObjectRequest,
   type ListProjectsResponse,
-  type ListSourceLibrariesResponse,
-  type ListSourcesResponse,
+  type ListFileLibraryCatalogsResponse,
   type ProjectDTO,
-  type SourceObjectShareLinkCreateRequest,
-  type SourceObjectShareLinkResponse,
-  type SourceObjectMetaResponse,
-  type SourceLibraryDTO,
-  type SourceDTO,
-  type UpdateSourceLibraryRequest,
+  type FileLibraryObjectShareLinkCreateRequest,
+  type FileLibraryObjectShareLinkResponse,
+  type FileLibraryObjectMetaResponse,
+  type FileLibraryCatalogDTO,
+  type UpdateFileLibraryCatalogRequest,
   type UpdateProjectRequest,
-  type UploadSourceObjectResponse,
+  type UploadFileLibraryObjectResponse,
 } from '@mbos/contracts';
 import { Project } from '@mbos/domain';
 import type { ReadableStream as WebReadableStream } from 'node:stream/web';
@@ -41,13 +37,9 @@ import type {
   IdGeneratorPort,
   ObjectStorePort,
   ProjectRepoPort,
-  SourceRepoPort,
-  SourceLibraryRepoPort,
+  FileLibraryCatalogRepoPort,
 } from '@mbos/ports';
-import {
-  buildFileLibrariesCacheKey,
-  buildSourcesCacheKey,
-} from './cache-keys';
+import { buildFileLibrariesCacheKey } from './cache-keys';
 
 export interface CreateProjectCommand {
   workspaceId: string;
@@ -66,48 +58,26 @@ export interface UpdateProjectCommand extends GetProjectCommand {
 
 export type DeleteProjectCommand = GetProjectCommand;
 
-export interface CreateSourceCommand {
-  workspaceId: string;
-  projectId: string;
-  input: CreateSourceRequest;
-}
-
-export interface ListSourcesCommand {
-  workspaceId: string;
-  projectId: string;
-  libraryId?: string;
-}
-
-export interface DeleteSourceCommand {
-  workspaceId: string;
-  projectId: string;
-  sourceId: string;
-}
-
-export type GetSourceCommand = DeleteSourceCommand;
-
-export type DownloadSourceCommand = DeleteSourceCommand;
-
-export interface ListSourceLibrariesCommand {
+export interface ListFileLibraryCatalogsCommand {
   workspaceId: string;
   projectId: string;
 }
 
-export interface CreateSourceLibraryCommand extends ListSourceLibrariesCommand {
+export interface CreateFileLibraryCatalogCommand extends ListFileLibraryCatalogsCommand {
   actorId: string;
-  input: CreateSourceLibraryRequest;
+  input: CreateFileLibraryCatalogRequest;
 }
 
-export interface UpdateSourceLibraryCommand extends ListSourceLibrariesCommand {
+export interface UpdateFileLibraryCatalogCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
-  input: UpdateSourceLibraryRequest;
+  input: UpdateFileLibraryCatalogRequest;
 }
 
-export interface DeleteSourceLibraryCommand extends ListSourceLibrariesCommand {
+export interface DeleteFileLibraryCatalogCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
 }
 
-export interface ListSourceLibraryObjectsCommand extends ListSourceLibrariesCommand {
+export interface ListFileLibraryObjectsCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
   prefix?: string;
   delimiter?: string;
@@ -118,12 +88,12 @@ export interface ListSourceLibraryObjectsCommand extends ListSourceLibrariesComm
   sortOrder?: 'asc' | 'desc';
 }
 
-export interface CreateSourceFolderCommand extends ListSourceLibrariesCommand {
+export interface CreateFileLibraryFolderCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
-  input: CreateSourceFolderRequest;
+  input: CreateFileLibraryObjectFolderRequest;
 }
 
-export interface UploadSourceObjectCommand extends ListSourceLibrariesCommand {
+export interface UploadFileLibraryObjectCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
   fileName: string;
   fileStream: WebReadableStream<Uint8Array>;
@@ -133,26 +103,26 @@ export interface UploadSourceObjectCommand extends ListSourceLibrariesCommand {
   overwrite?: boolean;
 }
 
-export interface DeleteSourceObjectsCommand extends ListSourceLibrariesCommand {
+export interface DeleteFileLibraryObjectsCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
-  input: DeleteSourceObjectsRequest;
+  input: DeleteFileLibraryObjectsRequest;
 }
 
-export interface MoveSourceObjectCommand extends ListSourceLibrariesCommand {
+export interface MoveFileLibraryObjectCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
-  input: MoveSourceObjectRequest;
+  input: MoveFileLibraryObjectRequest;
 }
 
-export interface GetSourceObjectMetaCommand extends ListSourceLibrariesCommand {
+export interface GetFileLibraryObjectMetaCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
   key: string;
 }
 
-export type DownloadSourceObjectCommand = GetSourceObjectMetaCommand;
+export type DownloadFileLibraryObjectCommand = GetFileLibraryObjectMetaCommand;
 
-export interface CreateSourceObjectShareLinkCommand extends ListSourceLibrariesCommand {
+export interface CreateFileLibraryObjectShareLinkCommand extends ListFileLibraryCatalogsCommand {
   libraryId: string;
-  input: SourceObjectShareLinkCreateRequest;
+  input: FileLibraryObjectShareLinkCreateRequest;
 }
 
 export class ListProjectsUseCase {
@@ -281,7 +251,7 @@ export class DeleteProjectUseCase {
   }
 }
 
-function sourceLibraryTuple(workspaceId: string, projectId: string, libraryId: string): {
+function fileLibraryTuple(workspaceId: string, projectId: string, libraryId: string): {
   objectPrefix: string;
   docNamespace: string;
   vectorNamespace: string;
@@ -295,13 +265,13 @@ function sourceLibraryTuple(workspaceId: string, projectId: string, libraryId: s
 }
 
 function ensureLibrary(
-  library: SourceLibraryDTO | null,
-): SourceLibraryDTO & { object_prefix: string } {
+  library: FileLibraryCatalogDTO | null,
+): FileLibraryCatalogDTO & { object_prefix: string } {
   if (!library) {
-    throw new Error('source_library_not_found');
+    throw new Error('file_library_not_found');
   }
   if (!library.object_prefix) {
-    throw new Error('source_library_prefix_missing');
+    throw new Error('file_library_prefix_missing');
   }
   const normalizedPrefix = `${library.object_prefix.trim().replace(/^\/+/, '').replace(/\/+$/, '')}/`;
   return { ...library, object_prefix: normalizedPrefix };
@@ -375,209 +345,43 @@ function decodeBase64(value: string): Uint8Array {
   return bytes;
 }
 
-export class ListSourcesUseCase {
+export class ListFileLibraryCatalogsUseCase {
   constructor(
-    private readonly sourceRepo: SourceRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly cache: CachePort,
   ) {}
 
-  async execute(command: ListSourcesCommand): Promise<ListSourcesResponse> {
-    const cacheKey = buildSourcesCacheKey(command.workspaceId, command.projectId, command.libraryId);
-    const cached = await this.cache.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached) as ListSourcesResponse;
-    }
-
-    const items = await this.sourceRepo.listByProject(command.workspaceId, command.projectId, {
-      libraryId: command.libraryId,
-    });
-    const payload: ListSourcesResponse = { items };
-    await this.cache.set(cacheKey, JSON.stringify(payload), 30);
-    return payload;
-  }
-}
-
-export class CreateSourceUseCase {
-  constructor(
-    private readonly sourceRepo: SourceRepoPort,
-    private readonly objectStore: ObjectStorePort,
-    private readonly idGenerator: IdGeneratorPort,
-    private readonly clock: ClockPort,
-    private readonly cache: CachePort,
-    private readonly bucket: string,
-  ) {}
-
-  async execute(command: CreateSourceCommand): Promise<SourceDTO> {
-    const input = CreateSourceRequestSchema.parse(command.input);
-    const sourceId = this.idGenerator.nextProjectId().replace(/^proj_/, 'src_');
-    const now = this.clock.nowIso();
-    const content = decodeBase64(input.content_base64);
-    const objectKey = `${command.workspaceId}/${command.projectId}/${sourceId}/${input.name}`;
-
-    await this.objectStore.putObject(
-      this.bucket,
-      objectKey,
-      content,
-      input.content_type,
-    );
-
-    const source: SourceDTO = {
-      id: sourceId,
-      workspace_id: command.workspaceId,
-      project_id: command.projectId,
-      library_id: input.library_id,
-      name: input.name.trim(),
-      object_key: objectKey,
-      content_type: input.content_type,
-      size_bytes: content.byteLength,
-      status: 'ready',
-      created_at: now,
-      updated_at: now,
-    };
-
-    await this.sourceRepo.save(source);
-    await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
-    if (input.library_id) {
-      await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, input.library_id));
-    }
-    return source;
-  }
-}
-
-export class GetSourceUseCase {
-  constructor(private readonly sourceRepo: SourceRepoPort) {}
-
-  async execute(command: GetSourceCommand): Promise<SourceDTO> {
-    const source = await this.sourceRepo.getById(
-      command.workspaceId,
-      command.projectId,
-      command.sourceId,
-    );
-    if (!source) {
-      throw new Error('source_not_found');
-    }
-    return source;
-  }
-}
-
-export class DeleteSourceUseCase {
-  constructor(
-    private readonly sourceRepo: SourceRepoPort,
-    private readonly objectStore: ObjectStorePort,
-    private readonly cache: CachePort,
-    private readonly bucket: string,
-  ) {}
-
-  async execute(command: DeleteSourceCommand): Promise<void> {
-    const existing = await this.sourceRepo.getById(
-      command.workspaceId,
-      command.projectId,
-      command.sourceId,
-    );
-    if (!existing) {
-      throw new Error('source_not_found');
-    }
-
-    await this.objectStore.deleteObject(this.bucket, existing.object_key);
-    await this.sourceRepo.delete(command.workspaceId, command.projectId, command.sourceId);
-    await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId));
-    if (existing.library_id) {
-      await this.cache.del(buildSourcesCacheKey(command.workspaceId, command.projectId, existing.library_id));
-    }
-  }
-}
-
-export interface SourceDownloadResult {
-  source: SourceDTO;
-  body: Uint8Array;
-}
-
-export class DownloadSourceUseCase {
-  constructor(
-    private readonly sourceRepo: SourceRepoPort,
-    private readonly objectStore: ObjectStorePort,
-    private readonly bucket: string,
-  ) {}
-
-  async execute(command: DownloadSourceCommand): Promise<SourceDownloadResult> {
-    const source = await this.sourceRepo.getById(
-      command.workspaceId,
-      command.projectId,
-      command.sourceId,
-    );
-    if (!source) {
-      throw new Error('source_not_found');
-    }
-
-    const body = await this.objectStore.getObject(this.bucket, source.object_key);
-    return { source, body };
-  }
-}
-
-export interface SourcesLimitSummary {
-  storage: { used: number; limit: number };
-  docdb: { used: number; limit: number };
-  vectordb: { used: number; limit: number };
-}
-
-export class GetSourcesLimitUseCase {
-  constructor(private readonly sourceRepo: SourceRepoPort) {}
-
-  async execute(command: ListSourcesCommand): Promise<SourcesLimitSummary> {
-    const sources = await this.sourceRepo.listByProject(
-      command.workspaceId,
-      command.projectId,
-      { libraryId: command.libraryId },
-    );
-    const storageUsed = sources.reduce((acc, item) => acc + item.size_bytes, 0);
-    const docdbUsed = sources.reduce((acc, item) => acc + (item.docdb_bytes ?? 0), 0);
-    const vectordbUsed = sources.reduce((acc, item) => acc + (item.vectordb_bytes ?? 0), 0);
-
-    return {
-      storage: { used: storageUsed, limit: 1_073_741_824 },
-      docdb: { used: docdbUsed, limit: 536_870_912 },
-      vectordb: { used: vectordbUsed, limit: 536_870_912 },
-    };
-  }
-}
-
-export class ListSourceLibrariesUseCase {
-  constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
-    private readonly cache: CachePort,
-  ) {}
-
-  async execute(command: ListSourceLibrariesCommand): Promise<ListSourceLibrariesResponse> {
+  async execute(command: ListFileLibraryCatalogsCommand): Promise<ListFileLibraryCatalogsResponse> {
     const cacheKey = buildFileLibrariesCacheKey(command.workspaceId, command.projectId);
     const cached = await this.cache.get(cacheKey);
     if (cached) {
-      return JSON.parse(cached) as ListSourceLibrariesResponse;
+      return JSON.parse(cached) as ListFileLibraryCatalogsResponse;
     }
 
-    const items = await this.sourceLibraryRepo.listByProject(
+    const items = await this.fileLibraryCatalogRepo.listByProject(
       command.workspaceId,
       command.projectId,
     );
-    const payload: ListSourceLibrariesResponse = { items };
+    const payload: ListFileLibraryCatalogsResponse = { items };
     await this.cache.set(cacheKey, JSON.stringify(payload), 30);
     return payload;
   }
 }
 
-export class CreateSourceLibraryUseCase {
+export class CreateFileLibraryCatalogUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly idGenerator: IdGeneratorPort,
     private readonly clock: ClockPort,
     private readonly cache: CachePort,
   ) {}
 
-  async execute(command: CreateSourceLibraryCommand): Promise<SourceLibraryDTO> {
-    const input = CreateSourceLibraryRequestSchema.parse(command.input);
+  async execute(command: CreateFileLibraryCatalogCommand): Promise<FileLibraryCatalogDTO> {
+    const input = CreateFileLibraryCatalogRequestSchema.parse(command.input);
     const now = this.clock.nowIso();
     const libraryId = this.idGenerator.nextProjectId().replace(/^proj_/, 'lib_');
-    const tuple = sourceLibraryTuple(command.workspaceId, command.projectId, libraryId);
-    const library: SourceLibraryDTO = {
+    const tuple = fileLibraryTuple(command.workspaceId, command.projectId, libraryId);
+    const library: FileLibraryCatalogDTO = {
       id: libraryId,
       workspace_id: command.workspaceId,
       project_id: command.projectId,
@@ -592,22 +396,22 @@ export class CreateSourceLibraryUseCase {
       updated_at: now,
     };
 
-    await this.sourceLibraryRepo.save(library);
+    await this.fileLibraryCatalogRepo.save(library);
     await this.cache.del(buildFileLibrariesCacheKey(command.workspaceId, command.projectId));
     return library;
   }
 }
 
-export class UpdateSourceLibraryUseCase {
+export class UpdateFileLibraryCatalogUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly clock: ClockPort,
     private readonly cache: CachePort,
   ) {}
 
-  async execute(command: UpdateSourceLibraryCommand): Promise<SourceLibraryDTO> {
-    const input = UpdateSourceLibraryRequestSchema.parse(command.input);
-    const patch: Partial<SourceLibraryDTO> = {
+  async execute(command: UpdateFileLibraryCatalogCommand): Promise<FileLibraryCatalogDTO> {
+    const input = UpdateFileLibraryCatalogRequestSchema.parse(command.input);
+    const patch: Partial<FileLibraryCatalogDTO> = {
       updated_at: this.clock.nowIso(),
     };
     if (input.name !== undefined) {
@@ -617,14 +421,14 @@ export class UpdateSourceLibraryUseCase {
       patch.description = input.description.trim();
     }
 
-    const updated = await this.sourceLibraryRepo.update(
+    const updated = await this.fileLibraryCatalogRepo.update(
       command.workspaceId,
       command.projectId,
       command.libraryId,
       patch,
     );
     if (!updated) {
-      throw new Error('source_library_not_found');
+      throw new Error('file_library_not_found');
     }
 
     await this.cache.del(buildFileLibrariesCacheKey(command.workspaceId, command.projectId));
@@ -632,16 +436,16 @@ export class UpdateSourceLibraryUseCase {
   }
 }
 
-export class DeleteSourceLibraryUseCase {
+export class DeleteFileLibraryCatalogUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly cache: CachePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: DeleteSourceLibraryCommand): Promise<void> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: DeleteFileLibraryCatalogCommand): Promise<void> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
@@ -655,28 +459,28 @@ export class DeleteSourceLibraryUseCase {
       throw new Error('library_not_empty');
     }
 
-    const deleted = await this.sourceLibraryRepo.delete(
+    const deleted = await this.fileLibraryCatalogRepo.delete(
       command.workspaceId,
       command.projectId,
       command.libraryId,
     );
     if (!deleted) {
-      throw new Error('source_library_not_found');
+      throw new Error('file_library_not_found');
     }
 
     await this.cache.del(buildFileLibrariesCacheKey(command.workspaceId, command.projectId));
   }
 }
 
-export class ListSourceLibraryObjectsUseCase {
+export class ListFileLibraryObjectsUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: ListSourceLibraryObjectsCommand): Promise<ListSourceObjectsResponse> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: ListFileLibraryObjectsCommand): Promise<ListFileLibraryObjectsResponse> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
@@ -739,7 +543,7 @@ export class ListSourceLibraryObjectsUseCase {
       objectItems = objectItems.slice().sort((a, b) => a.name.localeCompare(b.name) * sortFactor);
     }
 
-    return ListSourceObjectsResponseSchema.parse({
+    return ListFileLibraryObjectsResponseSchema.parse({
       prefix,
       items: [...prefixItems, ...objectItems],
       next_continuation_token: listed.nextContinuationToken,
@@ -747,20 +551,20 @@ export class ListSourceLibraryObjectsUseCase {
   }
 }
 
-export class CreateSourceFolderUseCase {
+export class CreateFileLibraryFolderUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: CreateSourceFolderCommand): Promise<void> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: CreateFileLibraryFolderCommand): Promise<void> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
     ));
-    const input = CreateSourceFolderRequestSchema.parse(command.input);
+    const input = CreateFileLibraryObjectFolderRequestSchema.parse(command.input);
     const prefix = normalizePrefix(input.prefix);
     if (!prefix) {
       throw new Error('invalid_prefix');
@@ -774,16 +578,16 @@ export class CreateSourceFolderUseCase {
   }
 }
 
-export class UploadSourceObjectUseCase {
+export class UploadFileLibraryObjectUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly clock: ClockPort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: UploadSourceObjectCommand): Promise<UploadSourceObjectResponse> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: UploadFileLibraryObjectCommand): Promise<UploadFileLibraryObjectResponse> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
@@ -806,7 +610,7 @@ export class UploadSourceObjectUseCase {
       sizeBytes: command.contentLength,
     });
     const stat = await this.objectStore.statObject(this.bucket, key);
-    return UploadSourceObjectResponseSchema.parse({
+    return UploadFileLibraryObjectResponseSchema.parse({
       key: stripObjectPrefix(key, library.object_prefix),
       size_bytes: stat.sizeBytes,
       content_type: stat.contentType ?? 'application/octet-stream',
@@ -816,14 +620,14 @@ export class UploadSourceObjectUseCase {
   }
 }
 
-export class DownloadSourceObjectUseCase {
+export class DownloadFileLibraryObjectUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: DownloadSourceObjectCommand): Promise<{
+  async execute(command: DownloadFileLibraryObjectCommand): Promise<{
     key: string;
     body: WebReadableStream<Uint8Array>;
     contentType: string;
@@ -831,7 +635,7 @@ export class DownloadSourceObjectUseCase {
     etag?: string;
     lastModified?: string;
   }> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
@@ -852,21 +656,21 @@ export class DownloadSourceObjectUseCase {
   }
 }
 
-export class CreateSourceObjectShareLinkUseCase {
+export class CreateFileLibraryObjectShareLinkUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly clock: ClockPort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: CreateSourceObjectShareLinkCommand): Promise<SourceObjectShareLinkResponse> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: CreateFileLibraryObjectShareLinkCommand): Promise<FileLibraryObjectShareLinkResponse> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
     ));
-    const input = SourceObjectShareLinkCreateRequestSchema.parse(command.input);
+    const input = FileLibraryObjectShareLinkCreateRequestSchema.parse(command.input);
     const key = normalizeKey(input.key);
     const expiresInSeconds = input.expires_in_seconds ?? 900;
     const fullKey = joinObjectKey(library.object_prefix, key);
@@ -877,7 +681,7 @@ export class CreateSourceObjectShareLinkUseCase {
       expiresInSeconds,
     );
     const now = this.clock.nowIso();
-    return SourceObjectShareLinkResponseSchema.parse({
+    return FileLibraryObjectShareLinkResponseSchema.parse({
       key,
       url,
       expires_at: addSecondsToIso(now, expiresInSeconds),
@@ -886,21 +690,21 @@ export class CreateSourceObjectShareLinkUseCase {
   }
 }
 
-export class DeleteSourceObjectsUseCase {
+export class DeleteFileLibraryObjectsUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: DeleteSourceObjectsCommand): Promise<DeleteSourceObjectsResponse> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: DeleteFileLibraryObjectsCommand): Promise<DeleteFileLibraryObjectsResponse> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
     ));
-    const input = DeleteSourceObjectsRequestSchema.parse(command.input);
-    const results: DeleteSourceObjectsResponse['results'] = [];
+    const input = DeleteFileLibraryObjectsRequestSchema.parse(command.input);
+    const results: DeleteFileLibraryObjectsResponse['results'] = [];
 
     for (const rawKey of input.keys) {
       const key = normalizeKey(rawKey);
@@ -925,20 +729,20 @@ export class DeleteSourceObjectsUseCase {
   }
 }
 
-export class MoveSourceObjectUseCase {
+export class MoveFileLibraryObjectUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: MoveSourceObjectCommand): Promise<void> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: MoveFileLibraryObjectCommand): Promise<void> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
     ));
-    const input = MoveSourceObjectRequestSchema.parse(command.input);
+    const input = MoveFileLibraryObjectRequestSchema.parse(command.input);
     const fromKey = normalizeKey(input.from_key);
     const toKey = normalizeKey(input.to_key);
     const overwrite = input.overwrite === true;
@@ -972,15 +776,15 @@ export class MoveSourceObjectUseCase {
   }
 }
 
-export class GetSourceObjectMetaUseCase {
+export class GetFileLibraryObjectMetaUseCase {
   constructor(
-    private readonly sourceLibraryRepo: SourceLibraryRepoPort,
+    private readonly fileLibraryCatalogRepo: FileLibraryCatalogRepoPort,
     private readonly objectStore: ObjectStorePort,
     private readonly bucket: string,
   ) {}
 
-  async execute(command: GetSourceObjectMetaCommand): Promise<SourceObjectMetaResponse> {
-    const library = ensureLibrary(await this.sourceLibraryRepo.getById(
+  async execute(command: GetFileLibraryObjectMetaCommand): Promise<FileLibraryObjectMetaResponse> {
+    const library = ensureLibrary(await this.fileLibraryCatalogRepo.getById(
       command.workspaceId,
       command.projectId,
       command.libraryId,
@@ -990,7 +794,7 @@ export class GetSourceObjectMetaUseCase {
       this.bucket,
       joinObjectKey(library.object_prefix, key),
     );
-    return SourceObjectMetaResponseSchema.parse({
+    return FileLibraryObjectMetaResponseSchema.parse({
       key,
       size_bytes: stat.sizeBytes,
       content_type: stat.contentType ?? 'application/octet-stream',

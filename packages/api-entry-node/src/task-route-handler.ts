@@ -62,11 +62,6 @@ interface TaskListItem extends TaskRecord {
 type TaskInputRefRecord =
   | {
       id: string;
-      kind: 'source';
-      source_id: string;
-    }
-  | {
-      id: string;
       kind: 'library_object';
       library_id: string;
       key: string;
@@ -101,7 +96,6 @@ interface TaskMessageRecord {
   role: 'user' | 'agent';
   content: string;
   created_at: string;
-  referenced_source_ids?: string[];
   turn_id?: string;
 }
 
@@ -242,15 +236,6 @@ function readTaskInputRefs(raw: unknown): TaskInputRefRecord[] {
   for (const item of raw) {
     const obj = asObject(item);
     const kind = typeof obj.kind === 'string' ? obj.kind.trim() : '';
-    if (kind === 'source') {
-      const sourceId = typeof obj.source_id === 'string' ? obj.source_id.trim() : '';
-      if (!sourceId) continue;
-      const dedupeKey = `source:${sourceId}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      results.push({ id: buildId('in'), kind: 'source', source_id: sourceId });
-      continue;
-    }
     if (kind === 'library_object') {
       const libraryId = typeof obj.library_id === 'string' ? obj.library_id.trim() : '';
       const key = typeof obj.key === 'string' ? obj.key.trim() : '';
@@ -754,19 +739,15 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     const existingKeys = new Set(
       task.attached_inputs.map((item) =>
-        item.kind === 'source'
-          ? `source:${item.source_id}`
-          : item.kind === 'library_object'
-            ? `library_object:${item.library_id}:${item.key}`
-            : item.kind === 'artifact'
+        item.kind === 'library_object'
+          ? `library_object:${item.library_id}:${item.key}`
+          : item.kind === 'artifact'
               ? `artifact:${item.task_id}:${item.artifact_id}`
             : `url:${item.url}`,
       ),
     );
     for (const inputRef of inputs) {
-      const key = inputRef.kind === 'source'
-        ? `source:${inputRef.source_id}`
-        : inputRef.kind === 'library_object'
+      const key = inputRef.kind === 'library_object'
           ? `library_object:${inputRef.library_id}:${inputRef.key}`
           : inputRef.kind === 'artifact'
             ? `artifact:${inputRef.task_id}:${inputRef.artifact_id}`

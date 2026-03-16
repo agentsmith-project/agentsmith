@@ -3,7 +3,7 @@ import type { ProjectResourcePolicyRecord } from './project-resource-policy-stor
 import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
 import { listUsageFacts } from './audit-usage-store.js';
 
-type ResourceType = 'endpoint' | 'source_library' | 'agent';
+type ResourceType = 'endpoint' | 'file_library' | 'agent';
 
 type PolicyRule = {
   key: string;
@@ -18,8 +18,8 @@ type LimitRuleKey =
   | 'endpoint.spending_usd_per_minute'
   | 'endpoint.spending_usd_per_5_hours'
   | 'endpoint.spending_usd_per_day'
-  | 'source_library.max_total_files'
-  | 'source_library.max_file_size_bytes';
+  | 'file_library.max_total_files'
+  | 'file_library.max_file_size_bytes';
 
 type LimitLimitDecision =
   | {
@@ -116,7 +116,7 @@ function mergeLimitRules(base: PolicyRule[], overrides: PolicyRule[]): PolicyRul
 
 function getRequestsPerMinuteRuleKey(resourceType: ResourceType): string | null {
   if (resourceType === 'endpoint') return 'endpoint.requests_per_minute';
-  if (resourceType === 'source_library') return 'source_library.requests_per_minute';
+  if (resourceType === 'file_library') return 'file_library.requests_per_minute';
   return null;
 }
 
@@ -643,7 +643,7 @@ export async function checkProjectEndpointSpendingLimitsForUser(args: {
   return { allowed: true, limits: details };
 }
 
-type SourceLibraryLimitDecision =
+type FileLibraryLimitDecision =
   | {
     allowed: true;
     effective_max_total_files?: number;
@@ -655,7 +655,7 @@ type SourceLibraryLimitDecision =
   | {
     allowed: false;
     reason: 'limit_exceeded';
-    limit_key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
+    limit_key: 'file_library.max_total_files' | 'file_library.max_file_size_bytes';
     effective_limit: number;
     current_usage: number;
     usage_unit: 'files' | 'bytes';
@@ -667,12 +667,12 @@ type SourceLibraryLimitDecision =
     scope: 'policy' | 'subject';
   };
 
-function getEffectiveSourceLibraryLimitRule(args: {
+function getEffectiveFileLibraryLimitRule(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
   policy: ProjectResourcePolicyRecord;
-  key: 'source_library.max_total_files' | 'source_library.max_file_size_bytes';
+  key: 'file_library.max_total_files' | 'file_library.max_file_size_bytes';
 }): { value?: number; scope?: 'policy' | 'subject' } {
   const baseRules = readPolicyRules(args.policy.spending_limits);
   const subject = getMatchingSubjectLimitRules(args);
@@ -682,30 +682,30 @@ function getEffectiveSourceLibraryLimitRule(args: {
   return { value: rule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
-export function checkProjectSourceLibraryLimitLimits(args: {
+export function checkProjectFileLibraryLimitRules(args: {
   workspaceId: string;
   projectId: string;
   userId: string;
   policy: ProjectResourcePolicyRecord | null;
   currentFileCount: number;
   nextFileSizeBytes: number;
-}): SourceLibraryLimitDecision {
+}): FileLibraryLimitDecision {
   if (!args.policy) {
     return { allowed: true };
   }
 
-  const maxTotalFiles = getEffectiveSourceLibraryLimitRule({
+  const maxTotalFiles = getEffectiveFileLibraryLimitRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
     policy: args.policy,
-    key: 'source_library.max_total_files',
+    key: 'file_library.max_total_files',
   });
   if (maxTotalFiles.value && args.currentFileCount + 1 > maxTotalFiles.value) {
     return {
       allowed: false,
       reason: 'limit_exceeded',
-      limit_key: 'source_library.max_total_files',
+      limit_key: 'file_library.max_total_files',
       effective_limit: maxTotalFiles.value,
       current_usage: args.currentFileCount + 1,
       usage_unit: 'files',
@@ -716,18 +716,18 @@ export function checkProjectSourceLibraryLimitLimits(args: {
     };
   }
 
-  const maxFileSize = getEffectiveSourceLibraryLimitRule({
+  const maxFileSize = getEffectiveFileLibraryLimitRule({
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
     policy: args.policy,
-    key: 'source_library.max_file_size_bytes',
+    key: 'file_library.max_file_size_bytes',
   });
   if (maxFileSize.value && args.nextFileSizeBytes > maxFileSize.value) {
     return {
       allowed: false,
       reason: 'limit_exceeded',
-      limit_key: 'source_library.max_file_size_bytes',
+      limit_key: 'file_library.max_file_size_bytes',
       effective_limit: maxFileSize.value,
       current_usage: args.nextFileSizeBytes,
       usage_unit: 'bytes',

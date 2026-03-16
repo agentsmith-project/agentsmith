@@ -32,7 +32,6 @@ interface TaskPageContentProps {
   handleViewArtifact: (artifact: Artifact) => void;
   isDisabled: boolean;
   loadMoreTracesForMessage: (messageId: string) => void;
-  localFileInputRef: React.RefObject<HTMLInputElement | null>;
   messages: TaskMessage[];
   onSetAddUrlOpen: (open: boolean) => void;
   onSetFileSelectOpen: (open: boolean) => void;
@@ -82,7 +81,6 @@ export function TaskPageContent({
   handleViewArtifact,
   isDisabled,
   loadMoreTracesForMessage,
-  localFileInputRef,
   messages,
   onSetAddUrlOpen,
   onSetFileSelectOpen,
@@ -122,7 +120,7 @@ export function TaskPageContent({
           }}
           onAddFromLocal={() => {
             if (!canUpdateTask || addingInput) return;
-            localFileInputRef.current?.click();
+            onSetFileSelectOpen(true);
           }}
           onAddFromUrl={() => {
             if (!canUpdateTask || addingInput) return;

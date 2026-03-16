@@ -581,6 +581,9 @@
         "confirm": "Add Selected",
         "no_files": "No ready files available in your library",
         "from_library": "From your Files library",
+        "legacy_source_title": "Source inputs",
+        "legacy_source_description": "Source selection is temporarily unavailable. This area remains visible for the upcoming notebook source redesign.",
+        "legacy_source_footer": "Notebook source selection is temporarily disabled.",
         "library_objects_title": "File Library Objects",
         "library_objects_empty": "No file libraries yet",
         "library_objects_no_items": "No files in this library yet",
@@ -1354,7 +1357,7 @@
     "all_types": "All resource types",
     "type_endpoint": "Endpoint",
     "type_agent": "Agent",
-    "type_source_library": "Source Library",
+    "type_file_library": "File Library",
     "filter_by_resource_id": "Filter by resource ID",
     "top_resources": "Top Resources",
     "top_users": "Top Users",
@@ -1372,7 +1375,7 @@
     "resource_type": {
       "endpoint": "Endpoint",
       "agent": "Agent",
-      "source_library": "Source Library"
+      "file_library": "File Library"
     }
   },
   "settings": {
@@ -1639,12 +1642,12 @@
     },
     "resource_type": {
       "endpoint": "Endpoint",
-      "source_library": "Source Library",
+      "file_library": "File Library",
       "agent": "Agent"
     },
     "editor_hint": {
       "endpoint": "Configure endpoint access and token limit for this model endpoint.",
-      "source_library": "Configure who can access this library and file-related limit controls.",
+      "file_library": "Configure who can access this library and file-related limit controls.",
       "agent": "Configure agent access and requests-per-minute limits."
     },
     "subjects": {
@@ -1708,10 +1711,10 @@
         "spending_usd_per_5_hours": "Endpoint spending limit (USD/5h)",
         "spending_usd_per_day": "Endpoint spending limit (USD/day)"
       },
-      "source_library": {
-        "requests_per_minute": "Source library requests per minute",
-        "max_total_files": "Source library max total files",
-        "max_file_size_bytes": "Source library max file size (bytes)"
+      "file_library": {
+        "requests_per_minute": "File library requests per minute",
+        "max_total_files": "File library max total files",
+        "max_file_size_bytes": "File library max file size (bytes)"
       },
       "agent": {
         "requests_per_minute": "Agent requests per minute"
@@ -1726,7 +1729,7 @@
         "spending_usd_per_5_hours": "subject spending limit (USD/5h)",
         "spending_usd_per_day": "subject spending limit (USD/day)"
       },
-      "source_library": {
+      "file_library": {
         "requests_per_minute": "subject requests per minute",
         "max_total_files": "subject max total files",
         "max_file_size_bytes": "subject max file size bytes"
@@ -1860,15 +1863,15 @@
       "sections": {
         "endpoint_title": "Endpoint Limits",
         "endpoint_description": "Per-user token usage for endpoint calls.",
-        "source_library_title": "Source Library Limits",
-        "source_library_description": "Per-user file storage constraints in source libraries.",
+        "file_library_title": "File Library Limits",
+        "file_library_description": "Per-user file storage constraints in source libraries.",
         "agent_title": "Agent Limits",
         "agent_description": "Per-user concurrent agent execution limits."
       },
       "fields": {
         "endpoint_daily_token_limit": "Endpoint daily token limit",
-        "source_library_max_total_files": "Source library total files",
-        "source_library_max_file_size_bytes": "Source library max file size",
+        "file_library_max_total_files": "File library total files",
+        "file_library_max_file_size_bytes": "File library max file size",
         "agent_max_concurrency": "Agent max concurrency"
       },
       "units": {
@@ -2038,9 +2041,9 @@
       "limit_apply_batch_success": "Limit template applied to {count} members",
       "limit_apply_partial_success": "Limit template applied partially. Some members could not be updated.",
       "limit_title": "Limit Templates",
-      "limit_description": "Manage reusable limit presets (e.g. Standard, High Usage, Restricted) for endpoint, source library, and agent limits.",
+      "limit_description": "Manage reusable limit presets (e.g. Standard, High Usage, Restricted) for endpoint, file library, and agent limits.",
       "limit_empty_title": "No limit templates yet",
-      "limit_empty_description": "Create a limit template to define preset overrides for endpoint token limits, source library file limits, and agent concurrency.",
+      "limit_empty_description": "Create a limit template to define preset overrides for endpoint token limits, file library file limits, and agent concurrency.",
       "save_changes": "Save Changes",
       "delete": "Delete",
       "delete_confirm_title": "Delete Template",
@@ -2722,7 +2725,7 @@
       "cancel": "Cancel",
       "rename": "Rename library",
       "delete": "Delete library",
-      "delete_confirm_title": "Delete source library",
+      "delete_confirm_title": "Delete file library",
       "delete_confirm_description": "This will remove the library and all files inside it. This action cannot be undone.",
       "delete_confirm_warning": "High risk action: all library files and related indexes will be permanently removed.",
       "delete_confirm_type_label": "Type \"{name}\" to confirm deletion.",

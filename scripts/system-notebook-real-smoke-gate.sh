@@ -35,8 +35,8 @@ run_cmd "npm run test:run -- \
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/settings/__tests__/page.test.tsx'"
 
 run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
-  'packages/api-entry-node/src/project-source-join-requests.test.ts' \
-  'packages/api-entry-node/src/project-source-member-governance.test.ts' \
+  'packages/api-entry-node/src/project-join-request-routes.test.ts' \
+  'packages/api-entry-node/src/project-member-governance-routes.test.ts' \
   'packages/api-entry-node/src/workspace-registry.test.ts'"
 
 info "real lane logs will be written to:"

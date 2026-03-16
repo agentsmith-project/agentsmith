@@ -13,8 +13,8 @@ export const mockTask: Task = {
   agent_name: 'Test Agent',
   status: 'active',
   attached_inputs: [
-    { id: 'in_1', kind: 'source', source_id: 'source-1' },
-    { id: 'in_2', kind: 'source', source_id: 'source-2' },
+    { id: 'in_1', kind: 'library_object', library_id: 'lib-1', key: 'docs/source-1.txt', name: 'source-1.txt' },
+    { id: 'in_2', kind: 'library_object', library_id: 'lib-1', key: 'docs/source-2.txt', name: 'source-2.txt' },
   ],
   created_at: '2024-01-01T00:00:00Z',
   updated_at: '2024-01-02T00:00:00Z',

@@ -5,7 +5,6 @@ import {
   resolveInputRef,
 } from './input-ref-input-resolver.js';
 
-type SourceInputRefRecord = { id: string; kind: 'source'; source_id: string };
 type LibraryObjectInputRefRecord = {
   id: string;
   kind: 'library_object';
@@ -37,19 +36,11 @@ type UrlInputRefRecord = {
 };
 
 export type NotebookTaskInputRefRecord =
-  | SourceInputRefRecord
   | LibraryObjectInputRefRecord
   | ArtifactInputRefRecord
   | UrlInputRefRecord;
 
 export type NotebookTaskInput =
-  | {
-      kind: 'source';
-      source_id: string;
-      filename: string;
-      file_type?: string;
-      file_size?: number;
-    }
   | {
       kind: 'library_object';
       library_id: string;
@@ -78,14 +69,6 @@ export type NotebookTaskInput =
     };
 
 export type NotebookTaskInputDetail =
-  | {
-      id: string;
-      kind: 'source';
-      source_id: string;
-      filename: string;
-      file_type: string;
-      file_size: number;
-    }
   | {
       id: string;
       kind: 'library_object';
@@ -117,10 +100,7 @@ export type NotebookTaskInputDetail =
     };
 
 type SourceLookupDeps = {
-  getSourceUseCase: {
-    execute(args: { workspaceId: string; projectId: string; sourceId: string }): Promise<unknown>;
-  };
-  getSourceObjectMetaUseCase: {
+  getFileLibraryObjectMetaUseCase: {
     execute(args: { workspaceId: string; projectId: string; libraryId: string; key: string }): Promise<{
       key: string;
       content_type?: string;
@@ -137,16 +117,8 @@ type ArtifactLookup = {
   task_relative_path?: string;
 };
 
-function asObject(input: unknown): Record<string, unknown> {
-  return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
-}
-
 function readString(input: unknown): string | undefined {
   return typeof input === 'string' && input.trim().length > 0 ? input.trim() : undefined;
-}
-
-function readNumber(input: unknown): number | undefined {
-  return typeof input === 'number' && Number.isFinite(input) ? input : undefined;
 }
 
 export async function buildNotebookTaskInputs(args: {
@@ -208,30 +180,11 @@ export async function buildNotebookTaskInputs(args: {
         meta: resolved.meta,
       }) satisfies NotebookTaskInput;
     }
-    try {
-      const source = await deps.getSourceUseCase.execute({
-        workspaceId,
-        projectId,
-        sourceId: inputRef.source_id,
-      });
-      const src = asObject(source);
-      return {
-        kind: 'source',
-        source_id: inputRef.source_id,
-        filename: readString(src.filename) ?? readString(src.name) ?? inputRef.source_id,
-        ...(readString(src.file_type) ?? readString(src.content_type)
-          ? { file_type: readString(src.file_type) ?? readString(src.content_type) }
-          : {}),
-        ...(readNumber(src.file_size) !== undefined ? { file_size: readNumber(src.file_size) } : {}),
-      } satisfies NotebookTaskInput;
-    } catch (error) {
-      debugLog?.('task_input_source_lookup_failed', {
-        task_id: taskId,
-        source_id: inputRef.source_id,
-        error: error instanceof Error ? error.message : 'source_lookup_failed',
-      });
-      return { kind: 'source', source_id: inputRef.source_id, filename: inputRef.source_id } satisfies NotebookTaskInput;
-    }
+    debugLog?.('task_input_unreachable_kind', {
+      task_id: taskId,
+      kind: 'unknown',
+    });
+    throw new Error('task_input_unreachable_kind');
   }));
 }
 
@@ -244,25 +197,6 @@ export async function resolveNotebookTaskInputDetails(args: {
 }): Promise<NotebookTaskInputDetail[]> {
   const { deps, workspaceId, projectId, inputs, loadArtifactsForTask } = args;
   const items = await Promise.all(inputs.map(async (inputRef): Promise<NotebookTaskInputDetail | null> => {
-    if (inputRef.kind === 'source') {
-      try {
-        const source = asObject(await deps.getSourceUseCase.execute({
-          workspaceId,
-          projectId,
-          sourceId: inputRef.source_id,
-        }));
-        return {
-          id: inputRef.id,
-          kind: 'source',
-          source_id: inputRef.source_id,
-          filename: typeof source.filename === 'string' ? source.filename : (typeof source.name === 'string' ? source.name : inputRef.source_id),
-          file_type: typeof source.file_type === 'string' ? source.file_type : (typeof source.content_type === 'string' ? source.content_type : 'application/octet-stream'),
-          file_size: typeof source.file_size === 'number' ? source.file_size : (typeof source.size_bytes === 'number' ? source.size_bytes : 0),
-        };
-      } catch {
-        return null;
-      }
-    }
     if (inputRef.kind === 'library_object') {
       const resolved = await resolveInputRef({
         kind: 'library_object',

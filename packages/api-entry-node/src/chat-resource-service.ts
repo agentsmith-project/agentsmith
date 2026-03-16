@@ -346,7 +346,7 @@ export class ChatResourceService {
     fileType: string;
     fileSize: number;
     sourceType?: 'local_upload' | 'library_import';
-    sourceLibraryId?: string;
+    fileLibraryId?: string;
     sourceObjectKey?: string;
     inputRef?: {
       kind: 'library_object' | 'url';
@@ -375,7 +375,7 @@ export class ChatResourceService {
       created_at: now,
       input_ref: input.inputRef,
       source_type: input.sourceType,
-      source_library_id: input.sourceLibraryId,
+      file_library_id: input.fileLibraryId,
       source_object_key: input.sourceObjectKey,
       content_base64: input.contentBase64,
       preview_url: input.previewUrl,

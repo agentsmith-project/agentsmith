@@ -6,7 +6,7 @@ export type AuditSummaryTranslator = (key: string, values?: Record<string, strin
 
 const RESOURCE_LABELS: Record<string, string> = {
   endpoint: 'Model Endpoint',
-  source_library: 'Source Library',
+  file_library: 'File Library',
   source_file: 'Source File',
   resource_policy: 'Resource Policy',
   credential: 'Credential',

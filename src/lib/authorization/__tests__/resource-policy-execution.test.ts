@@ -48,7 +48,7 @@ describe('Resource Policy Execution', () => {
   // Test Case 2: Non-endpoint resources are denied in MVP boundary
   it('should deny non-endpoint resources in MVP boundary', async () => {
     const evaluationContext: PolicyEvaluationContext = {
-      resource_type: 'source_library',
+      resource_type: 'file_library',
       resource_id: 'lib-1',
       subject_id: 'user-2',
       subject_type: 'user',

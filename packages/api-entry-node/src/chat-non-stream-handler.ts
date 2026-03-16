@@ -534,7 +534,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         size_bytes?: number;
       };
       source_type?: 'local_upload' | 'library_import';
-      source_library_id?: string;
+      file_library_id?: string;
       source_object_key?: string;
     };
     const validationError = validateAttachmentPayload(raw);
@@ -590,7 +590,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     if (inputRef?.kind === 'library_object') {
       const resolved = await resolveInputRef({
         kind: 'library_object',
-        deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
+        deps: { getFileLibraryObjectMetaUseCase: deps.getFileLibraryObjectMetaUseCase },
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: inputRef,
@@ -603,7 +603,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     } else if (inputRef?.kind === 'url') {
       const resolved = await resolveInputRef({
         kind: 'url',
-        deps: { getSourceObjectMetaUseCase: deps.getSourceObjectMetaUseCase },
+        deps: { getFileLibraryObjectMetaUseCase: deps.getFileLibraryObjectMetaUseCase },
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: inputRef,
@@ -623,12 +623,12 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       fileSize: resolvedAttachmentMeta?.fileSize ?? raw.file_size!,
       inputRef,
       sourceType: inputRef ? 'library_import' : raw.source_type,
-      sourceLibraryId:
+      fileLibraryId:
         inputRef?.kind === 'library_object'
           ? inputRef.library_id
           : inputRef?.kind === 'url'
-            ? (inputRef.imported_library_id ?? raw.source_library_id)
-            : raw.source_library_id,
+            ? (inputRef.imported_library_id ?? raw.file_library_id)
+            : raw.file_library_id,
       sourceObjectKey:
         inputRef?.kind === 'library_object'
           ? inputRef.key

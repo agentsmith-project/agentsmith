@@ -16,7 +16,7 @@ describe('builtin-skills', () => {
       const config = resolveBuiltinSkillsConfig();
       expect(config.sourceDir).toBe(resolve(process.cwd(), 'packages/agent-codex-runner/builtin-skills'));
       expect(config.required).toBe(true);
-      expect(config.skills).toEqual(['.system', 'feishu-docs', 'jira-ops', 'source-read']);
+      expect(config.skills).toEqual(['.system', 'feishu-docs', 'jira-ops', 'file-read']);
     } finally {
       if (previousDir === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
       else process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR = previousDir;

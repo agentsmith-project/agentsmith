@@ -23,7 +23,6 @@ type NotebookTaskRecord = {
   agent_name: string;
   status: 'active' | 'archived';
   attached_inputs: Array<
-    | { id: string; kind: 'source'; source_id: string }
     | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
     | { id: string; kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
     | { id: string; kind: 'url'; url: string; name?: string; imported_library_id?: string; imported_key?: string; content_type?: string; size_bytes?: number }
@@ -40,7 +39,6 @@ type NotebookTaskMessageRecord = {
   role: 'user' | 'agent';
   content: string;
   created_at: string;
-  referenced_source_ids?: string[];
   turn_id?: string;
 };
 

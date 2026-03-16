@@ -21,7 +21,7 @@ import {
   isBuiltInProjectGroupId,
   isBuiltInProjectTemplateId,
 } from './project-governance-model.js';
-import { projectScopedKey, readProjectPermissionContext, readRequestId } from './project-source-route-handler-utils.js';
+import { projectScopedKey, readProjectPermissionContext, readRequestId } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 

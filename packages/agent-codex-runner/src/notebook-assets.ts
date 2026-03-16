@@ -2,8 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 export type NotebookTaskInput = {
-  kind?: 'source' | 'library_object' | 'artifact' | 'url';
-  source_id?: string;
+  kind?: 'library_object' | 'artifact' | 'url';
   library_id?: string;
   key?: string;
   task_id?: string;
@@ -37,7 +36,7 @@ export function buildNotebookHeadlessPreamble(args: {
     `- Attached inputs count: ${String(args.taskInputsCount)}`,
     '',
     'Use attached inputs to complete the user request and mention generated artifact filenames in your final response.',
-    '- Inputs may be source-based, library-object-based, artifact-based, or URL-based. Inspect `kind` in the task inputs manifest.',
+    '- Inputs may be library-object-based, artifact-based, or URL-based. Inspect `kind` in the task inputs manifest.',
     '',
   ].join('\n');
 }
@@ -53,14 +52,14 @@ function buildNotebookAgentsMd(): string {
     '3. Save generated files/charts/images into `./artifacts/`.',
     '4. Put final conclusions in the response message, and mention generated artifact filenames.',
     '5. Attached notebook inputs are described in `./.mbos/task-inputs.json`.',
-    '6. Use the local source-read skill helper to fetch attached project file-library inputs when needed.',
+    '6. Use the local file-read skill helper to fetch attached project file-library inputs when needed.',
     '',
     '## Notebook Inputs Helper',
     '',
     '- List attached inputs:',
-    '  - `node ./.codex/skills/source-read/fetch_input.mjs list`',
+    '  - `node ./.codex/skills/file-read/fetch_input.mjs list`',
     '- Fetch a specific attached input into `./inputs/`:',
-    '  - `node ./.codex/skills/source-read/fetch_input.mjs fetch <input_id>`',
+    '  - `node ./.codex/skills/file-read/fetch_input.mjs fetch <input_id>`',
     '',
     '## Output Convention',
     '',
@@ -99,8 +98,7 @@ export async function prepareNotebookWorkspaceAssets(args: {
                 ? 'url'
                 : item?.kind === 'artifact'
                   ? 'artifact'
-                  : 'source',
-          source_id: typeof item?.source_id === 'string' ? item.source_id : undefined,
+                  : undefined,
           library_id: typeof item?.library_id === 'string' ? item.library_id : undefined,
           key: typeof item?.key === 'string' ? item.key : undefined,
           task_id: typeof item?.task_id === 'string' ? item.task_id : undefined,

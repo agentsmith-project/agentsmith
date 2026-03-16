@@ -28,7 +28,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - allow-list matching supports user and group subjects
   - endpoint `requests_per_minute` rate limiting is enforced
   - endpoint `daily_token_limit` limit enforcement is enforced
-  - legacy `source_library.max_total_files` and `source_library.max_file_size_bytes` remain enforced on old source-processing create/upload flows; the current Files mainline uses project `file-libraries`
+  - file upload and browsing in the current Files mainline use project `file-libraries`
 
 ## 1. Scope
 - Target: external agent for Notebook task execution/testing.
@@ -127,7 +127,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `MBOS_AGENT_RUNNER_DEBUG=1` (optional; logs spawn args/workdir/timeout)
 - `MBOS_AGENT_CODEX_YOLO=1` (optional; run codex with `--dangerously-bypass-approvals-and-sandbox`)
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `<repo>/packages/agent-codex-runner/builtin-skills`)
-- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops,source-read`)
+- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops,file-read`)
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 
 ### 5.3 API debug env vars (recommended for troubleshooting)
@@ -136,7 +136,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `DEBUG_NOTEBOOK_EXECUTION=1` (task/run/request_id level dispatch + terminal events)
 
 ### 5.3.1 Builtin Skills Mount Policy (MVP)
-- Every new task auto-mounts builtin skills into task workspace: `.codex/skills/.system`, `.codex/skills/feishu-docs`, `.codex/skills/jira-ops`, `.codex/skills/source-read`.
+- Every new task auto-mounts builtin skills into task workspace: `.codex/skills/.system`, `.codex/skills/feishu-docs`, `.codex/skills/jira-ops`, `.codex/skills/file-read`.
 - Mount happens before `codex exec` starts.
 - Default policy is fail-fast if required builtin skills are missing (`MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1`).
 
@@ -182,7 +182,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 
 ### 5.3.5 Notebook Artifact Inputs (output-to-input loop)
 - Notebook artifacts can be attached back into task inputs as first-class `artifact` refs.
-- The runner `source-read` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
+- The runner `file-read` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
 
 ### 5.3.6 Notebook Local Upload Inputs (object-first)
 - Notebook local file uploads now follow the same object-first flow as Chat uploads:
@@ -334,7 +334,7 @@ make notebook-agent-engineering-smoke
 ```
 - Default bundle includes:
   - `make notebook-agent-smoke-task`
-  - `make notebook-agent-source-read-mount-smoke`
+  - `make notebook-agent-file-read-mount-smoke`
   - `make notebook-agent-inputrefs-loop-smoke`
 - Smoke auth behavior:
   - notebook smoke scripts now auto-refresh token once on `401` and retry the failed API call (including initial `POST /tasks`).
@@ -886,8 +886,8 @@ Runner execution-context/task-input behavior:
   - `<task_cwd>/.mbos/task-inputs.json`
 - runner writes a task-local `AGENTS.md` with mandatory notebook rules (headless/artifacts/input helper)
 - runner installs a task-local Codex skill:
-  - `./.codex/skills/source-read/`
-  - helper command: `node ./.codex/skills/source-read/fetch_input.mjs ...`
+  - `./.codex/skills/file-read/`
+  - helper command: `node ./.codex/skills/file-read/fetch_input.mjs ...`
 - Codex is instructed to use the manifest and produce file outputs in `artifacts/`
 
 Session continuity behavior:

@@ -13,13 +13,13 @@ describe('mapRequestError', () => {
     });
   });
 
-  it('maps source-library mismatch to 422 validation error', () => {
-    const mapped = mapRequestError(new Error('source_library_mismatch'));
+  it('maps file-library mismatch to 422 validation error', () => {
+    const mapped = mapRequestError(new Error('file_library_mismatch'));
     expect(mapped).toEqual({
       status: 422,
       body: {
         error_code: 'VALIDATION_ERROR',
-        message: 'source_library_mismatch',
+        message: 'file_library_mismatch',
       },
     });
   });

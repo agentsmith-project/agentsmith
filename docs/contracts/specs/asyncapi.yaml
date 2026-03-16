@@ -261,7 +261,21 @@ components:
                       type: object
                       additionalProperties: false
                       properties:
-                        source_id:
+                        kind:
+                          type: string
+                          enum:
+                          - library_object
+                          - artifact
+                          - url
+                        library_id:
+                          type: string
+                        key:
+                          type: string
+                        task_id:
+                          type: string
+                        artifact_id:
+                          type: string
+                        url:
                           type: string
                         filename:
                           type: string

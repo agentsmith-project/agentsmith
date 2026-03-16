@@ -48,11 +48,11 @@ export async function readProjectPermissionContext(args: {
 }
 
 export function validatePolicyRuleKeys(args: {
-  resourceType: 'endpoint' | 'source_library' | 'agent';
+  resourceType: 'endpoint' | 'file_library' | 'agent';
   kind: 'rate_limits' | 'spending_limits';
   payload: unknown;
-  allowedRateKeys: Record<'endpoint' | 'source_library' | 'agent', readonly string[]>;
-  allowedLimitKeys: Record<'endpoint' | 'source_library' | 'agent', readonly string[]>;
+  allowedRateKeys: Record<'endpoint' | 'file_library' | 'agent', readonly string[]>;
+  allowedLimitKeys: Record<'endpoint' | 'file_library' | 'agent', readonly string[]>;
 }): { ok: true } | { ok: false; message: string } {
   if (args.payload === undefined) return { ok: true };
   if (!args.payload || typeof args.payload !== 'object' || Array.isArray(args.payload)) {

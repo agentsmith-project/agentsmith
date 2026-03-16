@@ -1,7 +1,7 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { extractBearerToken, verifyBearerToken } from './auth.js';
-import { handleProjectSourceRoute } from './project-source-route-handler.js';
+import { handleProjectRoute } from './project-route-handler.js';
 import { handleAuditUsageRoute } from './audit-usage-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
 import { handleChatStreamRoute } from './chat-stream-handler.js';
@@ -73,7 +73,7 @@ type AuthorizationRequestBody = {
   };
   action?: string;
   resource?: {
-    type?: 'project' | 'endpoint' | 'source_library' | 'agent';
+    type?: 'project' | 'endpoint' | 'file_library' | 'agent';
     id?: string;
   };
   context?: {
@@ -980,7 +980,7 @@ export async function handleRequest(
         || (body.subject.type !== 'user' && body.subject.type !== 'group' && body.subject.type !== 'agent')
         || typeof body.subject.id !== 'string'
         || (body.resource.type !== 'project' && body.resource.type !== 'endpoint'
-          && body.resource.type !== 'source_library' && body.resource.type !== 'agent')
+          && body.resource.type !== 'file_library' && body.resource.type !== 'agent')
         || typeof body.resource.id !== 'string'
       ) {
         json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_authorization_request' });
@@ -1041,7 +1041,7 @@ export async function handleRequest(
         return;
       }
 
-      if (body.resource.type === 'endpoint' || body.resource.type === 'source_library' || body.resource.type === 'agent') {
+      if (body.resource.type === 'endpoint' || body.resource.type === 'file_library' || body.resource.type === 'agent') {
         const policyDecision = evaluateResourcePolicyAuthorization({
           workspaceId: route.workspaceId,
           projectId: route.projectId,
@@ -1085,7 +1085,7 @@ export async function handleRequest(
       return;
     }
 
-    const handledProjectSourceRoute = await handleProjectSourceRoute({
+    const handledProjectRoute = await handleProjectRoute({
       route,
       method,
       req,
@@ -1098,7 +1098,7 @@ export async function handleRequest(
       json,
       readBody,
     });
-    if (handledProjectSourceRoute) {
+    if (handledProjectRoute) {
       return;
     }
 

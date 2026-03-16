@@ -1,21 +1,12 @@
-import type { ProjectDTO, SourceDTO, SourceLibraryDTO } from '@mbos/contracts';
+import type { ProjectDTO, FileLibraryCatalogDTO } from '@mbos/contracts';
 import type {
   CachePort,
   ClockPort,
-  DocumentParserPort,
-  EmbeddingProviderPort,
   IdGeneratorPort,
   JsonDocStorePort,
   ObjectStorePort,
   ProjectRepoPort,
-  SourceRepoPort,
-  SourceLibraryRepoPort,
-  TextChunk,
-  TextChunkerPort,
-  VectorChunkUpsert,
-  VectorSearchQuery,
-  VectorSearchResult,
-  VectorStorePort,
+  FileLibraryCatalogRepoPort,
 } from '@mbos/ports';
 import { MongoClient } from 'mongodb';
 import { Client as MinioClient } from 'minio';
@@ -806,333 +797,13 @@ export class InMemoryObjectStore implements ObjectStorePort {
   }
 }
 
-export class NoopVectorStore implements VectorStorePort {
-  async upsertChunks(): Promise<void> {
-    return undefined;
-  }
-
-  async deleteBySource(): Promise<void> {
-    return undefined;
-  }
-
-  async search(): Promise<VectorSearchResult[]> {
-    return [];
-  }
-
-  async countByLibrary(): Promise<number> {
-    return 0;
-  }
-}
-
-export interface PgVectorStoreOptions {
-  databaseUrl: string;
-  tableName?: string;
-  embeddingDimensions?: number;
-}
-
-interface EmbeddingRow {
-  chunk_id: string;
-  source_id: string;
-  content: string;
-  metadata: Record<string, unknown> | null;
-  score: number;
-}
-
-function asPgVectorLiteral(embedding: number[]): string {
-  if (embedding.length === 0) {
-    throw new Error('vector_embedding_empty');
-  }
-  for (const value of embedding) {
-    if (!Number.isFinite(value)) {
-      throw new Error('vector_embedding_not_finite');
-    }
-  }
-  return `[${embedding.join(',')}]`;
-}
-
-function validateVectorDimensions(embedding: number[], expectedDimensions: number): void {
-  if (embedding.length !== expectedDimensions) {
-    throw new Error('vector_embedding_dimensions_mismatch');
-  }
-}
-
-function assertSafeSqlIdentifier(value: string): void {
-  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(value)) {
-    throw new Error('vector_table_name_invalid');
-  }
-}
-
-export class PgVectorStore implements VectorStorePort {
-  private readonly pool: Pool;
-  private readonly tableName: string;
-  private readonly embeddingDimensions: number;
-
-  constructor(options: PgVectorStoreOptions) {
-    this.pool = new Pool({
-      connectionString: options.databaseUrl,
-    });
-    this.tableName = options.tableName ?? 'source_embeddings';
-    assertSafeSqlIdentifier(this.tableName);
-    this.embeddingDimensions = options.embeddingDimensions ?? 1536;
-  }
-
-  async ensureSchema(): Promise<void> {
-    await this.pool.query('CREATE EXTENSION IF NOT EXISTS vector');
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS ${this.tableName} (
-        id BIGSERIAL PRIMARY KEY,
-        workspace_id TEXT NOT NULL,
-        project_id TEXT NOT NULL,
-        library_id TEXT NOT NULL,
-        source_id TEXT NOT NULL,
-        chunk_id TEXT NOT NULL,
-        content TEXT NOT NULL,
-        embedding VECTOR(${this.embeddingDimensions}) NOT NULL,
-        metadata JSONB NULL,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (workspace_id, project_id, library_id, source_id, chunk_id)
-      )
-    `);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_${this.tableName}_scope
-      ON ${this.tableName} (workspace_id, project_id, library_id, source_id)
-    `);
-  }
-
-  async upsertChunks(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    chunks: VectorChunkUpsert[],
-  ): Promise<void> {
-    if (chunks.length === 0) {
-      return;
-    }
-
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      for (const chunk of chunks) {
-        validateVectorDimensions(chunk.embedding, this.embeddingDimensions);
-        const now = new Date().toISOString();
-        await client.query(
-          `
-          INSERT INTO ${this.tableName} (
-            workspace_id, project_id, library_id, source_id, chunk_id, content, embedding, metadata, created_at, updated_at
-          ) VALUES ($1,$2,$3,$4,$5,$6,$7::vector,$8::jsonb,$9,$10)
-          ON CONFLICT (workspace_id, project_id, library_id, source_id, chunk_id)
-          DO UPDATE SET
-            content = EXCLUDED.content,
-            embedding = EXCLUDED.embedding,
-            metadata = EXCLUDED.metadata,
-            updated_at = EXCLUDED.updated_at
-          `,
-          [
-            workspaceId,
-            projectId,
-            libraryId,
-            chunk.sourceId,
-            chunk.chunkId,
-            chunk.content,
-            asPgVectorLiteral(chunk.embedding),
-            chunk.metadata ? JSON.stringify(chunk.metadata) : null,
-            now,
-            now,
-          ],
-        );
-      }
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
-  async deleteBySource(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-    sourceId: string,
-  ): Promise<void> {
-    await this.pool.query(
-      `
-      DELETE FROM ${this.tableName}
-      WHERE workspace_id = $1 AND project_id = $2 AND library_id = $3 AND source_id = $4
-      `,
-      [workspaceId, projectId, libraryId, sourceId],
-    );
-  }
-
-  async search(query: VectorSearchQuery): Promise<VectorSearchResult[]> {
-    if (query.topK <= 0) {
-      return [];
-    }
-    validateVectorDimensions(query.queryEmbedding, this.embeddingDimensions);
-
-    const vectorLiteral = asPgVectorLiteral(query.queryEmbedding);
-    if (query.minScore !== undefined) {
-      const result = await this.pool.query<EmbeddingRow>(
-        `
-        WITH ranked AS (
-          SELECT
-            chunk_id,
-            source_id,
-            content,
-            metadata,
-            1 - (embedding <=> $4::vector) AS score
-          FROM ${this.tableName}
-          WHERE workspace_id = $1 AND project_id = $2 AND library_id = $3
-        )
-        SELECT chunk_id, source_id, content, metadata, score
-        FROM ranked
-        WHERE score >= $5
-        ORDER BY score DESC
-        LIMIT $6
-        `,
-        [
-          query.workspaceId,
-          query.projectId,
-          query.libraryId,
-          vectorLiteral,
-          query.minScore,
-          query.topK,
-        ],
-      );
-      return result.rows.map((row) => ({
-        chunkId: row.chunk_id,
-        sourceId: row.source_id,
-        content: row.content,
-        metadata: row.metadata ?? undefined,
-        score: row.score,
-      }));
-    }
-
-    const result = await this.pool.query<EmbeddingRow>(
-      `
-      SELECT
-        chunk_id,
-        source_id,
-        content,
-        metadata,
-        1 - (embedding <=> $4::vector) AS score
-      FROM ${this.tableName}
-      WHERE workspace_id = $1 AND project_id = $2 AND library_id = $3
-      ORDER BY embedding <=> $4::vector
-      LIMIT $5
-      `,
-      [query.workspaceId, query.projectId, query.libraryId, vectorLiteral, query.topK],
-    );
-    return result.rows.map((row) => ({
-      chunkId: row.chunk_id,
-      sourceId: row.source_id,
-      content: row.content,
-      metadata: row.metadata ?? undefined,
-      score: row.score,
-    }));
-  }
-
-  async countByLibrary(
-    workspaceId: string,
-    projectId: string,
-    libraryId: string,
-  ): Promise<number> {
-    const result = await this.pool.query<{ total: string }>(
-      `
-      SELECT COUNT(*)::text AS total
-      FROM ${this.tableName}
-      WHERE workspace_id = $1 AND project_id = $2 AND library_id = $3
-      `,
-      [workspaceId, projectId, libraryId],
-    );
-    return Number(result.rows[0]?.total ?? '0');
-  }
-
-  async close(): Promise<void> {
-    await this.pool.end();
-  }
-}
-
-export class JsonDocSourceRepo implements SourceRepoPort {
-  private static readonly collection = 'sources';
+export class JsonDocFileLibraryCatalogRepo implements FileLibraryCatalogRepoPort {
+  private static readonly collection = 'file_libraries';
 
   constructor(private readonly docStore: JsonDocStorePort) {}
 
-  async listByProject(
-    workspaceId: string,
-    projectId: string,
-    options?: { libraryId?: string },
-  ): Promise<SourceDTO[]> {
-    const items = await this.docStore.list<SourceDTO>(JsonDocSourceRepo.collection, {
-      workspace_id: workspaceId,
-      project_id: projectId,
-    });
-    if (!options?.libraryId) {
-      return items;
-    }
-    return items.filter((item) => item.library_id === options.libraryId);
-  }
-
-  async getById(
-    workspaceId: string,
-    projectId: string,
-    sourceId: string,
-  ): Promise<SourceDTO | null> {
-    const source = await this.docStore.get<SourceDTO>(JsonDocSourceRepo.collection, sourceId);
-    if (!source) {
-      return null;
-    }
-
-    if (source.workspace_id !== workspaceId || source.project_id !== projectId) {
-      return null;
-    }
-
-    return source;
-  }
-
-  async save(source: SourceDTO): Promise<void> {
-    await this.docStore.upsert<SourceDTO>(JsonDocSourceRepo.collection, source.id, source);
-  }
-
-  async update(
-    workspaceId: string,
-    projectId: string,
-    sourceId: string,
-    patch: Partial<SourceDTO>,
-  ): Promise<SourceDTO | null> {
-    const existing = await this.getById(workspaceId, projectId, sourceId);
-    if (!existing) {
-      return null;
-    }
-
-    const updated: SourceDTO = {
-      ...existing,
-      ...patch,
-    };
-    await this.save(updated);
-    return updated;
-  }
-
-  async delete(workspaceId: string, projectId: string, sourceId: string): Promise<boolean> {
-    const existing = await this.getById(workspaceId, projectId, sourceId);
-    if (!existing) {
-      return false;
-    }
-
-    await this.docStore.delete(JsonDocSourceRepo.collection, sourceId);
-    return true;
-  }
-}
-
-export class JsonDocSourceLibraryRepo implements SourceLibraryRepoPort {
-  private static readonly collection = 'source_libraries';
-
-  constructor(private readonly docStore: JsonDocStorePort) {}
-
-  async listByProject(workspaceId: string, projectId: string): Promise<SourceLibraryDTO[]> {
-    return this.docStore.list<SourceLibraryDTO>(JsonDocSourceLibraryRepo.collection, {
+  async listByProject(workspaceId: string, projectId: string): Promise<FileLibraryCatalogDTO[]> {
+    return this.docStore.list<FileLibraryCatalogDTO>(JsonDocFileLibraryCatalogRepo.collection, {
       workspace_id: workspaceId,
       project_id: projectId,
     });
@@ -1142,9 +813,9 @@ export class JsonDocSourceLibraryRepo implements SourceLibraryRepoPort {
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<SourceLibraryDTO | null> {
-    const library = await this.docStore.get<SourceLibraryDTO>(
-      JsonDocSourceLibraryRepo.collection,
+  ): Promise<FileLibraryCatalogDTO | null> {
+    const library = await this.docStore.get<FileLibraryCatalogDTO>(
+      JsonDocFileLibraryCatalogRepo.collection,
       libraryId,
     );
     if (!library) {
@@ -1158,9 +829,9 @@ export class JsonDocSourceLibraryRepo implements SourceLibraryRepoPort {
     return library;
   }
 
-  async save(library: SourceLibraryDTO): Promise<void> {
-    await this.docStore.upsert<SourceLibraryDTO>(
-      JsonDocSourceLibraryRepo.collection,
+  async save(library: FileLibraryCatalogDTO): Promise<void> {
+    await this.docStore.upsert<FileLibraryCatalogDTO>(
+      JsonDocFileLibraryCatalogRepo.collection,
       library.id,
       library,
     );
@@ -1170,14 +841,14 @@ export class JsonDocSourceLibraryRepo implements SourceLibraryRepoPort {
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    patch: Partial<SourceLibraryDTO>,
-  ): Promise<SourceLibraryDTO | null> {
+    patch: Partial<FileLibraryCatalogDTO>,
+  ): Promise<FileLibraryCatalogDTO | null> {
     const existing = await this.getById(workspaceId, projectId, libraryId);
     if (!existing) {
       return null;
     }
 
-    const updated: SourceLibraryDTO = {
+    const updated: FileLibraryCatalogDTO = {
       ...existing,
       ...patch,
     };
@@ -1191,86 +862,7 @@ export class JsonDocSourceLibraryRepo implements SourceLibraryRepoPort {
       return false;
     }
 
-    await this.docStore.delete(JsonDocSourceLibraryRepo.collection, libraryId);
+    await this.docStore.delete(JsonDocFileLibraryCatalogRepo.collection, libraryId);
     return true;
-  }
-}
-
-
-export class Utf8DocumentParser implements DocumentParserPort {
-  async parse(body: Uint8Array): Promise<string> {
-    const decoder = new TextDecoder('utf-8', { fatal: false });
-    return decoder.decode(body);
-  }
-}
-
-export interface FixedCharTextChunkerOptions {
-  chunkSize?: number;
-  overlap?: number;
-}
-
-export class FixedCharTextChunker implements TextChunkerPort {
-  private readonly chunkSize: number;
-  private readonly overlap: number;
-
-  constructor(options: FixedCharTextChunkerOptions = {}) {
-    this.chunkSize = options.chunkSize ?? 1000;
-    this.overlap = options.overlap ?? 100;
-    if (this.chunkSize <= 0) {
-      throw new Error('chunk_size_invalid');
-    }
-    if (this.overlap < 0 || this.overlap >= this.chunkSize) {
-      throw new Error('chunk_overlap_invalid');
-    }
-  }
-
-  chunk(text: string): TextChunk[] {
-    const normalized = text.trim();
-    if (!normalized) {
-      return [];
-    }
-
-    const chunks: TextChunk[] = [];
-    const step = this.chunkSize - this.overlap;
-    for (let start = 0; start < normalized.length; start += step) {
-      const end = Math.min(start + this.chunkSize, normalized.length);
-      chunks.push({
-        content: normalized.slice(start, end),
-        metadata: {
-          offset_start: start,
-          offset_end: end,
-        },
-      });
-      if (end >= normalized.length) {
-        break;
-      }
-    }
-    return chunks;
-  }
-}
-
-export class DeterministicEmbeddingProvider implements EmbeddingProviderPort {
-  constructor(private readonly vectorDimensions = 1536) {
-    if (this.vectorDimensions <= 0) {
-      throw new Error('embedding_dimensions_invalid');
-    }
-  }
-
-  dimensions(): number {
-    return this.vectorDimensions;
-  }
-
-  async embed(texts: string[]): Promise<number[][]> {
-    return texts.map((text) => this.embedOne(text));
-  }
-
-  private embedOne(text: string): number[] {
-    const vector = new Array<number>(this.vectorDimensions).fill(0);
-    const input = text || ' ';
-    for (let i = 0; i < this.vectorDimensions; i += 1) {
-      const code = input.charCodeAt(i % input.length);
-      vector[i] = ((code + i * 31) % 997) / 997;
-    }
-    return vector;
   }
 }

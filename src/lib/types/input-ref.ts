@@ -1,9 +1,3 @@
-export type SourceInputRef = {
-  kind: 'source';
-  source_id: string;
-  name?: string;
-};
-
 export type LibraryObjectInputRef = {
   kind: 'library_object';
   library_id: string;
@@ -30,7 +24,7 @@ export type ArtifactInputRef = {
   task_relative_path?: string;
 };
 
-export type InputRef = SourceInputRef | LibraryObjectInputRef | UrlInputRef | ArtifactInputRef;
+export type InputRef = LibraryObjectInputRef | UrlInputRef | ArtifactInputRef;
 
 export type ChatAttachmentInputRef = LibraryObjectInputRef | UrlInputRef;
 export type ChatMessageInputRef = ChatAttachmentInputRef;

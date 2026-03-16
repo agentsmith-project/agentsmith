@@ -66,7 +66,7 @@ Applies to:
 
 - Architecture and runtime truth:
   - `docs/contracts/juicefs-file-libraries-architecture.md`
-- The frontend must align with file library APIs and credential exchange, not legacy `source-library` routes.
+- The frontend must align with `file-libraries` APIs and credential exchange.
 
 ## 6. Test Contract
 

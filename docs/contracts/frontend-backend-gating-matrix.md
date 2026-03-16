@@ -63,7 +63,7 @@ Backend enforces `401/403`; frontend applies route/component gates.
    - return `endpoints[].limits[]` with canonical fields: `kind/window/metric/policy_key/used/max/remaining/usage_pct/reset_at`.
    - return `project_summary` with `project_used/project_max/project_remaining/project_usage_pct`.
 8. Files mainline now runs on JuiceFS-backed project `file-libraries`.
-   New Files frontend or backend work must target `file-libraries`, not the removed `source-libraries` public surface.
+   New Files frontend or backend work must target `file-libraries`.
 
 ## Target Migration (Accepted)
 

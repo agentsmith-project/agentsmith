@@ -35,9 +35,9 @@ vi.mock('./keycloak-user-directory.js', () => ({
   searchKeycloakDirectoryUsers: vi.fn(),
 }));
 
-import { handleWorkspaceProjectCreatorsRoute } from './project-source-workspace-governance.js';
+import { handleWorkspaceProjectCreatorsRoute } from './project-workspace-governance-routes.js';
 
-describe('project-source-workspace-governance', () => {
+describe('project-workspace-governance-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeProjectAuditEvent.mockResolvedValue(undefined);

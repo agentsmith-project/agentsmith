@@ -3,19 +3,17 @@ import {
   handleProjectCrudRoutes,
   handleFileLibraryRoutes,
   handleProjectGovernanceRoutes,
-  handleSourceDomainRoutes,
   handleWorkspaceRoutes,
-} from './project-source-route-dispatchers.js';
+} from './project-route-dispatchers.js';
 import type {
-  ProjectSourceHandlerArgs,
-  ProjectSourceRouteContext,
-} from './project-source-route-types.js';
-import { createSourceLibraryGuards } from './project-source-library-guards.js';
+  ProjectRouteHandlerArgs,
+  ProjectRouteContext,
+} from './project-route-types.js';
 import {
   checkAndConsumeProjectResourceRateLimitsForUser,
 } from './project-resource-policy-enforcer.js';
 
-export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): Promise<boolean> {
+export async function handleProjectRoute(args: ProjectRouteHandlerArgs): Promise<boolean> {
   const {
     route,
     method,
@@ -31,30 +29,9 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   } = args;
   const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
 
-  const {
-    enforceSourceLibraryAccess,
-    enforceSourceLibraryRateLimit,
-    enforceSourceLibraryPreflight,
-    enforceSourceLibraryLimit,
-    enforceSourceLibraryAccessBySourceId,
-  } = createSourceLibraryGuards({
-    deps,
-    user,
-    requestId,
-    res,
-    json,
-  });
-
-  const context: ProjectSourceRouteContext = {
+  const context: ProjectRouteContext = {
     ...args,
     requestId,
-    sourceLibraryGuards: {
-      enforceSourceLibraryAccess,
-      enforceSourceLibraryRateLimit,
-      enforceSourceLibraryPreflight,
-      enforceSourceLibraryLimit,
-      enforceSourceLibraryAccessBySourceId,
-    },
   };
 
   if (await handleWorkspaceRoutes(context)) {
@@ -76,10 +53,6 @@ export async function handleProjectSourceRoute(args: ProjectSourceHandlerArgs): 
   }
 
   if (await handleFileLibraryRoutes(context)) {
-    return true;
-  }
-
-  if (await handleSourceDomainRoutes(context)) {
     return true;
   }
 

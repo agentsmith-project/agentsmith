@@ -224,7 +224,7 @@ export function useBatchApplyPermissionTemplate(workspaceId: string, projectId: 
 export function useResourcePolicy(
   workspaceId: string,
   projectId: string,
-  resourceType: 'endpoint' | 'source_library' | 'agent',
+  resourceType: 'endpoint' | 'file_library' | 'agent',
   resourceId: string,
   options?: { enabled?: boolean },
 ): UseQueryResult<ResourcePolicy> {
@@ -243,7 +243,7 @@ export function useResourcePolicy(
 export function useUpdateResourcePolicy(
   workspaceId: string,
   projectId: string,
-  resourceType: 'endpoint' | 'source_library' | 'agent',
+  resourceType: 'endpoint' | 'file_library' | 'agent',
   resourceId: string
 ) {
   const queryClient = useQueryClient();

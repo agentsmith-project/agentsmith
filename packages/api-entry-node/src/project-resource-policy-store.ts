@@ -1,7 +1,7 @@
 import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
 
 type SubjectType = 'group' | 'user';
-type ResourceType = 'endpoint' | 'source_library' | 'agent';
+type ResourceType = 'endpoint' | 'file_library' | 'agent';
 
 export type ProjectResourcePolicyRecord = {
   resource_type: ResourceType;

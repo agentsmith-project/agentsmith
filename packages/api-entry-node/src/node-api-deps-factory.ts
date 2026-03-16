@@ -1,35 +1,28 @@
 import { join } from 'node:path';
 import {
-  CreateSourceFolderUseCase,
-  CreateSourceObjectShareLinkUseCase,
-  CreateSourceLibraryUseCase,
+  CreateFileLibraryFolderUseCase,
+  CreateFileLibraryObjectShareLinkUseCase,
+  CreateFileLibraryCatalogUseCase,
   CreateProjectUseCase,
-  CreateSourceUseCase,
-  DeleteSourceObjectsUseCase,
-  DeleteSourceLibraryUseCase,
-  DeleteSourceUseCase,
+  DeleteFileLibraryObjectsUseCase,
+  DeleteFileLibraryCatalogUseCase,
   DeleteProjectUseCase,
-  DownloadSourceObjectUseCase,
-  DownloadSourceUseCase,
-  GetSourceUseCase,
-  GetSourceObjectMetaUseCase,
-  GetSourcesLimitUseCase,
+  DownloadFileLibraryObjectUseCase,
+  GetFileLibraryObjectMetaUseCase,
   GetProjectUseCase,
   ListProjectsUseCase,
-  ListSourceLibraryObjectsUseCase,
-  ListSourceLibrariesUseCase,
-  ListSourcesUseCase,
-  MoveSourceObjectUseCase,
-  UploadSourceObjectUseCase,
-  UpdateSourceLibraryUseCase,
+  ListFileLibraryObjectsUseCase,
+  ListFileLibraryCatalogsUseCase,
+  MoveFileLibraryObjectUseCase,
+  UploadFileLibraryObjectUseCase,
+  UpdateFileLibraryCatalogUseCase,
   UpdateProjectUseCase,
 } from '@mbos/application';
 import {
   InMemoryCache,
   InMemoryJsonDocStore,
   InMemoryObjectStore,
-  JsonDocSourceRepo,
-  JsonDocSourceLibraryRepo,
+  JsonDocFileLibraryCatalogRepo,
   MinioObjectStore,
   MongoJsonDocStore,
   RedisCache,
@@ -58,10 +51,9 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   const cache = new InMemoryCache();
   const docStore = new InMemoryJsonDocStore();
   const clock = new SystemClock();
-  const sourceRepo = new JsonDocSourceRepo(docStore);
-  const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
+  const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const objectStore = new InMemoryObjectStore();
-  const sourceBucket = 'mbos-dev';
+  const fileLibraryBucket = 'mbos-dev';
 
   return {
     governanceReportsDir: join(process.cwd(), 'artifacts/governance-reports'),
@@ -73,46 +65,33 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     endpointResourceService: new EndpointResourceService(docStore),
     agentResourceService: new AgentResourceService(docStore),
     agentExecutionService: new AgentExecutionService(new AgentResourceService(docStore)),
-    sourceBucket,
-    createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
-      sourceLibraryRepo,
+    fileLibraryBucket,
+    createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
+      fileLibraryCatalogRepo,
       new SimpleIdGenerator(),
       clock,
       cache,
     ),
-    createSourceFolderUseCase: new CreateSourceFolderUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-    createSourceObjectShareLinkUseCase: new CreateSourceObjectShareLinkUseCase(
-      sourceLibraryRepo,
+    createFileLibraryFolderUseCase: new CreateFileLibraryFolderUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+    createFileLibraryObjectShareLinkUseCase: new CreateFileLibraryObjectShareLinkUseCase(
+      fileLibraryCatalogRepo,
       objectStore,
       clock,
-      sourceBucket,
+      fileLibraryBucket,
     ),
     createProjectUseCase: new CreateProjectUseCase(projectRepo, new SimpleIdGenerator(), clock),
-    createSourceUseCase: new CreateSourceUseCase(
-      sourceRepo,
-      objectStore,
-      new SimpleIdGenerator(),
-      clock,
-      cache,
-      sourceBucket,
-    ),
-    uploadSourceObjectUseCase: new UploadSourceObjectUseCase(sourceLibraryRepo, objectStore, clock, sourceBucket),
-    deleteSourceLibraryUseCase: new DeleteSourceLibraryUseCase(sourceLibraryRepo, objectStore, cache, sourceBucket),
-    deleteSourceObjectsUseCase: new DeleteSourceObjectsUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-    deleteSourceUseCase: new DeleteSourceUseCase(sourceRepo, objectStore, cache, sourceBucket),
-    moveSourceObjectUseCase: new MoveSourceObjectUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-    downloadSourceObjectUseCase: new DownloadSourceObjectUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-    downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, sourceBucket),
-    getSourceObjectMetaUseCase: new GetSourceObjectMetaUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-    getSourceUseCase: new GetSourceUseCase(sourceRepo),
-    getSourcesLimitUseCase: new GetSourcesLimitUseCase(sourceRepo),
+    uploadFileLibraryObjectUseCase: new UploadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, clock, fileLibraryBucket),
+    deleteFileLibraryCatalogUseCase: new DeleteFileLibraryCatalogUseCase(fileLibraryCatalogRepo, objectStore, cache, fileLibraryBucket),
+    deleteFileLibraryObjectsUseCase: new DeleteFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+    moveFileLibraryObjectUseCase: new MoveFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+    downloadFileLibraryObjectUseCase: new DownloadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+    getFileLibraryObjectMetaUseCase: new GetFileLibraryObjectMetaUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
     deleteProjectUseCase: new DeleteProjectUseCase(projectRepo),
     getProjectUseCase: new GetProjectUseCase(projectRepo),
     listProjectsUseCase: new ListProjectsUseCase(projectRepo),
-    listSourceLibrariesUseCase: new ListSourceLibrariesUseCase(sourceLibraryRepo, cache),
-    listSourceLibraryObjectsUseCase: new ListSourceLibraryObjectsUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-    listSourcesUseCase: new ListSourcesUseCase(sourceRepo, cache),
-    updateSourceLibraryUseCase: new UpdateSourceLibraryUseCase(sourceLibraryRepo, clock, cache),
+    listFileLibraryCatalogsUseCase: new ListFileLibraryCatalogsUseCase(fileLibraryCatalogRepo, cache),
+    listFileLibraryObjectsUseCase: new ListFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+    updateFileLibraryCatalogUseCase: new UpdateFileLibraryCatalogUseCase(fileLibraryCatalogRepo, clock, cache),
     updateProjectUseCase: new UpdateProjectUseCase(projectRepo, clock),
     fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
     fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
@@ -158,8 +137,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         secretKey: env.MINIO_SECRET_KEY ?? 'mbos_dev_password',
       })
     : new InMemoryObjectStore();
-  const sourceRepo = new JsonDocSourceRepo(docStore);
-  const sourceLibraryRepo = new JsonDocSourceLibraryRepo(docStore);
+  const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const chatResourceService = new ChatResourceService(docStore);
   const endpointResourceService = new EndpointResourceService(docStore);
   const agentResourceService = new AgentResourceService(docStore);
@@ -183,7 +161,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       process.stderr.write(`[api-entry-node] sandbox readyz preflight failed: ${message}\n`);
     });
   }
-  const sourceBucket = env.MINIO_BUCKET ?? 'mbos-dev';
+  const fileLibraryBucket = env.MINIO_BUCKET ?? 'mbos-dev';
 
   return {
     deps: {
@@ -197,46 +175,33 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       agentResourceService,
       agentExecutionService,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
-      sourceBucket,
-      createSourceLibraryUseCase: new CreateSourceLibraryUseCase(
-        sourceLibraryRepo,
+      fileLibraryBucket,
+      createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
+        fileLibraryCatalogRepo,
         new SimpleIdGenerator(),
         clock,
         cache,
       ),
-      createSourceFolderUseCase: new CreateSourceFolderUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-      createSourceObjectShareLinkUseCase: new CreateSourceObjectShareLinkUseCase(
-        sourceLibraryRepo,
+      createFileLibraryFolderUseCase: new CreateFileLibraryFolderUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+      createFileLibraryObjectShareLinkUseCase: new CreateFileLibraryObjectShareLinkUseCase(
+        fileLibraryCatalogRepo,
         objectStore,
         clock,
-        sourceBucket,
+        fileLibraryBucket,
       ),
       createProjectUseCase: new CreateProjectUseCase(factory.projectRepo, new SimpleIdGenerator(), clock),
-      createSourceUseCase: new CreateSourceUseCase(
-        sourceRepo,
-        objectStore,
-        new SimpleIdGenerator(),
-        clock,
-        cache,
-        sourceBucket,
-      ),
-      uploadSourceObjectUseCase: new UploadSourceObjectUseCase(sourceLibraryRepo, objectStore, clock, sourceBucket),
-      deleteSourceLibraryUseCase: new DeleteSourceLibraryUseCase(sourceLibraryRepo, objectStore, cache, sourceBucket),
-      deleteSourceObjectsUseCase: new DeleteSourceObjectsUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-      deleteSourceUseCase: new DeleteSourceUseCase(sourceRepo, objectStore, cache, sourceBucket),
-      moveSourceObjectUseCase: new MoveSourceObjectUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-      downloadSourceObjectUseCase: new DownloadSourceObjectUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-      downloadSourceUseCase: new DownloadSourceUseCase(sourceRepo, objectStore, sourceBucket),
-      getSourceObjectMetaUseCase: new GetSourceObjectMetaUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-      getSourceUseCase: new GetSourceUseCase(sourceRepo),
-      getSourcesLimitUseCase: new GetSourcesLimitUseCase(sourceRepo),
+      uploadFileLibraryObjectUseCase: new UploadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, clock, fileLibraryBucket),
+      deleteFileLibraryCatalogUseCase: new DeleteFileLibraryCatalogUseCase(fileLibraryCatalogRepo, objectStore, cache, fileLibraryBucket),
+      deleteFileLibraryObjectsUseCase: new DeleteFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+      moveFileLibraryObjectUseCase: new MoveFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+      downloadFileLibraryObjectUseCase: new DownloadFileLibraryObjectUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+      getFileLibraryObjectMetaUseCase: new GetFileLibraryObjectMetaUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
       deleteProjectUseCase: new DeleteProjectUseCase(factory.projectRepo),
       getProjectUseCase: new GetProjectUseCase(factory.projectRepo),
       listProjectsUseCase: new ListProjectsUseCase(factory.projectRepo),
-      listSourceLibrariesUseCase: new ListSourceLibrariesUseCase(sourceLibraryRepo, cache),
-      listSourceLibraryObjectsUseCase: new ListSourceLibraryObjectsUseCase(sourceLibraryRepo, objectStore, sourceBucket),
-      listSourcesUseCase: new ListSourcesUseCase(sourceRepo, cache),
-      updateSourceLibraryUseCase: new UpdateSourceLibraryUseCase(sourceLibraryRepo, clock, cache),
+      listFileLibraryCatalogsUseCase: new ListFileLibraryCatalogsUseCase(fileLibraryCatalogRepo, cache),
+      listFileLibraryObjectsUseCase: new ListFileLibraryObjectsUseCase(fileLibraryCatalogRepo, objectStore, fileLibraryBucket),
+      updateFileLibraryCatalogUseCase: new UpdateFileLibraryCatalogUseCase(fileLibraryCatalogRepo, clock, cache),
       updateProjectUseCase: new UpdateProjectUseCase(factory.projectRepo, clock),
       fileLibraryOrchestrator: canEnableRealFileLibraries
         ? new RealFileLibraryOrchestrator()

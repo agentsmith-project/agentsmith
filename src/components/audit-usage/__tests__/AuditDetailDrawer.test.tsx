@@ -38,7 +38,7 @@ describe('AuditDetailDrawer', () => {
           actor_type: 'user',
           actor_id: 'user_1',
           action: 'resource_policy.spending_limit_exceeded',
-          resource_type: 'source_library',
+          resource_type: 'file_library',
           resource_id: 'lib_1',
           result: 'error',
           error_code: 'RESOURCE_POLICY_SPENDING_LIMIT_EXCEEDED',
@@ -48,7 +48,7 @@ describe('AuditDetailDrawer', () => {
           metadata_json: {
             governance_kind: 'resource_policy',
             enforcement_kind: 'spending_limit',
-            limit_key: 'source_library.max_file_size_bytes',
+            limit_key: 'file_library.max_file_size_bytes',
             effective_limit: 1048576,
             current_usage: 1048577,
             usage_unit: 'bytes',
@@ -64,7 +64,7 @@ describe('AuditDetailDrawer', () => {
     expect(summary).toHaveTextContent('User Hit Spending Limit on lib_1 and failed');
     expect(summary).toHaveTextContent('Spending limit exceeded');
     expect(governance).toHaveTextContent('detail.governance_title');
-    expect(governance).toHaveTextContent('source_library.max_file_size_bytes');
+    expect(governance).toHaveTextContent('file_library.max_file_size_bytes');
     expect(governance).toHaveTextContent('1048576');
     expect(governance).toHaveTextContent('1048577');
     expect(governance).toHaveTextContent('Spending limit exceeded');
@@ -76,7 +76,7 @@ describe('AuditDetailDrawer', () => {
     expect(screen.getByText('gdec_1')).toBeInTheDocument();
     expect(screen.getByTestId('audit__detail-open-resource-policy')).toHaveAttribute(
       'href',
-      expect.stringContaining('/resource-policy?resource_type=source_library'),
+      expect.stringContaining('/resource-policy?resource_type=file_library'),
     );
     expect(screen.getByTestId('audit__detail-open-usage')).toHaveAttribute(
       'href',

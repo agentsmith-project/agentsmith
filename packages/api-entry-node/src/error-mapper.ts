@@ -10,8 +10,6 @@ interface MappedErrorResponse {
 
 const NOT_FOUND_ERRORS = new Set([
   'project_not_found',
-  'source_not_found',
-  'source_library_not_found',
   'file_library_not_found',
   'file_library_backend_not_found',
   'file_library_mount_access_not_found',
@@ -29,7 +27,7 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
     };
   }
 
-  if (message === 'source_library_mismatch') {
+  if (message === 'file_library_mismatch') {
     return {
       status: 422,
       body: { error_code: 'VALIDATION_ERROR', message },
@@ -59,7 +57,7 @@ export function mapRequestError(error: unknown): MappedErrorResponse {
 
   if (
     message === 'file_required' ||
-    message === 'source_library_prefix_missing'
+    message === 'file_library_prefix_missing'
   ) {
     return {
       status: 400,

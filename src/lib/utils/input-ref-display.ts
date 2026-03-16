@@ -6,8 +6,6 @@ export function getInputRefKindLabel(kind: InputRef['kind'] | ChatAttachmentInpu
   switch (kind) {
     case 'library_object':
       return 'Library object';
-    case 'source':
-      return 'Source';
     case 'url':
       return 'URL';
     case 'artifact':

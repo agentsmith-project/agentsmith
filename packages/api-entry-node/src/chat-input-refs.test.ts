@@ -94,7 +94,7 @@ describe('chat-input-refs', () => {
         created_at: '2026-01-01T00:00:00.000Z',
         input_ref: { kind: 'library_object', library_id: 'lib', key: 'a.txt' },
         source_type: 'library_import',
-        source_library_id: 'lib',
+        file_library_id: 'lib',
         source_object_key: 'a.txt',
       },
     ]);
@@ -106,7 +106,7 @@ describe('chat-input-refs', () => {
         file_size: 1,
         input_ref: { kind: 'library_object', library_id: 'lib', key: 'a.txt' },
         source_type: 'library_import',
-        source_library_id: 'lib',
+        file_library_id: 'lib',
         source_object_key: 'a.txt',
       },
     ]);

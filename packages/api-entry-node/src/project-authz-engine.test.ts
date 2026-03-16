@@ -200,6 +200,6 @@ describe('project-authz-engine', () => {
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.audit.view' })).toBe('project:audit:read');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.member.view' })).toBe('project:membership:update');
     expect(mapAuthorizationRequestToPermission({ resourceType: 'project', action: 'project.governance.credentials.update' })).toBe('project:governance:update');
-    expect(mapAuthorizationRequestToPermission({ resourceType: 'source_library', action: 'source_library.upload' })).toBe('project:files:update');
+    expect(mapAuthorizationRequestToPermission({ resourceType: 'file_library', action: 'file_library.upload' })).toBe('project:files:update');
   });
 });

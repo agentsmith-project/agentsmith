@@ -29,24 +29,27 @@ vi.mock('next-intl', () => ({
 const mockSources: TaskAttachedInputDetail[] = [
   {
     id: 'in_src_1',
-    kind: 'source',
-    source_id: 'source-1',
+    kind: 'library_object',
+    library_id: 'lib-1',
+    key: 'docs/document1.txt',
     filename: 'document1.txt',
     file_type: 'text/plain',
     file_size: 1024,
   },
   {
     id: 'in_src_2',
-    kind: 'source',
-    source_id: 'source-2',
+    kind: 'library_object',
+    library_id: 'lib-1',
+    key: 'docs/document2.pdf',
     filename: 'document2.pdf',
     file_type: 'application/pdf',
     file_size: 2048000,
   },
   {
     id: 'in_src_3',
-    kind: 'source',
-    source_id: 'source-3',
+    kind: 'library_object',
+    library_id: 'lib-1',
+    key: 'docs/document3.docx',
     filename: 'document3.docx',
     file_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     file_size: 512000,
@@ -104,10 +107,8 @@ describe('AttachedFilesPanel', () => {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  const renderComponent = (requestedIds: string[] = ['source-1', 'source-2']) => {
-    mockAttachedFilesData = mockSources.filter((file) =>
-      requestedIds.includes(file.id) || (file.kind === 'source' && requestedIds.includes(file.source_id))
-    );
+  const renderComponent = (requestedIds: string[] = ['in_src_1', 'in_src_2']) => {
+    mockAttachedFilesData = mockSources.filter((file) => requestedIds.includes(file.id));
     return render(
       <AttachedFilesPanel
         workspaceId={mockWorkspaceId}
@@ -137,7 +138,7 @@ describe('AttachedFilesPanel', () => {
   });
 
   describe('Empty State', () => {
-    it('shows empty state when no sources attached', () => {
+    it('shows empty state when no inputs are attached', () => {
       renderComponent([]);
 
       expect(screen.getByTestId('empty-state')).toBeInTheDocument();
@@ -151,23 +152,23 @@ describe('AttachedFilesPanel', () => {
     });
   });
 
-  describe('Source List Rendering', () => {
+  describe('Attached Input Rendering', () => {
     it('renders attached files', () => {
-      renderComponent(['source-1', 'source-2']);
+      renderComponent(['in_src_1', 'in_src_2']);
 
       expect(screen.getByText('document1.txt')).toBeInTheDocument();
       expect(screen.getByText('document2.pdf')).toBeInTheDocument();
     });
 
     it('does not render unattached files', () => {
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
       expect(screen.getByText('document1.txt')).toBeInTheDocument();
       expect(screen.queryByText('document2.pdf')).not.toBeInTheDocument();
     });
 
-    it('filters sources by attached IDs', () => {
-      renderComponent(['source-1', 'source-3']);
+    it('filters attached files by attached IDs', () => {
+      renderComponent(['in_src_1', 'in_src_3']);
 
       expect(screen.getByText('document1.txt')).toBeInTheDocument();
       expect(screen.getByText('document3.docx')).toBeInTheDocument();
@@ -175,30 +176,30 @@ describe('AttachedFilesPanel', () => {
     });
 
     it('displays file sizes in human readable format', () => {
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
       expect(screen.getByText('1.0 KB')).toBeInTheDocument();
     });
 
   });
 
-  describe('Remove Source', () => {
+  describe('Remove Attached File', () => {
     it('shows remove button on hover', () => {
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
-      const sourceItem = screen.getByText('document1.txt').closest('.group');
-      expect(sourceItem).toBeInTheDocument();
+      const fileItem = screen.getByText('document1.txt').closest('.group');
+      expect(fileItem).toBeInTheDocument();
 
-      const removeButton = sourceItem?.querySelector('button[aria-label="Remove from notebook (file remains in your library)"]');
+      const removeButton = fileItem?.querySelector('button[aria-label="Remove from notebook (file remains in your library)"]');
       expect(removeButton).toBeInTheDocument();
     });
 
     it('calls remove handler when remove is clicked', async () => {
       const user = userEvent.setup();
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
-      const sourceItem = screen.getByText('document1.txt').closest('.group');
-      const removeButton = sourceItem?.querySelector(
+      const fileItem = screen.getByText('document1.txt').closest('.group');
+      const removeButton = fileItem?.querySelector(
         'button[aria-label="Remove from notebook (file remains in your library)"]'
       ) as HTMLButtonElement;
 
@@ -249,45 +250,45 @@ describe('AttachedFilesPanel', () => {
     });
   });
 
-  describe('Source Item Rendering', () => {
+  describe('Attached File Item Rendering', () => {
     it('displays file icon', () => {
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
       const iconContainer = document.querySelector('.w-6.h-6');
       expect(iconContainer).toBeInTheDocument();
     });
 
     it('shows filename with truncation', () => {
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
       const filename = screen.getByText('document1.txt');
       expect(filename).toHaveClass('truncate');
     });
 
     it('groups remove button visibility', () => {
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
-      const sourceItem = screen.getByText('document1.txt').closest('.group');
-      expect(sourceItem).toHaveClass('group');
+      const fileItem = screen.getByText('document1.txt').closest('.group');
+      expect(fileItem).toHaveClass('group');
     });
   });
 
   describe('Edge Cases', () => {
-    it('handles empty attached source IDs', () => {
+    it('handles empty attached input IDs', () => {
       renderComponent([]);
 
       expect(screen.getByTestId('empty-state')).toBeInTheDocument();
     });
 
-    it('handles non-existent source IDs', () => {
+    it('handles non-existent attached input IDs', () => {
       renderComponent(['non-existent-id']);
 
-      // Should show empty state since the ID doesn't match any sources
+      // Should show empty state since the ID doesn't match any attached files
       expect(screen.getByTestId('empty-state')).toBeInTheDocument();
     });
 
     it('handles multiple attached files', () => {
-      renderComponent(['source-1', 'source-2', 'source-3']);
+      renderComponent(['in_src_1', 'in_src_2', 'in_src_3']);
 
       expect(screen.getByText('document1.txt')).toBeInTheDocument();
       expect(screen.getByText('document2.pdf')).toBeInTheDocument();
@@ -295,8 +296,8 @@ describe('AttachedFilesPanel', () => {
     });
 
     it('handles large file sizes', () => {
-      // The original mock has source-2 with file_size: 2048000 (~2.0 MB)
-      renderComponent(['source-2']);
+      // The original mock has in_src_2 with file_size: 2048000 (~2.0 MB)
+      renderComponent(['in_src_2']);
 
       expect(screen.getByText(/2\.0 MB/)).toBeInTheDocument();
     });
@@ -311,7 +312,7 @@ describe('AttachedFilesPanel', () => {
         }),
       }));
 
-      renderComponent(['source-1']);
+      renderComponent(['in_src_1']);
 
       // Component should render without errors
       expect(screen.getByText('Attached Inputs')).toBeInTheDocument();

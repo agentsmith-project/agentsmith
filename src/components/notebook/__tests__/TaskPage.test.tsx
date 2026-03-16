@@ -149,7 +149,7 @@ vi.mock('../TaskHeader', () => ({
 
 vi.mock('../AttachedFilesPanel', () => ({
   AttachedFilesPanel: ({ onAddFromFiles }: any) => (
-    <div data-testid="attached-sources-panel">
+    <div data-testid="attached-inputs-panel">
       <button onClick={onAddFromFiles}>Files</button>
     </div>
   ),
@@ -200,9 +200,9 @@ vi.mock('../ArtifactsPanel', () => ({
 }));
 
 vi.mock('../FileSelectDialog', () => ({
-  FileSelectDialog: ({ open, onOpenChange, onConfirm }: any) => (
+  FileSelectDialog: ({ open, onOpenChange }: any) => (
     <dialog open={open}>
-      <button onClick={() => onConfirm(['source-1'])}>Confirm</button>
+      <div>Source paused</div>
       <button onClick={() => onOpenChange(false)}>Cancel</button>
     </dialog>
   ),
@@ -373,7 +373,7 @@ describe('TaskPage', () => {
     it('renders attached files panel', () => {
       renderComponent();
 
-      expect(screen.getByTestId('attached-sources-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('attached-inputs-panel')).toBeInTheDocument();
     });
 
     it('renders conversation panel', () => {
@@ -571,30 +571,15 @@ describe('TaskPage', () => {
     });
   });
 
-  describe('Source Management', () => {
-    it('opens source select dialog', async () => {
+  describe('Input Management', () => {
+    it('opens input select dialog', async () => {
       const user = userEvent.setup();
       renderComponent();
 
       const addFilesButton = screen.getByText('Files');
       await user.click(addFilesButton);
 
-      // Dialog should be open
-    });
-
-    it('adds sources when confirmed', async () => {
-      const user = userEvent.setup();
-      renderComponent();
-
-      // Open add files
-      const addFilesButton = screen.getByText('Files');
-      await user.click(addFilesButton);
-
-      // Confirm selection
-      const confirmButton = screen.getByText('Confirm');
-      await user.click(confirmButton);
-
-      // Sources should be added via the mutation
+      expect(screen.getByText('Source paused')).toBeInTheDocument();
     });
   });
 
@@ -714,7 +699,7 @@ describe('TaskPage', () => {
 
       renderComponent();
 
-      expect(screen.getByTestId('attached-sources-panel')).toBeInTheDocument();
+      expect(screen.getByTestId('attached-inputs-panel')).toBeInTheDocument();
     });
   });
 });

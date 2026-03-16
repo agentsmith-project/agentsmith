@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
 
-type ResourceType = 'endpoint' | 'source_library' | 'agent';
+type ResourceType = 'endpoint' | 'file_library' | 'agent';
 
 type RequestFactLike = {
   requests?: number;

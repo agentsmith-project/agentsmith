@@ -9,7 +9,7 @@ import {
 describe('input-ref-input-resolver', () => {
   it('resolves library object metadata and falls back on lookup failure', async () => {
     const deps = {
-      getSourceObjectMetaUseCase: {
+      getFileLibraryObjectMetaUseCase: {
         execute: vi.fn()
           .mockResolvedValueOnce({ key: 'folder/a.txt', content_type: 'text/plain', size_bytes: 12 })
           .mockRejectedValueOnce(new Error('boom')),
@@ -42,7 +42,7 @@ describe('input-ref-input-resolver', () => {
 
   it('resolves url metadata via imported object and falls back to url defaults', async () => {
     const deps = {
-      getSourceObjectMetaUseCase: {
+      getFileLibraryObjectMetaUseCase: {
         execute: vi.fn().mockResolvedValue({ key: 'chat/s1/url-inputs/example.url.txt', content_type: 'text/plain', size_bytes: 44 }),
       },
     };
@@ -64,7 +64,7 @@ describe('input-ref-input-resolver', () => {
     });
 
     await expect(resolveUrlInputMeta({
-      deps: { getSourceObjectMetaUseCase: { execute: vi.fn().mockRejectedValue(new Error('nope')) } },
+      deps: { getFileLibraryObjectMetaUseCase: { execute: vi.fn().mockRejectedValue(new Error('nope')) } },
       workspaceId: 'ws',
       projectId: 'prj',
       input: { url: 'https://x.test' },
@@ -97,7 +97,7 @@ describe('input-ref-input-resolver', () => {
 
   it('provides a unified resolveInputRef entry point', async () => {
     const deps = {
-      getSourceObjectMetaUseCase: {
+      getFileLibraryObjectMetaUseCase: {
         execute: vi.fn().mockResolvedValue({ key: 'k/doc.txt', content_type: 'text/plain', size_bytes: 12 }),
       },
     };

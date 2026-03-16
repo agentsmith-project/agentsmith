@@ -242,7 +242,7 @@ export interface ChatAttachmentSnapshotRecord {
     size_bytes?: number;
   };
   source_type?: 'local_upload' | 'library_import';
-  source_library_id?: string;
+  file_library_id?: string;
   source_object_key?: string;
 }
 
@@ -269,7 +269,7 @@ export interface ChatAttachmentRecord {
     size_bytes?: number;
   };
   source_type?: 'local_upload' | 'library_import';
-  source_library_id?: string;
+  file_library_id?: string;
   source_object_key?: string;
   content_base64?: string;
   preview_url?: string;

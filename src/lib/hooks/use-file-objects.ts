@@ -10,11 +10,18 @@ import { getApiClient, FilesAPI } from '@/lib/api';
 import { queryKeys } from '@/lib/query-keys';
 import type { FileObjectsListParams } from '@/lib/api/types';
 
+type FileObjectsQueryOptions = {
+  refetchInterval?: number | false;
+  refetchIntervalInBackground?: boolean;
+  refetchOnWindowFocus?: boolean;
+};
+
 export function useFileObjects(
   workspaceId: string,
   projectId: string,
   libraryId: string | null,
   params: FileObjectsListParams,
+  options?: FileObjectsQueryOptions,
 ) {
   const filesAPI = new FilesAPI(getApiClient());
 
@@ -28,6 +35,9 @@ export function useFileObjects(
     },
     enabled: !!workspaceId && !!projectId && !!libraryId,
     staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground,
+    refetchOnWindowFocus: options?.refetchOnWindowFocus,
   });
 }
 
@@ -36,6 +46,7 @@ export function useFileObjectsInfinite(
   projectId: string,
   libraryId: string | null,
   params: Omit<FileObjectsListParams, 'continuation_token'>,
+  options?: FileObjectsQueryOptions,
 ) {
   const filesAPI = new FilesAPI(getApiClient());
 
@@ -54,6 +65,9 @@ export function useFileObjectsInfinite(
     getNextPageParam: (lastPage) => lastPage.next_continuation_token ?? undefined,
     enabled: !!workspaceId && !!projectId && !!libraryId,
     staleTime: 5_000,
+    refetchInterval: options?.refetchInterval,
+    refetchIntervalInBackground: options?.refetchIntervalInBackground,
+    refetchOnWindowFocus: options?.refetchOnWindowFocus,
   });
 }
 

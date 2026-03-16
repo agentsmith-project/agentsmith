@@ -20,6 +20,14 @@ import {
 
 import { vi } from 'vitest';
 
+const {
+  mockUseFileObjectsInfinite,
+  mockUseFileObjects,
+} = vi.hoisted(() => ({
+  mockUseFileObjectsInfinite: vi.fn(),
+  mockUseFileObjects: vi.fn(),
+}));
+
 vi.mock('react-virtuoso', () => ({
   Virtuoso: ({ data, itemContent, components }: {
     data: Array<unknown>;
@@ -70,31 +78,8 @@ vi.mock('@/lib/hooks/use-files', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-file-objects', () => ({
-  useFileObjectsInfinite: () => ({
-    data: {
-      pages: [
-        {
-          prefix: '',
-          items: [createPrefixItem(), createObjectItem()],
-          next_continuation_token: null,
-        },
-      ],
-    },
-    isLoading: false,
-    hasNextPage: false,
-    isFetchingNextPage: false,
-    fetchNextPage: vi.fn(),
-    refetch: vi.fn(),
-  }),
-  useFileObjects: () => ({
-    data: {
-      prefix: '',
-      items: [createPrefixItem(), createObjectItem()],
-      next_continuation_token: null,
-    },
-    isLoading: false,
-    refetch: vi.fn(),
-  }),
+  useFileObjectsInfinite: (...args: unknown[]) => mockUseFileObjectsInfinite(...args),
+  useFileObjects: (...args: unknown[]) => mockUseFileObjects(...args),
   useCreateFileFolder: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useUploadFileObject: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useDeleteFileObjects: () => ({ mutateAsync: vi.fn(), isPending: false }),
@@ -102,6 +87,38 @@ vi.mock('@/lib/hooks/use-file-objects', () => ({
 }));
 
 describe('FilesPage (object browser)', () => {
+  beforeEach(() => {
+    mockUseFileObjectsInfinite.mockReset();
+    mockUseFileObjects.mockReset();
+
+    mockUseFileObjectsInfinite.mockReturnValue({
+      data: {
+        pages: [
+          {
+            prefix: '',
+            items: [createPrefixItem(), createObjectItem()],
+            next_continuation_token: null,
+          },
+        ],
+      },
+      isLoading: false,
+      hasNextPage: false,
+      isFetchingNextPage: false,
+      fetchNextPage: vi.fn(),
+      refetch: vi.fn(),
+    });
+
+    mockUseFileObjects.mockReturnValue({
+      data: {
+        prefix: '',
+        items: [createPrefixItem(), createObjectItem()],
+        next_continuation_token: null,
+      },
+      isLoading: false,
+      refetch: vi.fn(),
+    });
+  });
+
   it('renders libraries pane and objects table', async () => {
     renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
 
@@ -166,5 +183,23 @@ describe('FilesPage (object browser)', () => {
 
     expect(await screen.findByTestId('files__dialog__library-mount-access')).toBeInTheDocument();
     expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
+  });
+
+  it('configures auto refresh for the active file library listing', async () => {
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+
+    await screen.findByTestId('files__objects-table');
+
+    expect(mockUseFileObjectsInfinite).toHaveBeenCalledWith(
+      'ws_default',
+      'proj_001',
+      'lib_1',
+      expect.any(Object),
+      {
+        refetchInterval: 5_000,
+        refetchIntervalInBackground: false,
+        refetchOnWindowFocus: true,
+      },
+    );
   });
 });

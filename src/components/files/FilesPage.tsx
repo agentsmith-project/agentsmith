@@ -99,7 +99,11 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     }),
     [prefix, search, sortBy, sortOrder],
   );
-  const objectsQuery = useFileObjectsInfinite(workspaceId, projectId, selectedLibraryId, listParams);
+  const objectsQuery = useFileObjectsInfinite(workspaceId, projectId, selectedLibraryId, listParams, {
+    refetchInterval: 5_000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+  });
   const items = React.useMemo(
     () => objectsQuery.data?.pages.flatMap((page) => page.items) ?? [],
     [objectsQuery.data?.pages],

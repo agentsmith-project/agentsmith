@@ -17,7 +17,7 @@ import { TemplateMode } from './TemplateMode';
 import { AdvancedMode } from './AdvancedMode';
 import { ChangesPreview } from './ChangesPreview';
 import {
-  GROUP_TEMPLATES,
+  PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS,
   isHighRiskPermission,
   ALL_PLATFORM_PERMISSIONS,
   type PlatformPermission,
@@ -25,9 +25,9 @@ import {
 import { PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 const BUILT_IN_TEMPLATE_PERMISSIONS = {
-  [PROJECT_BUILT_IN_TEMPLATE_IDS.owner]: GROUP_TEMPLATES.owner,
-  [PROJECT_BUILT_IN_TEMPLATE_IDS.admin]: GROUP_TEMPLATES.admin,
-  [PROJECT_BUILT_IN_TEMPLATE_IDS.member]: GROUP_TEMPLATES.user,
+  [PROJECT_BUILT_IN_TEMPLATE_IDS.owner]: PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner,
+  [PROJECT_BUILT_IN_TEMPLATE_IDS.admin]: PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin,
+  [PROJECT_BUILT_IN_TEMPLATE_IDS.member]: PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member,
 } as const;
 
 export interface PermissionsEditorProps {

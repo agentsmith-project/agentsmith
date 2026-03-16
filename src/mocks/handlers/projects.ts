@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
 import type { Project } from '@/lib/api/types';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
@@ -34,7 +34,7 @@ export const projectHandlers = [
         );
         return {
           ...project,
-          permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
+          permissions: membership?.permissions ?? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
           groups: membership?.groups ?? [{
             id: PROJECT_BUILT_IN_GROUP_IDS.owner,
             name: 'Project owner',
@@ -67,7 +67,7 @@ export const projectHandlers = [
     }
     return HttpResponse.json({
       ...project,
-      permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
+      permissions: membership?.permissions ?? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
       groups: membership?.groups ?? [{
         id: PROJECT_BUILT_IN_GROUP_IDS.owner,
         name: 'Project owner',
@@ -111,7 +111,7 @@ export const projectHandlers = [
         built_in: true,
         system_key: 'owner',
       }],
-      permissions: [...GROUP_TEMPLATES.owner],
+      permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
       status: 'active',
       joined_at: new Date().toISOString(),
     });
@@ -142,7 +142,7 @@ export const projectHandlers = [
           built_in: true,
           system_key: 'admins',
         }];
-        previousOwnerMembership.permissions = [...GROUP_TEMPLATES.admin];
+        previousOwnerMembership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin];
       }
       const nextOwnerMembership = projectMembershipFixtures.find(
         (membership) => membership.project_id === previous.id && membership.user_id === nextOwnerId,
@@ -155,7 +155,7 @@ export const projectHandlers = [
           built_in: true,
           system_key: 'owner',
         }];
-        nextOwnerMembership.permissions = [...GROUP_TEMPLATES.owner];
+        nextOwnerMembership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner];
       } else {
         projectMembershipFixtures.push({
           project_id: previous.id,
@@ -167,7 +167,7 @@ export const projectHandlers = [
             built_in: true,
             system_key: 'owner',
           }],
-          permissions: [...GROUP_TEMPLATES.owner],
+          permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
           status: 'active',
           joined_at: new Date().toISOString(),
         });

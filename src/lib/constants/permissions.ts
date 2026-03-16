@@ -63,10 +63,7 @@ export const PLATFORM_PERMISSIONS_GROUPED = [
   },
 ] as const;
 
-export const GROUP_TEMPLATES = {
-  // These templates are product-facing defaults, not the authorization truth.
-  // Runtime allow/deny must still resolve through permission checks in scope.
-  // Owner/admin/creator labels are only sources for deriving permissions.
+export const PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS = {
   owner: [
     'project:endpoint:use',
     'project:agent:manage',
@@ -84,15 +81,21 @@ export const GROUP_TEMPLATES = {
     'project:files:update',
     'project:governance:update',
   ],
-  developer: ['project:endpoint:use', 'project:agent:manage'],
-  user: ['project:endpoint:use'],
+  operator: ['project:endpoint:use', 'project:agent:manage'],
+  member: ['project:endpoint:use'],
 } as const;
 
-export const DEFAULT_PERMISSION_GROUP_TEMPLATES = {
-  project_admin_template: [...GROUP_TEMPLATES.admin],
-  project_operator_template: [...GROUP_TEMPLATES.developer],
-  project_member_template: [...GROUP_TEMPLATES.user],
-  project_viewer_template: [...GROUP_TEMPLATES.user],
+export const WORKSPACE_BUILT_IN_TEMPLATE_PERMISSIONS = {
+  owner: ['workspace:read', 'workspace:project:create', 'workspace:governance:update'],
+  projectCreator: ['workspace:read', 'workspace:project:create'],
+  member: ['workspace:read'],
+} as const;
+
+export const DEFAULT_PERMISSION_TEMPLATE_PRESETS = {
+  project_admin_template: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin],
+  project_operator_template: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.operator],
+  project_member_template: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
+  project_viewer_template: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
 } as const;
 
 export const HIGH_RISK_PERMISSIONS = [
@@ -105,17 +108,17 @@ export const HIGH_RISK_PERMISSIONS = [
 ] as const;
 
 export type PlatformPermission = (typeof ALL_PLATFORM_PERMISSIONS)[number];
-export type GroupTemplate = keyof typeof GROUP_TEMPLATES;
+export type ProjectBuiltInTemplatePermissionSet = keyof typeof PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS;
 export type HighRiskPermission = (typeof HIGH_RISK_PERMISSIONS)[number];
 
 export function isHighRiskPermission(permission: string): boolean {
   return HIGH_RISK_PERMISSIONS.includes(permission as HighRiskPermission);
 }
 
-export function getGroupTemplatePermissions(groupTemplate: GroupTemplate): readonly string[] {
-  return GROUP_TEMPLATES[groupTemplate];
+export function getProjectBuiltInTemplatePermissions(template: ProjectBuiltInTemplatePermissionSet): readonly string[] {
+  return PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS[template];
 }
 
-export function getAllPermissionsForGroup(groupTemplate: GroupTemplate): string[] {
-  return [...GROUP_TEMPLATES[groupTemplate]];
+export function getAllPermissionsForProjectTemplate(template: ProjectBuiltInTemplatePermissionSet): string[] {
+  return [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS[template]];
 }

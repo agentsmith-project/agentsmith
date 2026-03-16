@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 
 import type { SettingsProjectAdminOption } from '../settings-page-types';
 
-interface ProjectAdminsSectionProps {
+interface ProjectAdminGroupSectionProps {
   canAssignProjectAdmins: boolean;
   savingProjectAdmins: boolean;
   selectedProjectAdmins: string[];
@@ -19,7 +19,7 @@ interface ProjectAdminsSectionProps {
   onSave: () => void;
 }
 
-export function ProjectAdminsSection({
+export function ProjectAdminGroupSection({
   canAssignProjectAdmins,
   savingProjectAdmins,
   selectedProjectAdmins,
@@ -28,26 +28,26 @@ export function ProjectAdminsSection({
   membersHref,
   onCheckedChange,
   onSave,
-}: ProjectAdminsSectionProps) {
+}: ProjectAdminGroupSectionProps) {
   return (
     <div className="rounded-lg border border-subtle bg-bg-base/20 p-4" data-testid="settings__project-admins-section">
-      <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('project_admins_title')}</h3>
+      <h3 className="text-sm font-semibold text-foreground mb-1">{settingsT('admin_group_title')}</h3>
       <p className="text-sm text-tertiary mb-4">
-        {canAssignProjectAdmins ? settingsT('project_admins_owner_help') : settingsT('project_admins_read_only_help')}
+        {canAssignProjectAdmins ? settingsT('admin_group_owner_help') : settingsT('admin_group_read_only_help')}
       </p>
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-subtle bg-bg-base/20 p-3">
         <div className="space-y-1">
           <p className="text-xs font-semibold uppercase tracking-[0.14em] text-tertiary">
-            {settingsT('project_admins_members_flow_label')}
+            {settingsT('admin_group_members_flow_label')}
           </p>
-          <p className="text-sm text-secondary">{settingsT('project_admins_members_flow_help')}</p>
+          <p className="text-sm text-secondary">{settingsT('admin_group_members_flow_help')}</p>
         </div>
         <Link
           href={membersHref}
           className="text-sm font-medium text-primary underline-offset-2 hover:underline"
           data-testid="settings__project-admins-open-members"
         >
-          {settingsT('project_admins_open_members')}
+          {settingsT('admin_group_open_members')}
         </Link>
       </div>
       <div className="space-y-3">
@@ -82,7 +82,7 @@ export function ProjectAdminsSection({
       {canAssignProjectAdmins ? (
         <div className="mt-6 flex justify-end">
           <Button onClick={onSave} disabled={savingProjectAdmins} variant="primary" data-testid="settings__project-admins-save">
-            {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('project_admins_save')}
+            {savingProjectAdmins ? <Loader2 className="w-4 h-4 animate-spin" /> : settingsT('admin_group_save')}
           </Button>
         </div>
       ) : null}

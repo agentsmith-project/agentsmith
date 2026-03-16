@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   PLATFORM_PERMISSIONS,
   HIGH_RISK_PERMISSIONS,
-  GROUP_TEMPLATES,
+  PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS,
 } from '@/lib/constants/permissions';
 
 describe('Alert Center Authorization (TDD)', () => {
@@ -25,16 +25,16 @@ describe('Alert Center Authorization (TDD)', () => {
   });
 
   it('should include alert permissions in group templates correctly', () => {
-    expect(GROUP_TEMPLATES.owner).toContain('project:audit:read');
-    expect(GROUP_TEMPLATES.owner).toContain('project:governance:update');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner).toContain('project:audit:read');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner).toContain('project:governance:update');
 
-    expect(GROUP_TEMPLATES.admin).toContain('project:audit:read');
-    expect(GROUP_TEMPLATES.admin).toContain('project:governance:update');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin).toContain('project:audit:read');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin).toContain('project:governance:update');
 
-    expect(GROUP_TEMPLATES.developer).not.toContain('project:audit:read');
-    expect(GROUP_TEMPLATES.developer).not.toContain('project:governance:update');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.operator).not.toContain('project:audit:read');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.operator).not.toContain('project:governance:update');
 
-    expect(GROUP_TEMPLATES.user).not.toContain('project:audit:read');
-    expect(GROUP_TEMPLATES.user).not.toContain('project:governance:update');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member).not.toContain('project:audit:read');
+    expect(PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member).not.toContain('project:governance:update');
   });
 });

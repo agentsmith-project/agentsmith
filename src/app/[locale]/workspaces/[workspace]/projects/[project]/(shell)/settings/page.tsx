@@ -32,7 +32,7 @@ import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useMembers, useProjectGroups, useUpdateProjectGroup } from '@/lib/hooks/use-members';
 import { GeneralSettingsSection } from './_components/GeneralSettingsSection';
 import { GovernanceSection } from './_components/GovernanceSection';
-import { ProjectAdminsSection } from './_components/ProjectAdminsSection';
+import { ProjectAdminGroupSection } from './_components/ProjectAdminGroupSection';
 import { ProjectOwnerSection } from './_components/ProjectOwnerSection';
 import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 import type {
@@ -220,7 +220,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
       });
       toast.success(commonT('refreshed_data'));
     } catch (error) {
-      handleError(error, { context: settingsT('project_admins_title') });
+      handleError(error, { context: settingsT('admin_group_title') });
     } finally {
       setSavingProjectAdmins(false);
     }
@@ -338,7 +338,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               {settingsT('join_policy')}: {joinPolicyLabel}
             </div>
             <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
-              {settingsT('project_admins_title')}: {projectAdminCount}
+              {settingsT('admin_group_title')}: {projectAdminCount}
             </div>
             <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-tertiary">
               {settingsT('workspace_project_owner_label')}: {ownerDisplayName}
@@ -380,7 +380,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
               onVisibilityChange={setVisibility}
             />
 
-            <ProjectAdminsSection
+          <ProjectAdminGroupSection
               canAssignProjectAdmins={canAssignProjectAdmins}
               savingProjectAdmins={savingProjectAdmins}
               selectedProjectAdmins={selectedProjectAdmins}

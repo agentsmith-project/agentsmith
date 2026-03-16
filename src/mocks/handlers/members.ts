@@ -2,7 +2,7 @@ import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
 import { ensureWorkspaceMember } from './workspace';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import {
   PROJECT_BUILT_IN_GROUP_IDS,
   PROJECT_BUILT_IN_TEMPLATE_IDS,
@@ -171,7 +171,7 @@ function syncMembershipPermissionsFromBuiltInGroups(projectId: string): void {
         built_in: true,
         system_key: 'owner',
       }];
-      membership.permissions = [...GROUP_TEMPLATES.owner];
+      membership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner];
       continue;
     }
     if (adminIds.has(membership.user_id)) {
@@ -182,7 +182,7 @@ function syncMembershipPermissionsFromBuiltInGroups(projectId: string): void {
         built_in: true,
         system_key: 'admins',
       }];
-      membership.permissions = [...GROUP_TEMPLATES.admin];
+      membership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin];
       continue;
     }
     if (memberIds.has(membership.user_id)) {
@@ -193,7 +193,7 @@ function syncMembershipPermissionsFromBuiltInGroups(projectId: string): void {
         built_in: true,
         system_key: 'members',
       }];
-      membership.permissions = [...GROUP_TEMPLATES.user];
+      membership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member];
     }
   }
 }
@@ -339,7 +339,7 @@ export const memberHandlers = [
           built_in: true,
           system_key: 'members',
         }],
-        permissions: [...GROUP_TEMPLATES.user],
+        permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
         status: 'active',
         joined_at: request.reviewed_at,
       });
@@ -396,7 +396,7 @@ export const memberHandlers = [
     const membership = memberProjectMembershipFixtures.find((m) => m.user_id === params.id);
 
     return HttpResponse.json({
-      platform_permissions: membership?.permissions ?? [...GROUP_TEMPLATES.user],
+      platform_permissions: membership?.permissions ?? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
     });
   }),
   http.patch('/api/v1/workspaces/:ws/projects/:prj/members/:id/permissions', async ({ params, request }) => {
@@ -415,11 +415,11 @@ export const memberHandlers = [
     let nextPermissions = membership.permissions;
     if (body.mode === 'template' && typeof body.template === 'string') {
       if (body.template === PROJECT_BUILT_IN_TEMPLATE_IDS.owner) {
-        nextPermissions = [...GROUP_TEMPLATES.owner];
+        nextPermissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner];
       } else if (body.template === PROJECT_BUILT_IN_TEMPLATE_IDS.admin) {
-        nextPermissions = [...GROUP_TEMPLATES.admin];
+        nextPermissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin];
       } else if (body.template === PROJECT_BUILT_IN_TEMPLATE_IDS.member) {
-        nextPermissions = [...GROUP_TEMPLATES.user];
+        nextPermissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member];
       }
     } else if (Array.isArray(body.permissions)) {
       nextPermissions = body.permissions;
@@ -557,7 +557,7 @@ export const memberHandlers = [
         id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
         name: 'Project owner',
         description: 'Full access to all project resources',
-        permissions: [...GROUP_TEMPLATES.owner],
+        permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
         built_in: true,
         editable: false,
         is_default: true,
@@ -567,7 +567,7 @@ export const memberHandlers = [
         id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
         name: 'Project admins',
         description: 'Project admin permissions',
-        permissions: [...GROUP_TEMPLATES.admin],
+        permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin],
         built_in: true,
         editable: false,
         is_default: true,
@@ -577,7 +577,7 @@ export const memberHandlers = [
         id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
         name: 'Project members',
         description: 'Basic permissions',
-        permissions: [...GROUP_TEMPLATES.user],
+        permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
         built_in: true,
         editable: false,
         is_default: true,
@@ -713,11 +713,11 @@ export const memberHandlers = [
     let templatePermissions = custom?.permissions ?? [];
     if (!custom) {
       if (group.permission_template_id === PROJECT_BUILT_IN_TEMPLATE_IDS.owner) {
-        templatePermissions = [...GROUP_TEMPLATES.owner];
+        templatePermissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner];
       } else if (group.permission_template_id === PROJECT_BUILT_IN_TEMPLATE_IDS.admin) {
-        templatePermissions = [...GROUP_TEMPLATES.admin];
+        templatePermissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin];
       } else if (group.permission_template_id === PROJECT_BUILT_IN_TEMPLATE_IDS.member) {
-        templatePermissions = [...GROUP_TEMPLATES.user];
+        templatePermissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member];
       }
     }
 

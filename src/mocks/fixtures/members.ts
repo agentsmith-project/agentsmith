@@ -5,7 +5,7 @@
  */
 
 import type { ProjectMembership } from '@/lib/api/types';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface Member {
@@ -83,7 +83,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'owner',
     }],
-    permissions: [...GROUP_TEMPLATES.owner],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
     status: 'active',
     joined_at: '2026-01-15T10:00:00Z',
   },
@@ -97,7 +97,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'admins',
     }],
-    permissions: [...GROUP_TEMPLATES.admin],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin],
     status: 'active',
     joined_at: '2026-01-16T10:00:00Z',
   },
@@ -111,7 +111,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'members',
     }],
-    permissions: [...GROUP_TEMPLATES.user],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
     status: 'active',
     joined_at: '2026-01-17T10:00:00Z',
   },
@@ -125,7 +125,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'members',
     }],
-    permissions: [...GROUP_TEMPLATES.user],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
     status: 'active',
     joined_at: '2026-01-18T10:00:00Z',
   },
@@ -139,7 +139,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'members',
     }],
-    permissions: [...GROUP_TEMPLATES.user],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
     status: 'removed',
     joined_at: '2026-01-10T10:00:00Z',
   },
@@ -153,7 +153,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'owner',
     }],
-    permissions: [...GROUP_TEMPLATES.owner],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
     status: 'active',
     joined_at: '2026-01-10T09:00:00Z',
   },
@@ -167,7 +167,7 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
       built_in: true,
       system_key: 'admins',
     }],
-    permissions: [...GROUP_TEMPLATES.admin],
+    permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin],
     status: 'active',
     joined_at: '2026-01-12T09:00:00Z',
   },

@@ -1,5 +1,5 @@
 import type { MemberGroupSummary, PermissionTemplate } from '@/lib/api/types';
-import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 
 export const PROJECT_BUILT_IN_TEMPLATE_IDS = {
   owner: 'tpl_project_owner',
@@ -33,7 +33,7 @@ export function getProjectBuiltInTemplateOptions(t: Translator): PermissionTempl
       id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
       name: t('default_templates.owner'),
       description: t('default_templates.owner_description'),
-      permissions: [...GROUP_TEMPLATES.owner],
+      permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
       built_in: true,
       editable: false,
       is_default: true,
@@ -43,7 +43,7 @@ export function getProjectBuiltInTemplateOptions(t: Translator): PermissionTempl
       id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
       name: t('default_templates.admin'),
       description: t('default_templates.admin_description'),
-      permissions: [...GROUP_TEMPLATES.admin],
+      permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin],
       built_in: true,
       editable: false,
       is_default: true,
@@ -53,7 +53,7 @@ export function getProjectBuiltInTemplateOptions(t: Translator): PermissionTempl
       id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
       name: t('default_templates.user'),
       description: t('default_templates.user_description'),
-      permissions: [...GROUP_TEMPLATES.user],
+      permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
       built_in: true,
       editable: false,
       is_default: true,

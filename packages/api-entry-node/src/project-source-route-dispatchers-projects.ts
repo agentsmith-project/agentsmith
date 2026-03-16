@@ -157,7 +157,7 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
     if (touchesProjectAdmins) {
       json(res, 422, {
         error_code: 'VALIDATION_ERROR',
-        message: 'project_admins_field_removed_use_project_admin_group',
+        message: 'legacy_project_admin_list_removed_use_admin_group',
       });
       return true;
     }

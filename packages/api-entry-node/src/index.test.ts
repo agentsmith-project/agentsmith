@@ -8561,7 +8561,7 @@ describe('api-entry-node projects routes', () => {
     expect(forbiddenAssignRes.status).toBe(422);
     await expect(forbiddenAssignRes.json()).resolves.toMatchObject({
       error_code: 'VALIDATION_ERROR',
-      message: 'project_admins_field_removed_use_project_admin_group',
+      message: 'legacy_project_admin_list_removed_use_admin_group',
     });
 
   });

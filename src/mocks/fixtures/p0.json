@@ -12,22 +12,19 @@
   "workspaces": [
     {
       "id": "ws_1",
-      "name": "Corp Workspace",
-      "role": "owner"
+      "name": "Corp Workspace"
     }
   ],
   "workspace_members": [
     {
       "id": "u_1",
       "email": "it@corp.com",
-      "name": "IT Admin",
-      "role": "owner"
+      "name": "IT Admin"
     },
     {
       "id": "u_2",
       "email": "dev2@corp.com",
-      "name": "Dev Two",
-      "role": "member"
+      "name": "Dev Two"
     }
   ],
   "projects": [],
@@ -62,7 +59,6 @@
       "id": "u_1",
       "email": "alice@example.com",
       "name": "Alice Chen",
-      "role": "owner",
       "status": "active",
       "created_at": "2026-01-01T00:00:00Z"
     },
@@ -70,7 +66,6 @@
       "id": "u_2",
       "email": "bob.smith@example.com",
       "name": "Bob Smith",
-      "role": "admin",
       "status": "active",
       "created_at": "2026-01-05T00:00:00Z"
     },
@@ -78,7 +73,6 @@
       "id": "u_3",
       "email": "charlie@example.com",
       "name": "Charlie Wilson",
-      "role": "member",
       "status": "active",
       "created_at": "2026-01-10T00:00:00Z"
     }

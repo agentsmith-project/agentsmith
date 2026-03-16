@@ -62,6 +62,44 @@ test.describe('Files Page (file library browser)', () => {
     );
   });
 
+  test('creates and deletes an empty file library', async ({ authedPage }) => {
+    const libraryName = `E2E Library ${Date.now()}`;
+    await authedPage.getByTestId('files__library-create').click();
+    const createDialog = authedPage.getByTestId('files__dialog__library-create');
+    await expect(createDialog).toBeVisible();
+    await createDialog.getByTestId('files__library-create__name').fill(libraryName);
+    await createDialog.getByTestId('files__library-create__description').fill('Created during e2e');
+    await createDialog.getByTestId('files__library-create__submit').click();
+
+    const createdLibrary = authedPage.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
+    await expect(createdLibrary).toBeVisible();
+    await createdLibrary.getByRole('button', { name: /delete/i }).click();
+
+    const deleteDialog = authedPage.getByTestId('files__dialog__library-delete');
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByTestId('files__library-delete__confirm').fill(libraryName);
+    await deleteDialog.getByTestId('files__library-delete__submit').click();
+
+    await expect(authedPage.getByText(libraryName)).toHaveCount(0);
+  });
+
+  test('blocks deleting a non-empty file library', async ({ authedPage }) => {
+    const libraryName = 'Shared Docs';
+    const deleteButton = authedPage
+      .getByTestId('files__library-item--lib_shared_default')
+      .getByRole('button', { name: /delete/i });
+    await expect(deleteButton).toBeVisible();
+    await deleteButton.click({ force: true });
+
+    const deleteDialog = authedPage.getByTestId('files__dialog__library-delete');
+    await expect(deleteDialog).toBeVisible();
+    await deleteDialog.getByTestId('files__library-delete__confirm').fill(libraryName);
+    await deleteDialog.getByTestId('files__library-delete__submit').click();
+
+    await expect(deleteDialog).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
+  });
+
   test('shows build header actions', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('files__open-chat')).toHaveAttribute('href', /\/chat$/);
     await expect(authedPage.getByTestId('files__open-notebook')).toHaveAttribute('href', /\/notebook$/);

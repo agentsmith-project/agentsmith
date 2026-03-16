@@ -109,3 +109,27 @@ If any step fails, AgentSmith must roll back already-created resources and mark 
 - backend MinIO credentials are per-library and are not returned by default to normal users
 - reveal/exchange actions must be audited
 - AgentSmith admin provisioning credentials stay server-side only
+
+## Release Validation
+
+Before release, the file library line must pass:
+
+```bash
+npx tsc --noEmit
+npm run contracts:check-openapi
+npm run openapi:check-generated
+npm run test:files:real:smoke
+npm run test:files:real:sync
+```
+
+Mock lane coverage must also include:
+- Files page CRUD and browser flows
+- mount access dialog
+- create/delete dialogs
+- non-empty delete denial
+
+Real-lane checks must prove:
+- provisioning succeeds with real PostgreSQL + MinIO + JuiceFS
+- Web file operations succeed through the managed gateway
+- local `juicefs mount` sees Web mutations
+- Web/API sees local mount mutations

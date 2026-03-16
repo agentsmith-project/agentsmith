@@ -469,6 +469,29 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('dialog-files-mount-access.png');
   });
 
+  test('files - create library dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await authedPage.waitForTimeout(1200);
+    await authedPage.getByTestId('files__library-create').click();
+    await expect(authedPage.getByTestId('files__dialog__library-create')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('dialog-files-library-create.png');
+  });
+
+  test('files - delete non-empty library dialog', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('files'));
+    await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
+    await authedPage.waitForTimeout(1200);
+    await authedPage
+      .getByTestId('files__library-item--lib_shared_default')
+      .getByRole('button', { name: /delete/i })
+      .click();
+    await expect(authedPage.getByTestId('files__dialog__library-delete')).toBeVisible();
+    await authedPage.waitForTimeout(400);
+    await expect(authedPage).toHaveScreenshot('dialog-files-library-delete.png');
+  });
+
   test('create API key dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, '/en-US/user/api-keys');
     await authedPage.getByTestId('api-keys__create-btn').click();

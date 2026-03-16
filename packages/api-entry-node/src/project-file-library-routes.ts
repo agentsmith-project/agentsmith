@@ -38,6 +38,34 @@ type GatewayObjectItem = {
   lastModified: string;
 };
 
+function mapFileLibraryInfraError(error: unknown): {
+  statusCode: number;
+  errorCode: string;
+  message: string;
+} {
+  const message = error instanceof Error ? error.message : 'file_library_operation_failed';
+  if (message === 'file_library_juicefs_cli_missing') {
+    return { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message };
+  }
+  if (message === 'file_library_mc_cli_missing') {
+    return { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message };
+  }
+  if (message.startsWith('file_library_env_missing_')) {
+    return { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message };
+  }
+  if (message === 'file_library_backend_unavailable') {
+    return { statusCode: 503, errorCode: 'SERVICE_UNAVAILABLE', message };
+  }
+  if (message === 'file_library_not_empty') {
+    return { statusCode: 409, errorCode: 'FILE_LIBRARY_NOT_EMPTY', message };
+  }
+  return {
+    statusCode: 502,
+    errorCode: 'FILE_LIBRARY_OPERATION_FAILED',
+    message,
+  };
+}
+
 async function parseUploadAndExecute(
   req: http.IncomingMessage,
   execute: (input: {
@@ -257,6 +285,24 @@ async function listGatewayObjects(
   };
 }
 
+async function assertFileLibraryEmpty(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  libraryId: string;
+  filesystemName: string;
+}): Promise<void> {
+  const client = await createGatewayClient(args);
+  const bucket = fileLibraryBucketName(args.filesystemName);
+  const listed = await listGatewayObjects(client, bucket, {
+    prefix: '',
+    pageSize: 1,
+  });
+  if (listed.commonPrefixes.length > 0 || listed.objects.length > 0) {
+    throw new Error('file_library_not_empty');
+  }
+}
+
 async function copyObject(
   client: MinioClient,
   bucket: string,
@@ -390,11 +436,13 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 201, getFileLibrary(workspaceId, projectId, created.id));
     } catch (error) {
       updateFileLibraryRecord(workspaceId, projectId, created.id, { status: 'failed' });
-      const message = error instanceof Error ? error.message : 'file_library_provisioning_failed';
+      const mapped = mapFileLibraryInfraError(error);
       const record = getFileLibrary(workspaceId, projectId, created.id);
-      json(res, 502, {
-        error_code: 'FILE_LIBRARY_PROVISIONING_FAILED',
-        message,
+      json(res, mapped.statusCode, {
+        error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+          ? 'FILE_LIBRARY_PROVISIONING_FAILED'
+          : mapped.errorCode,
+        message: mapped.message,
         library: record,
       });
     }
@@ -434,6 +482,13 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
     updateFileLibraryRecord(workspaceId, projectId, libraryId, { status: 'deleting' });
     try {
+      await assertFileLibraryEmpty({
+        deps,
+        workspaceId,
+        projectId,
+        libraryId,
+        filesystemName: library.filesystem_name,
+      });
       await deps.fileLibraryOrchestrator.deleteLibrary({
         libraryId,
         filesystemName: library.filesystem_name,
@@ -444,9 +499,15 @@ export async function handleProjectFileLibraryRoutes(args: {
       res.end();
     } catch (error) {
       updateFileLibraryRecord(workspaceId, projectId, libraryId, { status: 'degraded' });
-      json(res, 502, {
-        error_code: 'FILE_LIBRARY_DELETE_FAILED',
-        message: error instanceof Error ? error.message : 'file_library_delete_failed',
+      const mapped = mapFileLibraryInfraError(error);
+      if (mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY') {
+        updateFileLibraryRecord(workspaceId, projectId, libraryId, { status: 'ready' });
+      }
+      json(res, mapped.statusCode, {
+        error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+          ? 'FILE_LIBRARY_DELETE_FAILED'
+          : mapped.errorCode,
+        message: mapped.message,
       });
     }
     return true;

@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, constants, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -76,11 +76,94 @@ function detectDefaultJuicefsBin(): string {
 }
 
 function detectDefaultMcBin(): string {
-  return envString('MC_BIN') || join(process.env.HOME ?? '', '.local/bin/mc');
+  const explicit = envString('MC_BIN');
+  if (explicit) return explicit;
+  return 'mc';
 }
 
-async function ensureExecutable(pathLike: string): Promise<void> {
-  await access(pathLike);
+function isAbsoluteLikeExecutable(pathLike: string): boolean {
+  return pathLike.includes('/') || pathLike.includes('\\');
+}
+
+async function resolveExecutable(pathLike: string): Promise<string> {
+  if (!pathLike.trim()) {
+    throw new Error('file_library_executable_path_invalid');
+  }
+  if (isAbsoluteLikeExecutable(pathLike)) {
+    await access(pathLike, constants.X_OK);
+    return pathLike;
+  }
+  const pathEntries = (process.env.PATH ?? '')
+    .split(':')
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  for (const entry of pathEntries) {
+    const candidate = join(entry, pathLike);
+    try {
+      await access(candidate, constants.X_OK);
+      return candidate;
+    } catch {
+      // keep searching
+    }
+  }
+  throw new Error(`file_library_executable_missing_${pathLike}`);
+}
+
+async function ensureExecutable(pathLike: string): Promise<string> {
+  return resolveExecutable(pathLike);
+}
+
+export interface FileLibraryRuntimeReadiness {
+  ready: boolean;
+  checks: {
+    juicefs: 'ready' | 'missing';
+    mc: 'ready' | 'missing';
+    database_url: 'ready' | 'missing';
+    minio_endpoint: 'ready' | 'missing';
+    minio_access_key: 'ready' | 'missing';
+    minio_secret_key: 'ready' | 'missing';
+  };
+  errors: string[];
+}
+
+export async function getFileLibraryRuntimeReadiness(
+  input?: { juicefsBin?: string; mcBin?: string; env?: NodeJS.ProcessEnv },
+): Promise<FileLibraryRuntimeReadiness> {
+  const env = input?.env ?? process.env;
+  const checks: FileLibraryRuntimeReadiness['checks'] = {
+    juicefs: 'missing',
+    mc: 'missing',
+    database_url: env.DATABASE_URL?.trim() ? 'ready' : 'missing',
+    minio_endpoint: env.MINIO_ENDPOINT?.trim() ? 'ready' : 'missing',
+    minio_access_key: env.MINIO_ACCESS_KEY?.trim() ? 'ready' : 'missing',
+    minio_secret_key: env.MINIO_SECRET_KEY?.trim() ? 'ready' : 'missing',
+  };
+  const errors: string[] = [];
+
+  try {
+    await resolveExecutable(input?.juicefsBin ?? detectDefaultJuicefsBin());
+    checks.juicefs = 'ready';
+  } catch {
+    errors.push('file_library_juicefs_cli_missing');
+  }
+
+  try {
+    await resolveExecutable(input?.mcBin ?? detectDefaultMcBin());
+    checks.mc = 'ready';
+  } catch {
+    errors.push('file_library_mc_cli_missing');
+  }
+
+  if (checks.database_url === 'missing') errors.push('file_library_env_missing_database_url');
+  if (checks.minio_endpoint === 'missing') errors.push('file_library_env_missing_minio_endpoint');
+  if (checks.minio_access_key === 'missing') errors.push('file_library_env_missing_minio_access_key');
+  if (checks.minio_secret_key === 'missing') errors.push('file_library_env_missing_minio_secret_key');
+
+  return {
+    ready: errors.length === 0,
+    checks,
+    errors,
+  };
 }
 
 function sanitizeSlug(input: string, fallback: string): string {

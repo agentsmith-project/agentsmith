@@ -143,4 +143,74 @@ describe('project-file-library-routes', () => {
       }),
     );
   });
+
+  it('returns a precise error when juicefs cli is unavailable during provisioning', async () => {
+    const json = vi.fn();
+    const res = {} as never;
+    const deps = {
+      fileLibraryOrchestrator: {
+        provisionLibrary: vi.fn().mockRejectedValue(new Error('file_library_juicefs_cli_missing')),
+      },
+      fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
+    } as never;
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res,
+      deps,
+      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Shared Docs',
+      }),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      res,
+      503,
+      expect.objectContaining({
+        error_code: 'SERVICE_UNAVAILABLE',
+        message: 'file_library_juicefs_cli_missing',
+      }),
+    );
+  });
+
+  it('returns a precise error when minio env is missing during provisioning', async () => {
+    const json = vi.fn();
+    const res = {} as never;
+    const deps = {
+      fileLibraryOrchestrator: {
+        provisionLibrary: vi.fn().mockRejectedValue(new Error('file_library_env_missing_minio_access_key')),
+      },
+      fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
+    } as never;
+
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res,
+      deps,
+      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Shared Docs',
+      }),
+    })).resolves.toBe(true);
+
+    expect(json).toHaveBeenCalledWith(
+      res,
+      503,
+      expect.objectContaining({
+        error_code: 'SERVICE_UNAVAILABLE',
+        message: 'file_library_env_missing_minio_access_key',
+      }),
+    );
+  });
 });

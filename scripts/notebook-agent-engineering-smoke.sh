@@ -156,9 +156,9 @@ run_inputrefs_loop_smoke() {
   run_make_target_with_token_retry notebook-agent-inputrefs-loop-smoke notebook-agent-inputrefs-loop-smoke
 }
 
-run_source_read_mount_smoke() {
-  info "running notebook-agent-source-read-mount-smoke"
-  run_make_target_with_token_retry notebook-agent-source-read-mount-smoke notebook-agent-source-read-mount-smoke
+run_file_read_mount_smoke() {
+  info "running notebook-agent-file-read-mount-smoke"
+  run_make_target_with_token_retry notebook-agent-file-read-mount-smoke notebook-agent-file-read-mount-smoke
 }
 
 run_credential_sync_smoke() {
@@ -218,7 +218,7 @@ main() {
     run_basic_smoke || failures=$((failures + 1))
   fi
   if [[ "${RUN_SOURCE_READ_MOUNT_SMOKE}" == "1" ]]; then
-    run_source_read_mount_smoke || failures=$((failures + 1))
+    run_file_read_mount_smoke || failures=$((failures + 1))
   fi
   if [[ "${RUN_INPUTREFS_LOOP}" == "1" ]]; then
     run_inputrefs_loop_smoke || failures=$((failures + 1))

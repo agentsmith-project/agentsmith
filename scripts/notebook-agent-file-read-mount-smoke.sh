@@ -11,8 +11,8 @@ TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 
-info() { echo "[source-read-smoke] $*"; }
-err() { echo "[source-read-smoke] ERROR: $*" >&2; }
+info() { echo "[file-read-smoke] $*"; }
+err() { echo "[file-read-smoke] ERROR: $*" >&2; }
 
 sanitize_part() {
   local input="$1"
@@ -84,31 +84,31 @@ main() {
   fi
 
   local skill_dir script_path skill_md
-  skill_dir="${cwd}/.codex/skills/source-read"
+  skill_dir="${cwd}/.codex/skills/file-read"
   skill_md="${skill_dir}/SKILL.md"
   script_path="${skill_dir}/fetch_input.mjs"
 
   if [[ ! -d "${skill_dir}" ]]; then
-    err "missing source-read skill dir: ${skill_dir}"
+    err "missing file-read skill dir: ${skill_dir}"
     exit 1
   fi
   if [[ ! -f "${skill_md}" ]]; then
-    err "missing source-read SKILL.md: ${skill_md}"
+    err "missing file-read SKILL.md: ${skill_md}"
     exit 1
   fi
   if [[ ! -f "${script_path}" ]]; then
-    err "missing source-read helper script: ${script_path}"
+    err "missing file-read helper script: ${script_path}"
     exit 1
   fi
 
-  if ! grep -q "name: source-read" "${skill_md}"; then
-    err "source-read SKILL.md content mismatch: ${skill_md}"
+  if ! grep -q "name: file-read" "${skill_md}"; then
+    err "file-read SKILL.md content mismatch: ${skill_md}"
     exit 1
   fi
 
-  info "source-read skill mounted OK"
+  info "file-read skill mounted OK"
   info "workspace=${cwd}"
-  info "verified files: .codex/skills/source-read/{SKILL.md,fetch_input.mjs}"
+  info "verified files: .codex/skills/file-read/{SKILL.md,fetch_input.mjs}"
 }
 
 main "$@"

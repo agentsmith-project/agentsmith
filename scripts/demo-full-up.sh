@@ -98,10 +98,10 @@ main() {
   (cd "${ROOT_DIR}" && make notebook-agent-demo-check PORT_API="${PORT_API}")
 
   if [[ "${DEMO_VALIDATE_SOURCE_READ_MOUNT}" == "1" ]]; then
-    info "running source-read mount smoke check"
-    (cd "${ROOT_DIR}" && make notebook-agent-source-read-mount-smoke)
+    info "running file-read mount smoke check"
+    (cd "${ROOT_DIR}" && make notebook-agent-file-read-mount-smoke)
   else
-    info "skip source-read mount smoke check (DEMO_VALIDATE_SOURCE_READ_MOUNT=0)"
+    info "skip file-read mount smoke check (DEMO_VALIDATE_SOURCE_READ_MOUNT=0)"
   fi
 
   local project_id endpoint_id agent_id ws_url

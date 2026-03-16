@@ -830,7 +830,7 @@ This follow-up extends the external notebook-agent execution line toward a Noteb
 - runner writes task-local manifest: `<task_cwd>/.mbos/task-inputs.json`
 - runner writes task-local `AGENTS.md` (headless rules, artifact dir rules, input helper guidance)
 - runner installs task-local Codex skill:
-  - `./.codex/skills/source-read/`
+  - `./.codex/skills/file-read/`
   - helper: `fetch_input.mjs` (downloads attached source files through AgentSmith API)
 - runner uses per-task session continuity:
   - first turn `codex exec ...`
@@ -852,19 +852,12 @@ Current known boundary:
 
 ## Unified InputRefs / Default Library Migration Notes (Chat + Notebook)
 
-- Notebook task inputs have been migrated to `attached_inputs` and `/tasks/:taskId/inputs` with `InputRef`-style records (`source`, `library_object`).
-- Notebook file picker now supports direct `library_object` refs (no source-only model requirement).
-- Chat file attachments started migrating toward object-first flow:
-  - local file uploads are first written into a deterministic default upload library (`My Uploads`) as library objects,
-  - then converted into chat attachments via the existing chat attachment request path.
-- Backend now enforces a system-managed default personal library (`system_managed_kind=default_personal_uploads`) with ensure route semantics and rename/delete protections.
-- Notebook "Add URL" follows object-first flow while attaching a first-class `url` input ref (with imported object provenance).
-- Notebook artifacts can now be attached back into task inputs as first-class `artifact` input refs (output-to-input loop).
-- Notebook local file uploads also follow object-first flow (default personal library object + `library_object` input ref), removing the last raw local-upload -> `source` shortcut in notebook task inputs.
-- Current architectural rule: `source` remains a derived/processed input type (AI-ready/indexed workflows), not the default raw-file ingestion path for Chat or Notebook.
-- Backend `POST /projects/:projectId/sources` creation now requires `library_id` and is treated as object-backed source creation only.
-- Chat message `inputs` and attachment provenance now support first-class `url` input refs (with optional imported object provenance), while request execution consumption still resolves through attachment snapshots.
-- Chat composer now exposes a URL input entry in the UI and imports URLs object-first into the default personal library before attaching a `url` input ref.
+- Notebook task inputs use `/tasks/:taskId/inputs` with `InputRef`-style records (`library_object`, `url`, `artifact`).
+- Files mainline now uses project `file-libraries`; raw uploads land in a deterministic project library (`Project Uploads`) instead of personal upload storage.
+- Notebook `source` UI is intentionally paused: the dialog shell remains visible, but it no longer performs file attachment/import logic.
+- Notebook artifacts can still be attached back into task inputs as first-class `artifact` refs (output-to-input loop).
+- Chat message `inputs` and attachment provenance support first-class `url` refs and project file-library-backed object refs.
+- Shared backend resolver layering is now in place:
 - Backend input-resolution code is partially shared: chat input parsing/attachment resolution is centralized in `chat-input-refs.ts`, and notebook input detail/execution mapping is centralized in `notebook-input-refs.ts`.
 - Shared backend resolver layering is now in place:
   - `input-ref-resolver.ts` (ref keys / imported object extraction / dedupe helpers)

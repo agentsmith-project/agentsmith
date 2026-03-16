@@ -102,6 +102,34 @@ describe('UsageAPI', () => {
     expect(firstRule?.usage_pct).toBe(62.5);
     expect(result.project_summary).toBeUndefined();
   });
+
+  it('passes end_user_id when requesting usage timeseries', async () => {
+    const getMock = vi.fn().mockResolvedValue({
+      data_points: [],
+      time_range: {
+        start: '2026-03-01T00:00:00.000Z',
+        end: '2026-03-30T23:59:59.000Z',
+        granularity: 'day',
+      },
+    });
+
+    const api = new UsageAPI({
+      ...client,
+      get: getMock,
+    } as unknown as ConstructorParameters<typeof UsageAPI>[0]);
+
+    await api.getTimeseries('ws_1', 'proj_1', {
+      start_time: '2026-03-01T00:00:00.000Z',
+      end_time: '2026-03-30T23:59:59.000Z',
+      granularity: 'day',
+      metric: 'requests',
+      end_user_id: 'user_001',
+    });
+
+    expect(getMock).toHaveBeenCalledWith(
+      '/workspaces/ws_1/projects/proj_1/usage/timeseries?start_time=2026-03-01T00%3A00%3A00.000Z&end_time=2026-03-30T23%3A59%3A59.000Z&granularity=day&metric=requests&end_user_id=user_001',
+    );
+  });
 });
 
 describe('AuditAPI list normalization', () => {

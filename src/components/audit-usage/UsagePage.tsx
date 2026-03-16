@@ -5,14 +5,13 @@ import { RefreshCw } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { UsageView } from './UsageView';
-import { useLimitsSummary, useUsageRecords } from '@/lib/hooks/use-audit-usage';
+import { useLimitsSummary, useUsageTimeseries } from '@/lib/hooks/use-audit-usage';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageToolbar } from '@/components/layout/PageToolbar';
 import { ErrorState } from '@/components/ui/error-state';
-import type { UsageListParams } from '@/lib/api/types';
 import { useQueryClient } from '@tanstack/react-query';
 import { queryKeys } from '@/lib/query-keys';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
@@ -23,8 +22,6 @@ export interface UsagePageProps {
   locale?: string;
   defaultEndUserId?: string;
   currentUserId?: string;
-  initialFilters?: Partial<UsageListParams>;
-  initialPanel?: 'usage' | 'dashboard';
 }
 
 export function UsagePage({
@@ -38,43 +35,42 @@ export function UsagePage({
   const queryClient = useQueryClient();
   const canReadUsage = useHasPermission('project:endpoint:use');
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
-  const [periodHours, setPeriodHours] = React.useState<24 | 48>(48);
   const [selectedEndpointId, setSelectedEndpointId] = React.useState<string>('all');
 
-  const usageRange = React.useMemo(() => {
+  const trendRange = React.useMemo(() => {
     const end = new Date();
-    const start = new Date(end.getTime() - periodHours * 60 * 60 * 1000);
+    const start = new Date(end);
+    start.setDate(start.getDate() - 29);
+    start.setHours(0, 0, 0, 0);
     return {
       start_time: start.toISOString(),
       end_time: end.toISOString(),
     };
-  }, [periodHours]);
+  }, []);
 
-  const usageParams = React.useMemo<UsageListParams>(
+  const timeseriesParams = React.useMemo(
     () => ({
-      start_time: usageRange.start_time,
-      end_time: usageRange.end_time,
+      start_time: trendRange.start_time,
+      end_time: trendRange.end_time,
+      granularity: 'day' as const,
+      metric: 'requests' as const,
       end_user_id: effectiveEndUserId,
-      resource_type: selectedEndpointId === 'all' ? undefined : 'endpoint',
+      resource_type: selectedEndpointId === 'all' ? undefined : ('endpoint' as const),
       resource_id: selectedEndpointId === 'all' ? undefined : selectedEndpointId,
-      page: 1,
-      page_size: 30,
-      group_by: 'day',
-      sort_by: 'time_bucket',
-      sort_order: 'asc',
     }),
-    [effectiveEndUserId, selectedEndpointId, usageRange.end_time, usageRange.start_time],
+    [effectiveEndUserId, selectedEndpointId, trendRange.end_time, trendRange.start_time],
   );
 
-  const { data: usageData, isLoading: usageLoading, error: usageError } = useUsageRecords(
+  const { data: usageData, isLoading: usageLoading, error: usageError } = useUsageTimeseries(
     workspaceId,
     projectId,
-    usageParams,
+    timeseriesParams,
     { enabled: canReadUsage },
   );
 
   const { data: limitsSummary } = useLimitsSummary(workspaceId, projectId, {
     enabled: canReadUsage,
+    refetchInterval: 15_000,
   });
   const { endpoints } = useEndpointsData({
     workspaceId,
@@ -119,15 +115,18 @@ export function UsagePage({
       name: item.name || item.id,
     }));
     if (fromEndpointsApi.length > 0) return fromEndpointsApi;
-
-    return (usageData?.items ?? [])
-      .filter((item) => item.resource_type === 'endpoint' && !!item.resource_id)
-      .map((item) => ({
-        id: item.resource_id as string,
-        name: endpointNameMap.get(item.resource_id as string) || (item.resource_id as string),
-      }));
-  }, [endpointNameMap, endpoints, limitsOverview.endpoints, usageData?.items]);
-  const totalLimitCards = limitsOverview.endpoints.reduce((count, endpoint) => count + endpoint.limits.length, 0);
+    return [];
+  }, [endpointNameMap, endpoints, limitsOverview.endpoints]);
+  const totalLimitCards = limitsOverview.endpoints.reduce(
+    (count, endpoint) =>
+      count
+      + endpoint.limits.filter(
+        (rule) =>
+          (rule.kind === 'rate_limit' || rule.kind === 'spending_limit')
+          && (rule.window === '5h' || rule.window === 'day'),
+      ).length,
+    0,
+  );
 
   React.useEffect(() => {
     if (selectedEndpointId === 'all' && endpointOptions.length > 0) {
@@ -191,23 +190,21 @@ export function UsagePage({
               {t('scope_my_usage')}
             </div>
             <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__endpoint-count">
-              {endpointOptions.length} {t('view.panel_title').toLowerCase()}
+              {endpointOptions.length} {t('view.endpoints_label')}
             </div>
             <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__limits-count">
-              {totalLimitCards} {t('view.limits_section_title').toLowerCase()}
+              {totalLimitCards} {t('view.active_limits')}
             </div>
             <div className="rounded-md border border-white/8 bg-white/[0.04] px-3 py-2 text-xs text-tertiary" data-testid="usage__period-badge">
-              {periodHours}h
+              {t('view.last_30_days')}
             </div>
           </PageToolbar>
         )}
       >
         <div className="rounded-[24px] border border-subtle bg-surface/95 p-4 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
           <UsageView
-            records={usageData?.items ?? []}
-          loading={usageLoading}
-          periodHours={periodHours}
-          onPeriodChange={setPeriodHours}
+            trendPoints={usageData?.data_points ?? []}
+          trendLoading={usageLoading}
           endpointOptions={endpointOptions}
           selectedEndpointId={selectedEndpointId}
           onEndpointChange={setSelectedEndpointId}

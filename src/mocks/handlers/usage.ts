@@ -127,6 +127,42 @@ export const usageHandlers = [
       total_pages: Math.max(1, Math.ceil(items.length / pageSize)),
     });
   }),
+  http.get('/api/v1/workspaces/:ws/projects/:prj/usage/timeseries', ({ request }) => {
+    const url = new URL(request.url);
+    const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const end = url.searchParams.get('end_time') ?? new Date().toISOString();
+    const resourceType = url.searchParams.get('resource_type');
+    const resourceId = url.searchParams.get('resource_id');
+    const endUserId = url.searchParams.get('end_user_id');
+
+    const items = buildRequestUsageRecords({
+      groupBy: 'day',
+      filters: {
+        startTime: start,
+        endTime: end,
+        resourceType,
+        resourceId,
+        endUserId,
+      },
+    });
+
+    return HttpResponse.json({
+      data_points: items.map((item) => ({
+        time_bucket: item.time_bucket,
+        requests: item.requests ?? 0,
+        errors: 0,
+        tokens: item.tokens ?? undefined,
+        duration_p95_ms: item.duration_p95_ms ?? undefined,
+        bytes_in: item.bytes_in ?? undefined,
+        bytes_out: item.bytes_out ?? undefined,
+      })),
+      time_range: {
+        start,
+        end,
+        granularity: 'day',
+      },
+    });
+  }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/usage/operations-summary', ({ request }) => {
     const url = new URL(request.url);
     const start = url.searchParams.get('start_time') ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
@@ -211,7 +247,7 @@ export const usageHandlers = [
 
         const makeRule = (
           kind: 'rate_limit' | 'spending_limit',
-          window: 'minute' | '5h' | 'day' | 'current',
+          window: 'minute' | '5h' | 'day',
           metric: 'requests' | 'usd',
           policyKey: string,
           used: number,

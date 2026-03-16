@@ -170,7 +170,7 @@ export type UsageTimeseriesResponse = {
 
 export type LimitRuleSnapshot = {
   kind: 'rate_limit' | 'spending_limit';
-  window: 'minute' | '5h' | 'day' | 'current';
+  window: 'minute' | '5h' | 'day';
   metric: 'requests' | 'usd';
   policy_key: string;
   used: number;
@@ -687,6 +687,8 @@ export async function getUsageTimeseries(
     granularity?: 'hour' | 'day' | 'week' | 'month';
     metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
     resourceType?: 'endpoint' | 'source_library' | 'agent' | null;
+    resourceId?: string | null;
+    endUserId?: string | null;
   },
 ): Promise<UsageTimeseriesResponse> {
   const normalizedGranularity = query.granularity === 'hour' ? 'hour' : 'day';
@@ -696,6 +698,8 @@ export async function getUsageTimeseries(
     startTime: query.startTime,
     endTime: query.endTime,
     resourceType: query.resourceType ?? null,
+    resourceId: query.resourceId ?? null,
+    endUserId: query.endUserId ?? null,
   });
 
   const buckets = new Map<string, {
@@ -806,8 +810,6 @@ export async function getLimitsSummary(
   const dayResetAt = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1)).toISOString();
   const minuteResetAt = new Date(Math.floor(nowMs / 60_000) * 60_000 + 60_000).toISOString();
   const fiveHoursResetAt = new Date(Math.floor(nowMs / (5 * 60 * 60 * 1000)) * (5 * 60 * 60 * 1000) + (5 * 60 * 60 * 1000)).toISOString();
-  const currentResetAt = nowIso;
-
   const facts = await listUsageFacts(docStore, {
     workspaceId: query.workspaceId,
     projectId: query.projectId,
@@ -838,7 +840,6 @@ export async function getLimitsSummary(
       usdMinute: 0,
       usd5h: 0,
       usdDay: 0,
-      usdCurrent: 0,
     };
     const timestampMs = parseIsoMillis(fact.timestamp);
     const requests = fact.requests ?? 1;
@@ -855,7 +856,6 @@ export async function getLimitsSummary(
       existing.requestsDay += requests;
       existing.usdDay += usd;
     }
-    existing.usdCurrent += usd;
     byEndpoint.set(endpointId, existing);
   }
 
@@ -868,7 +868,6 @@ export async function getLimitsSummary(
     minute: 5,
     fiveHours: 100,
     day: 400,
-    current: 1_000,
   };
 
   const toRule = (args: {
@@ -956,15 +955,6 @@ export async function getLimitsSummary(
           used: item.usdDay,
           max: spendingLimitMax.day,
           resetAt: dayResetAt,
-        }),
-        toRule({
-          kind: 'spending_limit',
-          window: 'current',
-          metric: 'usd',
-          policyKey: 'endpoint.spending_usd_current_cycle',
-          used: item.usdCurrent,
-          max: spendingLimitMax.current,
-          resetAt: currentResetAt,
         }),
       ],
     });

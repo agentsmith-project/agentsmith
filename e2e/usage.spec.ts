@@ -1,10 +1,10 @@
 /**
  * Usage Page - E2E Tests
  *
- * Covers the current low-cognitive personal usage view:
- * - resource tabs
- * - progress cards for endpoint limits
- * - period switching
+ * Covers the personal usage view:
+ * - 4 primary limit cards
+ * - rolling 30 day trend
+ * - endpoint tab switching when multiple endpoints exist
  */
 
 import { test, expect, goToProject } from './fixtures/test-base';
@@ -18,7 +18,8 @@ test.describe('Usage Page', () => {
     await expect(authedPage.getByTestId('usage__view')).toBeVisible({ timeout: 10000 });
     await expect(authedPage.getByTestId('usage__my-scope-badge')).toBeVisible();
     await expect(authedPage.getByTestId('usage__limits')).toBeVisible();
-    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
+    await expect(authedPage.locator('[data-testid="usage__progress-card"]')).toHaveCount(4);
+    await expect(authedPage.locator('[data-testid="usage__trend-bar"]')).toHaveCount(30);
     const endpointTabs = authedPage.getByTestId('usage__endpoint-tabs');
     const resourceTabs = authedPage.locator('[data-testid^="usage__resource-tab-"]');
     if (await endpointTabs.count()) {
@@ -27,37 +28,15 @@ test.describe('Usage Page', () => {
     }
   });
 
-  test('shows current low-cognitive usage structure without removed controls', async ({ authedPage }) => {
-    await expect(authedPage.getByTestId('usage__planning-controls')).toBeVisible();
+  test('shows compact usage structure without legacy controls', async ({ authedPage }) => {
     await expect(authedPage.getByTestId('usage__trend')).toBeVisible();
-
-    await expect(authedPage.getByTestId('usage__limit-mode-all')).toBeVisible();
-    await expect(authedPage.getByTestId('usage__limit-mode-rate')).toBeVisible();
-    await expect(authedPage.getByTestId('usage__limit-mode-spending')).toBeVisible();
+    await expect(authedPage.getByTestId('usage__period-badge')).toBeVisible();
 
     await expect(authedPage.getByTestId('usage__filters')).toHaveCount(0);
     await expect(authedPage.getByTestId('usage__table')).toHaveCount(0);
     await expect(authedPage.getByTestId('usage__export-trigger')).toHaveCount(0);
-  });
-
-  test('switches period between 48h and 24h', async ({ authedPage }) => {
-    const period24 = authedPage.getByTestId('usage__period-24');
-    const period48 = authedPage.getByTestId('usage__period-48');
-
-    await expect(period48).toHaveAttribute('data-active', 'true');
-    await period24.click();
-    await expect(period24).toHaveAttribute('data-active', 'true');
-    await expect(period48).toHaveAttribute('data-active', 'false');
-  });
-
-  test('switches limit mode between all and rate', async ({ authedPage }) => {
-    const allMode = authedPage.getByTestId('usage__limit-mode-all');
-    const rateMode = authedPage.getByTestId('usage__limit-mode-rate');
-
-    await expect(allMode).toBeVisible();
-    await rateMode.click();
-
-    await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
+    await expect(authedPage.getByTestId('usage__limit-mode-all')).toHaveCount(0);
+    await expect(authedPage.getByTestId('usage__period-24')).toHaveCount(0);
   });
 
   test('can switch resource tabs', async ({ authedPage }) => {
@@ -79,7 +58,7 @@ test.describe('Usage Page', () => {
 
     if (resourceTabCount > 1) {
       await resourceTabs.nth(1).click();
-      await expect(authedPage.locator('[data-testid="usage__endpoint-dimensions"]').first()).toBeVisible();
+      await expect(authedPage.getByTestId('usage__selected-endpoint')).toBeVisible();
     } else {
       await expect(resourceTabs.first()).toBeVisible();
     }

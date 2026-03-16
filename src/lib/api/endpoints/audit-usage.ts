@@ -48,7 +48,7 @@ export interface UsageTimeseriesResponse {
 
 export interface LimitRuleSnapshot {
   kind: 'rate_limit' | 'spending_limit';
-  window: 'minute' | '5h' | 'day' | 'current';
+  window: 'minute' | '5h' | 'day';
   metric: 'requests' | 'usd' | 'tokens';
   policy_key: string;
   used: number;
@@ -384,7 +384,6 @@ export class UsageAPI {
       if (rawWindow === 'minute' || rawWindow === 'min') return 'minute';
       if (rawWindow === '5h' || rawWindow === '5hour' || rawWindow === '5hours' || rawWindow === '5_hour') return '5h';
       if (rawWindow === 'day' || rawWindow === 'daily') return 'day';
-      if (rawWindow === 'current' || rawWindow === 'now') return 'current';
       return null;
     })();
     const metric: LimitRuleSnapshot['metric'] = (() => {
@@ -574,6 +573,8 @@ export class UsageAPI {
       granularity?: 'hour' | 'day' | 'week' | 'month';
       metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
       resource_type?: 'endpoint' | 'source_library' | 'agent';
+      resource_id?: string;
+      end_user_id?: string;
     },
   ): Promise<UsageTimeseriesResponse> {
     const searchParams = new URLSearchParams();
@@ -582,6 +583,8 @@ export class UsageAPI {
     if (params.granularity) searchParams.set('granularity', params.granularity);
     if (params.metric) searchParams.set('metric', params.metric);
     if (params.resource_type) searchParams.set('resource_type', params.resource_type);
+    if (params.resource_id) searchParams.set('resource_id', params.resource_id);
+    if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
 
     return this.client.get<UsageTimeseriesResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/usage/timeseries?${searchParams.toString()}`,

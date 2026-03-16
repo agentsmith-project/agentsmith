@@ -1250,29 +1250,30 @@
     "scope_my_usage": "我的用量",
     "view": {
       "panel_title": "使用情况面板",
+      "endpoints_label": "个端点",
       "limits_section_title": "剩余额度",
       "trend_section_title": "使用趋势",
-      "limit_mode_label": "限制统计",
-      "limit_mode_all": "全部",
-      "limit_mode_rate": "速率",
-      "limit_mode_spending": "支出",
+      "last_30_days": "最近30天",
+      "trend_last_30_days": "滚动30天请求量",
+      "active_limits": "个生效限额窗口",
       "limits_empty": "暂无 endpoint 限制数据。",
-      "rate_limit_title": "速率限制",
-      "spending_limit_title": "支出限制",
       "limit_reset_at": "重置时间：{value}",
-      "limit_group_empty": "当前返回暂无该类数据。",
+      "limit_not_configured": "当前还没有配置该类限额。",
+      "card_out_of": "上限 {value}",
+      "card_remaining": "剩余 {value}",
+      "cards": {
+        "requests_5h": "5小时请求量",
+        "requests_day": "每日请求量",
+        "spending_5h": "5小时支出",
+        "spending_day": "每日支出"
+      },
       "window": {
         "minute": "每分钟",
         "5h": "每5小时",
-        "day": "每天",
-        "current": "当前"
+        "day": "每天"
       },
       "no_data": "暂无用量趋势数据。",
-      "no_data_hint": "在当前时间范围内产生请求后，这里会显示趋势。",
-      "period": {
-        "24h": "24小时",
-        "48h": "48小时"
-      }
+      "no_data_hint": "在当前时间范围内产生请求后，这里会显示趋势。"
     },
     "detail": {
       "title": "请求详情",

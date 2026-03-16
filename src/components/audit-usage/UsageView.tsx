@@ -2,15 +2,23 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import type { UsageRecord } from '@/lib/api/types';
+import type { UsageDataPoint } from '@/lib/api/endpoints/audit-usage';
+
+type UsageLimitRule = {
+  kind: 'rate_limit' | 'spending_limit';
+  window: 'minute' | '5h' | 'day';
+  metric: 'requests' | 'usd' | 'tokens';
+  policyKey: string;
+  used: number;
+  max: number;
+  remaining: number;
+  usagePct: number;
+  resetAt: string;
+};
 
 export interface UsageViewProps {
-  records: UsageRecord[];
-  loading?: boolean;
-  periodHours: 24 | 48;
-  onPeriodChange?: (hours: 24 | 48) => void;
+  trendPoints: UsageDataPoint[];
+  trendLoading?: boolean;
   endpointOptions?: Array<{ id: string; name: string }>;
   selectedEndpointId?: string;
   onEndpointChange?: (endpointId: string) => void;
@@ -20,7 +28,7 @@ export interface UsageViewProps {
       endpointName: string;
       limits: Array<{
         kind: 'rate_limit' | 'spending_limit';
-        window: 'minute' | '5h' | 'day' | 'current';
+        window: 'minute' | '5h' | 'day';
         metric: 'requests' | 'usd' | 'tokens';
         policyKey: string;
         used: number;
@@ -33,12 +41,12 @@ export interface UsageViewProps {
   } | null;
 }
 
-function getBucketLabel(bucket: string): string {
-  if (/^\d{4}-\d{2}-\d{2}$/.test(bucket)) {
-    return bucket.slice(5);
-  }
-  return bucket;
-}
+type UsageCardRule = {
+  id: string;
+  titleKey: 'requests_5h' | 'requests_day' | 'spending_5h' | 'spending_day';
+  unitKey: 'requests' | 'usd';
+  rule: UsageLimitRule | null;
+};
 
 function clampPercent(value: number): number {
   return Math.min(100, Math.max(0, value));
@@ -53,6 +61,51 @@ function formatResetTime(value: string): string {
     hour: '2-digit',
     minute: '2-digit',
   });
+}
+
+function getDayLabel(bucket: string): string {
+  const date = new Date(bucket);
+  if (Number.isNaN(date.getTime())) {
+    return bucket.slice(5);
+  }
+  return date.toLocaleDateString(undefined, {
+    month: 'numeric',
+    day: 'numeric',
+  });
+}
+
+function formatValue(value: number, unit: 'requests' | 'usd'): string {
+  if (unit === 'usd') {
+    return new Intl.NumberFormat(undefined, {
+      style: 'currency',
+      currency: 'USD',
+      maximumFractionDigits: 2,
+    }).format(value);
+  }
+  return new Intl.NumberFormat().format(Math.round(value));
+}
+
+function buildLastThirtyDayBuckets(points: UsageDataPoint[]): UsageDataPoint[] {
+  const byBucket = new Map(points.map((item) => [item.time_bucket.slice(0, 10), item]));
+  const today = new Date();
+  const items: UsageDataPoint[] = [];
+
+  for (let offset = 29; offset >= 0; offset -= 1) {
+    const date = new Date(today);
+    date.setHours(0, 0, 0, 0);
+    date.setDate(date.getDate() - offset);
+    const key = date.toISOString().slice(0, 10);
+    const existing = byBucket.get(key);
+    items.push(
+      existing ?? {
+        time_bucket: key,
+        requests: 0,
+        errors: 0,
+      },
+    );
+  }
+
+  return items;
 }
 
 function getProgressTone(remainingPct: number): {
@@ -82,268 +135,195 @@ function getProgressTone(remainingPct: number): {
 }
 
 export function UsageView({
-  records,
-  loading = false,
-  periodHours,
-  onPeriodChange,
+  trendPoints,
+  trendLoading = false,
   endpointOptions = [],
   selectedEndpointId = 'all',
   onEndpointChange,
   limitsOverview,
 }: UsageViewProps) {
   const t = useTranslations('usage');
-  const [limitMetricMode, setLimitMetricMode] = React.useState<'all' | 'rate' | 'spending'>('all');
 
-  const maxRequests = React.useMemo(
-    () => Math.max(1, ...records.map((item) => item.requests ?? 0)),
-    [records],
-  );
-  const endpointLimitGroups = React.useMemo(() => {
-    const endpoints = limitsOverview?.endpoints ?? [];
-    const order: Record<'minute' | '5h' | 'day' | 'current', number> = {
-      minute: 1,
-      '5h': 2,
-      day: 3,
-      current: 4,
-    };
-    return endpoints.map((endpoint) => {
-      const rateLimits = endpoint.limits
-        .filter((row) => row.kind === 'rate_limit')
-        .sort((a, b) => order[a.window] - order[b.window]);
-      const spendingLimits = endpoint.limits
-        .filter((row) => row.kind === 'spending_limit')
-        .sort((a, b) => order[a.window] - order[b.window]);
-      return {
-        endpointId: endpoint.endpointId,
-        endpointName: endpoint.endpointName,
-        rateLimits,
-        spendingLimits,
-      };
-    });
+  const endpointGroups = React.useMemo(() => {
+    return (limitsOverview?.endpoints ?? []).map((endpoint) => ({
+      endpointId: endpoint.endpointId,
+      endpointName: endpoint.endpointName,
+      limits: endpoint.limits,
+    }));
   }, [limitsOverview?.endpoints]);
-  const effectiveEndpointId = React.useMemo(
-    () => {
-      if (selectedEndpointId !== 'all') return selectedEndpointId;
-      return endpointLimitGroups[0]?.endpointId ?? endpointOptions[0]?.id ?? 'all';
-    },
-    [endpointLimitGroups, endpointOptions, selectedEndpointId],
-  );
+
+  const effectiveEndpointId = React.useMemo(() => {
+    if (selectedEndpointId !== 'all') return selectedEndpointId;
+    return endpointGroups[0]?.endpointId ?? endpointOptions[0]?.id ?? 'all';
+  }, [endpointGroups, endpointOptions, selectedEndpointId]);
+
   const selectedEndpoint = React.useMemo(
-    () => endpointLimitGroups.find((endpoint) => endpoint.endpointId === effectiveEndpointId) ?? null,
-    [effectiveEndpointId, endpointLimitGroups],
+    () => endpointGroups.find((endpoint) => endpoint.endpointId === effectiveEndpointId) ?? null,
+    [effectiveEndpointId, endpointGroups],
   );
 
-  if (loading) {
-    return (
-      <div className="space-y-3" data-testid="usage__loading">
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="h-28 animate-pulse rounded-xl border border-border bg-surface" />
-          ))}
-        </div>
-        <div className="h-72 animate-pulse rounded-xl border border-border bg-surface" />
-      </div>
-    );
-  }
+  const usageCards = React.useMemo<UsageCardRule[]>(() => {
+    const limits = selectedEndpoint?.limits ?? [];
+    const findRule = (kind: UsageLimitRule['kind'], window: UsageLimitRule['window']) =>
+      limits.find((item) => item.kind === kind && item.window === window) ?? null;
+
+    return [
+      { id: 'requests-5h', titleKey: 'requests_5h', unitKey: 'requests', rule: findRule('rate_limit', '5h') },
+      { id: 'requests-day', titleKey: 'requests_day', unitKey: 'requests', rule: findRule('rate_limit', 'day') },
+      { id: 'spending-5h', titleKey: 'spending_5h', unitKey: 'usd', rule: findRule('spending_limit', '5h') },
+      { id: 'spending-day', titleKey: 'spending_day', unitKey: 'usd', rule: findRule('spending_limit', 'day') },
+    ];
+  }, [selectedEndpoint]);
+
+  const normalizedTrend = React.useMemo(() => buildLastThirtyDayBuckets(trendPoints), [trendPoints]);
+  const maxRequests = React.useMemo(
+    () => Math.max(1, ...normalizedTrend.map((item) => item.requests ?? 0)),
+    [normalizedTrend],
+  );
 
   return (
     <div className="space-y-6" data-testid="usage__view">
       <section className="space-y-3">
-        <div>
-          <p className="text-lg font-semibold text-foreground">{t('view.panel_title')}</p>
-        </div>
-        <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__planning-controls">
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <p className="mb-2 text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.limit_mode_label')}</p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                type="button"
-                variant={limitMetricMode === 'all' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setLimitMetricMode('all')}
-                data-testid="usage__limit-mode-all"
-              >
-                {t('view.limit_mode_all')}
-              </Button>
-              <Button
-                type="button"
-                variant={limitMetricMode === 'rate' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setLimitMetricMode('rate')}
-                data-testid="usage__limit-mode-rate"
-              >
-                {t('view.limit_mode_rate')}
-              </Button>
-              <Button
-                type="button"
-                variant={limitMetricMode === 'spending' ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => setLimitMetricMode('spending')}
-                data-testid="usage__limit-mode-spending"
-              >
-                {t('view.limit_mode_spending')}
-              </Button>
-            </div>
+            <p className="text-lg font-semibold text-foreground">{t('view.limits_section_title')}</p>
+            {selectedEndpoint ? (
+              <p className="mt-1 text-sm text-tertiary" data-testid="usage__selected-endpoint">
+                {selectedEndpoint.endpointName}
+              </p>
+            ) : null}
           </div>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <div>
-          <p className="text-lg font-semibold text-foreground">{t('view.limits_section_title')}</p>
-        </div>
-        <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__limits">
-          {selectedEndpoint ? (
-            <Tabs value={effectiveEndpointId} onValueChange={(value) => onEndpointChange?.(value)} className="space-y-4">
-              {endpointLimitGroups.length > 1 ? (
-                <TabsList
-                  className="h-auto w-full justify-start gap-2 overflow-x-auto rounded-2xl border border-subtle bg-bg-base/20 p-1.5"
-                  data-testid="usage__endpoint-tabs"
-                >
-                  {endpointLimitGroups.map((endpoint) => (
-                    <TabsTrigger
-                      key={endpoint.endpointId}
-                      value={endpoint.endpointId}
-                      className="rounded-xl px-4 py-2.5 text-sm"
-                      data-testid={`usage__resource-tab-${endpoint.endpointId}`}
-                    >
-                      {endpoint.endpointName}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-              ) : null}
-
-              {endpointLimitGroups.map((endpoint) => {
-                const cards = [
-                  ...endpoint.rateLimits.map((item) => ({ ...item, bucket: 'rate' as const })),
-                  ...endpoint.spendingLimits.map((item) => ({ ...item, bucket: 'spending' as const })),
-                ].filter((item) => {
-                  if (limitMetricMode === 'all') return true;
-                  if (limitMetricMode === 'rate') return item.bucket === 'rate';
-                  return item.bucket === 'spending';
-                });
-
+          {endpointGroups.length > 1 ? (
+            <div className="flex flex-wrap items-center gap-2" data-testid="usage__endpoint-tabs">
+              {endpointGroups.map((endpoint) => {
+                const active = endpoint.endpointId === effectiveEndpointId;
                 return (
-                  <TabsContent
+                  <button
                     key={endpoint.endpointId}
-                    value={endpoint.endpointId}
-                    className="data-[state=inactive]:hidden"
-                    data-testid="usage__endpoint-dimensions"
+                    type="button"
+                    onClick={() => onEndpointChange?.(endpoint.endpointId)}
+                    className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                      active
+                        ? 'border-accent/35 bg-accent/10 text-foreground'
+                        : 'border-subtle bg-bg-base/20 text-tertiary hover:border-white/12 hover:text-secondary'
+                    }`}
+                    data-testid={`usage__resource-tab-${endpoint.endpointId}`}
                   >
-                    <div className="mb-5 rounded-2xl border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.03),rgba(255,255,255,0.01))] px-4 py-4">
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.18em] text-tertiary">{t('view.panel_title')}</p>
-                          <p className="mt-2 text-xl font-semibold text-foreground">{endpoint.endpointName}</p>
-                        </div>
-                        <div className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-1 text-xs text-secondary">
-                          {cards.length} {cards.length === 1 ? 'limit' : 'limits'}
-                        </div>
-                      </div>
-                    </div>
-
-                    {cards.length > 0 ? (
-                      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-                      {cards.map((limit, index) => {
-                        const usagePct = clampPercent(limit.usagePct);
-                        const remainingPct = Math.max(0, 100 - usagePct);
-                        const tone = getProgressTone(remainingPct);
-                        return (
-                          <div
-                            key={`${endpoint.endpointId}-dim-${limit.bucket}-${index}`}
-                            className={`rounded-[28px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.01)_100%)] p-6 ${tone.ringClassName}`}
-                            data-testid="usage__progress-card"
-                          >
-                            <div>
-                              <p className="text-sm text-tertiary">
-                                {limit.bucket === 'rate' ? t('view.rate_limit_title') : t('view.spending_limit_title')}
-                              </p>
-                              <p className="mt-1 text-xs text-tertiary">{t(`view.window.${limit.window}`)}</p>
-                            </div>
-                            <p className="mt-5 text-4xl font-semibold tracking-tight text-foreground">
-                              {Math.round(remainingPct)}%
-                            </p>
-                            <div className="mt-5 h-3 rounded-full bg-surface-high">
-                              <div
-                                className={`h-3 rounded-full ${tone.fillClassName}`}
-                                style={{ width: `${remainingPct}%` }}
-                              />
-                            </div>
-                            {limit.resetAt ? (
-                              <p className="mt-4 text-xs text-tertiary">{t('view.limit_reset_at', { value: formatResetTime(limit.resetAt) })}</p>
-                            ) : null}
-                          </div>
-                        );
-                      })}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-tertiary">{t('view.limit_group_empty')}</p>
-                    )}
-                  </TabsContent>
+                    {endpoint.endpointName}
+                  </button>
                 );
               })}
-            </Tabs>
-          ) : (
-            <p className="mt-3 text-sm text-tertiary">{t('view.limits_empty')}</p>
-          )}
+            </div>
+          ) : null}
         </div>
+
+        {selectedEndpoint ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4" data-testid="usage__limits">
+            {usageCards.map((card) => {
+              if (!card.rule) {
+                return (
+                  <div
+                    key={card.id}
+                    className="rounded-[24px] border border-dashed border-subtle bg-bg-base/10 px-5 py-5"
+                    data-testid="usage__progress-card"
+                  >
+                    <p className="text-sm text-tertiary">{t(`view.cards.${card.titleKey}`)}</p>
+                    <p className="mt-3 text-sm text-tertiary">{t('view.limit_not_configured')}</p>
+                  </div>
+                );
+              }
+
+              const remainingPct = Math.max(0, 100 - clampPercent(card.rule.usagePct));
+              const tone = getProgressTone(remainingPct);
+
+              return (
+                <div
+                  key={card.id}
+                  className={`rounded-[24px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0.01)_100%)] p-5 ${tone.ringClassName}`}
+                  data-testid="usage__progress-card"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-sm text-tertiary">{t(`view.cards.${card.titleKey}`)}</p>
+                      <p className="mt-3 text-2xl font-semibold tracking-tight text-foreground">
+                        {formatValue(card.rule.used, card.unitKey)}
+                      </p>
+                      <p className="mt-1 text-xs text-tertiary">
+                        {t('view.card_out_of', {
+                          value: formatValue(card.rule.max, card.unitKey),
+                        })}
+                      </p>
+                    </div>
+                    <div className={`rounded-full px-2.5 py-1 text-xs font-medium ${tone.badgeClassName}`}>
+                      {Math.round(remainingPct)}%
+                    </div>
+                  </div>
+                  <div className="mt-4 h-2.5 rounded-full bg-surface-high">
+                    <div
+                      className={`h-2.5 rounded-full ${tone.fillClassName}`}
+                      style={{ width: `${remainingPct}%` }}
+                    />
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-3 text-xs text-tertiary">
+                    <span>
+                      {t('view.card_remaining', {
+                        value: formatValue(card.rule.remaining, card.unitKey),
+                      })}
+                    </span>
+                    <span>{t('view.limit_reset_at', { value: formatResetTime(card.rule.resetAt) })}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[24px] border border-dashed border-subtle bg-bg-base/10 px-5 py-10 text-center">
+            <p className="text-sm text-tertiary">{t('view.limits_empty')}</p>
+          </div>
+        )}
       </section>
 
       <section className="space-y-3">
-        <div>
-          <p className="text-lg font-semibold text-foreground">{t('view.trend_section_title')}</p>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-lg font-semibold text-foreground">{t('view.trend_section_title')}</p>
+            <p className="mt-1 text-sm text-tertiary">{t('view.trend_last_30_days')}</p>
+          </div>
         </div>
         <div className="rounded-[28px] border border-border bg-surface p-5 shadow-sm" data-testid="usage__trend">
-          <div className="mb-4 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Button
-                variant={periodHours === 24 ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => onPeriodChange?.(24)}
-                data-testid="usage__period-24"
-                data-active={periodHours === 24}
-              >
-                {t('view.period.24h')}
-              </Button>
-              <Button
-                variant={periodHours === 48 ? 'default' : 'outline'}
-                size="sm"
-                onClick={() => onPeriodChange?.(48)}
-                data-testid="usage__period-48"
-                data-active={periodHours === 48}
-              >
-                {t('view.period.48h')}
-              </Button>
-            </div>
-          </div>
-          {records.length === 0 ? (
+          {trendLoading ? (
+            <div className="h-72 animate-pulse rounded-[24px] border border-subtle bg-bg-base/20" data-testid="usage__loading" />
+          ) : normalizedTrend.every((item) => (item.requests ?? 0) === 0) ? (
             <div className="rounded-[24px] border border-dashed border-subtle bg-bg-base/10 px-5 py-10 text-center">
               <p className="text-sm font-medium text-foreground">{t('view.no_data')}</p>
               <p className="mt-2 text-xs text-tertiary">{t('view.no_data_hint')}</p>
             </div>
           ) : (
-            <div className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0)_100%)] px-4 pb-4 pt-6">
-              <div className="flex h-56 items-end gap-2 border-b border-subtle/80">
-              {records.map((item) => {
-                const requests = item.requests ?? 0;
-                const height = Math.max(8, Math.round((requests / maxRequests) * 180));
-                const intensity = requests / maxRequests;
-                const barClassName = intensity > 0.75
-                  ? 'bg-[linear-gradient(180deg,#ef4444_0%,#f97316_100%)]'
-                  : intensity > 0.45
-                    ? 'bg-[linear-gradient(180deg,#f43f5e_0%,#ec4899_100%)]'
-                    : 'bg-[linear-gradient(180deg,#fb7185_0%,#f472b6_100%)]';
-                return (
-                  <div key={item.id} className="flex min-w-0 flex-1 flex-col items-center gap-2">
-                    <div
-                      className={`w-full rounded-t-md ${barClassName} shadow-[0_0_24px_rgba(244,63,94,0.12)]`}
-                      style={{ height }}
-                      title={`${item.time_bucket}: ${requests}`}
-                    />
-                    <span className="pb-1 text-[10px] text-tertiary">{getBucketLabel(item.time_bucket)}</span>
-                  </div>
-                );
-              })}
+            <div className="rounded-[24px] border border-subtle bg-[linear-gradient(180deg,rgba(255,255,255,0.02)_0%,rgba(255,255,255,0)_100%)] px-3 pb-4 pt-6">
+              <div className="flex h-64 items-end gap-1.5 border-b border-subtle/80">
+                {normalizedTrend.map((item, index) => {
+                  const requests = item.requests ?? 0;
+                  const height = Math.max(8, Math.round((requests / maxRequests) * 208));
+                  const intensity = requests / maxRequests;
+                  const barClassName =
+                    intensity > 0.75
+                      ? 'bg-[linear-gradient(180deg,#ef4444_0%,#f97316_100%)]'
+                      : intensity > 0.45
+                        ? 'bg-[linear-gradient(180deg,#f43f5e_0%,#ec4899_100%)]'
+                        : 'bg-[linear-gradient(180deg,#fb7185_0%,#f472b6_100%)]';
+
+                  return (
+                    <div key={`${item.time_bucket}-${index}`} className="flex min-w-0 flex-1 flex-col items-center gap-2">
+                      <div
+                        className={`w-full rounded-t-sm ${barClassName} shadow-[0_0_18px_rgba(244,63,94,0.1)]`}
+                        style={{ height }}
+                        title={`${item.time_bucket}: ${requests}`}
+                        data-testid="usage__trend-bar"
+                      />
+                      <span className="pb-1 text-[10px] text-tertiary">{getDayLabel(item.time_bucket)}</span>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

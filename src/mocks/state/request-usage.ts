@@ -17,9 +17,54 @@ declare global {
   var __MBOS_MSW_REQUEST_USAGE_FACTS__: UsageFactRecord[] | undefined;
 }
 
+function buildSeededRequestUsageFacts(): UsageFactRecord[] {
+  const facts: UsageFactRecord[] = [];
+  const base = new Date();
+  base.setUTCHours(12, 0, 0, 0);
+
+  for (let offset = 0; offset < 30; offset += 1) {
+    const timestamp = new Date(base);
+    timestamp.setUTCDate(base.getUTCDate() - offset);
+    const requests = 180 + ((29 - offset) % 7) * 24;
+    const tokensTotal = requests * 820;
+    const inputTokens = Math.round(tokensTotal * 0.62);
+    const outputTokens = tokensTotal - inputTokens;
+
+    facts.push({
+      id: `seed_usage_fact_ep1_${offset}`,
+      timestamp: timestamp.toISOString(),
+      workspace_id: 'agentsmith',
+      project_id: 'p0',
+      resource_type: 'endpoint',
+      resource_id: 'ep_1',
+      end_user_id: 'user_001',
+      request_id: `seed_req_ep1_${offset}`,
+      requests,
+      duration_ms: 1400 + (offset % 5) * 120,
+      bytes_in: requests * 1200,
+      bytes_out: requests * 3600,
+      tokens_in: inputTokens,
+      tokens_out: outputTokens,
+      tokens_total: tokensTotal,
+      result: offset % 9 === 0 ? 'error' : 'ok',
+      error_code: offset % 9 === 0 ? 'UPSTREAM_429' : undefined,
+      request_details: {
+        provider: 'openai',
+        resolved_model: 'gpt-4.1',
+        error_class: offset % 9 === 0 ? 'provider_retryable' : undefined,
+        fallback_hops: 0,
+        estimated_cost: Number((tokensTotal / 1_000_000 * 3.2).toFixed(4)),
+        missing_price: false,
+      },
+    });
+  }
+
+  return facts;
+}
+
 function requestUsageFactsStore(): UsageFactRecord[] {
   if (!globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__) {
-    globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__ = [];
+    globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__ = buildSeededRequestUsageFacts();
   }
   return globalThis.__MBOS_MSW_REQUEST_USAGE_FACTS__;
 }

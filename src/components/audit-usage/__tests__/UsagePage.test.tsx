@@ -1,10 +1,11 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { UsagePage } from '../UsagePage';
 import { UsageView } from '../UsageView';
 
 const invalidateQueries = vi.fn();
+const useUsageTimeseriesMock = vi.fn();
+const useLimitsSummaryMock = vi.fn();
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, params?: Record<string, string | number>) =>
@@ -24,83 +25,8 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({
-  useUsageRecords: () => ({
-    data: {
-      items: [
-        {
-          id: 'usage_1',
-          time_bucket: '2026-02-28 15:00',
-          workspace_id: 'ws_1',
-          project_id: 'proj_1',
-          resource_type: 'endpoint',
-          resource_id: 'ep_1',
-          end_user_id: 'user_001',
-          requests: 2,
-          duration_p95_ms: 1000,
-          bytes_in: 10,
-          bytes_out: 20,
-          tokens: 300,
-        },
-      ],
-      total: 1,
-      page: 1,
-      page_size: 25,
-      has_more: false,
-    },
-    isLoading: false,
-    error: null,
-  }),
-  useLimitsSummary: () => ({
-    data: {
-      endpoints: [
-        {
-          endpoint_id: 'ep_1',
-          endpoint_name: '',
-          limits: [
-            {
-              kind: 'rate_limit',
-              window: 'minute',
-              metric: 'requests',
-              policy_key: 'endpoint.requests_per_minute',
-              used: 40,
-              max: 100,
-              remaining: 60,
-              usage_pct: 40,
-              reset_at: '2026-03-08T00:00:00.000Z',
-            },
-            {
-              kind: 'spending_limit',
-              window: 'day',
-              metric: 'usd',
-              policy_key: 'endpoint.spending_usd_per_day',
-              used: 12,
-              max: 50,
-              remaining: 38,
-              usage_pct: 24,
-              reset_at: '2026-03-08T00:00:00.000Z',
-            },
-          ],
-        },
-        {
-          endpoint_id: 'ep_2',
-          endpoint_name: 'Endpoint 2',
-          limits: [
-            {
-              kind: 'rate_limit',
-              window: 'day',
-              metric: 'requests',
-              policy_key: 'endpoint.requests_per_day',
-              used: 10,
-              max: 20,
-              remaining: 10,
-              usage_pct: 50,
-              reset_at: '2026-03-08T00:00:00.000Z',
-            },
-          ],
-        },
-      ],
-    },
-  }),
+  useUsageTimeseries: (...args: unknown[]) => useUsageTimeseriesMock(...args),
+  useLimitsSummary: (...args: unknown[]) => useLimitsSummaryMock(...args),
 }));
 
 vi.mock('@/lib/endpoints/use-endpoints-data', () => ({
@@ -123,115 +49,121 @@ vi.mock('@/components/ui/toast', () => ({
 describe('UsagePage', () => {
   beforeEach(() => {
     invalidateQueries.mockClear();
+    useUsageTimeseriesMock.mockReturnValue({
+      data: {
+        data_points: [
+          { time_bucket: '2026-03-01', requests: 2, errors: 0 },
+          { time_bucket: '2026-03-02', requests: 4, errors: 0 },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+    useLimitsSummaryMock.mockReturnValue({
+      data: {
+        endpoints: [
+          {
+            endpoint_id: 'ep_1',
+            endpoint_name: 'Endpoint 1',
+            limits: [
+              {
+                kind: 'rate_limit',
+                window: '5h',
+                metric: 'requests',
+                policy_key: 'endpoint.requests_per_5_hours',
+                used: 140,
+                max: 500,
+                remaining: 360,
+                usage_pct: 28,
+                reset_at: '2026-03-08T00:00:00.000Z',
+              },
+              {
+                kind: 'rate_limit',
+                window: 'day',
+                metric: 'requests',
+                policy_key: 'endpoint.requests_per_day',
+                used: 420,
+                max: 2000,
+                remaining: 1580,
+                usage_pct: 21,
+                reset_at: '2026-03-08T00:00:00.000Z',
+              },
+              {
+                kind: 'spending_limit',
+                window: '5h',
+                metric: 'usd',
+                policy_key: 'endpoint.spending_usd_per_5_hours',
+                used: 12.5,
+                max: 100,
+                remaining: 87.5,
+                usage_pct: 12.5,
+                reset_at: '2026-03-08T00:00:00.000Z',
+              },
+              {
+                kind: 'spending_limit',
+                window: 'day',
+                metric: 'usd',
+                policy_key: 'endpoint.spending_usd_per_day',
+                used: 34,
+                max: 400,
+                remaining: 366,
+                usage_pct: 8.5,
+                reset_at: '2026-03-08T00:00:00.000Z',
+              },
+            ],
+          },
+          {
+            endpoint_id: 'ep_2',
+            endpoint_name: 'Endpoint 2',
+            limits: [],
+          },
+        ],
+      },
+    });
   });
 
-  it('renders simplified my-usage view', () => {
+  it('requests rolling 30 day timeseries for the current end user', () => {
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    expect(useUsageTimeseriesMock).toHaveBeenCalled();
+    const [, , params] = useUsageTimeseriesMock.mock.calls.at(-1) as [string, string, {
+      start_time: string;
+      end_time: string;
+      granularity: string;
+      metric: string;
+      end_user_id: string;
+    }];
+    expect(params.granularity).toBe('day');
+    expect(params.metric).toBe('requests');
+    expect(params.end_user_id).toBe('user_001');
+  });
+
+  it('enables 15 second auto refresh for limits summary', () => {
+    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
+
+    const [, , options] = useLimitsSummaryMock.mock.calls.at(-1) as [string, string, { refetchInterval: number }];
+    expect(options.refetchInterval).toBe(15000);
+  });
+
+  it('renders compact 30 day usage view', () => {
     render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
 
     expect(screen.getByTestId('usage__my-scope-badge')).toBeInTheDocument();
-    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__open-audit')).not.toBeInTheDocument();
-    expect(screen.getByTestId('usage__endpoint-tabs')).toBeInTheDocument();
-    expect(screen.getAllByTestId('usage__endpoint-dimensions').length).toBeGreaterThan(0);
-    expect(screen.getAllByTestId('usage__progress-card').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('view.rate_limit_title').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('view.spending_limit_title').length).toBeGreaterThan(0);
-    expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();
+    expect(screen.getByTestId('usage__period-badge')).toHaveTextContent('view.last_30_days');
+    expect(screen.getAllByTestId('usage__progress-card')).toHaveLength(4);
+    expect(screen.getByText('view.cards.requests_5h')).toBeInTheDocument();
+    expect(screen.getByText('view.cards.spending_day')).toBeInTheDocument();
+    expect(screen.queryByTestId('usage__limit-mode-rate')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('usage__period-24')).not.toBeInTheDocument();
   });
 
-  it('does not expose export action in usage view', () => {
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    expect(screen.queryByTestId('usage__export-trigger')).not.toBeInTheDocument();
-  });
-
-  it('does not expose advanced view toggles in usage view', () => {
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__view-facts')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
-  });
-
-  it('keeps usage view when current user id is set', () => {
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__table')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage-facts__table')).not.toBeInTheDocument();
-  });
-
-  it('keeps usage view when default end user id is set', () => {
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" defaultEndUserId="user_002" />);
-
-    expect(screen.getByTestId('usage__view')).toBeInTheDocument();
-    expect(screen.queryByTestId('usage__filters')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('usage__view-mode')).not.toBeInTheDocument();
-  });
-
-  it('switches period between 48h and 24h', async () => {
-    const user = userEvent.setup();
-    render(<UsagePage workspaceId="ws_1" projectId="proj_1" currentUserId="user_001" />);
-
-    await user.click(screen.getByTestId('usage__period-24'));
-    expect(screen.getByTestId('usage__period-24')).toHaveAttribute('data-active', 'true');
-    expect(screen.getByTestId('usage__period-48')).toHaveAttribute('data-active', 'false');
-  });
-
-  it('shows selected endpoint dimensions without project aggregate', () => {
+  it('fills the trend chart to 30 daily bars', () => {
     render(
       <UsageView
-        records={[]}
-        periodHours={48}
-        endpointOptions={[
-          { id: 'ep_1', name: 'Endpoint 1' },
-          { id: 'ep_2', name: 'Endpoint 2' },
+        trendPoints={[
+          { time_bucket: '2026-03-01', requests: 2, errors: 0 },
+          { time_bucket: '2026-03-02', requests: 4, errors: 0 },
         ]}
-        selectedEndpointId="ep_2"
-        limitsOverview={{
-          endpoints: [
-            {
-              endpointId: 'ep_1',
-              endpointName: 'Endpoint 1',
-              limits: [],
-            },
-            {
-              endpointId: 'ep_2',
-              endpointName: 'Endpoint 2',
-              limits: [
-                {
-                  kind: 'rate_limit',
-                  window: 'day',
-                  metric: 'requests',
-                  policyKey: 'endpoint.requests_per_day',
-                  used: 10,
-                  max: 20,
-                  remaining: 10,
-                  usagePct: 50,
-                  resetAt: '2026-03-08T00:00:00.000Z',
-                },
-              ],
-            },
-          ],
-        }}
-      />,
-    );
-
-    expect(screen.getAllByTestId('usage__endpoint-dimensions').length).toBeGreaterThan(0);
-    expect(screen.getByTestId('usage__resource-tab-ep_2')).toBeInTheDocument();
-    expect(screen.getAllByTestId('usage__progress-card').length).toBe(1);
-    expect(screen.getAllByText('Endpoint 2').length).toBeGreaterThan(0);
-    expect(screen.queryByText('ep_2')).not.toBeInTheDocument();
-    expect(screen.getByText(/view\.limit_reset_at:/)).toBeInTheDocument();
-    expect(screen.getByText('50%')).toBeInTheDocument();
-    expect(screen.queryByText('view.project_max')).not.toBeInTheDocument();
-  });
-
-  it('hides resource tabs when only one endpoint is available', () => {
-    render(
-      <UsageView
-        records={[]}
-        periodHours={48}
         endpointOptions={[{ id: 'ep_1', name: 'Endpoint 1' }]}
         selectedEndpointId="ep_1"
         limitsOverview={{
@@ -242,13 +174,46 @@ describe('UsagePage', () => {
               limits: [
                 {
                   kind: 'rate_limit',
-                  window: 'minute',
+                  window: '5h',
                   metric: 'requests',
-                  policyKey: 'endpoint.requests_per_minute',
-                  used: 1,
+                  policyKey: 'endpoint.requests_per_5_hours',
+                  used: 2,
                   max: 10,
-                  remaining: 9,
-                  usagePct: 10,
+                  remaining: 8,
+                  usagePct: 20,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+                {
+                  kind: 'rate_limit',
+                  window: 'day',
+                  metric: 'requests',
+                  policyKey: 'endpoint.requests_per_day',
+                  used: 4,
+                  max: 20,
+                  remaining: 16,
+                  usagePct: 20,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+                {
+                  kind: 'spending_limit',
+                  window: '5h',
+                  metric: 'usd',
+                  policyKey: 'endpoint.spending_usd_per_5_hours',
+                  used: 1,
+                  max: 20,
+                  remaining: 19,
+                  usagePct: 5,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+                {
+                  kind: 'spending_limit',
+                  window: 'day',
+                  metric: 'usd',
+                  policyKey: 'endpoint.spending_usd_per_day',
+                  used: 2,
+                  max: 40,
+                  remaining: 38,
+                  usagePct: 5,
                   resetAt: '2026-03-08T00:00:00.000Z',
                 },
               ],
@@ -258,9 +223,50 @@ describe('UsagePage', () => {
       />,
     );
 
-    expect(screen.queryByTestId('usage__endpoint-tabs')).not.toBeInTheDocument();
-    expect(screen.getByText('Endpoint 1')).toBeInTheDocument();
-    expect(screen.getAllByTestId('usage__progress-card').length).toBe(1);
+    expect(screen.getAllByTestId('usage__trend-bar')).toHaveLength(30);
   });
 
+  it('shows not configured state when spending cards are missing', () => {
+    render(
+      <UsageView
+        trendPoints={[]}
+        endpointOptions={[{ id: 'ep_1', name: 'Endpoint 1' }]}
+        selectedEndpointId="ep_1"
+        limitsOverview={{
+          endpoints: [
+            {
+              endpointId: 'ep_1',
+              endpointName: 'Endpoint 1',
+              limits: [
+                {
+                  kind: 'rate_limit',
+                  window: '5h',
+                  metric: 'requests',
+                  policyKey: 'endpoint.requests_per_5_hours',
+                  used: 2,
+                  max: 10,
+                  remaining: 8,
+                  usagePct: 20,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+                {
+                  kind: 'rate_limit',
+                  window: 'day',
+                  metric: 'requests',
+                  policyKey: 'endpoint.requests_per_day',
+                  used: 4,
+                  max: 20,
+                  remaining: 16,
+                  usagePct: 20,
+                  resetAt: '2026-03-08T00:00:00.000Z',
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText('view.limit_not_configured').length).toBe(2);
+  });
 });

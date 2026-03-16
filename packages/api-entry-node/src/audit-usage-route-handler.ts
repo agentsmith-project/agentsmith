@@ -47,6 +47,7 @@ function requireTimeRange(
   requestUrl: URL,
   json: JsonResponder,
   res: http.ServerResponse,
+  maxRangeMs = 48 * 60 * 60 * 1000,
 ): { start: Date; end: Date } | true {
   const startRaw = requestUrl.searchParams.get('start_time');
   const endRaw = requestUrl.searchParams.get('end_time');
@@ -61,9 +62,13 @@ function requireTimeRange(
   if (end.getTime() < start.getTime()) {
     return badRequest(json, res, 'end_time must be >= start_time');
   }
-  const maxRangeMs = 48 * 60 * 60 * 1000;
   if (end.getTime() - start.getTime() > maxRangeMs) {
-    return badRequest(json, res, 'time_range_exceeds_48h');
+    const maxRangeLabel = maxRangeMs === 48 * 60 * 60 * 1000
+      ? '48h'
+      : maxRangeMs === 90 * 24 * 60 * 60 * 1000
+        ? '90d'
+        : `${Math.floor(maxRangeMs / (24 * 60 * 60 * 1000))}d`;
+    return badRequest(json, res, `time_range_exceeds_${maxRangeLabel}`);
   }
   return { start, end };
 }
@@ -164,7 +169,7 @@ export async function handleAuditUsageRoute({
   }
 
   if (route.kind === 'usageTimeseries' && method === 'GET') {
-    const range = requireTimeRange(requestUrl, json, res);
+    const range = requireTimeRange(requestUrl, json, res, 90 * 24 * 60 * 60 * 1000);
     if (range === true) return true;
     const granularityRaw = requestUrl.searchParams.get('granularity');
     const granularity = (
@@ -194,6 +199,8 @@ export async function handleAuditUsageRoute({
       granularity,
       metric,
       resourceType,
+      resourceId: requestUrl.searchParams.get('resource_id'),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
     });
     json(res, 200, payload);
     return true;

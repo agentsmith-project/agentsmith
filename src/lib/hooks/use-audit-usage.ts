@@ -93,8 +93,10 @@ export function useUsageTimeseries(
     granularity?: 'hour' | 'day' | 'week' | 'month';
     metric?: 'tokens' | 'requests' | 'cost' | 'bytes';
     resource_type?: 'endpoint' | 'source_library' | 'agent';
+    resource_id?: string;
+    end_user_id?: string;
   },
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
   const usageAPI = new UsageAPI(getApiClient());
   const enabled =
@@ -109,6 +111,7 @@ export function useUsageTimeseries(
     queryFn: () => usageAPI.getTimeseries(workspaceId, projectId, params),
     enabled,
     staleTime: 10000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -118,7 +121,7 @@ export function useUsageTimeseries(
 export function useLimitsSummary(
   workspaceId: string,
   projectId: string,
-  options?: { enabled?: boolean },
+  options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
   const usageAPI = new UsageAPI(getApiClient());
   const enabled = (options?.enabled ?? true) && !!workspaceId && !!projectId;
@@ -128,6 +131,7 @@ export function useLimitsSummary(
     queryFn: () => usageAPI.getLimitsSummary(workspaceId, projectId),
     enabled,
     staleTime: 30000,
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -162,4 +166,3 @@ export function useUsageOperationsSummary(
     staleTime: 10000,
   });
 }
-

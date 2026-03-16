@@ -1248,29 +1248,30 @@
     "scope_my_usage": "My Usage",
     "view": {
       "panel_title": "Usage Panel",
+      "endpoints_label": "endpoints",
       "limits_section_title": "Remaining Capacity",
       "trend_section_title": "Usage Trend",
-      "limit_mode_label": "Limit Metric",
-      "limit_mode_all": "All",
-      "limit_mode_rate": "Rate",
-      "limit_mode_spending": "Spending",
+      "last_30_days": "Last 30 Days",
+      "trend_last_30_days": "Rolling 30-day request volume",
+      "active_limits": "active limit windows",
       "limits_empty": "No endpoint limit data available.",
-      "rate_limit_title": "Rate Limit",
-      "spending_limit_title": "Spending Limit",
       "limit_reset_at": "Reset time: {value}",
-      "limit_group_empty": "No data in current response.",
+      "limit_not_configured": "No policy limit configured yet.",
+      "card_out_of": "of {value}",
+      "card_remaining": "{value} remaining",
+      "cards": {
+        "requests_5h": "5-hour requests",
+        "requests_day": "Daily requests",
+        "spending_5h": "5-hour spending",
+        "spending_day": "Daily spending"
+      },
       "window": {
         "minute": "Per Minute",
         "5h": "Per 5 Hours",
-        "day": "Per Day",
-        "current": "Current"
+        "day": "Per Day"
       },
       "no_data": "No usage trend data available.",
-      "no_data_hint": "This view will populate after requests are recorded for the selected time range.",
-      "period": {
-        "24h": "24H",
-        "48h": "48H"
-      }
+      "no_data_hint": "This view will populate after requests are recorded for the selected time range."
     },
     "detail": {
       "title": "Request Detail",

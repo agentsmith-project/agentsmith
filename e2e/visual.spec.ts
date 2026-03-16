@@ -504,12 +504,16 @@ test.describe('Visual - Overlays', () => {
     await expect(authedPage).toHaveScreenshot('dialog-edit-endpoint.png');
   });
 
-  test('usage - rate limit focus', async ({ authedPage }) => {
+  test('usage - endpoint switch', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('usage'));
-    await authedPage.getByTestId('usage__limit-mode-rate').click();
     await expect(authedPage.locator('[data-testid="usage__progress-card"]').first()).toBeVisible();
+    const endpointTabs = authedPage.locator('[data-testid^="usage__resource-tab-"]');
+    if (await endpointTabs.count() > 1) {
+      await endpointTabs.nth(1).click();
+      await expect(authedPage.getByTestId('usage__selected-endpoint')).toBeVisible();
+    }
     await authedPage.waitForTimeout(400);
-    await expect(authedPage).toHaveScreenshot('usage-rate-focus.png', { fullPage: true });
+    await expect(authedPage).toHaveScreenshot('usage-endpoint-switch.png', { fullPage: true });
   });
 
 });

@@ -110,26 +110,30 @@ function buildLastThirtyDayBuckets(points: UsageDataPoint[]): UsageDataPoint[] {
 
 function getProgressTone(remainingPct: number): {
   fillClassName: string;
+  trackClassName: string;
   ringClassName: string;
   badgeClassName: string;
 } {
-  if (remainingPct <= 20) {
+  if (remainingPct < 30) {
     return {
-      fillClassName: 'bg-[linear-gradient(90deg,var(--error)_0%,#f97066_100%)]',
+      fillClassName: 'bg-[linear-gradient(90deg,#ff6b6b_0%,#f87171_100%)]',
+      trackClassName: 'bg-[rgba(248,113,113,0.18)]',
       ringClassName: 'border-[color:rgb(var(--error-rgb,239_68_68)/0.35)]',
       badgeClassName: 'bg-[color:rgb(var(--error-rgb,239_68_68)/0.12)] text-[color:rgb(var(--error-rgb,239_68_68))]',
     };
   }
-  if (remainingPct <= 40) {
+  if (remainingPct < 60) {
     return {
-      fillClassName: 'bg-[linear-gradient(90deg,#f59e0b_0%,#fbbf24_100%)]',
+      fillClassName: 'bg-[linear-gradient(90deg,#f6c453_0%,#fbbf24_100%)]',
+      trackClassName: 'bg-[rgba(251,191,36,0.16)]',
       ringClassName: 'border-[rgba(245,158,11,0.28)]',
       badgeClassName: 'bg-[rgba(245,158,11,0.12)] text-[rgb(245,158,11)]',
     };
   }
   return {
-    fillClassName: 'bg-[linear-gradient(90deg,var(--success)_0%,#32d583_100%)]',
-    ringClassName: 'border-subtle',
+    fillClassName: 'bg-[linear-gradient(90deg,#22c55e_0%,#34d399_100%)]',
+    trackClassName: 'bg-[rgba(34,197,94,0.12)]',
+    ringClassName: 'border-[rgba(34,197,94,0.22)]',
     badgeClassName: 'bg-[color:rgb(var(--success-rgb,34_197_94)/0.12)] text-[color:rgb(var(--success-rgb,34_197_94))]',
   };
 }
@@ -258,7 +262,7 @@ export function UsageView({
                       {Math.round(remainingPct)}%
                     </div>
                   </div>
-                  <div className="mt-4 h-2.5 rounded-full bg-surface-high">
+                  <div className={`mt-4 h-2.5 rounded-full ${tone.trackClassName}`}>
                     <div
                       className={`h-2.5 rounded-full ${tone.fillClassName}`}
                       style={{ width: `${remainingPct}%` }}

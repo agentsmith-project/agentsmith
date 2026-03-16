@@ -46,7 +46,7 @@
     "test:smoke:real:notebook-mainline": "bash scripts/system-notebook-real-smoke-gate.sh",
     "test:files:real:smoke": "bash scripts/file-library-real-smoke.sh",
     "test:files:real:sync": "bash scripts/file-library-mount-sync-smoke.sh",
-    "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'files|dialog-files-mount-access' && npm run test:files:real:smoke && npm run test:files:real:sync",
+    "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'Visual - Project Pages › files$|files - create folder dialog|files - mount access dialog|files - create library dialog|files - delete non-empty library dialog' && npm run test:files:real:smoke && npm run test:files:real:sync",
     "test:visual:real:review": "bash scripts/release-real-visual-review.sh",
     "test:release:real:full": "bash scripts/release-real-full-gate.sh",
     "test:e2e:ui": "playwright test --ui",

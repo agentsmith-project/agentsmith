@@ -435,7 +435,10 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByTestId('files__search').fill('README');
     const fileRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
     await expect(fileRow).toBeVisible({ timeout: 10_000 });
-    await fileRow.getByRole('button').click();
+    const rowButton = fileRow.locator('button').first();
+    await expect(rowButton).toBeVisible({ timeout: 10_000 });
+    await rowButton.click({ force: true });
+    await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible();
     await authedPage.getByTestId('files__rename').click();
     await expect(authedPage.getByTestId('files__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
@@ -451,7 +454,9 @@ test.describe('Visual - Overlays', () => {
     await authedPage.getByTestId('files__search').fill('README');
     const fileRow = authedPage.getByTestId('files__object-row').filter({ hasText: 'README.txt' }).first();
     await expect(fileRow).toBeVisible({ timeout: 10_000 });
-    await fileRow.getByRole('button').click();
+    const rowButton = fileRow.locator('button').first();
+    await expect(rowButton).toBeVisible({ timeout: 10_000 });
+    await rowButton.click({ force: true });
     await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible();
     await expect(authedPage.getByTestId('files__details-panel')).toBeVisible();
     await authedPage.waitForTimeout(400);

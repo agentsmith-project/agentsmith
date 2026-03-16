@@ -8,7 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 PORT_WEB="${PORT_WEB:-3001}"
 BASE_URL="http://127.0.0.1:${PORT_WEB}"
 HEALTH_URL="${BASE_URL}/zh-CN/login"
-WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview'
+WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default/projects/proj_001/files'
 
 PID_FILE="/tmp/agentsmith_mock_lane_web.pid"
 LOG_FILE="/tmp/agentsmith_mock_lane_web.log"

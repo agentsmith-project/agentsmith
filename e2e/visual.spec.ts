@@ -62,6 +62,14 @@ async function stableNavigate(page: Page, path: string) {
   await page.waitForTimeout(500); // Let animations finish
 }
 
+async function dismissFilesOverlayIfPresent(page: Page) {
+  const mountDialog = page.getByTestId('files__dialog__library-mount-access');
+  if (await mountDialog.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape').catch(() => {});
+    await expect(mountDialog).toHaveCount(0, { timeout: 5_000 });
+  }
+}
+
 async function loginAsSystemAdmin(page: Page) {
   await stableNavigate(page, '/en-US/system/login');
   await page.getByTestId('system-login__username').fill('mbos-admin');
@@ -428,6 +436,7 @@ test.describe('Visual - Overlays', () => {
 
   test('files - rename dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await dismissFilesOverlayIfPresent(authedPage);
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
     await authedPage.waitForTimeout(1500);
@@ -437,9 +446,16 @@ test.describe('Visual - Overlays', () => {
     await expect(fileRow).toBeVisible({ timeout: 10_000 });
     const rowButton = fileRow.locator('button').first();
     await expect(rowButton).toBeVisible({ timeout: 10_000 });
-    await rowButton.click({ force: true });
+    await rowButton.evaluate((node) => {
+      (node as HTMLButtonElement).click();
+    });
     await expect(authedPage.getByTestId('files__selection-summary')).toBeVisible();
-    await authedPage.getByTestId('files__rename').click();
+    await expect(authedPage.getByTestId('files__selection-summary')).toContainText('1');
+    const renameButton = authedPage.getByTestId('files__rename');
+    await expect(renameButton).toBeEnabled();
+    await renameButton.evaluate((node) => {
+      (node as HTMLButtonElement).click();
+    });
     await expect(authedPage.getByTestId('files__dialog__move')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('dialog-files-rename.png');
@@ -447,6 +463,7 @@ test.describe('Visual - Overlays', () => {
 
   test('files - selection with details panel', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await dismissFilesOverlayIfPresent(authedPage);
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
     await authedPage.waitForTimeout(1500);
@@ -465,6 +482,7 @@ test.describe('Visual - Overlays', () => {
 
   test('files - mount access dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await dismissFilesOverlayIfPresent(authedPage);
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
     await authedPage.waitForTimeout(1500);
@@ -476,6 +494,7 @@ test.describe('Visual - Overlays', () => {
 
   test('files - create library dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await dismissFilesOverlayIfPresent(authedPage);
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await authedPage.waitForTimeout(1200);
     await authedPage.getByTestId('files__library-create').click();
@@ -486,6 +505,7 @@ test.describe('Visual - Overlays', () => {
 
   test('files - delete non-empty library dialog', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('files'));
+    await dismissFilesOverlayIfPresent(authedPage);
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await authedPage.waitForTimeout(1200);
     await authedPage

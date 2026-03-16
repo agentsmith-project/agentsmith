@@ -53,31 +53,6 @@ export function resolveProjectPermissions(ownerId: string, actorId: string): rea
   return OPERATOR_PROJECT_PERMISSIONS;
 }
 
-export function readProjectAdminIds(governanceJson: unknown): string[] {
-  if (typeof governanceJson !== 'object' || governanceJson === null) return [];
-  const rawAdmins = (governanceJson as Record<string, unknown>).project_admins;
-  if (!Array.isArray(rawAdmins)) return [];
-
-  const ids: string[] = [];
-  for (const item of rawAdmins) {
-    if (typeof item === 'string' && item.trim().length > 0) {
-      ids.push(item.trim());
-      continue;
-    }
-    if (typeof item === 'object' && item !== null) {
-      const maybeId = (item as Record<string, unknown>).id;
-      if (typeof maybeId === 'string' && maybeId.trim().length > 0) {
-        ids.push(maybeId.trim());
-      }
-    }
-  }
-  return Array.from(new Set(ids));
-}
-
-export function isProjectAdmin(governanceJson: unknown, actorId: string): boolean {
-  return readProjectAdminIds(governanceJson).includes(actorId);
-}
-
 function identifierMatches(actorId: string, actorEmail: string | undefined, identifier: string | undefined): boolean {
   if (!identifier) return false;
   const normalized = identifier.trim().toLowerCase();

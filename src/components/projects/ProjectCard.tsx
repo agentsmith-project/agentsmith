@@ -33,7 +33,10 @@ export function ProjectCard({
     'project:lifecycle:update',
   ]);
   const canRequestJoin =
-    !project.role && project.join_policy === 'approval_required' && project.status === 'active' && !!onJoinRequest;
+    !(Array.isArray(project.permissions) && project.permissions.length > 0)
+    && project.join_policy === 'approval_required'
+    && project.status === 'active'
+    && !!onJoinRequest;
   return (
     <div
       onClick={onClick}

@@ -6,6 +6,7 @@
 
 import type { ProjectMembership } from '@/lib/api/types';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface Member {
   id: string;
@@ -75,7 +76,13 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
   {
     project_id: 'proj_001',
     user_id: 'user_001',
-    role: 'owner',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+      name: 'Project owner',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+      built_in: true,
+      system_key: 'owner',
+    }],
     permissions: [...GROUP_TEMPLATES.owner],
     status: 'active',
     joined_at: '2026-01-15T10:00:00Z',
@@ -83,7 +90,13 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
   {
     project_id: 'proj_001',
     user_id: 'user_002',
-    role: 'admin',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+      name: 'Project admins',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
+      built_in: true,
+      system_key: 'admins',
+    }],
     permissions: [...GROUP_TEMPLATES.admin],
     status: 'active',
     joined_at: '2026-01-16T10:00:00Z',
@@ -91,15 +104,27 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
   {
     project_id: 'proj_001',
     user_id: 'user_003',
-    role: 'developer',
-    permissions: [...GROUP_TEMPLATES.developer],
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.members,
+      name: 'Project members',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+      built_in: true,
+      system_key: 'members',
+    }],
+    permissions: [...GROUP_TEMPLATES.user],
     status: 'active',
     joined_at: '2026-01-17T10:00:00Z',
   },
   {
     project_id: 'proj_001',
     user_id: 'user_004',
-    role: 'user',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.members,
+      name: 'Project members',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+      built_in: true,
+      system_key: 'members',
+    }],
     permissions: [...GROUP_TEMPLATES.user],
     status: 'active',
     joined_at: '2026-01-18T10:00:00Z',
@@ -107,7 +132,13 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
   {
     project_id: 'proj_001',
     user_id: 'user_005',
-    role: 'user',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.members,
+      name: 'Project members',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+      built_in: true,
+      system_key: 'members',
+    }],
     permissions: [...GROUP_TEMPLATES.user],
     status: 'removed',
     joined_at: '2026-01-10T10:00:00Z',
@@ -115,7 +146,13 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
   {
     project_id: 'proj_002',
     user_id: 'user_001',
-    role: 'owner',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+      name: 'Project owner',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+      built_in: true,
+      system_key: 'owner',
+    }],
     permissions: [...GROUP_TEMPLATES.owner],
     status: 'active',
     joined_at: '2026-01-10T09:00:00Z',
@@ -123,7 +160,13 @@ export const memberProjectMembershipFixtures: ProjectMembership[] = [
   {
     project_id: 'proj_002',
     user_id: 'user_003',
-    role: 'admin',
+    groups: [{
+      id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+      name: 'Project admins',
+      permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
+      built_in: true,
+      system_key: 'admins',
+    }],
     permissions: [...GROUP_TEMPLATES.admin],
     status: 'active',
     joined_at: '2026-01-12T09:00:00Z',

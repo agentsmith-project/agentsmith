@@ -28,7 +28,10 @@ const members = Array.from({ length: 25 }).map((_, index) => ({
   id: `member_${index + 1}`,
   name: `Member ${index + 1}`,
   email: `member${index + 1}@example.com`,
-  role: 'user' as const,
+  groups:
+    index === 0
+      ? [{ id: 'grp_project_admins', name: 'Project Admins', permission_template_id: 'tpl_project_admin', built_in: true, system_key: 'admins' }]
+      : [{ id: 'grp_project_members', name: 'Project Members', permission_template_id: 'tpl_project_member', built_in: true, system_key: 'members' }],
   permissions:
     index === 0
       ? ['project:membership:update']

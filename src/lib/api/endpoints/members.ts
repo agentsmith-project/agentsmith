@@ -20,7 +20,6 @@ export interface Member {
   email: string;
   name: string;
   avatar?: string;
-  role?: 'owner' | 'admin' | 'developer' | 'user';
   groups?: MemberGroupSummary[];
   permissions: string[]; // 平台层权限点
   status: 'active' | 'removed';
@@ -66,7 +65,6 @@ export interface JoinInviteActionResponse {
 export interface Membership {
   project_id: string;
   user_id: string;
-  role?: 'owner' | 'admin' | 'developer' | 'user';
   groups?: MemberGroupSummary[];
   permissions: string[];
   status: 'active' | 'pending' | 'suspended';

@@ -24,32 +24,6 @@ describe('WorkspaceAPI', () => {
     expect(mockGet).toHaveBeenCalledWith('/workspaces/ws_1/members');
   });
 
-  it('updates workspace member governance group', async () => {
-    const mockPatch = vi.fn().mockResolvedValue({
-      id: 'wm_1',
-      user_id: 'user_1',
-      governance_group: 'wheel',
-    });
-    const client: ApiClient = {
-      setToken: () => undefined,
-      getToken: () => null,
-      clearToken: () => undefined,
-      get: vi.fn(),
-      post: vi.fn(),
-      put: vi.fn(),
-      patch: mockPatch,
-      delete: vi.fn(),
-      connectSSE: () => Promise.resolve(new EventSource('http://localhost')),
-    };
-
-    const api = new WorkspaceAPI(client);
-    await api.updateMemberGovernanceGroup('ws_1', 'wm_1', 'wheel');
-
-    expect(mockPatch).toHaveBeenCalledWith('/workspaces/ws_1/members/wm_1/governance', {
-      governance_group: 'wheel',
-    });
-  });
-
   it('lists workspace project creators', async () => {
     const mockGet = vi.fn().mockResolvedValue({
       items: [{ id: 'user_1', user_id: 'user_1', name: 'User One', email: 'user1@example.com' }],

@@ -10,16 +10,30 @@ import {
 import type { ChangeHistoryEntry } from '@/lib/api/types';
 import { projects } from './projects';
 
-const members = p0.members.length ? p0.members : memberFixtures.map((m, i) => ({
-  ...m,
-  role: memberProjectMembershipFixtures[i]?.role ?? 'member',
-}));
+const members: Array<{
+  id: string;
+  email: string;
+  name: string;
+  avatar?: string;
+  status: 'active' | 'removed';
+  created_at: string;
+}> = p0.members.length
+  ? p0.members.map((member) => ({
+      id: member.id,
+      email: member.email,
+      name: member.name,
+      status: member.status === 'removed' ? 'removed' : 'active',
+      created_at: member.created_at,
+    }))
+  : memberFixtures.map((member) => ({ ...member }));
 
 type PermissionTemplate = {
   id: string;
   name: string;
   description?: string;
   permissions: string[];
+  built_in?: boolean;
+  editable?: boolean;
   is_default?: boolean;
   is_readonly?: boolean;
 };
@@ -77,7 +91,8 @@ function buildInitialBuiltInProjectGroupState(projectId: string): BuiltInProject
   );
   const owner = project?.owner_id ? [project.owner_id] : [];
   const admins = memberships
-    .filter((item) => item.user_id !== project?.owner_id && item.role === 'admin')
+    .filter((item) => item.user_id !== project?.owner_id)
+    .filter((item) => item.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
     .map((item) => item.user_id);
   const members = memberships.map((item) => item.user_id);
   return { owner, admins, members };
@@ -149,17 +164,35 @@ function syncMembershipPermissionsFromBuiltInGroups(projectId: string): void {
   for (const membership of memberProjectMembershipFixtures) {
     if (membership.project_id !== projectId) continue;
     if (ownerIds.has(membership.user_id)) {
-      membership.role = 'owner';
+      membership.groups = [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+        name: 'Project Owner',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+        built_in: true,
+        system_key: 'owner',
+      }];
       membership.permissions = [...GROUP_TEMPLATES.owner];
       continue;
     }
     if (adminIds.has(membership.user_id)) {
-      membership.role = 'admin';
+      membership.groups = [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+        name: 'Project Admins',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
+        built_in: true,
+        system_key: 'admins',
+      }];
       membership.permissions = [...GROUP_TEMPLATES.admin];
       continue;
     }
     if (memberIds.has(membership.user_id)) {
-      membership.role = 'user';
+      membership.groups = [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.members,
+        name: 'Project Members',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+        built_in: true,
+        system_key: 'members',
+      }];
       membership.permissions = [...GROUP_TEMPLATES.user];
     }
   }
@@ -248,13 +281,11 @@ export const memberHandlers = [
   http.post('/api/v1/workspaces/:ws/projects/:prj/members', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const email = typeof body.email === 'string' ? body.email : 'new@example.com';
-    const role = typeof body.role === 'string' ? body.role : 'member';
     const invited = {
       id: `u_${Date.now()}`,
       email,
       name: email.split('@')[0] ?? 'New User',
-      role,
-      status: 'active',
+      status: 'active' as const,
       created_at: new Date().toISOString(),
     };
     members.push(invited);
@@ -288,7 +319,6 @@ export const memberHandlers = [
         id: request.user_id,
         email: request.user_email,
         name: request.user_name,
-        role: 'user',
         status: 'active',
         created_at: new Date().toISOString(),
       });
@@ -297,13 +327,18 @@ export const memberHandlers = [
       user_id: request.user_id,
       email: request.user_email,
       name: request.user_name,
-      role: 'user',
     });
     if (!memberProjectMembershipFixtures.some((item) => item.project_id === projectId && item.user_id === request.user_id)) {
       memberProjectMembershipFixtures.push({
         project_id: projectId,
         user_id: request.user_id,
-        role: 'user',
+        groups: [{
+          id: PROJECT_BUILT_IN_GROUP_IDS.members,
+          name: 'Project Members',
+          permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+          built_in: true,
+          system_key: 'members',
+        }],
         permissions: [...GROUP_TEMPLATES.user],
         status: 'active',
         joined_at: request.reviewed_at,
@@ -368,7 +403,7 @@ export const memberHandlers = [
     const projectId = String(params.prj ?? '');
     const memberId = String(params.id ?? '');
     const body = (await request.json().catch(() => ({}))) as {
-      template?: keyof typeof GROUP_TEMPLATES | null;
+      template?: string | null;
       permissions?: string[];
       mode?: 'template' | 'custom';
     };
@@ -378,8 +413,14 @@ export const memberHandlers = [
     if (!membership) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
 
     let nextPermissions = membership.permissions;
-    if (body.mode === 'template' && body.template && GROUP_TEMPLATES[body.template]) {
-      nextPermissions = [...GROUP_TEMPLATES[body.template]];
+    if (body.mode === 'template' && typeof body.template === 'string') {
+      if (body.template === PROJECT_BUILT_IN_TEMPLATE_IDS.owner) {
+        nextPermissions = [...GROUP_TEMPLATES.owner];
+      } else if (body.template === PROJECT_BUILT_IN_TEMPLATE_IDS.admin) {
+        nextPermissions = [...GROUP_TEMPLATES.admin];
+      } else if (body.template === PROJECT_BUILT_IN_TEMPLATE_IDS.member) {
+        nextPermissions = [...GROUP_TEMPLATES.user];
+      }
     } else if (Array.isArray(body.permissions)) {
       nextPermissions = body.permissions;
     }
@@ -513,34 +554,32 @@ export const memberHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/permission-templates', () => {
     const defaults: PermissionTemplate[] = [
       {
-        id: 'owner',
-        name: 'Owner',
+        id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+        name: 'Project owner',
         description: 'Full access to all project resources',
         permissions: [...GROUP_TEMPLATES.owner],
+        built_in: true,
+        editable: false,
         is_default: true,
         is_readonly: true,
       },
       {
-        id: 'admin',
-        name: 'Admin',
+        id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
+        name: 'Project admins',
         description: 'Project admin permissions',
         permissions: [...GROUP_TEMPLATES.admin],
+        built_in: true,
+        editable: false,
         is_default: true,
         is_readonly: true,
       },
       {
-        id: 'developer',
-        name: 'Developer',
-        description: 'Development permissions',
-        permissions: [...GROUP_TEMPLATES.developer],
-        is_default: true,
-        is_readonly: true,
-      },
-      {
-        id: 'user',
-        name: 'User',
+        id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+        name: 'Project members',
         description: 'Basic permissions',
         permissions: [...GROUP_TEMPLATES.user],
+        built_in: true,
+        editable: false,
         is_default: true,
         is_readonly: true,
       },
@@ -671,8 +710,16 @@ export const memberHandlers = [
     if (!group) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
 
     const custom = customPermissionTemplates.find((item) => item.id === group.permission_template_id);
-    const roleKey = group.permission_template_id as keyof typeof GROUP_TEMPLATES;
-    const templatePermissions = custom?.permissions ?? (GROUP_TEMPLATES[roleKey] ? [...GROUP_TEMPLATES[roleKey]] : []);
+    let templatePermissions = custom?.permissions ?? [];
+    if (!custom) {
+      if (group.permission_template_id === PROJECT_BUILT_IN_TEMPLATE_IDS.owner) {
+        templatePermissions = [...GROUP_TEMPLATES.owner];
+      } else if (group.permission_template_id === PROJECT_BUILT_IN_TEMPLATE_IDS.admin) {
+        templatePermissions = [...GROUP_TEMPLATES.admin];
+      } else if (group.permission_template_id === PROJECT_BUILT_IN_TEMPLATE_IDS.member) {
+        templatePermissions = [...GROUP_TEMPLATES.user];
+      }
+    }
 
     const body = (await request.json().catch(() => ({}))) as { member_ids?: string[] };
     const targetMemberIds =

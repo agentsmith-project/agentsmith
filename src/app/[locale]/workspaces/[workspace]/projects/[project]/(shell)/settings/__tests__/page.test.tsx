@@ -23,7 +23,8 @@ const STABLE_PROJECT = {
   visibility: 'private',
   join_policy: 'approval_required',
   execution_preferences_json: {},
-  governance_json: { project_admins: ['admin_1'] },
+  governance_json: {},
+  admin_member_ids: ['admin_1'],
   limits_json: {},
   owner_id: 'owner_1',
   status: 'active',
@@ -43,6 +44,9 @@ const STABLE_PROJECT_GROUPS = [
   {
     id: PROJECT_BUILT_IN_GROUP_IDS.admins,
     name: 'Project Admins',
+    permission_template_id: 'tpl_project_admin',
+    built_in: true,
+    system_key: 'admins',
     member_ids: ['admin_1'],
   },
 ];

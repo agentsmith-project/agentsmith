@@ -17,7 +17,6 @@ import { z } from 'zod';
  *
  * Validates that:
  * - All Project fields are present and valid
- * - role is one of: owner, admin, developer, user (optional)
  * - permissions is an array of strings (optional)
  */
 export const ProjectWithMembershipSchema = z.object({
@@ -33,11 +32,11 @@ export const ProjectWithMembershipSchema = z.object({
   governance_json: z.record(z.string(), z.unknown()).optional(),
   execution_preferences_json: z.record(z.string(), z.unknown()).optional(),
   limits_json: z.record(z.string(), z.unknown()).optional(),
+  admin_member_ids: z.array(z.string()).optional(),
   created_at: z.string(),
   updated_at: z.string(),
 
   // Optional membership fields
-  role: z.enum(['owner', 'admin', 'developer', 'user']).optional(),
   permissions: z.array(z.string()).optional(),
   groups: z.array(z.object({
     id: z.string(),

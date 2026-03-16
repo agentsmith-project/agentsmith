@@ -4,6 +4,7 @@ import { workspaceFixtures } from '../fixtures/workspaces';
 import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { CURRENT_USER_ID } from '../fixtures/projects';
 import { AUTH_USER_FIXTURE } from './auth';
+import { WORKSPACE_BUILT_IN_GROUP_IDS, WORKSPACE_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 const workspaceItems = (() => {
   const fromP0 = p0.workspaces ?? [];
@@ -15,12 +16,9 @@ const workspaceItems = (() => {
 })();
 
 const workspaceMembers = (() => {
-  const getWorkspacePermissionsForRole = (role: 'owner' | 'admin' | 'developer' | 'user') => {
-    if (role === 'owner' || role === 'admin') {
+  const getWorkspacePermissionsForGroup = (groupId: string) => {
+    if (groupId === WORKSPACE_BUILT_IN_GROUP_IDS.owner || groupId === WORKSPACE_BUILT_IN_GROUP_IDS.projectCreators) {
       return [...PLATFORM_PERMISSIONS.WORKSPACE];
-    }
-    if (role === 'developer') {
-      return ['workspace:read'];
     }
     return ['workspace:read'];
   };
@@ -28,24 +26,27 @@ const workspaceMembers = (() => {
   const fromP0 = (p0.workspace_members ?? []).map((member) => {
     const memberRecord = member as Record<string, unknown>;
     const userId = String(member.id ?? '');
-    const role = member.role === 'owner' || member.role === 'admin' || member.role === 'developer'
-      ? member.role
-      : 'user';
-    const governanceGroup = memberRecord['governance_group'];
     const explicitPermissions = memberRecord['permissions'];
+    const groups = Array.isArray(memberRecord['groups'])
+      ? memberRecord['groups']
+      : [{
+          id: userId === CURRENT_USER_ID ? WORKSPACE_BUILT_IN_GROUP_IDS.owner : WORKSPACE_BUILT_IN_GROUP_IDS.members,
+          name: userId === CURRENT_USER_ID ? 'Workspace owner' : 'Workspace members',
+          permission_template_id: userId === CURRENT_USER_ID
+            ? WORKSPACE_BUILT_IN_TEMPLATE_IDS.owner
+            : WORKSPACE_BUILT_IN_TEMPLATE_IDS.member,
+          built_in: true,
+          system_key: userId === CURRENT_USER_ID ? 'owner' : 'members',
+        }];
     return {
       id: `wm_${userId}`,
       user_id: userId,
       name: member.name ?? member.email ?? userId,
       email: member.email ?? `${userId}@example.com`,
-      role,
-      governance_group:
-        governanceGroup === 'wheel' || governanceGroup === 'user'
-          ? governanceGroup
-          : role === 'owner' || role === 'admin'
-            ? 'wheel'
-            : 'user',
-      permissions: Array.isArray(explicitPermissions) ? explicitPermissions : getWorkspacePermissionsForRole(role),
+      groups,
+      permissions: Array.isArray(explicitPermissions)
+        ? explicitPermissions
+        : getWorkspacePermissionsForGroup((groups[0] as { id: string }).id),
       status: 'active' as const,
       joined_at: '2026-01-01T00:00:00Z',
     };
@@ -57,8 +58,13 @@ const workspaceMembers = (() => {
       user_id: CURRENT_USER_ID,
       name: AUTH_USER_FIXTURE.name,
       email: AUTH_USER_FIXTURE.email,
-      role: 'owner',
-      governance_group: 'wheel',
+      groups: [{
+        id: WORKSPACE_BUILT_IN_GROUP_IDS.owner,
+        name: 'Workspace owner',
+        permission_template_id: WORKSPACE_BUILT_IN_TEMPLATE_IDS.owner,
+        built_in: true,
+        system_key: 'owner',
+      }],
       permissions: [...PLATFORM_PERMISSIONS.WORKSPACE],
       status: 'active' as const,
       joined_at: '2026-01-01T00:00:00Z',
@@ -99,24 +105,24 @@ export function ensureWorkspaceMember(member: {
   user_id: string;
   email: string;
   name: string;
-  role?: 'owner' | 'admin' | 'developer' | 'user';
 }) {
   if (workspaceMembers.some((item) => item.user_id === member.user_id || item.email === member.email)) {
     return;
   }
 
-  const role = member.role ?? 'user';
   workspaceMembers.push({
     id: `wm_${member.user_id}`,
     user_id: member.user_id,
     name: member.name,
     email: member.email,
-    role,
-    governance_group: role === 'owner' || role === 'admin' ? 'wheel' : 'user',
-    permissions:
-      role === 'owner' || role === 'admin'
-        ? [...PLATFORM_PERMISSIONS.WORKSPACE]
-        : ['workspace:read'],
+    groups: [{
+      id: WORKSPACE_BUILT_IN_GROUP_IDS.members,
+      name: 'Workspace members',
+      permission_template_id: WORKSPACE_BUILT_IN_TEMPLATE_IDS.member,
+      built_in: true,
+      system_key: 'members',
+    }],
+    permissions: ['workspace:read'],
     status: 'active',
     joined_at: new Date().toISOString(),
   });
@@ -286,18 +292,5 @@ export const workspaceHandlers = [
         })),
     );
     return HttpResponse.json({ items: workspaceProjectCreators, total: workspaceProjectCreators.length });
-  }),
-  http.patch('/api/v1/workspaces/:ws/members/:memberId/governance', async ({ params, request }) => {
-    const memberId = String(params.memberId ?? '');
-    const body = (await request.json().catch(() => ({}))) as { governance_group?: 'wheel' | 'user' };
-    const target = workspaceMembers.find((member) => member.id === memberId || member.user_id === memberId);
-    if (!target) {
-      return HttpResponse.json({ error: 'workspace_member_not_found' }, { status: 404 });
-    }
-    if (body.governance_group !== 'wheel' && body.governance_group !== 'user') {
-      return HttpResponse.json({ error: 'invalid_governance_group' }, { status: 400 });
-    }
-    target.governance_group = body.governance_group;
-    return HttpResponse.json(target);
   }),
 ];

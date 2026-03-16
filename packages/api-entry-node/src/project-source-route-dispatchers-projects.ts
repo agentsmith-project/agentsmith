@@ -5,7 +5,6 @@ import {
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import {
   resolveVisibleProjectPermissionsForActor,
-  resolveVisibleProjectRoleForActor,
 } from './project-authz-engine.js';
 import type { ProjectSourceRouteContext } from './project-source-route-types.js';
 import {
@@ -15,7 +14,18 @@ import {
 import {
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
-import { setProjectAdminGroupMembers } from './project-groups-store.js';
+import {
+  getProjectGroupsState,
+  setProjectAdminGroupMembers,
+} from './project-groups-store.js';
+import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
+
+function readProjectAdminMemberIds(workspaceId: string, projectId: string, ownerId: string): string[] {
+  const adminGroup = getProjectGroupsState(workspaceId, projectId, ownerId).find(
+    (group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins,
+  );
+  return adminGroup ? [...adminGroup.member_ids] : [];
+}
 
 export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext): Promise<boolean> {
   const {
@@ -36,13 +46,7 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
     json(res, 200, {
       items: listed.items.map((item) => ({
         ...item,
-        role: resolveVisibleProjectRoleForActor({
-          workspaceId,
-          projectId: item.id,
-          projectOwnerId: item.owner_id,
-          projectGovernance: item.governance_json,
-          actorUserId: user.id,
-        }),
+        admin_member_ids: readProjectAdminMemberIds(workspaceId, item.id, item.owner_id),
         permissions: [
           ...resolveVisibleProjectPermissionsForActor({
             workspaceId,
@@ -113,13 +117,7 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
     });
     json(res, 200, {
       ...found,
-      role: resolveVisibleProjectRoleForActor({
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        projectOwnerId: found.owner_id,
-        projectGovernance: found.governance_json,
-        actorUserId: user.id,
-      }),
+      admin_member_ids: readProjectAdminMemberIds(route.workspaceId, route.projectId, found.owner_id),
       permissions: [
         ...resolveVisibleProjectPermissionsForActor({
           workspaceId: route.workspaceId,
@@ -156,13 +154,13 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
       typeof input.governance_json === 'object' &&
       input.governance_json !== null &&
       Object.prototype.hasOwnProperty.call(input.governance_json, 'project_admins');
-    const requestedProjectAdmins = touchesProjectAdmins
-      ? (((input.governance_json as Record<string, unknown>).project_admins) ?? [])
-        : [];
-    const normalizedRequestedProjectAdmins = Array.isArray(requestedProjectAdmins)
-      ? requestedProjectAdmins.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
-        .map((item) => item.trim())
-      : [];
+    if (touchesProjectAdmins) {
+      json(res, 422, {
+        error_code: 'VALIDATION_ERROR',
+        message: 'project_admins_field_removed_use_project_admin_group',
+      });
+      return true;
+    }
     const touchesProjectOwner =
       typeof input.owner_id === 'string' &&
       input.owner_id.trim().length > 0 &&
@@ -177,25 +175,6 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
         actorUserId: user.id,
       })
       : [];
-    if (touchesProjectAdmins && existingProject && !existingProjectPermissions.includes('project:admins:update')) {
-      await writeProjectAuditEvent(deps, {
-        workspaceId: route.workspaceId,
-        projectId: route.projectId,
-        actor: { type: 'user', id: user.id },
-        action: 'project.update',
-        result: 'error',
-        requestId,
-        resourceType: 'project',
-        resourceId: route.projectId,
-        errorCode: 'PERMISSION_DENIED',
-        errorMessage: 'project_owner_required',
-        metadata: {
-          updated_fields: Object.keys(input).sort(),
-        },
-      });
-      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
-      return true;
-    }
     if (
       touchesProjectOwner &&
       existingProject &&
@@ -238,31 +217,14 @@ export async function handleProjectCrudRoutes(context: ProjectSourceRouteContext
         },
       };
     }
-    if (touchesProjectAdmins) {
-      const requestedGovernance = typeof normalizedInput.governance_json === 'object' && normalizedInput.governance_json !== null
-        ? { ...(normalizedInput.governance_json as Record<string, unknown>) }
-        : {};
-      delete requestedGovernance.project_admins;
-      normalizedInput = {
-        ...normalizedInput,
-        governance_json: requestedGovernance,
-      };
-    }
     try {
       const updated = await deps.updateProjectUseCase.execute({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         input: normalizedInput,
       });
-      if (touchesProjectAdmins) {
-        setProjectAdminGroupMembers({
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          memberIds: normalizedRequestedProjectAdmins,
-        });
-      }
       if (touchesProjectOwner && existingProject) {
-        const retainedAdmins = new Set(normalizedRequestedProjectAdmins);
+        const retainedAdmins = new Set(readProjectAdminMemberIds(route.workspaceId, route.projectId, existingProject.owner_id));
         retainedAdmins.add(existingProject.owner_id);
         retainedAdmins.delete(updated.owner_id);
         setProjectAdminGroupMembers({

@@ -3,6 +3,7 @@ import p0 from '../fixtures/p0.json';
 import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
 import type { Project } from '@/lib/api/types';
 import { GROUP_TEMPLATES } from '@/lib/constants/permissions';
+import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
 
@@ -29,12 +30,22 @@ export const projectHandlers = [
           (m) => m.project_id === project.id && m.user_id === userId,
         ) ??
         projectMembershipFixtures.find(
-          (m) => m.project_id === project.id && m.role === 'owner',
+          (m) => m.project_id === project.id && m.user_id === project.owner_id,
         );
         return {
           ...project,
-          role: membership?.role ?? 'owner',
           permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
+          groups: membership?.groups ?? [{
+            id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+            name: 'Project owner',
+            permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+            built_in: true,
+            system_key: 'owner',
+          }],
+          admin_member_ids: projectMembershipFixtures
+            .filter((m) => m.project_id === project.id)
+            .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
+            .map((m) => m.user_id),
         };
       });
     return HttpResponse.json({ items });
@@ -49,15 +60,25 @@ export const projectHandlers = [
         (m) => m.project_id === projectId && m.user_id === userId,
       ) ??
       projectMembershipFixtures.find(
-        (m) => m.project_id === projectId && m.role === 'owner',
+        (m) => m.project_id === projectId && m.user_id === project?.owner_id,
       );
     if (!project) {
       return HttpResponse.json({ error: 'project_not_found' }, { status: 404 });
     }
     return HttpResponse.json({
       ...project,
-      role: membership?.role ?? 'owner',
       permissions: membership?.permissions ?? [...GROUP_TEMPLATES.owner],
+      groups: membership?.groups ?? [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+        name: 'Project owner',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+        built_in: true,
+        system_key: 'owner',
+      }],
+      admin_member_ids: projectMembershipFixtures
+        .filter((m) => m.project_id === projectId)
+        .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
+        .map((m) => m.user_id),
     });
   }),
   http.post('/api/v1/workspaces/:ws/projects', async ({ params, request }) => {
@@ -83,7 +104,13 @@ export const projectHandlers = [
     projectMembershipFixtures.push({
       project_id: created.id,
       user_id: userId,
-      role: 'owner',
+      groups: [{
+        id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+        name: 'Project owner',
+        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+        built_in: true,
+        system_key: 'owner',
+      }],
       permissions: [...GROUP_TEMPLATES.owner],
       status: 'active',
       joined_at: new Date().toISOString(),
@@ -104,32 +131,42 @@ export const projectHandlers = [
         ? body.governance_json as Record<string, unknown>
         : previous.governance_json ?? {};
     if (nextOwnerId !== previous.owner_id) {
-      const nextProjectAdmins = new Set<string>(
-        Array.isArray(governanceJson.project_admins)
-          ? governanceJson.project_admins.filter((value): value is string => typeof value === 'string')
-          : [],
-      );
-      nextProjectAdmins.add(previous.owner_id);
-      nextProjectAdmins.delete(nextOwnerId);
-      governanceJson.project_admins = [...nextProjectAdmins];
       const previousOwnerMembership = projectMembershipFixtures.find(
         (membership) => membership.project_id === previous.id && membership.user_id === previous.owner_id,
       );
       if (previousOwnerMembership) {
-        previousOwnerMembership.role = 'admin';
+        previousOwnerMembership.groups = [{
+          id: PROJECT_BUILT_IN_GROUP_IDS.admins,
+          name: 'Project admins',
+          permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.admin,
+          built_in: true,
+          system_key: 'admins',
+        }];
         previousOwnerMembership.permissions = [...GROUP_TEMPLATES.admin];
       }
       const nextOwnerMembership = projectMembershipFixtures.find(
         (membership) => membership.project_id === previous.id && membership.user_id === nextOwnerId,
       );
       if (nextOwnerMembership) {
-        nextOwnerMembership.role = 'owner';
+        nextOwnerMembership.groups = [{
+          id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+          name: 'Project owner',
+          permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+          built_in: true,
+          system_key: 'owner',
+        }];
         nextOwnerMembership.permissions = [...GROUP_TEMPLATES.owner];
       } else {
         projectMembershipFixtures.push({
           project_id: previous.id,
           user_id: nextOwnerId,
-          role: 'owner',
+          groups: [{
+            id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+            name: 'Project owner',
+            permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+            built_in: true,
+            system_key: 'owner',
+          }],
           permissions: [...GROUP_TEMPLATES.owner],
           status: 'active',
           joined_at: new Date().toISOString(),

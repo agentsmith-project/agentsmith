@@ -49,9 +49,9 @@ Clarify the boundary between authentication data and authorization enforcement t
 - They must not become an alternate runtime authorization system beside permission checks.
 
 3. Resource relationship is allowed as a permission source, not as permission truth.
-- Example: `owner_id` may be used to derive owner-only permissions.
-- Example: `governance_json.project_admins` may be used to derive project governance permissions.
-- But allow/deny still resolves through permissions, not through scattered role-name branching.
+- Example: `owner_id` may be used to sync the built-in owner group.
+- Example: built-in member groups such as `grp_project_admins` may contribute governance permissions through their bound templates.
+- But allow/deny still resolves through permissions, not through scattered role-name branching or legacy admin lists.
 
 ## Authn / Authz Boundary
 

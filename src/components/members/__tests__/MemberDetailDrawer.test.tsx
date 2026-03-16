@@ -38,7 +38,7 @@ describe('MemberDetailDrawer', () => {
     id: 'u_1',
     email: 'u1@example.com',
     name: 'User One',
-    role: 'admin' as const,
+    groups: [{ id: 'grp_project_admins', name: 'Project Admins', permission_template_id: 'tpl_project_admin', built_in: true, system_key: 'admins' }],
     permissions: [],
     status: 'active' as const,
     joined_at: '2026-02-01T00:00:00Z',
@@ -78,7 +78,7 @@ describe('MemberDetailDrawer', () => {
           membership: {
             project_id: 'proj_1',
             user_id: 'u_1',
-            role: 'admin',
+            groups: [{ id: 'grp_project_admins', name: 'Project Admins', permission_template_id: 'tpl_project_admin', built_in: true, system_key: 'admins' }],
             permissions: ['project:endpoint:use'],
             status: 'suspended',
             joined_at: '2026-02-01T00:00:00Z',

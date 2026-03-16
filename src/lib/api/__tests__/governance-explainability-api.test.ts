@@ -77,7 +77,15 @@ describe('GovernanceExplainabilityAPI', () => {
       .mockResolvedValueOnce({
         project_id: 'proj_1',
         user_id: 'user_1',
-        role: 'developer',
+        groups: [
+          {
+            id: 'grp_project_members',
+            name: 'Project Members',
+            permission_template_id: 'tpl_project_member',
+            built_in: true,
+            system_key: 'members',
+          },
+        ],
         permissions: ['project:endpoint:use'],
         status: 'suspended',
         joined_at: '2026-03-01T00:00:00.000Z',

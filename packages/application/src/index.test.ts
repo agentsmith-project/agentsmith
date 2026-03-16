@@ -579,7 +579,7 @@ describe('Project use cases', () => {
     expect(updated.updated_at).toBe('2026-02-08T00:00:00.000Z');
   });
 
-  it('updates project governance and execution config fields', async () => {
+  it('updates project metadata and execution config fields', async () => {
     const repo = new FakeProjectRepo([
       {
         id: 'proj_1',
@@ -602,14 +602,14 @@ describe('Project use cases', () => {
       projectId: 'proj_1',
       input: {
         owner_id: 'user_alt',
-        governance_json: { project_admins: ['user_alt'] },
+        governance_json: { governance_mode: 'groups_only' },
         execution_preferences_json: { notebook_endpoint_id: 'ep_notebook' },
         limits_json: { requests_per_day: 1000 },
       },
     });
 
     expect(updated.owner_id).toBe('user_alt');
-    expect(updated.governance_json).toEqual({ project_admins: ['user_alt'] });
+    expect(updated.governance_json).toEqual({ governance_mode: 'groups_only' });
     expect(updated.execution_preferences_json).toEqual({ notebook_endpoint_id: 'ep_notebook' });
     expect(updated.limits_json).toEqual({ requests_per_day: 1000 });
     expect(updated.updated_at).toBe('2026-02-08T00:00:00.000Z');

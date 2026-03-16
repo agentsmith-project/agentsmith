@@ -68,7 +68,7 @@ describe('project-source-route-handler utils', () => {
   it('reads project permission context and falls back to null on lookup error', async () => {
     const execute = vi.fn().mockResolvedValue({
       owner_id: 'owner-1',
-      governance_json: { project_admins: ['user-1'] },
+      governance_json: {},
     });
     const deps = {
       getProjectUseCase: { execute },

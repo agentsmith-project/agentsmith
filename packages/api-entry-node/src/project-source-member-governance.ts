@@ -418,11 +418,6 @@ export async function handleProjectMembershipGovernanceRoute(args: {
     json(res, 200, {
       project_id: projectId,
       user_id: userId,
-      role: projectOwnerId === userId
-        ? 'owner'
-        : effectiveGroups.some((group) => group.system_key === 'admins')
-          ? 'admin'
-          : 'developer',
       groups: effectiveGroups,
       permissions: isCurrentUser
         ? [

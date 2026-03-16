@@ -84,7 +84,6 @@ export async function handleProjectGovernanceRoutes(context: ProjectSourceRouteC
         id: membership.user_id,
         email: resolvedEmail,
         name: resolvedName,
-        role: groups.some((group) => group.system_key === 'admins') ? 'admin' : 'developer',
         groups,
         permissions: membership.user_id === user.id
           ? [
@@ -107,7 +106,6 @@ export async function handleProjectGovernanceRoutes(context: ProjectSourceRouteC
         id: ownerId,
         email: ownerId === user.id ? user.email : `${ownerId}@example.com`,
         name: ownerId === user.id ? user.name : ownerId,
-        role: 'owner',
         groups: getProjectGroupsState(workspaceId, projectId, ownerId)
           .filter((group) => group.member_ids.includes(ownerId))
           .map((group) => ({

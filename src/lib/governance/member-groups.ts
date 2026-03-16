@@ -78,6 +78,7 @@ export function isProjectBuiltInGroupId(groupId: string | undefined): boolean {
 
 export function getMemberAccessGroupLabel(args: {
   groups?: MemberGroupSummary[];
+  permissions?: readonly string[];
   fallback?: string;
 }): string {
   const groups = args.groups ?? [];

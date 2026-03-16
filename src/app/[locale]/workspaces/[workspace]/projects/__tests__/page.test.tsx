@@ -10,8 +10,9 @@ type MockProject = {
   visibility: string;
   join_policy?: 'approval_required' | 'open';
   owner_id: string;
-  role?: string;
+  groups?: Array<{ id: string; name: string; permission_template_id?: string; built_in?: boolean; system_key?: string }>;
   permissions: string[];
+  admin_member_ids?: string[];
   status: 'active';
   created_at: string;
   updated_at: string;
@@ -25,8 +26,9 @@ let mockProjectsData: MockProject[] = [
     visibility: 'private',
     join_policy: 'approval_required' as const,
     owner_id: 'owner_1',
-    role: 'admin',
+    groups: [{ id: 'grp_project_admins', name: 'Project Admins', permission_template_id: 'tpl_project_admin', built_in: true, system_key: 'admins' }],
     permissions: ['project:endpoint:use', 'project:governance:update'],
+    admin_member_ids: ['user_1'],
     status: 'active' as const,
     created_at: '2026-02-01T00:00:00Z',
     updated_at: '2026-02-01T00:00:00Z',
@@ -96,8 +98,7 @@ vi.mock('@/lib/hooks/use-workspaces', () => ({
         user_id: 'user_1',
         name: 'Test User',
         email: 'test@example.com',
-        role: 'admin',
-        governance_group: 'wheel',
+        groups: [{ id: 'grp_workspace_project_creators', name: 'Project Creators', permission_template_id: 'tpl_workspace_project_creator', built_in: true, system_key: 'project_creators' }],
         status: 'active',
         joined_at: '2026-02-01T00:00:00Z',
       },
@@ -146,8 +147,9 @@ describe('ProjectsPage route', () => {
         visibility: 'private',
         join_policy: 'approval_required' as const,
         owner_id: 'owner_1',
-        role: 'admin',
+        groups: [{ id: 'grp_project_admins', name: 'Project Admins', permission_template_id: 'tpl_project_admin', built_in: true, system_key: 'admins' }],
         permissions: ['project:endpoint:use', 'project:governance:update'],
+        admin_member_ids: ['user_1'],
         status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',
@@ -176,7 +178,7 @@ describe('ProjectsPage route', () => {
       expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
     });
     expect(screen.getByTestId('projects__back-to-workspace')).toHaveAttribute('href', '/en/workspaces/ws_1');
-    expect(screen.getByText('table.project_admin')).toBeInTheDocument();
+    expect(screen.getByTestId('projects__table__row')).toBeInTheDocument();
   });
 
   it('navigates to overview when clicking a project table row', async () => {
@@ -197,8 +199,9 @@ describe('ProjectsPage route', () => {
         visibility: 'private',
         join_policy: 'approval_required' as const,
         owner_id: 'owner_1',
-        role: 'admin',
+        groups: [{ id: 'grp_project_admins', name: 'Project Admins', permission_template_id: 'tpl_project_admin', built_in: true, system_key: 'admins' }],
         permissions: ['project:endpoint:use'],
+        admin_member_ids: ['user_1'],
         status: 'active' as const,
         created_at: '2026-02-01T00:00:00Z',
         updated_at: '2026-02-01T00:00:00Z',

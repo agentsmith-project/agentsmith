@@ -45,7 +45,6 @@ export interface WorkspaceMember {
   user_id: string;
   name: string;
   email: string;
-  role?: 'owner' | 'admin' | 'developer' | 'user';
   groups?: MemberGroupSummary[];
   permissions?: string[];
   status: 'active' | 'removed';
@@ -70,6 +69,7 @@ export interface Project {
   governance_json?: Record<string, unknown>;
   execution_preferences_json?: Record<string, unknown>;
   limits_json?: Record<string, unknown>;
+  admin_member_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -77,7 +77,6 @@ export interface Project {
 export interface ProjectMembership {
   project_id: string;
   user_id: string;
-  role?: 'owner' | 'admin' | 'developer' | 'user';
   groups?: MemberGroupSummary[];
   permissions: string[];
   status: 'active' | 'removed';

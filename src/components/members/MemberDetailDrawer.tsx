@@ -63,30 +63,13 @@ export interface MemberDetailDrawerProps {
   className?: string;
 }
 
-function formatGroupAlias(role: string): string {
-  switch (role) {
-    case 'owner':
-      return 'governance';
-    case 'admin':
-      return 'manager';
-    case 'developer':
-      return 'developer';
-    case 'user':
-      return 'member';
-    default:
-      return role;
-  }
-}
-
 function resolveMemberAccessLabel(member: Member): string {
-  return formatGroupAlias(
-    getMemberAccessGroupLabel({
-      groups: member.groups,
-      fallback: Array.isArray(member.permissions) && member.permissions.includes('project:governance:update')
-        ? 'manager'
-        : 'member',
-    }),
-  );
+  return getMemberAccessGroupLabel({
+    groups: member.groups,
+    fallback: Array.isArray(member.permissions) && member.permissions.includes('project:governance:update')
+      ? 'manager'
+      : 'member',
+  });
 }
 
 export function MemberDetailDrawer({

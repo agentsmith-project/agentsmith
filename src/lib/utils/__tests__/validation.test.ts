@@ -12,13 +12,13 @@ describe('validateProjectWithMembership', () => {
       visibility: 'public',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
-      role: 'owner',
+      groups: [{ id: 'grp_project_owner', name: 'Project Owner', permission_template_id: 'tpl_project_owner', built_in: true, system_key: 'owner' }],
       permissions: ['project:endpoint:use', 'project:governance:update'],
     };
 
     const result = validateProjectWithMembership(validProject);
     expect(result).not.toBeNull();
-    expect(result?.role).toBe('owner');
+    expect(result?.groups).toEqual([{ id: 'grp_project_owner', name: 'Project Owner', permission_template_id: 'tpl_project_owner', built_in: true, system_key: 'owner' }]);
     expect(result?.permissions).toEqual(['project:endpoint:use', 'project:governance:update']);
   });
 
@@ -32,8 +32,8 @@ describe('validateProjectWithMembership', () => {
     expect(result).toBeNull();
   });
 
-  it('should return null for invalid role', () => {
-    const projectWithInvalidRole = {
+  it('should return null for invalid groups payload', () => {
+    const projectWithInvalidGroups = {
       id: 'proj_001',
       workspace_id: 'ws_default',
       name: 'Test Project',
@@ -42,11 +42,11 @@ describe('validateProjectWithMembership', () => {
       visibility: 'public',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
-      role: 'invalid_role',
+      groups: 'invalid_group_payload',
       permissions: [],
     };
 
-    const result = validateProjectWithMembership(projectWithInvalidRole);
+    const result = validateProjectWithMembership(projectWithInvalidGroups);
     expect(result).toBeNull();
   });
 
@@ -60,7 +60,7 @@ describe('validateProjectWithMembership', () => {
       visibility: 'public',
       created_at: '2026-01-01T00:00:00Z',
       updated_at: '2026-01-01T00:00:00Z',
-      role: 'owner',
+      groups: [{ id: 'grp_project_owner', name: 'Project Owner', permission_template_id: 'tpl_project_owner', built_in: true, system_key: 'owner' }],
       permissions: 'not-an-array',
     };
 
@@ -68,7 +68,7 @@ describe('validateProjectWithMembership', () => {
     expect(result).toBeNull();
   });
 
-  it('should allow optional role and permissions', () => {
+  it('should allow optional groups and permissions', () => {
     const projectWithoutMembership = {
       id: 'proj_001',
       workspace_id: 'ws_default',
@@ -82,7 +82,7 @@ describe('validateProjectWithMembership', () => {
 
     const result = validateProjectWithMembership(projectWithoutMembership);
     expect(result).not.toBeNull();
-    expect(result?.role).toBeUndefined();
+    expect(result?.groups).toBeUndefined();
     expect(result?.permissions).toBeUndefined();
   });
 });

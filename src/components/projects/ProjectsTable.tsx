@@ -19,7 +19,8 @@ import {
 } from '@tanstack/react-table';
 
 import type { Project } from '@/lib/projects/project-view';
-import { buildProjectAdminSummary, formatProjectGroupAlias, hasAnyProjectPermission } from '@/lib/projects/project-view';
+import { buildProjectAdminSummary, hasAnyProjectPermission } from '@/lib/projects/project-view';
+import { getMemberAccessGroupLabel } from '@/lib/governance/member-groups';
 import { DataTable } from '@/components/ui/data-table';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
@@ -122,10 +123,17 @@ export function ProjectsTable({
           </div>
         ),
       }),
-      columnHelper.accessor('role', {
+      columnHelper.display({
+        id: 'access_group',
         header: t('table.role'),
-        cell: (info) => (
-          <span className="text-primary">{formatProjectGroupAlias(info.getValue())}</span>
+        cell: ({ row }) => (
+          <span className="text-primary">
+            {getMemberAccessGroupLabel({
+              groups: row.original.groups,
+              permissions: row.original.permissions,
+              fallback: row.original.permissions?.length ? 'member' : undefined,
+            })}
+          </span>
         ),
       }),
       columnHelper.accessor('status', {
@@ -147,7 +155,7 @@ export function ProjectsTable({
             'project:lifecycle:update',
           ]);
           const canRequestJoin =
-            !row.original.role &&
+            !(Array.isArray(row.original.permissions) && row.original.permissions.length > 0) &&
             row.original.join_policy === 'approval_required' &&
             row.original.status === 'active';
           const joinRequestPending = pendingJoinRequestIds.has(row.original.id);

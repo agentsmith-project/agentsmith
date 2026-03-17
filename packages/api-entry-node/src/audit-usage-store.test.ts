@@ -255,7 +255,7 @@ describe('audit-usage-store usage records summary', () => {
     expect(rows.items[0]?.action).toBe('request_delivery_failed');
   });
 
-  it('only returns endpoint limits that are explicitly configured in resource policy', async () => {
+  it('projects backend default endpoint limits into usage summary even without a saved policy', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_limits';
     const projectId = 'proj_limits';
@@ -290,7 +290,34 @@ describe('audit-usage-store usage records summary', () => {
     const usageOnly = summary.endpoints.find((item) => item.endpoint_id === 'ep_usage_only');
     const withPolicy = summary.endpoints.find((item) => item.endpoint_id === 'ep_with_policy');
 
-    expect(usageOnly?.limits ?? []).toEqual([]);
+    expect(usageOnly?.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'rate_limit',
+          window: '5h',
+          policy_key: 'endpoint.requests_per_5_hours',
+          max: 6000,
+        }),
+        expect.objectContaining({
+          kind: 'rate_limit',
+          window: 'day',
+          policy_key: 'endpoint.requests_per_day',
+          max: 20000,
+        }),
+        expect.objectContaining({
+          kind: 'spending_limit',
+          window: '5h',
+          policy_key: 'endpoint.spending_usd_per_5_hours',
+          max: 100,
+        }),
+        expect.objectContaining({
+          kind: 'spending_limit',
+          window: 'day',
+          policy_key: 'endpoint.spending_usd_per_day',
+          max: 400,
+        }),
+      ]),
+    );
     expect(withPolicy?.limits).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -305,8 +332,53 @@ describe('audit-usage-store usage records summary', () => {
           policy_key: 'endpoint.spending_usd_per_day',
           max: 400,
         }),
+        expect.objectContaining({
+          kind: 'rate_limit',
+          window: 'day',
+          policy_key: 'endpoint.requests_per_day',
+          max: 20000,
+        }),
+        expect.objectContaining({
+          kind: 'spending_limit',
+          window: '5h',
+          policy_key: 'endpoint.spending_usd_per_5_hours',
+          max: 100,
+        }),
       ]),
     );
+  });
+
+  it('includes project endpoints in limits summary even before they emit usage facts', async () => {
+    const store = new InMemoryJsonDocStore();
+
+    const summary = await getLimitsSummary(store, {
+      workspaceId: 'ws_limits_empty',
+      projectId: 'proj_limits_empty',
+      endpoints: [{ id: 'ep_configured_only', name: 'Configured Only Endpoint' }],
+    });
+
+    expect(summary.endpoints).toEqual([
+      expect.objectContaining({
+        endpoint_id: 'ep_configured_only',
+        endpoint_name: 'Configured Only Endpoint',
+        limits: expect.arrayContaining([
+          expect.objectContaining({
+            kind: 'rate_limit',
+            window: '5h',
+            policy_key: 'endpoint.requests_per_5_hours',
+            max: 6000,
+            used: 0,
+          }),
+          expect.objectContaining({
+            kind: 'spending_limit',
+            window: 'day',
+            policy_key: 'endpoint.spending_usd_per_day',
+            max: 400,
+            used: 0,
+          }),
+        ]),
+      }),
+    ]);
   });
 
   it('filters usage facts by request provider, model, and error class', async () => {

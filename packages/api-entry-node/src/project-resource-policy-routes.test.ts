@@ -52,7 +52,21 @@ describe('project-resource-policy-routes', () => {
     expect(json).toHaveBeenCalledWith(
       res,
       200,
-      getProjectResourcePolicyOrDefault('ws-1', 'proj-1', 'endpoint', 'ep-1'),
+      expect.objectContaining({
+        ...getProjectResourcePolicyOrDefault('ws-1', 'proj-1', 'endpoint', 'ep-1'),
+        rate_limits: expect.objectContaining({
+          rules: expect.arrayContaining([
+            expect.objectContaining({ key: 'endpoint.requests_per_5_hours', value: 6000 }),
+            expect.objectContaining({ key: 'endpoint.requests_per_day', value: 20000 }),
+          ]),
+        }),
+        spending_limits: expect.objectContaining({
+          rules: expect.arrayContaining([
+            expect.objectContaining({ key: 'endpoint.spending_usd_per_5_hours', value: 100 }),
+            expect.objectContaining({ key: 'endpoint.spending_usd_per_day', value: 400 }),
+          ]),
+        }),
+      }),
     );
   });
 

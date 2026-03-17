@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { Buffer } from 'node:buffer';
 import type { JsonDocStorePort } from '@mbos/ports';
-import { listProjectResourcePolicies } from './project-resource-policy-store.js';
+import { getProjectResourcePolicyOrDefault, listProjectResourcePolicies } from './project-resource-policy-store.js';
 export type {
   AuditEventRecord,
   AuditQuery,
@@ -38,6 +38,7 @@ import type {
 } from './audit-usage/types.js';
 import {
   auditEventsCollection,
+  classifyProviderErrorClass,
   estimateFactCost,
   extractDecisionIdFromMetadata,
   formatBucket,
@@ -439,7 +440,11 @@ export async function getUsageTimeseries(
 
 export async function getLimitsSummary(
   docStore: JsonDocStorePort,
-  query: { workspaceId: string; projectId: string },
+  query: {
+    workspaceId: string;
+    projectId: string;
+    endpoints?: Array<{ id: string; name?: string | null }>;
+  },
 ): Promise<LimitsOverview> {
   const now = new Date();
   const nowMs = now.getTime();
@@ -555,7 +560,9 @@ export async function getLimitsSummary(
   const endpointIds = new Set<string>([
     ...Array.from(byEndpoint.keys()),
     ...policies.map((policy) => policy.resource_id),
+    ...(query.endpoints ?? []).map((endpoint) => endpoint.id),
   ]);
+  const endpointNameMap = new Map((query.endpoints ?? []).map((endpoint) => [endpoint.id, endpoint.name ?? endpoint.id]));
 
   const endpoints: EndpointLimitSummary[] = [];
   for (const endpointId of endpointIds) {
@@ -568,7 +575,12 @@ export async function getLimitsSummary(
       usd5h: 0,
       usdDay: 0,
     };
-    const policy = policies.find((entry) => entry.resource_id === endpointId) ?? null;
+    const policy = getProjectResourcePolicyOrDefault(
+      query.workspaceId,
+      query.projectId,
+      'endpoint',
+      endpointId,
+    );
     const rateRules = readPolicyRules(policy?.rate_limits);
     const spendingRules = readPolicyRules(policy?.spending_limits);
     const limits: LimitRuleSnapshot[] = [];
@@ -647,7 +659,7 @@ export async function getLimitsSummary(
 
     endpoints.push({
       endpoint_id: endpointId,
-      endpoint_name: endpointId,
+      endpoint_name: endpointNameMap.get(endpointId) ?? endpointId,
       limits,
     });
   }

@@ -207,9 +207,14 @@ export async function handleAuditUsageRoute({
   }
 
   if (route.kind === 'limitsSummary' && method === 'GET') {
+    const endpoints = await deps.endpointResourceService.listEndpoints(route.workspaceId, route.projectId);
     const payload = await getLimitsSummary(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      endpoints: endpoints.map((endpoint) => ({
+        id: endpoint.id,
+        name: endpoint.name ?? endpoint.model ?? endpoint.id,
+      })),
     });
     json(res, 200, payload);
     return true;

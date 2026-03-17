@@ -37,6 +37,12 @@ Audience: 产品、研发、测试、发布负责人
 - artifact 旧的“保存到文件库”交互彻底删除
 - `artifacts` 面板只展示 task workspace 下 `.artifacts/` 目录内容
 - 多个 task 可以绑定同一个 `file library`
+- `file library` 根目录就是 task cwd
+- internal k8s 资源采用 lazy provisioning
+- external offline agent 后端拒绝创建 task
+- runner 只能拿当前 task 绑定的最小 workspace access
+- `workspace_file_library_id` 创建后不可变
+- `internal-k8s` 的 `workspace_path` 固定为 `/workspace`
 
 ## 3. 预期交付成果
 
@@ -54,6 +60,7 @@ Audience: 产品、研发、测试、发布负责人
 - 没有 file library 时不能创建 task
 - external agent 未连接时不能创建 task
 - internal agent 可创建 task，即使 pod 尚未存在
+- task 创建后不可修改 workspace file library
 
 ### D2. Task 详情可见工作空间绑定信息
 
@@ -89,12 +96,19 @@ task 持久化新增：
 
 后端需向 runner 提供 task 级 workspace 访问元信息。
 
+要求：
+
+- 只能按 `taskId` 获取
+- 不允许按任意 `file_library_id` 自由兑换
+- 只返回当前 task 已绑定 file library 的最小 mount 元信息
+
 ### D6. External runner 支持任务级 JuiceFS workspace
 
 external-bare / external-docker 都应支持：
 
 - 为每个 task 准备独立工作目录
 - 通过 JuiceFS 挂载该 task 选择的 file library
+- 该 file library 根目录就是 task cwd
 
 ### D7. Internal runner 支持 task 级预挂载 workspace
 
@@ -103,6 +117,7 @@ internal-k8s 应支持：
 - task 首条消息 lazy create pod
 - pod 使用该 task 对应 file library 的持久化工作目录
 - pod idle reclaim 后，后续消息可重新恢复
+- `workspace_path` 固定为 `/workspace`
 
 ### D8. Snapshot 机制删除
 
@@ -128,6 +143,7 @@ internal-k8s 应支持：
 - file library 对应 Secret/PV/PVC
 - sandbox workload 可挂载 PVC
 - internal workload 可关闭 snapshot
+- k8s 资源采用 lazy provisioning
 
 ## 4. 分阶段交付清单
 
@@ -141,6 +157,7 @@ internal-k8s 应支持：
 - notebook 在持久化工作目录执行
 - Web / local mount / notebook 三者可见同一份文件
 - artifact 展示收敛为 `.artifacts/` 目录模型
+- file library 根目录就是 task cwd
 
 ## Phase B：External Docker
 
@@ -151,6 +168,7 @@ internal-k8s 应支持：
 - 容器权限要求文档
 - docker 环境下 notebook 持久化工作目录可用
 - docker 环境下 `.artifacts/` 语义与 bare 一致
+- file library 根目录就是 task cwd
 
 ## Phase C：Internal K8s
 
@@ -161,6 +179,8 @@ internal-k8s 应支持：
 - internal agent lazy pod create
 - internal pod idle reclaim
 - reclaim 后后续消息恢复同一 file library 工作目录
+- k8s 资源采用 lazy provisioning
+- `workspace_path` 固定为 `/workspace`
 
 ## 5. 工程测试 Gate
 
@@ -187,6 +207,8 @@ npm run openapi:check-generated
 - internal workload lifecycle handling
 - artifact `.artifacts/` 映射与列表逻辑
 - 删除旧 save-to-library 路径后的回归
+- workspace access task-bound security validation
+- immutable workspace file library validation
 
 ## 5.3 Files / notebook / agent 真实联动 gate
 
@@ -199,6 +221,7 @@ npm run openapi:check-generated
 - notebook 产生文件后，Files 页面能看到
 - 本地 local mount 也能看到
 - `.artifacts/` 中的 deliverables 能在 notebook 面板和 Files 页面中一致出现
+- cwd 与 file library 根目录一致
 
 ### G2. External docker notebook workspace real gate
 
@@ -208,6 +231,7 @@ npm run openapi:check-generated
 - notebook 能在挂载目录中运行
 - 文件同步成立
 - `.artifacts/` 行为与 bare 一致
+- cwd 与 file library 根目录一致
 
 ### G3. Internal k8s notebook workspace real gate
 
@@ -217,6 +241,7 @@ npm run openapi:check-generated
 - 首条消息触发 lazy start
 - pod 内工作目录来自 file library
 - pod 回收后再次消息可恢复
+- k8s 资源按需创建并可复用
 
 ## 5.4 Files 双向同步 gate
 

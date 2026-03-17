@@ -66,6 +66,12 @@ Audience: 产品、前端、后端、sandbox 平台
 - 通过 `AGENTS.md` / 最佳实践约束 agent 把 deliverables 放入 `.artifacts/`
 - internal 方案明确采用 **JuiceFS CSI Driver**
 - internal 路线的 snapshot / restore **完全删除，不留兼容**
+- `file library` 根目录就是 task cwd
+- internal k8s 所需的 Secret / PV / PVC 采用 lazy provisioning
+- external agent 离线时，后端拒绝创建 notebook task
+- runner 只能拿到当前 task 已绑定 file library 的最小 workspace access
+- task 一旦创建，`workspace_file_library_id` 不可变
+- `internal-k8s` 的 `workspace_path` 固定为 `/workspace`
 
 ## 3. 当前现状
 
@@ -222,6 +228,12 @@ external 统一使用：
 - `external-docker`:
   - `/workspace/ags-workspaces/<task-slug>`
 
+当前已锁定：
+
+- mountpoint 对应的就是该 task 绑定 file library 的根目录
+- 不再额外引入 task 子目录语义
+- 若多个 task 绑定同一个 file library，则共享同一份根目录真相
+
 ### 5.3 Internal 工作空间方案
 
 internal 不建议在 pod 内直接运行 `juicefs mount`。
@@ -235,6 +247,15 @@ internal 不建议在 pod 内直接运行 `juicefs mount`。
   - PVC
 - internal task pod 直接把对应 PVC 挂到 `/workspace`
 - pod 内 runner 只把 `/workspace` 当成 cwd
+
+当前已锁定：
+
+- internal 所需 Secret / PV / PVC 由 AgentSmith 控制面维护映射
+- 创建时机采用 lazy provisioning
+  - 在真正拉 pod 时再创建所需 k8s 资源
+- 一旦该 file library 的 k8s 资源已存在，后续 internal task 复用
+- `workspace_path` 固定为 `/workspace`
+- `/workspace` 直接对应所选 file library 的根目录
 
 原因：
 
@@ -333,6 +354,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - notebook task 创建必须选择 `file library`
 - external agent 若不在线，不允许创建 task
 - internal agent 允许创建 task，即使 pod 尚未启动
+- `workspace_file_library_id` 在 task 创建后不可修改
 
 ### 9.3 Artifact 语义收敛
 
@@ -354,7 +376,16 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - 中间过程文件保留在工作目录其它位置
 - UI 优先展示 `.artifacts/` 目录内容
 
-## 10. 后端接口建议
+## 10. 后端接口与安全边界建议
+
+runner 使用的 workspace access 应收成下面的硬约束：
+
+- runner 只能以 `taskId` 维度获取 workspace access
+- runner 不允许自由传入任意 `file_library_id` 做兑换
+- workspace access 只返回当前 task 已绑定 file library 的最小 mount 元信息
+- task 创建后其 `workspace_file_library_id` 不可变，因此 workspace access 绑定关系稳定
+
+## 11. 后端接口建议
 
 不建议直接把 `storage-credential-exchange` 的 UI 返回体原样塞进 notebook 执行上下文。
 
@@ -375,7 +406,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - external runner 用它来 mount
 - internal runner 可用它做一致性元信息，但不要求 pod 内自己 mount
 
-## 11. Sandbox 满足度分析
+## 12. Sandbox 满足度分析
 
 ### 11.1 已满足
 
@@ -405,7 +436,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 
 而不是先补容器内 FUSE。
 
-## 12. External / Internal 生命周期差异
+## 13. External / Internal 生命周期差异
 
 ### 12.1 External
 
@@ -424,7 +455,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - pod 空闲后自动回收
 - 下次再拉起时重新挂同一个 file library 对应 PVC
 
-## 13. 风险与边界
+## 14. 风险与边界
 
 ### 13.1 最大风险在 internal 平台，不在 notebook 本身
 
@@ -449,7 +480,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - 会共享同一工作目录真相
 - 应在产品文案中明确这一点
 
-## 14. 推荐推进顺序
+## 15. 推荐推进顺序
 
 建议按下面顺序推进：
 
@@ -464,7 +495,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - internal 的主要风险在平台层
 - 先把 external 路线跑通，能更快验证 notebook + file library 的产品模型
 
-## 15. 最终判断
+## 16. 最终判断
 
 ### 可以直接推进的部分
 

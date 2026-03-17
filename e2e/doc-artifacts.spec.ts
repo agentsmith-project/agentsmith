@@ -222,6 +222,27 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
       '查看或下载产物文件。',
     ],
   });
+  const tracePanel = authedPage.getByTestId('notebook__message-trace-panel');
+  if (await tracePanel.count().catch(() => 0)) {
+    await expect(tracePanel).toBeVisible();
+    await writeDocArtifact(authedPage, manifest, {
+      id: 'project-notebook-trace-detail',
+      title: 'Notebook 执行 Trace 视图',
+      group: 'notebook',
+      role: '项目成员',
+      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/task_doc_001`,
+      summary: 'Trace 视图用于查看智能体任务的执行细节、关键事件和异常线索，是任务排障与复盘的重要视图。',
+      contentPoints: [
+        '面板展示执行步骤、事件筛选和原始日志视图。',
+        '适合在说明书中展示长期任务的执行可观测性。',
+      ],
+      userSteps: [
+        '在任务消息区域点击“执行详情”。',
+        '切换筛选和原始日志视图。',
+        '根据 trace 内容定位问题或复核执行过程。',
+      ],
+    });
+  }
 
   await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/files`);
   await dismissOpenDialogs(authedPage);
@@ -244,7 +265,6 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
       '通过页面进行上传、下载、重命名或删除。',
     ],
   });
-
   await dismissOpenDialogs(authedPage);
   await authedPage.getByTestId('files__library-create').click();
   await expect(authedPage.getByTestId('files__dialog__library-create')).toBeVisible();
@@ -289,6 +309,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     ],
   });
   await dismissOpenDialogs(authedPage);
+  await expect(authedPage.getByTestId('files__dialog__library-mount-access')).toHaveCount(0);
   await authedPage.getByTestId('files__library-delete-btn--lib_shared_default').click();
   await expect(authedPage.getByTestId('files__dialog__library-delete')).toBeVisible();
   await writeDocArtifact(authedPage, manifest, {

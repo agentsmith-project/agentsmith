@@ -9,12 +9,13 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 API_PORT="${INTEGRATION_API_PORT:-20000}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3001}"
-BASE_URL="${BASE_URL:-http://localhost:${WEB_PORT}}"
+PLAYWRIGHT_BASE_URL="${INTEGRATION_BASE_URL:-http://localhost:${WEB_PORT}}"
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE:-http://localhost:${API_PORT}}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_URL="${KEYCLOAK_URL:-http://localhost:18080/realms}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
@@ -24,6 +25,40 @@ WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-integration.log}"
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
+}
+
+curl_status() {
+  local url="$1"
+  curl -s -o /dev/null -w "%{http_code}" "${url}" || true
+}
+
+warm_route() {
+  local path="$1"
+  local attempts="${2:-20}"
+  local url="${PLAYWRIGHT_BASE_URL}${path}"
+  local last_code=""
+  for _ in $(seq 1 "${attempts}"); do
+    last_code="$(curl_status "${url}")"
+    if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" ]]; then
+      # Hit the route a second time after a short pause so Next dev can finish
+      # compiling and the page is less likely to open as a blank first render.
+      sleep 1
+      last_code="$(curl_status "${url}")"
+      if [[ "${last_code}" == "200" || "${last_code}" == "307" || "${last_code}" == "308" ]]; then
+        return 0
+      fi
+    fi
+    sleep 1
+  done
+  echo "[integration-e2e-full] failed to warm route ${path} (last status: ${last_code})" >&2
+  return 1
+}
+
+try_warm_route() {
+  local path="$1"
+  if ! warm_route "${path}"; then
+    echo "[integration-e2e-full] continuing after non-fatal warm-up miss for ${path}" >&2
+  fi
 }
 
 port_in_use() {
@@ -61,6 +96,16 @@ fi
 PORT="${API_PORT}" \
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
 KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+MINIO_PORT="${MINIO_PORT:-19000}" \
+MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
 run_clean npm run api:node:dev >"${API_LOG}" 2>&1 &
 API_PID=$!
 
@@ -99,7 +144,7 @@ fi
 
 web_ready=0
 for _ in $(seq 1 120); do
-  code="$(curl -s -o /dev/null -w "%{http_code}" "${BASE_URL}/en-US/login" || true)"
+  code="$(curl -s -o /dev/null -w "%{http_code}" "${PLAYWRIGHT_BASE_URL}/en-US/login" || true)"
   if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
     web_ready=1
     break
@@ -114,6 +159,14 @@ if [[ "${web_ready}" -ne 1 ]]; then
   exit 1
 fi
 
-BASE_URL="${BASE_URL}" \
+echo "[integration-e2e-full] warming key routes before Playwright..." >&2
+try_warm_route "/${INTEGRATION_LOCALE}/login"
+try_warm_route "/${INTEGRATION_LOCALE}/login/workspace"
+try_warm_route "/${INTEGRATION_LOCALE}/system/login"
+try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/login"
+try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default"
+try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
+
+BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
 run_clean npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@"

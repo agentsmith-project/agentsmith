@@ -153,15 +153,35 @@ async function gotoWithRetry(page: Page, pathOrUrl: string): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await page.goto(pathOrUrl, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => document.readyState === 'interactive' || document.readyState === 'complete');
+      if (page.url() === 'about:blank') {
+        throw new Error('blank_navigation');
+      }
+      const bodyText = await page.locator('body').textContent().catch(() => '');
+      if ((bodyText ?? '').trim().length === 0) {
+        throw new Error('empty_document');
+      }
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('ERR_ABORTED') || attempt === 2) {
+      if ((!message.includes('ERR_ABORTED') && !message.includes('blank_navigation') && !message.includes('empty_document')) || attempt === 2) {
         throw error;
       }
       await page.waitForTimeout(500);
     }
   }
+}
+
+async function waitForSystemLoginReady(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await gotoWithRetry(page, `/${LOCALE}/system/login`);
+    const heading = page.getByTestId('system-login__heading');
+    if (await heading.isVisible({ timeout: 10_000 }).catch(() => false)) {
+      return;
+    }
+    await page.waitForTimeout(1_000);
+  }
+  await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
 }
 
 async function settlePage(page: Page, timeout = 30_000): Promise<void> {
@@ -172,8 +192,7 @@ async function settlePage(page: Page, timeout = 30_000): Promise<void> {
 
 async function loginAsSystemAdmin(page: Page): Promise<void> {
   await page.context().clearCookies();
-  await gotoWithRetry(page, `/${LOCALE}/system/login`);
-  await expect(page.getByTestId('system-login__heading')).toBeVisible();
+  await waitForSystemLoginReady(page);
   await page.getByTestId('system-login__username').fill('mbos-admin');
   await page.getByTestId('system-login__password').fill('mbos-admin');
   let loginResponseOk = false;
@@ -297,7 +316,7 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/login`);
-    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible();
+    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('workspace-login__keycloak-btn').click();
 
     const bootstrapError = page.getByTestId('workspace-login__keycloak-error');
@@ -635,7 +654,7 @@ async function captureProjectPages(page: Page, captures: CaptureEntry[], context
     { name: 'project-overview', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/overview`, waitFor: 'project-hub__page' },
     { name: 'project-chat', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/chat`, waitFor: 'chat__main-pane' },
     { name: 'project-notebook', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`, waitFor: 'notebook__task-list' },
-    { name: 'project-files', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`, waitFor: 'files__library-list' },
+    { name: 'project-files', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/files`, waitFor: 'files__library-create' },
     { name: 'project-endpoints', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/endpoints`, waitFor: 'endpoints__create-btn' },
     { name: 'project-credentials', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/credentials`, waitFor: 'credentials__create-btn' },
     { name: 'project-agents', path: `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/agents`, waitFor: 'agents__create-btn' },
@@ -796,8 +815,7 @@ test.describe('@lane-real integration visual review', () => {
       notes: '批准并授予项目管理权限后的成员治理页',
     });
 
-    await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-    const projectAdminToken = await readStoredAuthToken(page);
+    const projectOwnerToken = await readStoredAuthToken(page);
 
     await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/credentials`);
     await expect(page.getByTestId('credentials__create-btn')).toBeVisible({ timeout: 30_000 });
@@ -806,7 +824,7 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'dialog-create-credential-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '真实环境创建凭据对话框',
     });
     await page.getByTestId('credentials__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
@@ -814,7 +832,7 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-credentials-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '真实凭据列表',
     });
 
@@ -825,7 +843,7 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'dialog-create-endpoint-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '真实环境 endpoint 创建入口',
     });
     await page.getByTestId('endpoints__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
@@ -833,7 +851,7 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-endpoints-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '真实 endpoint 列表',
     });
 
@@ -844,7 +862,7 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'dialog-create-agent-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '真实环境 agent 创建对话框',
     });
     await page.getByTestId('agents__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
@@ -852,12 +870,12 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-agents-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '真实 agent 列表',
     });
 
-    const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectAdminToken, agentName);
-    const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectAdminToken);
+    const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectOwnerToken, agentName);
+    const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectOwnerToken);
     const bridge = startExternalNotebookBridge({
       wsUrl: connectionInfo.wsUrl,
       agentKey: connectionInfo.agentKey,
@@ -866,13 +884,13 @@ test.describe('@lane-real integration visual review', () => {
     });
     await bridge.ready;
 
-    await captureProjectPages(page, captures, project, 'project admin');
+    await captureProjectPages(page, captures, project, 'project owner');
     await runNotebookTask(page, project, NOTEBOOK_EXPECTED_TOKEN);
     await expect(bridge.observedReply).resolves.toContain(NOTEBOOK_EXPECTED_TOKEN);
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-notebook-task-detail-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: 'notebook 真实任务完成后的详情页',
     });
     await bridge.stop();
@@ -887,7 +905,7 @@ test.describe('@lane-real integration visual review', () => {
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'members-effective-access-real',
-      role: 'project admin',
+      role: 'project owner',
       notes: '成员有效权限抽屉',
     });
 

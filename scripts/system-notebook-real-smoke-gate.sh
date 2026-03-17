@@ -27,6 +27,7 @@ run_cmd() {
 run_cmd "npm run contracts:check"
 run_cmd "npm run contracts:check-openapi"
 run_cmd "npm run openapi:check-generated"
+run_cmd "npx next typegen ."
 run_cmd "npx tsc --noEmit"
 
 run_cmd "npm run test:run -- \

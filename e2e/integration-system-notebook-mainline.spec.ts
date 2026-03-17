@@ -59,10 +59,18 @@ async function gotoWithRetry(page: Page, path: string): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       await page.goto(path, { waitUntil: 'domcontentloaded' });
+      await page.waitForFunction(() => document.readyState === 'interactive' || document.readyState === 'complete');
+      if (page.url() === 'about:blank') {
+        throw new Error('blank_navigation');
+      }
+      const bodyText = await page.locator('body').textContent().catch(() => '');
+      if ((bodyText ?? '').trim().length === 0) {
+        throw new Error('empty_document');
+      }
       return;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!message.includes('ERR_ABORTED') || attempt === 2) {
+      if ((!message.includes('ERR_ABORTED') && !message.includes('blank_navigation') && !message.includes('empty_document')) || attempt === 2) {
         throw error;
       }
       await page.waitForTimeout(500);
@@ -70,10 +78,21 @@ async function gotoWithRetry(page: Page, path: string): Promise<void> {
   }
 }
 
+async function waitForSystemLoginReady(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await gotoWithRetry(page, `/${LOCALE}/system/login`);
+    const heading = page.getByTestId('system-login__heading');
+    if (await heading.isVisible({ timeout: 10_000 }).catch(() => false)) {
+      return;
+    }
+    await page.waitForTimeout(1_000);
+  }
+  await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
+}
+
 async function loginAsSystemAdmin(page: Page): Promise<void> {
   await page.context().clearCookies();
-  await gotoWithRetry(page, `/${LOCALE}/system/login`);
-  await expect(page.getByTestId('system-login__heading')).toBeVisible();
+  await waitForSystemLoginReady(page);
   await page.getByTestId('system-login__username').fill('mbos-admin');
   await page.getByTestId('system-login__password').fill('mbos-admin');
   let loginResponseOk = false;
@@ -199,7 +218,7 @@ async function loginToWorkspace(page: Page, workspaceId: string, username: strin
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
     await page.goto(`/${LOCALE}/workspaces/${workspaceId}/login`);
-    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible();
+    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('workspace-login__keycloak-btn').click();
 
     const bootstrapError = page.getByTestId('workspace-login__keycloak-error');
@@ -663,7 +682,7 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
     await approveJoinRequest(page, workspaceId, projectId);
     await promoteJoinedMemberToProjectAdmin(page, workspaceId, projectId);
 
-    await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
+    await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
     await createCredential(page, workspaceId, projectId, glmApiKey);
     await createEndpoint(page, workspaceId, projectId);
     const agentName = await createAgent(page, workspaceId, projectId);
@@ -682,6 +701,7 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
     try {
       await bridge.ready;
       await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
+      await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
       await runNotebookTask(page, workspaceId, projectId, agentName, NOTEBOOK_EXPECTED_TOKEN);
       const observedReply = await bridge.observedReply;
       expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);

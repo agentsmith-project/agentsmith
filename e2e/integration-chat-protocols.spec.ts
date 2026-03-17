@@ -29,6 +29,7 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
       await page.goto(`/${locale}/workspaces/ws_default/login`);
     }
 
+    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('workspace-login__keycloak-btn').click();
     const keycloakError = page.getByTestId('workspace-login__keycloak-error');
     if (await keycloakError.isVisible({ timeout: 3_000 }).catch(() => false)) {

@@ -9,6 +9,7 @@ test.describe('@lane-real minimal integration flow', () => {
     const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 
     await page.goto(`/${locale}/workspaces/ws_default/login`);
+    await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
     await page.getByTestId('workspace-login__keycloak-btn').click();
 
     const keycloakError = page.getByTestId('login__keycloak-error');

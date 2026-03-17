@@ -42,6 +42,7 @@ run_cmd "npx eslint \
   'src/lib/system-admin/**/*.ts' \
   'packages/api-entry-node/src/project-workspace-governance-routes.ts' \
   'packages/api-entry-node/src/workspace-registry.ts'"
+run_cmd "npx next typegen ."
 run_cmd "npx tsc --noEmit"
 
 run_cmd "npm run test:run -- \

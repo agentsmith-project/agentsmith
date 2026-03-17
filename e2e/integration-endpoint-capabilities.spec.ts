@@ -62,6 +62,7 @@ function startOpenAICompatibleTaskUpstream(): Promise<{
 
 async function keycloakLogin(page: import('@playwright/test').Page, locale: string, username: string, password: string) {
   await page.goto(`/${locale}/workspaces/ws_default/login`);
+  await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('workspace-login__keycloak-btn').click();
 
   const keycloakError = page.getByTestId('login__keycloak-error');

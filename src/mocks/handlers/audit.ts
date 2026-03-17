@@ -1,7 +1,10 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docAuditEvents } from '../doc-fixtures/audit-usage';
 
 type MockAuditEvent = (typeof p0.audit)[number];
+const auditEvents = DOC_FIXTURES_ENABLED ? (docAuditEvents as MockAuditEvent[]) : (p0.audit as MockAuditEvent[]);
 
 function asPositiveInt(value: string | null, fallback: number): number {
   if (!value) {
@@ -23,7 +26,7 @@ export const auditHandlers = [
     const page = asPositiveInt(url.searchParams.get('page'), 1);
     const pageSize = asPositiveInt(url.searchParams.get('page_size'), 25);
 
-    const filtered = (p0.audit as MockAuditEvent[]).filter((event) => {
+    const filtered = auditEvents.filter((event) => {
       if (action && event.action !== action) return false;
       if (actorType && event.actor_type !== actorType) return false;
       if (actorId && event.actor_id !== actorId) return false;

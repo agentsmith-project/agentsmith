@@ -1,11 +1,17 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docProjectFixtures, docProjectMembershipFixtures } from '../doc-fixtures/workspace-projects';
 import type { Project } from '@/lib/api/types';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS, PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
-export const projects = [...(p0.projects.length ? p0.projects : projectFixtures)];
+export const projects = DOC_FIXTURES_ENABLED
+  ? [...docProjectFixtures]
+  : [...(p0.projects.length ? p0.projects : projectFixtures)];
+
+const membershipsSource = DOC_FIXTURES_ENABLED ? docProjectMembershipFixtures : projectMembershipFixtures;
 
 function getRequestUserId(request: Request): string {
   const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
@@ -26,10 +32,10 @@ export const projectHandlers = [
       .filter((project) => project.workspace_id === workspaceId)
       .map((project) => {
       const membership =
-        projectMembershipFixtures.find(
+        membershipsSource.find(
           (m) => m.project_id === project.id && m.user_id === userId,
         ) ??
-        projectMembershipFixtures.find(
+        membershipsSource.find(
           (m) => m.project_id === project.id && m.user_id === project.owner_id,
         );
         return {
@@ -42,7 +48,7 @@ export const projectHandlers = [
             built_in: true,
             system_key: 'owner',
           }],
-          admin_member_ids: projectMembershipFixtures
+          admin_member_ids: membershipsSource
             .filter((m) => m.project_id === project.id)
             .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
             .map((m) => m.user_id),
@@ -56,10 +62,10 @@ export const projectHandlers = [
     const projectId = params.prj as string;
     const project = projects.find((p) => p.workspace_id === workspaceId && p.id === projectId);
     const membership =
-      projectMembershipFixtures.find(
+      membershipsSource.find(
         (m) => m.project_id === projectId && m.user_id === userId,
       ) ??
-      projectMembershipFixtures.find(
+      membershipsSource.find(
         (m) => m.project_id === projectId && m.user_id === project?.owner_id,
       );
     if (!project) {
@@ -75,7 +81,7 @@ export const projectHandlers = [
         built_in: true,
         system_key: 'owner',
       }],
-      admin_member_ids: projectMembershipFixtures
+      admin_member_ids: membershipsSource
         .filter((m) => m.project_id === projectId)
         .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
         .map((m) => m.user_id),
@@ -101,7 +107,7 @@ export const projectHandlers = [
       updated_at: new Date().toISOString(),
     };
     projects.push(created);
-    projectMembershipFixtures.push({
+    membershipsSource.push({
       project_id: created.id,
       user_id: userId,
       groups: [{
@@ -131,7 +137,7 @@ export const projectHandlers = [
         ? body.governance_json as Record<string, unknown>
         : previous.governance_json ?? {};
     if (nextOwnerId !== previous.owner_id) {
-      const previousOwnerMembership = projectMembershipFixtures.find(
+      const previousOwnerMembership = membershipsSource.find(
         (membership) => membership.project_id === previous.id && membership.user_id === previous.owner_id,
       );
       if (previousOwnerMembership) {
@@ -144,7 +150,7 @@ export const projectHandlers = [
         }];
         previousOwnerMembership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.admin];
       }
-      const nextOwnerMembership = projectMembershipFixtures.find(
+      const nextOwnerMembership = membershipsSource.find(
         (membership) => membership.project_id === previous.id && membership.user_id === nextOwnerId,
       );
       if (nextOwnerMembership) {
@@ -157,7 +163,7 @@ export const projectHandlers = [
         }];
         nextOwnerMembership.permissions = [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner];
       } else {
-        projectMembershipFixtures.push({
+        membershipsSource.push({
           project_id: previous.id,
           user_id: nextOwnerId,
           groups: [{

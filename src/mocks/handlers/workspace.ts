@@ -1,12 +1,17 @@
 import { bypass, http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { workspaceFixtures } from '../fixtures/workspaces';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docWorkspaceFixtures } from '../doc-fixtures/workspace-projects';
 import { PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
 import { CURRENT_USER_ID } from '../fixtures/projects';
 import { AUTH_USER_FIXTURE } from './auth';
 import { WORKSPACE_BUILT_IN_GROUP_IDS, WORKSPACE_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 const workspaceItems = (() => {
+  if (DOC_FIXTURES_ENABLED) {
+    return docWorkspaceFixtures;
+  }
   const fromP0 = p0.workspaces ?? [];
   if (!fromP0.length) {
     return workspaceFixtures;

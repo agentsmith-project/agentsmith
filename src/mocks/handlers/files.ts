@@ -1,12 +1,15 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import type { FileLibrary } from '@/lib/api/types';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docFileLibraries } from '../doc-fixtures/workspace-projects';
+import { docObjectDbByLibraryId } from '../doc-fixtures/files';
 
 type ObjectRow =
   | { kind: 'prefix'; prefix: string; name: string }
   | { kind: 'object'; key: string; name: string; size_bytes: number; content_type: string; etag?: string; last_modified: string; content?: string };
 
-const sourceLibraries: FileLibrary[] = [
+const sourceLibraries: FileLibrary[] = DOC_FIXTURES_ENABLED ? [...docFileLibraries] : [
   {
     id: 'lib_shared_default',
     workspace_id: 'ws_default',
@@ -83,7 +86,9 @@ function shouldFailOnce(kind: 'delete' | 'download', key: string) {
   return true;
 }
 
-const objectDbByLibraryId: Record<string, ObjectRow[]> = {
+const objectDbByLibraryId: Record<string, ObjectRow[]> = DOC_FIXTURES_ENABLED
+  ? (docObjectDbByLibraryId as Record<string, ObjectRow[]>)
+  : {
   lib_shared_default: [
     { kind: 'prefix', prefix: 'docs/', name: 'docs' },
     { kind: 'prefix', prefix: 'images/', name: 'images' },

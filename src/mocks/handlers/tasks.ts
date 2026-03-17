@@ -5,11 +5,18 @@ import {
   artifactFixtures,
   taskTraceFixtures,
 } from '../fixtures/notebook';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import {
+  docTaskFixtures,
+  docTaskMessageFixtures,
+  docArtifactFixtures,
+  docTaskTraceFixtures,
+} from '../doc-fixtures/notebook';
 
-const tasks = [...taskFixtures];
-const taskMessages = [...taskMessageFixtures];
-const artifacts = [...artifactFixtures];
-const taskTraces = [...taskTraceFixtures];
+const tasks = DOC_FIXTURES_ENABLED ? [...docTaskFixtures] : [...taskFixtures];
+const taskMessages = DOC_FIXTURES_ENABLED ? [...docTaskMessageFixtures] : [...taskMessageFixtures];
+const artifacts = DOC_FIXTURES_ENABLED ? [...docArtifactFixtures] : [...artifactFixtures];
+const taskTraces = DOC_FIXTURES_ENABLED ? [...docTaskTraceFixtures] : [...taskTraceFixtures];
 
 export const taskHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/tasks', ({ request }) => {

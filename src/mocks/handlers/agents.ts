@@ -1,7 +1,10 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docAgentFixtures } from '../doc-fixtures/workspace-projects';
+import type { Agent } from '@/lib/api/types';
 
-const agents = [...(p0.agents ?? [])];
+const agents: Agent[] = DOC_FIXTURES_ENABLED ? [...docAgentFixtures] : [...((p0.agents ?? []) as Agent[])];
 type AgentKeyRecord = {
   id: string;
   agent_id: string;
@@ -23,16 +26,15 @@ export const agentHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/agents', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const created = {
+    const created: Agent = {
       id: `agent_${Date.now()}`,
       project_id: 'proj_001',
-      workspace_id: 'ws_default',
       name: (body.name as string) ?? 'New Agent',
       description: (body.description as string) ?? '',
-      mode: (body.mode as string) ?? 'external',
-      interaction_mode: (body.interaction_mode as string) ?? 'both',
-      presence: 'offline',
-      status: 'enabled',
+      mode: body.mode === 'internal' ? 'internal' : 'external',
+      interaction_mode: body.interaction_mode === 'chat' || body.interaction_mode === 'notebook' ? body.interaction_mode : 'both',
+      presence: 'offline' as const,
+      status: 'enabled' as const,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };

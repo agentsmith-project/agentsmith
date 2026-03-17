@@ -122,5 +122,18 @@ export default defineConfig({
       fullyParallel: false,
       workers: 1,
     },
+    {
+      name: 'doc-artifacts',
+      testMatch: /doc-artifacts\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
+      fullyParallel: false,
+      workers: 1,
+    },
   ],
 });

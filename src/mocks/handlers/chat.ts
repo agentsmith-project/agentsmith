@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { chatSessionFixtures, chatMessageFixtures } from '../fixtures/chat';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docChatSessions, docChatMessages } from '../doc-fixtures/chat';
 import type { Attachment } from '@/lib/api/types';
 
 type ChatSessionLike = {
@@ -25,10 +27,14 @@ type ChatMessageLike = {
   parent_id?: string | null;
 };
 
-const sessions: ChatSessionLike[] = p0.chat_sessions.length
+const sessions: ChatSessionLike[] = DOC_FIXTURES_ENABLED
+  ? (docChatSessions as unknown as ChatSessionLike[])
+  : p0.chat_sessions.length
   ? (p0.chat_sessions as unknown as ChatSessionLike[])
   : (chatSessionFixtures as unknown as ChatSessionLike[]);
-const messages: ChatMessageLike[] = p0.chat_messages.length
+const messages: ChatMessageLike[] = DOC_FIXTURES_ENABLED
+  ? (docChatMessages as unknown as ChatMessageLike[])
+  : p0.chat_messages.length
   ? (p0.chat_messages as unknown as ChatMessageLike[])
   : (chatMessageFixtures as unknown as ChatMessageLike[]);
 

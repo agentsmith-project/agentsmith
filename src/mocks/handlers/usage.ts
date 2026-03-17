@@ -1,6 +1,8 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { buildRequestUsageRecords, listRequestUsageFacts } from '../state/request-usage';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docUsageTopResources } from '../doc-fixtures/audit-usage';
 
 type ResourceType = 'endpoint' | 'file_library' | 'agent';
 
@@ -224,7 +226,7 @@ export const usageHandlers = [
     return HttpResponse.json(buildUsageOperationsSummary([...requestFacts, ...fixtureFacts]));
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/limits/summary', () => {
-    const resources = p0.top_resources as Array<{
+    const resources = (DOC_FIXTURES_ENABLED ? docUsageTopResources : p0.top_resources) as Array<{
       resource_id: string;
       resource_name: string;
       resource_type: ResourceType;

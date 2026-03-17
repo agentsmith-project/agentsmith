@@ -1,7 +1,10 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
+import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
+import { docEndpointFixtures } from '../doc-fixtures/workspace-projects';
+import type { Endpoint } from '@/lib/api/types';
 
-const endpoints = [...(p0.endpoints ?? [])];
+const endpoints: Endpoint[] = DOC_FIXTURES_ENABLED ? [...docEndpointFixtures] : [...((p0.endpoints ?? []) as Endpoint[])];
 
 export const endpointHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/endpoints', () =>
@@ -14,17 +17,33 @@ export const endpointHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/endpoints', async ({ request }) => {
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const created = {
+    const created: Endpoint = {
       id: `ep_${Date.now()}`,
       project_id: 'proj_001',
       name: (body.name as string) ?? 'New Endpoint',
       description: (body.description as string) ?? '',
-      type: (body.type as string) ?? 'openai',
+      type: body.type === 'anthropic' || body.type === 'custom' ? body.type : 'openai',
       model: (body.model as string) ?? '',
       base_url: (body.base_url as string) ?? 'https://api.openai.com/v1',
       credential_ref: (body.credential_ref as string) ?? '',
-      provider_family: (body.provider_family as string) ?? 'custom',
-      protocol: (body.protocol as string) ?? 'openai_compatible',
+      provider_family:
+        body.provider_family === 'anthropic'
+        || body.provider_family === 'openai'
+        || body.provider_family === 'deepseek'
+        || body.provider_family === 'minimax'
+        || body.provider_family === 'kimi'
+        || body.provider_family === 'google'
+        || body.provider_family === 'glm'
+        || body.provider_family === 'alibaba'
+          ? body.provider_family
+          : 'custom',
+      protocol:
+        body.protocol === 'anthropic_compatible'
+        || body.protocol === 'google_gemini'
+        || body.protocol === 'glm_native'
+        || body.protocol === 'dashscope_native'
+          ? body.protocol
+          : 'openai_compatible',
       meta: (body.meta as Record<string, string>) ?? undefined,
       status: 'active',
       created_at: new Date().toISOString(),

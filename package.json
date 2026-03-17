@@ -54,6 +54,7 @@
     "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'Visual - Project Pages › files$|files - create folder dialog|files - rename dialog|files - selection with details panel|files - mount access dialog|files - create library dialog|files - delete non-empty library dialog' && bash scripts/run-file-library-real-gate.sh",
     "test:visual:real:review": "bash scripts/release-real-visual-review.sh",
     "test:release:real:full": "bash scripts/release-real-full-gate.sh",
+    "docs:artifacts:generate": "bash scripts/generate-doc-artifacts.sh",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "integration:deps:up": "docker compose -f infra/integration/docker-compose.yml up -d",

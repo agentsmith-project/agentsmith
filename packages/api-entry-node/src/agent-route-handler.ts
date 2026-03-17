@@ -65,6 +65,34 @@ function sanitizeAgentForApi<T extends { config?: Record<string, unknown> | unde
   };
 }
 
+export function resolveAgentPresenceForApi(input: {
+  mode: 'external' | 'internal';
+  storedPresence: 'online' | 'offline' | 'managed';
+  socketOnline: boolean;
+}): 'online' | 'offline' | 'managed' {
+  if (input.mode === 'internal') {
+    return 'managed';
+  }
+  return input.socketOnline ? 'online' : 'offline';
+}
+
+function toPublicAgent<T extends {
+  id: string;
+  mode: 'external' | 'internal';
+  presence: 'online' | 'offline' | 'managed';
+  config?: Record<string, unknown> | undefined;
+}>(deps: NodeApiDeps, agent: T): T {
+  const sanitized = sanitizeAgentForApi(agent);
+  return {
+    ...sanitized,
+    presence: resolveAgentPresenceForApi({
+      mode: agent.mode,
+      storedPresence: agent.presence,
+      socketOnline: deps.agentExecutionService.getAgentOnlineState(agent.id),
+    }),
+  };
+}
+
 function readInternalImage(config: unknown): string {
   const cfg = readObject(config);
   const image = typeof cfg?.image === 'string' ? cfg.image.trim() : '';
@@ -104,7 +132,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       canManageAgents,
     );
     json(res, 200, {
-      items: items.map((item) => sanitizeAgentForApi(item)),
+      items: items.map((item) => toPublicAgent(deps, item)),
       total: items.length,
       page: 1,
       page_size: items.length,
@@ -182,7 +210,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         responseAgent = updated;
       }
     }
-    json(res, 201, sanitizeAgentForApi(responseAgent));
+    json(res, 201, toPublicAgent(deps, responseAgent));
     return true;
   }
 
@@ -198,7 +226,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
-    json(res, 200, sanitizeAgentForApi(item));
+    json(res, 200, toPublicAgent(deps, item));
     return true;
   }
 
@@ -305,7 +333,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found' });
       return true;
     }
-    json(res, 200, sanitizeAgentForApi(updated));
+    json(res, 200, toPublicAgent(deps, updated));
     return true;
   }
 

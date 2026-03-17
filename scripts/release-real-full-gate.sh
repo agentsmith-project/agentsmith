@@ -5,6 +5,12 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source "${ROOT_DIR}/.env.real.local"
+  set +a
+fi
 GLM_API_KEY_VALUE="${GLM_API_KEY:-}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/${RUN_ID}}"
@@ -90,7 +96,10 @@ run_cmd "npm run test:governance:strict"
 run_cmd "npm run test:visual:strict"
 run_real_cmd 20050 3051 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:mainline:strict:real"
 run_real_cmd 20060 3061 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:smoke:real:notebook-mainline"
-run_real_cmd 20070 3071 "GLM_API_KEY='${GLM_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:real:review"
+run_real_cmd 20065 3066 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:agents:real:codex"
+run_cmd "FILE_LIBRARY_GATE_API_PORT='20068' FILE_LIBRARY_GATE_API_LOG='/tmp/agentsmith-file-library-gate-api.log' GLM_API_KEY='${GLM_API_KEY_VALUE}' bash scripts/run-file-library-real-gate.sh"
+run_real_cmd 20070 3071 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:files:real:ui-sync"
+run_real_cmd 20080 3081 "GLM_API_KEY='${GLM_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:real:review"
 
 info "release-grade real verification passed"
 info "artifacts written to ${ARTIFACT_DIR}"

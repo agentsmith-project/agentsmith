@@ -183,6 +183,7 @@ export function AgentsTable({
                   className="h-8 w-8 text-icon-default hover:bg-hover"
                   title={t('keys_title')}
                   aria-label={t('keys_title')}
+                  data-testid={`agents__keys-btn--${agent.id}`}
                 >
                   <Key className="w-4 h-4" />
                 </Button>

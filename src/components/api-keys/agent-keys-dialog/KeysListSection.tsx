@@ -29,7 +29,7 @@ export function KeysListSection({
   onRevoke,
 }: KeysListSectionProps) {
   return (
-    <div className="rounded-lg border border-subtle bg-surface-high/20 p-4">
+    <div className="rounded-lg border border-subtle bg-surface-high/20 p-4" data-testid="agents__keys__list">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-primary">
           <span>{sectionTitle}</span>
@@ -43,6 +43,7 @@ export function KeysListSection({
           onClick={onCreate}
           disabled={createPending}
           className="w-full sm:w-auto"
+          data-testid="agents__keys__create"
         >
           <Plus className="w-4 h-4" />
           {createLabel}
@@ -73,7 +74,10 @@ export function KeysListSection({
 
 function AgentKeyRow({ item, onRevoke }: { item: AgentServiceKey; onRevoke: () => void }) {
   return (
-    <div className="flex w-full max-w-full items-center justify-between overflow-hidden rounded-md border border-subtle bg-surface px-3 py-2.5 transition-colors hover:bg-hover">
+    <div
+      className="flex w-full max-w-full items-center justify-between overflow-hidden rounded-md border border-subtle bg-surface px-3 py-2.5 transition-colors hover:bg-hover"
+      data-testid={`agents__keys__row--${item.id}`}
+    >
       <div className="flex min-w-0 flex-1 items-center gap-2">
         <Key className="w-4 h-4 text-icon-default flex-shrink-0" />
         <div className="min-w-0 flex-1">
@@ -87,7 +91,13 @@ function AgentKeyRow({ item, onRevoke }: { item: AgentServiceKey; onRevoke: () =
         <span className="sr-only">
           {item.created_at ? formatRelativeTime(new Date(item.created_at)) : '—'}
         </span>
-        <Button variant="ghost" size="sm" className="text-error hover:text-error" onClick={onRevoke}>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="text-error hover:text-error"
+          onClick={onRevoke}
+          data-testid={`agents__keys__revoke--${item.id}`}
+        >
           <Trash2 className="w-4 h-4" />
         </Button>
       </div>

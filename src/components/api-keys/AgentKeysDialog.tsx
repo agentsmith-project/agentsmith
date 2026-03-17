@@ -97,7 +97,10 @@ export function AgentKeysDialog({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="w-[min(680px,calc(100vw-2rem))] max-w-[min(680px,calc(100vw-2rem))] overflow-x-hidden border-subtle bg-surface p-0">
+        <DialogContent
+          className="w-[min(680px,calc(100vw-2rem))] max-w-[min(680px,calc(100vw-2rem))] overflow-x-hidden border-subtle bg-surface p-0"
+          data-testid="agents__dialog__keys"
+        >
           <DialogHeader className="border-b border-subtle px-6 pb-4 pt-6">
             <DialogTitle className="flex items-center gap-2">
               <Key className="w-5 h-5 text-icon-default" />

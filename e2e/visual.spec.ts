@@ -352,7 +352,7 @@ test.describe('Visual - Overlays', () => {
 
   test('alerts - notifications tab', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('alerts'));
-    await authedPage.getByRole('tab', { name: 'Notifications', exact: true }).click();
+    await authedPage.getByTestId('alerts__tab__notifications').click();
     await expect(authedPage.getByTestId('alert-notifications')).toBeVisible();
     await authedPage.waitForTimeout(400);
     await expect(authedPage).toHaveScreenshot('alerts-notifications-tab.png', { fullPage: true });

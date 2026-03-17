@@ -4,6 +4,13 @@ set -euo pipefail
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
 shift || true
 
+if [[ -f ".env.real.local" ]]; then
+  set -a
+  # shellcheck disable=SC1091
+  source ".env.real.local"
+  set +a
+fi
+
 # Always clear proxy-related env vars for deterministic local integration/e2e testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
@@ -22,9 +29,53 @@ INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
 API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-node-integration.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-integration.log}"
+API_PID=""
+WEB_PID=""
+PLAYWRIGHT_PID=""
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
+}
+
+start_background_job() {
+  local log_file="$1"
+  shift
+  "$@" >"${log_file}" 2>&1 &
+  echo $!
+}
+
+kill_process_tree() {
+  local pid="$1"
+  [[ -n "${pid}" ]] || return 0
+  local child
+  while read -r child; do
+    [[ -n "${child}" ]] || continue
+    kill_process_tree "${child}"
+  done < <(pgrep -P "${pid}" 2>/dev/null || true)
+  kill -TERM "${pid}" >/dev/null 2>&1 || true
+}
+
+stop_background_job() {
+  local pid="$1"
+  [[ -n "${pid}" ]] || return 0
+  if ! kill -0 "${pid}" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  kill_process_tree "${pid}"
+
+  for _ in $(seq 1 10); do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 0.2
+  done
+
+  while read -r child; do
+    [[ -n "${child}" ]] || continue
+    kill -KILL "${child}" >/dev/null 2>&1 || true
+  done < <(pgrep -P "${pid}" 2>/dev/null || true)
+  kill -KILL "${pid}" >/dev/null 2>&1 || true
 }
 
 curl_status() {
@@ -93,35 +144,39 @@ if port_in_use "${WEB_PORT}"; then
   exit 1
 fi
 
-PORT="${API_PORT}" \
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
-MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
-MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
-REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
-MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
-MINIO_PORT="${MINIO_PORT:-19000}" \
-MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
-MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-run_clean npm run api:node:dev >"${API_LOG}" 2>&1 &
-API_PID=$!
+API_PID="$(
+  PORT="${API_PORT}" \
+  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+  MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+  REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+  MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+  MINIO_PORT="${MINIO_PORT:-19000}" \
+  MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+  MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+  MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+  MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+  start_background_job "${API_LOG}" run_clean npm run api:node:dev
+)"
 
-NEXT_PUBLIC_USE_MSW=false \
-NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
-NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
-NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-run_clean npm run dev:test -- --port "${WEB_PORT}" >"${WEB_LOG}" 2>&1 &
-WEB_PID=$!
+WEB_PID="$(
+  NEXT_PUBLIC_USE_MSW=false \
+  NEXT_PUBLIC_API_BASE="${INTEGRATION_API_BASE}/api/v1" \
+  NEXT_PUBLIC_KEYCLOAK_URL="${KEYCLOAK_URL}" \
+  NEXT_PUBLIC_KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  NEXT_PUBLIC_KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  start_background_job "${WEB_LOG}" run_clean npm run dev:test -- --port "${WEB_PORT}"
+)"
 
 cleanup() {
-  kill "${API_PID}" >/dev/null 2>&1 || true
-  kill "${WEB_PID}" >/dev/null 2>&1 || true
-  wait "${API_PID}" >/dev/null 2>&1 || true
+  stop_background_job "${PLAYWRIGHT_PID}"
+  stop_background_job "${WEB_PID}"
+  stop_background_job "${API_PID}"
+  wait "${PLAYWRIGHT_PID}" >/dev/null 2>&1 || true
   wait "${WEB_PID}" >/dev/null 2>&1 || true
+  wait "${API_PID}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -169,4 +224,6 @@ try_warm_route "/${INTEGRATION_LOCALE}/workspaces/ws_default/projects"
 
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
-run_clean npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@"
+run_clean npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@" &
+PLAYWRIGHT_PID=$!
+wait "${PLAYWRIGHT_PID}"

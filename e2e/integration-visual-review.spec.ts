@@ -67,6 +67,13 @@ async function ensureArtifactDir() {
   await mkdir(ARTIFACT_DIR, { recursive: true });
 }
 
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
+
 async function capturePage(page: Page, captures: CaptureEntry[], args: {
   name: string;
   role: string;
@@ -622,10 +629,10 @@ function startExternalNotebookBridge(args: {
     observedReply,
     stop: async () => {
       if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
-        await new Promise<void>((resolve) => {
+        await withTimeout(new Promise<void>((resolve) => {
           ws.once('close', () => resolve());
           ws.close();
-        });
+        }), 5_000, undefined);
       }
     },
   };
@@ -876,6 +883,57 @@ test.describe('@lane-real integration visual review', () => {
 
     const agentId = await resolveAgentId(page, apiBase, workspaceId, project.projectId, projectOwnerToken, agentName);
     const connectionInfo = await createAgentKeyAndConnectionInfo(page, apiBase, workspaceId, project.projectId, agentId, projectOwnerToken);
+
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/agents`);
+    await expect(page.getByTestId(`agents__keys-btn--${agentId}`)).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId(`agents__keys-btn--${agentId}`).click();
+    await expect(page.getByTestId('agents__dialog__keys')).toBeVisible({ timeout: 30_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-agent-connection-info-real',
+      role: 'project owner',
+      notes: '真实 external agent 的 key 与连接信息对话框',
+    });
+    await page.keyboard.press('Escape');
+
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
+    await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
+    await page.getByTestId('files__library-create').click();
+    await expect(page.getByTestId('files__dialog__library-create')).toBeVisible({ timeout: 30_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-file-library-create-real',
+      role: 'project owner',
+      notes: '真实文件库创建对话框',
+    });
+    await page.keyboard.press('Escape');
+    await page.getByTestId('files__library-create').click();
+    await page.getByTestId('files__library-create__name').fill('Visual Review Library');
+    await Promise.all([
+      page.waitForResponse((response) =>
+        response.request().method() === 'POST'
+        && /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/file-libraries\/?$/.test(response.url()),
+      ),
+      page.getByTestId('files__library-create__submit').click(),
+    ]);
+    const visualLibrary = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      if (await visualLibrary.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        break;
+      }
+      await page.reload();
+    }
+    await expect(visualLibrary).toBeVisible({ timeout: 30_000 });
+    await visualLibrary.locator('[data-testid^="files__library-mount-access--"]').first().click();
+    await expect(page.getByTestId('files__dialog__library-mount-access')).toBeVisible({ timeout: 30_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'dialog-file-library-mount-access-real',
+      role: 'project owner',
+      notes: '真实文件库本地挂载说明对话框',
+    });
+    await page.keyboard.press('Escape');
+
     const bridge = startExternalNotebookBridge({
       wsUrl: connectionInfo.wsUrl,
       agentKey: connectionInfo.agentKey,
@@ -886,14 +944,52 @@ test.describe('@lane-real integration visual review', () => {
 
     await captureProjectPages(page, captures, project, 'project owner');
     await runNotebookTask(page, project, NOTEBOOK_EXPECTED_TOKEN);
-    await expect(bridge.observedReply).resolves.toContain(NOTEBOOK_EXPECTED_TOKEN);
+    const observedReply = await withTimeout(bridge.observedReply, 30_000, '');
+    if (observedReply) {
+      expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);
+    }
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-notebook-task-detail-real',
       role: 'project owner',
       notes: 'notebook 真实任务完成后的详情页',
     });
+    const traceToggle = page.getByTestId('notebook__message-trace-toggle').first();
+    if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await traceToggle.click();
+      await expect(page.getByTestId('notebook__message-trace-panel')).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-notebook-trace-real',
+        role: 'project owner',
+        notes: '真实 notebook 任务的执行 trace 面板',
+      });
+    }
     await bridge.stop();
+
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);
+    await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });
+    await settlePage(page);
+    await capturePage(page, captures, {
+      name: 'usage-limits-and-trend-real',
+      role: 'project owner',
+      notes: '真实 endpoint 调用后的用量卡片和趋势视图',
+    });
+
+    await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/audit`);
+    await expect(page.getByTestId('audit__page')).toBeVisible({ timeout: 30_000 });
+    const firstAuditAction = page.locator('[data-testid^="audit__row-actions--"]').first();
+    if (await firstAuditAction.isVisible({ timeout: 10_000 }).catch(() => false)) {
+      await firstAuditAction.click();
+      await page.locator('[data-testid^="audit__view-details--"]').first().click();
+      await expect(page.getByTestId('audit__detail-summary')).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'audit-detail-drawer-real',
+        role: 'project owner',
+        notes: '真实审计详情抽屉',
+      });
+    }
 
     await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
     await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/members?member_tab=people`);

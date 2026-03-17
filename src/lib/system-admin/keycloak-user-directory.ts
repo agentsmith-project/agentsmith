@@ -24,7 +24,7 @@ const MOCK_KEYCLOAK_DIRECTORY_USERS: KeycloakDirectoryUser[] = [
   { user_id: 'kc-integration-member', email: 'integration-member@example.com', name: 'Integration Member' },
 ];
 
-function useMockKeycloakDirectory(): boolean {
+function shouldUseMockKeycloakDirectory(): boolean {
   return process.env.NEXT_PUBLIC_USE_MSW === 'true';
 }
 
@@ -155,7 +155,7 @@ export async function searchKeycloakUsers(args: {
 }): Promise<KeycloakDirectoryUser[]> {
   const query = args.query.trim();
   if (!query) return [];
-  if (useMockKeycloakDirectory()) {
+  if (shouldUseMockKeycloakDirectory()) {
     const normalizedQuery = query.toLowerCase();
     return MOCK_KEYCLOAK_DIRECTORY_USERS.filter((user) => {
       const haystack = `${user.email} ${user.name ?? ''}`.toLowerCase();
@@ -208,7 +208,7 @@ export async function resolveKeycloakUserById(args: {
       code: 'DIRECTORY_USER_REQUIRED',
     });
   }
-  if (useMockKeycloakDirectory()) {
+  if (shouldUseMockKeycloakDirectory()) {
     const user = MOCK_KEYCLOAK_DIRECTORY_USERS.find((item) => item.user_id === userId);
     if (!user) {
       throw Object.assign(new Error('directory_user_not_found'), {

@@ -1,8 +1,10 @@
 import { cp } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const DEFAULT_SKILLS_DIR = resolve(process.cwd(), 'packages/agent-codex-runner/builtin-skills');
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+const DEFAULT_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
 const DEFAULT_BUILTIN_SKILLS = ['.system', 'feishu-docs', 'jira-ops', 'file-read'];
 
 function parseBooleanFlag(input: string | undefined, fallback: boolean): boolean {

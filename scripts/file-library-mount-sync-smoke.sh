@@ -4,14 +4,15 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-API_BASE="${API_BASE:-http://localhost:20000}"
+API_PORT="${INTEGRATION_API_PORT:-20000}"
+API_BASE="${API_BASE:-http://localhost:${API_PORT}}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 MBOS_DEV_USERNAME="${MBOS_DEV_USERNAME:-dev-admin}"
 MBOS_DEV_PASSWORD="${MBOS_DEV_PASSWORD:-dev-admin-123}"
-WORKSPACE_ID="${WORKSPACE_ID:-agentsmith}"
-PROJECT_ID="${PROJECT_ID:-test-project}"
+WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
+PROJECT_ID="${PROJECT_ID:-}"
 
 TMP_DIR="$(mktemp -d /tmp/agentsmith-filelib-mount.XXXXXX)"
 TOKEN_FILE="${TMP_DIR}/token.txt"

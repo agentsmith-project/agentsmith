@@ -204,18 +204,72 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   process.stdout.write(`[agent-codex-runner][debug] ${message}${payload}\n`);
 }
 
-function extractPrompt(messages: Array<{ role?: string; content?: unknown }> | undefined): string {
-  if (!messages || messages.length === 0) return '';
-  const lastUser = [...messages].reverse().find((item) => item.role === 'user');
-  const content = lastUser?.content;
+function stringifyMessageContent(content: unknown): string {
   if (typeof content === 'string') return content;
-  return JSON.stringify(content ?? '');
+  if (Array.isArray(content)) {
+    return content.map((part) => {
+      if (typeof part === 'string') return part;
+      if (typeof part !== 'object' || part === null) return JSON.stringify(part);
+      const record = part as Record<string, unknown>;
+      if (record.type === 'text' && typeof record.text === 'string') return record.text;
+      if (record.type === 'image_url') return '[image]';
+      return JSON.stringify(record);
+    }).join('\n').trim();
+  }
+  if (content == null) return '';
+  return JSON.stringify(content);
+}
+
+function buildConversationPrompt(messages: Array<{ role?: string; content?: unknown }> | undefined): string {
+  if (!messages || messages.length === 0) return '';
+  return messages
+    .map((message) => {
+      const role = typeof message.role === 'string' && message.role.trim() ? message.role.trim() : 'message';
+      const content = stringifyMessageContent(message.content);
+      return `${role.toUpperCase()}:\n${content}`;
+    })
+    .filter((section) => section.trim().length > 0)
+    .join('\n\n');
 }
 
 function maybeEmitDeltaChunk(requestId: string, chunk: string): void {
   const trimmed = sanitizeAgentDeltaChunk(chunk, () => getFilterStats(requestId)).replace(/\r/g, '');
   if (!trimmed.trim()) return;
   sendFrame('agent.response.delta', requestId, { delta: trimmed });
+}
+
+function extractAgentDeltaFromStdoutLine(line: string): string | null {
+  const evt = parseCodexJsonLine(line);
+  if (!evt) {
+    const trimmed = line.trim();
+    return trimmed ? trimmed : null;
+  }
+  const type = typeof evt.type === 'string' ? evt.type : '';
+  const item = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : null;
+  const payload = typeof evt.payload === 'object' && evt.payload !== null ? (evt.payload as Record<string, unknown>) : null;
+  if (type === 'response.output_text.delta' && typeof evt.delta === 'string' && evt.delta.trim()) {
+    return evt.delta;
+  }
+  if (type === 'response.output_text.done' && typeof evt.text === 'string' && evt.text.trim()) {
+    return evt.text;
+  }
+  if (type === 'item.delta') {
+    const delta = typeof evt.delta === 'object' && evt.delta !== null ? (evt.delta as Record<string, unknown>) : null;
+    if (delta && typeof delta.text === 'string' && delta.text.trim()) {
+      return delta.text;
+    }
+  }
+  if ((type === 'item.completed' || type === 'item.updated') && item?.type === 'agent_message') {
+    if (typeof item.text === 'string' && item.text.trim()) return item.text;
+    if (typeof item.content === 'string' && item.content.trim()) return item.content;
+  }
+  if (type === 'event_msg' && payload?.type === 'agent_message' && typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message;
+  }
+  if (type === 'task_complete' && payload && typeof payload.last_agent_message === 'string' && payload.last_agent_message.trim()) {
+    return payload.last_agent_message;
+  }
+  return null;
 }
 
 function parseCodexJsonLine(line: string): Record<string, unknown> | null {
@@ -489,7 +543,10 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
     const line = rawPart.trim();
     if (!line) continue;
     maybeEmitTraceFromStdoutLine(requestId, line);
-    maybeEmitDeltaChunk(requestId, line);
+    const agentDelta = extractAgentDeltaFromStdoutLine(line);
+    if (agentDelta) {
+      maybeEmitDeltaChunk(requestId, agentDelta);
+    }
   }
   remaining = tail;
 
@@ -498,7 +555,10 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
     const line = jsonObject.trim();
     if (!line) continue;
     maybeEmitTraceFromStdoutLine(requestId, line);
-    maybeEmitDeltaChunk(requestId, line);
+    const agentDelta = extractAgentDeltaFromStdoutLine(line);
+    if (agentDelta) {
+      maybeEmitDeltaChunk(requestId, agentDelta);
+    }
   }
   return parsed.rest;
 }
@@ -522,7 +582,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     required: builtinSkillsConfig.required,
   });
   const isNotebookMode = executionContext.notebook_mode === true;
-  const userPrompt = extractPrompt(payload.messages);
+  const userPrompt = buildConversationPrompt(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
   const credentialFiles = Array.isArray(executionContext.credential_files)
     ? executionContext.credential_files
@@ -986,6 +1046,11 @@ ws.on('message', (raw) => {
   });
 
   void runCodexRequest(message.request_id, startPayload).catch((error) => {
+    debugLog('request start failed', {
+      request_id: message.request_id!,
+      error: error instanceof Error ? error.message : 'codex_request_failed',
+      stack: error instanceof Error ? error.stack ?? null : null,
+    });
     sendRunLifecycleEvent(
       message.request_id!,
       'failed',

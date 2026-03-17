@@ -56,11 +56,11 @@ export function AlertCenterTabs({
     <Tabs value={activeTab} onValueChange={(value) => onTabChange(value as AlertCenterTabValue)}>
       <div className="flex items-center justify-between">
         <TabsList>
-          <TabsTrigger value="rules">
+          <TabsTrigger value="rules" data-testid="alerts__tab__rules">
             <Settings className="h-4 w-4 mr-2" />
             {t('rules')}
           </TabsTrigger>
-          <TabsTrigger value="notifications">
+          <TabsTrigger value="notifications" data-testid="alerts__tab__notifications">
             <Bell className="h-4 w-4 mr-2" />
             {t('notifications')}
           </TabsTrigger>

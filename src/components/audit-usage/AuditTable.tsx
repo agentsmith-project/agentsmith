@@ -218,9 +218,14 @@ export function AuditTable({
         cell: (info) => {
           const event = info.row.original;
           return (
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  data-testid={`audit__row-actions--${event.id}`}
+                >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -229,6 +234,7 @@ export function AuditTable({
                   <DropdownMenuItem
                     onClick={() => onViewDetails(event)}
                     className="flex items-center gap-2"
+                    data-testid={`audit__view-details--${event.id}`}
                   >
                     <Eye className="h-4 w-4" />
                     {commonT('view_details')}

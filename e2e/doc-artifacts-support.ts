@@ -24,6 +24,14 @@ export const DOC_OUTPUT_DIR = process.env.DOC_ARTIFACTS_OUTPUT_DIR
   ? path.resolve(process.env.DOC_ARTIFACTS_OUTPUT_DIR)
   : path.resolve('artifacts/product-docs/manual-run');
 
+const GROUP_LABELS: Record<DocCapture['group'], string> = {
+  workspace: '工作区与项目',
+  chat: 'Chat 对话',
+  notebook: 'Notebook 任务',
+  files: '文件管理',
+  governance: '治理与运营',
+};
+
 export async function ensureDocOutputDir() {
   await mkdir(DOC_OUTPUT_DIR, { recursive: true });
 }
@@ -42,9 +50,13 @@ function renderMarkdown(entry: DocArtifactRecord) {
   const lines = [
     `# ${entry.title}`,
     '',
-    `- 功能分组：${entry.group}`,
+    `- 功能分组：${GROUP_LABELS[entry.group]}`,
     `- 适用角色：${entry.role}`,
     `- 功能路径：${entry.route}`,
+    '',
+    '## 页面截图',
+    '',
+    `![${entry.title}](./${entry.image})`,
     '',
     '## 功能说明',
     '',
@@ -99,10 +111,11 @@ export async function flushDocIndex(manifest: DocArtifactRecord[]) {
   ];
 
   for (const [group, items] of Object.entries(grouped)) {
-    indexLines.push(`### ${group}`);
+    indexLines.push(`### ${GROUP_LABELS[group as DocCapture['group']] ?? group}`);
     indexLines.push('');
     for (const item of items) {
-      indexLines.push(`- [${item.title}](./${item.markdown})`);
+      indexLines.push(`- [${item.title}](./${item.markdown})`)
+      indexLines.push(`  截图：[${item.image}](./${item.image})`);
     }
     indexLines.push('');
   }
@@ -114,4 +127,3 @@ export async function flushDocIndex(manifest: DocArtifactRecord[]) {
     'utf-8',
   );
 }
-

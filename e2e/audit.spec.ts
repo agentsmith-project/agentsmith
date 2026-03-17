@@ -69,6 +69,7 @@ test.describe('Audit Page', () => {
     const firstRow = table.getByTestId('audit__table__row').first();
     await firstRow.getByRole('button').last().click();
     await authedPage.getByRole('menuitem', { name: /view details/i }).click();
-    await expect(authedPage.getByText(/Audit Event Details/i)).toBeVisible();
+    await expect(authedPage.getByRole('dialog', { name: /Audit Event Details/i })).toBeVisible();
+    await expect(authedPage.getByTestId('audit__detail-summary')).toBeVisible();
   });
 });

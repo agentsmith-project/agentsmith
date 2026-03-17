@@ -1,16 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { searchKeycloakUsers } from '../keycloak-user-directory';
+import { resolveKeycloakUserById, searchKeycloakUsers } from '../keycloak-user-directory';
 
 describe('searchKeycloakUsers', () => {
   const fetchMock = vi.fn<typeof fetch>();
+  const originalEnv = process.env;
 
   beforeEach(() => {
+    process.env = { ...originalEnv, NEXT_PUBLIC_USE_MSW: 'false' };
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
   });
 
   afterEach(() => {
+    process.env = originalEnv;
     vi.unstubAllGlobals();
+  });
+
+  it('returns mock directory users in mock lane without calling fetch', async () => {
+    process.env.NEXT_PUBLIC_USE_MSW = 'true';
+
+    const items = await searchKeycloakUsers({
+      idpUrl: 'http://localhost:18080',
+      realm: 'mbos',
+      query: 'dev-admin',
+    });
+
+    expect(items).toEqual([
+      {
+        user_id: 'kc-dev-admin',
+        email: 'dev-admin@example.com',
+        name: 'Dev Admin',
+      },
+    ]);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('prefers exact email lookup for email queries', async () => {
@@ -96,5 +118,27 @@ describe('searchKeycloakUsers', () => {
     ]);
     expect(fetchMock).toHaveBeenCalledTimes(3);
     expect(String(fetchMock.mock.calls[2]?.[0])).toContain('search=dev-admin%40example.com');
+  });
+});
+
+describe('resolveKeycloakUserById', () => {
+  const originalEnv = process.env;
+
+  afterEach(() => {
+    process.env = originalEnv;
+  });
+
+  it('returns mock users in mock lane', async () => {
+    process.env = { ...originalEnv, NEXT_PUBLIC_USE_MSW: 'true' };
+
+    await expect(resolveKeycloakUserById({
+      idpUrl: 'http://localhost:18080',
+      realm: 'mbos',
+      userId: 'kc-integration-user',
+    })).resolves.toEqual({
+      user_id: 'kc-integration-user',
+      email: 'integration-user@example.com',
+      name: 'Integration User',
+    });
   });
 });

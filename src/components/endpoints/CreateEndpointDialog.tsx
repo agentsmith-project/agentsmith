@@ -282,6 +282,7 @@ export function CreateEndpointDialog({
                       size="sm"
                       onClick={() => setShowCustomWizard(true)}
                       disabled={createMutation.isPending}
+                      data-testid="endpoints__open-guided-wizard"
                     >
                       <Sparkles className="mr-1 h-4 w-4" />
                       {t('create_dialog.guided_setup_action')}

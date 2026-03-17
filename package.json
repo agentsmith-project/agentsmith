@@ -24,7 +24,7 @@
     "test:e2e:lane:mock:visual:update": "playwright test --project=visual --update-snapshots",
     "test:visual:strict": "bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1",
     "test:e2e:lane:mock:full": "playwright test --project=smoke --project=chromium --project=chromium-serial",
-    "test:e2e:lane:mock:full:with-visual": "playwright test --project=smoke --project=chromium --project=chromium-serial --project=visual",
+    "test:e2e:lane:mock:full:with-visual": "bash scripts/run-mock-lane-playwright.sh --project=smoke --workers=1 && bash scripts/run-mock-lane-playwright.sh --project=chromium --workers=4 && bash scripts/run-mock-lane-playwright.sh --project=chromium-serial --workers=1 && bash scripts/run-mock-lane-playwright.sh --project=visual --workers=1",
     "test:e2e:lane:real": "playwright test --config playwright.config.integration.ts --project=chromium",
     "test:e2e:integration:minimal": "playwright test --config playwright.config.integration.ts e2e/integration-minimal.spec.ts --project=chromium --workers=1",
     "test:e2e:integration:files": "playwright test --config playwright.config.integration.ts e2e/integration-files.spec.ts --project=chromium --workers=1",

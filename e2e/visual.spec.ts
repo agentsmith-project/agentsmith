@@ -117,16 +117,16 @@ test.describe('Visual - Workspace Pages', () => {
 
   test('workspace home', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}`);
-    await expect(authedPage.getByTestId('workspace-home__heading')).toBeVisible();
+    await expect(authedPage.getByTestId('projects__page')).toBeVisible();
     await expect(authedPage).toHaveScreenshot('workspace-home.png', { fullPage: true });
   });
 
   test('workspace home - project creator', async ({ page }) => {
     await withAuth(page, WS_ID, 'dev2@corp.com', 'u_2');
     await stableNavigate(page, `/en-US/workspaces/${WS_ID}`);
-    await expect(page.getByTestId('workspace-home__heading')).toBeVisible();
-    await expect(page.getByTestId('workspace-home__create-project')).toBeVisible();
-    await expect(page.getByTestId('workspace-home__admin-section')).toHaveCount(0);
+    await expect(page.getByTestId('projects__page')).toBeVisible();
+    await expect(page.getByTestId('projects__create-btn')).toBeVisible();
+    await expect(page.getByTestId('projects__back-to-workspace')).toHaveCount(0);
     await expect(page).toHaveScreenshot('workspace-home-project-creator.png', { fullPage: true });
   });
 

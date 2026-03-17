@@ -34,8 +34,73 @@ async function waitForWorkspaceId(page: import('@playwright/test').Page, workspa
   }, workspaceName);
 }
 
+async function mockWorkspaceAdminDirectory(page: import('@playwright/test').Page) {
+  await page.route('**/api/system/workspaces/directory/users', async (route) => {
+    const request = route.request();
+    const body = request.postDataJSON() as { query?: string } | undefined;
+    const query = body?.query?.trim().toLowerCase() ?? '';
+    const users = [
+      { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+      { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+    ].filter((user) => user.email.toLowerCase().includes(query));
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ items: users, total: users.length }),
+    });
+  });
+}
+
+async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email: string) {
+  const adminInput = page.getByTestId('system-workspaces__draft-admin');
+  let lastFailure = 'directory_request_not_observed';
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const responsePromise = page.waitForResponse(
+      (candidate) =>
+        candidate.url().includes('/api/system/workspaces/directory/users') &&
+        candidate.request().method() === 'POST',
+      { timeout: 15_000 },
+    ).catch(() => null);
+    await adminInput.fill('');
+    await adminInput.fill(email);
+    const response = await responsePromise;
+    if (!response) {
+      lastFailure = 'directory_request_timeout';
+      continue;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { items?: Array<{ user_id?: string; email?: string }> }
+      | { error_message?: string }
+      | null;
+    if (!response.ok()) {
+      lastFailure = `directory_response_${response.status()}`;
+      continue;
+    }
+
+    const matchedUser = Array.isArray(payload?.items)
+      ? payload.items.find((item) => item.email === email)
+      : null;
+    const userId = typeof matchedUser?.user_id === 'string' ? matchedUser.user_id : '';
+    if (!userId) {
+      lastFailure = 'directory_user_missing';
+      continue;
+    }
+
+    const adminOption = page.getByTestId(`system-workspaces__admin-option--${userId}`);
+    await expect(adminOption).toBeVisible({ timeout: 15_000 });
+    await adminOption.click();
+    await expect(page.getByTestId('system-workspaces__selected-admin')).toContainText(email);
+    return;
+  }
+
+  throw new Error(`workspace_admin_directory_user_missing:${email}:${lastFailure}`);
+}
+
 test.describe('System Workspace Mainline', () => {
   test('system admin can configure a workspace and a user can enter it and create a project', async ({ page }) => {
+    await mockWorkspaceAdminDirectory(page);
     await loginAsSystemAdmin(page);
 
     const workspaceName = `Mainline Workspace ${Date.now()}`;
@@ -43,11 +108,11 @@ test.describe('System Workspace Mainline', () => {
     const projectName = `Mainline Project ${Date.now()}`;
 
     await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
-    await page.getByTestId('system-workspaces__draft-admin').fill('mainline-admin@example.com');
     await page.getByTestId('system-workspaces__draft-idp-url').fill('https://login.example.com');
     await page.getByTestId('system-workspaces__draft-idp-realm').fill('mainline');
     await page.getByTestId('system-workspaces__draft-idp-client-id').fill('mainline-client');
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('mainline-secret');
+    await selectWorkspaceAdmin(page, 'dev-admin@example.com');
     await page.getByTestId('system-workspaces__save').click();
 
     const workspaceId = await waitForWorkspaceId(page, workspaceName);
@@ -56,8 +121,6 @@ test.describe('System Workspace Mainline', () => {
 
     await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
     await page.getByTestId('system-workspaces__publish').click();
-    await expect(page.getByTestId('system-workspaces__save-notice')).toHaveText('Workspace published.');
-
     const loginLink = page.getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`);
     await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${workspaceId}/login$`));
     await loginLink.click();
@@ -70,11 +133,7 @@ test.describe('System Workspace Mainline', () => {
     await page.getByTestId('workspace-login__submit').click();
 
     await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}$`), { timeout: 15_000 });
-    await expect(page.getByTestId('workspace-home__page')).toBeVisible();
-    await expect(page.getByTestId('workspace-home__workspace-id')).toHaveText(workspaceId);
-
-    await page.getByTestId('workspace-home__open-projects').click();
-    await page.waitForURL(new RegExp(`/en-US/workspaces/${workspaceId}/projects$`), { timeout: 15_000 });
+    await expect(page.getByTestId('projects__page')).toBeVisible();
     await expect(page.getByRole('heading', { level: 1, name: /projects/i })).toBeVisible();
 
     const toolbarCreateButton = page.getByTestId('projects__create-btn');

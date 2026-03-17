@@ -18,6 +18,16 @@ type KeycloakUserRecord = {
   username?: string;
 };
 
+const MOCK_KEYCLOAK_DIRECTORY_USERS: KeycloakDirectoryUser[] = [
+  { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
+  { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
+  { user_id: 'kc-integration-member', email: 'integration-member@example.com', name: 'Integration Member' },
+];
+
+function useMockKeycloakDirectory(): boolean {
+  return process.env.NEXT_PUBLIC_USE_MSW === 'true';
+}
+
 function getKeycloakAdminUsername(): string {
   return process.env.KEYCLOAK_ADMIN?.trim() || 'admin';
 }
@@ -145,6 +155,13 @@ export async function searchKeycloakUsers(args: {
 }): Promise<KeycloakDirectoryUser[]> {
   const query = args.query.trim();
   if (!query) return [];
+  if (useMockKeycloakDirectory()) {
+    const normalizedQuery = query.toLowerCase();
+    return MOCK_KEYCLOAK_DIRECTORY_USERS.filter((user) => {
+      const haystack = `${user.email} ${user.name ?? ''}`.toLowerCase();
+      return haystack.includes(normalizedQuery);
+    }).slice(0, Math.max(1, Math.min(args.max ?? 10, 20)));
+  }
   const token = await getAdminToken(args.idpUrl);
   const max = Math.max(1, Math.min(args.max ?? 10, 20));
   const payload = query.includes('@')
@@ -190,6 +207,19 @@ export async function resolveKeycloakUserById(args: {
     throw Object.assign(new Error('directory_user_required'), {
       code: 'DIRECTORY_USER_REQUIRED',
     });
+  }
+  if (useMockKeycloakDirectory()) {
+    const user = MOCK_KEYCLOAK_DIRECTORY_USERS.find((item) => item.user_id === userId);
+    if (!user) {
+      throw Object.assign(new Error('directory_user_not_found'), {
+        code: 'DIRECTORY_USER_NOT_FOUND',
+      });
+    }
+    return {
+      user_id: user.user_id,
+      email: user.email,
+      name: user.name,
+    };
   }
   const token = await getAdminToken(args.idpUrl);
   const response = await adminFetch(

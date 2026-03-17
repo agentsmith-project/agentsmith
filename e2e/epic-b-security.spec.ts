@@ -144,7 +144,8 @@ test.describe('Epic B2: Audit Field Standardization', () => {
       await authedPage.getByRole('menuitem', { name: /view details/i }).click();
 
       // Detail drawer should open
-      await expect(authedPage.getByText(/Audit Event Details/i)).toBeVisible();
+      await expect(authedPage.getByRole('dialog', { name: /Audit Event Details/i })).toBeVisible();
+      await expect(authedPage.getByTestId('audit__detail-summary')).toBeVisible();
 
       // Standardized fields should be visible:
       // - Actor (type, id, name)

@@ -62,16 +62,9 @@ test.describe('Workspace Settings Page', () => {
     await expect(page.getByRole('heading', { name: /Permission Denied/i })).toBeVisible();
 
     await goTo(page, `/${LOCALE}/workspaces/${WS_ID}`);
-    await expect(page.getByTestId('workspace-home__page')).toBeVisible();
-    await expect(page.getByTestId('workspace-home__open-projects')).toBeVisible();
-    await expect(page.getByTestId('workspace-home__projects-section')).toBeVisible();
-    await expect(page.getByTestId('workspace-home__projects-section')).toContainText(/workspace_projects_title|Projects/i);
-    await expect(page.getByTestId('workspace-home__admin-section')).toHaveCount(0);
-
-    await page.getByTestId('workspace-home__open-projects').click();
-    await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects$`), { timeout: 10_000 });
+    await expect(page.getByTestId('projects__page')).toBeVisible();
     await expect(page.getByTestId('projects__create-btn')).toBeEnabled();
-    await expect(page.getByTestId('projects__back-to-workspace')).toBeVisible();
+    await expect(page.getByTestId('projects__back-to-workspace')).toHaveCount(0);
   });
 
   test('project creators become project owners for projects they create', async ({ page }) => {
@@ -80,9 +73,7 @@ test.describe('Workspace Settings Page', () => {
     await expect(page.getByRole('heading', { name: /Permission Denied/i })).toBeVisible();
 
     await goTo(page, `/${LOCALE}/workspaces/${WS_ID}`);
-    await expect(page.getByTestId('workspace-home__page')).toBeVisible();
-    await page.getByTestId('workspace-home__open-projects').click();
-    await page.waitForURL(new RegExp(`/workspaces/${WS_ID}/projects$`), { timeout: 10_000 });
+    await expect(page.getByTestId('projects__page')).toBeVisible();
     await expect(page.getByTestId('projects__create-btn')).toBeEnabled();
 
     const projectName = `Creator Owned ${Date.now()}`;

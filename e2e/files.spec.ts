@@ -189,8 +189,18 @@ test.describe('Files Page (file library browser)', () => {
       if (await targetRow.isVisible().catch(() => false)) break;
       const loadMoreButton = authedPage.getByTestId('files__load-more');
       if (!await loadMoreButton.isVisible().catch(() => false)) break;
-      await loadMoreButton.click();
-      await authedPage.waitForTimeout(150);
+      const rowCountBefore = await authedPage.getByTestId('files__object-row').count();
+      await expect(loadMoreButton).toBeEnabled();
+      try {
+        await loadMoreButton.click();
+      } catch {
+        await authedPage.waitForTimeout(200);
+        await expect(authedPage.getByTestId('files__load-more')).toBeEnabled();
+        await authedPage.getByTestId('files__load-more').click();
+      }
+      await expect
+        .poll(async () => authedPage.getByTestId('files__object-row').count(), { timeout: 5000 })
+        .toBeGreaterThan(rowCountBefore);
     }
 
     await authedPage.getByTestId('files__search').fill('bulk-0250');

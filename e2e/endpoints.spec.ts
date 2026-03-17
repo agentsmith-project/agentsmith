@@ -78,10 +78,19 @@ async function openCustomWizardFromCreateDialog(page: import('@playwright/test')
   const dialog = page.getByTestId('endpoints__create-dialog');
   await expect(dialog).toBeVisible();
   await pickSelectOption(dialog, page, /Custom|自定义/i);
-  await dialog.getByRole('button', { name: /Open Wizard|打开向导/i }).click();
+  await dialog.getByTestId('endpoints__open-guided-wizard').click();
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 5000 });
   return wizard;
+}
+
+async function openManualEndpointForm(dialog: import('@playwright/test').Locator) {
+  const nameInput = dialog.getByLabel(/name/i);
+  if (await nameInput.isVisible().catch(() => false)) {
+    return;
+  }
+  await dialog.getByRole('button', { name: /Use manual form instead|改用手动表单/i }).click();
+  await expect(nameInput).toBeVisible();
 }
 
 test.describe('Endpoints Page', () => {
@@ -128,8 +137,8 @@ test.describe('Endpoints Page', () => {
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
-    // Verify the dialog contains a name input
-    await expect(dialog.locator('#endpoint-name')).toBeVisible();
+    await expect(dialog.getByTestId('endpoints__open-guided-wizard')).toBeVisible();
+    await openManualEndpointForm(dialog);
   });
 
   test('edit dialog opens when clicking edit on a row', async ({ authedPage }) => {
@@ -176,9 +185,10 @@ test.describe('Endpoints Page', () => {
 
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
+    await openManualEndpointForm(dialog);
 
     // Fill name only; model/base_url are derived from provider catalog selection.
-    await dialog.locator('#endpoint-name').fill('E2E Test Endpoint');
+    await dialog.getByLabel(/name/i).fill('E2E Test Endpoint');
 
     const noCredentialHint = dialog.getByText(/no credentials|create credential first|请先创建凭据/i).first();
     if (await noCredentialHint.isVisible().catch(() => false)) {
@@ -209,6 +219,7 @@ test.describe('Endpoints Page', () => {
 
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
+    await openManualEndpointForm(dialog);
 
     // Submit button should be disabled when required fields are empty
     const submitBtn = dialog.getByRole('button', { name: /create/i });
@@ -237,7 +248,7 @@ test.describe('Endpoints Page', () => {
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
-    await dialog.getByRole('button', { name: /Open Wizard/i }).click();
+    await dialog.getByTestId('endpoints__open-guided-wizard').click();
     await expect(authedPage.getByTestId('endpoints__custom-wizard')).toBeVisible({ timeout: 5000 });
   });
 
@@ -246,10 +257,11 @@ test.describe('Endpoints Page', () => {
     await authedPage.getByTestId('endpoints__create-btn').click();
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
+    await openManualEndpointForm(dialog);
 
     // Existing endpoint in mock data: OpenAI Main
-    await dialog.locator('#endpoint-name').fill('OpenAI Main');
-    await expect(dialog.locator('#endpoint-name')).toHaveValue('OpenAI Main');
+    await dialog.getByLabel(/name/i).fill('OpenAI Main');
+    await expect(dialog.getByLabel(/name/i)).toHaveValue('OpenAI Main');
     await expect(dialog.getByText(/already exists|已存在同名端点/i)).toBeVisible();
     await expect(dialog.getByRole('button', { name: /^create$/i })).toBeDisabled();
   });
@@ -264,7 +276,7 @@ test.describe('Endpoints Page', () => {
 
       const dialog = authedPage.getByTestId('endpoints__create-dialog');
       await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('button', { name: /Open Wizard/i })).toBeVisible();
+      await expect(dialog.getByTestId('endpoints__open-guided-wizard')).toBeVisible();
     });
 
     test('opens custom wizard from create dialog', async ({ authedPage }) => {
@@ -281,7 +293,7 @@ test.describe('Endpoints Page', () => {
       await pickSelectOption(dialog, authedPage, /Custom/i);
 
       // Click wizard button
-      const wizardBtn = dialog.getByRole('button', { name: /Open Wizard/i });
+      const wizardBtn = dialog.getByTestId('endpoints__open-guided-wizard');
       await wizardBtn.click();
 
       // Wizard should open, main dialog should close
@@ -300,7 +312,7 @@ test.describe('Endpoints Page', () => {
 
       await pickSelectOption(dialog, authedPage, /Custom/i);
 
-      const wizardBtn = dialog.getByRole('button', { name: /Open Wizard/i });
+      const wizardBtn = dialog.getByTestId('endpoints__open-guided-wizard');
       await wizardBtn.click();
 
       // Wizard should be open
@@ -330,7 +342,7 @@ test.describe('Endpoints Page', () => {
       await expect(dialog).toBeVisible();
 
       await pickSelectOption(dialog, authedPage, /Custom/i);
-      await dialog.getByRole('button', { name: /Open Wizard/i }).click();
+      await dialog.getByTestId('endpoints__open-guided-wizard').click();
 
       const wizard = authedPage.getByTestId('endpoints__custom-wizard');
       await expect(wizard).toBeVisible();
@@ -361,7 +373,7 @@ test.describe('Endpoints Page', () => {
       await expect(dialog).toBeVisible();
 
       await pickSelectOption(dialog, authedPage, /Custom/i);
-      await dialog.getByRole('button', { name: /Open Wizard/i }).click();
+      await dialog.getByTestId('endpoints__open-guided-wizard').click();
 
       const wizard = authedPage.getByTestId('endpoints__custom-wizard');
       await expect(wizard).toBeVisible();

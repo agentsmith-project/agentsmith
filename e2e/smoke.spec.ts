@@ -252,7 +252,7 @@ test.describe('Smoke: Endpoints Create Flow', () => {
     const dialog = authedPage.getByTestId('endpoints__create-dialog');
     await expect(dialog).toBeVisible();
 
-    const openWizardButton = dialog.getByRole('button', { name: /Open Wizard|打开向导/i });
+    const openWizardButton = dialog.getByTestId('endpoints__open-guided-wizard');
     await expect(openWizardButton).toBeVisible();
     await openWizardButton.click();
 

@@ -48,10 +48,12 @@ import { useCreateJoinRequest } from '@/lib/hooks/use-join-requests';
 
 interface WorkspaceProjectsEntryPageProps {
   showBackLink?: boolean;
+  workspaceIdOverride?: string | null;
 }
 
 export function WorkspaceProjectsEntryPage({
   showBackLink = true,
+  workspaceIdOverride = null,
 }: WorkspaceProjectsEntryPageProps) {
   const routeParams = useParams<{ workspace?: string; locale?: string }>();
   const router = useRouter();
@@ -72,7 +74,7 @@ export function WorkspaceProjectsEntryPage({
 
   useSyncAuthFromUrl();
 
-  const workspaceId = validateWorkspaceParam(routeParams?.workspace);
+  const workspaceId = workspaceIdOverride ?? validateWorkspaceParam(routeParams?.workspace);
   const locale = routeParams?.locale || 'en-US';
   const createJoinRequest = useCreateJoinRequest(workspaceId ?? '');
 
@@ -292,7 +294,10 @@ export function WorkspaceProjectsEntryPage({
         <div className="min-h-screen bg-background flex flex-col">
           <Topbar />
 
-          <main className="flex-1 w-full max-w-[1640px] mx-auto px-4 py-6 md:px-6 md:py-8">
+          <main
+            className="flex-1 w-full max-w-[1640px] mx-auto px-4 py-6 md:px-6 md:py-8"
+            data-testid="projects__page"
+          >
             <div className="mb-6 space-y-4">
               {showBackLink ? (
                 <Link

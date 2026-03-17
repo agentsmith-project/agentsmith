@@ -8,8 +8,7 @@ import { handleChatStreamRoute } from './chat-stream-handler.js';
 import { handleEndpointRoute } from './endpoint-route-handler.js';
 import { handleModelConfigRoute } from './model-config-route-handler.js';
 import { handleAgentRoute } from './agent-route-handler.js';
-import { matchProjectsRoute, type ProjectsRoute } from './projects-route-match.js';
-import type { ChatRoute } from './chat-route-match.js';
+import { matchProjectsRoute } from './projects-route-match.js';
 import {
   buildWorkspaceRecords,
 } from './workspace-permissions.js';
@@ -43,28 +42,29 @@ import { getGovernanceReportDetail, listGovernanceReports } from './governance-r
 import { getGovernanceRunDetail, listGovernanceRuns } from './governance-run-store.js';
 import {
   createGovernancePolicyOverride,
-  getGovernancePolicyOverrideEffectiveStatus,
-  listGovernancePolicyOverrides,
   updateGovernancePolicyOverrideDecision,
 } from './governance-policy-override-store.js';
 import {
-  enforceGovernance,
-  evaluateGovernance,
-  mergeGovernanceEvaluations,
-  type GovernanceEvaluation,
-} from './governance-evaluation.js';
+  handleTaskRoute,
+} from './task-route-handler.js';
 import {
   getNotebookTaskMetricsPrometheusText,
   getNotebookTaskMetricsSnapshot,
-  handleTaskRoute,
-} from './task-route-handler.js';
+} from './notebook-task/task-metrics-api.js';
 import { issueSSETicket } from './sse-ticket-store.js';
-
-type GovernanceReportPolicyShape = {
-  summary?: {
-    governance_policy?: GovernanceEvaluation;
-  };
-};
+import { buildUpstreamUrl } from './request-handler/build-upstream-url.js';
+import {
+  buildPolicyEnforcement,
+  mergeEscalationState,
+  withOverrideEffectiveStatus,
+} from './request-handler/governance-route-utils.js';
+import {
+  isAgentRoute,
+  isChatRoute,
+  isTaskRoute,
+  routeHasProjectScope,
+} from './request-handler/route-kind-guards.js';
+import { requiredProjectPermissions } from './request-handler/required-project-permissions.js';
 
 type AuthorizationRequestBody = {
   subject?: {
@@ -82,318 +82,9 @@ type AuthorizationRequestBody = {
   };
 };
 
-async function buildPolicyEnforcement(
-  deps: NodeApiDeps,
-  reportName: string,
-  report: Record<string, unknown>,
-  scope?: { workspaceId?: string | null; projectId?: string | null },
-) {
-  const baseEvaluation = (report as GovernanceReportPolicyShape).summary?.governance_policy;
-  if (!baseEvaluation) return undefined;
-  const workspaceId = scope?.workspaceId?.trim();
-  const projectId = scope?.projectId?.trim();
-  const overrides = workspaceId && projectId
-    ? await listGovernancePolicyOverrides(deps.docStore, { workspaceId, projectId, reportName })
-    : [];
-  const escalations = listGovernanceIncidents(deps.governanceIncidentsDir ?? 'artifacts/governance-incidents')
-    .filter((item) => item.report_name === reportName);
-  const escalationStates = await listGovernanceIncidentStates(deps.docStore);
-  const escalationStateById = new Map(escalationStates.map((item) => [item.id, item]));
-  const mergedEscalations = escalations.map((item) => mergeEscalationState(item, escalationStateById.get(item.id)));
-  const governanceEvaluation = mergedEscalations.length > 0
-    ? evaluateGovernance({
-      governance: {
-        open_escalations: mergedEscalations.filter((item) => item.status !== 'resolved').length,
-        critical_unassigned: mergedEscalations.filter((item) =>
-          item.status !== 'resolved' && item.severity === 'critical' && !(item.assignee_user_id ?? '').trim()).length,
-        critical_overdue: mergedEscalations.filter((item) =>
-          item.status !== 'resolved' && item.severity === 'critical' && item.sla_status === 'overdue').length,
-        due_soon: mergedEscalations.filter((item) =>
-          item.status !== 'resolved' && item.sla_status === 'due_soon').length,
-      },
-    })
-    : undefined;
-  const evaluation = mergeGovernanceEvaluations(baseEvaluation, governanceEvaluation);
-  return enforceGovernance(
-    evaluation,
-    overrides.map((item) => {
-      const effectiveStatus = getGovernancePolicyOverrideEffectiveStatus(item);
-      return {
-        issue_id: item.issue_id,
-        status: effectiveStatus === 'expired' ? 'rejected' : effectiveStatus,
-      };
-    }),
-  );
-}
-
-function isChatRoute(route: { kind: string }): route is ChatRoute {
-  return route.kind.startsWith('chat');
-}
-
-function isAgentRoute(route: { kind: string }): boolean {
-  return route.kind === 'agents'
-    || route.kind === 'agentItem'
-    || route.kind === 'agentDiagnostics'
-    || route.kind === 'agentExecutionConfig'
-    || route.kind === 'agentConnectionInfo'
-    || route.kind === 'agentKeys'
-    || route.kind === 'agentKeyItem';
-}
-
-function isTaskRoute(route: { kind: string }): boolean {
-  return route.kind === 'tasks'
-    || route.kind === 'taskItem'
-    || route.kind === 'taskInputs'
-    || route.kind === 'taskInputItem'
-    || route.kind === 'taskMessages'
-    || route.kind === 'taskCancelRun'
-    || route.kind === 'taskTraces'
-    || route.kind === 'taskArtifacts'
-    || route.kind === 'taskArtifactSave'
-    || route.kind === 'taskArtifactDownload'
-    || route.kind === 'taskEvents';
-}
-
-function routeHasProjectScope(route: ProjectsRoute): route is ProjectsRoute & { workspaceId: string; projectId: string } {
-  return 'workspaceId' in route
-    && typeof route.workspaceId === 'string'
-    && 'projectId' in route
-    && typeof route.projectId === 'string';
-}
-
-function requiredProjectPermissions(route: ProjectsRoute, method: string): string[] {
-  if (route.kind === 'projectAuthorize') {
-    return [];
-  }
-
-  if (isTaskRoute(route)) {
-    if (route.kind === 'taskMessages' && method === 'POST') {
-      return ['project:endpoint:use', 'project:agent:manage'];
-    }
-    return ['project:endpoint:use'];
-  }
-
-  if (route.kind === 'audit') {
-    return ['project:audit:read'];
-  }
-
-  if (
-    route.kind === 'usage'
-    || route.kind === 'usageTimeseries'
-    || route.kind === 'usageFacts'
-    || route.kind === 'usageRecordsSummary'
-    || route.kind === 'usageOperationsSummary'
-    || route.kind === 'limitsSummary'
-  ) {
-    return ['project:endpoint:use'];
-  }
-
-  if (
-    route.kind === 'projectMembers'
-    || route.kind === 'projectJoinRequestApprove'
-    || route.kind === 'projectJoinRequestReject'
-    || route.kind === 'projectPermissionTemplates'
-    || route.kind === 'projectPermissionTemplateItem'
-    || route.kind === 'projectGroups'
-    || route.kind === 'projectGroupItem'
-    || route.kind === 'projectGroupApplyTemplate'
-    || route.kind === 'projectMembershipItem'
-    || route.kind === 'projectMemberPermissions'
-    || route.kind === 'projectMemberChangeHistory'
-  ) {
-    return ['project:membership:update'];
-  }
-
-  if (route.kind === 'projectJoinRequests') {
-    return method === 'POST' ? [] : ['project:membership:update'];
-  }
-
-  if (route.kind === 'projectResourcePolicy') {
-    return ['project:governance:update'];
-  }
-
-  if (isAgentRoute(route)) {
-    if (method === 'GET') return ['project:agent:manage'];
-    return ['project:agent:manage'];
-  }
-
-  if (route.kind === 'credentials' || route.kind === 'credentialItem' || route.kind === 'credentialRotate') {
-    return ['project:governance:update'];
-  }
-
-  if (
-    route.kind === 'llmUnifiedChat'
-    || route.kind === 'projectPricing'
-    || route.kind === 'modelCatalogProviders'
-    || route.kind === 'modelCatalogModels'
-    || route.kind === 'modelCatalogSync'
-  ) {
-    if (route.kind === 'llmUnifiedChat') {
-      return ['project:endpoint:use'];
-    }
-    if (route.kind === 'modelCatalogProviders' || route.kind === 'modelCatalogModels') {
-      return ['project:endpoint:use'];
-    }
-    return ['project:governance:update'];
-  }
-
-  if (
-    route.kind === 'endpoints'
-    || route.kind === 'endpointItem'
-    || route.kind === 'endpointRerank'
-    || route.kind === 'endpointImageGeneration'
-    || route.kind === 'endpointVideoGenerationCreate'
-    || route.kind === 'endpointVideoGenerationPoll'
-    || route.kind === 'endpointVideoGenerationCancel'
-    || route.kind === 'endpointProxy'
-    || route.kind === 'llmGatewayProxy'
-    || route.kind === 'endpointImportOpenAICompatible'
-  ) {
-    if (
-      route.kind === 'endpointRerank'
-      || route.kind === 'endpointImageGeneration'
-      || route.kind === 'endpointVideoGenerationCreate'
-      || route.kind === 'endpointVideoGenerationPoll'
-      || route.kind === 'endpointVideoGenerationCancel'
-      || route.kind === 'endpointProxy'
-      || route.kind === 'llmGatewayProxy'
-      || (route.kind === 'endpoints' && method === 'GET')
-      || (route.kind === 'endpointItem' && method === 'GET')
-    ) {
-      return ['project:endpoint:use'];
-    }
-    return ['project:governance:update'];
-  }
-
-  return ['project:endpoint:use'];
-}
-
-export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
-  const cleanBase = baseUrl.replace(/\/+$/, '');
-  const cleanPath = proxyPath.replace(/^\/+/, '');
-  if (!cleanPath) return cleanBase;
-  if (cleanPath.toLowerCase() === 'messages' || cleanPath.toLowerCase().startsWith('messages/')) {
-    const suffix = cleanPath.toLowerCase() === 'messages'
-      ? 'messages'
-      : cleanPath.replace(/^messages\//i, 'messages/');
-    const lowerBase = cleanBase.toLowerCase();
-    if (lowerBase.endsWith('/messages') || lowerBase.includes('/messages/')) {
-      if (lowerBase.endsWith(`/${cleanPath.toLowerCase()}`)) return cleanBase;
-      if (lowerBase.endsWith('/messages') && suffix !== 'messages') {
-        return `${cleanBase}/${suffix.replace(/^messages\//i, '')}`;
-      }
-      return cleanBase;
-    }
-    if (/\/v\d+$/i.test(cleanBase)) {
-      return `${cleanBase}/${suffix}`;
-    }
-    return `${cleanBase}/v1/${suffix}`;
-  }
-
-  // Be tolerant of base URLs that already include the target API path.
-  // Example: base_url ".../chat/completions" + proxyPath "chat/completions".
-  if (
-    cleanBase.toLowerCase().endsWith(`/${cleanPath.toLowerCase()}`) ||
-    cleanBase.toLowerCase().endsWith(cleanPath.toLowerCase())
-  ) {
-    return cleanBase;
-  }
-
-  return `${cleanBase}/${cleanPath}`;
-}
-
 function sseWrite(res: http.ServerResponse, event: string, data: unknown): void {
   res.write(`event: ${event}\n`);
   res.write(`data: ${JSON.stringify(data)}\n\n`);
-}
-
-function mergeEscalationState<T extends {
-    status: 'open' | 'resolved';
-    acknowledged_at?: string;
-    acknowledged_by_user_id?: string;
-    acknowledged_by_name?: string;
-    assignee_user_id?: string;
-    assignee_name?: string;
-    due_at?: string;
-    resolution_reason?: string;
-    resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
-    resolved_at?: string;
-    resolved_by_user_id?: string;
-    resolved_by_name?: string;
-  } & Record<string, unknown>>(
-  event: T,
-  state?: {
-    acknowledged_at?: string;
-    acknowledged_by_user_id?: string;
-    acknowledged_by_name?: string;
-    assignee_user_id?: string;
-    assignee_name?: string;
-    due_at?: string;
-    resolution_status?: 'open' | 'resolved';
-    resolution_reason?: string;
-    resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
-    resolved_at?: string;
-    resolved_by_user_id?: string;
-    resolved_by_name?: string;
-  } | null,
-): T & {
-  status: 'open' | 'resolved';
-  acknowledged_at?: string;
-  acknowledged_by_user_id?: string;
-  acknowledged_by_name?: string;
-  assignee_user_id?: string;
-  assignee_name?: string;
-  due_at?: string;
-  resolution_reason?: string;
-  resolution_category?: 'mitigated' | 'accepted_risk' | 'false_positive' | 'deferred';
-  resolved_at?: string;
-  resolved_by_user_id?: string;
-  resolved_by_name?: string;
-  age_ms?: number;
-  sla_status: 'on_track' | 'due_soon' | 'overdue' | 'resolved';
-} {
-  const status = state?.resolution_status ?? event.status;
-  const dueAt = state?.due_at ?? event.due_at;
-  const now = Date.now();
-  const dueTime = dueAt ? new Date(dueAt).getTime() : Number.NaN;
-  const ageMs = typeof event.created_at === 'string' ? now - new Date(event.created_at).getTime() : undefined;
-  let slaStatus: 'on_track' | 'due_soon' | 'overdue' | 'resolved' = 'on_track';
-  if (status === 'resolved') {
-    slaStatus = 'resolved';
-  } else if (!Number.isNaN(dueTime)) {
-    const remainingMs = dueTime - now;
-    if (remainingMs < 0) slaStatus = 'overdue';
-    else if (remainingMs <= 4 * 60 * 60 * 1000) slaStatus = 'due_soon';
-  }
-  return {
-    ...event,
-    status,
-    acknowledged_at: state?.acknowledged_at ?? event.acknowledged_at,
-    acknowledged_by_user_id: state?.acknowledged_by_user_id ?? event.acknowledged_by_user_id,
-    acknowledged_by_name: state?.acknowledged_by_name ?? event.acknowledged_by_name,
-    assignee_user_id: state?.assignee_user_id ?? event.assignee_user_id,
-    assignee_name: state?.assignee_name ?? event.assignee_name,
-    due_at: dueAt,
-    resolution_reason: state?.resolution_reason ?? event.resolution_reason,
-    resolution_category: state?.resolution_category ?? event.resolution_category,
-    resolved_at: state?.resolved_at ?? event.resolved_at,
-    resolved_by_user_id: state?.resolved_by_user_id ?? event.resolved_by_user_id,
-    resolved_by_name: state?.resolved_by_name ?? event.resolved_by_name,
-    age_ms: Number.isNaN(ageMs) ? undefined : ageMs,
-    sla_status: slaStatus,
-  };
-}
-
-function withOverrideEffectiveStatus<T extends { status: 'pending' | 'approved' | 'rejected'; expires_at: string }>(
-  record: T,
-): T & { effective_status: 'pending' | 'approved' | 'rejected' | 'expired' } {
-  const effectiveStatus = record.status === 'approved' && record.expires_at.localeCompare(new Date().toISOString()) < 0
-    ? 'expired'
-    : record.status;
-  return {
-    ...record,
-    effective_status: effectiveStatus,
-  };
 }
 
 export async function handleRequest(

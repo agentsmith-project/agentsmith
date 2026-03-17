@@ -1,18 +1,12 @@
 import type http from 'node:http';
-import { randomUUID } from 'node:crypto';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
-  appendNotebookTaskPrometheusMetrics,
-  getNotebookTaskMetricsState,
-  getNotebookTraceQueryLatencyByScopeSnapshot,
   observeNotebookTraceQueryLatency,
   type TraceQueryScope,
 } from './notebook-task-metrics.js';
 import {
-  countInMemoryTraceRecords,
   deleteTaskTraceEvents,
-  getNotebookTraceStoreLimits,
   listTaskTraceEventsFiltered,
   loadTaskTraceEvents,
   removeTaskTraceEventsFromMemory,
@@ -20,7 +14,6 @@ import {
 import {
   clearNotebookTaskEventState,
   emitNotebookTaskEvent,
-  getNotebookTaskSseBrokerStats,
   replayBufferedNotebookTaskEvents,
   subscribeNotebookTaskEvents,
   unsubscribeNotebookTaskEvents,
@@ -31,86 +24,47 @@ import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestr
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
-
-interface TaskRecord {
-  id: string;
-  workspace_id: string;
-  project_id: string;
-  owner_user_id: string;
-  title: string;
-  agent_id: string;
-  agent_name: string;
-  status: 'active' | 'archived';
-  attached_inputs: TaskInputRefRecord[];
-  created_at: string;
-  updated_at: string;
-  last_activity_at: string;
-}
-
-interface TaskListItem extends TaskRecord {
-  agent_presence?: 'online' | 'offline' | 'managed' | 'unknown';
-  run_state?: 'running' | 'idle';
-  stats?: {
-    user_turn_count: number;
-    message_count: number;
-    artifact_count: number;
-    attached_input_count: number;
-  };
-}
-
-type TaskInputRefRecord =
-  | {
-      id: string;
-      kind: 'library_object';
-      library_id: string;
-      key: string;
-      name?: string;
-      content_type?: string;
-      size_bytes?: number;
-    }
-  | {
-      id: string;
-      kind: 'artifact';
-      task_id: string;
-      artifact_id: string;
-      task_relative_path?: string;
-      name?: string;
-      content_type?: string;
-      size_bytes?: number;
-    }
-  | {
-      id: string;
-      kind: 'url';
-      url: string;
-      name?: string;
-      imported_library_id?: string;
-      imported_key?: string;
-      content_type?: string;
-      size_bytes?: number;
-    };
-
-interface TaskMessageRecord {
-  id: string;
-  task_id: string;
-  role: 'user' | 'agent';
-  content: string;
-  created_at: string;
-  turn_id?: string;
-}
-
-interface TaskArtifactRecord {
-  id: string;
-  task_id: string;
-  type: 'text' | 'image' | 'file' | 'other';
-  task_relative_path?: string;
-  title?: string;
-  content?: string;
-  thumbnail_url?: string;
-  file_size?: number;
-  mime_type?: string;
-  created_at: string;
-}
+import { getNotebookTaskMetricsPrometheusText, getNotebookTaskMetricsSnapshot } from './notebook-task/task-metrics-api.js';
+import {
+  asObject,
+  buildId,
+  readTaskInputRefs,
+  type TaskInputRefRecord,
+  type TaskRecord,
+} from './notebook-task/task-models.js';
+import {
+  buildTaskRealtimeView,
+  mapTaskMessagesForExecution,
+  resolvePublicBaseUrl,
+} from './notebook-task/task-realtime-view.js';
+import {
+  ACTIVE_RUNS_BY_TASK,
+  ACTIVE_RUN_CANCEL_BY_TASK,
+  ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK,
+  ARTIFACTS_BY_TASK,
+  findTask,
+  findTaskById,
+  getTaskArtifacts,
+  getTaskMessages,
+  getTasks,
+  MESSAGES_BY_TASK,
+  nowIso,
+  projectKey,
+  readSortValue,
+  sanitizePathPart,
+  updateTaskActivity,
+} from './notebook-task/task-runtime-state.js';
+import {
+  createTaskArtifactRecord,
+  deleteTaskArtifacts,
+  deleteTaskMessages,
+  loadProjectTasks,
+  loadTaskArtifacts,
+  loadTaskMessages,
+  notebookTaskArtifactsCollection,
+  notebookTaskMessagesCollection,
+  notebookTasksCollection,
+} from './notebook-task/task-store.js';
 
 interface TaskRouteHandlerArgs {
   route: ProjectsRoute;
@@ -124,247 +78,10 @@ interface TaskRouteHandlerArgs {
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
 }
 
-const TASKS_BY_PROJECT = new Map<string, TaskRecord[]>();
-const MESSAGES_BY_TASK = new Map<string, TaskMessageRecord[]>();
-const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
-const ACTIVE_RUNS_BY_TASK = new Set<string>();
-const ACTIVE_RUN_CANCEL_BY_TASK = new Map<string, { runId: string; requestId: string; cancel: () => void }>();
-const ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK = new Map<string, { runId: string; requestedAt: string }>();
-const NOTEBOOK_TRACE_STORE_LIMITS = getNotebookTraceStoreLimits();
-const TASKS_COLLECTION = 'notebook_tasks';
-const TASK_MESSAGES_COLLECTION = 'notebook_task_messages';
-const TASK_ARTIFACTS_COLLECTION = 'notebook_task_artifacts';
-
-function notebookTasksCollection(workspaceId: string): string {
-  return resolveWorkspaceScopedCollection(TASKS_COLLECTION, workspaceId);
-}
-
-function notebookTaskMessagesCollection(workspaceId: string): string {
-  return resolveWorkspaceScopedCollection(TASK_MESSAGES_COLLECTION, workspaceId);
-}
-
-function notebookTaskArtifactsCollection(workspaceId: string): string {
-  return resolveWorkspaceScopedCollection(TASK_ARTIFACTS_COLLECTION, workspaceId);
-}
-
 function debugNotebookExecution(message: string, extra?: Record<string, unknown>): void {
   if (process.env.DEBUG_NOTEBOOK_EXECUTION !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-execution] ${message}${suffix}\n`);
-}
-
-export function getNotebookTaskMetricsSnapshot(): Record<string, unknown> {
-  const metrics = getNotebookTaskMetricsState();
-  const taskCount = [...TASKS_BY_PROJECT.values()].reduce((acc, items) => acc + items.length, 0);
-  const messageCount = [...MESSAGES_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
-  const artifactCount = [...ARTIFACTS_BY_TASK.values()].reduce((acc, items) => acc + items.length, 0);
-  const traceCount = countInMemoryTraceRecords();
-  const sseBrokerStats = getNotebookTaskSseBrokerStats();
-  return {
-    ...metrics,
-    active_runs: ACTIVE_RUNS_BY_TASK.size,
-    task_sse_clients: sseBrokerStats.client_count,
-    in_memory: {
-      tasks: taskCount,
-      messages: messageCount,
-      artifacts: artifactCount,
-      traces: traceCount,
-      task_event_history_tasks: sseBrokerStats.history_task_count,
-    },
-    limits: {
-      max_trace_events_per_task: NOTEBOOK_TRACE_STORE_LIMITS.maxTraceEventsPerTask,
-      max_trace_details_bytes: NOTEBOOK_TRACE_STORE_LIMITS.maxTraceDetailsBytes,
-      max_task_sse_events_per_task: sseBrokerStats.max_events_per_task,
-    },
-    trace_query_latency_by_scope: getNotebookTraceQueryLatencyByScopeSnapshot(),
-  };
-}
-
-export function getNotebookTaskMetricsPrometheusText(): string {
-  const snapshot = getNotebookTaskMetricsSnapshot() as {
-    task_runs_started: number;
-    task_runs_completed: number;
-    task_runs_failed: number;
-    task_runs_terminal_without_done: number;
-    trace_events_recorded: number;
-    trace_events_truncated_records: number;
-    trace_details_truncated: number;
-    task_traces_queries_total: number;
-    task_traces_queries_message_scoped_total: number;
-    task_traces_queries_run_scoped_total: number;
-    active_runs: number;
-    task_sse_clients: number;
-    in_memory: {
-      tasks: number;
-      messages: number;
-      artifacts: number;
-      traces: number;
-      task_event_history_tasks: number;
-    };
-    limits: {
-      max_trace_events_per_task: number;
-      max_trace_details_bytes: number;
-      max_task_sse_events_per_task: number;
-    };
-  };
-
-  const lines: string[] = [];
-  appendNotebookTaskPrometheusMetrics(lines, snapshot);
-  return `${lines.join('\n')}\n`;
-}
-
-function projectKey(workspaceId: string, projectId: string): string {
-  return `${workspaceId}:${projectId}`;
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function buildId(prefix: string): string {
-  return `${prefix}_${randomUUID().replace(/-/g, '')}`;
-}
-
-function asObject(input: unknown): Record<string, unknown> {
-  return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : {};
-}
-
-function readTaskInputRefs(raw: unknown): TaskInputRefRecord[] {
-  if (!Array.isArray(raw)) return [];
-  const results: TaskInputRefRecord[] = [];
-  const seen = new Set<string>();
-  for (const item of raw) {
-    const obj = asObject(item);
-    const kind = typeof obj.kind === 'string' ? obj.kind.trim() : '';
-    if (kind === 'library_object') {
-      const libraryId = typeof obj.library_id === 'string' ? obj.library_id.trim() : '';
-      const key = typeof obj.key === 'string' ? obj.key.trim() : '';
-      if (!libraryId || !key) continue;
-      const dedupeKey = `library_object:${libraryId}:${key}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      results.push({
-        id: buildId('in'),
-        kind: 'library_object',
-        library_id: libraryId,
-        key,
-        ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
-        ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
-        ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
-          ? { size_bytes: Math.floor(obj.size_bytes) }
-          : {}),
-      });
-      continue;
-    }
-    if (kind === 'artifact') {
-      const taskId = typeof obj.task_id === 'string' ? obj.task_id.trim() : '';
-      const artifactId = typeof obj.artifact_id === 'string' ? obj.artifact_id.trim() : '';
-      if (!taskId || !artifactId) continue;
-      const dedupeKey = `artifact:${taskId}:${artifactId}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      results.push({
-        id: buildId('in'),
-        kind: 'artifact',
-        task_id: taskId,
-        artifact_id: artifactId,
-        ...(typeof obj.task_relative_path === 'string' && obj.task_relative_path.trim()
-          ? { task_relative_path: obj.task_relative_path.trim() }
-          : {}),
-        ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
-        ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
-        ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
-          ? { size_bytes: Math.floor(obj.size_bytes) }
-          : {}),
-      });
-      continue;
-    }
-    if (kind === 'url') {
-      const url = typeof obj.url === 'string' ? obj.url.trim() : '';
-      if (!/^https?:\/\//i.test(url)) continue;
-      const dedupeKey = `url:${url}`;
-      if (seen.has(dedupeKey)) continue;
-      seen.add(dedupeKey);
-      results.push({
-        id: buildId('in'),
-        kind: 'url',
-        url,
-        ...(typeof obj.name === 'string' && obj.name.trim() ? { name: obj.name.trim() } : {}),
-        ...(typeof obj.imported_library_id === 'string' && obj.imported_library_id.trim()
-          ? { imported_library_id: obj.imported_library_id.trim() }
-          : {}),
-        ...(typeof obj.imported_key === 'string' && obj.imported_key.trim()
-          ? { imported_key: obj.imported_key.trim() }
-          : {}),
-        ...(typeof obj.content_type === 'string' && obj.content_type.trim() ? { content_type: obj.content_type.trim() } : {}),
-        ...(typeof obj.size_bytes === 'number' && Number.isFinite(obj.size_bytes) && obj.size_bytes >= 0
-          ? { size_bytes: Math.floor(obj.size_bytes) }
-          : {}),
-      });
-    }
-  }
-  return results;
-}
-
-function normalizeTaskRecord(input: TaskRecord): TaskRecord {
-  const raw = asObject(input);
-  const attachedInputs = readTaskInputRefs(raw.attached_inputs);
-  return {
-    ...input,
-    attached_inputs: attachedInputs,
-  };
-}
-
-function getTasks(workspaceId: string, projectId: string): TaskRecord[] {
-  const key = projectKey(workspaceId, projectId);
-  let existing = TASKS_BY_PROJECT.get(key);
-  if (!existing) {
-    existing = [];
-    TASKS_BY_PROJECT.set(key, existing);
-  }
-  return existing;
-}
-
-async function loadProjectTasks(deps: NodeApiDeps, workspaceId: string, projectId: string): Promise<TaskRecord[]> {
-  const key = projectKey(workspaceId, projectId);
-  const cached = TASKS_BY_PROJECT.get(key);
-  if (cached) return cached;
-  const listed = await deps.docStore.list<TaskRecord>(notebookTasksCollection(workspaceId), {
-    workspace_id: workspaceId,
-    project_id: projectId,
-  });
-  const sorted = listed.map((item) => normalizeTaskRecord(item)).sort((a, b) => b.updated_at.localeCompare(a.updated_at));
-  TASKS_BY_PROJECT.set(key, sorted);
-  return sorted;
-}
-
-function getTaskMessages(taskId: string): TaskMessageRecord[] {
-  let existing = MESSAGES_BY_TASK.get(taskId);
-  if (!existing) {
-    existing = [];
-    MESSAGES_BY_TASK.set(taskId, existing);
-  }
-  return existing;
-}
-
-async function loadTaskMessages(deps: NodeApiDeps, taskId: string): Promise<TaskMessageRecord[]> {
-  const cached = MESSAGES_BY_TASK.get(taskId);
-  if (cached) return cached;
-  const task = findTaskById(taskId);
-  if (!task) return [];
-  const listed = await deps.docStore.list<TaskMessageRecord>(notebookTaskMessagesCollection(task.workspace_id), { task_id: taskId });
-  const sorted = listed.sort((a, b) => a.created_at.localeCompare(b.created_at));
-  MESSAGES_BY_TASK.set(taskId, sorted);
-  return sorted;
-}
-
-function getTaskArtifacts(taskId: string): TaskArtifactRecord[] {
-  let existing = ARTIFACTS_BY_TASK.get(taskId);
-  if (!existing) {
-    existing = [];
-    ARTIFACTS_BY_TASK.set(taskId, existing);
-  }
-  return existing;
 }
 
 async function maybeReleaseInternalAgentWorkload(
@@ -383,176 +100,6 @@ async function maybeReleaseInternalAgentWorkload(
   ).catch((err: unknown) => {
     console.warn('[sandbox] releasePod failed for task %s: %s', task.id, err instanceof Error ? err.message : err);
   });
-}
-
-async function createTaskArtifactRecord(
-  deps: NodeApiDeps,
-  args: {
-    taskId: string;
-    payload: {
-      artifact_type: 'text' | 'image' | 'file' | 'other';
-      task_relative_path: string;
-      title?: string;
-      content?: string;
-      thumbnail_url?: string;
-      file_size?: number;
-      mime_type?: string;
-      filename?: string;
-    };
-  },
-): Promise<TaskArtifactRecord> {
-  const { taskId, payload } = args;
-  const task = findTaskById(taskId);
-  if (!task) {
-    throw new Error('task_not_found');
-  }
-  const normalizedTitle = payload.title?.trim() || payload.filename?.trim() || undefined;
-  const normalizedPath = payload.task_relative_path.trim();
-  const items = getTaskArtifacts(taskId);
-  const existing = items.find((item) => {
-    if (item.type !== payload.artifact_type) return false;
-    const samePath = typeof item.task_relative_path === 'string'
-      ? item.task_relative_path === normalizedPath
-      : (item.title?.trim() || '') === (normalizedTitle ?? '');
-    if (!samePath) return false;
-    if ((item.file_size ?? null) !== (typeof payload.file_size === 'number' ? payload.file_size : null)) return false;
-    if ((item.mime_type ?? null) !== (typeof payload.mime_type === 'string' ? payload.mime_type : null)) return false;
-    if ((item.content ?? null) !== (typeof payload.content === 'string' ? payload.content : null)) return false;
-    if ((item.thumbnail_url ?? null) !== (typeof payload.thumbnail_url === 'string' ? payload.thumbnail_url : null)) return false;
-    return true;
-  });
-  if (existing) return existing;
-
-  const artifact: TaskArtifactRecord = {
-    id: buildId('artifact'),
-    task_id: taskId,
-    type: payload.artifact_type,
-    ...(normalizedPath ? { task_relative_path: normalizedPath } : {}),
-    ...(normalizedTitle ? { title: normalizedTitle } : {}),
-    ...(typeof payload.content === 'string' ? { content: payload.content } : {}),
-    ...(typeof payload.thumbnail_url === 'string' ? { thumbnail_url: payload.thumbnail_url } : {}),
-    ...(typeof payload.file_size === 'number' ? { file_size: payload.file_size } : {}),
-    ...(typeof payload.mime_type === 'string' ? { mime_type: payload.mime_type } : {}),
-    created_at: nowIso(),
-  };
-  items.push(artifact);
-  await deps.docStore.upsert<TaskArtifactRecord>(notebookTaskArtifactsCollection(task.workspace_id), artifact.id, artifact);
-  return artifact;
-}
-
-async function loadTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<TaskArtifactRecord[]> {
-  const cached = ARTIFACTS_BY_TASK.get(taskId);
-  if (cached) return cached;
-  const task = findTaskById(taskId);
-  if (!task) return [];
-  const listed = await deps.docStore.list<TaskArtifactRecord>(notebookTaskArtifactsCollection(task.workspace_id), { task_id: taskId });
-  const sorted = listed.sort((a, b) => a.created_at.localeCompare(b.created_at));
-  ARTIFACTS_BY_TASK.set(taskId, sorted);
-  return sorted;
-}
-
-async function buildTaskRealtimeView(
-  deps: NodeApiDeps,
-  workspaceId: string,
-  projectId: string,
-  task: TaskRecord,
-): Promise<TaskListItem> {
-  await Promise.all([
-    loadTaskMessages(deps, task.id),
-    loadTaskArtifacts(deps, task.id),
-  ]);
-  const messages = getTaskMessages(task.id);
-  const artifacts = getTaskArtifacts(task.id);
-  const userTurnCount = messages.filter((item) => item.role === 'user').length;
-  const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
-  const agentPresence: TaskListItem['agent_presence'] = (
-    !agent ? 'unknown'
-    : agent.mode === 'internal' ? 'managed'
-    : (agent.presence === 'online' ? 'online' : 'offline')
-  );
-  return {
-    ...task,
-    agent_presence: agentPresence,
-    run_state: ACTIVE_RUNS_BY_TASK.has(task.id) ? 'running' : 'idle',
-    stats: {
-      user_turn_count: userTurnCount,
-      message_count: messages.length,
-      artifact_count: artifacts.length,
-      attached_input_count: task.attached_inputs.length,
-    },
-  };
-}
-
-function findTask(workspaceId: string, projectId: string, taskId: string): TaskRecord | undefined {
-  return getTasks(workspaceId, projectId).find((item) => item.id === taskId);
-}
-
-function findTaskById(taskId: string): TaskRecord | undefined {
-  for (const tasks of TASKS_BY_PROJECT.values()) {
-    const found = tasks.find((item) => item.id === taskId);
-    if (found) return found;
-  }
-  return undefined;
-}
-
-function sanitizePathPart(input: string): string {
-  return input.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || 'unknown';
-}
-
-async function deleteTaskMessages(deps: NodeApiDeps, taskId: string): Promise<void> {
-  const task = findTaskById(taskId);
-  if (!task) return;
-  const collection = notebookTaskMessagesCollection(task.workspace_id);
-  const existing = await deps.docStore.list<TaskMessageRecord>(collection, { task_id: taskId });
-  await Promise.all(existing.map((item) => deps.docStore.delete(collection, item.id)));
-}
-
-async function deleteTaskArtifacts(deps: NodeApiDeps, taskId: string): Promise<void> {
-  const task = findTaskById(taskId);
-  if (!task) return;
-  const collection = notebookTaskArtifactsCollection(task.workspace_id);
-  const existing = await deps.docStore.list<TaskArtifactRecord>(collection, { task_id: taskId });
-  await Promise.all(existing.map((item) => deps.docStore.delete(collection, item.id)));
-}
-
-function mapTaskMessagesForExecution(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
-  return getTaskMessages(taskId)
-    .filter((item) => item.id !== assistantMessageId)
-    .filter((item) => item.role === 'user' || (item.role === 'agent' && item.content.trim().length > 0))
-    .map((item) => ({
-      role: item.role === 'agent' ? 'assistant' : 'user',
-      content: item.content,
-    }));
-}
-
-function updateTaskActivity(task: TaskRecord): void {
-  const now = nowIso();
-  task.last_activity_at = now;
-  task.updated_at = now;
-}
-
-function readSortValue(task: TaskRecord, sortBy: string): string {
-  if (sortBy === 'created_at') return task.created_at;
-  if (sortBy === 'updated_at') return task.updated_at;
-  if (sortBy === 'last_activity_at') return task.last_activity_at;
-  return task.last_activity_at;
-}
-
-function firstHeaderValue(value: string | string[] | undefined): string | undefined {
-  if (Array.isArray(value)) return value[0];
-  return value;
-}
-
-function resolvePublicBaseUrl(req: http.IncomingMessage): string {
-  const forwardedProto = firstHeaderValue(req.headers['x-forwarded-proto']);
-  const forwardedHost = firstHeaderValue(req.headers['x-forwarded-host']);
-  const host = firstHeaderValue(req.headers.host);
-  const proto = (forwardedProto?.split(',')[0]?.trim() || 'http').toLowerCase();
-  const resolvedHost = forwardedHost?.split(',')[0]?.trim() || host?.trim();
-  if (resolvedHost) {
-    return `${proto}://${resolvedHost}`;
-  }
-  return process.env.MBOS_PUBLIC_BASE_URL ?? 'http://localhost:20000';
 }
 
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {

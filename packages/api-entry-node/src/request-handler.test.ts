@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildUpstreamUrl } from './request-handler.js';
+import { buildUpstreamUrl } from './request-handler/build-upstream-url.js';
 
 describe('buildUpstreamUrl', () => {
   it('joins base and proxy path in normal case', () => {

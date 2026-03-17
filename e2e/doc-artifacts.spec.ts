@@ -175,6 +175,29 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
       '点击某个任务进入详情页继续查看执行过程和结果。',
     ],
   });
+  const createTaskButton = authedPage.getByTestId('notebook__create-task-btn');
+  if (await createTaskButton.isVisible().catch(() => false)) {
+    await createTaskButton.click();
+    await expect(authedPage.getByRole('dialog')).toBeVisible();
+    await writeDocArtifact(authedPage, manifest, {
+      id: 'dialog-notebook-task-create',
+      title: '创建任务对话框',
+      group: 'notebook',
+      role: '项目成员',
+      route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook`,
+      summary: '创建任务对话框用于新建长期运行的智能体任务，选择执行智能体并设定任务标题，是 Notebook 工作流的起点。',
+      contentPoints: [
+        '表单展示任务标题、可用智能体选择和关键提示信息。',
+        '适合说明长期任务与普通聊天的区别。',
+      ],
+      userSteps: [
+        '点击“创建任务”。',
+        '填写任务标题并选择执行智能体。',
+        '提交后进入任务详情页观察执行过程。',
+      ],
+    });
+    await dismissOpenDialogs(authedPage);
+  }
 
   await stableNavigate(authedPage, `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/notebook/tasks/task_doc_001`);
   await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible();
@@ -263,6 +286,26 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
       '点击文件库右侧的挂载入口。',
       '查看并复制挂载信息。',
       '在本地执行 JuiceFS 挂载命令后与 Web 端同步操作。',
+    ],
+  });
+  await dismissOpenDialogs(authedPage);
+  await authedPage.getByTestId('files__library-delete-btn--lib_shared_default').click();
+  await expect(authedPage.getByTestId('files__dialog__library-delete')).toBeVisible();
+  await writeDocArtifact(authedPage, manifest, {
+    id: 'dialog-file-library-delete-denied',
+    title: '非空文件库删除受阻对话框',
+    group: 'files',
+    role: '项目成员',
+    route: `/${DOC_LOCALE}/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/files`,
+    summary: '删除对话框用于确认文件库删除操作。对非空文件库，系统会要求用户明确确认名称，避免误删共享资料。',
+    contentPoints: [
+      '对话框展示待删除文件库名称和确认输入框。',
+      '用于说明文件库删除的安全保护机制。',
+    ],
+    userSteps: [
+      '在文件库列表中点击删除。',
+      '核对名称并输入确认内容。',
+      '清空文件后再执行最终删除。',
     ],
   });
   await dismissOpenDialogs(authedPage);

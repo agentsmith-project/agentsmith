@@ -111,6 +111,7 @@ export function FilesLibrariesPane({
                           onRenameLibrary(library);
                         }}
                         aria-label={t('file_manager.library_rename')}
+                        data-testid={`files__library-rename-btn--${library.id}`}
                       >
                         <Pencil className="h-3.5 w-3.5" />
                       </Button>
@@ -125,6 +126,7 @@ export function FilesLibrariesPane({
                           onDeleteLibrary(library);
                         }}
                         aria-label={t('file_manager.library_delete')}
+                        data-testid={`files__library-delete-btn--${library.id}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>

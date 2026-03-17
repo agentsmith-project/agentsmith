@@ -59,6 +59,8 @@ export async function buildPolicyEnforcement(
   );
 }
 
+export { listGovernancePolicyOverrides };
+
 export function mergeEscalationState<T extends {
     status: 'open' | 'resolved';
     acknowledged_at?: string;

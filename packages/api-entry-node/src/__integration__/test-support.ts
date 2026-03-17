@@ -221,3 +221,58 @@ export function apiFetchWithToken(baseUrl: string, path: string, token: string, 
     headers,
   });
 }
+
+export function startMockFeishuOAuthServer(): { server: Server; authorizeUrl: string; tokenUrl: string } {
+  const server = http.createServer(async (req, res) => {
+    const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+    if (req.method === 'POST' && url.pathname === '/open-apis/authen/v2/oauth/token') {
+      const chunks: Uint8Array[] = [];
+      for await (const chunk of req) {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      }
+      const body = JSON.parse(Buffer.concat(chunks).toString('utf-8')) as Record<string, unknown>;
+      const grantType = body.grant_type;
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      if (grantType === 'authorization_code') {
+        res.end(JSON.stringify({
+          code: 0,
+          data: {
+            access_token: 'feishu-access-1',
+            refresh_token: 'feishu-refresh-1',
+            expires_in: 3600,
+            scope: 'offline_access docs:read',
+            union_id: 'union_1',
+          },
+        }));
+        return;
+      }
+      if (grantType === 'refresh_token') {
+        res.end(JSON.stringify({
+          code: 0,
+          data: {
+            access_token: 'feishu-access-2',
+            refresh_token: 'feishu-refresh-2',
+            expires_in: 7200,
+            scope: 'offline_access docs:read',
+            union_id: 'union_1',
+          },
+        }));
+        return;
+      }
+      res.statusCode = 400;
+      res.end(JSON.stringify({ code: 9999, msg: 'unsupported_grant_type' }));
+      return;
+    }
+    res.statusCode = 404;
+    res.end('not found');
+  });
+  server.listen(0);
+  servers.push(server);
+  const address = server.address() as AddressInfo;
+  return {
+    server,
+    authorizeUrl: `http://127.0.0.1:${address.port}/open-apis/authen/v1/authorize`,
+    tokenUrl: `http://127.0.0.1:${address.port}/open-apis/authen/v2/oauth/token`,
+  };
+}

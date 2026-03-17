@@ -49,8 +49,7 @@ export function Topbar({ className = '' }: TopbarProps) {
   }, [workspaceId, workspaces]);
 
   const handleWorkspaceChange = (newWorkspaceId: string) => {
-    // Navigate to the new workspace's project list
-    router.push(`/workspaces/${newWorkspaceId}/projects`);
+    router.push(`/workspaces/${newWorkspaceId}`);
   };
 
   const handleProjectChange = (newProjectId: string) => {
@@ -62,13 +61,13 @@ export function Topbar({ className = '' }: TopbarProps) {
 
   const handleGoToProjects = () => {
     if (workspaceId) {
-      router.push(`/workspaces/${workspaceId}/projects`);
+      router.push(`/workspaces/${workspaceId}`);
     }
   };
 
   const handleLogoClick = () => {
     if (workspaceId) {
-      router.push(`/workspaces/${workspaceId}/projects`);
+      router.push(`/workspaces/${workspaceId}`);
     }
   };
 

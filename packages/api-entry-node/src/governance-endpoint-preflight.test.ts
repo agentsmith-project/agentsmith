@@ -61,7 +61,7 @@ describe('governance-endpoint-preflight', () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
     const endpoint = buildEndpoint({ id: 'ep_access' });
-    upsertProjectResourcePolicy(endpoint.workspace_id, endpoint.project_id, {
+    await upsertProjectResourcePolicy(docStore, endpoint.workspace_id, endpoint.project_id, {
       resource_type: 'endpoint',
       resource_id: endpoint.id,
       access_mode: 'allow_list',
@@ -131,7 +131,7 @@ describe('governance-endpoint-preflight', () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
     const endpoint = buildEndpoint({ id: 'ep_rate' });
-    upsertProjectResourcePolicy(endpoint.workspace_id, endpoint.project_id, {
+    await upsertProjectResourcePolicy(docStore, endpoint.workspace_id, endpoint.project_id, {
       resource_type: 'endpoint',
       resource_id: endpoint.id,
       access_mode: 'allow_all_members',
@@ -174,7 +174,7 @@ describe('governance-endpoint-preflight', () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
     const endpoint = buildEndpoint({ id: 'ep_spending' });
-    upsertProjectResourcePolicy(endpoint.workspace_id, endpoint.project_id, {
+    await upsertProjectResourcePolicy(docStore, endpoint.workspace_id, endpoint.project_id, {
       resource_type: 'endpoint',
       resource_id: endpoint.id,
       access_mode: 'allow_all_members',

@@ -1,8 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { getProjectGroupsState, setProjectAdminGroupMembers } from './project-groups-store.js';
-import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
-import { upsertProjectMembership } from './project-memberships-store.js';
-import { getProjectPermissionTemplatesState } from './project-permission-templates-store.js';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import {
+  saveProjectGroup,
+  saveProjectPermissionTemplate,
+  setProjectAdminGroupMembersPersisted,
+  upsertProjectMemberPermissionState,
+  upsertProjectMembershipRecord,
+} from './project-member-governance-persistence.js';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
 import {
@@ -14,10 +18,11 @@ import {
 } from './project-authz-engine.js';
 
 describe('project-authz-engine', () => {
-  it('resolves permissions from group templates and member custom grants', () => {
+  it('resolves permissions from group templates and member custom grants', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    getProjectPermissionTemplatesState(workspaceId, projectId).push({
+    await saveProjectPermissionTemplate(docStore, workspaceId, projectId, {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
@@ -25,7 +30,7 @@ describe('project-authz-engine', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    getProjectGroupsState(workspaceId, projectId).push({
+    await saveProjectGroup(docStore, workspaceId, projectId, {
       id: 'grp_manage',
       project_id: projectId,
       name: 'Managers',
@@ -34,12 +39,14 @@ describe('project-authz-engine', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    getProjectMemberPermissionsState(workspaceId, projectId).set('user_test', {
+    await upsertProjectMemberPermissionState(docStore, workspaceId, projectId, 'user_test', {
       mode: 'custom',
+      template: null,
       permissions: ['project:endpoint:use'],
     });
 
-    const permissions = new Set(resolveProjectPermissionsForActor({
+    const permissions = new Set(await resolveProjectPermissionsForActor({
+      docStore,
       workspaceId,
       projectId,
       projectOwnerId: 'user_owner',
@@ -50,16 +57,19 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:endpoint:use')).toBe(true);
   });
 
-  it('grants project admin permissions from the built-in admin group', () => {
+  it('grants project admin permissions from the built-in admin group', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore,
       workspaceId,
       projectId,
       memberIds: ['user_test'],
     });
 
-    const permissions = new Set(resolveProjectPermissionsForActor({
+    const permissions = new Set(await resolveProjectPermissionsForActor({
+      docStore,
       workspaceId,
       projectId,
       projectOwnerId: 'user_owner',
@@ -73,10 +83,11 @@ describe('project-authz-engine', () => {
     expect(permissions.has('project:governance:update')).toBe(true);
   });
 
-  it('denies all required permissions when membership is suspended', () => {
+  it('denies all required permissions when membership is suspended', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    upsertProjectMembership(workspaceId, projectId, {
+    await upsertProjectMembershipRecord(docStore, workspaceId, projectId, {
       project_id: projectId,
       user_id: 'user_test',
       role: 'member',
@@ -84,7 +95,8 @@ describe('project-authz-engine', () => {
       joined_at: new Date().toISOString(),
     });
 
-    const evaluation = evaluateProjectPermissions({
+    const evaluation = await evaluateProjectPermissions({
+      docStore,
       workspaceId,
       projectId,
       projectOwnerId: 'user_owner',
@@ -96,7 +108,8 @@ describe('project-authz-engine', () => {
     expect(evaluation.decisions.every((item) => item.granted === false)).toBe(true);
     expect(evaluation.decisions[0]?.reason).toBe('membership_suspended');
     expect(
-      resolveVisibleProjectPermissionsForActor({
+      await resolveVisibleProjectPermissionsForActor({
+        docStore,
         workspaceId,
         projectId,
         projectOwnerId: 'user_owner',
@@ -105,10 +118,11 @@ describe('project-authz-engine', () => {
     ).toEqual([]);
   });
 
-  it('evaluates resource policy allow-list for user and group subjects', () => {
+  it('evaluates resource policy allow-list for user and group subjects', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    getProjectGroupsState(workspaceId, projectId).push({
+    await saveProjectGroup(docStore, workspaceId, projectId, {
       id: 'grp_ops',
       project_id: projectId,
       name: 'Ops',
@@ -117,7 +131,7 @@ describe('project-authz-engine', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    upsertProjectResourcePolicy(workspaceId, projectId, {
+    await upsertProjectResourcePolicy(docStore, workspaceId, projectId, {
       resource_type: 'endpoint',
       resource_id: 'ep_1',
       access_mode: 'allow_list',
@@ -127,7 +141,8 @@ describe('project-authz-engine', () => {
       ],
     });
 
-    const direct = evaluateResourcePolicyAuthorization({
+    const direct = await evaluateResourcePolicyAuthorization({
+      docStore,
       workspaceId,
       projectId,
       resourceType: 'endpoint',
@@ -135,7 +150,8 @@ describe('project-authz-engine', () => {
       subjectType: 'user',
       subjectId: 'user_direct',
     });
-    const grouped = evaluateResourcePolicyAuthorization({
+    const grouped = await evaluateResourcePolicyAuthorization({
+      docStore,
       workspaceId,
       projectId,
       resourceType: 'endpoint',
@@ -143,7 +159,8 @@ describe('project-authz-engine', () => {
       subjectType: 'user',
       subjectId: 'user_grouped',
     });
-    const denied = evaluateResourcePolicyAuthorization({
+    const denied = await evaluateResourcePolicyAuthorization({
+      docStore,
       workspaceId,
       projectId,
       resourceType: 'endpoint',
@@ -160,28 +177,31 @@ describe('project-authz-engine', () => {
     expect(denied.reason).toBe('not_in_allow_list');
   });
 
-  it('evaluates resource policy allow-list for the built-in admin group', () => {
+  it('evaluates resource policy allow-list for the built-in admin group', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    upsertProjectMembership(workspaceId, projectId, {
+    await upsertProjectMembershipRecord(docStore, workspaceId, projectId, {
       project_id: projectId,
       user_id: 'user_admin',
       status: 'active',
       joined_at: new Date().toISOString(),
     });
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore,
       workspaceId,
       projectId,
       memberIds: ['user_admin'],
     });
-    upsertProjectResourcePolicy(workspaceId, projectId, {
+    await upsertProjectResourcePolicy(docStore, workspaceId, projectId, {
       resource_type: 'endpoint',
       resource_id: 'ep_default_group',
       access_mode: 'allow_list',
       allowed_subjects: [{ subject_type: 'group', subject_id: PROJECT_BUILT_IN_GROUP_IDS.admins }],
     });
 
-    const result = evaluateResourcePolicyAuthorization({
+    const result = await evaluateResourcePolicyAuthorization({
+      docStore,
       workspaceId,
       projectId,
       resourceType: 'endpoint',

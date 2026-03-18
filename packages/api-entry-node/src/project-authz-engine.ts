@@ -1,14 +1,12 @@
-import { getAllProjectGroupIdsForUser, getProjectGroupsState } from './project-groups-store.js';
+import type { JsonDocStorePort } from '@mbos/ports';
 import {
-  getProjectMembershipsState,
-} from './project-memberships-store.js';
-import {
-  getProjectMemberPermissionsState,
-} from './project-member-permissions-store.js';
-import {
-  getProjectPermissionTemplatesState,
-  type ProjectPermissionTemplateRecord,
-} from './project-permission-templates-store.js';
+  getAllProjectGroupIdsForUserPersisted,
+  getProjectMembership,
+  getProjectMemberPermissionState,
+  listProjectGroups,
+  listProjectPermissionTemplates,
+} from './project-member-governance-persistence.js';
+import type { ProjectPermissionTemplateRecord } from './project-permission-templates-store.js';
 import {
   getProjectResourcePolicy,
 } from './project-resource-policy-store.js';
@@ -74,12 +72,13 @@ export type ResourcePolicyDecision = {
 };
 
 function getMembershipStatus(
+  docStore: JsonDocStorePort,
   workspaceId: string,
   projectId: string,
   actorUserId: string,
-): ProjectAuthorizationSnapshot['membership_status'] {
-  const membership = getProjectMembershipsState(workspaceId, projectId).get(actorUserId);
-  return membership?.status ?? 'none';
+): Promise<ProjectAuthorizationSnapshot['membership_status']> {
+  return getProjectMembership(docStore, workspaceId, projectId, actorUserId)
+    .then((membership) => membership?.status ?? 'none');
 }
 
 function addPermissionSource(
@@ -92,27 +91,28 @@ function addPermissionSource(
 }
 
 function templateMap(
+  docStore: JsonDocStorePort,
   workspaceId: string,
   projectId: string,
-): Map<string, ProjectPermissionTemplateRecord> {
-  return new Map(
-    getProjectPermissionTemplatesState(workspaceId, projectId).map((template) => [template.id, template]),
-  );
+): Promise<Map<string, ProjectPermissionTemplateRecord>> {
+  return listProjectPermissionTemplates(docStore, workspaceId, projectId)
+    .then((templates) => new Map(templates.map((template) => [template.id, template])));
 }
 
-function collectPermissionSources(args: {
+async function collectPermissionSources(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
   projectGovernance?: unknown;
   actorUserId: string;
 }): ProjectAuthorizationSnapshot {
-  const { workspaceId, projectId, projectOwnerId, actorUserId } = args;
-  const storedMembershipStatus = getMembershipStatus(workspaceId, projectId, actorUserId);
+  const { docStore, workspaceId, projectId, projectOwnerId, actorUserId } = args;
+  const storedMembershipStatus = await getMembershipStatus(docStore, workspaceId, projectId, actorUserId);
   const byPermission = new Map<string, ProjectAuthzPermissionSource>();
 
-  const templates = templateMap(workspaceId, projectId);
-  const groups = getProjectGroupsState(workspaceId, projectId, projectOwnerId);
+  const templates = await templateMap(docStore, workspaceId, projectId);
+  const groups = await listProjectGroups(docStore, workspaceId, projectId, projectOwnerId);
   const hasGroupMembership = groups.some((group) => group.member_ids.includes(actorUserId));
   const membershipStatus: ProjectAuthorizationSnapshot['membership_status'] =
     actorUserId === projectOwnerId
@@ -143,7 +143,7 @@ function collectPermissionSources(args: {
     }
   }
 
-  const memberPermissionState = getProjectMemberPermissionsState(workspaceId, projectId).get(actorUserId);
+  const memberPermissionState = await getProjectMemberPermissionState(docStore, workspaceId, projectId, actorUserId);
   if (memberPermissionState) {
     if (memberPermissionState.mode === 'template' && memberPermissionState.template) {
       const template = templates.get(memberPermissionState.template);
@@ -175,15 +175,16 @@ function collectPermissionSources(args: {
   };
 }
 
-export function evaluateProjectPermissions(args: {
+export async function evaluateProjectPermissions(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
   projectGovernance?: unknown;
   actorUserId: string;
   requiredPermissions: readonly string[];
-}): ProjectAuthorizationEvaluation {
-  const snapshot = collectPermissionSources(args);
+}): Promise<ProjectAuthorizationEvaluation> {
+  const snapshot = await collectPermissionSources(args);
   const sourceByPermission = new Map(snapshot.permission_sources.map((item) => [item.permission, item]));
   const decisions = args.requiredPermissions.map((permission) => {
     if (snapshot.membership_status === 'pending') {
@@ -230,31 +231,34 @@ export function evaluateProjectPermissions(args: {
   };
 }
 
-export function resolveVisibleProjectPermissionsForActor(args: {
+export async function resolveVisibleProjectPermissionsForActor(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
   projectGovernance?: unknown;
   actorUserId: string;
-}): readonly string[] {
-  const snapshot = collectPermissionSources(args);
+}): Promise<readonly string[]> {
+  const snapshot = await collectPermissionSources(args);
   if (snapshot.membership_status === 'pending' || snapshot.membership_status === 'suspended') {
     return [];
   }
   return snapshot.effective_permissions;
 }
 
-export function resolveVisibleProjectRoleForActor(args: {
+export async function resolveVisibleProjectRoleForActor(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
   projectGovernance?: unknown;
   actorUserId: string;
-}): 'owner' | 'admin' | 'developer' | undefined {
+}): Promise<'owner' | 'admin' | 'developer' | undefined> {
   if (args.projectOwnerId === args.actorUserId) {
     return 'owner';
   }
-  const groupIds = getAllProjectGroupIdsForUser({
+  const groupIds = await getAllProjectGroupIdsForUserPersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.actorUserId,
@@ -263,7 +267,7 @@ export function resolveVisibleProjectRoleForActor(args: {
   if (groupIds.includes(PROJECT_BUILT_IN_GROUP_IDS.admins)) {
     return 'admin';
   }
-  const snapshot = collectPermissionSources(args);
+  const snapshot = await collectPermissionSources(args);
   return snapshot.membership_status === 'active' ? 'developer' : undefined;
 }
 
@@ -312,15 +316,22 @@ export function mapAuthorizationRequestToPermission(args: {
   return mapResourceActionToPermission(args.resourceType, args.action);
 }
 
-export function evaluateResourcePolicyAuthorization(args: {
+export async function evaluateResourcePolicyAuthorization(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   resourceType: Exclude<ResourceType, 'project'>;
   resourceId: string;
   subjectType: SubjectType;
   subjectId: string;
-}): ResourcePolicyDecision {
-  const policy = getProjectResourcePolicy(args.workspaceId, args.projectId, args.resourceType, args.resourceId);
+}): Promise<ResourcePolicyDecision> {
+  const policy = await getProjectResourcePolicy(
+    args.docStore,
+    args.workspaceId,
+    args.projectId,
+    args.resourceType,
+    args.resourceId,
+  );
   if (!policy) {
     return { allowed: true };
   }
@@ -352,7 +363,8 @@ export function evaluateResourcePolicyAuthorization(args: {
         },
       };
     }
-    const groups = getAllProjectGroupIdsForUser({
+    const groups = await getAllProjectGroupIdsForUserPersisted({
+      docStore: args.docStore,
       workspaceId: args.workspaceId,
       projectId: args.projectId,
       userId: args.subjectId,
@@ -405,11 +417,12 @@ export function evaluateResourcePolicyAuthorization(args: {
   };
 }
 
-export function resolveProjectPermissionsForActor(args: {
+export async function resolveProjectPermissionsForActor(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   projectOwnerId: string;
   actorUserId: string;
-}): readonly string[] {
-  return collectPermissionSources(args).effective_permissions;
+}): Promise<readonly string[]> {
+  return (await collectPermissionSources(args)).effective_permissions;
 }

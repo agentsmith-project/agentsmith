@@ -14,14 +14,16 @@ import {
 import {
   resolveWorkspacePermissions,
 } from './workspace-permissions.js';
-import {
-  getProjectGroupsState,
-  setProjectAdminGroupMembers,
-} from './project-groups-store.js';
+import { listProjectGroups, setProjectAdminGroupMembersPersisted } from './project-member-governance-persistence.js';
 import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
 
-function readProjectAdminMemberIds(workspaceId: string, projectId: string, ownerId: string): string[] {
-  const adminGroup = getProjectGroupsState(workspaceId, projectId, ownerId).find(
+async function readProjectAdminMemberIds(
+  deps: ProjectRouteContext['deps'],
+  workspaceId: string,
+  projectId: string,
+  ownerId: string,
+): Promise<string[]> {
+  const adminGroup = (await listProjectGroups(deps.docStore, workspaceId, projectId, ownerId)).find(
     (group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins,
   );
   return adminGroup ? [...adminGroup.member_ids] : [];
@@ -43,20 +45,22 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
   if (route.kind === 'collection' && method === 'GET' && route.workspaceId) {
     const workspaceId = route.workspaceId;
     const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
+    const items = await Promise.all(listed.items.map(async (item) => ({
+      ...item,
+      admin_member_ids: await readProjectAdminMemberIds(deps, workspaceId, item.id, item.owner_id),
+      permissions: [
+        ...await resolveVisibleProjectPermissionsForActor({
+          docStore: deps.docStore,
+          workspaceId,
+          projectId: item.id,
+          projectOwnerId: item.owner_id,
+          projectGovernance: item.governance_json,
+          actorUserId: user.id,
+        }),
+      ],
+    })));
     json(res, 200, {
-      items: listed.items.map((item) => ({
-        ...item,
-        admin_member_ids: readProjectAdminMemberIds(workspaceId, item.id, item.owner_id),
-        permissions: [
-          ...resolveVisibleProjectPermissionsForActor({
-            workspaceId,
-            projectId: item.id,
-            projectOwnerId: item.owner_id,
-            projectGovernance: item.governance_json,
-            actorUserId: user.id,
-          }),
-        ],
-      })),
+      items,
     });
     return true;
   }
@@ -117,9 +121,10 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
     });
     json(res, 200, {
       ...found,
-      admin_member_ids: readProjectAdminMemberIds(route.workspaceId, route.projectId, found.owner_id),
+      admin_member_ids: await readProjectAdminMemberIds(deps, route.workspaceId, route.projectId, found.owner_id),
       permissions: [
-        ...resolveVisibleProjectPermissionsForActor({
+        ...await resolveVisibleProjectPermissionsForActor({
+          docStore: deps.docStore,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           projectOwnerId: found.owner_id,
@@ -167,7 +172,8 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       existingProject !== null &&
       input.owner_id.trim() !== existingProject.owner_id;
     const existingProjectPermissions = existingProject
-      ? resolveVisibleProjectPermissionsForActor({
+      ? await resolveVisibleProjectPermissionsForActor({
+        docStore: deps.docStore,
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         projectOwnerId: existingProject.owner_id,
@@ -224,10 +230,11 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
         input: normalizedInput,
       });
       if (touchesProjectOwner && existingProject) {
-        const retainedAdmins = new Set(readProjectAdminMemberIds(route.workspaceId, route.projectId, existingProject.owner_id));
+        const retainedAdmins = new Set(await readProjectAdminMemberIds(deps, route.workspaceId, route.projectId, existingProject.owner_id));
         retainedAdmins.add(existingProject.owner_id);
         retainedAdmins.delete(updated.owner_id);
-        setProjectAdminGroupMembers({
+        await setProjectAdminGroupMembersPersisted({
+          docStore: deps.docStore,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           memberIds: [...retainedAdmins],

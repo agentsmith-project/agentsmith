@@ -507,7 +507,7 @@ export async function getLimitsSummary(
     byEndpoint.set(endpointId, existing);
   }
 
-  const policies = listProjectResourcePolicies(query.workspaceId, query.projectId, 'endpoint');
+  const policies = await listProjectResourcePolicies(docStore, query.workspaceId, query.projectId, 'endpoint');
 
   type PolicyRuleRecord = {
     key: string;
@@ -575,7 +575,8 @@ export async function getLimitsSummary(
       usd5h: 0,
       usdDay: 0,
     };
-    const policy = getProjectResourcePolicyOrDefault(
+    const policy = await getProjectResourcePolicyOrDefault(
+      docStore,
       query.workspaceId,
       query.projectId,
       'endpoint',

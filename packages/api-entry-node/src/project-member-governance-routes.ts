@@ -4,64 +4,88 @@ import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
 import {
-  addUserToProjectAdminGroup,
-  getProjectGroupsState,
-  setProjectAdminGroupMembers,
-  setProjectGroupsState,
-} from './project-groups-store.js';
-import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
-import {
-  getProjectMembershipsState,
-} from './project-memberships-store.js';
-import {
-  getProjectPermissionTemplatesState,
-  setProjectPermissionTemplatesState,
-} from './project-permission-templates-store.js';
+  appendProjectMemberChangeHistory,
+  deleteProjectGroup,
+  deleteProjectMemberPermissionState,
+  deleteProjectMembershipRecord,
+  deleteProjectPermissionTemplate,
+  getProjectMembership,
+  getProjectMemberPermissionState,
+  listProjectGroups,
+  listProjectMemberChangeHistory,
+  listProjectPermissionTemplates,
+  saveProjectGroup,
+  saveProjectPermissionTemplate,
+  setProjectAdminGroupMembersPersisted,
+  upsertProjectMemberPermissionState,
+  upsertProjectMembershipRecord,
+} from './project-member-governance-persistence.js';
 import {
   isBuiltInProjectGroupId,
   isBuiltInProjectTemplateId,
 } from './project-governance-model.js';
-import { projectScopedKey, readProjectPermissionContext, readRequestId } from './project-route-handler-utils.js';
+import { readProjectPermissionContext, readRequestId } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 
-type MemberChangeRecord = {
-  id: string;
-  timestamp: string;
-  actor_id: string;
-  actor_email: string;
-  change_type: 'permissions' | 'resource_policy' | 'group' | 'membership';
+async function appendMemberChange(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  actorId: string;
+  actorEmail: string;
+  changeType: 'permissions' | 'resource_policy' | 'group' | 'membership';
   changes: {
     added?: string[];
     removed?: string[];
     updated?: Record<string, { from: unknown; to: unknown }>;
   };
-};
-
-const PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT = new Map<string, Map<string, MemberChangeRecord[]>>();
-
-export function getMemberChangeHistoryState(workspaceId: string, projectId: string) {
-  const key = projectScopedKey(workspaceId, projectId);
-  const existing = PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.get(key);
-  if (existing) return existing;
-  const map = new Map<string, MemberChangeRecord[]>();
-  PROJECT_MEMBER_CHANGE_HISTORY_BY_PROJECT.set(key, map);
-  return map;
+}): Promise<void> {
+  await appendProjectMemberChangeHistory(
+    args.deps.docStore,
+    args.workspaceId,
+    args.projectId,
+    args.userId,
+    {
+      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
+      timestamp: new Date().toISOString(),
+      actor_id: args.actorId,
+      actor_email: args.actorEmail,
+      change_type: args.changeType,
+      changes: args.changes,
+    },
+  );
 }
 
-function clearMemberGovernanceState(workspaceId: string, projectId: string, userId: string): void {
-  const groups = getProjectGroupsState(workspaceId, projectId);
-  let groupsChanged = false;
+async function clearMemberGovernanceState(args: {
+  deps: NodeApiDeps;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  projectOwnerId?: string | null;
+}): Promise<void> {
+  const groups = await listProjectGroups(args.deps.docStore, args.workspaceId, args.projectId, args.projectOwnerId);
   for (const group of groups) {
-    if (!group.member_ids.includes(userId)) continue;
-    group.member_ids = group.member_ids.filter((memberId) => memberId !== userId);
-    group.updated_at = new Date().toISOString();
-    groupsChanged = true;
+    if (!group.member_ids.includes(args.userId)) continue;
+    if (isBuiltInProjectGroupId(group.id)) {
+      if (group.id === 'grp_project_admins') {
+        await setProjectAdminGroupMembersPersisted({
+          docStore: args.deps.docStore,
+          workspaceId: args.workspaceId,
+          projectId: args.projectId,
+          memberIds: group.member_ids.filter((memberId) => memberId !== args.userId),
+        });
+      }
+      continue;
+    }
+    await saveProjectGroup(args.deps.docStore, args.workspaceId, args.projectId, {
+      ...group,
+      member_ids: group.member_ids.filter((memberId) => memberId !== args.userId),
+      updated_at: new Date().toISOString(),
+    });
   }
-  if (groupsChanged) {
-    setProjectGroupsState(workspaceId, projectId, groups);
-  }
-  getProjectMemberPermissionsState(workspaceId, projectId).delete(userId);
+  await deleteProjectMemberPermissionState(args.deps.docStore, args.workspaceId, args.projectId, args.userId);
 }
 
 async function requireMembershipUpdatePermission(args: {
@@ -93,7 +117,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
   const { routeKind, method, workspaceId, projectId, templateId, req, res, deps, user, json, readBody } = args;
 
   if (routeKind === 'projectPermissionTemplates' && method === 'GET') {
-    json(res, 200, { items: getProjectPermissionTemplatesState(workspaceId, projectId) });
+    json(res, 200, { items: await listProjectPermissionTemplates(deps.docStore, workspaceId, projectId) });
     return true;
   }
 
@@ -118,7 +142,6 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       return true;
     }
     const permissions = body.permissions.filter((v): v is string => typeof v === 'string');
-    const items = getProjectPermissionTemplatesState(workspaceId, projectId);
     const now = new Date().toISOString();
     const created = {
       id: `pt_${Math.random().toString(36).slice(2, 10)}`,
@@ -130,8 +153,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       created_at: now,
       updated_at: now,
     };
-    items.push(created);
-    setProjectPermissionTemplatesState(workspaceId, projectId, items);
+    await saveProjectPermissionTemplate(deps.docStore, workspaceId, projectId, created);
     json(res, 200, created);
     return true;
   }
@@ -152,7 +174,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       description?: string;
       permissions?: string[];
     };
-    const items = getProjectPermissionTemplatesState(workspaceId, projectId);
+    const items = await listProjectPermissionTemplates(deps.docStore, workspaceId, projectId);
     const item = items.find((it) => it.id === templateId);
     if (!item) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
@@ -168,6 +190,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       item.permissions = body.permissions.filter((v): v is string => typeof v === 'string');
     }
     item.updated_at = new Date().toISOString();
+    await saveProjectPermissionTemplate(deps.docStore, workspaceId, projectId, item);
     json(res, 200, item);
     return true;
   }
@@ -183,7 +206,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
-    const items = getProjectPermissionTemplatesState(workspaceId, projectId);
+    const items = await listProjectPermissionTemplates(deps.docStore, workspaceId, projectId);
     const target = items.find((it) => it.id === templateId);
     if (!target) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Permission template not found' });
@@ -193,11 +216,7 @@ export async function handleProjectPermissionTemplatesRoute(args: {
       json(res, 409, { error_code: 'CONFLICT', message: 'Built-in templates cannot be deleted' });
       return true;
     }
-    setProjectPermissionTemplatesState(
-      workspaceId,
-      projectId,
-      items.filter((it) => it.id !== templateId),
-    );
+    await deleteProjectPermissionTemplate(deps.docStore, workspaceId, projectId, templateId);
     res.statusCode = 204;
     res.end();
     return true;
@@ -229,7 +248,7 @@ export async function handleProjectGroupsRoute(args: {
     } catch {
       projectOwnerId = null;
     }
-    json(res, 200, { items: getProjectGroupsState(workspaceId, projectId, projectOwnerId) });
+    json(res, 200, { items: await listProjectGroups(deps.docStore, workspaceId, projectId, projectOwnerId) });
     return true;
   }
 
@@ -254,7 +273,6 @@ export async function handleProjectGroupsRoute(args: {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'name and permission_template_id are required' });
       return true;
     }
-    const groups = getProjectGroupsState(workspaceId, projectId);
     const now = new Date().toISOString();
     const created = {
       id: `grp_${Math.random().toString(36).slice(2, 10)}`,
@@ -266,8 +284,7 @@ export async function handleProjectGroupsRoute(args: {
       created_at: now,
       updated_at: now,
     };
-    groups.push(created);
-    setProjectGroupsState(workspaceId, projectId, groups);
+    await saveProjectGroup(deps.docStore, workspaceId, projectId, created);
     json(res, 200, created);
     return true;
   }
@@ -289,7 +306,7 @@ export async function handleProjectGroupsRoute(args: {
       permission_template_id?: string;
       member_ids?: string[];
     };
-    const groups = getProjectGroupsState(workspaceId, projectId);
+    const groups = await listProjectGroups(deps.docStore, workspaceId, projectId);
     const group = groups.find((g) => g.id === groupId);
     if (!group) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });
@@ -305,8 +322,13 @@ export async function handleProjectGroupsRoute(args: {
         return true;
       }
       const nextMemberIds = Array.from(new Set(body.member_ids.filter((v): v is string => typeof v === 'string')));
-      setProjectAdminGroupMembers(workspaceId, projectId, nextMemberIds);
-      const updatedGroups = getProjectGroupsState(workspaceId, projectId);
+      await setProjectAdminGroupMembersPersisted({
+        docStore: deps.docStore,
+        workspaceId,
+        projectId,
+        memberIds: nextMemberIds,
+      });
+      const updatedGroups = await listProjectGroups(deps.docStore, workspaceId, projectId);
       const updatedGroup = updatedGroups.find((item) => item.id === groupId);
       json(res, 200, updatedGroup ?? group);
       return true;
@@ -318,6 +340,7 @@ export async function handleProjectGroupsRoute(args: {
       group.member_ids = body.member_ids.filter((v): v is string => typeof v === 'string');
     }
     group.updated_at = new Date().toISOString();
+    await saveProjectGroup(deps.docStore, workspaceId, projectId, group);
     json(res, 200, group);
     return true;
   }
@@ -333,13 +356,11 @@ export async function handleProjectGroupsRoute(args: {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
-    const groups = getProjectGroupsState(workspaceId, projectId);
     if (isBuiltInProjectGroupId(groupId)) {
       json(res, 409, { error_code: 'CONFLICT', message: 'Built-in groups cannot be deleted' });
       return true;
     }
-    const next = groups.filter((g) => g.id !== groupId);
-    setProjectGroupsState(workspaceId, projectId, next);
+    await deleteProjectGroup(deps.docStore, workspaceId, projectId, groupId);
     res.statusCode = 204;
     res.end();
     return true;
@@ -357,7 +378,7 @@ export async function handleProjectGroupsRoute(args: {
       return true;
     }
     const body = await readBody(req) as { member_ids?: string[] };
-    const groups = getProjectGroupsState(workspaceId, projectId);
+    const groups = await listProjectGroups(deps.docStore, workspaceId, projectId);
     const group = groups.find((g) => g.id === groupId);
     if (!group) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Group not found' });
@@ -404,9 +425,9 @@ export async function handleProjectMembershipGovernanceRoute(args: {
     } catch {
       // Keep minimal membership read endpoint usable in local/dev fixtures.
     }
-    const membership = getProjectMembershipsState(workspaceId, projectId).get(userId);
+    const membership = await getProjectMembership(deps.docStore, workspaceId, projectId, userId);
     const isCurrentUser = userId === user.id;
-    const effectiveGroups = getProjectGroupsState(workspaceId, projectId, projectOwnerId).filter(
+    const effectiveGroups = (await listProjectGroups(deps.docStore, workspaceId, projectId, projectOwnerId)).filter(
       (group) => group.member_ids.includes(userId),
     ).map((group) => ({
       id: group.id,
@@ -421,10 +442,12 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       groups: effectiveGroups,
       permissions: isCurrentUser
         ? [
-          ...resolveVisibleProjectPermissionsForActor({
+          ...await resolveVisibleProjectPermissionsForActor({
+            docStore: deps.docStore,
             workspaceId,
             projectId,
             projectOwnerId: projectOwnerId ?? user.id,
+            projectGovernance,
             actorUserId: user.id,
           }),
         ]
@@ -488,8 +511,7 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       json(res, 409, { error_code: 'CONFLICT', message: 'project_owner_membership_cannot_be_modified' });
       return true;
     }
-    const memberships = getProjectMembershipsState(workspaceId, projectId);
-    const existing = memberships.get(userId);
+    const existing = await getProjectMembership(deps.docStore, workspaceId, projectId, userId);
     let prevStatus: 'active' | 'pending' | 'suspended' | null = null;
     if (!existing) {
       if (body.status !== 'active') {
@@ -512,7 +534,7 @@ export async function handleProjectMembershipGovernanceRoute(args: {
         json(res, 404, { error_code: 'NOT_FOUND', message: 'membership_not_found' });
         return true;
       }
-      memberships.set(userId, {
+      await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
         project_id: projectId,
         user_id: userId,
         status: 'active',
@@ -520,25 +542,26 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       });
     } else {
       prevStatus = existing.status;
-      existing.status = body.status;
-      memberships.set(userId, existing);
+      await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
+        ...existing,
+        status: body.status,
+      });
     }
 
-    const historyState = getMemberChangeHistoryState(workspaceId, projectId);
-    const items = historyState.get(userId) ?? [];
-    items.unshift({
-      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
-      timestamp: new Date().toISOString(),
-      actor_id: user.id,
-      actor_email: user.email,
-      change_type: 'membership',
+    await appendMemberChange({
+      deps,
+      workspaceId,
+      projectId,
+      userId,
+      actorId: user.id,
+      actorEmail: user.email,
+      changeType: 'membership',
       changes: {
         updated: {
           status: { from: prevStatus ?? 'missing', to: body.status },
         },
       },
     });
-    historyState.set(userId, items);
 
     await writeProjectAuditEvent(deps, {
       workspaceId,
@@ -605,8 +628,7 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       json(res, 409, { error_code: 'CONFLICT', message: 'project_owner_membership_cannot_be_removed' });
       return true;
     }
-    const memberships = getProjectMembershipsState(workspaceId, projectId);
-    const existing = memberships.get(userId);
+    const existing = await getProjectMembership(deps.docStore, workspaceId, projectId, userId);
     if (!existing) {
       await writeProjectAuditEvent(deps, {
         workspaceId,
@@ -626,24 +648,29 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'membership_not_found' });
       return true;
     }
-    memberships.delete(userId);
-    clearMemberGovernanceState(workspaceId, projectId, userId);
+    await deleteProjectMembershipRecord(deps.docStore, workspaceId, projectId, userId);
+    await clearMemberGovernanceState({
+      deps,
+      workspaceId,
+      projectId,
+      userId,
+      projectOwnerId: projectPermissionContext.ownerId,
+    });
 
-    const historyState = getMemberChangeHistoryState(workspaceId, projectId);
-    const items = historyState.get(userId) ?? [];
-    items.unshift({
-      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
-      timestamp: new Date().toISOString(),
-      actor_id: user.id,
-      actor_email: user.email,
-      change_type: 'membership',
+    await appendMemberChange({
+      deps,
+      workspaceId,
+      projectId,
+      userId,
+      actorId: user.id,
+      actorEmail: user.email,
+      changeType: 'membership',
       changes: {
         updated: {
           status: { from: existing.status, to: 'removed' },
         },
       },
     });
-    historyState.set(userId, items);
 
     await writeProjectAuditEvent(deps, {
       workspaceId,
@@ -664,8 +691,7 @@ export async function handleProjectMembershipGovernanceRoute(args: {
   }
 
   if (routeKind === 'projectMemberPermissions' && method === 'GET') {
-    const state = getProjectMemberPermissionsState(workspaceId, projectId);
-    const current = state.get(userId);
+    const current = await getProjectMemberPermissionState(deps.docStore, workspaceId, projectId, userId);
     json(res, 200, {
       platform_permissions: current?.permissions ?? [],
       resource_permissions: undefined,
@@ -724,27 +750,27 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'mode is required' });
       return true;
     }
-    const state = getProjectMemberPermissionsState(workspaceId, projectId);
-    const prev = state.get(userId) ?? { mode: 'custom' as const, template: null, permissions: [] };
+    const prev = await getProjectMemberPermissionState(deps.docStore, workspaceId, projectId, userId)
+      ?? { mode: 'custom' as const, template: null, permissions: [] };
     const nextPermissions = Array.isArray(body.permissions)
       ? body.permissions.filter((v): v is string => typeof v === 'string')
       : prev.permissions;
     const nextTemplate = body.mode === 'template'
       ? (typeof body.template === 'string' || body.template === null ? body.template : prev.template ?? null)
       : null;
-    state.set(userId, {
+    await upsertProjectMemberPermissionState(deps.docStore, workspaceId, projectId, userId, {
       mode: body.mode,
       template: nextTemplate,
       permissions: nextPermissions,
     });
-    const historyState = getMemberChangeHistoryState(workspaceId, projectId);
-    const items = historyState.get(userId) ?? [];
-    items.unshift({
-      id: `chg_${Math.random().toString(36).slice(2, 10)}`,
-      timestamp: new Date().toISOString(),
-      actor_id: user.id,
-      actor_email: user.email,
-      change_type: 'permissions',
+    await appendMemberChange({
+      deps,
+      workspaceId,
+      projectId,
+      userId,
+      actorId: user.id,
+      actorEmail: user.email,
+      changeType: 'permissions',
       changes: {
         updated: {
           mode: { from: prev.mode, to: body.mode },
@@ -754,7 +780,6 @@ export async function handleProjectMembershipGovernanceRoute(args: {
         removed: prev.permissions.filter((p) => !nextPermissions.includes(p)),
       },
     });
-    historyState.set(userId, items);
     await writeProjectAuditEvent(deps, {
       workspaceId,
       projectId,
@@ -783,8 +808,7 @@ export async function handleProjectMembershipGovernanceRoute(args: {
   }
 
   if (routeKind === 'projectMemberChangeHistory' && method === 'GET') {
-    const state = getMemberChangeHistoryState(workspaceId, projectId);
-    json(res, 200, { items: state.get(userId) ?? [] });
+    json(res, 200, { items: await listProjectMemberChangeHistory(deps.docStore, workspaceId, projectId, userId) });
     return true;
   }
 

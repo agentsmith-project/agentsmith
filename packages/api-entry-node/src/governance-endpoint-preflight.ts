@@ -81,7 +81,8 @@ export async function enforceEndpointGovernancePreflight(args: {
   } = args;
 
   const decisionId = `gdec_${randomUUID().replace(/-/g, '')}`;
-  const policyCheck = isProjectResourceAccessAllowedForUser({
+  const policyCheck = await isProjectResourceAccessAllowedForUser({
+    docStore: deps.docStore,
     workspaceId,
     projectId,
     resourceType: 'endpoint',

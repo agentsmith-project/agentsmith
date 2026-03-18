@@ -1,9 +1,11 @@
 import type http from 'node:http';
+import { randomUUID } from 'node:crypto';
+import type { JsonDocStorePort } from '@mbos/ports';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
-import { upsertProjectMembership } from './project-memberships-store.js';
-import { projectScopedKey, readProjectPermissionContext } from './project-route-handler-utils.js';
+import { upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
+import { readProjectPermissionContext } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
 
@@ -21,19 +23,79 @@ export interface ProjectJoinRequestRecord {
   reject_reason?: string;
 }
 
-const PROJECT_JOIN_REQUESTS_BY_PROJECT = new Map<string, ProjectJoinRequestRecord[]>();
+const PROJECT_JOIN_REQUEST_COLLECTION = 'project_join_requests';
 
-export function resetProjectJoinRequestsState(): void {
-  PROJECT_JOIN_REQUESTS_BY_PROJECT.clear();
+type StoredProjectJoinRequestRecord = ProjectJoinRequestRecord & {
+  workspace_id: string;
+};
+
+function toStoredRecord(args: {
+  workspaceId: string;
+  record: ProjectJoinRequestRecord;
+}): StoredProjectJoinRequestRecord {
+  return {
+    workspace_id: args.workspaceId,
+    ...args.record,
+  };
 }
 
-export function getProjectJoinRequestsState(workspaceId: string, projectId: string): ProjectJoinRequestRecord[] {
-  const key = projectScopedKey(workspaceId, projectId);
-  const existing = PROJECT_JOIN_REQUESTS_BY_PROJECT.get(key);
-  if (existing) return existing;
-  const items: ProjectJoinRequestRecord[] = [];
-  PROJECT_JOIN_REQUESTS_BY_PROJECT.set(key, items);
-  return items;
+function toPublicRecord(record: StoredProjectJoinRequestRecord): ProjectJoinRequestRecord {
+  const { workspace_id: _workspaceId, ...publicRecord } = record;
+  return publicRecord;
+}
+
+export class JsonDocProjectJoinRequestRepo {
+  constructor(private readonly docStore: JsonDocStorePort) {}
+
+  async listByProject(workspaceId: string, projectId: string): Promise<ProjectJoinRequestRecord[]> {
+    const items = await this.docStore.list<StoredProjectJoinRequestRecord>(PROJECT_JOIN_REQUEST_COLLECTION, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+    });
+    return items.map(toPublicRecord);
+  }
+
+  async getById(
+    workspaceId: string,
+    projectId: string,
+    joinRequestId: string,
+  ): Promise<ProjectJoinRequestRecord | null> {
+    const item = await this.docStore.get<StoredProjectJoinRequestRecord>(PROJECT_JOIN_REQUEST_COLLECTION, joinRequestId);
+    if (!item) return null;
+    if (item.workspace_id !== workspaceId || item.project_id !== projectId) {
+      return null;
+    }
+    return toPublicRecord(item);
+  }
+
+  async save(workspaceId: string, record: ProjectJoinRequestRecord): Promise<void> {
+    await this.docStore.upsert(PROJECT_JOIN_REQUEST_COLLECTION, record.id, toStoredRecord({ workspaceId, record }));
+  }
+}
+
+export async function listProjectJoinRequests(
+  docStore: JsonDocStorePort,
+  workspaceId: string,
+  projectId: string,
+): Promise<ProjectJoinRequestRecord[]> {
+  return new JsonDocProjectJoinRequestRepo(docStore).listByProject(workspaceId, projectId);
+}
+
+export async function getProjectJoinRequest(
+  docStore: JsonDocStorePort,
+  workspaceId: string,
+  projectId: string,
+  joinRequestId: string,
+): Promise<ProjectJoinRequestRecord | null> {
+  return new JsonDocProjectJoinRequestRepo(docStore).getById(workspaceId, projectId, joinRequestId);
+}
+
+export async function saveProjectJoinRequest(
+  docStore: JsonDocStorePort,
+  workspaceId: string,
+  record: ProjectJoinRequestRecord,
+): Promise<void> {
+  await new JsonDocProjectJoinRequestRepo(docStore).save(workspaceId, record);
 }
 
 export async function handleProjectJoinRequestsRoute(args: {
@@ -64,7 +126,7 @@ export async function handleProjectJoinRequestsRoute(args: {
   } = args;
 
   if (routeKind === 'projectJoinRequests' && method === 'GET') {
-    const items = getProjectJoinRequestsState(workspaceId, projectId);
+    const items = await listProjectJoinRequests(deps.docStore, workspaceId, projectId);
     json(res, 200, { items, total: items.length });
     return true;
   }
@@ -86,14 +148,14 @@ export async function handleProjectJoinRequestsRoute(args: {
     }
     const body = await readBody(req) as { reason?: unknown } | null;
     const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
-    const items = getProjectJoinRequestsState(workspaceId, projectId);
+    const items = await listProjectJoinRequests(deps.docStore, workspaceId, projectId);
     const existingPending = items.find((item) => item.user_id === user.id && item.status === 'pending');
     if (existingPending) {
       json(res, 409, { error_code: 'JOIN_REQUEST_ALREADY_PENDING', message: 'A pending join request already exists' });
       return true;
     }
     const created: ProjectJoinRequestRecord = {
-      id: `jr_${Math.random().toString(36).slice(2, 10)}`,
+      id: `jr_${randomUUID().replace(/-/g, '').slice(0, 8)}`,
       project_id: projectId,
       user_id: user.id,
       user_email: user.email,
@@ -102,7 +164,7 @@ export async function handleProjectJoinRequestsRoute(args: {
       status: 'pending',
       requested_at: new Date().toISOString(),
     };
-    items.push(created);
+    await saveProjectJoinRequest(deps.docStore, workspaceId, created);
     await writeProjectAuditEvent(deps, {
       workspaceId,
       projectId,
@@ -130,22 +192,25 @@ export async function handleProjectJoinRequestsRoute(args: {
       json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_owner_required' });
       return true;
     }
-    const items = getProjectJoinRequestsState(workspaceId, projectId);
-    const target = items.find((item) => item.id === joinId);
+    const target = await getProjectJoinRequest(deps.docStore, workspaceId, projectId, joinId);
     if (!target) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Join request not found' });
       return true;
     }
-    target.status = 'approved';
-    target.reviewed_at = new Date().toISOString();
-    target.reviewed_by = user.id;
-    target.reject_reason = undefined;
-    upsertProjectMembership(workspaceId, projectId, {
+    const approved: ProjectJoinRequestRecord = {
+      ...target,
+      status: 'approved',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user.id,
+      reject_reason: undefined,
+    };
+    await saveProjectJoinRequest(deps.docStore, workspaceId, approved);
+    await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
       project_id: projectId,
-      user_id: target.user_id,
+      user_id: approved.user_id,
       status: 'active',
-      joined_at: target.reviewed_at,
-      approved_via_join_request_id: target.id,
+      joined_at: approved.reviewed_at,
+      approved_via_join_request_id: approved.id,
     });
     await writeProjectAuditEvent(deps, {
       workspaceId,
@@ -153,9 +218,9 @@ export async function handleProjectJoinRequestsRoute(args: {
       actor: { type: 'user', id: user.id },
       action: 'member.join_request.approved',
       resourceType: 'join_request',
-      resourceId: target.id,
+      resourceId: approved.id,
       metadata: {
-        requested_user_id: target.user_id,
+        requested_user_id: approved.user_id,
       },
     });
     res.statusCode = 204;
@@ -178,25 +243,28 @@ export async function handleProjectJoinRequestsRoute(args: {
     const reason = typeof (body as { reason?: unknown } | null)?.reason === 'string'
       ? (body as { reason?: string }).reason
       : undefined;
-    const items = getProjectJoinRequestsState(workspaceId, projectId);
-    const target = items.find((item) => item.id === joinId);
+    const target = await getProjectJoinRequest(deps.docStore, workspaceId, projectId, joinId);
     if (!target) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Join request not found' });
       return true;
     }
-    target.status = 'rejected';
-    target.reviewed_at = new Date().toISOString();
-    target.reviewed_by = user.id;
-    target.reject_reason = reason;
+    const rejected: ProjectJoinRequestRecord = {
+      ...target,
+      status: 'rejected',
+      reviewed_at: new Date().toISOString(),
+      reviewed_by: user.id,
+      reject_reason: reason,
+    };
+    await saveProjectJoinRequest(deps.docStore, workspaceId, rejected);
     await writeProjectAuditEvent(deps, {
       workspaceId,
       projectId,
       actor: { type: 'user', id: user.id },
       action: 'member.join_request.rejected',
       resourceType: 'join_request',
-      resourceId: target.id,
+      resourceId: rejected.id,
       metadata: {
-        requested_user_id: target.user_id,
+        requested_user_id: rejected.user_id,
         reject_reason_present: typeof reason === 'string' && reason.trim().length > 0,
       },
     });

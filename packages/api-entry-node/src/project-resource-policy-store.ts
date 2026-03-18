@@ -1,4 +1,5 @@
-import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
+import type { JsonDocStorePort } from '@mbos/ports';
+import { getAllProjectGroupIdsForUserPersisted } from './project-member-governance-persistence.js';
 
 type SubjectType = 'group' | 'user';
 type ResourceType = 'endpoint' | 'file_library' | 'agent';
@@ -24,7 +25,7 @@ export type ProjectResourcePolicyRecord = {
   spending_limits?: Record<string, unknown>;
 };
 
-const PROJECT_RESOURCE_POLICIES_BY_PROJECT = new Map<string, Map<string, ProjectResourcePolicyRecord>>();
+const PROJECT_RESOURCE_POLICY_COLLECTION = 'project_resource_policies';
 
 const DEFAULT_ENDPOINT_RATE_RULES: PolicyRuleRecord[] = [
   { key: 'endpoint.requests_per_minute', value: 120 },
@@ -38,21 +39,27 @@ const DEFAULT_ENDPOINT_SPENDING_RULES: PolicyRuleRecord[] = [
   { key: 'endpoint.spending_usd_per_day', value: 400, window: 'day' },
 ];
 
-function projectScopedKey(workspaceId: string, projectId: string) {
-  return `${workspaceId}:${projectId}`;
-}
+type StoredProjectResourcePolicyRecord = ProjectResourcePolicyRecord & {
+  id: string;
+  workspace_id: string;
+  project_id: string;
+};
 
 function policyKey(resourceType: string, resourceId: string) {
   return `${resourceType}:${resourceId}`;
 }
 
-function getProjectPolicyState(workspaceId: string, projectId: string) {
-  const key = projectScopedKey(workspaceId, projectId);
-  const existing = PROJECT_RESOURCE_POLICIES_BY_PROJECT.get(key);
-  if (existing) return existing;
-  const map = new Map<string, ProjectResourcePolicyRecord>();
-  PROJECT_RESOURCE_POLICIES_BY_PROJECT.set(key, map);
-  return map;
+function buildStoredPolicyRecord(args: {
+  workspaceId: string;
+  projectId: string;
+  policy: ProjectResourcePolicyRecord;
+}): StoredProjectResourcePolicyRecord {
+  return {
+    id: policyKey(args.policy.resource_type, args.policy.resource_id),
+    workspace_id: args.workspaceId,
+    project_id: args.projectId,
+    ...args.policy,
+  };
 }
 
 function readPolicyRules(input: unknown): PolicyRuleRecord[] {
@@ -114,42 +121,104 @@ function buildDefaultPolicy(resourceType: ResourceType, resourceId: string): Pro
   };
 }
 
-export function getProjectResourcePolicy(
+function toPublicPolicy(record: StoredProjectResourcePolicyRecord): ProjectResourcePolicyRecord {
+  return {
+    resource_type: record.resource_type,
+    resource_id: record.resource_id,
+    access_mode: record.access_mode,
+    allowed_subjects: record.allowed_subjects.map((subject) => ({ ...subject })),
+    rate_limits: record.rate_limits,
+    spending_limits: record.spending_limits,
+  };
+}
+
+export class JsonDocProjectResourcePolicyRepo {
+  constructor(private readonly docStore: JsonDocStorePort) {}
+
+  async getByResource(
+    workspaceId: string,
+    projectId: string,
+    resourceType: ResourceType,
+    resourceId: string,
+  ): Promise<ProjectResourcePolicyRecord | null> {
+    const stored = await this.docStore.get<StoredProjectResourcePolicyRecord>(
+      PROJECT_RESOURCE_POLICY_COLLECTION,
+      policyKey(resourceType, resourceId),
+    );
+    if (!stored) return null;
+    if (stored.workspace_id !== workspaceId || stored.project_id !== projectId) {
+      return null;
+    }
+    return toPublicPolicy(stored);
+  }
+
+  async listByProject(
+    workspaceId: string,
+    projectId: string,
+    resourceType?: ResourceType,
+  ): Promise<ProjectResourcePolicyRecord[]> {
+    const items = await this.docStore.list<StoredProjectResourcePolicyRecord>(
+      PROJECT_RESOURCE_POLICY_COLLECTION,
+      {
+        workspace_id: workspaceId,
+        project_id: projectId,
+        ...(resourceType ? { resource_type: resourceType } : {}),
+      },
+    );
+    return items.map(toPublicPolicy);
+  }
+
+  async save(
+    workspaceId: string,
+    projectId: string,
+    policy: ProjectResourcePolicyRecord,
+  ): Promise<void> {
+    const stored = buildStoredPolicyRecord({ workspaceId, projectId, policy });
+    await this.docStore.upsert(PROJECT_RESOURCE_POLICY_COLLECTION, stored.id, stored);
+  }
+}
+
+export async function getProjectResourcePolicy(
+  docStore: JsonDocStorePort,
   workspaceId: string,
   projectId: string,
   resourceType: ResourceType,
   resourceId: string,
-): ProjectResourcePolicyRecord | null {
-  return getProjectPolicyState(workspaceId, projectId).get(policyKey(resourceType, resourceId)) ?? null;
+): Promise<ProjectResourcePolicyRecord | null> {
+  return new JsonDocProjectResourcePolicyRepo(docStore).getByResource(
+    workspaceId,
+    projectId,
+    resourceType,
+    resourceId,
+  );
 }
 
-export function listProjectResourcePolicies(
+export async function listProjectResourcePolicies(
+  docStore: JsonDocStorePort,
   workspaceId: string,
   projectId: string,
   resourceType?: ResourceType,
-): ProjectResourcePolicyRecord[] {
-  const policies = Array.from(getProjectPolicyState(workspaceId, projectId).values());
-  if (!resourceType) {
-    return policies;
-  }
-  return policies.filter((policy) => policy.resource_type === resourceType);
+): Promise<ProjectResourcePolicyRecord[]> {
+  return new JsonDocProjectResourcePolicyRepo(docStore).listByProject(workspaceId, projectId, resourceType);
 }
 
-export function upsertProjectResourcePolicy(
+export async function upsertProjectResourcePolicy(
+  docStore: JsonDocStorePort,
   workspaceId: string,
   projectId: string,
   policy: ProjectResourcePolicyRecord,
-): void {
-  getProjectPolicyState(workspaceId, projectId).set(policyKey(policy.resource_type, policy.resource_id), policy);
+): Promise<void> {
+  await new JsonDocProjectResourcePolicyRepo(docStore).save(workspaceId, projectId, policy);
 }
 
-export function getProjectResourcePolicyOrDefault(
+export async function getProjectResourcePolicyOrDefault(
+  docStore: JsonDocStorePort,
   workspaceId: string,
   projectId: string,
   resourceType: ResourceType,
   resourceId: string,
-): ProjectResourcePolicyRecord {
-  const existing = getProjectResourcePolicy(workspaceId, projectId, resourceType, resourceId);
+): Promise<ProjectResourcePolicyRecord> {
+  const existing = await getProjectResourcePolicy(docStore, workspaceId, projectId, resourceType, resourceId);
   const defaults = buildDefaultPolicy(resourceType, resourceId);
   if (!existing) {
     return defaults;
@@ -174,14 +243,21 @@ export function getProjectResourcePolicyOrDefault(
   };
 }
 
-export function isProjectResourceAccessAllowedForUser(args: {
+export async function isProjectResourceAccessAllowedForUser(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   resourceType: ResourceType;
   resourceId: string;
   userId: string;
-}): { allowed: boolean; policy: ProjectResourcePolicyRecord | null; reason?: 'not_in_allow_list' } {
-  const policy = getProjectResourcePolicy(args.workspaceId, args.projectId, args.resourceType, args.resourceId);
+}): Promise<{ allowed: boolean; policy: ProjectResourcePolicyRecord | null; reason?: 'not_in_allow_list' }> {
+  const policy = await getProjectResourcePolicy(
+    args.docStore,
+    args.workspaceId,
+    args.projectId,
+    args.resourceType,
+    args.resourceId,
+  );
   if (!policy || policy.access_mode === 'allow_all_members') {
     return { allowed: true, policy };
   }
@@ -191,7 +267,8 @@ export function isProjectResourceAccessAllowedForUser(args: {
   if (userMatch) {
     return { allowed: true, policy };
   }
-  const userGroupIds = getAllProjectGroupIdsForUser({
+  const userGroupIds = await getAllProjectGroupIdsForUserPersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,

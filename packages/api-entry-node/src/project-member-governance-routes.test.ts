@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 
 const {
   writeProjectAuditEvent,
@@ -22,18 +23,36 @@ vi.mock('./project-route-handler-utils.js', async () => {
   };
 });
 
-import { getProjectGroupsState } from './project-groups-store.js';
-import { getProjectMemberPermissionsState } from './project-member-permissions-store.js';
-import { getProjectMembershipsState } from './project-memberships-store.js';
-import { getProjectPermissionTemplatesState } from './project-permission-templates-store.js';
 import {
-  getMemberChangeHistoryState,
   handleProjectGroupsRoute,
   handleProjectMembershipGovernanceRoute,
   handleProjectPermissionTemplatesRoute,
 } from './project-member-governance-routes.js';
+import {
+  getProjectMembership,
+  getProjectMemberPermissionState,
+  listProjectGroups,
+  listProjectMemberChangeHistory,
+  listProjectPermissionTemplates,
+  saveProjectPermissionTemplate,
+} from './project-member-governance-persistence.js';
+import type { NodeApiDeps } from './node-api-deps.js';
 
 describe('project-member-governance-routes', () => {
+  function buildDeps(): NodeApiDeps {
+    return {
+      docStore: new InMemoryJsonDocStore(),
+      getProjectUseCase: {
+        execute: vi.fn().mockResolvedValue({
+          id: 'proj_default',
+          owner_id: 'owner-1',
+          created_at: '2026-03-01T00:00:00Z',
+          governance_json: null,
+        }),
+      },
+    } as unknown as NodeApiDeps;
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     writeProjectAuditEvent.mockResolvedValue(undefined);
@@ -46,6 +65,7 @@ describe('project-member-governance-routes', () => {
   it('creates permission templates and protects built-in templates from deletion', async () => {
     const workspaceId = `ws-templates-${Date.now()}`;
     const projectId = `proj-templates-${Date.now()}`;
+    const deps = buildDeps();
     const json = vi.fn();
     const res = { end: vi.fn(), statusCode: 200 } as never;
 
@@ -56,7 +76,7 @@ describe('project-member-governance-routes', () => {
       projectId,
       req: {} as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn().mockResolvedValue({
@@ -66,14 +86,14 @@ describe('project-member-governance-routes', () => {
       }),
     })).resolves.toBe(true);
 
-    const created = getProjectPermissionTemplatesState(workspaceId, projectId).at(-1);
+    const created = (await listProjectPermissionTemplates(deps.docStore, workspaceId, projectId)).find((item) => item.name === 'Custom Editors');
     expect(created).toEqual(expect.objectContaining({
       name: 'Custom Editors',
       permissions: ['project:files:update', 'project:audit:read'],
       built_in: false,
     }));
 
-    getProjectPermissionTemplatesState(workspaceId, projectId).push({
+    await saveProjectPermissionTemplate(deps.docStore, workspaceId, projectId, {
       id: 'pt_builtin',
       project_id: projectId,
       name: 'Built In',
@@ -91,7 +111,7 @@ describe('project-member-governance-routes', () => {
       templateId: 'pt_builtin',
       req: {} as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn(),
@@ -107,6 +127,7 @@ describe('project-member-governance-routes', () => {
   it('creates groups and applies templates to explicit members', async () => {
     const workspaceId = `ws-groups-${Date.now()}`;
     const projectId = `proj-groups-${Date.now()}`;
+    const deps = buildDeps();
     const json = vi.fn();
     const res = { end: vi.fn(), statusCode: 200 } as never;
 
@@ -117,7 +138,7 @@ describe('project-member-governance-routes', () => {
       projectId,
       req: {} as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn().mockResolvedValue({
@@ -127,7 +148,8 @@ describe('project-member-governance-routes', () => {
       }),
     })).resolves.toBe(true);
 
-    const group = getProjectGroupsState(workspaceId, projectId).find((item) => item.name === 'Reviewers');
+    const group = (await listProjectGroups(deps.docStore, workspaceId, projectId, 'owner-1'))
+      .find((item) => item.name === 'Reviewers');
     expect(group).toEqual(expect.objectContaining({
       name: 'Reviewers',
       permission_template_id: 'pt_review',
@@ -142,7 +164,7 @@ describe('project-member-governance-routes', () => {
       groupId: group!.id,
       req: {} as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn().mockResolvedValue({ member_ids: ['user-2'] }),
@@ -157,6 +179,7 @@ describe('project-member-governance-routes', () => {
   it('updates membership and member permissions while recording history', async () => {
     const workspaceId = `ws-members-${Date.now()}`;
     const projectId = `proj-members-${Date.now()}`;
+    const deps = buildDeps();
     const json = vi.fn();
     const res = { end: vi.fn(), statusCode: 200 } as never;
 
@@ -168,7 +191,7 @@ describe('project-member-governance-routes', () => {
       userId: 'user-1',
       req: { headers: { 'x-request-id': 'req-members-1' } } as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn().mockResolvedValue({ status: 'active' }),
@@ -182,7 +205,7 @@ describe('project-member-governance-routes', () => {
       userId: 'user-1',
       req: { headers: { 'x-request-id': 'req-members-2' } } as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn().mockResolvedValue({
@@ -199,40 +222,42 @@ describe('project-member-governance-routes', () => {
       userId: 'user-1',
       req: {} as never,
       res,
-      deps: {} as never,
+      deps,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
-    expect(getProjectMembershipsState(workspaceId, projectId).get('user-1')).toEqual(expect.objectContaining({
+    expect(await getProjectMembership(deps.docStore, workspaceId, projectId, 'user-1')).toEqual(expect.objectContaining({
       status: 'active',
     }));
-    expect(getProjectMemberPermissionsState(workspaceId, projectId).get('user-1')).toEqual({
+    expect(await getProjectMemberPermissionState(deps.docStore, workspaceId, projectId, 'user-1')).toEqual({
       mode: 'custom',
       template: null,
       permissions: ['project:files:update', 'project:audit:read'],
     });
-    expect(getMemberChangeHistoryState(workspaceId, projectId).get('user-1')).toEqual([
-      expect.objectContaining({ change_type: 'permissions' }),
-      expect.objectContaining({ change_type: 'membership' }),
-    ]);
+    expect(await listProjectMemberChangeHistory(deps.docStore, workspaceId, projectId, 'user-1')).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ change_type: 'permissions' }),
+        expect.objectContaining({ change_type: 'membership' }),
+      ]),
+    );
     expect(writeProjectAuditEvent).toHaveBeenCalledWith(
-      {} as never,
+      deps,
       expect.objectContaining({ action: 'member.membership.activated', requestId: 'req-members-1' }),
     );
     expect(writeProjectAuditEvent).toHaveBeenCalledWith(
-      {} as never,
+      deps,
       expect.objectContaining({ action: 'member.permissions.updated', requestId: 'req-members-2' }),
     );
     expect(json).toHaveBeenLastCalledWith(
       res,
       200,
       expect.objectContaining({
-        items: [
+        items: expect.arrayContaining([
           expect.objectContaining({ change_type: 'permissions' }),
           expect.objectContaining({ change_type: 'membership' }),
-        ],
+        ]),
       }),
     );
   });

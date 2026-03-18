@@ -11,7 +11,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     const workspaceId = 'ws_1';
     const projectId = 'proj_1';
     const endpointId = 'ep_denied';
-    upsertProjectResourcePolicy(workspaceId, projectId, {
+    await upsertProjectResourcePolicy(docStore, workspaceId, projectId, {
       resource_type: 'endpoint',
       resource_id: endpointId,
       access_mode: 'allow_list',

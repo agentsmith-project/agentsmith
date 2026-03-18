@@ -63,7 +63,8 @@ export async function handleProjectResourcePolicyRoute(args: {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'unsupported_resource_type' });
       return true;
     }
-    const policy = getProjectResourcePolicyOrDefault(
+    const policy = await getProjectResourcePolicyOrDefault(
+      deps.docStore,
       workspaceId,
       projectId,
       resourceType,
@@ -138,7 +139,8 @@ export async function handleProjectResourcePolicyRoute(args: {
       return true;
     }
 
-    const previousPolicy = getProjectResourcePolicyOrDefault(
+    const previousPolicy = await getProjectResourcePolicyOrDefault(
+      deps.docStore,
       workspaceId,
       projectId,
       resourceType,
@@ -198,7 +200,7 @@ export async function handleProjectResourcePolicyRoute(args: {
       ...subject,
       updated_at: new Date().toISOString(),
     }));
-    upsertProjectResourcePolicy(workspaceId, projectId, {
+    await upsertProjectResourcePolicy(deps.docStore, workspaceId, projectId, {
       resource_type: resourceType,
       resource_id: resourceId,
       access_mode: body.access_mode,

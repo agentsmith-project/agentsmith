@@ -140,7 +140,8 @@ export async function handleRequest(
             workspaceId: route.workspaceId,
             projectId: route.projectId,
           });
-          const evaluation = evaluateProjectPermissions({
+          const evaluation = await evaluateProjectPermissions({
+            docStore: deps.docStore,
             workspaceId: route.workspaceId,
             projectId: route.projectId,
             projectOwnerId: project.owner_id,
@@ -189,7 +190,8 @@ export async function handleRequest(
         workspaceId: route.workspaceId,
         projectId: route.projectId,
       });
-      const actorGate = evaluateProjectPermissions({
+      const actorGate = await evaluateProjectPermissions({
+        docStore: deps.docStore,
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         projectOwnerId: project.owner_id,
@@ -214,7 +216,8 @@ export async function handleRequest(
         return;
       }
 
-      const permissionEvaluation = evaluateProjectPermissions({
+      const permissionEvaluation = await evaluateProjectPermissions({
+        docStore: deps.docStore,
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         projectOwnerId: project.owner_id,
@@ -240,7 +243,8 @@ export async function handleRequest(
       }
 
       if (body.resource.type === 'endpoint' || body.resource.type === 'file_library' || body.resource.type === 'agent') {
-        const policyDecision = evaluateResourcePolicyAuthorization({
+        const policyDecision = await evaluateResourcePolicyAuthorization({
+          docStore: deps.docStore,
           workspaceId: route.workspaceId,
           projectId: route.projectId,
           resourceType: body.resource.type,

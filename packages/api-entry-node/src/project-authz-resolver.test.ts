@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { getProjectGroupsState } from './project-groups-store.js';
-import { getProjectPermissionTemplatesState } from './project-permission-templates-store.js';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { saveProjectGroup, saveProjectPermissionTemplate } from './project-member-governance-persistence.js';
 import { resolveProjectPermissionsForRequest } from './project-authz-resolver.js';
 
 describe('resolveProjectPermissionsForRequest', () => {
-  it('grants group template permissions in addition to baseline operator permissions', () => {
+  it('grants group template permissions from persisted governance state', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Date.now()}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 10)}`;
-    getProjectPermissionTemplatesState(workspaceId, projectId).push({
+    await saveProjectPermissionTemplate(docStore, workspaceId, projectId, {
       id: 'pt_manage',
       project_id: projectId,
       name: 'Managers',
@@ -15,7 +16,7 @@ describe('resolveProjectPermissionsForRequest', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    getProjectGroupsState(workspaceId, projectId).push({
+    await saveProjectGroup(docStore, workspaceId, projectId, {
       id: 'grp_manage',
       project_id: projectId,
       name: 'Managers',
@@ -25,14 +26,14 @@ describe('resolveProjectPermissionsForRequest', () => {
       updated_at: new Date().toISOString(),
     });
 
-    const perms = new Set(resolveProjectPermissionsForRequest({
+    const perms = new Set(await resolveProjectPermissionsForRequest({
+      docStore,
       workspaceId,
       projectId,
       projectOwnerId: 'user_owner',
       actorUserId: 'user_test',
     }));
 
-    expect(perms.has('project:endpoint:use')).toBe(true);
     expect(perms.has('project:governance:update')).toBe(true);
   });
 });

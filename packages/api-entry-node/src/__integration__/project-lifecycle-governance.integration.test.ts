@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { setProjectAdminGroupMembers } from '../project-groups-store.js';
-import { apiFetch, apiFetchWithToken, startServer } from './test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { setProjectAdminGroupMembersPersisted } from '../project-member-governance-persistence.js';
+import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 describe('api-entry-node project lifecycle and governance routes', () => {
   it('records project lifecycle changes in audit events', async () => {
@@ -167,7 +168,8 @@ describe('api-entry-node project lifecycle and governance routes', () => {
   });
 
   it('rejects project admin assignment changes from non-owners via the removed legacy field', async () => {
-    const { baseUrl } = startServer();
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
       method: 'POST',
@@ -183,10 +185,10 @@ describe('api-entry-node project lifecycle and governance routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore: deps.docStore,
       workspaceId: 'ws_default',
       projectId: created.id,
-      projectOwnerId: 'user_test',
       memberIds: ['user_alt'],
     });
 
@@ -291,7 +293,8 @@ describe('api-entry-node project lifecycle and governance routes', () => {
   });
 
   it('rejects forced ownership transfer when actor lacks the built-in workspace owner group', async () => {
-    const { baseUrl } = startServer();
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
       method: 'POST',
@@ -307,10 +310,10 @@ describe('api-entry-node project lifecycle and governance routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore: deps.docStore,
       workspaceId: 'ws_default',
       projectId: created.id,
-      projectOwnerId: 'user_test',
       memberIds: ['user_alt'],
     });
 
@@ -382,7 +385,8 @@ describe('api-entry-node project lifecycle and governance routes', () => {
   });
 
   it('rejects project deletion from non-owners and records audit errors', async () => {
-    const { baseUrl } = startServer();
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createRes = await apiFetch(baseUrl, '/api/v1/workspaces/ws_default/projects', {
       method: 'POST',
@@ -398,10 +402,10 @@ describe('api-entry-node project lifecycle and governance routes', () => {
     expect(createRes.status).toBe(201);
     const created = (await createRes.json()) as { id: string };
 
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore: deps.docStore,
       workspaceId: 'ws_default',
       projectId: created.id,
-      projectOwnerId: 'user_test',
       memberIds: ['user_alt'],
     });
 

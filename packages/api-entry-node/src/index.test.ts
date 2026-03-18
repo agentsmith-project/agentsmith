@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps } from './index.js';
-import { setProjectAdminGroupMembers } from './project-groups-store.js';
 import { recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
 import type { GovernanceRunnerController } from './governance-runner.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';

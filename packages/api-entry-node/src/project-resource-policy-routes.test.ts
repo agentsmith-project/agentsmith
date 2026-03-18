@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 
 const { writeProjectAuditEvent } = vi.hoisted(() => ({
   writeProjectAuditEvent: vi.fn(),
@@ -32,6 +33,7 @@ describe('project-resource-policy-routes', () => {
   it('returns default policy for supported resources', async () => {
     const json = vi.fn();
     const res = {} as never;
+    const docStore = new InMemoryJsonDocStore();
 
     await expect(handleProjectResourcePolicyRoute({
       method: 'GET',
@@ -41,7 +43,7 @@ describe('project-resource-policy-routes', () => {
       resourceId: 'ep-1',
       req: { headers: {} } as never,
       res,
-      deps: {} as never,
+      deps: { docStore } as never,
       user: { id: 'user-1', email: 'user-1@example.com', name: 'User One' },
       json,
       readBody: vi.fn(),
@@ -53,7 +55,7 @@ describe('project-resource-policy-routes', () => {
       res,
       200,
       expect.objectContaining({
-        ...getProjectResourcePolicyOrDefault('ws-1', 'proj-1', 'endpoint', 'ep-1'),
+        ...(await getProjectResourcePolicyOrDefault(docStore, 'ws-1', 'proj-1', 'endpoint', 'ep-1')),
         rate_limits: expect.objectContaining({
           rules: expect.arrayContaining([
             expect.objectContaining({ key: 'endpoint.requests_per_5_hours', value: 6000 }),
@@ -73,6 +75,7 @@ describe('project-resource-policy-routes', () => {
   it('rejects invalid top-level rule keys during policy updates', async () => {
     const json = vi.fn();
     const res = {} as never;
+    const docStore = new InMemoryJsonDocStore();
 
     await expect(handleProjectResourcePolicyRoute({
       method: 'PATCH',
@@ -82,7 +85,7 @@ describe('project-resource-policy-routes', () => {
       resourceId: 'ep-1',
       req: { headers: { 'x-request-id': 'req-1' } } as never,
       res,
-      deps: {} as never,
+      deps: { docStore } as never,
       user: { id: 'user-1', email: 'user-1@example.com', name: 'User One' },
       json,
       readBody: vi.fn().mockResolvedValue({
@@ -102,7 +105,7 @@ describe('project-resource-policy-routes', () => {
       { error_code: 'VALIDATION_ERROR', message: 'rate_limits_rule_key_invalid' },
     );
     expect(writeProjectAuditEvent).toHaveBeenCalledWith(
-      {} as never,
+      { docStore } as never,
       expect.objectContaining({
         action: 'resource_policy.updated',
         result: 'error',
@@ -115,7 +118,7 @@ describe('project-resource-policy-routes', () => {
   it('updates policy state and records audit metadata', async () => {
     const json = vi.fn();
     const res = { end: vi.fn(), statusCode: 200 } as never;
-    const deps = {} as never;
+    const deps = { docStore: new InMemoryJsonDocStore() } as { docStore: InMemoryJsonDocStore };
 
     await expect(handleProjectResourcePolicyRoute({
       method: 'PATCH',
@@ -125,7 +128,7 @@ describe('project-resource-policy-routes', () => {
       resourceId: 'lib-1',
       req: { headers: { 'x-request-id': 'req-2' } } as never,
       res,
-      deps,
+      deps: deps as never,
       user: { id: 'owner-1', email: 'owner-1@example.com', name: 'Owner One' },
       json,
       readBody: vi.fn().mockResolvedValue({
@@ -147,7 +150,7 @@ describe('project-resource-policy-routes', () => {
       allowedLimitKeys,
     })).resolves.toBe(true);
 
-    const saved = getProjectResourcePolicyOrDefault('ws-2', 'proj-2', 'file_library', 'lib-1');
+    const saved = await getProjectResourcePolicyOrDefault(deps.docStore, 'ws-2', 'proj-2', 'file_library', 'lib-1');
     expect(saved).toEqual(expect.objectContaining({
       access_mode: 'allow_list',
       allowed_subjects: [
@@ -158,7 +161,7 @@ describe('project-resource-policy-routes', () => {
       ],
     }));
     expect(writeProjectAuditEvent).toHaveBeenCalledWith(
-      deps,
+      deps as never,
       expect.objectContaining({
         action: 'resource_policy.updated',
         requestId: 'req-2',

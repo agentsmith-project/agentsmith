@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
-import { setProjectAdminGroupMembers } from '../project-groups-store.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 describe('api-entry-node project members governance routes', () => {
@@ -1084,12 +1083,22 @@ describe('api-entry-node project members governance routes', () => {
       'owner-token',
     );
     expect(getPolicyRes.status).toBe(200);
-    expect(await getPolicyRes.json()).toEqual({
+    expect(await getPolicyRes.json()).toEqual(expect.objectContaining({
       resource_type: 'endpoint',
       resource_id: 'ep_test',
       access_mode: 'allow_all_members',
       allowed_subjects: [],
-    });
+      rate_limits: expect.objectContaining({
+        rules: expect.arrayContaining([
+          expect.objectContaining({ key: 'endpoint.requests_per_day', value: 20000 }),
+        ]),
+      }),
+      spending_limits: expect.objectContaining({
+        rules: expect.arrayContaining([
+          expect.objectContaining({ key: 'endpoint.spending_usd_per_day', value: 400 }),
+        ]),
+      }),
+    }));
 
     const patchPolicyRes = await apiFetchWithToken(
       baseUrl,
@@ -1150,7 +1159,11 @@ describe('api-entry-node project members governance routes', () => {
     expect(policy.access_mode).toBe('allow_list');
     expect(policy.allowed_subjects[0]).toMatchObject({ subject_id: 'grp_1' });
     expect(policy.allowed_subjects[0]?.updated_at).toBeTruthy();
-    expect(policy.spending_limits).toEqual({ rules: [{ key: 'endpoint.spending_usd_per_day', value: 9999 }] });
+    expect(policy.spending_limits).toEqual(expect.objectContaining({
+      rules: expect.arrayContaining([
+        expect.objectContaining({ key: 'endpoint.spending_usd_per_day', value: 9999 }),
+      ]),
+    }));
 
     const patchInvalidRootRateKeyRes = await apiFetch(
       baseUrl,

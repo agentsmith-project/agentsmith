@@ -1,6 +1,7 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
 import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
+import { getAllProjectGroupIdsForUserPersisted } from './project-member-governance-persistence.js';
 import { listUsageFacts } from './audit-usage-store.js';
 
 type ResourceType = 'endpoint' | 'file_library' | 'agent';
@@ -184,6 +185,52 @@ function getMatchingSubjectLimitRules(args: {
   return { rules: merged, matched: merged.length > 0 };
 }
 
+async function getMatchingSubjectRateRulesPersisted(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  policy: ProjectResourcePolicyRecord;
+}): Promise<{ rules: PolicyRule[]; matched: boolean }> {
+  const userRules = args.policy.allowed_subjects
+    .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
+    .flatMap((s) => readPolicyRules(s.rate_limits));
+  const groupIds = await getAllProjectGroupIdsForUserPersisted({
+    docStore: args.docStore,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
+  const groupRules = args.policy.allowed_subjects
+    .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
+    .flatMap((s) => readPolicyRules(s.rate_limits));
+  const merged = mergeRateRules(userRules, groupRules);
+  return { rules: merged, matched: merged.length > 0 };
+}
+
+async function getMatchingSubjectLimitRulesPersisted(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  policy: ProjectResourcePolicyRecord;
+}): Promise<{ rules: PolicyRule[]; matched: boolean }> {
+  const userRules = args.policy.allowed_subjects
+    .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
+    .flatMap((s) => readPolicyRules(s.spending_limits));
+  const groupIds = await getAllProjectGroupIdsForUserPersisted({
+    docStore: args.docStore,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
+  const groupRules = args.policy.allowed_subjects
+    .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
+    .flatMap((s) => readPolicyRules(s.spending_limits));
+  const merged = mergeLimitRules(userRules, groupRules);
+  return { rules: merged, matched: merged.length > 0 };
+}
+
 function getEffectiveLimitRule(args: {
   workspaceId: string;
   projectId: string;
@@ -195,6 +242,26 @@ function getEffectiveLimitRule(args: {
   if (limitRuleKeys.length === 0) return {};
   const baseRules = readPolicyRules(args.policy.spending_limits);
   const subject = getMatchingSubjectLimitRules(args);
+  const effective = subject.matched ? mergeLimitRules(baseRules, subject.rules) : baseRules;
+  const limitRule = limitRuleKeys
+    .map((key) => ({ key, rule: effective.find((r) => r.key === key) }))
+    .find((item): item is { key: LimitRuleKey; rule: PolicyRule } => !!item.rule);
+  if (!limitRule) return {};
+  return { key: limitRule.key, value: limitRule.rule.value, scope: subject.matched ? 'subject' : 'policy' };
+}
+
+async function getEffectiveLimitRulePersisted(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  resourceType: ResourceType;
+  policy: ProjectResourcePolicyRecord;
+}): Promise<{ key?: LimitRuleKey; value?: number; scope?: 'policy' | 'subject' }> {
+  const limitRuleKeys = getLimitRuleKeys(args.resourceType);
+  if (limitRuleKeys.length === 0) return {};
+  const baseRules = readPolicyRules(args.policy.spending_limits);
+  const subject = await getMatchingSubjectLimitRulesPersisted(args);
   const effective = subject.matched ? mergeLimitRules(baseRules, subject.rules) : baseRules;
   const limitRule = limitRuleKeys
     .map((key) => ({ key, rule: effective.find((r) => r.key === key) }))
@@ -274,7 +341,8 @@ export async function checkProjectResourceLimitLimitsForUser(args: {
   if (!args.policy) {
     return { allowed: true };
   }
-  const effective = getEffectiveLimitRule({
+  const effective = await getEffectiveLimitRulePersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -445,6 +513,25 @@ function resolveEndpointRateRules(args: {
     }));
 }
 
+async function resolveEndpointRateRulesPersisted(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  policy: ProjectResourcePolicyRecord;
+}): Promise<Array<{ key: EndpointRateRuleKey; value: number; scope: 'policy' | 'subject' }>> {
+  const baseRules = readPolicyRules(args.policy.rate_limits).filter(isEndpointRateRule);
+  const subject = await getMatchingSubjectRateRulesPersisted(args);
+  const effective = subject.matched ? mergeRateRules(baseRules, subject.rules) : baseRules;
+  return effective
+    .filter(isEndpointRateRule)
+    .map((rule) => ({
+      key: rule.key,
+      value: rule.value,
+      scope: subject.matched ? 'subject' : 'policy',
+    }));
+}
+
 function resolveEndpointSpendingRules(args: {
   workspaceId: string;
   projectId: string;
@@ -457,6 +544,39 @@ function resolveEndpointSpendingRules(args: {
     .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
     .filter(isEndpointSpendingRule);
   const groupIds = getAllProjectGroupIdsForUser({
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.userId,
+  });
+  const groupRules = args.policy.allowed_subjects
+    .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
+    .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
+    .filter(isEndpointSpendingRule);
+  const subjectMatched = userRules.length > 0 || groupRules.length > 0;
+  const effective = subjectMatched ? mergeLimitRules(baseRules, mergeLimitRules(userRules, groupRules)) : baseRules;
+  return effective
+    .filter(isEndpointSpendingRule)
+    .map((rule) => ({
+      key: rule.key,
+      value: rule.value,
+      scope: subjectMatched ? 'subject' : 'policy',
+    }));
+}
+
+async function resolveEndpointSpendingRulesPersisted(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  userId: string;
+  policy: ProjectResourcePolicyRecord;
+}): Promise<Array<{ key: EndpointSpendingRuleKey; value: number; scope: 'policy' | 'subject' }>> {
+  const baseRules = readPolicyRulesRaw(args.policy.spending_limits).filter(isEndpointSpendingRule);
+  const userRules = args.policy.allowed_subjects
+    .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
+    .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
+    .filter(isEndpointSpendingRule);
+  const groupIds = await getAllProjectGroupIdsForUserPersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -513,7 +633,8 @@ export async function checkProjectEndpointRateLimitsForUser(args: {
   nowMs?: number;
 }): Promise<EndpointRateLimitDecision> {
   if (!args.policy) return { allowed: true };
-  const rules = resolveEndpointRateRules({
+  const rules = await resolveEndpointRateRulesPersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -582,7 +703,8 @@ export async function checkProjectEndpointSpendingLimitsForUser(args: {
   nowMs?: number;
 }): Promise<EndpointSpendingLimitDecision> {
   if (!args.policy) return { allowed: true };
-  const rules = resolveEndpointSpendingRules({
+  const rules = await resolveEndpointSpendingRulesPersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,

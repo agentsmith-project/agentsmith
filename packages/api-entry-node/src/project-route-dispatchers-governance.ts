@@ -7,9 +7,8 @@ import {
 } from './project-member-governance-routes.js';
 import { handleProjectResourcePolicyRoute } from './project-resource-policy-routes.js';
 import type { ProjectRouteContext } from './project-route-types.js';
-import { getProjectGroupsState } from './project-groups-store.js';
-import { getProjectMembershipsState } from './project-memberships-store.js';
-import { getProjectJoinRequestsState } from './project-join-request-routes.js';
+import { listProjectJoinRequests } from './project-join-request-routes.js';
+import { getProjectMembershipMap, listProjectGroups } from './project-member-governance-persistence.js';
 
 export const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'file_library' | 'agent', readonly string[]> = {
   endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
@@ -57,9 +56,18 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
       // Keep minimal members read endpoint usable in local/dev environments even
       // when membership/governance backend is not fully wired to project repo fixtures.
     }
-    const memberships = Array.from(getProjectMembershipsState(workspaceId, projectId).values());
+    const memberships = Array.from((await getProjectMembershipMap(deps.docStore, workspaceId, projectId)).values());
+    const allGroups = await listProjectGroups(deps.docStore, workspaceId, projectId, projectOwnerId ?? user.id);
+    const actorPermissions = await resolveVisibleProjectPermissionsForActor({
+      docStore: deps.docStore,
+      workspaceId,
+      projectId,
+      projectOwnerId: projectOwnerId ?? user.id,
+      projectGovernance,
+      actorUserId: user.id,
+    });
     const joinRequestsById = new Map(
-      getProjectJoinRequestsState(workspaceId, projectId).map((request) => [request.id, request]),
+      (await listProjectJoinRequests(deps.docStore, workspaceId, projectId)).map((request) => [request.id, request]),
     );
     const items = memberships.map((membership) => {
       const approvedRequest = membership.approved_via_join_request_id
@@ -71,7 +79,7 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
       const resolvedName = membership.user_id === user.id
         ? user.name
         : approvedRequest?.user_name || membership.user_id;
-      const groups = getProjectGroupsState(workspaceId, projectId, projectOwnerId ?? user.id)
+      const groups = allGroups
         .filter((group) => group.member_ids.includes(membership.user_id))
         .map((group) => ({
           id: group.id,
@@ -86,15 +94,7 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
         name: resolvedName,
         groups,
         permissions: membership.user_id === user.id
-          ? [
-            ...resolveVisibleProjectPermissionsForActor({
-              workspaceId,
-              projectId,
-              projectOwnerId: projectOwnerId ?? user.id,
-              projectGovernance,
-              actorUserId: user.id,
-            }),
-          ]
+          ? [...actorPermissions]
           : [],
         status: membership.status,
         joined_at: membership.joined_at,
@@ -106,7 +106,7 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
         id: ownerId,
         email: ownerId === user.id ? user.email : `${ownerId}@example.com`,
         name: ownerId === user.id ? user.name : ownerId,
-        groups: getProjectGroupsState(workspaceId, projectId, ownerId)
+        groups: allGroups
           .filter((group) => group.member_ids.includes(ownerId))
           .map((group) => ({
             id: group.id,
@@ -116,15 +116,7 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
             system_key: group.system_key,
           })),
         permissions: ownerId === user.id
-          ? [
-            ...resolveVisibleProjectPermissionsForActor({
-              workspaceId,
-              projectId,
-              projectOwnerId: ownerId,
-              projectGovernance,
-              actorUserId: user.id,
-            }),
-          ]
+          ? [...actorPermissions]
           : [],
         status: 'active',
         joined_at: projectCreatedAt ?? new Date().toISOString(),

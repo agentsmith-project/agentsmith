@@ -44,7 +44,7 @@ interface UserProfileRecord {
   preferences_json?: Record<string, unknown> | null;
 }
 
-const profilesByUser = new Map<string, UserProfileRecord>();
+const USER_PROFILE_COLLECTION = 'user_profiles';
 function getProviderConfig(provider: 'feishu' | 'jira' | 'github' | 'gitee' | 'custom') {
   if (provider === 'feishu') {
     const feishu = getFeishuOAuthConfig();
@@ -67,8 +67,9 @@ function getProviderConfig(provider: 'feishu' | 'jira' | 'github' | 'gitee' | 'c
   };
 }
 
-function getUserProfile(user: AuthenticatedUser): UserProfileRecord {
-  return profilesByUser.get(user.id) ?? {
+async function getUserProfile(docStore: JsonDocStorePort, user: AuthenticatedUser): Promise<UserProfileRecord> {
+  const stored = await docStore.get<UserProfileRecord>(USER_PROFILE_COLLECTION, user.id);
+  return stored ?? {
     display_name: user.name,
     locale: null,
     timezone: null,
@@ -81,8 +82,8 @@ function getUserProfile(user: AuthenticatedUser): UserProfileRecord {
   };
 }
 
-function setUserProfile(userId: string, profile: UserProfileRecord): void {
-  profilesByUser.set(userId, profile);
+async function setUserProfile(docStore: JsonDocStorePort, userId: string, profile: UserProfileRecord): Promise<void> {
+  await docStore.upsert(USER_PROFILE_COLLECTION, userId, profile);
 }
 
 export async function handleMeRoute(args: {
@@ -102,17 +103,17 @@ export async function handleMeRoute(args: {
 
   if (pathname === '/api/v1/me/profile') {
     if (method === 'GET') {
-      json(res, 200, getUserProfile(user));
+      json(res, 200, await getUserProfile(docStore, user));
       return true;
     }
     if (method === 'PATCH') {
       const body = (await readBody(req)) as Record<string, unknown> | null;
-      const current = getUserProfile(user);
+      const current = await getUserProfile(docStore, user);
       const next: UserProfileRecord = {
         ...current,
         ...(body ?? {}),
       };
-      setUserProfile(user.id, next);
+      await setUserProfile(docStore, user.id, next);
       json(res, 200, next);
       return true;
     }
@@ -127,7 +128,7 @@ export async function handleMeRoute(args: {
     }
     if (governanceIncidentsDir) {
       for (const event of listGovernanceIncidents(governanceIncidentsDir).slice(0, 20)) {
-        syncUserNotification(user.id, {
+        await syncUserNotification(docStore, user.id, {
           id: `governance_incident_${event.id}`,
           type: 'governance_incident',
           title: event.title,
@@ -138,7 +139,7 @@ export async function handleMeRoute(args: {
         });
       }
     }
-    const all = [...getUserNotifications(user.id)].sort((a, b) => b.created_at.localeCompare(a.created_at));
+    const all = [...await getUserNotifications(docStore, user.id)].sort((a, b) => b.created_at.localeCompare(a.created_at));
     const unreadOnly = requestUrl.searchParams.get('unread_only') === 'true';
     const limit = Math.max(0, Math.min(200, Number.parseInt(requestUrl.searchParams.get('limit') ?? '20', 10) || 20));
     const offset = Math.max(0, Number.parseInt(requestUrl.searchParams.get('offset') ?? '0', 10) || 0);
@@ -156,7 +157,7 @@ export async function handleMeRoute(args: {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
     }
-    json(res, 200, { unread_count: unreadNotificationsCount(getUserNotifications(user.id)) });
+    json(res, 200, { unread_count: unreadNotificationsCount(await getUserNotifications(docStore, user.id)) });
     return true;
   }
 
@@ -347,7 +348,7 @@ export async function handleMeRoute(args: {
       json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
       return true;
     }
-    const markedCount = markAllNotificationsRead(user.id);
+    const markedCount = await markAllNotificationsRead(docStore, user.id);
     json(res, 200, { marked_count: markedCount });
     return true;
   }
@@ -359,7 +360,7 @@ export async function handleMeRoute(args: {
       return true;
     }
     const id = decodeURIComponent(markReadMatch[1] ?? '');
-    const found = markNotificationRead(user.id, id);
+    const found = await markNotificationRead(docStore, user.id, id);
     if (!found) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'notification_not_found' });
       return true;

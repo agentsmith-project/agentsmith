@@ -273,7 +273,7 @@ describe('audit-usage-store usage records summary', () => {
       metadata_json: { provider: 'openai', resolved_model: 'gpt-4.1', estimated_cost: 0.12 },
     });
 
-    upsertProjectResourcePolicy(workspaceId, projectId, {
+    await upsertProjectResourcePolicy(store, workspaceId, projectId, {
       resource_type: 'endpoint',
       resource_id: 'ep_with_policy',
       access_mode: 'allow_all_members',

@@ -34,7 +34,8 @@ export async function readProjectPermissionContext(args: {
     return {
       ownerId: project.owner_id,
       governance: project.governance_json,
-      permissions: resolveVisibleProjectPermissionsForActor({
+      permissions: await resolveVisibleProjectPermissionsForActor({
+        docStore: args.deps.docStore,
         workspaceId: args.workspaceId,
         projectId: args.projectId,
         projectOwnerId: project.owner_id,

@@ -293,7 +293,7 @@ export async function handleInternalRoutes({
       userId: user.id,
       userName: user.name,
     });
-    appendUserNotification(user.id, {
+    await appendUserNotification(deps.docStore, user.id, {
       type: 'governance_incident_acknowledged',
       title: 'Governance incident acknowledged',
       body: detail.title,
@@ -347,7 +347,7 @@ export async function handleInternalRoutes({
       nextAssigneeName: assigneeName,
       nextDueAt: dueAt,
     });
-    appendUserNotification(user.id, {
+    await appendUserNotification(deps.docStore, user.id, {
       type: 'governance_incident_assigned',
       title: 'Governance incident assigned',
       body: detail.title,
@@ -394,7 +394,7 @@ export async function handleInternalRoutes({
       userId: user.id,
       userName: user.name,
     });
-    appendUserNotification(user.id, {
+    await appendUserNotification(deps.docStore, user.id, {
       type: 'governance_incident_resolved',
       title: status === 'resolved' ? 'Governance incident resolved' : 'Governance incident reopened',
       body: detail.title,
@@ -473,7 +473,7 @@ export async function handleInternalRoutes({
       createdByUserId: user.id,
       createdByName: user.name,
     });
-    appendUserNotification(user.id, {
+    await appendUserNotification(deps.docStore, user.id, {
       type: 'governance_override_requested',
       title: 'Governance override requested',
       body: `${record.issue_source}: ${record.issue_message}`,
@@ -511,7 +511,7 @@ export async function handleInternalRoutes({
       json(res, 404, { error_code: 'NOT_FOUND', message: 'governance_policy_override_not_found' });
       return true;
     }
-    appendUserNotification(user.id, {
+    await appendUserNotification(deps.docStore, user.id, {
       type: 'governance_override_decided',
       title: `Governance override ${updated.status}`,
       body: `${updated.issue_source}: ${updated.issue_message}`,

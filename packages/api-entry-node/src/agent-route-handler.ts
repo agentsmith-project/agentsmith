@@ -23,7 +23,8 @@ async function resolveActorPermissions(
 ): Promise<Set<string>> {
   try {
     const project = await deps.getProjectUseCase.execute({ workspaceId, projectId });
-    const perms = resolveVisibleProjectPermissionsForActor({
+    const perms = await resolveVisibleProjectPermissionsForActor({
+      docStore: deps.docStore,
       workspaceId,
       projectId,
       projectOwnerId: project.owner_id,

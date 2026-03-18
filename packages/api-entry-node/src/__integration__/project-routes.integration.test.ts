@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { writeFileSync } from 'node:fs';
 import { createDefaultNodeApiDeps } from '../index.js';
-import { setProjectAdminGroupMembers } from '../project-groups-store.js';
+import { setProjectAdminGroupMembersPersisted } from '../project-member-governance-persistence.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 describe('api-entry-node project routes integration', () => {
@@ -336,10 +336,10 @@ describe('api-entry-node project routes integration', () => {
         join_policy: 'approval_required',
       },
     });
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore: deps.docStore,
       workspaceId: 'ws_default',
       projectId: created.id,
-      projectOwnerId: created.owner_id,
       memberIds: ['user_test'],
     });
     const { baseUrl } = startServerWithDeps(deps);

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 
 import { handleProjectFileLibraryRoutes } from './project-file-library-routes.js';
 import {
@@ -11,13 +12,18 @@ describe('project-file-library-routes', () => {
     vi.clearAllMocks();
   });
 
-  it('creates a file library and returns ready metadata when orchestrator is configured', async () => {
-    const json = vi.fn();
-    const res = {} as never;
-    const deps = {
+  function createDeps() {
+    return {
+      docStore: new InMemoryJsonDocStore(),
       fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
       fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
     } as never;
+  }
+
+  it('creates a file library and returns ready metadata when orchestrator is configured', async () => {
+    const json = vi.fn();
+    const res = {} as never;
+    const deps = createDeps();
 
     await expect(handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraries',
@@ -48,10 +54,7 @@ describe('project-file-library-routes', () => {
   it('returns exchange data for an existing file library', async () => {
     const json = vi.fn();
     const res = {} as never;
-    const deps = {
-      fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
-      fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
-    } as never;
+    const deps = createDeps();
 
     await handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraries',
@@ -98,10 +101,7 @@ describe('project-file-library-routes', () => {
   it('does not expose metadata credentials from backend details', async () => {
     const json = vi.fn();
     const res = {} as never;
-    const deps = {
-      fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
-      fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
-    } as never;
+    const deps = createDeps();
 
     await handleProjectFileLibraryRoutes({
       routeKind: 'fileLibraries',
@@ -148,6 +148,7 @@ describe('project-file-library-routes', () => {
     const json = vi.fn();
     const res = {} as never;
     const deps = {
+      docStore: new InMemoryJsonDocStore(),
       fileLibraryOrchestrator: {
         provisionLibrary: vi.fn().mockRejectedValue(new Error('file_library_juicefs_cli_missing')),
       },
@@ -183,6 +184,7 @@ describe('project-file-library-routes', () => {
     const json = vi.fn();
     const res = {} as never;
     const deps = {
+      docStore: new InMemoryJsonDocStore(),
       fileLibraryOrchestrator: {
         provisionLibrary: vi.fn().mockRejectedValue(new Error('file_library_env_missing_minio_access_key')),
       },
@@ -222,6 +224,7 @@ describe('project-file-library-routes', () => {
     } as unknown as never;
     const deleteWorkspaceBinding = vi.fn().mockResolvedValue(undefined);
     const deps = {
+      docStore: new InMemoryJsonDocStore(),
       fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
       fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
       internalAgentWorkspaceProvisioner: {

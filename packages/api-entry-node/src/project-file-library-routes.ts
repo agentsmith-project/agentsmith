@@ -16,17 +16,11 @@ import { Client as MinioClient } from 'minio';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
-  createFileLibraryRecord,
-  deleteFileLibraryRecord,
-  getFileLibrary,
-  getFileLibraryBackend,
-  getFileLibraryBackendInternal,
-  getFileLibraryMountAccess,
-  listFileLibraries,
-  setFileLibraryBackend,
-  setFileLibraryMountAccess,
-  updateFileLibraryRecord,
-} from './file-library-store.js';
+  buildFileLibraryRecord,
+  JsonDocProjectFileLibraryBackendRepo,
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 import { getFileLibraryGatewayInternalCredentials } from './file-library-runtime.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
@@ -199,7 +193,11 @@ async function createGatewayClient(args: {
   libraryId: string;
   filesystemName: string;
 }): Promise<MinioClient> {
-  const backend = getFileLibraryBackendInternal(args.workspaceId, args.projectId, args.libraryId);
+  const backend = await new JsonDocProjectFileLibraryBackendRepo(args.deps.docStore).getInternal(
+    args.workspaceId,
+    args.projectId,
+    args.libraryId,
+  );
   if (!backend?.metadata_url) {
     throw new Error('file_library_backend_not_found');
   }
@@ -373,9 +371,12 @@ export async function handleProjectFileLibraryRoutes(args: {
     json,
     readBody,
   } = args;
+  const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
+  const backendRepo = new JsonDocProjectFileLibraryBackendRepo(deps.docStore);
+  const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
   if (routeKind === 'fileLibraries' && method === 'GET') {
-    json(res, 200, { items: listFileLibraries(workspaceId, projectId) });
+    json(res, 200, { items: await catalogRepo.listByProject(workspaceId, projectId) });
     return true;
   }
 
@@ -390,7 +391,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     const filesystemName = buildFilesystemName(workspaceId, projectId, parsed.data.name);
-    const created = createFileLibraryRecord({
+    const created = buildFileLibraryRecord({
       workspaceId,
       projectId,
       name: parsed.data.name,
@@ -398,6 +399,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       filesystemName,
       createdByUserId: user.user_id,
     });
+    await catalogRepo.save(created);
     try {
       const provisioned = await deps.fileLibraryOrchestrator.provisionLibrary({
         libraryId: created.id,
@@ -407,7 +409,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         filesystemName: created.filesystem_name,
         requestedByUserId: user.user_id,
       });
-      setFileLibraryBackend(workspaceId, projectId, created.id, {
+      await backendRepo.save(workspaceId, projectId, created.id, {
         library_id: created.id,
         filesystem_name: provisioned.filesystemName,
         provisioning_status: 'ready',
@@ -416,7 +418,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         minio: provisioned.minio,
         metadata_url: provisioned.metadataUrl,
       });
-      setFileLibraryMountAccess(workspaceId, projectId, created.id, {
+      await mountAccessRepo.save(workspaceId, projectId, created.id, {
         filesystem_name: provisioned.filesystemName,
         metadata_url: provisioned.metadataUrl,
         recommended_mount_path: `~/Agentsmith/${created.name}`,
@@ -432,12 +434,12 @@ export async function handleProjectFileLibraryRoutes(args: {
         },
         created_at: new Date().toISOString(),
       });
-      updateFileLibraryRecord(workspaceId, projectId, created.id, { status: 'ready' });
-      json(res, 201, getFileLibrary(workspaceId, projectId, created.id));
+      const updated = await catalogRepo.update(workspaceId, projectId, created.id, { status: 'ready' });
+      json(res, 201, updated);
     } catch (error) {
-      updateFileLibraryRecord(workspaceId, projectId, created.id, { status: 'failed' });
+      await catalogRepo.update(workspaceId, projectId, created.id, { status: 'failed' });
       const mapped = mapFileLibraryInfraError(error);
-      const record = getFileLibrary(workspaceId, projectId, created.id);
+      const record = await catalogRepo.getById(workspaceId, projectId, created.id);
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
           ? 'FILE_LIBRARY_PROVISIONING_FAILED'
@@ -453,7 +455,7 @@ export async function handleProjectFileLibraryRoutes(args: {
     return false;
   }
 
-  const library = getFileLibrary(workspaceId, projectId, libraryId);
+  const library = await catalogRepo.getById(workspaceId, projectId, libraryId);
   if (!library) {
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
     return true;
@@ -470,7 +472,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_update_request' });
       return true;
     }
-    const updated = updateFileLibraryRecord(workspaceId, projectId, libraryId, parsed.data);
+    const updated = await catalogRepo.update(workspaceId, projectId, libraryId, parsed.data);
     json(res, 200, updated);
     return true;
   }
@@ -480,7 +482,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 503, { error_code: 'SERVICE_UNAVAILABLE', message: 'file_library_backend_unavailable' });
       return true;
     }
-    updateFileLibraryRecord(workspaceId, projectId, libraryId, { status: 'deleting' });
+    await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'deleting' });
     try {
       await assertFileLibraryEmpty({
         deps,
@@ -498,14 +500,16 @@ export async function handleProjectFileLibraryRoutes(args: {
         workspaceId,
         fileLibraryId: libraryId,
       });
-      deleteFileLibraryRecord(workspaceId, projectId, libraryId);
+      await mountAccessRepo.delete(workspaceId, projectId, libraryId);
+      await backendRepo.delete(workspaceId, projectId, libraryId);
+      await catalogRepo.delete(workspaceId, projectId, libraryId);
       res.statusCode = 204;
       res.end();
     } catch (error) {
-      updateFileLibraryRecord(workspaceId, projectId, libraryId, { status: 'degraded' });
+      await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'degraded' });
       const mapped = mapFileLibraryInfraError(error);
       if (mapped.errorCode === 'FILE_LIBRARY_NOT_EMPTY') {
-        updateFileLibraryRecord(workspaceId, projectId, libraryId, { status: 'ready' });
+        await catalogRepo.update(workspaceId, projectId, libraryId, { status: 'ready' });
       }
       json(res, mapped.statusCode, {
         error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
@@ -518,7 +522,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   if (routeKind === 'fileLibraryBackend' && method === 'GET') {
-    const backend = getFileLibraryBackend(workspaceId, projectId, libraryId);
+    const backend = await backendRepo.getPublic(workspaceId, projectId, libraryId);
     if (!backend) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_backend_not_found' });
       return true;
@@ -876,7 +880,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   if (routeKind === 'fileLibraryStorageCredentialExchange' && method === 'POST') {
-    const access = getFileLibraryMountAccess(workspaceId, projectId, libraryId);
+    const access = await mountAccessRepo.getById(workspaceId, projectId, libraryId);
     if (!access) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
       return true;

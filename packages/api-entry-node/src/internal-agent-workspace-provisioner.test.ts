@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
-  createFileLibraryRecord,
-  setFileLibraryMountAccess,
-} from './file-library-store.js';
+  buildFileLibraryRecord,
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 import { InternalAgentWorkspaceProvisionerImpl } from './internal-agent-workspace-provisioner.js';
 
 describe('internal-agent-workspace-provisioner', () => {
@@ -14,7 +15,9 @@ describe('internal-agent-workspace-provisioner', () => {
       ensurePersistentVolume: vi.fn().mockResolvedValue(undefined),
       ensurePersistentVolumeClaim: vi.fn().mockResolvedValue(undefined),
     };
-    const library = createFileLibraryRecord({
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+    const library = buildFileLibraryRecord({
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       name: 'Project Workspace',
@@ -22,7 +25,8 @@ describe('internal-agent-workspace-provisioner', () => {
       createdByUserId: 'user_1',
       status: 'ready',
     });
-    setFileLibraryMountAccess('ws_1', 'proj_1', library.id, {
+    await catalogRepo.save(library);
+    await mountAccessRepo.save('ws_1', 'proj_1', library.id, {
       filesystem_name: library.filesystem_name,
       metadata_url: 'postgres://juicefs-user:secret@db:5432/juicefs',
       recommended_mount_path: '/tmp/mount',
@@ -72,7 +76,9 @@ describe('internal-agent-workspace-provisioner', () => {
       ensurePersistentVolume: vi.fn().mockResolvedValue(undefined),
       ensurePersistentVolumeClaim: vi.fn().mockResolvedValue(undefined),
     };
-    const library = createFileLibraryRecord({
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+    const library = buildFileLibraryRecord({
       workspaceId: 'ws_rewrite',
       projectId: 'proj_rewrite',
       name: 'Rewrite Workspace',
@@ -80,7 +86,8 @@ describe('internal-agent-workspace-provisioner', () => {
       createdByUserId: 'user_1',
       status: 'ready',
     });
-    setFileLibraryMountAccess('ws_rewrite', 'proj_rewrite', library.id, {
+    await catalogRepo.save(library);
+    await mountAccessRepo.save('ws_rewrite', 'proj_rewrite', library.id, {
       filesystem_name: library.filesystem_name,
       metadata_url: 'postgres://juicefs-user:secret@localhost:15432/juicefs',
       recommended_mount_path: '/tmp/mount',
@@ -121,7 +128,9 @@ describe('internal-agent-workspace-provisioner', () => {
       ensurePersistentVolume: vi.fn().mockResolvedValue(undefined),
       ensurePersistentVolumeClaim: vi.fn().mockResolvedValue(undefined),
     };
-    const library = createFileLibraryRecord({
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+    const library = buildFileLibraryRecord({
       workspaceId: 'ws_storage',
       projectId: 'proj_storage',
       name: 'Storage Workspace',
@@ -129,7 +138,8 @@ describe('internal-agent-workspace-provisioner', () => {
       createdByUserId: 'user_1',
       status: 'ready',
     });
-    setFileLibraryMountAccess('ws_storage', 'proj_storage', library.id, {
+    await catalogRepo.save(library);
+    await mountAccessRepo.save('ws_storage', 'proj_storage', library.id, {
       filesystem_name: library.filesystem_name,
       metadata_url: 'postgres://juicefs-user:secret@db:5432/juicefs',
       recommended_mount_path: '/tmp/mount',
@@ -174,7 +184,9 @@ describe('internal-agent-workspace-provisioner', () => {
       ensurePersistentVolume: vi.fn().mockResolvedValue(undefined),
       ensurePersistentVolumeClaim: vi.fn().mockResolvedValue(undefined),
     };
-    const library = createFileLibraryRecord({
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+    const library = buildFileLibraryRecord({
       workspaceId: 'ws_2',
       projectId: 'proj_2',
       name: 'Quant Workspace',
@@ -182,7 +194,8 @@ describe('internal-agent-workspace-provisioner', () => {
       createdByUserId: 'user_1',
       status: 'ready',
     });
-    setFileLibraryMountAccess('ws_2', 'proj_2', library.id, {
+    await catalogRepo.save(library);
+    await mountAccessRepo.save('ws_2', 'proj_2', library.id, {
       filesystem_name: library.filesystem_name,
       metadata_url: 'postgres://juicefs-user:secret@db:5432/juicefs',
       recommended_mount_path: '/tmp/mount',
@@ -225,7 +238,9 @@ describe('internal-agent-workspace-provisioner', () => {
       deletePersistentVolume: vi.fn().mockResolvedValue(undefined),
       deletePersistentVolumeClaim: vi.fn().mockResolvedValue(undefined),
     };
-    const library = createFileLibraryRecord({
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+    const library = buildFileLibraryRecord({
       workspaceId: 'ws_3',
       projectId: 'proj_3',
       name: 'Cleanup Workspace',
@@ -233,7 +248,8 @@ describe('internal-agent-workspace-provisioner', () => {
       createdByUserId: 'user_1',
       status: 'ready',
     });
-    setFileLibraryMountAccess('ws_3', 'proj_3', library.id, {
+    await catalogRepo.save(library);
+    await mountAccessRepo.save('ws_3', 'proj_3', library.id, {
       filesystem_name: library.filesystem_name,
       metadata_url: 'postgres://juicefs-user:secret@db:5432/juicefs',
       recommended_mount_path: '/tmp/mount',

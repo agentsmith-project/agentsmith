@@ -24,7 +24,10 @@ import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestr
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
-import { getFileLibrary, getFileLibraryMountAccess } from './file-library-store.js';
+import {
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 import { getNotebookTaskMetricsPrometheusText, getNotebookTaskMetricsSnapshot } from './notebook-task/task-metrics-api.js';
 import {
   asObject,
@@ -117,6 +120,8 @@ async function maybeReleaseInternalAgentWorkload(
 
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, rawBearerToken, json, readBody } = args;
+  const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
+  const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
   if (route.kind === 'tasks' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
@@ -180,7 +185,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'AGENT_OFFLINE', message: 'agent_offline' });
       return true;
     }
-    const workspaceFileLibrary = getFileLibrary(route.workspaceId, route.projectId, workspaceFileLibraryId);
+    const workspaceFileLibrary = await catalogRepo.getById(route.workspaceId, route.projectId, workspaceFileLibraryId);
     if (!workspaceFileLibrary) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
       return true;
@@ -245,12 +250,20 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'TASK_WORKSPACE_NOT_BOUND', message: 'task_workspace_file_library_not_configured' });
       return true;
     }
-    const workspaceFileLibrary = getFileLibrary(route.workspaceId, route.projectId, task.workspace_file_library_id);
+    const workspaceFileLibrary = await catalogRepo.getById(
+      route.workspaceId,
+      route.projectId,
+      task.workspace_file_library_id,
+    );
     if (!workspaceFileLibrary) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
       return true;
     }
-    const mountAccess = getFileLibraryMountAccess(route.workspaceId, route.projectId, task.workspace_file_library_id);
+    const mountAccess = await mountAccessRepo.getById(
+      route.workspaceId,
+      route.projectId,
+      task.workspace_file_library_id,
+    );
     if (!mountAccess) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
       return true;

@@ -1,7 +1,10 @@
 import { ApiException, CoreV1Api, KubeConfig, type V1PersistentVolume, type V1PersistentVolumeClaim, type V1Secret } from '@kubernetes/client-node';
 import type { JsonDocStorePort } from '@mbos/ports';
 import { createHash } from 'node:crypto';
-import { getFileLibrary, getFileLibraryMountAccess } from './file-library-store.js';
+import {
+  JsonDocProjectFileLibraryCatalogRepo,
+  JsonDocProjectFileLibraryMountAccessRepo,
+} from './file-library-persistence.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 const INTERNAL_AGENT_WORKSPACE_COLLECTION = 'internal_agent_file_library_workspaces';
@@ -213,6 +216,9 @@ export class KubernetesInternalAgentWorkspaceK8sClient implements InternalAgentW
 }
 
 export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorkspaceProvisioner {
+  private readonly catalogRepo: JsonDocProjectFileLibraryCatalogRepo;
+  private readonly mountAccessRepo: JsonDocProjectFileLibraryMountAccessRepo;
+
   constructor(
     private readonly docStore: JsonDocStorePort,
     private readonly k8sClient: InternalAgentWorkspaceK8sClient,
@@ -224,7 +230,10 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       storageEndpointOverride?: string;
       storageCredentialSeed?: string;
     },
-  ) {}
+  ) {
+    this.catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    this.mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+  }
 
   async ensureWorkspaceBinding(input: {
     workspaceId: string;
@@ -235,11 +244,11 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     mountPath: '/workspace';
     binding: InternalAgentWorkspaceBinding;
   }> {
-    const library = getFileLibrary(input.workspaceId, input.projectId, input.fileLibraryId);
+    const library = await this.catalogRepo.getById(input.workspaceId, input.projectId, input.fileLibraryId);
     if (!library) {
       throw Object.assign(new Error('file_library_not_found'), { code: 'FILE_LIBRARY_NOT_FOUND' });
     }
-    const mountAccess = getFileLibraryMountAccess(input.workspaceId, input.projectId, input.fileLibraryId);
+    const mountAccess = await this.mountAccessRepo.getById(input.workspaceId, input.projectId, input.fileLibraryId);
     if (!mountAccess?.metadata_url) {
       throw Object.assign(new Error('file_library_workspace_access_unavailable'), {
         code: 'FILE_LIBRARY_WORKSPACE_ACCESS_UNAVAILABLE',

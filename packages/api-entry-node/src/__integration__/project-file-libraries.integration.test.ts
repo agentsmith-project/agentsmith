@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { apiFetch, startServer } from './test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
 
 describe('api-entry-node project file libraries integration', () => {
   it('supports file libraries CRUD flow', async () => {
@@ -59,5 +60,32 @@ describe('api-entry-node project file libraries integration', () => {
       { method: 'DELETE' },
     );
     expect(deleteRes.status).toBe(204);
+  });
+
+  it('preserves file libraries across api restarts when the same deps/doc store are reused', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const firstServer = startServerWithDeps(deps);
+
+    const createRes = await apiFetch(
+      firstServer.baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: 'Restart Persistence', description: 'persists across restart' }),
+      },
+    );
+    expect(createRes.status).toBe(201);
+    const created = (await createRes.json()) as { id: string; name: string };
+
+    firstServer.server.closeAllConnections?.();
+    firstServer.server.closeIdleConnections?.();
+    await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+
+    const secondServer = startServerWithDeps(deps);
+    const listRes = await apiFetch(secondServer.baseUrl, '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries');
+    expect(listRes.status).toBe(200);
+    const listed = (await listRes.json()) as { items: Array<{ id: string; name: string }> };
+    expect(listed.items.some((item) => item.id === created.id && item.name === created.name)).toBe(true);
   });
 });

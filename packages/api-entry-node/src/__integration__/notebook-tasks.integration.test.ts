@@ -2,7 +2,8 @@ import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
-import { apiFetch, startServer } from './test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
 
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -211,6 +212,63 @@ describe('api-entry-node notebook task routes', () => {
       metadata_url: expect.any(String),
       recommended_mount_path: expect.any(String),
       created_at: expect.any(String),
+    });
+  });
+
+  it('keeps task workspace access available after api restart', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const firstServer = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Task Workspace');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'restartable-internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      firstServer.baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Restart Workspace Access Task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    firstServer.server.closeAllConnections?.();
+    firstServer.server.closeIdleConnections?.();
+    await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+
+    const secondServer = startServerWithDeps(deps);
+    const workspaceAccessRes = await apiFetch(
+      secondServer.baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      { method: 'POST' },
+    );
+    expect(workspaceAccessRes.status).toBe(200);
+    await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+      task_id: task.id,
+      file_library_id: workspaceLibrary.id,
+      file_library_name: workspaceLibrary.name,
+      metadata_url: expect.any(String),
     });
   });
 

@@ -306,7 +306,7 @@ describe('AgentExecutionService', () => {
         request_id: msg.request_id,
         payload: {
           filename: 'plot.png',
-          task_relative_path: 'artifacts/plot.png',
+          task_relative_path: '.artifacts/plot.png',
           artifact_type: 'image',
           mime_type: 'image/png',
           file_size: 128,
@@ -337,7 +337,7 @@ describe('AgentExecutionService', () => {
       type: 'artifact',
       artifact: {
         filename: 'plot.png',
-        task_relative_path: 'artifacts/plot.png',
+        task_relative_path: '.artifacts/plot.png',
         artifact_type: 'image',
         mime_type: 'image/png',
       },

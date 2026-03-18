@@ -87,7 +87,6 @@ export type {
   CreateTaskRequest,
   UpdateTaskRequest,
   SendMessageRequest,
-  SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
   ProjectPricingMap,

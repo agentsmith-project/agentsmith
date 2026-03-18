@@ -160,8 +160,6 @@ export function TaskPage({
     setFileSelectOpen,
     imageViewerOpen,
     setImageViewerOpen,
-    saveDialogOpen,
-    setSaveDialogOpen,
     addUrlOpen,
     setAddUrlOpen,
     urlInput,
@@ -171,9 +169,7 @@ export function TaskPage({
     handleAttachArtifactAsInput,
     handleSubmitUrlInput,
     handleViewArtifact,
-    handleSaveArtifact,
     handleDownloadArtifact,
-    handleSaveArtifactToLibrary,
   } = useTaskInputActions({
     workspaceId,
     projectId,
@@ -555,6 +551,7 @@ export function TaskPage({
         task={task}
         workspaceId={workspaceId}
         projectId={projectId}
+        agentMode={taskAgent?.mode ?? null}
         agentPresence={taskAgent?.presence ?? null}
         agentRunActivity={{ active: agentIsBusy, elapsedSeconds: runElapsedSeconds }}
         canDeleteTask={canDeleteTask}
@@ -582,7 +579,6 @@ export function TaskPage({
         handleDownloadArtifact={handleDownloadArtifact}
         handlePendingRemove={handlePendingRemove}
         handlePendingUpdate={handlePendingUpdate}
-        handleSaveArtifact={handleSaveArtifact}
         handleSendMessage={handleSendMessage}
         handleViewArtifact={handleViewArtifact}
         isDisabled={isDisabled}
@@ -635,7 +631,6 @@ export function TaskPage({
         fileSelectOpen={fileSelectOpen}
         imageViewerOpen={imageViewerOpen}
         projectId={projectId}
-        saveDialogOpen={saveDialogOpen}
         savingTask={updateTask.isPending}
         selectedArtifact={selectedArtifact}
         t={t}
@@ -644,12 +639,10 @@ export function TaskPage({
         urlInput={urlInput}
         workspaceId={workspaceId}
         onArtifactDownload={handleDownloadArtifact}
-        onArtifactSaveToLibrary={handleSaveArtifactToLibrary}
         onEditDialogOpenChange={setEditDialogOpen}
         onFileSelectOpenChange={setFileSelectOpen}
         onHandleTaskUpdated={handleTaskUpdated}
         onImageViewerOpenChange={setImageViewerOpen}
-        onSaveDialogOpenChange={setSaveDialogOpen}
         onSetAddUrlOpen={setAddUrlOpen}
         onSetCreateDialogOpen={setCreateDialogOpen}
         onSetUrlInput={setUrlInput}

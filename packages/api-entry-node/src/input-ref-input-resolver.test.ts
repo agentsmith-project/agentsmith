@@ -77,13 +77,13 @@ describe('input-ref-input-resolver', () => {
 
   it('resolves artifact metadata with artifact lookup fallback and overrides', () => {
     expect(resolveArtifactInputMeta({
-      input: { artifact_id: 'a1', task_relative_path: 'artifacts/out.png' },
+      input: { artifact_id: 'a1', task_relative_path: '.artifacts/out.png' },
       artifact: { id: 'a1', title: 'plot.png', mime_type: 'image/png', file_size: 100 },
     })).toEqual({
       filename: 'plot.png',
       file_type: 'image/png',
       file_size: 100,
-      task_relative_path: 'artifacts/out.png',
+      task_relative_path: '.artifacts/out.png',
     });
 
     expect(resolveArtifactInputMeta({

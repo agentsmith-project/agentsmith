@@ -15,7 +15,7 @@ import {
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
-import { resolveTaskCwd } from './task-workspace.js';
+import { prepareTaskWorkspace } from './task-workspace.js';
 import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
@@ -32,8 +32,13 @@ type ServerStartPayload = {
     session_id?: string;
     api_base?: string;
     user_bearer_token?: string;
+    workspace_path?: string;
     wire_api?: 'chat' | 'responses';
     model?: string;
+    workspace_binding_mode?: 'file_library';
+    workspace_file_library_id?: string | null;
+    workspace_file_library_name?: string | null;
+    workspace_dir_name?: string | null;
     notebook_mode?: boolean;
     task_inputs?: Array<{
       kind?: 'library_object' | 'artifact' | 'url';
@@ -567,8 +572,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const executionContext = payload.execution_context ?? {};
   const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
-  const cwdResult = resolveTaskCwd({
-    workspacePath: process.env.WORKSPACE_PATH,
+  const cwdResult = await prepareTaskWorkspace({
+    executionContext,
     username,
     taskId,
   });
@@ -587,7 +592,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const credentialFiles = Array.isArray(executionContext.credential_files)
     ? executionContext.credential_files
     : [];
-  let artifactsDir = join(cwd, 'artifacts');
+  let artifactsDir = join(cwd, '.artifacts');
   let taskInputsManifestPath = join(cwd, '.mbos', 'task-inputs.json');
   if (isNotebookMode) {
     const preparedAssets = await prepareNotebookWorkspaceAssets({
@@ -706,7 +711,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       task_inputs_count: taskInputs.length,
       credential_files_count: executionFilesResult.written,
       builtin_skills_count: builtinSkillsResult.mounted.length,
-      artifacts_dir: isNotebookMode ? 'artifacts/' : null,
+      artifacts_dir: isNotebookMode ? '.artifacts/' : null,
     },
   });
   if (isNotebookMode) {
@@ -718,7 +723,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       summary: 'Notebook headless execution policy applied',
       details: {
         task_inputs_manifest: '.mbos/task-inputs.json',
-        artifacts_dir: 'artifacts/',
+        artifacts_dir: '.artifacts/',
       },
     });
   }
@@ -1043,6 +1048,9 @@ ws.on('message', (raw) => {
     model: startPayload.execution_context?.model ?? startPayload.model ?? null,
     wire_api: startPayload.execution_context?.wire_api ?? null,
     task_id: startPayload.execution_context?.task_id ?? null,
+    workspace_binding_mode: startPayload.execution_context?.workspace_binding_mode ?? null,
+    workspace_file_library_id: startPayload.execution_context?.workspace_file_library_id ?? null,
+    workspace_dir_name: startPayload.execution_context?.workspace_dir_name ?? null,
   });
 
   void runCodexRequest(message.request_id, startPayload).catch((error) => {

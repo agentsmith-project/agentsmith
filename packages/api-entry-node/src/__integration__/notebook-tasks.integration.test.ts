@@ -5,8 +5,17 @@ import { WebSocket } from 'ws';
 import { apiFetch, startServer } from './test-support.js';
 
 const upstreamServers: Server[] = [];
+const sockets: WebSocket[] = [];
 
 afterEach(async () => {
+  for (const socket of sockets) {
+    try {
+      socket.close();
+    } catch {
+      // ignore cleanup failures in tests
+    }
+  }
+  sockets.length = 0;
   await Promise.all(
     upstreamServers.map(
       (server) =>
@@ -53,10 +62,162 @@ function startUpstreamServer(): {
   };
 }
 
+async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): Promise<{ id: string; name: string }> {
+  const createLibraryRes = await apiFetch(
+    baseUrl,
+    '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, description: 'task workspace library' }),
+    },
+  );
+  expect(createLibraryRes.status).toBe(201);
+  return (await createLibraryRes.json()) as { id: string; name: string };
+}
+
 describe('api-entry-node notebook task routes', () => {
+  it('requires workspace file library when creating a notebook task', async () => {
+    const { baseUrl, deps } = startServer();
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Notebook task missing workspace',
+          agent_id: agent.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(422);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
+      error_code: 'VALIDATION_ERROR',
+      message: 'workspace_file_library_id_required',
+    });
+  });
+
+  it('rejects creating notebook task for offline external agents', async () => {
+    const { baseUrl, deps } = startServer();
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Offline Agent Workspace');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'offline-external-notebook-agent',
+      mode: 'external',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        _external_key_source: 'generated',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_offline',
+          wire_api: 'responses',
+          model: 'glm-4.7',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Notebook task offline external agent',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(409);
+    await expect(createTaskRes.json()).resolves.toMatchObject({
+      error_code: 'AGENT_OFFLINE',
+      message: 'agent_offline',
+    });
+  });
+
+  it('returns task-bound workspace access for notebook task file libraries', async () => {
+    const { baseUrl, deps } = startServer();
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Workspace Access Library');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Workspace Access Task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const workspaceAccessRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      { method: 'POST' },
+    );
+    expect(workspaceAccessRes.status).toBe(200);
+    await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+      task_id: task.id,
+      workspace_binding_mode: 'file_library',
+      workspace_dir_name: 'workspace-access-task',
+      file_library_id: workspaceLibrary.id,
+      file_library_name: workspaceLibrary.name,
+      filesystem_name: expect.any(String),
+      metadata_url: expect.any(String),
+      recommended_mount_path: expect.any(String),
+      created_at: expect.any(String),
+    });
+  });
+
   it('runs notebook task message through external execution service and enforces single active run per task', async () => {
     const { baseUrl } = startServer();
     const upstream = startUpstreamServer();
+    const workspaceLibrary = await createFileLibrary(baseUrl);
 
     const createCredentialRes = await apiFetch(
       baseUrl,
@@ -140,6 +301,10 @@ describe('api-entry-node notebook task routes', () => {
       apiBase: string;
       userToken: string;
       notebookMode: boolean | null;
+      workspaceBindingMode: string | null;
+      workspaceFileLibraryId: string | null;
+      workspaceFileLibraryName: string | null;
+      workspaceDirName: string | null;
       taskInputsCount: number | null;
       credentialFilesCount: number | null;
       hasCredentialIndexFile: boolean;
@@ -149,6 +314,7 @@ describe('api-entry-node notebook task routes', () => {
       const ws = new WebSocket(wsUrl, {
         headers: { Authorization: `Bearer ${keyPayload.key}` },
       });
+      sockets.push(ws);
 
       ws.on('message', (raw) => {
         const msg = JSON.parse(raw.toString('utf-8')) as {
@@ -162,6 +328,10 @@ describe('api-entry-node notebook task routes', () => {
               api_base?: string;
               user_bearer_token?: string;
               notebook_mode?: boolean;
+              workspace_binding_mode?: string;
+              workspace_file_library_id?: string | null;
+              workspace_file_library_name?: string | null;
+              workspace_dir_name?: string | null;
               task_inputs?: unknown[];
               credential_files?: Array<{ relative_path?: string }>;
             };
@@ -180,6 +350,18 @@ describe('api-entry-node notebook task routes', () => {
           userToken: msg.payload?.execution_context?.user_bearer_token ?? '',
           notebookMode: typeof msg.payload?.execution_context?.notebook_mode === 'boolean'
             ? msg.payload.execution_context.notebook_mode
+            : null,
+          workspaceBindingMode: typeof msg.payload?.execution_context?.workspace_binding_mode === 'string'
+            ? msg.payload.execution_context.workspace_binding_mode
+            : null,
+          workspaceFileLibraryId: typeof msg.payload?.execution_context?.workspace_file_library_id === 'string'
+            ? msg.payload.execution_context.workspace_file_library_id
+            : null,
+          workspaceFileLibraryName: typeof msg.payload?.execution_context?.workspace_file_library_name === 'string'
+            ? msg.payload.execution_context.workspace_file_library_name
+            : null,
+          workspaceDirName: typeof msg.payload?.execution_context?.workspace_dir_name === 'string'
+            ? msg.payload.execution_context.workspace_dir_name
             : null,
           taskInputsCount: Array.isArray(msg.payload?.execution_context?.task_inputs)
             ? msg.payload.execution_context.task_inputs.length
@@ -215,7 +397,7 @@ describe('api-entry-node notebook task routes', () => {
           request_id: msg.request_id,
           payload: {
             filename: 'plot.png',
-            task_relative_path: 'artifacts/plot.png',
+            task_relative_path: '.artifacts/plot.png',
             artifact_type: 'image',
             mime_type: 'image/png',
             file_size: 1234,
@@ -233,6 +415,24 @@ describe('api-entry-node notebook task routes', () => {
         }, 20);
       });
     });
+    const runnerReady = new Promise<void>((resolve, reject) => {
+      const ws = sockets[sockets.length - 1];
+      if (!ws) {
+        reject(new Error('execution socket not initialized'));
+        return;
+      }
+      ws.once('error', reject);
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
+        if (msg.type !== 'server.hello') return;
+        ws.send(JSON.stringify({
+          type: 'agent.ready',
+          payload: { capabilities: { wire_api: 'chat' } },
+        }));
+        resolve();
+      });
+    });
+    await runnerReady;
 
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -243,6 +443,7 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           title: 'Notebook task',
           agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
@@ -302,6 +503,10 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.userToken).toBe('test-token');
     expect(execution.apiBase).toBe(baseUrl);
     expect(execution.notebookMode).toBe(true);
+    expect(execution.workspaceBindingMode).toBe('file_library');
+    expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
+    expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
+    expect(execution.workspaceDirName).toBe('notebook-task');
     expect(execution.taskInputsCount).toBe(0);
     expect(execution.credentialFilesCount).toBeGreaterThan(0);
     expect(execution.hasCredentialIndexFile).toBe(true);
@@ -402,6 +607,7 @@ describe('api-entry-node notebook task routes', () => {
 
   it('synthesizes terminal trace and closes task when notebook execution dispatch fails', async () => {
     const { baseUrl } = startServer();
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Offline Execution Workspace');
 
     const createCredentialRes = await apiFetch(
       baseUrl,
@@ -462,6 +668,40 @@ describe('api-entry-node notebook task routes', () => {
     expect(createAgentRes.status).toBe(201);
     const agent = (await createAgentRes.json()) as { id: string };
 
+    const keyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/keys`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'runner-offline' }),
+      },
+    );
+    expect(keyRes.status).toBe(201);
+    const keyPayload = (await keyRes.json()) as { key: string };
+    const connInfoRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${agent.id}/connection-info`,
+    );
+    expect(connInfoRes.status).toBe(200);
+    const connInfo = (await connInfoRes.json()) as { ws_url: string };
+    const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
+    const ws = new WebSocket(wsUrl, {
+      headers: { Authorization: `Bearer ${keyPayload.key}` },
+    });
+    sockets.push(ws);
+    await new Promise<void>((resolve) => {
+      ws.on('message', (raw) => {
+        const msg = JSON.parse(raw.toString('utf-8')) as { type?: string };
+        if (msg.type !== 'server.hello') return;
+        ws.send(JSON.stringify({
+          type: 'agent.ready',
+          payload: { capabilities: { wire_api: 'chat' } },
+        }));
+        resolve();
+      });
+    });
+
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
@@ -471,11 +711,13 @@ describe('api-entry-node notebook task routes', () => {
         body: JSON.stringify({
           title: 'Notebook task offline execution',
           agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
         }),
       },
     );
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
+    ws.close();
 
     const postMessageRes = await apiFetch(
       baseUrl,
@@ -559,7 +801,8 @@ describe('api-entry-node notebook task routes', () => {
   });
 
   it('records task trace query metrics for message-scoped requests', async () => {
-    const { baseUrl } = startServer();
+    const { baseUrl, deps } = startServer();
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Trace Metrics Workspace');
 
     const createCredentialRes = await apiFetch(
       baseUrl,
@@ -596,23 +839,21 @@ describe('api-entry-node notebook task routes', () => {
     expect(createEndpointRes.status).toBe(201);
     const endpoint = (await createEndpointRes.json()) as { id: string };
 
-    const createAgentRes = await apiFetch(
-      baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: 'Metrics notebook agent',
-          mode: 'external',
-          interaction_mode: 'notebook',
-          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
-          capabilities: { streaming_completion: true, multimodal_completion: false },
-        }),
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'Metrics notebook agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' },
       },
-    );
-    expect(createAgentRes.status).toBe(201);
-    const agent = (await createAgentRes.json()) as { id: string };
+    });
 
     const createTaskRes = await apiFetch(
       baseUrl,
@@ -620,7 +861,11 @@ describe('api-entry-node notebook task routes', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ title: 'Trace metrics task', agent_id: agent.id }),
+        body: JSON.stringify({
+          title: 'Trace metrics task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
       },
     );
     expect(createTaskRes.status).toBe(201);

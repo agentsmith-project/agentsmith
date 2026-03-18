@@ -19,7 +19,6 @@ import type {
   CreateTaskRequest,
   UpdateTaskRequest,
   SendMessageRequest,
-  SaveArtifactRequest,
   TaskListParams,
   TaskTraceListResponse,
   TaskAttachedInputDetail,
@@ -329,40 +328,6 @@ export function useRemoveFile() {
     },
     onError: (error: unknown) => {
       handleErrorForToast(error, 'useRemoveFile');
-    },
-  });
-}
-
-/**
- * Hook to save an artifact to the file library
- */
-export function useSaveArtifact() {
-  const queryClient = useQueryClient();
-  const taskAPI = new TaskAPI(getApiClient());
-  const t = useTranslations('common.toast');
-
-  return useMutation({
-    mutationFn: ({
-      workspaceId,
-      projectId,
-      taskId,
-      artifactId,
-      data,
-    }: {
-      workspaceId: string;
-      projectId: string;
-      taskId: string;
-      artifactId: string;
-      data: SaveArtifactRequest;
-    }) => taskAPI.saveArtifact(workspaceId, projectId, taskId, artifactId, data),
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({
-        queryKey: queryKeys.files.list(variables.workspaceId, variables.projectId),
-      });
-      toast.success(t('artifact_saved_to_library'));
-    },
-    onError: (error: unknown) => {
-      handleErrorForToast(error, 'useSaveArtifact');
     },
   });
 }

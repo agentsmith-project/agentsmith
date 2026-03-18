@@ -12,11 +12,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
 import { useCreateTask } from '@/lib/hooks/use-task';
+import { useFileLibraries } from '@/lib/hooks/use-files';
 import { useQuery } from '@tanstack/react-query';
 import { AgentAPI, getApiClient } from '@/lib/api';
 import type { CreateTaskRequest } from '@/lib/types/task';
 import { AgentSelectField } from '@/components/notebook/task-create-dialog/AgentSelectField';
 import { ImportantNotice } from '@/components/notebook/task-create-dialog/ImportantNotice';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 export interface TaskCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,6 +38,7 @@ export function TaskCreateDialog({
   const commonT = useTranslations('common');
   const [title, setTitle] = React.useState('');
   const [agentId, setAgentId] = React.useState<string>('');
+  const [workspaceFileLibraryId, setWorkspaceFileLibraryId] = React.useState<string>('');
   const createTask = useCreateTask();
 
   // Fetch available agents
@@ -52,6 +55,11 @@ export function TaskCreateDialog({
     ),
     [agentsData?.items],
   );
+  const { data: fileLibrariesData, isLoading: fileLibrariesLoading } = useFileLibraries(workspaceId, projectId);
+  const fileLibraries = React.useMemo(
+    () => (fileLibrariesData?.items || []).filter((library) => library.status === 'ready'),
+    [fileLibrariesData?.items],
+  );
   const isAgentSelectable = React.useCallback((agent: { mode: string; presence?: string }) => (
     agent.mode === 'internal' || agent.presence === 'online' || agent.presence === 'managed'
   ), []);
@@ -61,6 +69,7 @@ export function TaskCreateDialog({
     if (open) {
       setTitle('');
       setAgentId('');
+      setWorkspaceFileLibraryId('');
     }
   }, [open]);
 
@@ -71,16 +80,24 @@ export function TaskCreateDialog({
     }
   }, [agentId, agents]);
 
+  React.useEffect(() => {
+    if (!workspaceFileLibraryId) return;
+    if (!fileLibraries.some((library) => library.id === workspaceFileLibraryId)) {
+      setWorkspaceFileLibraryId('');
+    }
+  }, [fileLibraries, workspaceFileLibraryId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!title.trim() || !agentId) {
+    if (!title.trim() || !agentId || !workspaceFileLibraryId) {
       return;
     }
 
     const data: CreateTaskRequest = {
       title: title.trim(),
       agent_id: agentId,
+      workspace_file_library_id: workspaceFileLibraryId,
     };
 
     try {
@@ -98,7 +115,10 @@ export function TaskCreateDialog({
     }
   };
 
-  const canSubmit = title.trim().length > 0 && agentId.length > 0 && !createTask.isPending;
+  const canSubmit = title.trim().length > 0
+    && agentId.length > 0
+    && workspaceFileLibraryId.length > 0
+    && !createTask.isPending;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -135,6 +155,37 @@ export function TaskCreateDialog({
             isAgentSelectable={isAgentSelectable}
             onValueChange={setAgentId}
           />
+
+          <div className="space-y-2">
+            <label htmlFor="task-workspace-file-library" className="text-sm font-medium text-foreground">
+              {t('select_workspace_file_library')}
+            </label>
+            <Select
+              value={workspaceFileLibraryId}
+              onValueChange={setWorkspaceFileLibraryId}
+              disabled={createTask.isPending || fileLibrariesLoading}
+            >
+              <SelectTrigger id="task-workspace-file-library" data-testid="task-create__file-library">
+                <SelectValue placeholder={t('select_workspace_file_library')} />
+              </SelectTrigger>
+              <SelectContent>
+                {fileLibrariesLoading ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-4 w-4 animate-spin text-tertiary" />
+                  </div>
+                ) : fileLibraries.length === 0 ? (
+                  <div className="py-4 text-center text-sm text-tertiary">{t('workspace_file_library_empty')}</div>
+                ) : (
+                  fileLibraries.map((library) => (
+                    <SelectItem key={library.id} value={library.id}>
+                      {library.name}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-tertiary">{t('workspace_file_library_hint')}</p>
+          </div>
 
           <ImportantNotice t={t} />
 

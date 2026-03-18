@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/button';
 import type { Artifact, Task } from '@/lib/types/task';
 
 import { ArtifactImageViewer } from '../ArtifactImageViewer';
-import { ArtifactSaveDialog } from '../ArtifactSaveDialog';
 import { EditTaskDialog } from '../EditTaskDialog';
 import { FileSelectDialog } from '../FileSelectDialog';
 import { TaskCreateDialog } from '../TaskCreateDialog';
@@ -29,7 +28,6 @@ interface TaskPageDialogsProps {
   fileSelectOpen: boolean;
   imageViewerOpen: boolean;
   projectId: string;
-  saveDialogOpen: boolean;
   savingTask: boolean;
   selectedArtifact: Artifact | null;
   t: (key: string) => string;
@@ -38,12 +36,10 @@ interface TaskPageDialogsProps {
   urlInput: string;
   workspaceId: string;
   onArtifactDownload: (artifact: Artifact) => void | Promise<void>;
-  onArtifactSaveToLibrary: (filename?: string, description?: string) => void | Promise<void>;
   onEditDialogOpenChange: (open: boolean) => void;
   onFileSelectOpenChange: (open: boolean) => void;
   onHandleTaskUpdated: (data: { title: string }) => void | Promise<void>;
   onImageViewerOpenChange: (open: boolean) => void;
-  onSaveDialogOpenChange: (open: boolean) => void;
   onSetAddUrlOpen: (open: boolean) => void;
   onSetCreateDialogOpen: (open: boolean) => void;
   onSetUrlInput: (value: string) => void;
@@ -61,7 +57,6 @@ export function TaskPageDialogs({
   fileSelectOpen,
   imageViewerOpen,
   projectId,
-  saveDialogOpen,
   savingTask,
   selectedArtifact,
   t,
@@ -70,12 +65,10 @@ export function TaskPageDialogs({
   urlInput,
   workspaceId,
   onArtifactDownload,
-  onArtifactSaveToLibrary,
   onEditDialogOpenChange,
   onFileSelectOpenChange,
   onHandleTaskUpdated,
   onImageViewerOpenChange,
-  onSaveDialogOpenChange,
   onSetAddUrlOpen,
   onSetCreateDialogOpen,
   onSetUrlInput,
@@ -120,13 +113,6 @@ export function TaskPageDialogs({
         onOpenChange={onImageViewerOpenChange}
         artifact={selectedArtifact}
         onDownload={selectedArtifact ? () => onArtifactDownload(selectedArtifact) : undefined}
-      />
-
-      <ArtifactSaveDialog
-        open={saveDialogOpen}
-        onOpenChange={onSaveDialogOpenChange}
-        artifact={selectedArtifact}
-        onSave={onArtifactSaveToLibrary}
       />
 
       <TaskCreateDialog

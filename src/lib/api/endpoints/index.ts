@@ -55,7 +55,6 @@ export type {
   CreateTaskRequest,
   UpdateTaskRequest,
   SendMessageRequest,
-  SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
 } from './tasks';

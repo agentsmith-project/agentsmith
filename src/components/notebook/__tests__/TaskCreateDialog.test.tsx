@@ -7,6 +7,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { TaskCreateDialog } from '../TaskCreateDialog';
+import * as React from 'react';
 
 // Polyfill pointer capture methods not available in jsdom (needed by Radix Select)
 beforeAll(() => {
@@ -19,6 +20,9 @@ beforeAll(() => {
   if (!Element.prototype.releasePointerCapture) {
     Element.prototype.releasePointerCapture = () => {};
   }
+  if (!Element.prototype.scrollIntoView) {
+    Element.prototype.scrollIntoView = () => {};
+  }
 });
 
 // Shared mock for the agent list function — can be changed per-test
@@ -27,6 +31,10 @@ let mockAgentListFn = vi.fn();
 // Mock hooks — use vi.fn() so we can control return value per-test
 vi.mock('@/lib/hooks/use-task', () => ({
   useCreateTask: vi.fn(),
+}));
+
+vi.mock('@/lib/hooks/use-files', () => ({
+  useFileLibraries: vi.fn(),
 }));
 
 // Mock API — use class so `new AgentAPI(...)` works
@@ -40,6 +48,97 @@ vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(),
 }));
 
+vi.mock('@/components/ui/select', async () => {
+  const React = await import('react');
+  const SelectContext = React.createContext<{
+    value?: string;
+    onValueChange?: (value: string) => void;
+    disabled?: boolean;
+  }>({});
+
+  function Select({
+    value,
+    onValueChange,
+    disabled,
+    children,
+  }: {
+    value?: string;
+    onValueChange?: (value: string) => void;
+    disabled?: boolean;
+    children: React.ReactNode;
+  }) {
+    return (
+      <SelectContext.Provider value={{ value, onValueChange, disabled }}>
+        <div>{children}</div>
+      </SelectContext.Provider>
+    );
+  }
+
+  function SelectTrigger({
+    children,
+    id,
+    disabled,
+    ...props
+  }: React.ComponentProps<'button'>) {
+    const context = React.useContext(SelectContext);
+    return (
+      <button
+        type="button"
+        role="combobox"
+        id={id}
+        disabled={disabled ?? context.disabled}
+        {...props}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  function SelectValue({ placeholder }: { placeholder?: string }) {
+    const context = React.useContext(SelectContext);
+    return <span>{context.value || placeholder || ''}</span>;
+  }
+
+  function SelectContent({ children }: { children: React.ReactNode }) {
+    return <div role="listbox">{children}</div>;
+  }
+
+  function SelectItem({
+    value,
+    disabled,
+    children,
+  }: {
+    value: string;
+    disabled?: boolean;
+    children: React.ReactNode;
+  }) {
+    const context = React.useContext(SelectContext);
+    return (
+      <button
+        type="button"
+        role="option"
+        aria-selected={context.value === value}
+        disabled={disabled}
+        onClick={() => {
+          if (!disabled) {
+            context.onValueChange?.(value);
+          }
+        }}
+      >
+        {children}
+      </button>
+    );
+  }
+
+  return {
+    Select,
+    SelectTrigger,
+    SelectValue,
+    SelectContent,
+    SelectItem,
+  };
+});
+
 // Mock next-intl with translation map
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string) => {
@@ -49,6 +148,9 @@ vi.mock('next-intl', () => ({
       'important': 'Important:',
       'create_title': 'Task Title',
       'select_agent': 'Select an Agent',
+      'select_workspace_file_library': 'Select Workspace File Library',
+      'workspace_file_library_hint': 'This library becomes the persistent task workspace.',
+      'workspace_file_library_empty': 'No ready file libraries',
       'agent_fixed_notice': 'The agent cannot be changed after creation',
       'history_immutable_notice': 'Task history cannot be modified',
       'cancel': 'Cancel',
@@ -59,6 +161,7 @@ vi.mock('next-intl', () => ({
 }));
 
 import { useCreateTask } from '@/lib/hooks/use-task';
+import { useFileLibraries } from '@/lib/hooks/use-files';
 
 const mockAgents = [
   {
@@ -67,6 +170,7 @@ const mockAgents = [
     name: 'Test Agent 1',
     description: 'First test agent',
     mode: 'external' as const,
+    presence: 'online' as const,
     status: 'enabled' as const,
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
@@ -77,11 +181,39 @@ const mockAgents = [
     name: 'Test Agent 2',
     description: 'Second test agent',
     mode: 'external' as const,
+    presence: 'online' as const,
     status: 'enabled' as const,
     created_at: '2024-01-02T00:00:00Z',
     updated_at: '2024-01-02T00:00:00Z',
   },
 ];
+
+const mockFileLibraries = [
+  {
+    id: 'flib-1',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    name: 'Project Uploads',
+    status: 'ready' as const,
+    filesystem_name: 'flib-project-uploads',
+    created_by_user_id: 'user-1',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+async function selectRadixOption(user: ReturnType<typeof userEvent.setup>, trigger: HTMLElement, optionName: string) {
+  fireEvent.click(trigger);
+  await user.click(await screen.findByRole('option', { name: optionName }));
+}
+
+function submitTaskCreateForm() {
+  const form = document.querySelector('form');
+  if (!form) {
+    throw new Error('Task create form not found');
+  }
+  fireEvent.submit(form);
+}
 
 describe('TaskCreateDialog', () => {
   let queryClient: QueryClient;
@@ -113,6 +245,10 @@ describe('TaskCreateDialog', () => {
     vi.mocked(useCreateTask).mockReturnValue({
       mutateAsync: mockMutateAsync,
       isPending: false,
+    } as any);
+    vi.mocked(useFileLibraries).mockReturnValue({
+      data: { items: mockFileLibraries },
+      isLoading: false,
     } as any);
   });
 
@@ -184,18 +320,21 @@ describe('TaskCreateDialog', () => {
     it('renders agent select', () => {
       renderComponent();
 
-      const selectTrigger = document.querySelector('[role="combobox"]');
-      expect(selectTrigger).toBeInTheDocument();
+      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('renders workspace file library select', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('task-create__file-library')).toBeInTheDocument();
     });
 
     it('shows placeholder in agent select', () => {
       renderComponent();
 
-      // Both the label and the placeholder span contain "Select an Agent"
-      // Verify via the combobox trigger which displays the placeholder
-      const combobox = screen.getByRole('combobox');
+      const combobox = screen.getAllByRole('combobox')[0];
       expect(combobox).toBeInTheDocument();
-      expect(combobox).toHaveAttribute('data-placeholder');
+      expect(combobox).toHaveTextContent('Select an Agent');
     });
   });
 
@@ -264,7 +403,7 @@ describe('TaskCreateDialog', () => {
       });
 
       // Verify the select trigger is present for agent selection
-      expect(screen.getByRole('combobox')).toBeInTheDocument();
+      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
     });
 
     it('shows loading state while fetching agents', () => {
@@ -287,7 +426,7 @@ describe('TaskCreateDialog', () => {
       // (Radix Select dropdown content only renders in portal when opened,
       // which is unreliable in jsdom — verify the form structure instead)
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(screen.getByRole('combobox')).toBeInTheDocument();
+      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
     });
   });
 
@@ -321,17 +460,13 @@ describe('TaskCreateDialog', () => {
       expect(createButton).toBeDisabled();
     });
 
-    it('enables create button when form is valid', async () => {
+    it('keeps create button disabled until agent and file library are selected', async () => {
       const user = userEvent.setup();
       renderComponent();
 
-      // Fill in title
       const titleInput = screen.getByRole('textbox', { name: /Task Title/i });
       await user.type(titleInput, 'Test Task');
-
-      // Select an agent (would need to interact with the select)
-      // For now, just check the button state after title input
-      // The actual agent selection would require more complex setup
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
     });
   });
 
@@ -343,13 +478,21 @@ describe('TaskCreateDialog', () => {
       const titleInput = screen.getByRole('textbox', { name: /Task Title/i });
       await user.type(titleInput, 'Test Task');
 
-      // Submit form
-      const form = screen.getByRole('textbox', { name: /Task Title/i }).closest('form');
-      if (form) {
-        fireEvent.submit(form);
-      }
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      submitTaskCreateForm();
 
-      // Form submission would be tested with actual agent selection
+      await waitFor(() => {
+        expect(mockMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: {
+            title: 'Test Task',
+            agent_id: 'agent-1',
+            workspace_file_library_id: 'flib-1',
+          },
+        });
+      });
     });
 
     it('trims whitespace from title', async () => {
@@ -371,15 +514,14 @@ describe('TaskCreateDialog', () => {
       expect(createButton).toBeDisabled();
     });
 
-    it('does not submit without agent selection', async () => {
+    it('does not submit without agent and file library selection', async () => {
       const user = userEvent.setup();
       renderComponent();
 
       const titleInput = screen.getByRole('textbox', { name: /Task Title/i });
       await user.type(titleInput, 'Test Task');
 
-      const _createButton = screen.getByRole('button', { name: 'Create' });
-      // Button should still be disabled until agent is selected
+      expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
     });
   });
 
@@ -407,18 +549,27 @@ describe('TaskCreateDialog', () => {
 
   describe('Success Callback', () => {
     it('calls onSuccess with task ID after successful creation', async () => {
-      const _user = userEvent.setup();
+      const user = userEvent.setup();
       renderComponent();
 
-      // Fill form and submit
-      // Success callback would be triggered after creation
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Created Task');
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      submitTaskCreateForm();
+
+      await waitFor(() => expect(mockOnSuccess).toHaveBeenCalledWith('new-task-id'));
     });
 
     it('closes dialog after successful creation', async () => {
-      const _user = userEvent.setup();
+      const user = userEvent.setup();
       renderComponent();
 
-      // After successful creation, dialog should close
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Created Task');
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      submitTaskCreateForm();
+
+      await waitFor(() => expect(mockOnOpenChange).toHaveBeenCalledWith(false));
     });
   });
 

@@ -189,10 +189,9 @@ vi.mock('../ConversationPanel', () => ({
 }));
 
 vi.mock('../ArtifactsPanel', () => ({
-  ArtifactsPanel: ({ onView, onSave, onDownload, disabled }: any) => (
+  ArtifactsPanel: ({ onView, onDownload, disabled }: any) => (
     <div data-testid="artifacts-panel">
       <button onClick={() => onView(mockArtifacts[0])}>View Artifact</button>
-      <button onClick={() => onSave(mockArtifacts[0])}>Save Artifact</button>
       <button onClick={() => onDownload(mockArtifacts[0])}>Download Artifact</button>
       {disabled && <div data-disabled>disabled</div>}
     </div>
@@ -212,15 +211,6 @@ vi.mock('../ArtifactImageViewer', () => ({
   ArtifactImageViewer: ({ open, onOpenChange }: any) => (
     <dialog open={open}>
       <button onClick={() => onOpenChange(false)}>Close Viewer</button>
-    </dialog>
-  ),
-}));
-
-vi.mock('../ArtifactSaveDialog', () => ({
-  ArtifactSaveDialog: ({ open, onOpenChange, onSave }: any) => (
-    <dialog open={open}>
-      <button onClick={() => onSave('filename.txt', 'description')}>Save</button>
-      <button onClick={() => onOpenChange(false)}>Cancel</button>
     </dialog>
   ),
 }));
@@ -250,7 +240,6 @@ vi.mock('@/lib/api', () => ({
       listTraces: mockTaskApiListTraces,
       cancelRun: mockTaskApiCancelRun,
       downloadArtifact: vi.fn().mockResolvedValue(new Blob()),
-      saveArtifact: vi.fn().mockResolvedValue({}),
     };
   }),
   FilesAPI: vi.fn().mockImplementation(function FilesAPI() {
@@ -592,16 +581,6 @@ describe('TaskPage', () => {
       await user.click(viewButton);
 
       // Viewer dialog should open
-    });
-
-    it('opens save dialog for artifacts', async () => {
-      const user = userEvent.setup();
-      renderComponent();
-
-      const saveButton = screen.getByText('Save Artifact');
-      await user.click(saveButton);
-
-      // Save dialog should open
     });
 
     it('downloads artifact', async () => {

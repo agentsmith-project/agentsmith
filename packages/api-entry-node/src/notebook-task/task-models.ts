@@ -8,6 +8,8 @@ export interface TaskRecord {
   title: string;
   agent_id: string;
   agent_name: string;
+  workspace_file_library_id?: string;
+  workspace_file_library_name?: string;
   status: 'active' | 'archived';
   attached_inputs: TaskInputRefRecord[];
   created_at: string;

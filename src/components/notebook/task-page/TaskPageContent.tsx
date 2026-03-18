@@ -27,7 +27,6 @@ interface TaskPageContentProps {
   handleDownloadArtifact: (artifact: Artifact) => Promise<void>;
   handlePendingRemove: (id: string) => void;
   handlePendingUpdate: (id: string, content: string) => void;
-  handleSaveArtifact: (artifact: Artifact) => void;
   handleSendMessage: (content: string) => Promise<void>;
   handleViewArtifact: (artifact: Artifact) => void;
   isDisabled: boolean;
@@ -76,7 +75,6 @@ export function TaskPageContent({
   handleDownloadArtifact,
   handlePendingRemove,
   handlePendingUpdate,
-  handleSaveArtifact,
   handleSendMessage,
   handleViewArtifact,
   isDisabled,
@@ -167,7 +165,6 @@ export function TaskPageContent({
         <ArtifactsPanel
           artifacts={artifacts}
           onView={handleViewArtifact}
-          onSave={handleSaveArtifact}
           onDownload={handleDownloadArtifact}
           onAttachAsInput={handleAttachArtifactAsInput}
           disabled={isDisabled || !canUpdateTask}

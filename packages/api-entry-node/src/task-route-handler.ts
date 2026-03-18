@@ -24,12 +24,14 @@ import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestr
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import type { ProjectsRoute } from './projects-route-match.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { getFileLibrary, getFileLibraryMountAccess } from './file-library-store.js';
 import { getNotebookTaskMetricsPrometheusText, getNotebookTaskMetricsSnapshot } from './notebook-task/task-metrics-api.js';
 import {
   asObject,
   buildId,
   readTaskInputRefs,
   type TaskInputRefRecord,
+  type TaskListItem,
   type TaskRecord,
 } from './notebook-task/task-models.js';
 import {
@@ -82,6 +84,17 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
   if (process.env.DEBUG_NOTEBOOK_EXECUTION !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-execution] ${message}${suffix}\n`);
+}
+
+function sanitizeTaskWorkspaceDirName(title: string, taskId: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  if (slug) return slug;
+  return taskId.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'task-workspace';
 }
 
 async function maybeReleaseInternalAgentWorkload(
@@ -142,6 +155,9 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const body = asObject(await readBody(req));
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     const agentId = typeof body.agent_id === 'string' ? body.agent_id.trim() : '';
+    const workspaceFileLibraryId = typeof body.workspace_file_library_id === 'string'
+      ? body.workspace_file_library_id.trim()
+      : '';
     if (!title) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'task_title_required' });
       return true;
@@ -150,10 +166,23 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_id_required' });
       return true;
     }
+    if (!workspaceFileLibraryId) {
+      json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' });
+      return true;
+    }
 
     const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, agentId);
     if (!agent || agent.status !== 'enabled' || agent.interaction_mode === 'chat') {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'agent_not_found_or_not_notebook_compatible' });
+      return true;
+    }
+    if (agent.mode === 'external' && agent.presence !== 'online') {
+      json(res, 409, { error_code: 'AGENT_OFFLINE', message: 'agent_offline' });
+      return true;
+    }
+    const workspaceFileLibrary = getFileLibrary(route.workspaceId, route.projectId, workspaceFileLibraryId);
+    if (!workspaceFileLibrary) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
       return true;
     }
 
@@ -166,6 +195,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       title,
       agent_id: agent.id,
       agent_name: agent.name,
+      workspace_file_library_id: workspaceFileLibrary.id,
+      workspace_file_library_name: workspaceFileLibrary.name,
       status: 'active',
       attached_inputs: readTaskInputRefs(body.initial_inputs),
       created_at: createdAt,
@@ -182,9 +213,13 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       resourceType: 'notebook_task',
       resourceId: task.id,
       requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null,
-      metadata: { agent_id: task.agent_id, initial_input_count: task.attached_inputs.length },
+      metadata: {
+        agent_id: task.agent_id,
+        workspace_file_library_id: task.workspace_file_library_id,
+        initial_input_count: task.attached_inputs.length,
+      },
     });
-    json(res, 201, task);
+    json(res, 201, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
     return true;
   }
 
@@ -196,6 +231,41 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       return true;
     }
     json(res, 200, await buildTaskRealtimeView(deps, route.workspaceId, route.projectId, task));
+    return true;
+  }
+
+  if (route.kind === 'taskWorkspaceAccess' && method === 'POST') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
+    if (!task.workspace_file_library_id) {
+      json(res, 409, { error_code: 'TASK_WORKSPACE_NOT_BOUND', message: 'task_workspace_file_library_not_configured' });
+      return true;
+    }
+    const workspaceFileLibrary = getFileLibrary(route.workspaceId, route.projectId, task.workspace_file_library_id);
+    if (!workspaceFileLibrary) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+      return true;
+    }
+    const mountAccess = getFileLibraryMountAccess(route.workspaceId, route.projectId, task.workspace_file_library_id);
+    if (!mountAccess) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
+      return true;
+    }
+    json(res, 200, {
+      task_id: task.id,
+      workspace_binding_mode: 'file_library',
+      workspace_dir_name: sanitizeTaskWorkspaceDirName(task.title, task.id),
+      file_library_id: workspaceFileLibrary.id,
+      file_library_name: workspaceFileLibrary.name,
+      filesystem_name: mountAccess.filesystem_name,
+      metadata_url: mountAccess.metadata_url,
+      recommended_mount_path: mountAccess.recommended_mount_path,
+      created_at: mountAccess.created_at,
+    });
     return true;
   }
 
@@ -597,26 +667,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskEvents' && method === 'GET') {
     // handled below (kept here only to make route ordering explicit)
-  }
-
-  if (route.kind === 'taskArtifactSave' && method === 'POST') {
-    await loadTaskArtifacts(deps, route.taskId);
-    const artifact = getTaskArtifacts(route.taskId).find((item) => item.id === route.artifactId);
-    if (!artifact) {
-      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'artifact_not_found' });
-      return true;
-    }
-    json(res, 200, {
-      id: `file_${artifact.id}`,
-      project_id: route.projectId,
-      file_name: artifact.title ?? `${artifact.id}.txt`,
-      file_type: artifact.mime_type ?? 'text/plain',
-      file_size: artifact.file_size ?? 0,
-      status: 'ready',
-      created_at: nowIso(),
-      updated_at: nowIso(),
-    });
-    return true;
   }
 
   if (route.kind === 'taskArtifactDownload' && method === 'GET') {

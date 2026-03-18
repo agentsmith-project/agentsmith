@@ -288,6 +288,8 @@ export const taskFixtures: Task[] = [
     title: 'Product Documentation Analysis',
     agent_id: 'agent_001',
     agent_name: 'AgentA',
+    workspace_file_library_id: 'lib_shared_docs',
+    workspace_file_library_name: 'Shared Documentation Workspace',
     status: 'active',
     attached_inputs: [
       { id: 'in_lib_001', kind: 'library_object', library_id: 'lib_shared_docs', key: 'product-specs.md', name: 'product-specs.md', content_type: 'text/markdown', size_bytes: 445000 },
@@ -305,6 +307,8 @@ export const taskFixtures: Task[] = [
     title: 'API Reference Guide',
     agent_id: 'agent_002',
     agent_name: 'AgentB',
+    workspace_file_library_id: 'lib_shared_docs',
+    workspace_file_library_name: 'Shared Documentation Workspace',
     status: 'active',
     attached_inputs: [{ id: 'in_lib_003', kind: 'library_object', library_id: 'lib_shared_docs', key: 'api-reference.md', name: 'api-reference.md', content_type: 'text/markdown', size_bytes: 98000 }],
     created_at: '2026-01-28T11:15:00Z',

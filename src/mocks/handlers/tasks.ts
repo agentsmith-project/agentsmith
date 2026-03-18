@@ -43,6 +43,9 @@ export const taskHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/tasks', async ({ request, params }) => {
     const body: any = await request.json().catch(() => ({}));
+    if (typeof body?.workspace_file_library_id !== 'string' || body.workspace_file_library_id.trim().length === 0) {
+      return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' }, { status: 422 });
+    }
     const now = new Date().toISOString();
     const newTask = {
       id: `task_${Math.random().toString(36).slice(2, 8)}`,
@@ -52,6 +55,8 @@ export const taskHandlers = [
       title: body?.title ?? 'New Task',
       agent_id: body?.agent_id ?? 'agent_001',
       agent_name: body?.agent_name ?? 'AgentA',
+      workspace_file_library_id: body.workspace_file_library_id,
+      workspace_file_library_name: body?.workspace_file_library_name ?? 'Project Uploads',
       status: body?.status ?? 'active',
       attached_inputs: Array.isArray(body?.inputs) ? body.inputs.map((item: any, idx: number) => ({
         id: item?.id ?? `in_${idx}_${Math.random().toString(36).slice(2, 7)}`,
@@ -243,23 +248,6 @@ export const taskHandlers = [
     const taskId = params.id as string;
     const items = artifacts.filter((a) => a.task_id === taskId);
     return HttpResponse.json(items);
-  }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/artifacts/:artifactId/save', async ({ params }) => {
-    const artifactId = params.artifactId as string;
-    const artifact = artifacts.find((a) => a.id === artifactId);
-    if (!artifact) {
-      return HttpResponse.json({ error: 'artifact_not_found' }, { status: 404 });
-    }
-    return HttpResponse.json({
-      id: `saved_${artifact.id}`,
-      project_id: params.prj as string,
-      file_name: artifact.title ?? 'artifact.txt',
-      file_type: artifact.mime_type ?? 'application/octet-stream',
-      file_size: artifact.file_size ?? 0,
-      status: 'ready',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/tasks/:id/artifacts/:artifactId/download', () => {
     return new HttpResponse('Mock artifact content', {

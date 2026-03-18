@@ -11,14 +11,12 @@ import type {
   CreateTaskRequest,
   UpdateTaskRequest,
   SendMessageRequest,
-  SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
   TaskTraceListResponse,
   TaskTraceEvent,
   TaskAttachedInputDetail,
 } from '../../types/task';
-import type { FileItem } from '../types';
 import type { ApiClient } from '../client';
 import { API_BASE } from '../client';
 
@@ -223,22 +221,6 @@ export class TaskAPI {
   }
 
   /**
-   * Save an artifact to the file library
-   */
-  async saveArtifact(
-    workspaceId: string,
-    projectId: string,
-    taskId: string,
-    artifactId: string,
-    data: SaveArtifactRequest,
-  ): Promise<FileItem> {
-    return this.client.post<FileItem>(
-      `/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/artifacts/${artifactId}/save`,
-      data,
-    );
-  }
-
-  /**
    * Download an artifact
    */
   async downloadArtifact(
@@ -285,9 +267,7 @@ export type {
   CreateTaskRequest,
   UpdateTaskRequest,
   SendMessageRequest,
-  SaveArtifactRequest,
   TaskListParams,
   TaskListResponse,
   TaskTraceEvent,
-  FileItem,
 };

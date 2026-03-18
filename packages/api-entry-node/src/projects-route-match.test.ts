@@ -545,6 +545,17 @@ describe('matchProjectsRoute', () => {
     });
   });
 
+  it('matches notebook task workspace access route', () => {
+    expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/tasks/task_1/workspace-access'),
+    ).toEqual({
+      kind: 'taskWorkspaceAccess',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      taskId: 'task_1',
+    });
+  });
+
   it('returns null for unknown route', () => {
     expect(matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/unknown')).toBeNull();
   });

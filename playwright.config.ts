@@ -32,6 +32,7 @@ const chromiumMvpSpecMatch = [
   /files\.spec\.ts$/,
   /governance-mainline\.spec\.ts$/,
   /login\.spec\.ts$/,
+  /notebook\.spec\.ts$/,
   /workspace-overview\.spec\.ts$/,
   /workspace-settings\.spec\.ts$/,
   /usage\.spec\.ts$/,

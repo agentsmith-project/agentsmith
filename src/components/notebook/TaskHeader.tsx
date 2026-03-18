@@ -29,6 +29,7 @@ export interface TaskHeaderProps {
   task: Task;
   workspaceId: string;
   projectId: string;
+  agentMode?: 'external' | 'internal' | null;
   agentPresence?: 'online' | 'offline' | 'managed' | null;
   agentRunActivity?: { active: boolean; elapsedSeconds: number } | null;
   canDeleteTask?: boolean;
@@ -42,6 +43,7 @@ export function TaskHeader({
   task,
   workspaceId,
   projectId,
+  agentMode = null,
   agentPresence = null,
   agentRunActivity = null,
   canDeleteTask = true,
@@ -108,6 +110,14 @@ export function TaskHeader({
     const remain = seconds % 60;
     return remain === 0 ? `${minutes}m` : `${minutes}m ${remain}s`;
   };
+  const agentModeLabel = (
+    agentMode === 'internal'
+      ? t('agent_mode_internal')
+      : agentMode === 'external'
+        ? t('agent_mode_external')
+        : t('agent_mode_unknown')
+  );
+  const workspaceFileLibraryName = task.workspace_file_library_name?.trim() || t('workspace_file_library_unknown');
 
   return (
     <div
@@ -142,6 +152,12 @@ export function TaskHeader({
             <span className="text-[11px] text-tertiary">Agent: {task.agent_name}</span>
             <Badge variant={agentPresenceVariant} className="text-[11px]">
               {agentPresenceLabel}
+            </Badge>
+            <Badge variant="outline" className="text-[11px]" data-testid="notebook__task-header-agent-mode">
+              {agentModeLabel}
+            </Badge>
+            <Badge variant="outline" className="text-[11px]" data-testid="notebook__task-header-workspace-library">
+              {t('workspace_file_library_label')}: {workspaceFileLibraryName}
             </Badge>
             {agentRunActivity?.active ? (
               <Badge variant="secondary" className="text-[11px]" data-testid="notebook__task-header-agent-busy">

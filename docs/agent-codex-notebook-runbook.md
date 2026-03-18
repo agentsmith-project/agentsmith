@@ -34,7 +34,13 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - Target: external agent for Notebook task execution/testing.
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).
 - Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
-- Workdir rule: `/tmp/<username>/<task_id>`.
+- Workdir rule:
+  - legacy fallback: `/tmp/<username>/<task_id>`
+  - persistent workspace mode (Phase 1 current truth):
+    - external bare: `~/ags-workspaces/<workspace_dir_name>`
+    - external docker: `/workspace/ags-workspaces/<workspace_dir_name>`
+  - the mounted workspace root is the selected notebook task file library root
+  - deliverables should be written to `./.artifacts/`
 
 ## 2. Current Delivery Status
 - Implemented:
@@ -60,7 +66,9 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
    - `execution_context` (`workspace_id/project_id/task_id/run_id/username/user_bearer_token/wire_api/model`)
    - static proxy config comes from `server.hello.resource_proxy.base_url`
 5. `agent-codex-runner`:
-   - creates `/tmp/<username>/<task_id>`;
+   - resolves task workspace access from AgentSmith;
+   - in persistent workspace mode, mounts the task-bound JuiceFS file library root;
+   - uses the mounted workspace as cwd;
    - generates task-scoped `.codex/config.toml`;
    - runs `codex exec` with explicit `-c model_provider=proxy` / `model_providers.proxy.*` overrides;
    - marks current task workdir as trusted project (`projects."<cwd>".trust_level="trusted"`) and disables git requirement (`project_root_markers=[]`, `--skip-git-repo-check`);
@@ -129,6 +137,17 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `<repo>/packages/agent-codex-runner/builtin-skills`)
 - `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops,file-read`)
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
+- `MBOS_AGENT_WORKSPACE_ROOT` (optional; base directory for mounted notebook workspaces)
+
+### 5.2.1 External Docker runner prerequisites
+- `juicefs` CLI must be available in the runner image
+- FUSE support must be enabled for the container runtime
+- recommended Docker flags for the current local baseline:
+  - `--privileged`
+  - `--device /dev/fuse`
+  - `--security-opt apparmor:unconfined`
+- the workspace root inside the container is `/workspace/ags-workspaces`
+- build-time proxy may be required in local environments; do not persist proxy env vars in the final image
 
 ### 5.3 API debug env vars (recommended for troubleshooting)
 - `DEBUG_AGENT_EXECUTION=1` (execution websocket accept/reject logs)

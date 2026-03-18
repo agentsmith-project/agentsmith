@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -9,6 +9,7 @@ export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 export const GLM_BASE_URL = process.env.INTEGRATION_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
 export const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'GLM-5';
+export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 'http://192.168.0.210:8889';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 
@@ -40,6 +41,63 @@ async function killProcessTree(pid: number, signal: NodeJS.Signals): Promise<voi
   } catch {
     // Process already exited.
   }
+}
+
+async function unmountWorkspaceTree(root: string): Promise<void> {
+  let entries: string[] = [];
+  try {
+    entries = await readdir(root);
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const mountPath = path.join(root, entry);
+    await new Promise<void>((resolve) => {
+      const proc = spawn('juicefs', ['umount', mountPath], { stdio: 'ignore' });
+      proc.once('error', () => resolve());
+      proc.once('exit', () => resolve());
+      setTimeout(() => resolve(), 5_000);
+    });
+  }
+}
+
+async function unmountSingleWorkspace(mountPath: string): Promise<void> {
+  await new Promise<void>((resolve) => {
+    const proc = spawn('juicefs', ['umount', mountPath], { stdio: 'ignore' });
+    proc.once('error', () => resolve());
+    proc.once('exit', () => resolve());
+    setTimeout(() => resolve(), 5_000);
+  });
+}
+
+async function spawnAndCapture(command: string, args: string[], options?: { cwd?: string; env?: NodeJS.ProcessEnv }): Promise<{
+  code: number;
+  stdout: string;
+  stderr: string;
+}> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(command, args, {
+      cwd: options?.cwd,
+      env: options?.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', (chunk) => {
+      stdout += chunk.toString('utf-8');
+    });
+    proc.stderr.on('data', (chunk) => {
+      stderr += chunk.toString('utf-8');
+    });
+    proc.once('error', reject);
+    proc.once('close', (code) => {
+      resolve({
+        code: code ?? 1,
+        stdout,
+        stderr,
+      });
+    });
+  });
 }
 
 async function clearAppState(page: Page, workspaceId: string): Promise<void> {
@@ -396,9 +454,15 @@ export async function startCodexRunnerProcess(args: {
   wsUrl: string;
   agentKey: string;
   codeBin?: string;
-}): Promise<{ proc: ChildProcessWithoutNullStreams; logPath: string; stop: () => Promise<void> }> {
+}): Promise<{
+  proc: ChildProcessWithoutNullStreams;
+  logPath: string;
+  workspaceRoot: string;
+  stop: () => Promise<void>;
+}> {
   return new Promise((resolve, reject) => {
     const logPath = path.join(tmpdir(), `agentsmith-codex-runner-${Date.now()}.log`);
+    const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-workspaces-${Date.now()}`);
     const proc = spawn(
       'npm',
       ['run', 'agent:codex-runner'],
@@ -409,6 +473,7 @@ export async function startCodexRunnerProcess(args: {
           MBOS_AGENT_KEY: args.agentKey,
           MBOS_AGENT_CODEX_YOLO: '1',
           MBOS_AGENT_RUNNER_DEBUG: '1',
+          MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
           ...(args.codeBin ? { CODEX_BIN: args.codeBin } : {}),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -431,21 +496,25 @@ export async function startCodexRunnerProcess(args: {
         resolve({
           proc,
           logPath,
+          workspaceRoot,
           stop: async () => {
-            if (proc.killed || proc.exitCode !== null) return;
-            await killProcessTree(proc.pid, 'SIGTERM');
-            await new Promise<void>((done) => {
-              const killTimeout = setTimeout(() => {
-                if (!proc.killed && proc.exitCode === null) {
-                  void killProcessTree(proc.pid, 'SIGKILL');
-                }
-                done();
-              }, 5_000);
-              proc.once('exit', () => {
-                clearTimeout(killTimeout);
-                done();
+            if (!proc.killed && proc.exitCode === null) {
+              await killProcessTree(proc.pid, 'SIGTERM');
+              await new Promise<void>((done) => {
+                const killTimeout = setTimeout(() => {
+                  if (!proc.killed && proc.exitCode === null) {
+                    void killProcessTree(proc.pid, 'SIGKILL');
+                  }
+                  done();
+                }, 5_000);
+                proc.once('exit', () => {
+                  clearTimeout(killTimeout);
+                  done();
+                });
               });
-            });
+            }
+            await unmountWorkspaceTree(workspaceRoot);
+            await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
           },
         });
       }
@@ -473,12 +542,138 @@ export async function startCodexRunnerProcess(args: {
   });
 }
 
+export async function startCodexRunnerDockerProcess(args: {
+  wsUrl: string;
+  agentKey: string;
+  codeBin?: string;
+}): Promise<{
+  containerName: string;
+  workspaceRoot: string;
+  imageTag: string;
+  stop: () => Promise<void>;
+}> {
+  const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner:local';
+  const buildContext = path.resolve(__dirname, '..');
+  const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner');
+  const inspectResult = await spawnAndCapture('docker', ['image', 'inspect', imageTag]);
+  if (inspectResult.code !== 0) {
+    const buildArgs = ['build'];
+    if (DOCKER_BUILD_PROXY.trim()) {
+      buildArgs.push('--build-arg', `HTTP_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
+      buildArgs.push('--build-arg', `HTTPS_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
+      buildArgs.push('--build-arg', `NO_PROXY=127.0.0.1,localhost,host.docker.internal`);
+    }
+    buildArgs.push('-f', dockerfile, '-t', imageTag, '.');
+    const buildResult = await spawnAndCapture('docker', buildArgs, { cwd: buildContext });
+    if (buildResult.code !== 0) {
+      throw new Error(`docker_runner_image_build_failed:${buildResult.stderr.slice(-800)}`);
+    }
+  }
+
+  const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-docker-workspaces-${Date.now()}`);
+  await mkdir(workspaceRoot, { recursive: true });
+  const containerName = `agentsmith-codex-runner-${Date.now()}`;
+  const runArgs = [
+    'run',
+    '--detach',
+    '--rm',
+    '--name',
+    containerName,
+    '--network',
+    'host',
+    '--privileged',
+    '--device',
+    '/dev/fuse',
+    '--security-opt',
+    'apparmor:unconfined',
+    '--env',
+    `MBOS_AGENT_WS_URL=${args.wsUrl}`,
+    '--env',
+    `MBOS_AGENT_KEY=${args.agentKey}`,
+    '--env',
+    'MBOS_AGENT_CODEX_YOLO=1',
+    '--env',
+    'MBOS_AGENT_RUNNER_DEBUG=1',
+    '--env',
+    'MBOS_AGENT_WORKSPACE_ROOT=/workspace/ags-workspaces',
+    '--env',
+    'MBOS_AGENT_BUILTIN_SKILLS_DIR=/app/packages/agent-codex-runner/builtin-skills',
+    '--env',
+    'MBOS_AGENT_BUILTIN_SKILLS=.system,feishu-docs,jira-ops,file-read',
+    '--env',
+    'MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1',
+    '--volume',
+    `${buildContext}:/app`,
+    '--volume',
+    `${workspaceRoot}:/workspace/ags-workspaces:rshared`,
+  ];
+  if (args.codeBin) {
+    runArgs.push('--env', `CODEX_BIN=${args.codeBin}`);
+  }
+  runArgs.push(imageTag);
+
+  const runResult = await spawnAndCapture('docker', runArgs);
+  if (runResult.code !== 0) {
+    throw new Error(`docker_runner_start_failed:${runResult.stderr.slice(-800)}`);
+  }
+
+  const started = (runResult.stdout || '').trim();
+  if (!started) {
+    throw new Error('docker_runner_start_missing_container_id');
+  }
+
+  const deadline = Date.now() + 60_000;
+  while (Date.now() < deadline) {
+    const logs = await spawnAndCapture('docker', ['logs', containerName]);
+    if (`${logs.stdout}\n${logs.stderr}`.includes('[agent-codex-runner] connected')) {
+      return {
+        containerName,
+        workspaceRoot,
+        imageTag,
+        stop: async () => {
+          await spawnAndCapture('docker', ['rm', '-f', containerName]);
+          await unmountWorkspaceTree(workspaceRoot);
+          await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
+        },
+      };
+    }
+    const inspectRunning = await spawnAndCapture('docker', ['inspect', '-f', '{{.State.Running}}', containerName]);
+    if (inspectRunning.code !== 0 || !inspectRunning.stdout.includes('true')) {
+      throw new Error(`docker_runner_exit:${logs.stderr.slice(-800)}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
+
+  const logs = await spawnAndCapture('docker', ['logs', containerName]);
+  await spawnAndCapture('docker', ['rm', '-f', containerName]);
+  throw new Error(`docker_runner_connect_timeout:${`${logs.stdout}\n${logs.stderr}`.slice(-1200)}`);
+}
+
+export async function mountFileLibraryLocally(metadataUrl: string): Promise<{
+  mountPath: string;
+  stop: () => Promise<void>;
+}> {
+  const mountPath = await mkdtemp(path.join(tmpdir(), 'agentsmith-real-file-library-'));
+  const mountResult = await spawnAndCapture('juicefs', ['mount', metadataUrl, mountPath, '-d']);
+  if (mountResult.code !== 0) {
+    await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
+    throw new Error(`local_juicefs_mount_failed:${mountResult.stderr.slice(-800)}`);
+  }
+  return {
+    mountPath,
+    stop: async () => {
+      await unmountSingleWorkspace(mountPath);
+      await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
+    },
+  };
+}
+
 export async function createFileLibraryViaUi(
   page: Page,
   workspaceId: string,
   projectId: string,
   name: string,
-): Promise<void> {
+): Promise<string> {
   await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/files`);
   await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('files__library-create').click();
@@ -487,9 +682,15 @@ export async function createFileLibraryViaUi(
   await dialog.getByTestId('files__library-create__name').fill(name);
   await dialog.getByTestId('files__library-create__submit').click();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
-  await expect(page.locator('[data-testid^="files__library-item--"]').filter({ hasText: name }).first()).toBeVisible({
+  const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: name }).first();
+  await expect(libraryItem).toBeVisible({
     timeout: 30_000,
   });
+  const libraryId = (await libraryItem.getAttribute('data-testid'))?.replace('files__library-item--', '');
+  if (!libraryId) {
+    throw new Error(`file_library_id_not_found:${name}`);
+  }
+  return libraryId;
 }
 
 export async function openMountAccessAndRevealMetadataUrl(

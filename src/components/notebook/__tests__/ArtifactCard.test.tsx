@@ -60,7 +60,6 @@ describe('ArtifactCard', () => {
   };
 
   const mockOnView = vi.fn();
-  const mockOnSave = vi.fn();
   const mockOnDownload = vi.fn();
   const mockOnAttachAsInput = vi.fn();
 
@@ -82,13 +81,12 @@ describe('ArtifactCard', () => {
 
   const renderComponent = (artifact: Artifact, props = {}) => {
     return render(
-      <ArtifactCard
-        artifact={artifact}
-        onView={mockOnView}
-        onSave={mockOnSave}
-        onDownload={mockOnDownload}
-        onAttachAsInput={mockOnAttachAsInput}
-        {...props}
+        <ArtifactCard
+          artifact={artifact}
+          onView={mockOnView}
+          onDownload={mockOnDownload}
+          onAttachAsInput={mockOnAttachAsInput}
+          {...props}
       />
     );
   };
@@ -239,7 +237,6 @@ describe('ArtifactCard', () => {
       render(
         <ArtifactCard
           artifact={mockTextArtifact}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
         />
       );
@@ -258,34 +255,6 @@ describe('ArtifactCard', () => {
       expect(mockOnView).toHaveBeenCalled();
     });
 
-    it('shows save button when onSave is provided', () => {
-      renderComponent(mockTextArtifact);
-
-      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
-      expect(screen.getByRole('button', { name: /save artifact/i })).toBeInTheDocument();
-    });
-
-    it('does not show save button when onSave is not provided', () => {
-      render(
-        <ArtifactCard
-          artifact={mockTextArtifact}
-          onView={mockOnView}
-          onDownload={mockOnDownload}
-        />
-      );
-
-      expect(screen.queryByRole('button', { name: /save/i })).not.toBeInTheDocument();
-    });
-
-    it('calls onSave when save button is clicked', async () => {
-      const user = userEvent.setup();
-      renderComponent(mockTextArtifact);
-
-      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
-      await user.click(screen.getByRole('button', { name: /save artifact/i }));
-      expect(mockOnSave).toHaveBeenCalled();
-    });
-
     it('shows download button when onDownload is provided', () => {
       renderComponent(mockTextArtifact);
 
@@ -298,7 +267,6 @@ describe('ArtifactCard', () => {
         <ArtifactCard
           artifact={mockTextArtifact}
           onView={mockOnView}
-          onSave={mockOnSave}
         />
       );
 
@@ -321,7 +289,6 @@ describe('ArtifactCard', () => {
         <ArtifactCard
           artifact={mockTextArtifact}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
           onAttachAsInput={mockOnAttachAsInput}
           disabled={true}
@@ -337,7 +304,6 @@ describe('ArtifactCard', () => {
         <ArtifactCard
           artifact={mockTextArtifact}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
           disabled={true}
         />
@@ -348,27 +314,11 @@ describe('ArtifactCard', () => {
       expect(viewButton).toBeDisabled();
     });
 
-    it('disables save button when disabled', () => {
-      render(
-        <ArtifactCard
-          artifact={mockTextArtifact}
-          onView={mockOnView}
-          onSave={mockOnSave}
-          onDownload={mockOnDownload}
-          disabled={true}
-        />
-      );
-
-      fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
-      expect(screen.getByRole('button', { name: /save artifact/i })).toBeDisabled();
-    });
-
     it('disables download button when disabled', () => {
       render(
         <ArtifactCard
           artifact={mockTextArtifact}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
           disabled={true}
         />
@@ -447,7 +397,6 @@ describe('ArtifactCard', () => {
       expect(screen.getByRole('button', { name: /view/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /attach as input/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /copy artifact/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /save artifact/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /download artifact/i })).toBeInTheDocument();
     });
   });

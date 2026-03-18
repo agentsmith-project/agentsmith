@@ -18,13 +18,13 @@ export function isAgentRoute(route: { kind: string }): boolean {
 export function isTaskRoute(route: { kind: string }): boolean {
   return route.kind === 'tasks'
     || route.kind === 'taskItem'
+    || route.kind === 'taskWorkspaceAccess'
     || route.kind === 'taskInputs'
     || route.kind === 'taskInputItem'
     || route.kind === 'taskMessages'
     || route.kind === 'taskCancelRun'
     || route.kind === 'taskTraces'
     || route.kind === 'taskArtifacts'
-    || route.kind === 'taskArtifactSave'
     || route.kind === 'taskArtifactDownload'
     || route.kind === 'taskEvents';
 }

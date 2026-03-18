@@ -150,7 +150,6 @@
       "unexpected_error": "An unexpected error occurred",
       "files_added_to_task": "Added {{count}} file(s) to task",
       "file_removed_from_task": "Source removed from task",
-      "artifact_saved_to_library": "Artifact saved to library",
       "batch_delete_failed": "Failed to delete {{count}} file(s)",
       "file_download_success": "File downloaded successfully",
       "update_agent_failed": "Failed to update agent"
@@ -519,6 +518,9 @@
       "important": "Important:",
       "create_title": "Task Title",
       "select_agent": "Select Agent",
+      "select_workspace_file_library": "Select Workspace File Library",
+      "workspace_file_library_hint": "The selected file library becomes this task's persistent working directory.",
+      "workspace_file_library_empty": "No ready file libraries in this project yet. Create one in Files first.",
       "agent_fixed_notice": "Agent cannot be changed after creation",
       "history_immutable_notice": "Conversation history cannot be modified",
       "leave": "Leave Task",
@@ -536,6 +538,11 @@
       "agent_presence_offline": "Agent Offline",
       "agent_presence_managed": "Agent Managed",
       "agent_presence_unknown": "Agent Unknown",
+      "agent_mode_external": "External Runner",
+      "agent_mode_internal": "Internal Runner",
+      "agent_mode_unknown": "Unknown Runner",
+      "workspace_file_library_label": "Workspace",
+      "workspace_file_library_unknown": "No Workspace Library",
       "agent_busy": "Agent Busy · {duration}",
       "agent_option_offline": "offline",
       "agent_online_only_hint": "External agents must be online to create runnable tasks.",
@@ -727,7 +734,6 @@
       "actions": {
         "attach_input": "Add as Input"
       },
-      "save_to_library": "Save to Library",
       "download": "Download",
       "view_full": "View Full",
       "copy": "Copy",
@@ -737,17 +743,6 @@
         "image": "Image",
         "file": "File",
         "other": "Other"
-      },
-      "save_dialog": {
-        "title": "Save Artifact to Library",
-        "description": "Save this artifact to your file library so it can be reused later.",
-        "filename_optional": "Filename (optional)",
-        "filename_placeholder": "Enter filename",
-        "description_optional": "Description (optional)",
-        "description_placeholder": "Enter description",
-        "note_title": "Note:",
-        "note_body": "Saved files become available in the selected file library after the save completes.",
-        "confirm": "Save to Library"
       },
       "image_viewer": {
         "default_title": "Image Artifact",

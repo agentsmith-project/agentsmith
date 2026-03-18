@@ -18,12 +18,11 @@ vi.mock('@/components/ui/loading', () => ({
 }));
 
 vi.mock('../ArtifactCard', () => ({
-  ArtifactCard: ({ artifact, onView, onSave, onDownload, onAttachAsInput, disabled }: any) => (
+  ArtifactCard: ({ artifact, onView, onDownload, onAttachAsInput, disabled }: any) => (
     <div data-testid={`artifact-card-${artifact.id}`}>
       <div data-artifact-type>{artifact.type}</div>
       <div data-artifact-title>{artifact.title || '(no title)'}</div>
       {onView && <button data-action="view">View</button>}
-      {onSave && <button data-action="save">Save</button>}
       {onDownload && <button data-action="download">Download</button>}
       {onAttachAsInput && <button data-action="attach-input">Attach Input</button>}
       {disabled && <div data-disabled>disabled</div>}
@@ -68,7 +67,6 @@ describe('ArtifactsPanel', () => {
   ];
 
   const mockOnView = vi.fn();
-  const mockOnSave = vi.fn();
   const mockOnDownload = vi.fn();
   const mockOnAttachAsInput = vi.fn();
 
@@ -78,13 +76,12 @@ describe('ArtifactsPanel', () => {
 
   const renderComponent = (props = {}) => {
     return render(
-      <ArtifactsPanel
-        artifacts={mockArtifacts}
-        onView={mockOnView}
-        onSave={mockOnSave}
-        onDownload={mockOnDownload}
-        onAttachAsInput={mockOnAttachAsInput}
-        {...props}
+        <ArtifactsPanel
+          artifacts={mockArtifacts}
+          onView={mockOnView}
+          onDownload={mockOnDownload}
+          onAttachAsInput={mockOnAttachAsInput}
+          {...props}
       />
     );
   };
@@ -95,7 +92,6 @@ describe('ArtifactsPanel', () => {
         <ArtifactsPanel
           artifacts={[]}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
         />
       );
@@ -109,7 +105,6 @@ describe('ArtifactsPanel', () => {
         <ArtifactsPanel
           artifacts={[]}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
         />
       );
@@ -183,12 +178,6 @@ describe('ArtifactsPanel', () => {
       expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="view"]')).toBeInTheDocument();
     });
 
-    it('passes save callback to artifacts', () => {
-      renderComponent();
-
-      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="save"]')).toBeInTheDocument();
-    });
-
     it('passes download callback to artifacts', () => {
       renderComponent();
 
@@ -209,7 +198,6 @@ describe('ArtifactsPanel', () => {
         <ArtifactsPanel
           artifacts={mockArtifacts}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
           disabled={true}
         />
@@ -285,7 +273,6 @@ describe('ArtifactsPanel', () => {
         <ArtifactsPanel
           artifacts={artifactWithoutTitle}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
         />
       );
@@ -315,7 +302,6 @@ describe('ArtifactsPanel', () => {
         <ArtifactsPanel
           artifacts={onlyImages}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
         />
       );
@@ -346,7 +332,6 @@ describe('ArtifactsPanel', () => {
         <ArtifactsPanel
           artifacts={onlyNonImages}
           onView={mockOnView}
-          onSave={mockOnSave}
           onDownload={mockOnDownload}
         />
       );

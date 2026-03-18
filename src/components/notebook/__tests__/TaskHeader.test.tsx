@@ -37,6 +37,11 @@ vi.mock('next-intl', () => ({
       'edit_title': 'Edit Task',
       'new': 'New',
       'agent_presence_unknown': 'Agent Unknown',
+      'agent_mode_unknown': 'Unknown Runner',
+      'agent_mode_external': 'External Runner',
+      'agent_mode_internal': 'Internal Runner',
+      'workspace_file_library_label': 'Workspace',
+      'workspace_file_library_unknown': 'No Workspace Library',
     };
     return translations[key] || key;
   },
@@ -54,6 +59,8 @@ describe('TaskHeader', () => {
     title: 'Test Task Title',
     agent_id: 'agent-1',
     agent_name: 'Test Agent',
+    workspace_file_library_id: 'flib-1',
+    workspace_file_library_name: 'Project Workspace',
     status: 'active',
     attached_inputs: [],
     created_at: '2024-01-01T00:00:00Z',
@@ -98,9 +105,20 @@ describe('TaskHeader', () => {
       expect(screen.getByText('Agent: Test Agent')).toBeInTheDocument();
     });
 
+    it('renders workspace file library badge', () => {
+      renderComponent();
+
+      expect(screen.getByTestId('notebook__task-header-workspace-library')).toHaveTextContent('Workspace: Project Workspace');
+    });
+
     it('renders agent presence badge instead of task status badge', () => {
       renderComponent();
       expect(screen.getByText('Agent Unknown')).toBeInTheDocument();
+    });
+
+    it('renders agent mode badge', () => {
+      renderComponent(mockTask, { agentMode: 'external' as const });
+      expect(screen.getByTestId('notebook__task-header-agent-mode')).toHaveTextContent('External Runner');
     });
 
     it('has data-testid for easy selection', () => {
@@ -280,7 +298,7 @@ describe('TaskHeader', () => {
       const { container } = renderComponent();
 
       const header = container.querySelector('[data-testid="notebook__task-header"]');
-      expect(header).toHaveClass('border-b', 'border-border', 'bg-surface');
+      expect(header).toHaveClass('border-b', 'border-white/6', 'bg-surface/55');
     });
 
     it('renders action buttons in correct order', () => {

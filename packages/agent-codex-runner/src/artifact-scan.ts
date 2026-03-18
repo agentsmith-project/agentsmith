@@ -81,7 +81,7 @@ function inferArtifactKind(filename: string): {
 }
 
 export async function scanArtifactsDirectory(cwd: string): Promise<ScannedArtifact[]> {
-  const artifactsDir = join(cwd, 'artifacts');
+  const artifactsDir = join(cwd, '.artifacts');
   let entries: Dirent[];
   try {
     entries = await readdir(artifactsDir, { withFileTypes: true, encoding: 'utf8' });
@@ -103,7 +103,7 @@ export async function scanArtifactsDirectory(cwd: string): Promise<ScannedArtifa
     const inferred = inferArtifactKind(entry.name);
     const artifact: ScannedArtifact = {
       filename: entry.name,
-      task_relative_path: `artifacts/${entry.name}`,
+      task_relative_path: `.artifacts/${entry.name}`,
       artifact_type: inferred.artifactType,
       ...(inferred.mimeType ? { mime_type: inferred.mimeType } : {}),
       file_size: fileStat.size,
@@ -161,7 +161,7 @@ function shouldSkipWorkspaceEntry(relPath: string, entry: Dirent): boolean {
   const parts = normalized.split('/').filter(Boolean);
   if (parts.length === 0) return true;
   const top = parts[0]!;
-  if (top === '.codex' || top === '.mbos' || top === 'artifacts') return true;
+  if (top === '.codex' || top === '.mbos' || top === '.artifacts') return true;
   if (top === '.git' || top === 'node_modules') return true;
   if (entry.name.startsWith('.DS_Store')) return true;
   return false;

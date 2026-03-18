@@ -21,6 +21,8 @@ type NotebookTaskRecord = {
   owner_user_id: string;
   title: string;
   agent_name: string;
+  workspace_file_library_id?: string;
+  workspace_file_library_name?: string;
   status: 'active' | 'archived';
   attached_inputs: Array<
     | { id: string; kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
@@ -32,6 +34,17 @@ type NotebookTaskRecord = {
   last_activity_at: string;
   agent_id: string;
 };
+
+function sanitizeTaskWorkspaceDirName(title: string, taskId: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 48);
+  if (slug) return slug;
+  return taskId.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'task-workspace';
+}
 
 type NotebookTaskMessageRecord = {
   id: string;
@@ -238,6 +251,10 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         user_bearer_token: rawBearerToken,
         wire_api: wireApi,
         model,
+        workspace_binding_mode: 'file_library',
+        workspace_file_library_id: task.workspace_file_library_id ?? null,
+        workspace_file_library_name: task.workspace_file_library_name ?? null,
+        workspace_dir_name: sanitizeTaskWorkspaceDirName(task.title, task.id),
         task_inputs: taskInputs,
         credential_files: thirdPartyCredentialFiles,
         notebook_mode: true,

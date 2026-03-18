@@ -23,6 +23,7 @@ export type ProjectsRoute =
   | { kind: 'fileLibraryShareLink'; workspaceId: string; projectId: string; libraryId: string }
   | { kind: 'tasks'; workspaceId: string; projectId: string }
   | { kind: 'taskItem'; workspaceId: string; projectId: string; taskId: string }
+  | { kind: 'taskWorkspaceAccess'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskInputs'; workspaceId: string; projectId: string; taskId: string }
   | {
     kind: 'taskInputItem';
@@ -35,13 +36,6 @@ export type ProjectsRoute =
   | { kind: 'taskCancelRun'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskTraces'; workspaceId: string; projectId: string; taskId: string }
   | { kind: 'taskArtifacts'; workspaceId: string; projectId: string; taskId: string }
-  | {
-    kind: 'taskArtifactSave';
-    workspaceId: string;
-    projectId: string;
-    taskId: string;
-    artifactId: string;
-  }
   | {
     kind: 'taskArtifactDownload';
     workspaceId: string;
@@ -555,19 +549,6 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
     };
   }
 
-  const taskArtifactSaveMatched = pathname.match(
-    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/artifacts\/([^/]+)\/save\/?$/,
-  );
-  if (taskArtifactSaveMatched) {
-    return {
-      kind: 'taskArtifactSave',
-      workspaceId: decodeURIComponent(taskArtifactSaveMatched[1]),
-      projectId: decodeURIComponent(taskArtifactSaveMatched[2]),
-      taskId: decodeURIComponent(taskArtifactSaveMatched[3]),
-      artifactId: decodeURIComponent(taskArtifactSaveMatched[4]),
-    };
-  }
-
   const taskArtifactsMatched = pathname.match(
     /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/artifacts\/?$/,
   );
@@ -650,6 +631,18 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       workspaceId: decodeURIComponent(taskEventsMatched[1]),
       projectId: decodeURIComponent(taskEventsMatched[2]),
       taskId: decodeURIComponent(taskEventsMatched[3]),
+    };
+  }
+
+  const taskWorkspaceAccessMatched = pathname.match(
+    /^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/tasks\/([^/]+)\/workspace-access\/?$/,
+  );
+  if (taskWorkspaceAccessMatched) {
+    return {
+      kind: 'taskWorkspaceAccess',
+      workspaceId: decodeURIComponent(taskWorkspaceAccessMatched[1]),
+      projectId: decodeURIComponent(taskWorkspaceAccessMatched[2]),
+      taskId: decodeURIComponent(taskWorkspaceAccessMatched[3]),
     };
   }
 

@@ -76,6 +76,8 @@ export interface Task {
   title: string;
   agent_id: string; // Fixed after creation, cannot be changed
   agent_name: string; // Redundant field for display
+  workspace_file_library_id?: string;
+  workspace_file_library_name?: string;
   status: TaskStatus;
   attached_inputs: TaskInputRef[]; // Attached task input references
   created_at: string; // ISO 8601
@@ -145,6 +147,7 @@ export interface TaskTraceListResponse {
 export interface CreateTaskRequest {
   title: string;
   agent_id: string;
+  workspace_file_library_id: string;
   initial_inputs?: Array<
     | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
     | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }
@@ -160,12 +163,6 @@ export interface UpdateTaskRequest {
 export interface SendMessageRequest {
   task_id: string;
   content: string;
-}
-
-export interface SaveArtifactRequest {
-  artifact_id: string;
-  filename?: string;
-  description?: string;
 }
 
 export interface TaskListParams {

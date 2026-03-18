@@ -12,7 +12,6 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 export interface ArtifactCardProps {
   artifact: Artifact;
   onView?: () => void;
-  onSave?: () => void;
   onDownload?: () => void;
   onAttachAsInput?: () => void;
   disabled?: boolean;
@@ -21,7 +20,6 @@ export interface ArtifactCardProps {
 export function ArtifactCard({
   artifact,
   onView,
-  onSave,
   onDownload,
   onAttachAsInput,
   disabled = false,
@@ -185,18 +183,6 @@ export function ArtifactCard({
                         aria-label="copy artifact"
                       >
                         {tCommon('copy')}
-                      </Button>
-                    ) : null}
-                    {onSave ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onSave}
-                        disabled={disabled}
-                        className="h-7 justify-start px-2 text-[10px]"
-                        aria-label="save artifact"
-                      >
-                        {tCommon('save')}
                       </Button>
                     ) : null}
                     {onDownload ? (

@@ -15,7 +15,6 @@ import type { Artifact, ArtifactType } from '@/lib/types/task';
 export interface ArtifactsPanelProps {
   artifacts: Artifact[];
   onView?: (artifact: Artifact) => void;
-  onSave?: (artifact: Artifact) => void;
   onDownload?: (artifact: Artifact) => void;
   onAttachAsInput?: (artifact: Artifact) => void;
   disabled?: boolean;
@@ -24,7 +23,6 @@ export interface ArtifactsPanelProps {
 export function ArtifactsPanel({
   artifacts,
   onView,
-  onSave,
   onDownload,
   onAttachAsInput,
   disabled = false,
@@ -73,7 +71,6 @@ export function ArtifactsPanel({
                 key={artifact.id}
                 artifact={artifact}
                 onView={onView ? () => onView(artifact) : undefined}
-                onSave={onSave ? () => onSave(artifact) : undefined}
                 onDownload={onDownload ? () => onDownload(artifact) : undefined}
                 onAttachAsInput={onAttachAsInput ? () => onAttachAsInput(artifact) : undefined}
                 disabled={disabled}

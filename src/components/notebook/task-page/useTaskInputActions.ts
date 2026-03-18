@@ -22,7 +22,6 @@ export function useTaskInputActions(args: {
 
   const [fileSelectOpen, setFileSelectOpen] = React.useState(false);
   const [imageViewerOpen, setImageViewerOpen] = React.useState(false);
-  const [saveDialogOpen, setSaveDialogOpen] = React.useState(false);
   const [addUrlOpen, setAddUrlOpen] = React.useState(false);
   const [urlInput, setUrlInput] = React.useState('');
   const [addingInput, setAddingInput] = React.useState(false);
@@ -67,11 +66,6 @@ export function useTaskInputActions(args: {
     }
   }, []);
 
-  const handleSaveArtifact = React.useCallback((artifact: Artifact) => {
-    setSelectedArtifact(artifact);
-    setSaveDialogOpen(true);
-  }, []);
-
   const handleDownloadArtifact = React.useCallback(async (artifact: Artifact) => {
     try {
       const blob = await taskAPI.downloadArtifact(workspaceId, projectId, taskId, artifact.id);
@@ -88,33 +82,11 @@ export function useTaskInputActions(args: {
     }
   }, [handleError, projectId, taskAPI, taskId, workspaceId]);
 
-  const handleSaveArtifactToLibrary = React.useCallback(async (filename?: string, description?: string) => {
-    if (!selectedArtifact) return;
-    try {
-      await taskAPI.saveArtifact(
-        workspaceId,
-        projectId,
-        taskId,
-        selectedArtifact.id,
-        {
-          artifact_id: selectedArtifact.id,
-          filename: filename || selectedArtifact.title,
-          description,
-        },
-      );
-      setSaveDialogOpen(false);
-    } catch (err) {
-      handleError(err, { logContext: 'TaskPage.saveArtifactToLibrary' });
-    }
-  }, [handleError, projectId, selectedArtifact, taskAPI, taskId, workspaceId]);
-
   return {
     fileSelectOpen,
     setFileSelectOpen,
     imageViewerOpen,
     setImageViewerOpen,
-    saveDialogOpen,
-    setSaveDialogOpen,
     addUrlOpen,
     setAddUrlOpen,
     urlInput,
@@ -124,8 +96,6 @@ export function useTaskInputActions(args: {
     handleAttachArtifactAsInput,
     handleSubmitUrlInput,
     handleViewArtifact,
-    handleSaveArtifact,
     handleDownloadArtifact,
-    handleSaveArtifactToLibrary,
   };
 }

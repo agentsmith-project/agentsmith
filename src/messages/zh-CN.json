@@ -150,7 +150,6 @@
       "unexpected_error": "发生意外错误",
       "files_added_to_task": "已添加 {{count}} 个文件到任务",
       "file_removed_from_task": "已从任务中移除文件",
-      "artifact_saved_to_library": "已保存制品到库",
       "batch_delete_failed": "删除 {{count}} 个文件失败",
       "file_download_success": "文件下载成功",
       "update_agent_failed": "更新智能体失败",
@@ -521,6 +520,9 @@
       "important": "重要：",
       "create_title": "任务标题",
       "select_agent": "选择 Agent",
+      "select_workspace_file_library": "选择工作文件库",
+      "workspace_file_library_hint": "所选文件库将直接作为该任务的持久化工作目录。",
+      "workspace_file_library_empty": "当前项目暂无可用文件库，请先在 Files 中创建文件库。",
       "agent_fixed_notice": "创建后 Agent 不可更改",
       "history_immutable_notice": "对话历史不可修改",
       "leave": "离开任务",
@@ -538,6 +540,11 @@
       "agent_presence_offline": "Agent 离线",
       "agent_presence_managed": "Agent 托管中",
       "agent_presence_unknown": "Agent 状态未知",
+      "agent_mode_external": "外部 Runner",
+      "agent_mode_internal": "内部 Runner",
+      "agent_mode_unknown": "Runner 未知",
+      "workspace_file_library_label": "工作文件库",
+      "workspace_file_library_unknown": "未绑定工作文件库",
       "agent_busy": "Agent 忙碌中 · {duration}",
       "agent_option_offline": "离线",
       "agent_online_only_hint": "External Agent 需在线后才能创建可运行任务。",
@@ -729,7 +736,6 @@
       "actions": {
         "attach_input": "添加为输入"
       },
-      "save_to_library": "保存到文件库",
       "download": "下载",
       "view_full": "查看完整",
       "copy": "复制",
@@ -739,17 +745,6 @@
         "image": "图片",
         "file": "文件",
         "other": "其他"
-      },
-      "save_dialog": {
-        "title": "保存生成物到文件库",
-        "description": "将该生成物保存到文件库，便于后续继续使用。",
-        "filename_optional": "文件名（可选）",
-        "filename_placeholder": "输入文件名",
-        "description_optional": "描述（可选）",
-        "description_placeholder": "输入描述",
-        "note_title": "说明：",
-        "note_body": "保存完成后，文件会出现在所选文件库中。",
-        "confirm": "保存到文件库"
       },
       "image_viewer": {
         "default_title": "图片生成物",

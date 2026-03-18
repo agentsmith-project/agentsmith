@@ -311,10 +311,6 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/download",
     "method": "get"
   },
-  "taskArtifactSave": {
-    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/save",
-    "method": "post"
-  },
   "taskArtifacts": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts",
     "method": "get"
@@ -346,6 +342,10 @@
   "tasks": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks",
     "method": "get"
+  },
+  "taskWorkspaceAccess": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access",
+    "method": "post"
   },
   "taskTraces": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/traces",

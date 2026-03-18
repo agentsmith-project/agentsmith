@@ -3428,12 +3428,12 @@
         }
       }
     },
-    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/artifacts/{artifactId}/save": {
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/tasks/{taskId}/workspace-access": {
       "post": {
         "tags": [
           "Notebook"
         ],
-        "operationId": "saveTaskArtifact",
+        "operationId": "getTaskWorkspaceAccess",
         "responses": {
           "200": {
             "description": "OK",
@@ -3441,7 +3441,50 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true
+                  "required": [
+                    "task_id",
+                    "workspace_binding_mode",
+                    "workspace_dir_name",
+                    "file_library_id",
+                    "file_library_name",
+                    "filesystem_name",
+                    "metadata_url",
+                    "recommended_mount_path",
+                    "created_at"
+                  ],
+                  "properties": {
+                    "task_id": {
+                      "type": "string"
+                    },
+                    "workspace_binding_mode": {
+                      "type": "string",
+                      "enum": [
+                        "file_library"
+                      ]
+                    },
+                    "workspace_dir_name": {
+                      "type": "string"
+                    },
+                    "file_library_id": {
+                      "type": "string"
+                    },
+                    "file_library_name": {
+                      "type": "string"
+                    },
+                    "filesystem_name": {
+                      "type": "string"
+                    },
+                    "metadata_url": {
+                      "type": "string"
+                    },
+                    "recommended_mount_path": {
+                      "type": "string"
+                    },
+                    "created_at": {
+                      "type": "string",
+                      "format": "date-time"
+                    }
+                  }
                 }
               }
             }

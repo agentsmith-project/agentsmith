@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { WebSocket } from 'ws';
 import { expect, test, type Page } from '@playwright/test';
+import { startCodexRunnerProcess, waitForAgentPresenceOnline } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -20,6 +21,7 @@ const MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-
 const MEMBER_EMAIL = 'integration-member@example.com';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
 const NOTEBOOK_EXPECTED_TOKEN = `REAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
+const NOTEBOOK_ARTIFACT_NAME = `visual-review-summary-${Date.now()}.md`;
 const ARTIFACT_DIR = process.env.RELEASE_REAL_VISUAL_ARTIFACT_DIR
   ? path.resolve(process.env.RELEASE_REAL_VISUAL_ARTIFACT_DIR)
   : path.resolve('artifacts/release-real-visual/manual-run');
@@ -638,7 +640,15 @@ function startExternalNotebookBridge(args: {
   };
 }
 
-async function runNotebookTask(page: Page, context: ProjectContext, expectedToken: string) {
+async function runNotebookTask(args: {
+  page: Page;
+  context: ProjectContext;
+  agentName: string;
+  workspaceLibraryName: string;
+  expectedToken: string;
+  artifactName: string;
+}) {
+  const { page, context, agentName, workspaceLibraryName, expectedToken, artifactName } = args;
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`);
   await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('notebook__create-task-btn').click();
@@ -646,12 +656,26 @@ async function runNotebookTask(page: Page, context: ProjectContext, expectedToke
   await expect(dialog.locator('#task-title')).toBeVisible({ timeout: 30_000 });
   await dialog.locator('#task-title').fill('Release Review Task');
   await dialog.locator('#task-agent').click();
-  await page.getByRole('option').first().click();
+  await page.getByRole('option', { name: new RegExp(agentName) }).click();
+  await dialog.getByTestId('task-create__file-library').click();
+  await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
   await dialog.getByRole('button', { name: /create task/i }).click();
   await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
 
   const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
-  await input.fill(`Reply with exactly this token and a short explanation: ${expectedToken}`);
+  await input.fill([
+    'Run the following shell command exactly, then reply with the token and filename.',
+    '```bash',
+    `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
+    '# Market sizing summary',
+    `- Token: ${expectedToken}`,
+    '- Segment: North America consumer electronics',
+    '- Insight: online channel share is expanding faster than retail',
+    '- Recommendation: prioritize search plus retail media in the next planning cycle',
+    'EOF',
+    '```',
+    `After the file is written, reply with exactly: ${expectedToken} ${artifactName}`,
+  ].join(' '));
   await page.getByTestId('notebook__send-btn').click();
   await expect(page.getByText(expectedToken)).toBeVisible({ timeout: 120_000 });
 }
@@ -933,39 +957,63 @@ test.describe('@lane-real integration visual review', () => {
       notes: '真实文件库本地挂载说明对话框',
     });
     await page.keyboard.press('Escape');
+    await expect(page.getByTestId('files__dialog__library-mount-access')).toBeHidden({ timeout: 10_000 });
 
-    const bridge = startExternalNotebookBridge({
+    const runner = await startCodexRunnerProcess({
       wsUrl: connectionInfo.wsUrl,
       agentKey: connectionInfo.agentKey,
-      expectedToken: NOTEBOOK_EXPECTED_TOKEN,
-      model: GLM_MODEL,
     });
-    await bridge.ready;
+    test.info().annotations.push({ type: 'codex_runner_log', description: runner.logPath });
+    await waitForAgentPresenceOnline(page, workspaceId, project.projectId, agentId);
 
-    await captureProjectPages(page, captures, project, 'project owner');
-    await runNotebookTask(page, project, NOTEBOOK_EXPECTED_TOKEN);
-    const observedReply = await withTimeout(bridge.observedReply, 30_000, '');
-    if (observedReply) {
-      expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);
-    }
-    await settlePage(page);
-    await capturePage(page, captures, {
-      name: 'project-notebook-task-detail-real',
-      role: 'project owner',
-      notes: 'notebook 真实任务完成后的详情页',
-    });
-    const traceToggle = page.getByTestId('notebook__message-trace-toggle').first();
-    if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await traceToggle.click();
-      await expect(page.getByTestId('notebook__message-trace-panel')).toBeVisible({ timeout: 30_000 });
+    try {
+      await captureProjectPages(page, captures, project, 'project owner');
+      await runNotebookTask({
+        page,
+        context: project,
+        agentName,
+        workspaceLibraryName: 'Visual Review Library',
+        expectedToken: NOTEBOOK_EXPECTED_TOKEN,
+        artifactName: NOTEBOOK_ARTIFACT_NAME,
+      });
       await settlePage(page);
       await capturePage(page, captures, {
-        name: 'project-notebook-trace-real',
+        name: 'project-notebook-task-detail-real',
         role: 'project owner',
-        notes: '真实 notebook 任务的执行 trace 面板',
+        notes: 'notebook 真实任务完成后的详情页',
       });
+      const traceToggle = page.getByTestId('notebook__message-trace-toggle').first();
+      if (await traceToggle.isVisible({ timeout: 5_000 }).catch(() => false)) {
+        await traceToggle.click();
+        await expect(page.getByTestId('notebook__message-trace-panel')).toBeVisible({ timeout: 30_000 });
+        await settlePage(page);
+        await capturePage(page, captures, {
+          name: 'project-notebook-trace-real',
+          role: 'project owner',
+          notes: '真实 notebook 任务的执行 trace 面板',
+        });
+      }
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
+      const mountDialog = page.getByTestId('files__dialog__library-mount-access');
+      if (await mountDialog.isVisible().catch(() => false)) {
+        await page.keyboard.press('Escape');
+        await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+      }
+      const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
+      await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+      await libraryItem.click();
+      const artifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
+      await expect(artifactsRow).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-files-notebook-workspace-real',
+        role: 'project owner',
+        notes: 'notebook 任务绑定的文件库根目录，.artifacts 交付目录已经在 Files 页面中可见',
+      });
+    } finally {
+      await runner.stop();
     }
-    await bridge.stop();
 
     await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);
     await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });

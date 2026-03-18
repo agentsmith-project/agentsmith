@@ -61,8 +61,43 @@ async function createNotebookTaskViaDialog(args: {
   return taskId!;
 }
 
+async function openFileLibraryRoot(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  libraryName: string;
+}): Promise<void> {
+  const { page, workspaceId, projectId, libraryName } = args;
+  await page.goto(`/en-US/workspaces/${workspaceId}/projects/${projectId}/files`);
+  const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
+  await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+  const mountDialog = page.getByTestId('files__dialog__library-mount-access');
+  if (await mountDialog.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+  }
+  await libraryItem.click();
+  await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
+}
+
+async function openFolderByName(page: Page, name: string): Promise<void> {
+  const mountDialog = page.getByTestId('files__dialog__library-mount-access');
+  if (await mountDialog.isVisible().catch(() => false)) {
+    await page.keyboard.press('Escape');
+    await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+  }
+  const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
+  await expect(folderRow).toBeVisible({ timeout: 30_000 });
+  const rowButton = folderRow.getByRole('button').first();
+  if (await rowButton.isVisible().catch(() => false)) {
+    await rowButton.dblclick();
+    return;
+  }
+  await folderRow.dblclick();
+}
+
 test.describe('@lane-real notebook external agent via real codex runner', () => {
-  test('runs a notebook task, exposes traces, and leaves usage/audit evidence', async ({ page }) => {
+  test('runs a notebook task and keeps the mounted workspace consistent across runner, Files UI, and local mount', async ({ page }) => {
     test.setTimeout(720_000);
     const glmApiKey = requireGlmApiKey();
 
@@ -117,10 +152,17 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
           data: {
             role: 'user',
             content: [
-              `Create a concise markdown deliverable at .artifacts/${artifactName}.`,
-              `The file must include the exact token ${replyToken}.`,
-              'The deliverable should summarize a simple market-sizing analysis in 3 bullets.',
-              `Then reply with the exact token ${replyToken} and mention ${artifactName}.`,
+              'Run the following shell command exactly, then reply with the token and filename.',
+              '```bash',
+              `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
+              '# Market sizing summary',
+              `- Token: ${replyToken}`,
+              '- Segment: North America consumer electronics',
+              '- Insight: online channel share is expanding faster than retail',
+              '- Recommendation: prioritize search plus retail media in the next planning cycle',
+              'EOF',
+              '```',
+              `After the file is written, reply with exactly: ${replyToken} ${artifactName}`,
             ].join(' '),
           },
         },
@@ -157,8 +199,9 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         { headers: { Authorization: `Bearer ${token}` } },
       );
       expect(workspaceAccessResponse.ok()).toBeTruthy();
-      const workspaceAccessBody = (await workspaceAccessResponse.json()) as { workspace_dir_name: string };
+      const workspaceAccessBody = (await workspaceAccessResponse.json()) as { workspace_dir_name: string; metadata_url: string };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
+      expect(workspaceAccessBody.metadata_url).toBeTruthy();
 
       const artifactPath = path.join(
         runner.workspaceRoot,
@@ -172,7 +215,30 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
           { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
         )
         .toContain(replyToken);
-      await expect(page.getByTestId('notebook__task-header')).toBeVisible({ timeout: 30_000 });
+
+      await openFileLibraryRoot({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        libraryName: workspaceLibraryName,
+      });
+      await openFolderByName(page, '.artifacts');
+      await expect(
+        page.getByTestId('files__object-row').filter({ hasText: artifactName }).first(),
+      ).toBeVisible({ timeout: 30_000 });
+
+      const localMount = await mountFileLibraryLocally(workspaceAccessBody.metadata_url);
+      try {
+        await expect
+          .poll(
+            async () => readFile(path.join(localMount.mountPath, '.artifacts', artifactName), 'utf-8').catch(() => null),
+            { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
+          )
+          .toContain(replyToken);
+      } finally {
+        await localMount.stop();
+      }
+
     } finally {
       await runner.stop();
     }
@@ -232,10 +298,17 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
           data: {
             role: 'user',
             content: [
-              `Create a markdown deliverable at .artifacts/${artifactName}.`,
-              `The file must include the exact token ${replyToken}.`,
-              'Summarize a compact market-sizing analysis in 3 bullets and one recommendation.',
-              `Then reply with the exact token ${replyToken} and mention ${artifactName}.`,
+              'Run the following shell command exactly, then reply with the token and filename.',
+              '```bash',
+              `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
+              '# Market sizing summary',
+              `- Token: ${replyToken}`,
+              '- Segment: North America consumer electronics',
+              '- Insight: online channel share is expanding faster than retail',
+              '- Recommendation: prioritize search plus retail media in the next planning cycle',
+              'EOF',
+              '```',
+              `After the file is written, reply with exactly: ${replyToken} ${artifactName}`,
             ].join(' '),
           },
         },

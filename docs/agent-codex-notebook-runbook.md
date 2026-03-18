@@ -31,7 +31,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - file upload and browsing in the current Files mainline use project `file-libraries`
 
 ## 1. Scope
-- Target: external agent for Notebook task execution/testing.
+- Target: notebook task execution with persistent file-library workspaces.
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).
 - Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
 - Workdir rule:
@@ -39,6 +39,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - persistent workspace mode (Phase 1 current truth):
     - external bare: `~/ags-workspaces/<workspace_dir_name>`
     - external docker: `/workspace/ags-workspaces/<workspace_dir_name>`
+    - internal k8s: `/workspace`
   - the mounted workspace root is the selected notebook task file library root
   - deliverables should be written to `./.artifacts/`
 
@@ -53,9 +54,12 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - Responses-to-chat compatibility translation in endpoint proxy (including streaming SSE translation).
   - Codex runner per-task watchdog timeout and task auto-close protections.
   - Codex runner task workdir `.codex/config.toml` generation and noisy warning filtering.
+  - Internal-k8s notebook execution path using JuiceFS CSI pre-mounted `/workspace`.
+  - Internal lazy start / reclaim / resume without snapshot restore.
 - Verified:
   - `packages/api-entry-node/src/http-utils.test.ts` (responses/chat translation) passing.
   - End-to-end Notebook external agent pipeline with real GLM (`glm-5`) returns `turn.completed`.
+  - Internal notebook workspace real gate writes `.artifacts/` into the selected file library root and resumes after workload reclaim.
 
 ## 3. End-to-End Flow
 1. User creates Notebook task with notebook-capable external agent.
@@ -388,26 +392,32 @@ make governance-policy-effect-smoke
   - Intended for real backend mode page validation (not MSW-only UI smoke)
   - `governance-policy-effect-smoke` temporarily patches the current endpoint policy (RPM=1), validates a 429 rate-limit hit, checks Audit/Usage evidence, then restores the original policy
 
-### 5.4.4 Internal Agent Sandbox Smoke (fail-fast expected)
+### 5.4.4 Internal Agent Workspace Real Gate
 - Required env for internal mode:
 ```bash
 export SANDBOX_MANAGER_URL=http://<sandbox-manager-host>:8080
 export SANDBOX_SERVICE_KEY=<sandbox-service-key>
+export INTERNAL_AGENT_K8S_NAMESPACE=agentsmith-sandbox
 ```
 - Optional (recommended explicit execution ws base):
 ```bash
 export AGENT_EXECUTION_WS_BASE_URL=ws://localhost:20000
 ```
-- Smoke checklist:
-  - Create internal agent with `config.image` and notebook `execution_preferences.notebook.endpoint_id`.
-  - Confirm create/list/get agent responses do not contain `_internal_raw_key`.
-  - Create chat session with `external_agent_id=<internal_agent_id>`, send a stream request.
-  - Expected fail-fast when env missing: `422 AGENT_SANDBOX_NOT_CONFIGURED`.
-  - Expected normal path when env exists: first request may cold-start pod, then stream starts.
-  - Close/delete notebook task: pod cleanup/reclaim should be triggered by API.
+- Run:
+```bash
+npm run test:internal:real:notebook-workspace
+```
+- Gate proves:
+  - internal agent can be selected before pod exists
+  - first notebook message lazy-starts workload
+  - JuiceFS CSI mounts selected file library root at `/workspace`
+  - task writes deliverables into `/workspace/.artifacts`
+  - Files 页面与本地 mount 均可见这些 deliverables
+  - workload reclaim 后再次消息可恢复
 - Contract notes:
-  - Runner static proxy source is only `server.hello.resource_proxy.base_url`.
-  - Per-request auth token remains in `execution_context.user_bearer_token` (no proxy-base fallback).
+  - internal runner uses `workspace_binding_mode=pre_mounted`
+  - `workspace_path` is fixed to `/workspace`
+  - snapshot/restore no longer participates in this route
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.

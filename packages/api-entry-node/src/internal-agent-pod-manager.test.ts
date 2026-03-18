@@ -23,12 +23,11 @@ describe('internal-agent-pod-manager', () => {
     expect(sanitizeWorkloadId('---')).toBe('workload');
   });
 
-  it('creates pod, starts runner and waits for online', async () => {
+  it('creates pod with image command enabled and waits for online', async () => {
     const getPodStatus = vi.fn()
       .mockResolvedValueOnce({ phase: 'offline' })
       .mockResolvedValueOnce({ phase: 'Running' });
     const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
-    const exec = vi.fn().mockResolvedValue({ exit_code: 0, stdout: '123', stderr: '', duration_ms: 10 });
     const onlineStateStore = {
       getAgentOnlineState: vi.fn()
         .mockReturnValueOnce(false)
@@ -42,7 +41,7 @@ describe('internal-agent-pod-manager', () => {
         createOrEnsurePod,
         deletePod: vi.fn().mockResolvedValue(undefined),
         keepalive: vi.fn().mockResolvedValue(null),
-        exec,
+        exec: vi.fn(),
       },
       onlineStateStore,
       'ws://api:20000',
@@ -60,10 +59,29 @@ describe('internal-agent-pod-manager', () => {
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
       }),
+      workspaceMount: {
+        claimName: 'pvc-file-library-1',
+      },
     });
 
     expect(createOrEnsurePod).toHaveBeenCalledTimes(1);
-    expect(exec).toHaveBeenCalledTimes(1);
+    expect(createOrEnsurePod).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      'task_1',
+      expect.objectContaining({
+        workdir: '/workspace',
+        use_image_command: true,
+        disable_snapshot: true,
+        volumes: [
+          expect.objectContaining({
+            name: 'workspace',
+            mount_path: '/workspace',
+            persistent_volume_claim_name: 'pvc-file-library-1',
+          }),
+        ],
+      }),
+    );
     expect(onlineStateStore.getAgentOnlineState).toHaveBeenCalled();
   });
 

@@ -135,4 +135,124 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     });
     expect(audit.items.some((item) => item.error_code === 'RESOURCE_POLICY_DENIED')).toBe(true);
   });
+
+  it('uses internal execution api base derived from agent execution websocket base', async () => {
+    const previousWsBase = process.env.AGENT_EXECUTION_WS_BASE_URL;
+    const previousHttpBase = process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://172.19.0.1:20072';
+    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_internal',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_internal',
+          status: 'enabled',
+          mode: 'internal',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_internal',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+      internalAgentPodManager: {
+        ensureAgentReady: vi.fn(async () => undefined),
+      },
+      internalAgentWorkspaceProvisioner: {
+        ensureWorkspaceBinding: vi.fn(async () => ({
+          fileLibraryId: 'flib_internal',
+          filesystemName: 'flib_internal',
+          claimName: 'juicefs-pvc-internal',
+          mountPath: '/workspace',
+        })),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_internal',
+      workspace_id: 'ws_internal',
+      project_id: 'proj_internal',
+      owner_user_id: 'user_internal',
+      title: 'internal task',
+      agent_name: 'internal agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_internal',
+      workspace_file_library_id: 'flib_internal',
+      workspace_file_library_name: 'Internal Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_internal',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_internal',
+        user: { id: 'user_internal', name: 'Internal User', email: 'internal@example.com' },
+        rawBearerToken: 'token',
+        publicBaseUrl: 'http://localhost:20072',
+        buildRunId: () => 'run_internal',
+        buildProxyUsername: () => 'internal_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_internal',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      if (previousWsBase === undefined) {
+        delete process.env.AGENT_EXECUTION_WS_BASE_URL;
+      } else {
+        process.env.AGENT_EXECUTION_WS_BASE_URL = previousWsBase;
+      }
+      if (previousHttpBase === undefined) {
+        delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
+      } else {
+        process.env.AGENT_EXECUTION_HTTP_BASE_URL = previousHttpBase;
+      }
+    }
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          api_base: 'http://172.19.0.1:20072',
+          workspace_binding_mode: 'pre_mounted',
+          workspace_path: '/workspace',
+          workspace_file_library_id: 'flib_internal',
+        }),
+      }),
+    );
+  });
 });

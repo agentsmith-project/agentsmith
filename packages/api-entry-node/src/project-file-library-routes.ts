@@ -494,6 +494,10 @@ export async function handleProjectFileLibraryRoutes(args: {
         filesystemName: library.filesystem_name,
       });
       await deps.fileLibraryGatewayManager?.stopGateway(libraryId);
+      await deps.internalAgentWorkspaceProvisioner?.deleteWorkspaceBinding({
+        workspaceId,
+        fileLibraryId: libraryId,
+      });
       deleteFileLibraryRecord(workspaceId, projectId, libraryId);
       res.statusCode = 204;
       res.end();

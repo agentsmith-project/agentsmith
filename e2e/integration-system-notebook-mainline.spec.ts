@@ -346,6 +346,23 @@ async function createCredential(page: Page, workspaceId: string, projectId: stri
   await expect(page.getByText('BigModel Anthropic Key')).toBeVisible({ timeout: 30_000 });
 }
 
+async function createFileLibrary(page: Page, workspaceId: string, projectId: string): Promise<string> {
+  const libraryName = `Mainline Notebook Workspace ${Date.now()}`;
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/files`);
+  await expect(page.getByTestId('files__library-create')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('files__library-create').click();
+
+  const dialog = page.getByTestId('files__dialog__library-create');
+  await expect(dialog).toBeVisible({ timeout: 30_000 });
+  await dialog.getByTestId('files__library-create__name').fill(libraryName);
+  await dialog.getByTestId('files__library-create__submit').click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
+
+  const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
+  await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+  return libraryName;
+}
+
 async function createEndpoint(page: Page, workspaceId: string, projectId: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
   await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
@@ -633,6 +650,7 @@ async function runNotebookTask(
   workspaceId: string,
   projectId: string,
   agentName: string,
+  workspaceLibraryName: string,
   expectedToken: string,
 ): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
@@ -644,6 +662,8 @@ async function runNotebookTask(
   await dialog.locator('#task-title').fill('Mainline Real Notebook Task');
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
+  await dialog.getByTestId('task-create__file-library').click();
+  await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
   await dialog.getByRole('button', { name: /create/i }).click();
 
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
@@ -685,6 +705,7 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
     await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
     await createCredential(page, workspaceId, projectId, glmApiKey);
     await createEndpoint(page, workspaceId, projectId);
+    const workspaceLibraryName = await createFileLibrary(page, workspaceId, projectId);
     const agentName = await createAgent(page, workspaceId, projectId);
 
     const token = await readStoredAuthToken(page);
@@ -702,7 +723,7 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
       await bridge.ready;
       await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-      await runNotebookTask(page, workspaceId, projectId, agentName, NOTEBOOK_EXPECTED_TOKEN);
+      await runNotebookTask(page, workspaceId, projectId, agentName, workspaceLibraryName, NOTEBOOK_EXPECTED_TOKEN);
       const observedReply = await bridge.observedReply;
       expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);
     } finally {

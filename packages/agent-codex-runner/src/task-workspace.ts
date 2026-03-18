@@ -13,7 +13,7 @@ type FileLibraryWorkspaceExecutionContext = {
   api_base?: string;
   workspace_path?: string;
   user_bearer_token?: string;
-  workspace_binding_mode?: 'file_library';
+  workspace_binding_mode?: 'file_library' | 'pre_mounted';
   workspace_file_library_id?: string | null;
   workspace_file_library_name?: string | null;
   workspace_dir_name?: string | null;
@@ -116,6 +116,14 @@ export async function prepareTaskWorkspace(input: {
   username: string;
   taskId: string;
 }): Promise<{ cwd: string; source: 'workspace_path' | 'tmp_fallback' | 'file_library_mount' }> {
+  if (input.executionContext.workspace_binding_mode === 'pre_mounted') {
+    return resolveTaskCwd({
+      workspacePath: input.executionContext.workspace_path,
+      username: input.username,
+      taskId: input.taskId,
+    });
+  }
+
   if (input.executionContext.workspace_binding_mode === 'file_library') {
     const workspaceAccess = await fetchTaskWorkspaceAccess(input.executionContext);
     const cached = mountedWorkspaceByTaskId.get(input.taskId);

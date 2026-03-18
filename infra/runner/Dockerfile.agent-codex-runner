@@ -44,7 +44,38 @@ RUN set -eux; \
   npm install -g "@openai/codex@${CODEX_VERSION}"; \
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY no_proxy
 
-WORKDIR /app
+WORKDIR /opt/agent-runner
+
+COPY packages/agent-codex-runner/src ./src
+COPY packages/agent-codex-runner/builtin-skills ./builtin-skills
+
+RUN set -eux; \
+  printf '%s\n' \
+    '{' \
+    '  "name": "agent-codex-runner-image",' \
+    '  "private": true,' \
+    '  "type": "module",' \
+    '  "scripts": {' \
+    '    "start": "tsx src/index.ts"' \
+    '  },' \
+    '  "dependencies": {' \
+    '    "ws": "^8.18.3"' \
+    '  },' \
+    '  "devDependencies": {' \
+    '    "tsx": "^4.20.6"' \
+    '  }' \
+    '}' \
+    > /opt/agent-runner/package.json; \
+  npm install --no-audit --no-fund; \
+  printf '%s\n' \
+    '#!/usr/bin/env bash' \
+    'set -euo pipefail' \
+    'cd /opt/agent-runner' \
+    'exec npm run start -- "$@"' \
+    > /usr/local/bin/agent-runner; \
+  chmod +x /usr/local/bin/agent-runner
+
+ENV MBOS_AGENT_BUILTIN_SKILLS_DIR=/opt/agent-runner/builtin-skills
 
 ENTRYPOINT ["/usr/bin/tini", "--"]
-CMD ["bash", "-lc", "npm run agent:codex-runner"]
+CMD ["agent-runner"]

@@ -10,6 +10,7 @@ export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20
 export const GLM_BASE_URL = process.env.INTEGRATION_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
 export const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'GLM-5';
 export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 'http://192.168.0.210:8889';
+export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
 
@@ -410,6 +411,86 @@ export async function createExternalCodexAgentBundle(
     agentKey: keyPayload.key,
     sessionId: session.id,
   };
+}
+
+export async function createInternalCodexAgent(
+  page: Page,
+  args: {
+    workspaceId: string;
+    projectId: string;
+    endpointId: string;
+    title: string;
+    image?: string;
+  },
+): Promise<{ agentId: string; agentName: string }> {
+  const token = await readStoredAuthToken(page);
+  const agentName = `${args.title}-${Date.now()}`;
+  const createAgentRes = await page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/agents`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        name: agentName,
+        mode: 'internal',
+        interaction_mode: 'notebook',
+        execution_preferences: {
+          notebook: {
+            endpoint_id: args.endpointId,
+            wire_api: 'responses',
+            model: GLM_MODEL,
+          },
+        },
+        config: {
+          image: args.image?.trim() || INTERNAL_AGENT_IMAGE,
+          endpoint_id: args.endpointId,
+          cpu_request: '500m',
+          cpu_limit: '2',
+          memory_request: '512Mi',
+          memory_limit: '4Gi',
+          idle_timeout_sec: 180,
+          max_lifetime_sec: 3600,
+        },
+        capabilities: {
+          streaming_completion: true,
+        },
+      },
+    },
+  );
+  expect(createAgentRes.ok()).toBeTruthy();
+  const createdAgent = (await createAgentRes.json()) as { id: string };
+  expect(createdAgent.id).toBeTruthy();
+  return {
+    agentId: createdAgent.id,
+    agentName,
+  };
+}
+
+export async function deleteInternalWorkloadViaManager(args: {
+  workspaceId: string;
+  projectId: string;
+  workloadId: string;
+}): Promise<void> {
+  const managerBase = process.env.SANDBOX_MANAGER_URL?.trim();
+  const serviceKey = process.env.SANDBOX_SERVICE_KEY?.trim();
+  if (!managerBase || !serviceKey) {
+    throw new Error('sandbox_manager_env_missing');
+  }
+  const response = await fetch(
+    `${managerBase.replace(/\/+$/, '')}/v1/workspaces/${encodeURIComponent(args.workspaceId)}/projects/${encodeURIComponent(args.projectId)}/workloads/${encodeURIComponent(args.workloadId)}`,
+    {
+      method: 'DELETE',
+      headers: {
+        'X-Service-Key': serviceKey,
+      },
+    },
+  );
+  if (!response.ok && response.status !== 404) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`delete_internal_workload_failed:${response.status}:${body}`);
+  }
 }
 
 export async function waitForAgentPresenceOnline(

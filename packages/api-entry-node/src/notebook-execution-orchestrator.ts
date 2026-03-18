@@ -74,6 +74,45 @@ type ExecutionEventPayload =
   | { type: 'task_update'; data: NotebookTaskRecord }
   | { type: 'error'; data: { message: string; code: string } };
 
+function sanitizeBaseUrl(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function deriveHttpBaseFromWebSocketBase(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'ws:') {
+      parsed.protocol = 'http:';
+    } else if (parsed.protocol === 'wss:') {
+      parsed.protocol = 'https:';
+    }
+    parsed.pathname = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function resolveExecutionApiBase(publicBaseUrl: string, agentMode: 'external' | 'internal'): string {
+  if (agentMode === 'internal') {
+    const explicitInternalBase = sanitizeBaseUrl(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
+    if (explicitInternalBase) {
+      return explicitInternalBase;
+    }
+    const derivedInternalBase = deriveHttpBaseFromWebSocketBase(process.env.AGENT_EXECUTION_WS_BASE_URL);
+    if (derivedInternalBase) {
+      return derivedInternalBase;
+    }
+  }
+  return sanitizeBaseUrl(publicBaseUrl) ?? publicBaseUrl;
+}
+
 export async function runNotebookTaskWithExecutionAgent(input: {
   deps: NodeApiDeps;
   task: NotebookTaskRecord;
@@ -200,16 +239,35 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       if (!deps.internalAgentPodManager) {
         throw Object.assign(new Error('agent_sandbox_not_configured'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
       }
+      if (!deps.internalAgentWorkspaceProvisioner) {
+        throw Object.assign(new Error('internal_agent_workspace_not_configured'), {
+          code: 'AGENT_SANDBOX_NOT_CONFIGURED',
+        });
+      }
+      if (!task.workspace_file_library_id) {
+        throw Object.assign(new Error('workspace_file_library_id_required'), {
+          code: 'WORKSPACE_FILE_LIBRARY_ID_REQUIRED',
+        });
+      }
       emitTaskEvent(taskId, {
         type: 'trace_event',
         data: buildSandboxStartingEvent(),
       });
       const workloadId = sanitizeWorkloadId(task.id);
+      const workspaceBinding = await deps.internalAgentWorkspaceProvisioner.ensureWorkspaceBinding({
+        workspaceId: task.workspace_id,
+        projectId: task.project_id,
+        fileLibraryId: task.workspace_file_library_id,
+      });
       await deps.internalAgentPodManager.ensureAgentReady({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
         workloadId,
         agent,
+        workspaceMount: {
+          claimName: workspaceBinding.claimName,
+          mountPath: workspaceBinding.mountPath,
+        },
       });
       keepaliveTimer = setInterval(() => {
         void deps.internalAgentPodManager?.keepalive(
@@ -247,11 +305,12 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         run_id: runId,
         username: userHandle,
         endpoint_id: endpointId,
-        api_base: publicBaseUrl.replace(/\/+$/, ''),
+        api_base: resolveExecutionApiBase(publicBaseUrl, agent.mode),
         user_bearer_token: rawBearerToken,
         wire_api: wireApi,
         model,
-        workspace_binding_mode: 'file_library',
+        workspace_binding_mode: agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
+        workspace_path: agent.mode === 'internal' ? '/workspace' : undefined,
         workspace_file_library_id: task.workspace_file_library_id ?? null,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
         workspace_dir_name: sanitizeTaskWorkspaceDirName(task.title, task.id),

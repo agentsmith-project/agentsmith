@@ -35,7 +35,7 @@ type ServerStartPayload = {
     workspace_path?: string;
     wire_api?: 'chat' | 'responses';
     model?: string;
-    workspace_binding_mode?: 'file_library';
+    workspace_binding_mode?: 'file_library' | 'pre_mounted';
     workspace_file_library_id?: string | null;
     workspace_file_library_name?: string | null;
     workspace_dir_name?: string | null;

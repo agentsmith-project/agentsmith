@@ -213,4 +213,57 @@ describe('project-file-library-routes', () => {
       }),
     );
   });
+
+  it('cleans up internal workspace bindings when deleting a file library', async () => {
+    const json = vi.fn();
+    const res = {
+      end: vi.fn(),
+      statusCode: 200,
+    } as unknown as never;
+    const deleteWorkspaceBinding = vi.fn().mockResolvedValue(undefined);
+    const deps = {
+      fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
+      fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
+      internalAgentWorkspaceProvisioner: {
+        deleteWorkspaceBinding,
+      },
+    } as never;
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res,
+      deps,
+      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Workspace Library',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req: {} as never,
+      res,
+      deps,
+      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      json,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(deleteWorkspaceBinding).toHaveBeenCalledWith({
+      workspaceId: 'ws_default',
+      fileLibraryId: createdBody.id,
+    });
+    expect(res.statusCode).toBe(204);
+    expect(res.end).toHaveBeenCalled();
+  });
 });

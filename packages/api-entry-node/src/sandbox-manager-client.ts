@@ -23,6 +23,16 @@ export interface SandboxPodCreateBody {
   memory_limit?: string;
   idle_timeout_sec?: number;
   max_lifetime_sec?: number;
+  workdir?: string;
+  use_image_command?: boolean;
+  disable_snapshot?: boolean;
+  volumes?: Array<{
+    name: string;
+    mount_path: string;
+    persistent_volume_claim_name?: string;
+    size_limit?: string;
+    read_only?: boolean;
+  }>;
 }
 
 export class SandboxManagerHttpError extends Error {

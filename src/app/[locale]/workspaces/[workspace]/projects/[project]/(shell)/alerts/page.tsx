@@ -19,6 +19,7 @@ import { cn } from '@/lib/utils';
 import type {
   Alert,
   AlertNotification,
+  AlertRule,
   AlertRuleCreateRequest,
   AlertRuleUpdateRequest,
 } from '@/lib/types/alerts';
@@ -26,6 +27,9 @@ import type {
 interface AlertsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
+
+const EMPTY_ALERT_RULES: AlertRule[] = [];
+const EMPTY_ALERT_NOTIFICATIONS: AlertNotification[] = [];
 
 function defaultTimeRange() {
   return {
@@ -154,13 +158,13 @@ export default function AlertsPage({ params }: AlertsPageProps) {
     });
   }, [params]);
 
-  const { data: rules = [] } = useQuery({
+  const { data: rules = EMPTY_ALERT_RULES } = useQuery({
     queryKey: ['alert-rules', workspaceId, projectId],
     queryFn: () => alertAPI.listRules(workspaceId, projectId),
     enabled: !!workspaceId && !!projectId && canViewAlerts,
   });
 
-  const { data: notifications = [] } = useQuery({
+  const { data: notifications = EMPTY_ALERT_NOTIFICATIONS } = useQuery({
     queryKey: ['alert-notifications', workspaceId, projectId],
     queryFn: () => alertAPI.listNotifications(workspaceId, projectId, { page: 1, page_size: 100 }),
     enabled: !!workspaceId && !!projectId && canViewAlerts,
@@ -169,9 +173,14 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   useEffect(() => {
     if (notifications.length > 0) {
       const normalizedNotifications = dedupeFiringNotifications(notifications);
-      setLocalAlerts(normalizedNotifications.map((item) => toInAppAlert(workspaceId, projectId, item)));
+      setLocalAlerts((previous) => {
+        const nextAlerts = normalizedNotifications.map((item) => toInAppAlert(workspaceId, projectId, item));
+        const previousSerialized = JSON.stringify(previous);
+        const nextSerialized = JSON.stringify(nextAlerts);
+        return previousSerialized === nextSerialized ? previous : nextAlerts;
+      });
     } else {
-      setLocalAlerts([]);
+      setLocalAlerts((previous) => (previous.length === 0 ? previous : []));
     }
   }, [notifications, workspaceId, projectId]);
 

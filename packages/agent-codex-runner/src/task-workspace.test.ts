@@ -201,4 +201,23 @@ describe('task-workspace', () => {
       source: 'file_library_mount',
     });
   });
+
+  it('uses pre-mounted workspace path for internal task bindings', async () => {
+    const resolved = await prepareTaskWorkspace({
+      executionContext: {
+        workspace_binding_mode: 'pre_mounted',
+        workspace_path: '/workspace',
+      },
+      username: 'alice',
+      taskId: 'task_internal',
+    });
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(mkdirMock).not.toHaveBeenCalled();
+    expect(execFileMock).not.toHaveBeenCalled();
+    expect(resolved).toEqual({
+      cwd: '/workspace',
+      source: 'workspace_path',
+    });
+  });
 });

@@ -2,7 +2,12 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { WebSocket } from 'ws';
 import { expect, test, type Page } from '@playwright/test';
-import { startCodexRunnerProcess, waitForAgentPresenceOnline } from './integration-real-helpers';
+import {
+  createInternalCodexAgent,
+  deleteInternalWorkloadViaManager,
+  startCodexRunnerProcess,
+  waitForAgentPresenceOnline,
+} from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -435,7 +440,8 @@ async function createCredential(page: Page, workspaceId: string, projectId: stri
   await expect(page.getByText('BigModel Anthropic Key')).toBeVisible({ timeout: 30_000 });
 }
 
-async function createEndpoint(page: Page, workspaceId: string, projectId: string): Promise<void> {
+async function createEndpoint(page: Page, workspaceId: string, projectId: string): Promise<{ endpointId: string; endpointName: string }> {
+  const endpointName = 'BigModel Anthropic Endpoint';
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
   await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('endpoints__create-btn').click();
@@ -444,7 +450,7 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await dialog.getByRole('button', { name: /use guided setup/i }).click();
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });
-  await wizard.getByTestId('wizard-name-input').fill('BigModel Anthropic Endpoint');
+  await wizard.getByTestId('wizard-name-input').fill(endpointName);
   await wizard.getByTestId('protocol-anthropic_compatible').click();
   await wizard.getByTestId('wizard-base-url-input').fill(GLM_BASE_URL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
@@ -456,7 +462,26 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled({ timeout: 30_000 });
   await wizard.getByTestId('wizard-create-button').click();
   await expect(wizard).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByText('BigModel Anthropic Endpoint')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(endpointName)).toBeVisible({ timeout: 30_000 });
+
+  const token = await readStoredAuthToken(page);
+  const response = await page.request.get(`${apiBaseForPage(page)}/api/v1/workspaces/${workspaceId}/projects/${projectId}/endpoints`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json()) as { items?: Array<{ id?: string; name?: string }> };
+  const endpointId = payload.items?.find((item) => item.name === endpointName)?.id;
+  expect(endpointId).toBeTruthy();
+  return {
+    endpointId: endpointId!,
+    endpointName,
+  };
+}
+
+function apiBaseForPage(page: Page): string {
+  return process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
 }
 
 async function createAgent(page: Page, workspaceId: string, projectId: string): Promise<string> {
@@ -643,23 +668,22 @@ function startExternalNotebookBridge(args: {
 async function runNotebookTask(args: {
   page: Page;
   context: ProjectContext;
-  agentName: string;
-  workspaceLibraryName: string;
+  agentId: string;
+  fileLibraryId: string;
   expectedToken: string;
   artifactName: string;
 }) {
-  const { page, context, agentName, workspaceLibraryName, expectedToken, artifactName } = args;
-  await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook`);
-  await expect(page.getByTestId('notebook__create-task-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('notebook__create-task-btn').click();
-  const dialog = page.getByRole('dialog', { name: /create task/i });
-  await expect(dialog.locator('#task-title')).toBeVisible({ timeout: 30_000 });
-  await dialog.locator('#task-title').fill('Release Review Task');
-  await dialog.locator('#task-agent').click();
-  await page.getByRole('option', { name: new RegExp(agentName) }).click();
-  await dialog.getByTestId('task-create__file-library').click();
-  await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
-  await dialog.getByRole('button', { name: /create task/i }).click();
+  const { page, context, agentId, fileLibraryId, expectedToken, artifactName } = args;
+  const taskTitle = `Release Review Task ${Date.now()}`;
+  const taskId = await createNotebookTaskViaApi({
+    page,
+    workspaceId: context.workspaceId,
+    projectId: context.projectId,
+    title: taskTitle,
+    agentId,
+    fileLibraryId,
+  });
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${context.workspaceId}/projects/${context.projectId}/notebook/tasks/${taskId}`);
   await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
 
   const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
@@ -678,6 +702,97 @@ async function runNotebookTask(args: {
   ].join(' '));
   await page.getByTestId('notebook__send-btn').click();
   await expect(page.getByText(expectedToken)).toBeVisible({ timeout: 120_000 });
+}
+
+async function createNotebookTaskViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  title: string;
+  agentId: string;
+  fileLibraryId: string;
+}): Promise<string> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        title: args.title,
+        agent_id: args.agentId,
+        workspace_file_library_id: args.fileLibraryId,
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  const payload = (await response.json().catch(() => null)) as { id?: string; data?: { id?: string } } | null;
+  const taskId = payload?.id ?? payload?.data?.id;
+  expect(taskId).toBeTruthy();
+  return taskId!;
+}
+
+async function sendNotebookTaskMessage(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  content: string;
+}): Promise<void> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        role: 'user',
+        content: args.content,
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+async function waitForNotebookTaskToken(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  token: string;
+  minAgentMessages?: number;
+}): Promise<void> {
+  const authToken = await readStoredAuthToken(args.page);
+  await expect
+    .poll(
+      async () => {
+        const response = await args.page.request.get(
+          `${apiBaseForPage(args.page)}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+          { headers: { Authorization: `Bearer ${authToken}` } },
+        );
+        if (!response.ok()) return false;
+        const payload = (await response.json()) as Array<{ role?: string; content?: string }>;
+        const agentMessages = payload.filter((item) => item.role === 'agent');
+        if (agentMessages.length < (args.minAgentMessages ?? 1)) return false;
+        return agentMessages.some((item) => item.content?.includes(args.token));
+      },
+      { timeout: 300_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(true);
+}
+
+function sanitizeWorkloadId(taskId: string): string {
+  const normalized = taskId
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+  return normalized || 'workload';
 }
 
 async function captureProjectPages(page: Page, captures: CaptureEntry[], context: ProjectContext, role: string) {
@@ -878,7 +993,7 @@ test.describe('@lane-real integration visual review', () => {
       notes: '真实环境 endpoint 创建入口',
     });
     await page.getByTestId('endpoints__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
-    await createEndpoint(page, workspaceId, project.projectId);
+    const endpointInfo = await createEndpoint(page, workspaceId, project.projectId);
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-endpoints-real',
@@ -933,13 +1048,18 @@ test.describe('@lane-real integration visual review', () => {
     await page.keyboard.press('Escape');
     await page.getByTestId('files__library-create').click();
     await page.getByTestId('files__library-create__name').fill('Visual Review Library');
-    await Promise.all([
-      page.waitForResponse((response) =>
+    const createLibraryResponsePromise = page.waitForResponse((response) =>
         response.request().method() === 'POST'
         && /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/file-libraries\/?$/.test(response.url()),
-      ),
-      page.getByTestId('files__library-create__submit').click(),
-    ]);
+      );
+    await page.getByTestId('files__library-create__submit').click();
+    const createLibraryResponse = await createLibraryResponsePromise;
+    expect(createLibraryResponse.ok()).toBeTruthy();
+    const createLibraryPayload = (await createLibraryResponse.json().catch(() => null)) as
+      | { id?: string; data?: { id?: string } }
+      | null;
+    const visualLibraryId = createLibraryPayload?.id ?? createLibraryPayload?.data?.id;
+    expect(visualLibraryId).toBeTruthy();
     const visualLibrary = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
     for (let attempt = 0; attempt < 3; attempt += 1) {
       if (await visualLibrary.isVisible({ timeout: 5_000 }).catch(() => false)) {
@@ -971,8 +1091,8 @@ test.describe('@lane-real integration visual review', () => {
       await runNotebookTask({
         page,
         context: project,
-        agentName,
-        workspaceLibraryName: 'Visual Review Library',
+        agentId,
+        fileLibraryId: visualLibraryId!,
         expectedToken: NOTEBOOK_EXPECTED_TOKEN,
         artifactName: NOTEBOOK_ARTIFACT_NAME,
       });
@@ -1013,6 +1133,113 @@ test.describe('@lane-real integration visual review', () => {
       });
     } finally {
       await runner.stop();
+    }
+
+    if (
+      process.env.SANDBOX_MANAGER_URL?.trim()
+      && process.env.SANDBOX_SERVICE_KEY?.trim()
+      && process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim()
+    ) {
+      const internalAgent = await createInternalCodexAgent(page, {
+        workspaceId,
+        projectId: project.projectId,
+        endpointId: endpointInfo.endpointId,
+        title: 'internal-visual-review-agent',
+      });
+      const internalExpectedToken = `INTERNAL_VISUAL_NOTEBOOK_OK_${Date.now()}`;
+      const internalArtifactName = `internal-visual-review-${Date.now()}.md`;
+      const internalTaskTitle = `Internal Visual Review ${Date.now()}`;
+      const internalTaskId = await createNotebookTaskViaApi({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        title: internalTaskTitle,
+        agentId: internalAgent.agentId,
+        fileLibraryId: visualLibraryId!,
+      });
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/notebook`);
+      await expect(page.getByTestId('notebook__task-list')).toBeVisible({ timeout: 30_000 });
+      await page.getByTestId('notebook__task-list').getByText(internalTaskTitle).first().click();
+      await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
+
+      await sendNotebookTaskMessage({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        taskId: internalTaskId,
+        content: [
+          'Run the following shell command exactly, then reply with the token and filename.',
+          '```bash',
+          `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${internalArtifactName}`,
+          '# Internal workspace summary',
+          `- Token: ${internalExpectedToken}`,
+          '- Mode: internal-k8s',
+          '- Insight: JuiceFS CSI mounted workspace remained consistent across notebook execution',
+          'EOF',
+          '```',
+          `After the file is written, reply with exactly: ${internalExpectedToken} ${internalArtifactName}`,
+        ].join(' '),
+      });
+      await page.waitForTimeout(1_500);
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-notebook-task-internal-preparing-real',
+        role: 'project owner',
+        notes: 'internal agent lazy start 后的 notebook 任务执行中状态',
+      });
+
+      await waitForNotebookTaskToken({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        taskId: internalTaskId,
+        token: internalExpectedToken,
+      });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-notebook-task-internal-detail-real',
+        role: 'project owner',
+        notes: 'internal-k8s notebook 任务完成后的详情页，工作目录固定为 /workspace',
+      });
+
+      const internalWorkloadId = sanitizeWorkloadId(internalTaskId);
+      await deleteInternalWorkloadViaManager({
+        workspaceId,
+        projectId: project.projectId,
+        workloadId: internalWorkloadId,
+      });
+      await page.waitForTimeout(3_000);
+
+      const resumeToken = `INTERNAL_VISUAL_NOTEBOOK_RESUME_${Date.now()}`;
+      await sendNotebookTaskMessage({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        taskId: internalTaskId,
+        content: `Reply with exactly ${resumeToken} after verifying the existing .artifacts/${internalArtifactName} file is still present in the workspace.`,
+      });
+      await waitForNotebookTaskToken({
+        page,
+        workspaceId,
+        projectId: project.projectId,
+        taskId: internalTaskId,
+        token: resumeToken,
+        minAgentMessages: 2,
+      });
+
+      await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/files`);
+      const internalLibraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: 'Visual Review Library' }).first();
+      await expect(internalLibraryItem).toBeVisible({ timeout: 30_000 });
+      await internalLibraryItem.click();
+      const internalArtifactsRow = page.getByTestId('files__object-row').filter({ hasText: '.artifacts' }).first();
+      await expect(internalArtifactsRow).toBeVisible({ timeout: 30_000 });
+      await settlePage(page);
+      await capturePage(page, captures, {
+        name: 'project-files-internal-workspace-real',
+        role: 'project owner',
+        notes: 'internal-k8s 任务恢复后，.artifacts 交付目录仍在 Files 页面中可见',
+      });
     }
 
     await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${project.projectId}/usage`);

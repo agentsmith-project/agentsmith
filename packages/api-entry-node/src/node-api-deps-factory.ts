@@ -36,6 +36,10 @@ import { ChatResourceService } from './chat-resource-service.js';
 import { AgentResourceService } from './agent-resource-service.js';
 import { AgentExecutionService } from './agent-execution-service.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
+import {
+  InternalAgentWorkspaceProvisionerImpl,
+  KubernetesInternalAgentWorkspaceK8sClient,
+} from './internal-agent-workspace-provisioner.js';
 import { SandboxManagerClient } from './sandbox-manager-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
@@ -111,6 +115,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   );
   const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
+  const internalAgentK8sNamespace = env.INTERNAL_AGENT_K8S_NAMESPACE?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
     throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
       code: 'SANDBOX_MANAGER_CONFIG_INCOMPLETE',
@@ -145,6 +150,23 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
     : undefined;
+  const internalAgentWorkspaceProvisioner = internalAgentK8sNamespace
+    ? new InternalAgentWorkspaceProvisionerImpl(
+        docStore,
+        new KubernetesInternalAgentWorkspaceK8sClient(),
+        {
+          namespace: internalAgentK8sNamespace,
+          csiDriver: env.INTERNAL_AGENT_JUICEFS_CSI_DRIVER?.trim() || 'csi.juicefs.com',
+          storageCapacity: env.INTERNAL_AGENT_WORKSPACE_CAPACITY?.trim() || '1Pi',
+          metadataHostOverride: env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || undefined,
+          storageEndpointOverride: env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
+          storageCredentialSeed:
+            env.FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED?.trim()
+            || env.AGENTSMITH_SECRET_KEY?.trim()
+            || undefined,
+        },
+      )
+    : undefined;
   const internalAgentPodManager = sandboxClient
     ? new InternalAgentPodManagerImpl(
         sandboxClient,
@@ -175,6 +197,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       agentResourceService,
       agentExecutionService,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
+      ...(internalAgentWorkspaceProvisioner ? { internalAgentWorkspaceProvisioner } : {}),
       fileLibraryBucket,
       createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
         fileLibraryCatalogRepo,

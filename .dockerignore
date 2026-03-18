@@ -1,0 +1,12 @@
+.git
+.next
+node_modules
+artifacts
+coverage
+dist
+test-results
+e2e/__screenshots__
+playwright-report
+storybook-static
+tmp
+*.log

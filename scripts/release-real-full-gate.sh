@@ -99,6 +99,7 @@ run_real_cmd 20060 3061 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:smoke:r
 run_real_cmd 20065 3066 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:agents:real:codex"
 run_cmd "FILE_LIBRARY_GATE_API_PORT='20068' FILE_LIBRARY_GATE_API_LOG='/tmp/agentsmith-file-library-gate-api.log' GLM_API_KEY='${GLM_API_KEY_VALUE}' bash scripts/run-file-library-real-gate.sh"
 run_real_cmd 20070 3071 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:files:real:ui-sync"
+run_real_cmd 20072 3072 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:internal:real:notebook-workspace"
 run_real_cmd 20080 3081 "GLM_API_KEY='${GLM_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:real:review"
 
 info "release-grade real verification passed"

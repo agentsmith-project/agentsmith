@@ -48,6 +48,7 @@
     "test:governance:strict": "bash scripts/governance-mainline-gate.sh",
     "test:members-governance:strict": "bash scripts/governance-mainline-gate.sh",
     "test:smoke:real:notebook-mainline": "bash scripts/system-notebook-real-smoke-gate.sh",
+    "test:internal:real:notebook-workspace": "bash scripts/run-internal-notebook-real-gate.sh",
     "test:agents:real:codex": "bash scripts/run-integration-e2e-full.sh e2e/integration-agents-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts --grep docker",
     "test:files:real:smoke": "bash scripts/file-library-real-smoke.sh",
     "test:files:real:sync": "bash scripts/file-library-mount-sync-smoke.sh",

@@ -31,6 +31,11 @@ export interface InternalAgentPodManager {
     projectId: string;
     workloadId: string;
     agent: AgentRecord;
+    workspaceMount?: {
+      claimName: string;
+      mountPath?: string;
+      readOnly?: boolean;
+    };
   }): Promise<void>;
   keepalive(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
   releasePod(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
@@ -146,6 +151,11 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     projectId: string;
     workloadId: string;
     agent: AgentRecord;
+    workspaceMount?: {
+      claimName: string;
+      mountPath?: string;
+      readOnly?: boolean;
+    };
   }): Promise<void> {
     const { workspaceId, projectId, workloadId, agent } = input;
     if (agent.mode !== 'internal') {
@@ -169,7 +179,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.locks.set(lockKey, lock);
 
     try {
-      await this.doEnsure(workspaceId, projectId, workloadId, agent);
+      await this.doEnsure(workspaceId, projectId, workloadId, agent, input.workspaceMount);
     } finally {
       this.locks.delete(lockKey);
       releaseLock();
@@ -221,6 +231,11 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     projectId: string,
     workloadId: string,
     agent: AgentRecord,
+    workspaceMount?: {
+      claimName: string;
+      mountPath?: string;
+      readOnly?: boolean;
+    },
   ): Promise<void> {
     if (this.agentExecution.getAgentOnlineState(agent.id)) return;
 
@@ -245,12 +260,14 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
     if (status.phase === 'offline') {
       const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`;
+      const mountPath = workspaceMount?.mountPath?.trim() || '/workspace';
       await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
         image: config.image,
         env: {
           MBOS_AGENT_WS_URL: wsUrl,
           MBOS_AGENT_KEY: config.rawKey,
           MBOS_AGENT_CODEX_YOLO: '1',
+          MBOS_AGENT_RUNNER_DEBUG: '1',
           MBOS_AGENT_TASK_TIMEOUT_SEC: '55',
           ...(config.env ?? {}),
         },
@@ -260,6 +277,19 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         memory_limit: config.memoryLimit ?? '4Gi',
         idle_timeout_sec: config.idleTimeoutSec ?? 1800,
         max_lifetime_sec: config.maxLifetimeSec ?? 86400,
+        workdir: mountPath,
+        use_image_command: true,
+        disable_snapshot: true,
+        ...(workspaceMount
+          ? {
+            volumes: [{
+              name: 'workspace',
+              mount_path: mountPath,
+              persistent_volume_claim_name: workspaceMount.claimName,
+              ...(workspaceMount.readOnly ? { read_only: true } : {}),
+            }],
+          }
+          : {}),
       });
       status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
     }
@@ -267,20 +297,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.checkDeadline(deadline);
     if (status.phase !== 'Running') {
       await this.waitForPhase(workspaceId, projectId, workloadId, 'Running', deadline);
-    }
-
-    this.checkDeadline(deadline);
-    const exec = await this.sandboxClient.exec(workspaceId, projectId, workloadId, [
-      'bash', '-c',
-      'pkill -f agent-runner 2>/dev/null; sleep 0.5; '
-      + 'mkdir -p /workspace/.mbos; '
-      + 'nohup agent-runner > /workspace/.mbos/agent.log 2>&1 & echo $!',
-    ], 10);
-
-    if (exec.exit_code !== 0) {
-      throw Object.assign(new Error(`sandbox_exec_failed: ${exec.stderr || exec.stdout || 'unknown'}`), {
-        code: 'AGENT_SANDBOX_EXEC_FAILED',
-      });
     }
 
     this.checkDeadline(deadline);

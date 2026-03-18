@@ -16,6 +16,11 @@ This checklist is the strict gate for the current project governance judgment ch
 This gate does not add a new product surface.  
 It validates the current governance workflow already present in `members / resource policy / audit / alerts`.
 
+Persistence baseline:
+
+- member governance, resource policy, join request, and notifications are backend-owned persisted truth
+- this workflow must remain stable across API restart
+
 ## 2. Contract Gate
 
 Run:
@@ -47,6 +52,7 @@ Expected:
 3. Backend authorization explainability tests remain green.
 4. Mock lane governance E2E passes.
 5. Targeted visual baselines pass for governance pages and overlays.
+6. Governance mainline data does not silently disappear after API restart.
 
 ## 4. Covered Mock Lane Workflow
 

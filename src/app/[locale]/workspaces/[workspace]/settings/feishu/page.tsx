@@ -100,7 +100,7 @@ export default function WorkspaceFeishuSettingsPage() {
   const recommendedCallback = React.useMemo(() => {
     if (!workspaceId) return '';
     if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/${locale}/workspaces/${workspaceId}/settings/feishu/callback`;
+    return `${window.location.origin}/${locale}/workspaces/${workspaceId}/feishu/callback`;
   }, [locale, workspaceId]);
 
   const workspaceBasePath = workspaceId ? `/${locale}/workspaces/${workspaceId}` : `/${locale}/workspaces`;

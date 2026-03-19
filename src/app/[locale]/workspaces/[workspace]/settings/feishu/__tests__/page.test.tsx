@@ -101,14 +101,14 @@ describe('WorkspaceFeishuSettingsPage', () => {
     const redirectUriInput = document.getElementById('feishu-redirect-uri') as HTMLInputElement;
     await user.type(appIdInput, 'cli_demo');
     await user.type(appSecretInput, 'secret_demo');
-    await user.type(redirectUriInput, 'http://localhost:3001/en-US/workspaces/ws_1/connections/feishu/callback');
+    await user.type(redirectUriInput, 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback');
     await user.click(screen.getByTestId('ws-feishu__save-draft'));
 
     await waitFor(() => {
       expect(mockUpdateFeishuIntegration).toHaveBeenCalledWith('ws_1', {
         app_id: 'cli_demo',
         app_secret: 'secret_demo',
-        redirect_uri: 'http://localhost:3001/en-US/workspaces/ws_1/connections/feishu/callback',
+        redirect_uri: 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback',
       });
     });
   });

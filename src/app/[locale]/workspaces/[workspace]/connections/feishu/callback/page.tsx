@@ -1,11 +1,14 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { WorkspaceAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { buttonVariants } from '@/components/ui/button';
 import { PageState } from '@/components/layout/PageState';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+import { cn } from '@/lib/utils';
 
 export default function WorkspaceFeishuCallbackPage() {
   const params = useParams();
@@ -15,7 +18,14 @@ export default function WorkspaceFeishuCallbackPage() {
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const api = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
   const [error, setError] = React.useState<string | null>(null);
+  const [showFallback, setShowFallback] = React.useState(false);
   const hasSubmittedRef = React.useRef(false);
+  const fallbackHref = workspaceId ? `/${locale}/workspaces/${workspaceId}/connections` : `/${locale}/workspaces`;
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setShowFallback(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   React.useEffect(() => {
     if (!workspaceId) {
@@ -50,13 +60,21 @@ export default function WorkspaceFeishuCallbackPage() {
 
   return (
     <PageState state={error ? 'error' : 'loading'}>
-      <div className="max-w-md text-center space-y-2">
+      <div className="max-w-md text-center space-y-4">
         <h2 className="text-lg font-semibold">
           {error ? t('workspace_feishu_callback_failed_title') : t('workspace_feishu_callback_title')}
         </h2>
         <p className="text-sm text-tertiary">
           {error || t('workspace_feishu_callback_description')}
         </p>
+        {(error || showFallback) ? (
+          <Link
+            href={fallbackHref}
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+          >
+            {t('feishu_open_connections')}
+          </Link>
+        ) : null}
       </div>
     </PageState>
   );

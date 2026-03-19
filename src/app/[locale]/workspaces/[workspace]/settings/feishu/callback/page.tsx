@@ -1,21 +1,32 @@
 'use client';
 
 import * as React from 'react';
+import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { PageState } from '@/components/layout/PageState';
+import { buttonVariants } from '@/components/ui/button';
 import { WorkspaceAPI, getApiClient, handleErrorForToast } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 export default function WorkspaceFeishuSettingsCallbackPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const t = useTranslations('settings');
+  const t = useTranslations('third_party_accounts');
+  const settingsT = useTranslations('settings');
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const api = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
   const [error, setError] = React.useState<string | null>(null);
+  const [showFallback, setShowFallback] = React.useState(false);
   const hasSubmittedRef = React.useRef(false);
+  const fallbackHref = workspaceId ? `/${locale}/workspaces/${workspaceId}/settings/feishu?step=enable` : `/${locale}/workspaces`;
+
+  React.useEffect(() => {
+    const timer = window.setTimeout(() => setShowFallback(true), 4000);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   React.useEffect(() => {
     if (!workspaceId) {
@@ -50,13 +61,21 @@ export default function WorkspaceFeishuSettingsCallbackPage() {
 
   return (
     <PageState state={error ? 'error' : 'loading'}>
-      <div className="max-w-md text-center space-y-2">
+      <div className="max-w-md text-center space-y-4">
         <h2 className="text-lg font-semibold">
-          {error ? t('feishu_verify_callback_failed_title') : t('feishu_verify_callback_title')}
+          {error ? t('workspace_feishu_callback_failed_title') : t('workspace_feishu_callback_title')}
         </h2>
         <p className="text-sm text-tertiary">
-          {error || t('feishu_verify_callback_description')}
+          {error || t('workspace_feishu_callback_description')}
         </p>
+        {(error || showFallback) ? (
+          <Link
+            href={fallbackHref}
+            className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+          >
+            {settingsT('feishu_back_to_settings')}
+          </Link>
+        ) : null}
       </div>
     </PageState>
   );

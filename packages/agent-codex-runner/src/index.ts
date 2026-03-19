@@ -746,7 +746,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       summary: (text.split('\n')[0] ?? 'stderr').slice(0, 200),
       details: { stderr: text.slice(0, 4000) },
     });
-    maybeEmitDeltaChunk(requestId, `[stderr] ${text}\n`);
   });
 
   child.on('error', (error) => {

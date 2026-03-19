@@ -5,6 +5,7 @@ function makeStats(): RunnerFilterStats {
   return {
     stderr_superpowers_skill_missing: 0,
     model_metadata_warning: 0,
+    stderr_model_refresh_timeout: 0,
     delta_metadata_warning_event: 0,
     delta_empty_error_shell: 0,
   };
@@ -32,5 +33,16 @@ describe('codex-output-filter', () => {
     expect(out).toContain('next line');
     expect(out).not.toContain('failed to stat skills entry');
     expect(stats.stderr_superpowers_skill_missing).toBe(1);
+  });
+
+  it('removes expected model refresh timeout stderr noise', () => {
+    const stats = makeStats();
+    const input = [
+      '2026-03-18T13:32:41.530743Z ERROR codex_core::models_manager::manager: failed to refresh available models: timeout waiting for child process to exit',
+      'next line',
+    ].join('\n');
+    const out = sanitizeStderrChunk(input, () => stats);
+    expect(out).toBe('next line');
+    expect(stats.stderr_model_refresh_timeout).toBe(1);
   });
 });

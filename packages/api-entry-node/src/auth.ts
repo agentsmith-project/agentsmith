@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import type { CachePort } from '@mbos/ports';
 import { resolveSSETicket } from './sse-ticket-store.js';
 
 export interface AuthenticatedUser {
@@ -67,11 +68,17 @@ function canUseTicketQuery(req: http.IncomingMessage): boolean {
 
 const userInfoCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
 
-export async function verifyBearerToken(req: http.IncomingMessage): Promise<AuthenticatedUser | null> {
+export async function verifyBearerToken(
+  req: http.IncomingMessage,
+  options?: { cache?: CachePort },
+): Promise<AuthenticatedUser | null> {
   const headerToken = extractBearerToken(req);
+  const ticketToken = canUseTicketQuery(req) && options?.cache
+    ? (await resolveSSETicket(options.cache, extractSSETicket(req) ?? ''))?.bearerToken ?? null
+    : null;
   const token =
     headerToken
-    ?? (canUseTicketQuery(req) ? resolveSSETicket(extractSSETicket(req) ?? '')?.bearerToken ?? null : null);
+    ?? ticketToken;
   if (!token) {
     return null;
   }

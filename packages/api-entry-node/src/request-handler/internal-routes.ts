@@ -81,7 +81,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/notebook-task-metrics' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -91,7 +91,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/notebook-task-metrics/prometheus' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -103,7 +103,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-reports' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -126,7 +126,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-runner' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -139,7 +139,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-runner/trigger' && method === 'POST') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -178,7 +178,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.startsWith('/api/v1/internal/governance-reports/') && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -199,7 +199,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-runs' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -222,7 +222,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.startsWith('/api/v1/internal/governance-runs/') && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -246,7 +246,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-incidents' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -259,7 +259,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.startsWith('/api/v1/internal/governance-incidents/') && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -278,7 +278,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-incidents\/[^/]+\/acknowledge\/?$/) && method === 'POST') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -305,7 +305,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-incidents\/[^/]+\/assignment\/?$/) && method === 'POST') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -359,7 +359,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-incidents\/[^/]+\/resolution\/?$/) && method === 'POST') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -406,7 +406,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-policy-overrides' && method === 'GET') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -428,7 +428,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname === '/api/v1/internal/governance-policy-overrides' && method === 'POST') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;
@@ -485,7 +485,7 @@ export async function handleInternalRoutes({
   }
 
   if (requestUrl.pathname.match(/^\/api\/v1\/internal\/governance-policy-overrides\/[^/]+\/decision\/?$/) && method === 'POST') {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return true;

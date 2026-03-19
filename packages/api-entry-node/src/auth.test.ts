@@ -1,4 +1,5 @@
 import type http from 'node:http';
+import { InMemoryCache } from '@mbos/adapters-private';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractBearerToken, verifyBearerToken } from './auth.js';
 import { issueSSETicket, resetSSETicketsForTest } from './sse-ticket-store.js';
@@ -14,14 +15,21 @@ function makeRequest(args: {
 }
 
 describe('auth', () => {
+  const cache = new InMemoryCache();
+  const issuedTickets: string[] = [];
+
   beforeEach(() => {
     process.env.KEYCLOAK_ISSUER_URL = 'http://issuer.test/realms/mbos';
   });
 
   afterEach(() => {
-    resetSSETicketsForTest();
-    vi.restoreAllMocks();
-    delete process.env.KEYCLOAK_ISSUER_URL;
+    return Promise.all([
+      resetSSETicketsForTest(cache, issuedTickets.splice(0)),
+      Promise.resolve().then(() => {
+        vi.restoreAllMocks();
+        delete process.env.KEYCLOAK_ISSUER_URL;
+      }),
+    ]);
   });
 
   it('extracts bearer token only from authorization header', () => {
@@ -43,11 +51,12 @@ describe('auth', () => {
         name: 'Test User',
       }),
     } as Response);
-    const issued = issueSSETicket({ bearerToken: 'jwt-token-123' });
+    const issued = await issueSSETicket(cache, { bearerToken: 'jwt-token-123' });
+    issuedTickets.push(issued.ticket);
 
     const user = await verifyBearerToken(makeRequest({
       url: `/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
-    }));
+    }), { cache });
 
     expect(user).toMatchObject({ id: 'user_test' });
     expect(fetchSpy).toHaveBeenCalledWith(
@@ -68,14 +77,15 @@ describe('auth', () => {
         name: 'Test User',
       }),
     } as Response);
-    const issued = issueSSETicket({ bearerToken });
+    const issued = await issueSSETicket(cache, { bearerToken });
+    issuedTickets.push(issued.ticket);
 
     const first = await verifyBearerToken(makeRequest({
       url: `/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
-    }));
+    }), { cache });
     const second = await verifyBearerToken(makeRequest({
       url: `/api/v1/events?ticket=${encodeURIComponent(issued.ticket)}`,
-    }));
+    }), { cache });
 
     expect(first).toMatchObject({ id: 'user_single_use' });
     expect(second).toBeNull();
@@ -109,11 +119,12 @@ describe('auth', () => {
         name: 'Test User',
       }),
     } as Response);
-    const issued = issueSSETicket({ bearerToken: 'jwt-token-123' });
+    const issued = await issueSSETicket(cache, { bearerToken: 'jwt-token-123' });
+    issuedTickets.push(issued.ticket);
 
     const user = await verifyBearerToken(makeRequest({
       url: `/api/v1/me/notifications?ticket=${encodeURIComponent(issued.ticket)}`,
-    }));
+    }), { cache });
 
     expect(user).toBeNull();
     expect(fetchSpy).not.toHaveBeenCalled();

@@ -893,6 +893,10 @@ make notebook-agent-benchmark-archive
 - Recommended current deployment pattern:
   - single API instance for notebook external-agent execution, or
   - sticky routing by task/session when using multiple API instances
+- Current SSE ticket behavior is now shared-cache based:
+  - short-lived SSE tickets are stored in the configured `CachePort` backend
+  - in production, this means Redis-backed ticket validation works across API instance restarts and cross-instance routing
+  - the remaining single-instance/sticky requirement is for notebook execution coordination, not for the SSE ticket itself
 - Future hardening path (not implemented in v1):
   - distributed task-run lock (e.g. Redis)
   - shared replay/event source for notebook task SSE

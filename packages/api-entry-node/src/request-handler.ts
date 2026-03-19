@@ -89,7 +89,7 @@ export async function handleRequest(
     }
 
   try {
-    const user = await verifyBearerToken(req);
+    const user = await verifyBearerToken(req, { cache: deps.cache });
     if (!user) {
       unauthorized(res);
       return;
@@ -100,7 +100,7 @@ export async function handleRequest(
         unauthorized(res);
         return;
       }
-      const issued = issueSSETicket({ bearerToken, maxConnections: 1 });
+      const issued = await issueSSETicket(deps.cache, { bearerToken, maxConnections: 1 });
       const host = req.headers.host || 'localhost';
       const protocol = (req.headers['x-forwarded-proto'] as string | undefined) || 'http';
       json(res, 200, {

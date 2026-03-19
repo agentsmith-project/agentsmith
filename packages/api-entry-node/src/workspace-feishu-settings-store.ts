@@ -55,8 +55,12 @@ function hydrateRecord(record: StoredWorkspaceFeishuIntegrationRecord): Workspac
 export function presentWorkspaceFeishuIntegration(
   record: WorkspaceFeishuIntegrationRecord,
 ): PublicWorkspaceFeishuIntegrationRecord {
+  const {
+    app_secret: _appSecret,
+    ...rest
+  } = record;
   return {
-    ...record,
+    ...rest,
     has_app_secret: Boolean(record.app_secret),
   };
 }

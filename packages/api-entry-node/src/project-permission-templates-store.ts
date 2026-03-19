@@ -1,3 +1,10 @@
+/**
+ * Legacy in-memory permission template store.
+ *
+ * Production permission templates are persisted via
+ * `project-member-governance-persistence.ts`. This module is retained only for
+ * legacy type/test compatibility.
+ */
 import {
   PROJECT_BUILT_IN_TEMPLATES,
 } from './project-governance-model.js';

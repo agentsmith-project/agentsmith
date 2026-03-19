@@ -1,3 +1,11 @@
+/**
+ * Legacy in-memory file library store.
+ *
+ * Production file library state now lives in persistent repos under
+ * `file-library-persistence.ts`. This module is retained only as historical
+ * reference for tests/migrations and must not be used as a production truth
+ * source.
+ */
 import { randomUUID } from 'node:crypto';
 import { encryptSecretValue, decryptSecretValue } from './secret-crypto.js';
 import type {

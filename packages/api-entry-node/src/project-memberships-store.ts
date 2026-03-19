@@ -1,3 +1,11 @@
+/**
+ * Legacy in-memory project membership store.
+ *
+ * Production membership state is persisted via
+ * `project-member-governance-persistence.ts`. This module remains only for
+ * legacy type/test compatibility and must not be treated as the source of
+ * truth.
+ */
 export type ProjectMembershipRecord = {
   project_id: string;
   user_id: string;

@@ -1,3 +1,9 @@
+/**
+ * Legacy in-memory project group store.
+ *
+ * Production governance data now lives in `project-member-governance-persistence.ts`
+ * and the backing docStore. Keep this module out of production write/read paths.
+ */
 import { getProjectMembershipsState } from './project-memberships-store.js';
 import {
   PROJECT_BUILT_IN_GROUPS,

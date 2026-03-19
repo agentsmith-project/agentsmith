@@ -1,3 +1,10 @@
+/**
+ * Legacy in-memory member permission store.
+ *
+ * Production member permission state is persisted via
+ * `project-member-governance-persistence.ts`. Keep this file type-only /
+ * test-only.
+ */
 export type ProjectMemberPermissionState = {
   mode: 'template' | 'custom';
   template?: string | null;

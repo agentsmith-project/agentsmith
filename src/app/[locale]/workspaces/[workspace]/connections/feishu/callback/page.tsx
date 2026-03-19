@@ -16,6 +16,7 @@ export default function WorkspaceFeishuCallbackPage() {
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const api = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
   const [error, setError] = React.useState<string | null>(null);
+  const hasSubmittedRef = React.useRef(false);
 
   React.useEffect(() => {
     if (!workspaceId) {
@@ -28,6 +29,10 @@ export default function WorkspaceFeishuCallbackPage() {
       setError('feishu_callback_missing_code_or_state');
       return;
     }
+    if (hasSubmittedRef.current) {
+      return;
+    }
+    hasSubmittedRef.current = true;
     let cancelled = false;
     void api.completeWorkspaceFeishuAuth(workspaceId, { code, state })
       .then((result) => {

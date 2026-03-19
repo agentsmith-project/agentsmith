@@ -7,10 +7,9 @@ import type { Artifact } from '@/lib/types/task';
 export interface ArtifactImageGridProps {
   artifacts: Artifact[];
   onImageClick: (artifact: Artifact) => void;
-  onAttachAsInput?: (artifact: Artifact) => void;
 }
 
-export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: ArtifactImageGridProps) {
+export function ArtifactImageGrid({ artifacts, onImageClick }: ArtifactImageGridProps) {
   const tArtifacts = useTranslations('notebook.artifacts');
   const tCommon = useTranslations('common');
   if (artifacts.length === 0) {
@@ -65,15 +64,6 @@ export function ArtifactImageGrid({ artifacts, onImageClick, onAttachAsInput }: 
                 >
                   {tCommon('view')}
                 </button>
-                {onAttachAsInput ? (
-                  <button
-                    type="button"
-                    onClick={() => onAttachAsInput(artifact)}
-                    className="h-6 rounded-md px-1.5 text-[10px] text-primary hover:bg-hover transition-colors"
-                  >
-                    {tArtifacts('actions.attach_input')}
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>

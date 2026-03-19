@@ -28,12 +28,11 @@ Audience: 产品、研发、测试、发布负责人
 - `file library` 成为 task 的持久化工作空间
 - agent CLI 永远在该工作空间中执行
 
-当前已锁定：
+当前真相：
 
-- 先交付：
-  - `external-bare`
-  - `external-docker`
-- `internal-k8s` 作为下一阶段交付
+- `external-bare` 已交付
+- `external-docker` 已交付
+- `internal-k8s` 已交付
 - artifact 旧的“保存到文件库”交互彻底删除
 - `artifacts` 面板只展示 task workspace 下 `.artifacts/` 目录内容
 - 多个 task 可以绑定同一个 `file library`
@@ -301,7 +300,7 @@ npm run test:release:real:full
 
 - sandbox PVC 挂载能力可用
 - snapshot 已删除
-- internal lazy start / reclaim / restore 成立
+- internal lazy start / reclaim / resume 成立
 - 真实 gate 通过
 
 ## 7. 不在本阶段交付范围
@@ -317,7 +316,7 @@ npm run test:release:real:full
 
 ## 8. 交付评审建议
 
-后续评审建议按下面顺序进行：
+当前评审建议按下面顺序检查：
 
 1. 数据模型与 contract 是否正确
 2. external-bare 是否先闭环

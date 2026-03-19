@@ -1,6 +1,5 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
-import { getAllProjectGroupIdsForUser } from './project-groups-store.js';
 import { getAllProjectGroupIdsForUserPersisted } from './project-member-governance-persistence.js';
 import { listUsageFacts } from './audit-usage-store.js';
 
@@ -126,65 +125,6 @@ function getLimitRuleKeys(resourceType: ResourceType): LimitRuleKey[] {
   return [];
 }
 
-function getMatchingSubjectRateRules(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  policy: ProjectResourcePolicyRecord;
-}): { rules: PolicyRule[]; matched: boolean } {
-  const userRules = args.policy.allowed_subjects
-    .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
-    .flatMap((s) => readPolicyRules(s.rate_limits));
-  const groupIds = getAllProjectGroupIdsForUser({
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    userId: args.userId,
-  });
-  const groupRules = args.policy.allowed_subjects
-    .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
-    .flatMap((s) => readPolicyRules(s.rate_limits));
-  const merged = mergeRateRules(userRules, groupRules);
-  return { rules: merged, matched: merged.length > 0 };
-}
-
-function getEffectiveRequestsPerMinuteRule(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  resourceType: ResourceType;
-  policy: ProjectResourcePolicyRecord;
-}): { value?: number; scope?: 'policy' | 'subject' } {
-  const rpmRuleKey = getRequestsPerMinuteRuleKey(args.resourceType);
-  if (!rpmRuleKey) return {};
-  const baseRules = readPolicyRules(args.policy.rate_limits);
-  const subject = getMatchingSubjectRateRules(args);
-  const effective = subject.matched ? mergeRateRules(baseRules, subject.rules) : baseRules;
-  const rpmRule = effective.find((r) => r.key === rpmRuleKey);
-  if (!rpmRule) return {};
-  return { value: rpmRule.value, scope: subject.matched ? 'subject' : 'policy' };
-}
-
-function getMatchingSubjectLimitRules(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  policy: ProjectResourcePolicyRecord;
-}): { rules: PolicyRule[]; matched: boolean } {
-  const userRules = args.policy.allowed_subjects
-    .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
-    .flatMap((s) => readPolicyRules(s.spending_limits));
-  const groupIds = getAllProjectGroupIdsForUser({
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    userId: args.userId,
-  });
-  const groupRules = args.policy.allowed_subjects
-    .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
-    .flatMap((s) => readPolicyRules(s.spending_limits));
-  const merged = mergeLimitRules(userRules, groupRules);
-  return { rules: merged, matched: merged.length > 0 };
-}
-
 async function getMatchingSubjectRateRulesPersisted(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;
@@ -231,25 +171,6 @@ async function getMatchingSubjectLimitRulesPersisted(args: {
   return { rules: merged, matched: merged.length > 0 };
 }
 
-function getEffectiveLimitRule(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  resourceType: ResourceType;
-  policy: ProjectResourcePolicyRecord;
-}): { key?: LimitRuleKey; value?: number; scope?: 'policy' | 'subject' } {
-  const limitRuleKeys = getLimitRuleKeys(args.resourceType);
-  if (limitRuleKeys.length === 0) return {};
-  const baseRules = readPolicyRules(args.policy.spending_limits);
-  const subject = getMatchingSubjectLimitRules(args);
-  const effective = subject.matched ? mergeLimitRules(baseRules, subject.rules) : baseRules;
-  const limitRule = limitRuleKeys
-    .map((key) => ({ key, rule: effective.find((r) => r.key === key) }))
-    .find((item): item is { key: LimitRuleKey; rule: PolicyRule } => !!item.rule);
-  if (!limitRule) return {};
-  return { key: limitRule.key, value: limitRule.rule.value, scope: subject.matched ? 'subject' : 'policy' };
-}
-
 async function getEffectiveLimitRulePersisted(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;
@@ -270,7 +191,8 @@ async function getEffectiveLimitRulePersisted(args: {
   return { key: limitRule.key, value: limitRule.rule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
-export function checkAndConsumeProjectResourceRateLimitsForUser(args: {
+export async function checkAndConsumeProjectResourceRateLimitsForUser(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   resourceType: ResourceType;
@@ -278,17 +200,25 @@ export function checkAndConsumeProjectResourceRateLimitsForUser(args: {
   userId: string;
   policy: ProjectResourcePolicyRecord | null;
   nowMs?: number;
-}): RateLimitDecision {
+}): Promise<RateLimitDecision> {
   if (!args.policy) {
     return { allowed: true };
   }
-  const effective = getEffectiveRequestsPerMinuteRule({
+  const rpmRuleKey = getRequestsPerMinuteRuleKey(args.resourceType);
+  if (!rpmRuleKey) {
+    return { allowed: true };
+  }
+  const baseRules = readPolicyRules(args.policy.rate_limits);
+  const subject = await getMatchingSubjectRateRulesPersisted({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
-    resourceType: args.resourceType,
     policy: args.policy,
   });
+  const effectiveRules = subject.matched ? mergeRateRules(baseRules, subject.rules) : baseRules;
+  const rpmRule = effectiveRules.find((r) => r.key === rpmRuleKey);
+  const effective = rpmRule ? { value: rpmRule.value, scope: subject.matched ? 'subject' as const : 'policy' as const } : {};
   if (!effective.value || effective.value <= 0) {
     return { allowed: true };
   }
@@ -495,24 +425,6 @@ function estimateRetryAfterSecondsFromFacts(
   return Math.max(1, Math.ceil((oldestMs + windowMs - nowMs) / 1000));
 }
 
-function resolveEndpointRateRules(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  policy: ProjectResourcePolicyRecord;
-}): Array<{ key: EndpointRateRuleKey; value: number; scope: 'policy' | 'subject' }> {
-  const baseRules = readPolicyRules(args.policy.rate_limits).filter(isEndpointRateRule);
-  const subject = getMatchingSubjectRateRules(args);
-  const effective = subject.matched ? mergeRateRules(baseRules, subject.rules) : baseRules;
-  return effective
-    .filter(isEndpointRateRule)
-    .map((rule) => ({
-      key: rule.key,
-      value: rule.value,
-      scope: subject.matched ? 'subject' : 'policy',
-    }));
-}
-
 async function resolveEndpointRateRulesPersisted(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;
@@ -529,37 +441,6 @@ async function resolveEndpointRateRulesPersisted(args: {
       key: rule.key,
       value: rule.value,
       scope: subject.matched ? 'subject' : 'policy',
-    }));
-}
-
-function resolveEndpointSpendingRules(args: {
-  workspaceId: string;
-  projectId: string;
-  userId: string;
-  policy: ProjectResourcePolicyRecord;
-}): Array<{ key: EndpointSpendingRuleKey; value: number; scope: 'policy' | 'subject' }> {
-  const baseRules = readPolicyRulesRaw(args.policy.spending_limits).filter(isEndpointSpendingRule);
-  const userRules = args.policy.allowed_subjects
-    .filter((s) => s.subject_type === 'user' && s.subject_id === args.userId)
-    .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
-    .filter(isEndpointSpendingRule);
-  const groupIds = getAllProjectGroupIdsForUser({
-    workspaceId: args.workspaceId,
-    projectId: args.projectId,
-    userId: args.userId,
-  });
-  const groupRules = args.policy.allowed_subjects
-    .filter((s) => s.subject_type === 'group' && groupIds.includes(s.subject_id))
-    .flatMap((s) => readPolicyRulesRaw(s.spending_limits))
-    .filter(isEndpointSpendingRule);
-  const subjectMatched = userRules.length > 0 || groupRules.length > 0;
-  const effective = subjectMatched ? mergeLimitRules(baseRules, mergeLimitRules(userRules, groupRules)) : baseRules;
-  return effective
-    .filter(isEndpointSpendingRule)
-    .map((rule) => ({
-      key: rule.key,
-      value: rule.value,
-      scope: subjectMatched ? 'subject' : 'policy',
     }));
 }
 
@@ -789,34 +670,37 @@ type FileLibraryLimitDecision =
     scope: 'policy' | 'subject';
   };
 
-function getEffectiveFileLibraryLimitRule(args: {
+async function getEffectiveFileLibraryLimitRule(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   userId: string;
   policy: ProjectResourcePolicyRecord;
   key: 'file_library.max_total_files' | 'file_library.max_file_size_bytes';
-}): { value?: number; scope?: 'policy' | 'subject' } {
+}): Promise<{ value?: number; scope?: 'policy' | 'subject' }> {
   const baseRules = readPolicyRules(args.policy.spending_limits);
-  const subject = getMatchingSubjectLimitRules(args);
+  const subject = await getMatchingSubjectLimitRulesPersisted(args);
   const effective = subject.matched ? mergeLimitRules(baseRules, subject.rules) : baseRules;
   const rule = effective.find((item) => item.key === args.key);
   if (!rule) return {};
   return { value: rule.value, scope: subject.matched ? 'subject' : 'policy' };
 }
 
-export function checkProjectFileLibraryLimitRules(args: {
+export async function checkProjectFileLibraryLimitRules(args: {
+  docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
   userId: string;
   policy: ProjectResourcePolicyRecord | null;
   currentFileCount: number;
   nextFileSizeBytes: number;
-}): FileLibraryLimitDecision {
+}): Promise<FileLibraryLimitDecision> {
   if (!args.policy) {
     return { allowed: true };
   }
 
-  const maxTotalFiles = getEffectiveFileLibraryLimitRule({
+  const maxTotalFiles = await getEffectiveFileLibraryLimitRule({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,
@@ -838,7 +722,8 @@ export function checkProjectFileLibraryLimitRules(args: {
     };
   }
 
-  const maxFileSize = getEffectiveFileLibraryLimitRule({
+  const maxFileSize = await getEffectiveFileLibraryLimitRule({
+    docStore: args.docStore,
     workspaceId: args.workspaceId,
     projectId: args.projectId,
     userId: args.userId,

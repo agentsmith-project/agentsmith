@@ -7,15 +7,15 @@ import {
   checkProjectEndpointSpendingLimitsForUser,
   checkProjectFileLibraryLimitRules,
 } from './project-resource-policy-enforcer.js';
-import { getProjectGroupsState, setProjectAdminGroupMembers } from './project-groups-store.js';
-import { upsertProjectMembership } from './project-memberships-store.js';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
 import { recordUsageFact } from './audit-usage-store.js';
 import { PROJECT_BUILT_IN_GROUP_IDS } from './project-governance-model.js';
+import { saveProjectGroup, setProjectAdminGroupMembersPersisted, upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
 
 describe('project-resource-policy-enforcer', () => {
-  it('enforces endpoint requests_per_minute at policy root', () => {
+  it('enforces endpoint requests_per_minute at policy root', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
+    const docStore = new InMemoryJsonDocStore();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'endpoint',
       resource_id: 'ep_1',
@@ -25,7 +25,8 @@ describe('project-resource-policy-enforcer', () => {
         rules: [{ key: 'endpoint.requests_per_minute', value: 1 }],
       },
     };
-    const first = checkAndConsumeProjectResourceRateLimitsForUser({
+    const first = await checkAndConsumeProjectResourceRateLimitsForUser({
+      docStore,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'endpoint',
@@ -34,7 +35,8 @@ describe('project-resource-policy-enforcer', () => {
       policy,
       nowMs: 1_700_000_000_000,
     });
-    const second = checkAndConsumeProjectResourceRateLimitsForUser({
+    const second = await checkAndConsumeProjectResourceRateLimitsForUser({
+      docStore,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'endpoint',
@@ -52,14 +54,14 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
-  it('supports subject-level override via group rule', () => {
+  it('supports subject-level override via group rule', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Math.random().toString(36).slice(2, 8)}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 8)}`;
     const userId = 'user_a';
-    getProjectGroupsState(workspaceId, projectId).push({
+    await saveProjectGroup(docStore, workspaceId, projectId, {
       id: 'grp_ops',
-      project_id: projectId,
       name: 'ops',
       permission_template_id: 'perm_tpl_default',
       member_ids: [userId],
@@ -80,26 +82,28 @@ describe('project-resource-policy-enforcer', () => {
       rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
     };
     const baseMs = 1_700_000_060_000;
-    const one = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs });
-    const two = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 1 });
-    const three = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 2 });
+    const one = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs });
+    const two = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 1 });
+    const three = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 2 });
     expect(one.allowed).toBe(true);
     expect(two.allowed).toBe(true);
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
   });
 
-  it('supports subject-level override via the built-in admin group rule', () => {
+  it('supports subject-level override via the built-in admin group rule', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
+    const docStore = new InMemoryJsonDocStore();
     const workspaceId = `ws_${Math.random().toString(36).slice(2, 8)}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 8)}`;
     const userId = 'user_admin';
-    upsertProjectMembership(workspaceId, projectId, {
+    await upsertProjectMembershipRecord(docStore, workspaceId, projectId, {
       project_id: projectId,
       user_id: userId,
       status: 'active',
       joined_at: new Date().toISOString(),
     });
-    setProjectAdminGroupMembers({
+    await setProjectAdminGroupMembersPersisted({
+      docStore,
       workspaceId,
       projectId,
       memberIds: [userId],
@@ -118,16 +122,17 @@ describe('project-resource-policy-enforcer', () => {
       rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
     };
     const baseMs = 1_700_000_160_000;
-    const one = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs });
-    const two = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 1 });
-    const three = checkAndConsumeProjectResourceRateLimitsForUser({ workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 2 });
+    const one = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs });
+    const two = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 1 });
+    const three = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 2 });
     expect(one.allowed).toBe(true);
     expect(two.allowed).toBe(true);
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
   });
 
-  it('enforces file_library requests_per_minute at policy root', () => {
+  it('enforces file_library requests_per_minute at policy root', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
+    const docStore = new InMemoryJsonDocStore();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'file_library',
       resource_id: 'lib_1',
@@ -137,7 +142,8 @@ describe('project-resource-policy-enforcer', () => {
         rules: [{ key: 'file_library.requests_per_minute', value: 1 }],
       },
     };
-    const first = checkAndConsumeProjectResourceRateLimitsForUser({
+    const first = await checkAndConsumeProjectResourceRateLimitsForUser({
+      docStore,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'file_library',
@@ -146,7 +152,8 @@ describe('project-resource-policy-enforcer', () => {
       policy,
       nowMs: 1_700_000_120_000,
     });
-    const second = checkAndConsumeProjectResourceRateLimitsForUser({
+    const second = await checkAndConsumeProjectResourceRateLimitsForUser({
+      docStore,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'file_library',
@@ -243,7 +250,8 @@ describe('project-resource-policy-enforcer', () => {
     });
   });
 
-  it('enforces file library file count and file size limits', () => {
+  it('enforces file library file count and file size limits', async () => {
+    const docStore = new InMemoryJsonDocStore();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'file_library',
       resource_id: 'lib_limit',
@@ -257,7 +265,8 @@ describe('project-resource-policy-enforcer', () => {
       },
     };
 
-    const oversized = checkProjectFileLibraryLimitRules({
+    const oversized = await checkProjectFileLibraryLimitRules({
+      docStore,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',
@@ -273,7 +282,8 @@ describe('project-resource-policy-enforcer', () => {
       usage_unit: 'bytes',
     });
 
-    const tooMany = checkProjectFileLibraryLimitRules({
+    const tooMany = await checkProjectFileLibraryLimitRules({
+      docStore,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       userId: 'user_1',

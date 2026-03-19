@@ -72,7 +72,7 @@ Some components are shared across multiple modules:
 
 ### Component Naming
 
-- Use PascalCase: `TaskList.tsx`, `FileSelectDialog.tsx`
+- Use PascalCase: `TaskList.tsx`, `TaskCreateDialog.tsx`
 - Be descriptive: `TaskCreateDialog` not `CreateDialog`
 - Match file name to component name
 

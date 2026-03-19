@@ -582,38 +582,10 @@
       "add": "添加输入",
       "remove": "移除",
       "empty": "未附加任何输入",
-      "empty_description": "从您的文件库中添加文件，为 Agent 提供上下文",
-      "select_dialog": {
-        "title": "添加文件作为输入",
-        "description": "从您的文件库中选择文件作为上下文输入",
-        "search_placeholder": "搜索您的文件...",
-        "confirm": "添加选中",
-        "no_files": "您的文件库中暂无可用文件",
-        "from_library": "来自您的文件库",
-        "legacy_source_title": "Source 输入",
-        "legacy_source_description": "Source 选择功能已暂时停用。这里先保留界面，后续会用新的 notebook source 方案重做。",
-        "legacy_source_footer": "Notebook Source 选择暂时不可用。",
-        "library_objects_title": "文件库对象",
-        "library_objects_empty": "暂无文件库",
-        "library_objects_no_items": "该文件库中暂无文件",
-        "library_objects_add": "添加",
-        "library_objects_hint": "文件库对象会先导入为可挂载文件，再附加到当前任务。",
-        "none_selected": "未选择文件",
-        "selected_count": "已选择 {count} 个文件"
-      },
+      "empty_description": "旧的附加输入流程已不再参与 notebook 工作空间模型。",
       "tooltip": {
         "attached_file": "此文件已附加到此笔记本作为上下文输入",
         "remove_file": "从笔记本中移除（文件仍保留在您的文件库中）"
-      },
-      "add_files": "文件库",
-      "add_local": "本地上传",
-      "add_url": "网页链接",
-      "url_dialog": {
-        "title": "添加网页链接作为输入",
-        "description": "Notebook 会将该链接作为上下文输入添加。",
-        "placeholder": "https://example.com/article",
-        "confirm": "添加链接",
-        "cancel": "取消"
       }
     },
     "conversation": {

@@ -61,7 +61,6 @@ describe('ArtifactCard', () => {
 
   const mockOnView = vi.fn();
   const mockOnDownload = vi.fn();
-  const mockOnAttachAsInput = vi.fn();
 
   const writeTextMock = vi.fn().mockResolvedValue(undefined);
 
@@ -85,7 +84,6 @@ describe('ArtifactCard', () => {
           artifact={artifact}
           onView={mockOnView}
           onDownload={mockOnDownload}
-          onAttachAsInput={mockOnAttachAsInput}
           {...props}
       />
     );
@@ -290,7 +288,6 @@ describe('ArtifactCard', () => {
           artifact={mockTextArtifact}
           onView={mockOnView}
           onDownload={mockOnDownload}
-          onAttachAsInput={mockOnAttachAsInput}
           disabled={true}
         />
       );
@@ -395,7 +392,6 @@ describe('ArtifactCard', () => {
 
       fireEvent.mouseEnter(screen.getByTestId('notebook__artifact-card'));
       expect(screen.getByRole('button', { name: /view/i })).toBeInTheDocument();
-      expect(screen.getByRole('button', { name: /attach as input/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /copy artifact/i })).toBeInTheDocument();
       expect(screen.getByRole('button', { name: /download artifact/i })).toBeInTheDocument();
     });

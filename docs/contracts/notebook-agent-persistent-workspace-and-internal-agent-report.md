@@ -55,10 +55,7 @@ Audience: 产品、前端、后端、sandbox 平台
 
 当前已锁定下面这些范围决策：
 
-- 先交付 **Phase 1：external 完整闭环**
-  - `external-bare`
-  - `external-docker`
-- `internal-k8s` 保留为下一阶段交付
+- `external-bare`、`external-docker`、`internal-k8s` 已全部交付
 - 允许多个 task 绑定同一个 `file library`
   - 这代表它们共享同一份工作目录真相
 - notebook 旧的“artifact 保存到文件库”交互**彻底删除**
@@ -324,7 +321,7 @@ external 的 docker 模式下，如果要在容器内运行 `juicefs mount`，�
 - `external-bare` / `external-docker`
   - `workspace_binding_mode = juicefs_local_mount`
 - `internal-k8s`
-  - `workspace_binding_mode = pre_mounted_volume`
+  - `workspace_binding_mode = pre_mounted`
 
 这样 runner 主流程可以统一：
 

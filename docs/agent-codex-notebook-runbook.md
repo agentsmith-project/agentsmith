@@ -35,7 +35,6 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).
 - Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
 - Workdir rule:
-  - legacy fallback: `/tmp/<username>/<task_id>`
   - persistent workspace mode (Phase 1 current truth):
     - external bare: `~/ags-workspaces/<workspace_dir_name>`
     - external docker: `/workspace/ags-workspaces/<workspace_dir_name>`

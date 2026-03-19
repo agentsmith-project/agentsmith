@@ -18,13 +18,12 @@ vi.mock('@/components/ui/loading', () => ({
 }));
 
 vi.mock('../ArtifactCard', () => ({
-  ArtifactCard: ({ artifact, onView, onDownload, onAttachAsInput, disabled }: any) => (
+  ArtifactCard: ({ artifact, onView, onDownload, disabled }: any) => (
     <div data-testid={`artifact-card-${artifact.id}`}>
       <div data-artifact-type>{artifact.type}</div>
       <div data-artifact-title>{artifact.title || '(no title)'}</div>
       {onView && <button data-action="view">View</button>}
       {onDownload && <button data-action="download">Download</button>}
-      {onAttachAsInput && <button data-action="attach-input">Attach Input</button>}
       {disabled && <div data-disabled>disabled</div>}
     </div>
   ),
@@ -68,8 +67,6 @@ describe('ArtifactsPanel', () => {
 
   const mockOnView = vi.fn();
   const mockOnDownload = vi.fn();
-  const mockOnAttachAsInput = vi.fn();
-
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -80,7 +77,6 @@ describe('ArtifactsPanel', () => {
           artifacts={mockArtifacts}
           onView={mockOnView}
           onDownload={mockOnDownload}
-          onAttachAsInput={mockOnAttachAsInput}
           {...props}
       />
     );
@@ -184,12 +180,6 @@ describe('ArtifactsPanel', () => {
       expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="download"]')).toBeInTheDocument();
     });
 
-    it('passes attach-as-input callback to artifacts', () => {
-      renderComponent();
-
-      expect(screen.getByTestId('artifact-card-artifact-1').querySelector('[data-action="attach-input"]')).toBeInTheDocument();
-      expect(screen.getByTestId('artifact-card-artifact-2').querySelector('[data-action="attach-input"]')).toBeInTheDocument();
-    });
   });
 
   describe('Disabled State', () => {

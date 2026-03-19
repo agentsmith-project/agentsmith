@@ -1,5 +1,7 @@
 # System / Workspace / Project MVP Handoff
 
+> Historical handoff note. This file is archived context, not current implementation truth.
+
 Date: 2026-03-13
 
 ## 1. Handoff Purpose
@@ -408,4 +410,3 @@ At handoff time:
    - `1c547c3a` `feat: apply workspace tenant prefixes to model config storage`
 3. system/workspace/project control-plane skeleton is stable
 4. provisioning semantics are real in the control plane, but still partial in the backend data plane
-

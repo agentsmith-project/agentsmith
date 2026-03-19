@@ -580,38 +580,10 @@
       "add": "Add Inputs",
       "remove": "Remove",
       "empty": "No inputs attached",
-      "empty_description": "Add files from your Files library to provide context for the agent",
-      "select_dialog": {
-        "title": "Add Files as Inputs",
-        "description": "Choose files from your library to add as context inputs",
-        "search_placeholder": "Search your files...",
-        "confirm": "Add Selected",
-        "no_files": "No ready files available in your library",
-        "from_library": "From your Files library",
-        "legacy_source_title": "Source inputs",
-        "legacy_source_description": "Source selection is temporarily unavailable. This area remains visible for the upcoming notebook source redesign.",
-        "legacy_source_footer": "Notebook source selection is temporarily disabled.",
-        "library_objects_title": "File Library Objects",
-        "library_objects_empty": "No file libraries yet",
-        "library_objects_no_items": "No files in this library yet",
-        "library_objects_add": "Add",
-        "library_objects_hint": "Library objects will be imported as task-selectable files, then attached to this task.",
-        "none_selected": "No files selected",
-        "selected_count": "{count} file(s) selected"
-      },
+      "empty_description": "Legacy attached inputs are no longer part of the notebook workspace flow.",
       "tooltip": {
         "attached_file": "This file is attached to this notebook as context input",
         "remove_file": "Remove from notebook (file remains in your library)"
-      },
-      "add_files": "Files",
-      "add_local": "Local",
-      "add_url": "URL",
-      "url_dialog": {
-        "title": "Add URL as Input",
-        "description": "Notebook will add this URL as a context input note.",
-        "placeholder": "https://example.com/article",
-        "confirm": "Add URL",
-        "cancel": "Cancel"
       }
     },
     "conversation": {

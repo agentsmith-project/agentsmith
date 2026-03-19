@@ -16,7 +16,6 @@ export interface ArtifactsPanelProps {
   artifacts: Artifact[];
   onView?: (artifact: Artifact) => void;
   onDownload?: (artifact: Artifact) => void;
-  onAttachAsInput?: (artifact: Artifact) => void;
   disabled?: boolean;
 }
 
@@ -24,7 +23,6 @@ export function ArtifactsPanel({
   artifacts,
   onView,
   onDownload,
-  onAttachAsInput,
   disabled = false,
 }: ArtifactsPanelProps) {
   const t = useTranslations('notebook.artifacts');
@@ -72,7 +70,6 @@ export function ArtifactsPanel({
                 artifact={artifact}
                 onView={onView ? () => onView(artifact) : undefined}
                 onDownload={onDownload ? () => onDownload(artifact) : undefined}
-                onAttachAsInput={onAttachAsInput ? () => onAttachAsInput(artifact) : undefined}
                 disabled={disabled}
               />
             ))}

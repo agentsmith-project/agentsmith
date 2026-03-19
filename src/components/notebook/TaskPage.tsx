@@ -2,7 +2,7 @@
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
 import { TaskHeader } from './TaskHeader';
-import { useTask, useTaskMessages, useTaskArtifacts, useSendMessage, useAddFiles, useUpdateTask } from '@/lib/hooks/use-task';
+import { useTask, useTaskMessages, useTaskArtifacts, useSendMessage, useUpdateTask } from '@/lib/hooks/use-task';
 import { useTaskSSE } from '@/lib/hooks/use-task-sse';
 import { useErrorHandler } from '@/lib/hooks/use-error-handler';
 import { TaskAPI } from '@/lib/api';
@@ -46,7 +46,6 @@ export function TaskPage({
   diagnosticsBasePath,
 }: TaskPageProps) {
   type PendingMessage = ReturnType<typeof createPendingMessage>;
-  const t = useTranslations('notebook.attached_files.url_dialog');
   const tTask = useTranslations('notebook.task');
   const tConversation = useTranslations('notebook.conversation');
   const tCommon = useTranslations('common');
@@ -83,7 +82,6 @@ export function TaskPage({
   const { data: messages } = useTaskMessages(workspaceId, projectId, taskId);
   const { data: artifacts } = useTaskArtifacts(workspaceId, projectId, taskId);
   const sendMessage = useSendMessage();
-  const addFiles = useAddFiles();
   const updateTask = useUpdateTask();
   const cancelActiveRun = useMutation({
     mutationFn: () => taskAPI.cancelRun(workspaceId, projectId, taskId),
@@ -156,18 +154,9 @@ export function TaskPage({
   });
 
   const {
-    fileSelectOpen,
-    setFileSelectOpen,
     imageViewerOpen,
     setImageViewerOpen,
-    addUrlOpen,
-    setAddUrlOpen,
-    urlInput,
-    setUrlInput,
-    addingInput,
     selectedArtifact,
-    handleAttachArtifactAsInput,
-    handleSubmitUrlInput,
     handleViewArtifact,
     handleDownloadArtifact,
   } = useTaskInputActions({
@@ -175,7 +164,6 @@ export function TaskPage({
     projectId,
     taskId,
     taskAPI,
-    addFiles,
     handleError,
   });
 
@@ -561,7 +549,6 @@ export function TaskPage({
         onLeave={handleLeave}
       />
       <TaskPageContent
-        addingInput={addingInput}
         agentIsBusy={agentIsBusy}
         artifacts={artifacts || []}
         canUpdateTask={canUpdateTask}
@@ -574,7 +561,6 @@ export function TaskPage({
         focusTraceMessageId={traceFocusMessageId}
         focusTraceName={traceFocusName}
         focusTraceToken={traceFocusToken}
-        handleAttachArtifactAsInput={canUpdateTask && !isDisabled ? handleAttachArtifactAsInput : undefined}
         handleCancelActiveRun={handleCancelActiveRun}
         handleDownloadArtifact={handleDownloadArtifact}
         handlePendingRemove={handlePendingRemove}
@@ -591,8 +577,6 @@ export function TaskPage({
           setTraceFocusName(action.traceName);
           setTraceFocusToken((prev) => prev + 1);
         }}
-        onSetAddUrlOpen={setAddUrlOpen}
-        onSetFileSelectOpen={setFileSelectOpen}
         onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
         pendingMessages={pendingMessages}
         projectId={projectId}
@@ -611,7 +595,6 @@ export function TaskPage({
         sseDebugEvents={sseDebugEvents}
         streamingContent={streamingContent}
         streamingMessageId={streamingMessageId}
-        taskAttachedInputIds={task.attached_inputs.map((item) => item.id)}
         taskId={taskId}
         traceErrorByMessageId={traceErrorByMessageId}
         traceEventsByMessageId={traceEventsByMessageId}
@@ -622,31 +605,22 @@ export function TaskPage({
       />
 
       <TaskPageDialogs
-        addUrlOpen={addUrlOpen}
-        addingInput={addingInput}
         canCreateTask={canCreateTask}
         canUpdateTask={canUpdateTask}
         createDialogOpen={createDialogOpen}
         editDialogOpen={editDialogOpen}
-        fileSelectOpen={fileSelectOpen}
         imageViewerOpen={imageViewerOpen}
         projectId={projectId}
         savingTask={updateTask.isPending}
         selectedArtifact={selectedArtifact}
-        t={t}
         tCommon={tCommon}
         task={task}
-        urlInput={urlInput}
         workspaceId={workspaceId}
         onArtifactDownload={handleDownloadArtifact}
         onEditDialogOpenChange={setEditDialogOpen}
-        onFileSelectOpenChange={setFileSelectOpen}
         onHandleTaskUpdated={handleTaskUpdated}
         onImageViewerOpenChange={setImageViewerOpen}
-        onSetAddUrlOpen={setAddUrlOpen}
         onSetCreateDialogOpen={setCreateDialogOpen}
-        onSetUrlInput={setUrlInput}
-        onSubmitUrlInput={handleSubmitUrlInput}
         onTaskCreated={handleTaskCreated}
       />
     </div>

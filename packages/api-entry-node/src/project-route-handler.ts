@@ -9,9 +9,6 @@ import type {
   ProjectRouteHandlerArgs,
   ProjectRouteContext,
 } from './project-route-types.js';
-import {
-  checkAndConsumeProjectResourceRateLimitsForUser,
-} from './project-resource-policy-enforcer.js';
 
 export async function handleProjectRoute(args: ProjectRouteHandlerArgs): Promise<boolean> {
   const {

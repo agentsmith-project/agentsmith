@@ -1,5 +1,7 @@
 # System / Workspace Provisioning MVP Analysis v1
 
+> 历史分析稿，仅供背景参考，不作为当前实现真相。
+
 ## 1. 目的
 
 本文件用于确认 `system / workspace / project` 主线下，workspace 创建、配置、初始化、隔离与系统信息展示的正式分析结论与后续开发计划。

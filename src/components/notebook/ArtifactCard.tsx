@@ -13,7 +13,6 @@ export interface ArtifactCardProps {
   artifact: Artifact;
   onView?: () => void;
   onDownload?: () => void;
-  onAttachAsInput?: () => void;
   disabled?: boolean;
 }
 
@@ -21,7 +20,6 @@ export function ArtifactCard({
   artifact,
   onView,
   onDownload,
-  onAttachAsInput,
   disabled = false,
 }: ArtifactCardProps) {
   const t = useTranslations('common.toast');
@@ -159,18 +157,6 @@ export function ArtifactCard({
                         className="h-7 justify-start px-2 text-[10px]"
                       >
                         {tCommon('view')}
-                      </Button>
-                    ) : null}
-                    {onAttachAsInput ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={onAttachAsInput}
-                        disabled={disabled}
-                        className="h-7 justify-start px-2 text-[10px]"
-                        aria-label="attach as input"
-                      >
-                        {tArtifacts('actions.attach_input')}
                       </Button>
                     ) : null}
                     {artifact.type === 'text' ? (

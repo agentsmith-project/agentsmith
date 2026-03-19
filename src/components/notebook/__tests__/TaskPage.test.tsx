@@ -45,10 +45,6 @@ vi.mock('next-intl', () => ({
       'notebook.task.not_found_title': 'Task not found',
       'notebook.task.not_found_description': "The task you're looking for doesn't exist or has been deleted.",
       'notebook.task.back_to_notebook': 'Go back to Notebook',
-      'notebook.attached_files.url_dialog.title': 'Add URL as Input',
-      'notebook.attached_files.url_dialog.description': 'Notebook will add this URL as a context input note.',
-      'notebook.attached_files.url_dialog.placeholder': 'https://example.com/article',
-      'notebook.attached_files.url_dialog.confirm': 'Add URL',
       'notebook.conversation.trace_view': 'View execution details',
       'notebook.conversation.trace_load_more': 'Load earlier logs',
       'notebook.conversation.send_rate_limited_title': 'Request rate limited',
@@ -93,10 +89,6 @@ vi.mock('@/lib/hooks/use-task', () => ({
   useSendMessage: () => ({
     mutateAsync: mockSendMessageMutateAsync,
     isPending: mockSendMessageIsPending.value,
-  }),
-  useAddFiles: () => ({
-    mutateAsync: vi.fn().mockResolvedValue({}),
-    isPending: false,
   }),
   useUpdateTask: () => ({
     mutateAsync: vi.fn().mockResolvedValue({}),
@@ -147,14 +139,6 @@ vi.mock('../TaskHeader', () => ({
   },
 }));
 
-vi.mock('../AttachedFilesPanel', () => ({
-  AttachedFilesPanel: ({ onAddFromFiles }: any) => (
-    <div data-testid="attached-inputs-panel">
-      <button onClick={onAddFromFiles}>Files</button>
-    </div>
-  ),
-}));
-
 vi.mock('../ConversationPanel', () => ({
   ConversationPanel: (props: any) => {
     latestConversationPanelPropsRef.current = props;
@@ -195,15 +179,6 @@ vi.mock('../ArtifactsPanel', () => ({
       <button onClick={() => onDownload(mockArtifacts[0])}>Download Artifact</button>
       {disabled && <div data-disabled>disabled</div>}
     </div>
-  ),
-}));
-
-vi.mock('../FileSelectDialog', () => ({
-  FileSelectDialog: ({ open, onOpenChange }: any) => (
-    <dialog open={open}>
-      <div>Source paused</div>
-      <button onClick={() => onOpenChange(false)}>Cancel</button>
-    </dialog>
   ),
 }));
 
@@ -359,10 +334,10 @@ describe('TaskPage', () => {
       expect(screen.getByTestId('task-title')).toHaveTextContent('Test Task');
     });
 
-    it('renders attached files panel', () => {
+    it('does not render the removed attached inputs panel', () => {
       renderComponent();
 
-      expect(screen.getByTestId('attached-inputs-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('attached-inputs-panel')).not.toBeInTheDocument();
     });
 
     it('renders conversation panel', () => {
@@ -560,18 +535,6 @@ describe('TaskPage', () => {
     });
   });
 
-  describe('Input Management', () => {
-    it('opens input select dialog', async () => {
-      const user = userEvent.setup();
-      renderComponent();
-
-      const addFilesButton = screen.getByText('Files');
-      await user.click(addFilesButton);
-
-      expect(screen.getByText('Source paused')).toBeInTheDocument();
-    });
-  });
-
   describe('Artifact Actions', () => {
     it('opens artifact viewer for images', async () => {
       const user = userEvent.setup();
@@ -678,7 +641,8 @@ describe('TaskPage', () => {
 
       renderComponent();
 
-      expect(screen.getByTestId('attached-inputs-panel')).toBeInTheDocument();
+      expect(screen.queryByTestId('attached-inputs-panel')).not.toBeInTheDocument();
+      expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
     });
   });
 });

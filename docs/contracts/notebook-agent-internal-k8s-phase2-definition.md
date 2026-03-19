@@ -183,7 +183,7 @@ sandbox manager 需要支持：
 - chat 也绑定持久化工作空间
 - 一个 task 同时挂多个 file library
 - 目录级更细粒度隔离
-- snapshot 兼容保留
+- snapshot 兼容保留已明确不做
 - 通用 sandbox 平台化抽象
 
 ## 6. 技术方案边界

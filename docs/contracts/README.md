@@ -28,6 +28,9 @@
 
 - `API_GUIDE.md`（API 导航入口；具体接口以 OpenAPI/AsyncAPI 为准）
 - `model-catalog-project-pricing-contract.md`（模型目录能力启用时适用）
+- `backend-persistent-state-boundary.md`（后端主数据、共享运行态与进程内瞬态的边界）
+- `backend-storage-architecture-matrix.md`（全系统后端数据真相、接口模块与存储模式总表）
+- `backend-storage-maturity-checklist.md`（后端数据持久化成熟度改进清单）
 
 ## 模块合同
 

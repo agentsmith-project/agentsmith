@@ -3,6 +3,10 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  getPersistedSystemWorkspace,
+  resetSystemWorkspaceRegistryPersistenceForTest,
+} from '../../../src/lib/system-admin/workspace-registry/persistence.js';
+import {
   getRegisteredWorkspaceConfig,
   readRegisteredWorkspaces,
   updateRegisteredWorkspaceProjectCreators,
@@ -19,6 +23,7 @@ describe('readRegisteredWorkspaces', () => {
 
   afterEach(() => {
     process.env = originalEnv;
+    resetSystemWorkspaceRegistryPersistenceForTest();
   });
 
   it('returns ready registered workspaces and skips disabled ones', () => {
@@ -65,7 +70,7 @@ describe('readRegisteredWorkspaces', () => {
     ]);
   });
 
-  it('preserves published login configuration when project creators are updated', () => {
+  it('preserves published login configuration when project creators are updated', async () => {
     writeFileSync(
       process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
       `${JSON.stringify([
@@ -97,7 +102,7 @@ describe('readRegisteredWorkspaces', () => {
       'utf-8',
     );
 
-    updateRegisteredWorkspaceProjectCreators('ws_ready', [
+    await updateRegisteredWorkspaceProjectCreators('ws_ready', [
       {
         user_id: 'next-user',
         email: 'next@example.com',
@@ -124,6 +129,18 @@ describe('readRegisteredWorkspaces', () => {
         provisioning_status: 'ready',
         last_initialized_at: '2026-03-12T00:00:00.000Z',
         last_init_error: null,
+      }),
+    );
+    await expect(getPersistedSystemWorkspace('ws_ready')).resolves.toEqual(
+      expect.objectContaining({
+        id: 'ws_ready',
+        project_creators: [
+          {
+            user_id: 'next-user',
+            email: 'next@example.com',
+            name: 'Next Creator',
+          },
+        ],
       }),
     );
   });

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { WorkspaceRecord } from './resource-models.js';
+import { upsertPersistedSystemWorkspace } from '../../../src/lib/system-admin/workspace-registry/persistence.js';
 
 export type WorkspaceIdentitySnapshot = {
   user_id: string;
@@ -105,6 +106,34 @@ export type RegisteredWorkspaceConfig = RegistryRecord & {
     collection_prefix?: string;
     key_prefix?: string;
   };
+  created_at: string;
+  updated_at: string;
+};
+
+type PersistedWorkspaceRecord = {
+  id: string;
+  name: string;
+  workspace_admin: string;
+  workspace_admin_user_id?: string;
+  workspace_admin_name?: string | null;
+  workspace_admin_binding_required?: boolean;
+  project_creators: WorkspaceIdentitySnapshot[];
+  idp: {
+    kind: 'keycloak';
+    url: string;
+    realm: string;
+    client_id: string;
+    client_secret?: string;
+  };
+  tenant: {
+    substrate_label?: string;
+    database_name: string;
+    collection_prefix: string;
+    key_prefix: string;
+  };
+  provisioning_status: 'draft' | 'provisioning' | 'ready' | 'failed' | 'disabled';
+  last_initialized_at: string | null;
+  last_init_error: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -249,7 +278,57 @@ export function getRegisteredWorkspaceTenantConfig(workspaceId: string): Registe
 export function updateRegisteredWorkspaceProjectCreators(
   workspaceId: string,
   projectCreators: WorkspaceIdentitySnapshot[],
-): RegisteredWorkspaceConfig {
+): Promise<RegisteredWorkspaceConfig> {
+  return updateRegisteredWorkspaceProjectCreatorsPersisted(workspaceId, projectCreators);
+}
+
+function toPersistedWorkspaceRecord(record: RegisteredWorkspaceConfig): PersistedWorkspaceRecord {
+  return {
+    id: record.id,
+    name: record.name,
+    workspace_admin: record.workspace_admin ?? '',
+    workspace_admin_user_id: record.workspace_admin_user_id,
+    workspace_admin_name: record.workspace_admin_name ?? null,
+    workspace_admin_binding_required: undefined,
+    project_creators: normalizeIdentitySnapshots(record.project_creators),
+    idp: {
+      kind: 'keycloak',
+      url: record.idp?.url?.trim() ?? '',
+      realm: record.idp?.realm?.trim() ?? '',
+      client_id: record.idp?.client_id?.trim() ?? '',
+      ...(record.idp?.client_secret ? { client_secret: record.idp.client_secret.trim() } : {}),
+    },
+    tenant: {
+      database_name: record.tenant?.database_name?.trim() ?? '',
+      collection_prefix: record.tenant?.collection_prefix?.trim() ?? '',
+      key_prefix: record.tenant?.key_prefix?.trim() ?? '',
+      ...(record.tenant?.substrate_label ? { substrate_label: record.tenant.substrate_label.trim() } : {}),
+    },
+    provisioning_status:
+      record.provisioning_status === 'draft'
+      || record.provisioning_status === 'provisioning'
+      || record.provisioning_status === 'ready'
+      || record.provisioning_status === 'failed'
+      || record.provisioning_status === 'disabled'
+        ? record.provisioning_status
+        : 'ready',
+    last_initialized_at:
+      typeof record.last_initialized_at === 'string' || record.last_initialized_at === null
+        ? record.last_initialized_at
+        : null,
+    last_init_error:
+      typeof record.last_init_error === 'string' || record.last_init_error === null
+        ? record.last_init_error
+        : null,
+    created_at: record.created_at,
+    updated_at: record.updated_at,
+  };
+}
+
+async function updateRegisteredWorkspaceProjectCreatorsPersisted(
+  workspaceId: string,
+  projectCreators: WorkspaceIdentitySnapshot[],
+): Promise<RegisteredWorkspaceConfig> {
   const records = readRegisteredWorkspaceConfigs();
   const target = records.find((record) => record.id === workspaceId);
   if (!target) {
@@ -257,6 +336,6 @@ export function updateRegisteredWorkspaceProjectCreators(
   }
   target.project_creators = normalizeIdentitySnapshots(projectCreators);
   target.updated_at = new Date().toISOString();
-  writeRegisteredWorkspaceConfigs(records);
+  await upsertPersistedSystemWorkspace(toPersistedWorkspaceRecord(target));
   return target;
 }

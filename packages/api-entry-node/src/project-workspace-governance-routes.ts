@@ -147,7 +147,7 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
         realm: directoryConfig.realm,
         userIds: nextCreatorIds,
       });
-      updateRegisteredWorkspaceProjectCreators(workspaceId, resolvedCreators);
+      await updateRegisteredWorkspaceProjectCreators(workspaceId, resolvedCreators);
       const previousSet = new Set(currentItems);
       const nextSet = new Set(nextCreatorIds);
       await writeProjectAuditEvent(deps, {

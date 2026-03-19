@@ -53,11 +53,11 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 - 可以保留在进程内内存
 
-### 2.4 文件证据型存储
+### 2.4 内部工程证据型存储
 
 定义：
 
-- 数据并非主数据记录，而是运行产物、报告或证据文件
+- 数据并非产品主数据记录，而是研发验收、发布审查或内部治理工具链的运行产物、报告或证据文件
 
 要求：
 
@@ -93,9 +93,9 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 | 审计与用量 | `packages/api-entry-node/src/audit-usage-store.ts` | audit events / usage facts | `docStore` / Mongo | 主数据 | 通过 | 与 resource policy 已打通 |
 | 用户资料与通知 | `packages/api-entry-node/src/me-notifications-store.ts`, `packages/api-entry-node/src/me-route-handler.ts` | profile / notifications | `docStore` / Mongo | 主数据 | 通过 | 已持久化 |
 | SSE ticket | `packages/api-entry-node/src/sse-ticket-store.ts` | short-lived tickets | 进程内内存 | 瞬态运行态 | 条件通过 | 若未来无粘性多实例 SSE，可考虑共享化 |
-| 治理报告 | `packages/api-entry-node/src/governance-report-store.ts` | reports / evidence files | 本地磁盘 | 文件证据型存储 | 条件通过 | 需持久卷或共享存储前提 |
-| 治理运行记录 | `packages/api-entry-node/src/governance-run-store.ts` | run evidence files | 本地磁盘 | 文件证据型存储 | 条件通过 | 不适合无状态本地盘部署 |
-| 治理事件/incident 证据 | `packages/api-entry-node/src/governance-incident-store.ts` | incident evidence files | 本地磁盘 | 文件证据型存储 | 条件通过 | 推荐后续对象存储化 |
+| 治理报告 | `packages/api-entry-node/src/governance-report-store.ts` | reports / evidence files | 本地磁盘 | 内部工程证据型存储 | 条件通过 | 当前属于研发/发布证据链，不属于产品主数据 |
+| 治理运行记录 | `packages/api-entry-node/src/governance-run-store.ts` | run evidence files | 本地磁盘 | 内部工程证据型存储 | 条件通过 | 当前属于研发/发布证据链，不属于产品主数据 |
+| 治理事件/incident 证据 | `packages/api-entry-node/src/governance-incident-store.ts` | incident evidence files | 本地磁盘 | 内部工程证据型存储 | 条件通过 | 当前属于研发/发布证据链，不属于产品主数据 |
 
 ## 4. 审查结论
 
@@ -128,7 +128,6 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 - notebook 当前运行控制
 - SSE tickets
 - file library gateway runtime
-- governance report / run / incident 文件证据存储
 
 它们不是“主数据未落库”问题，但如果目标是：
 
@@ -149,19 +148,28 @@ Audience: 架构评审、后端、前端、测试、发布负责人
 
 ### 需要明确部署前提
 
-- governance evidence 文件存储
 - SSE ticket 单进程模型
 - notebook active run / cancel 进程内控制
 - file library gateway 进程内会话模型
+
+### 不纳入产品主数据成熟度主线
+
+以下目录和对应读取模块当前定义为内部工程/发布证据链：
+
+- `artifacts/governance-reports/`
+- `artifacts/governance-runs/`
+- `artifacts/governance-incidents/`
+
+它们需要有自己的工程治理和存储前提，但不应再与产品主数据持久化问题混在一起判断。
 
 ## 6. 推荐的下一阶段增强方向
 
 若目标从“正式发布可用”进一步提升到“更强的多实例与高可用成熟度”，建议按以下顺序推进：
 
-1. 治理证据型存储外部化
-2. SSE ticket 共享化
-3. notebook active run / cancel 控制共享化
-4. file library gateway manager 外部化
+1. SSE ticket 共享化
+2. notebook active run / cancel 控制共享化
+3. file library gateway manager 外部化
+4. 如需继续提升工程证据链，再单独立项治理证据型存储外部化
 
 对应完整清单见：
 

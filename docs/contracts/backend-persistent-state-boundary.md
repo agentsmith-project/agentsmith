@@ -55,6 +55,19 @@ Audience: 后端、前端、测试、发布负责人
 - API 重启后，通知列表和已读状态保留
 - 通知与治理/审计行为保持一致
 
+### 2.4 System 管理侧工作区配置
+
+- system workspace registry
+- 工作区发布状态
+- workspace admin / project creators 绑定快照
+- idp 配置与 tenant 配置
+
+要求：
+
+- system 管理侧创建、更新、发布、禁用、删除后的状态在 API 重启后保留
+- 旧 JSON registry 只作为迁移来源或兼容镜像，不再是生产唯一真相
+- 多实例不能依赖各自本地文件维持工作区清单一致性
+
 ## 3. 允许保留内存的运行态
 
 以下对象允许继续使用进程内状态：
@@ -64,6 +77,16 @@ Audience: 后端、前端、测试、发布负责人
 - notebook SSE 历史缓存
 - notebook trace 热缓存
 - 其他只为当前进程运行效率服务、且重启后可安全重建的状态
+
+以下对象属于**共享运行态**，不应只保留在单实例内存：
+
+- 外部 OAuth callback state
+- agent presence / heartbeat 投影
+
+要求：
+
+- 它们可以不进入 `docStore`
+- 但必须进入共享 cache / Redis，避免 API 重启或多实例分叉导致状态失真
 
 判断标准：
 
@@ -79,6 +102,12 @@ Audience: 后端、前端、测试、发布负责人
 - project join request 主路径
 - me notifications / profile 主路径
 - project member governance 主路径
+- system workspace registry 主路径
+
+### 已收敛到共享运行态
+
+- Feishu OAuth state
+- agent presence
 
 ### 仍保留但不应再作为生产主路径
 
@@ -104,6 +133,7 @@ Audience: 后端、前端、测试、发布负责人
 2. 若会，是否已有持久化 repo / docStore 真相
 3. route / authz / notebook / files / governance 是否都读同一套真相
 4. 是否存在“运行记录已持久化，但主数据仍在内存”的分叉
+5. 若是共享运行态，是否仍错误地只存在单实例内存
 
 推荐的最低验证模式：
 

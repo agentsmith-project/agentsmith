@@ -1,7 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { resetSystemWorkspaceRegistryPersistenceForTest } from '../workspace-registry/persistence';
 import { getPersistedSystemWorkspace, upsertPersistedSystemWorkspace } from '../workspace-registry/persistence';
 
@@ -31,8 +28,6 @@ describe('publishSystemWorkspace retry semantics', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-system-ws-publish-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
     provisioningModule.initializeWorkspaceResources.mockReset();
     resetSystemWorkspaceRegistryPersistenceForTest();
   });

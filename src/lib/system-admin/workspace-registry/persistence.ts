@@ -62,3 +62,11 @@ export async function deletePersistedSystemWorkspace(id: string): Promise<void> 
 export function resetSystemWorkspaceRegistryPersistenceForTest(): void {
   sharedDocStore = null;
 }
+
+export function seedPersistedSystemWorkspacesForTest(records: SystemWorkspaceRecord[]): void {
+  const docStore = new InMemoryJsonDocStore();
+  sharedDocStore = docStore;
+  for (const record of records) {
+    void docStore.upsert<StoredSystemWorkspaceRecord>(SYSTEM_WORKSPACE_COLLECTION, record.id, record);
+  }
+}

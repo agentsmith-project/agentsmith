@@ -1,14 +1,14 @@
 import { afterEach } from 'vitest';
 import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { createDefaultNodeApiDeps, createNodeApiServer } from '../index.js';
+import {
+  resetSystemWorkspaceRegistryPersistenceForTest,
+  seedPersistedSystemWorkspacesForTest,
+} from '../../../../src/lib/system-admin/workspace-registry/persistence.js';
 
 const servers: Server[] = [];
 const originalKeycloakIssuer = process.env.KEYCLOAK_ISSUER_URL;
-const originalSystemWorkspaceRegistryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
 const originalFeishuAppId = process.env.FEISHU_APP_ID;
 const originalFeishuAppSecret = process.env.FEISHU_APP_SECRET;
 const originalFeishuRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI;
@@ -32,11 +32,7 @@ afterEach(async () => {
   } else {
     process.env.KEYCLOAK_ISSUER_URL = originalKeycloakIssuer;
   }
-  if (originalSystemWorkspaceRegistryPath === undefined) {
-    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
-  } else {
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = originalSystemWorkspaceRegistryPath;
-  }
+  resetSystemWorkspaceRegistryPersistenceForTest();
   if (originalFeishuAppId === undefined) delete process.env.FEISHU_APP_ID;
   else process.env.FEISHU_APP_ID = originalFeishuAppId;
   if (originalFeishuAppSecret === undefined) delete process.env.FEISHU_APP_SECRET;
@@ -143,31 +139,35 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string }
 export function startServer(): { server: Server; baseUrl: string; deps: ReturnType<typeof createDefaultNodeApiDeps> } {
   const keycloak = startMockKeycloakServer();
   process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
-  const dir = mkdtempSync(join(tmpdir(), 'agentsmith-default-workspace-registry-'));
-  process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
-  writeFileSync(
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
-    JSON.stringify([
-      {
-        id: 'ws_default',
-        name: 'Default Workspace',
-        workspace_admin: 'owner@example.com',
-        project_creators: ['test@example.com'],
-        idp: {
-          kind: 'keycloak',
-          url: keycloak.issuerUrl,
-          realm: 'mbos',
-          client_id: 'agentsmith-web',
-        },
-        tenant: {
-          substrate: 'default',
-          database_name: 'agentsmith_ws_default',
-          collection_prefix: 'ws_default_',
-        },
+  seedPersistedSystemWorkspacesForTest([
+    {
+      id: 'ws_default',
+      name: 'Default Workspace',
+      workspace_admin: 'owner@example.com',
+      workspace_admin_user_id: 'user_owner',
+      workspace_admin_name: 'Owner User',
+      project_creators: [{ user_id: 'user_test', email: 'test@example.com', name: 'Test User' }],
+      idp: {
+        kind: 'keycloak',
+        url: keycloak.issuerUrl,
+        realm: 'mbos',
+        client_id: 'agentsmith-web',
       },
-    ]),
-    'utf-8',
-  );
+      tenant: {
+        workspace_id: 'ws_default',
+        workspace_name: 'Default Workspace',
+        substrate_label: 'default',
+        database_name: 'agentsmith_ws_default',
+        collection_prefix: 'ws_default_',
+        key_prefix: 'ws_default:',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ]);
   const deps = createDefaultNodeApiDeps();
   const server = createNodeApiServer(0, deps);
   servers.push(server);
@@ -178,31 +178,35 @@ export function startServer(): { server: Server; baseUrl: string; deps: ReturnTy
 export function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
   const keycloak = startMockKeycloakServer();
   process.env.KEYCLOAK_ISSUER_URL = keycloak.issuerUrl;
-  const dir = mkdtempSync(join(tmpdir(), 'agentsmith-default-workspace-registry-'));
-  process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
-  writeFileSync(
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
-    JSON.stringify([
-      {
-        id: 'ws_default',
-        name: 'Default Workspace',
-        workspace_admin: 'owner@example.com',
-        project_creators: ['test@example.com'],
-        idp: {
-          kind: 'keycloak',
-          url: keycloak.issuerUrl,
-          realm: 'mbos',
-          client_id: 'agentsmith-web',
-        },
-        tenant: {
-          substrate: 'default',
-          database_name: 'agentsmith_ws_default',
-          collection_prefix: 'ws_default_',
-        },
+  seedPersistedSystemWorkspacesForTest([
+    {
+      id: 'ws_default',
+      name: 'Default Workspace',
+      workspace_admin: 'owner@example.com',
+      workspace_admin_user_id: 'user_owner',
+      workspace_admin_name: 'Owner User',
+      project_creators: [{ user_id: 'user_test', email: 'test@example.com', name: 'Test User' }],
+      idp: {
+        kind: 'keycloak',
+        url: keycloak.issuerUrl,
+        realm: 'mbos',
+        client_id: 'agentsmith-web',
       },
-    ]),
-    'utf-8',
-  );
+      tenant: {
+        workspace_id: 'ws_default',
+        workspace_name: 'Default Workspace',
+        substrate_label: 'default',
+        database_name: 'agentsmith_ws_default',
+        collection_prefix: 'ws_default_',
+        key_prefix: 'ws_default:',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+  ]);
   const server = createNodeApiServer(0, deps);
   servers.push(server);
   const address = server.address() as AddressInfo;

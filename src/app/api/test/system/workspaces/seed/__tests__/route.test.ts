@@ -10,6 +10,37 @@ vi.mock('@/lib/system-admin/workspace-registry/persistence', () => storageModule
 
 import { POST } from '../route';
 
+function buildRecord(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    id: 'ws_seeded',
+    name: 'Seeded Workspace',
+    workspace_admin: 'seed-admin@example.com',
+    workspace_admin_user_id: 'kc-seed-admin',
+    workspace_admin_name: 'Seed Admin',
+    project_creators: [],
+    idp: {
+      kind: 'keycloak',
+      url: 'https://seed.example.com',
+      realm: 'seed',
+      client_id: 'seed-client',
+    },
+    tenant: {
+      workspace_id: 'ws_seeded',
+      workspace_name: 'Seeded Workspace',
+      substrate_label: 'primary',
+      database_name: 'agentsmith_ws_ws_seeded',
+      collection_prefix: 'ws_ws_seeded_',
+      key_prefix: 'ws:ws_seeded:',
+    },
+    provisioning_status: 'ready',
+    last_initialized_at: '2026-03-15T00:00:00.000Z',
+    last_init_error: null,
+    created_at: '2026-03-15T00:00:00.000Z',
+    updated_at: '2026-03-15T00:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('/api/test/system/workspaces/seed', () => {
   const originalEnv = process.env;
 
@@ -21,12 +52,12 @@ describe('/api/test/system/workspaces/seed', () => {
     process.env = { ...originalEnv, NEXT_PUBLIC_USE_MSW: 'true' };
   });
 
-  it('rejects invalid seed states', async () => {
+  it('rejects invalid workspace payloads', async () => {
     const response = await POST(
       new Request('http://localhost/api/test/system/workspaces/seed', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state: 'unknown' }),
+        body: JSON.stringify({ records: [{ id: 'ws_bad' }] }),
       }),
     );
 
@@ -38,7 +69,7 @@ describe('/api/test/system/workspaces/seed', () => {
       new Request('http://localhost/api/test/system/workspaces/seed', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state: 'empty' }),
+        body: JSON.stringify({ records: [] }),
       }),
     );
 
@@ -52,7 +83,13 @@ describe('/api/test/system/workspaces/seed', () => {
       new Request('http://localhost/api/test/system/workspaces/seed', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state: 'with_failed_workspace' }),
+        body: JSON.stringify({
+          records: [buildRecord({
+            provisioning_status: 'failed',
+            last_initialized_at: null,
+            last_init_error: 'identity_provider_config_incomplete',
+          })],
+        }),
       }),
     );
 
@@ -73,7 +110,7 @@ describe('/api/test/system/workspaces/seed', () => {
       new Request('http://localhost/api/test/system/workspaces/seed', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ state: 'empty' }),
+        body: JSON.stringify({ records: [] }),
       }),
     );
 

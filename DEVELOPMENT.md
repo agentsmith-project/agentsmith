@@ -278,7 +278,7 @@ Notes:
 2. mock visual 基线看 `e2e/__screenshots__/`
 3. 真实后端人工界面审查看 `artifacts/release-real-visual/<run-id>/`
 4. 不再新增泛化的 `tests/` 目录承载主测试代码
-5. 过渡期内仍在使用的 `artifacts/system-workspaces.json` 与 `artifacts/system-workspace-provisioning/` 属于现有运行时输出路径，不要按新目录约定直接重命名或手工迁走
+5. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
 
 ## Governance Mainline Strict Gate
 

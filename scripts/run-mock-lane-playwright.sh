@@ -12,7 +12,6 @@ WARM_URLS_DEFAULT=$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/over
 
 PID_FILE="/tmp/agentsmith_mock_lane_web.pid"
 LOG_FILE="/tmp/agentsmith_mock_lane_web.log"
-MOCK_WORKSPACE_REGISTRY_PATH="artifacts/system-workspaces.mock.json"
 MOCK_WORKSPACE_PROVISIONING_PATH="artifacts/system-workspace-provisioning.mock"
 STARTED_BY_SCRIPT=0
 LAST_PLAYWRIGHT_LOG=""
@@ -39,7 +38,7 @@ cleanup() {
     fi
     rm -f "${PID_FILE}"
   fi
-  rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_REGISTRY_PATH}" "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
+  rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
 }
 trap cleanup EXIT
 
@@ -212,7 +211,7 @@ warm_routes() {
 start_mock_server() {
   local launch_attempt=1
   while [[ "${launch_attempt}" -le 3 ]]; do
-    rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_REGISTRY_PATH}" "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
+    rm -rf "${ROOT_DIR}/${MOCK_WORKSPACE_PROVISIONING_PATH}"
 
     if is_port_listening; then
       info "mock lane requires deterministic MSW mode; restarting :${PORT_WEB}"
@@ -236,7 +235,7 @@ start_mock_server() {
       cd "${ROOT_DIR}"
       exec env \
         NEXT_PUBLIC_USE_MSW=true \
-        SYSTEM_WORKSPACE_REGISTRY_PATH="${MOCK_WORKSPACE_REGISTRY_PATH}" \
+        AGENTSMITH_ENABLE_TEST_ROUTES=true \
         SYSTEM_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH}" \
         npm run dev:test -- --port "${PORT_WEB}"
     ) >>"${LOG_FILE}" 2>&1 &

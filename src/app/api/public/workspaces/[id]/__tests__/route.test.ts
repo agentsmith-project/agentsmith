@@ -9,11 +9,8 @@ vi.mock('@/lib/system-admin/workspace-registry', () => registryModule);
 import { GET } from '../route';
 
 describe('/api/public/workspaces/[id]', () => {
-  const envBackup = { ...process.env };
-
   beforeEach(() => {
     registryModule.getPublicSystemWorkspace.mockReset();
-    process.env = { ...envBackup };
   });
 
   it('returns configured workspace login settings', async () => {
@@ -46,36 +43,11 @@ describe('/api/public/workspaces/[id]', () => {
     });
   });
 
-  it('falls back to default workspace identity config', async () => {
-    process.env.MBOS_DEFAULT_WORKSPACE_ID = 'ws_default';
-    process.env.MBOS_DEFAULT_WORKSPACE_NAME = 'Default Workspace';
-    process.env.NEXT_PUBLIC_KEYCLOAK_URL = 'https://login.example.com';
-    process.env.NEXT_PUBLIC_KEYCLOAK_REALM = 'mbos';
-    process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID = 'agentsmith-web';
+  it('returns 404 when the workspace is not persisted as public', async () => {
     registryModule.getPublicSystemWorkspace.mockResolvedValue(null);
 
     const response = await GET(new Request('http://localhost/api/public/workspaces/ws_default'), {
       params: Promise.resolve({ id: 'ws_default' }),
-    });
-
-    expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({
-      id: 'ws_default',
-      name: 'Default Workspace',
-      idp: {
-        kind: 'keycloak',
-        url: 'https://login.example.com',
-        realm: 'mbos',
-        client_id: 'agentsmith-web',
-      },
-    });
-  });
-
-  it('returns 404 for non-ready workspace config', async () => {
-    registryModule.getPublicSystemWorkspace.mockResolvedValue(null);
-
-    const response = await GET(new Request('http://localhost/api/public/workspaces/ws_alpha'), {
-      params: Promise.resolve({ id: 'ws_alpha' }),
     });
 
     expect(response.status).toBe(404);

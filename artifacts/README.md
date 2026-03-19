@@ -43,7 +43,6 @@
 
 当前仓库仍有少量现有运行时输出继续使用历史路径：
 
-- `artifacts/system-workspaces.json`
 - `artifacts/system-workspace-provisioning/`
 
 它们还被现有代码直接消费，所以现在不要手工迁移或重命名。  

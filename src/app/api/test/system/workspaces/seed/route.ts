@@ -6,67 +6,68 @@ import {
 } from '@/lib/system-admin/workspace-registry/persistence';
 import type { SystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
 
-type SeedState = 'empty' | 'with_workspace' | 'with_disabled_workspace' | 'with_failed_workspace';
+type SeedRequestBody = {
+  records?: unknown;
+};
 
-function buildWorkspace(state: Exclude<SeedState, 'empty'>): SystemWorkspaceRecord {
-  const base: SystemWorkspaceRecord = {
-    id: 'ws_seeded',
-    name: 'Seeded Workspace',
-    workspace_admin: 'seed-admin@example.com',
-    workspace_admin_user_id: 'kc-seed-admin',
-    workspace_admin_name: 'Seed Admin',
-    project_creators: [],
-    idp: {
-      kind: 'keycloak',
-      url: 'https://seed.example.com',
-      realm: 'seed',
-      client_id: 'seed-client',
-    },
-    tenant: {
-      workspace_id: 'ws_seeded',
-      workspace_name: 'Seeded Workspace',
-      substrate_label: 'primary',
-      database_name: 'agentsmith_ws_ws_seeded',
-      collection_prefix: 'ws_ws_seeded_',
-      key_prefix: 'ws:ws_seeded:',
-    },
-    provisioning_status: 'ready',
-    last_initialized_at: '2026-03-15T00:00:00.000Z',
-    last_init_error: null,
-    created_at: '2026-03-15T00:00:00.000Z',
-    updated_at: '2026-03-15T00:00:00.000Z',
-  };
+function isIdentitySnapshotArray(value: unknown): value is SystemWorkspaceRecord['project_creators'] {
+  return Array.isArray(value) && value.every((item) => (
+    typeof item === 'object' &&
+    item !== null &&
+    typeof item['user_id'] === 'string' &&
+    typeof item['email'] === 'string' &&
+    (item['name'] === null || item['name'] === undefined || typeof item['name'] === 'string')
+  ));
+}
 
-  if (state === 'with_disabled_workspace') {
-    return { ...base, provisioning_status: 'disabled' };
+function isSystemWorkspaceRecord(value: unknown): value is SystemWorkspaceRecord {
+  if (typeof value !== 'object' || value === null) {
+    return false;
   }
-
-  if (state === 'with_failed_workspace') {
-    return {
-      ...base,
-      provisioning_status: 'failed',
-      last_initialized_at: null,
-      last_init_error: 'identity_provider_config_incomplete',
-    };
+  const record = value as Record<string, unknown>;
+  const idp = record['idp'];
+  const tenant = record['tenant'];
+  if (typeof idp !== 'object' || idp === null || typeof tenant !== 'object' || tenant === null) {
+    return false;
   }
-
-  return base;
+  const idpRecord = idp as Record<string, unknown>;
+  const tenantRecord = tenant as Record<string, unknown>;
+  return typeof record['id'] === 'string'
+    && typeof record['name'] === 'string'
+    && typeof record['workspace_admin'] === 'string'
+    && typeof record['workspace_admin_user_id'] === 'string'
+    && typeof record['workspace_admin_name'] === 'string'
+    && isIdentitySnapshotArray(record['project_creators'])
+    && typeof idpRecord['kind'] === 'string'
+    && typeof idpRecord['url'] === 'string'
+    && typeof idpRecord['realm'] === 'string'
+    && typeof idpRecord['client_id'] === 'string'
+    && typeof tenantRecord['workspace_id'] === 'string'
+    && typeof tenantRecord['workspace_name'] === 'string'
+    && typeof tenantRecord['substrate_label'] === 'string'
+    && typeof tenantRecord['database_name'] === 'string'
+    && typeof tenantRecord['collection_prefix'] === 'string'
+    && typeof tenantRecord['key_prefix'] === 'string'
+    && typeof record['provisioning_status'] === 'string'
+    && (record['last_initialized_at'] === null || typeof record['last_initialized_at'] === 'string')
+    && (record['last_init_error'] === null || typeof record['last_init_error'] === 'string')
+    && typeof record['created_at'] === 'string'
+    && typeof record['updated_at'] === 'string';
 }
 
 export async function POST(request: Request) {
-  if (process.env.NEXT_PUBLIC_USE_MSW !== 'true') {
+  if (process.env.NEXT_PUBLIC_USE_MSW !== 'true' && process.env.AGENTSMITH_ENABLE_TEST_ROUTES !== 'true') {
     return NextResponse.json({ error_code: 'NOT_FOUND', error_message: 'not_found' }, { status: 404 });
   }
 
-  const body = (await request.json().catch(() => null)) as { state?: SeedState } | null;
-  const state = body?.state;
-  if (state !== 'empty' && state !== 'with_workspace' && state !== 'with_disabled_workspace' && state !== 'with_failed_workspace') {
-    return NextResponse.json({ error_code: 'VALIDATION_ERROR', error_message: 'invalid_seed_state' }, { status: 422 });
+  const body = (await request.json().catch(() => null)) as SeedRequestBody | null;
+  const records = body?.records;
+  if (!Array.isArray(records) || !records.every((item) => isSystemWorkspaceRecord(item))) {
+    return NextResponse.json({ error_code: 'VALIDATION_ERROR', error_message: 'invalid_workspace_records' }, { status: 422 });
   }
 
   const existing = await listPersistedSystemWorkspaces();
   await Promise.all(existing.map((record) => deletePersistedSystemWorkspace(record.id)));
-  const records = state === 'empty' ? [] : [buildWorkspace(state)];
   await Promise.all(records.map((record) => upsertPersistedSystemWorkspace(record)));
   return NextResponse.json({ ok: true, total: records.length });
 }

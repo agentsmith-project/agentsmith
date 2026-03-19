@@ -132,15 +132,14 @@
 
 当前仓库里仍有少量现有运行时输出继续沿用历史路径：
 
-- `artifacts/system-workspaces.json`
 - `artifacts/system-workspace-provisioning/`
 
-它们目前仍被 system 管理侧和后端基础初始化流程直接使用。  
+它目前仍被 system 管理侧的工作区发布/初始化流程直接使用。  
 这意味着：
 
 - 新的长期证据目录约定已经成立
 - 但不能因为有了 `artifacts/system-state/` 这样的新命名，就直接把上述现有路径手工迁走或重命名
 
 当前正确理解是：
-- `artifacts/system-workspaces.json` / `artifacts/system-workspace-provisioning/` 是**现有运行时输出路径**
+- `artifacts/system-workspace-provisioning/` 是**当前运行时输出路径**
 - `artifacts/system-state/` 是**后续长期状态快照与审查资产**的收口方向

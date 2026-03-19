@@ -81,9 +81,53 @@ async function loginAsSystemAdmin(page: Page) {
   await waitForPageReady(page);
 }
 
+function buildSeededWorkspaceRecord(state: 'with_workspace' | 'with_disabled_workspace' | 'with_failed_workspace') {
+  const base = {
+    id: 'ws_seeded',
+    name: 'Seeded Workspace',
+    workspace_admin: 'seed-admin@example.com',
+    workspace_admin_user_id: 'kc-seed-admin',
+    workspace_admin_name: 'Seed Admin',
+    project_creators: [],
+    idp: {
+      kind: 'keycloak',
+      url: 'https://seed.example.com',
+      realm: 'seed',
+      client_id: 'seed-client',
+    },
+    tenant: {
+      workspace_id: 'ws_seeded',
+      workspace_name: 'Seeded Workspace',
+      substrate_label: 'primary',
+      database_name: 'agentsmith_ws_ws_seeded',
+      collection_prefix: 'ws_ws_seeded_',
+      key_prefix: 'ws:ws_seeded:',
+    },
+    provisioning_status: 'ready',
+    last_initialized_at: '2026-03-15T00:00:00.000Z',
+    last_init_error: null,
+    created_at: '2026-03-15T00:00:00.000Z',
+    updated_at: '2026-03-15T00:00:00.000Z',
+  };
+  if (state === 'with_disabled_workspace') {
+    return { ...base, provisioning_status: 'disabled' };
+  }
+  if (state === 'with_failed_workspace') {
+    return {
+      ...base,
+      provisioning_status: 'failed',
+      last_initialized_at: null,
+      last_init_error: 'identity_provider_config_incomplete',
+    };
+  }
+  return base;
+}
+
 async function seedSystemWorkspaces(request: APIRequestContext, state: 'empty' | 'with_workspace' | 'with_disabled_workspace' | 'with_failed_workspace') {
   const response = await request.post('/api/test/system/workspaces/seed', {
-    data: { state },
+    data: {
+      records: state === 'empty' ? [] : [buildSeededWorkspaceRecord(state)],
+    },
   });
   expect(response.ok()).toBe(true);
 }

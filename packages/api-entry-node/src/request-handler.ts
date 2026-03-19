@@ -164,7 +164,7 @@ export async function handleRequest(
             return;
           }
         } catch {
-          // Keep compatibility with in-memory local routes that are not yet tied to project repo records.
+          // Ignore authorization introspection failures on routes that are not bound to a project resource record.
         }
       }
     }

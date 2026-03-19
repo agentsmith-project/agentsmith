@@ -67,4 +67,37 @@ describe('builtin-skills', () => {
       rmSync(cwdRoot, { recursive: true, force: true });
     }
   });
+
+  it('reuses existing mounted skill when overwrite is denied', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const cwdRoot = mkdtempSync(join(tmpdir(), 'runner-skills-cwd-'));
+    try {
+      mkdirSync(join(sourceRoot, '.system'), { recursive: true });
+      writeFileSync(join(sourceRoot, '.system', 'SKILL.md'), 'new-system');
+
+      const targetRoot = join(cwdRoot, '.codex', 'skills', '.system');
+      mkdirSync(targetRoot, { recursive: true });
+      writeFileSync(join(targetRoot, 'SKILL.md'), 'old-system');
+
+      const result = await syncBuiltinSkills({
+        cwd: cwdRoot,
+        sourceDir: sourceRoot,
+        skills: ['.system'],
+        required: true,
+        copyFileTree: async (_source, target) => {
+        if (String(target).includes('.codex/skills/.system')) {
+          const error = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+          throw error;
+        }
+        },
+      });
+
+      expect(result.mounted).toEqual(['.system']);
+      expect(result.missing).toEqual([]);
+      expect(existsSync(join(targetRoot, 'SKILL.md'))).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(cwdRoot, { recursive: true, force: true });
+    }
+  });
 });

@@ -47,6 +47,7 @@ export async function syncBuiltinSkills(args: {
   sourceDir: string;
   skills: string[];
   required: boolean;
+  copyFileTree?: (sourcePath: string, targetPath: string) => Promise<void>;
 }): Promise<{
   mounted: string[];
   missing: string[];
@@ -55,6 +56,10 @@ export async function syncBuiltinSkills(args: {
   const mounted: string[] = [];
   const missing: string[] = [];
   const skillsRoot = join(args.cwd, '.codex', 'skills');
+  const copyFileTree = args.copyFileTree ?? ((sourcePath: string, targetPath: string) => cp(sourcePath, targetPath, {
+    recursive: true,
+    force: true,
+  }));
   for (const skill of args.skills) {
     const sourcePath = join(args.sourceDir, skill);
     if (!existsSync(sourcePath)) {
@@ -62,7 +67,21 @@ export async function syncBuiltinSkills(args: {
       continue;
     }
     const targetPath = join(skillsRoot, skill);
-    await cp(sourcePath, targetPath, { recursive: true, force: true });
+    try {
+      await copyFileTree(sourcePath, targetPath);
+    } catch (error) {
+      const code = typeof error === 'object' && error !== null && 'code' in error
+        ? String((error as { code?: string }).code)
+        : '';
+      // Internal agents reuse a persistent workspace. If builtin skills were
+      // already synced by a previous run with different ownership, prefer the
+      // existing copy over failing the whole request on overwrite.
+      if ((code === 'EACCES' || code === 'EPERM') && existsSync(targetPath)) {
+        mounted.push(skill);
+        continue;
+      }
+      throw error;
+    }
     mounted.push(skill);
   }
   if (args.required && missing.length > 0) {

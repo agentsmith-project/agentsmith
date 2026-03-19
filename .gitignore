@@ -67,6 +67,7 @@ artifacts/system-workspaces.json
 artifacts/system-workspaces.mock.json
 artifacts/system-workspace-provisioning/
 artifacts/system-workspace-provisioning.mock/
+artifacts/product-docs/
 packages/api-entry-node/artifacts/
 artifacts/governance-reports/report-*.json
 artifacts/governance-reports/report-*.md

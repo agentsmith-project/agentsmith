@@ -14,6 +14,9 @@ import {
 import { resetSystemWorkspaceRegistryPersistenceForTest } from '../workspace-registry/persistence';
 
 const keycloakDirectoryModule = vi.hoisted(() => ({
+  verifyKeycloakLoginIdentityProvider: vi.fn(async () => ({
+    idp_ok: true,
+  })) as ReturnType<typeof vi.fn>,
   verifyKeycloakIdentityProvider: vi.fn(async () => ({
     idp_ok: true,
     directory_search_supported: true,
@@ -52,10 +55,11 @@ describe('system workspace registry', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
       workspace_admin_email: 'admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'platform',
-      idp_client_id: 'agentsmith-platform',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'platform',
+      login_client_id: 'agentsmith-platform-login',
+      directory_client_id: 'agentsmith-platform-directory',
+      directory_client_secret: 'secret-1',
     });
 
     expect(created.provisioning_status).toBe('draft');
@@ -70,11 +74,14 @@ describe('system workspace registry', () => {
         workspace_admin: 'admin@example.com',
         workspace_admin_user_id: 'kc-admin-001',
         project_creators: [],
-        idp: expect.objectContaining({
+        login_idp: expect.objectContaining({
           kind: 'keycloak',
           url: 'https://idp.example.com',
           realm: 'platform',
-          client_id: 'agentsmith-platform',
+          client_id: 'agentsmith-platform-login',
+        }),
+        directory_idp: expect.objectContaining({
+          client_id: 'agentsmith-platform-directory',
           has_client_secret: true,
         }),
       }),
@@ -87,10 +94,11 @@ describe('system workspace registry', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
       workspace_admin_email: 'admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'platform',
-      idp_client_id: 'agentsmith-platform',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'platform',
+      login_client_id: 'agentsmith-platform-login',
+      directory_client_id: 'agentsmith-platform-directory',
+      directory_client_secret: 'secret-1',
     });
 
     const updated = await updateSystemWorkspace('platform_ops', {
@@ -98,18 +106,19 @@ describe('system workspace registry', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-ops-001',
       workspace_admin_email: 'ops-admin@example.com',
-      idp_url: 'https://login.example.com',
-      idp_realm: 'platform-prod',
-      idp_client_id: 'agentsmith-platform-prod',
-      idp_client_secret: '',
+      login_idp_url: 'https://login.example.com',
+      login_idp_realm: 'platform-prod',
+      login_client_id: 'agentsmith-platform-prod-login',
+      directory_client_id: 'agentsmith-platform-prod-directory',
+      directory_client_secret: '',
     });
 
     expect(updated.workspace_admin).toBe('ops-admin@example.com');
     expect(updated.workspace_admin_user_id).toBe('kc-ops-001');
     expect(updated.project_creators).toEqual([]);
-    expect(updated.idp.url).toBe('https://login.example.com');
-    expect(updated.idp.realm).toBe('platform-prod');
-    expect(updated.idp.client_secret).toBe('secret-1');
+    expect(updated.login_idp.url).toBe('https://login.example.com');
+    expect(updated.login_idp.realm).toBe('platform-prod');
+    expect(updated.directory_idp?.client_secret).toBe('secret-1');
     expect(updated.provisioning_status).toBe('draft');
     expect(updated.last_initialized_at).toBeNull();
     expect(updated.last_init_error).toBeNull();
@@ -121,10 +130,11 @@ describe('system workspace registry', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
       workspace_admin_email: 'admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'platform',
-      idp_client_id: 'agentsmith-platform',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'platform',
+      login_client_id: 'agentsmith-platform-login',
+      directory_client_id: 'agentsmith-platform-directory',
+      directory_client_secret: 'secret-1',
     });
 
     const published = await publishSystemWorkspace('platform_ops');
@@ -194,10 +204,11 @@ describe('system workspace registry', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
       workspace_admin_email: 'admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'delete-guard',
-      idp_client_id: 'agentsmith-delete-guard',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'delete-guard',
+      login_client_id: 'agentsmith-delete-guard-login',
+      directory_client_id: 'agentsmith-delete-guard-directory',
+      directory_client_secret: 'secret-1',
     });
 
     await expect(deleteSystemWorkspace('delete_guard_workspace')).rejects.toMatchObject({
@@ -219,10 +230,11 @@ describe('system workspace registry', () => {
       name: 'Email Pending Workspace',
       workspace_admin_mode: 'email_pending',
       workspace_admin_email: 'future-admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'pending',
-      idp_client_id: 'agentsmith-pending',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'pending',
+      login_client_id: 'agentsmith-pending-login',
+      directory_client_id: 'agentsmith-pending-directory',
+      directory_client_secret: 'secret-1',
     });
 
     expect(created.workspace_admin).toBe('future-admin@example.com');

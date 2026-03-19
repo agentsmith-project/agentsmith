@@ -26,10 +26,11 @@ export type SystemWorkspaceDraft = {
   adminEmail: string;
   adminQuery: string;
   admin: SystemWorkspaceDraftAdmin | null;
-  idpUrl: string;
-  idpRealm: string;
-  idpClientId: string;
-  idpClientSecret: string;
+  loginIdpUrl: string;
+  loginIdpRealm: string;
+  loginClientId: string;
+  directoryClientId: string;
+  directoryClientSecret: string;
 };
 
 export type SystemWorkspaceEditorState = {
@@ -38,6 +39,7 @@ export type SystemWorkspaceEditorState = {
   selectedWorkspace: PublicSystemWorkspaceRecord | null;
   selectedStatus: WorkspaceProvisioningStatus;
   isEditingWorkspace: boolean;
+  isEditMode: boolean;
   canSubmit: boolean;
   canPublish: boolean;
   canDisable: boolean;

@@ -17,7 +17,7 @@ import { ArrowRight } from 'lucide-react';
 type WorkspaceLoginConfig = {
   id: string;
   name: string;
-  idp: {
+  login_idp: {
     kind: 'keycloak';
     url: string;
     realm: string;
@@ -104,8 +104,8 @@ export default function WorkspaceLoginPage() {
       return;
     }
 
-    const realmBase = resolveKeycloakRealmBase(config.idp.url, config.idp.realm);
-    if (!realmBase || !config.idp.client_id) {
+    const realmBase = resolveKeycloakRealmBase(config.login_idp.url, config.login_idp.realm);
+    if (!realmBase || !config.login_idp.client_id) {
       setKeycloakError('keycloak_not_configured');
       return;
     }
@@ -117,15 +117,15 @@ export default function WorkspaceLoginPage() {
       const verifier = randomBase64Url(48);
       const state = randomBase64Url(24);
       const pkce = await createPkceChallenge(verifier);
-      const redirectUri = `${window.location.origin}/${locale}/workspaces/${workspaceId}/login/callback`;
+      const redirectUri = `${window.location.origin}/workspaces/${workspaceId}/login/callback`;
       sessionStorage.setItem(
         'mbos:keycloak:pkce',
-        JSON.stringify({ verifier, state, redirectUri, createdAt: Date.now(), workspaceId }),
+        JSON.stringify({ verifier, state, redirectUri, createdAt: Date.now(), workspaceId, locale }),
       );
 
       const authUrl = new URL(`${realmBase}/protocol/openid-connect/auth`);
       authUrl.searchParams.set('response_type', 'code');
-      authUrl.searchParams.set('client_id', config.idp.client_id);
+      authUrl.searchParams.set('client_id', config.login_idp.client_id);
       authUrl.searchParams.set('redirect_uri', redirectUri);
       authUrl.searchParams.set('scope', 'openid profile email');
       authUrl.searchParams.set('state', state);

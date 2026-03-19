@@ -1,5 +1,9 @@
 import { initializeWorkspaceResources } from './workspace-registry/provisioning';
-import { resolveKeycloakUserById, verifyKeycloakIdentityProvider } from './keycloak-user-directory';
+import {
+  resolveKeycloakUserById,
+  verifyKeycloakIdentityProvider,
+  verifyKeycloakLoginIdentityProvider,
+} from './keycloak-user-directory';
 import {
   buildUpdatedWorkspaceRecord,
   createWorkspaceRecord,
@@ -14,7 +18,8 @@ import {
 export type {
   PublicSystemWorkspaceRecord,
   PublishSystemWorkspaceResult,
-  SystemWorkspaceIdpConfig,
+  SystemWorkspaceDirectoryIdpConfig,
+  SystemWorkspaceLoginIdpConfig,
   SystemWorkspaceRecord,
   UpsertSystemWorkspaceInput,
   WorkspaceProvisioningStatus,
@@ -23,6 +28,7 @@ import type {
   PublicSystemWorkspaceRecord,
   SystemWorkspaceRecord,
   UpsertSystemWorkspaceInput,
+  WorkspaceIdentitySnapshot,
 } from './workspace-registry/types';
 
 export async function listSystemWorkspaces(): Promise<SystemWorkspaceRecord[]> {
@@ -49,26 +55,31 @@ export async function getPublicSystemWorkspace(id: string): Promise<SystemWorksp
 
 export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): Promise<SystemWorkspaceRecord> {
   const records = await listPersistedSystemWorkspaces();
-  const verification = await verifyKeycloakIdentityProvider({
-    idpUrl: input.idp_url,
-    realm: input.idp_realm,
-    clientId: input.idp_client_id,
-    clientSecret: input.idp_client_secret,
+  const effectiveDirectoryClientId = input.directory_client_id?.trim() || (input.directory_client_secret?.trim() ? input.login_client_id.trim() : '');
+  const loginVerification = await verifyKeycloakLoginIdentityProvider({
+    idpUrl: input.login_idp_url,
+    realm: input.login_idp_realm,
   });
-  if (!verification.idp_ok) {
+  if (!loginVerification.idp_ok) {
     throw Object.assign(new Error('keycloak_idp_invalid'), { code: 'KEYCLOAK_IDP_INVALID' });
   }
-  if (input.workspace_admin_mode === 'directory_user' && !verification.directory_search_supported) {
+  const directoryVerification = await verifyKeycloakIdentityProvider({
+    idpUrl: input.login_idp_url,
+    realm: input.login_idp_realm,
+    clientId: effectiveDirectoryClientId,
+    clientSecret: input.directory_client_secret,
+  });
+  if (input.workspace_admin_mode === 'directory_user' && !directoryVerification.directory_search_supported) {
     throw Object.assign(new Error('keycloak_directory_permission_required'), {
       code: 'KEYCLOAK_DIRECTORY_PERMISSION_REQUIRED',
     });
   }
   const workspaceAdmin = input.workspace_admin_mode === 'directory_user'
     ? await resolveKeycloakUserById({
-        idpUrl: input.idp_url,
-        realm: input.idp_realm,
-        clientId: input.idp_client_id,
-        clientSecret: input.idp_client_secret,
+        idpUrl: input.login_idp_url,
+        realm: input.login_idp_realm,
+        clientId: effectiveDirectoryClientId,
+        clientSecret: input.directory_client_secret,
         userId: input.workspace_admin_user_id ?? '',
       })
     : null;
@@ -86,26 +97,35 @@ export async function updateSystemWorkspace(
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
-  const verification = await verifyKeycloakIdentityProvider({
-    idpUrl: input.idp_url,
-    realm: input.idp_realm,
-    clientId: input.idp_client_id,
-    clientSecret: input.idp_client_secret || existing.idp.client_secret,
+  const effectiveDirectoryClientId = input.directory_client_id?.trim() || (
+    input.directory_client_secret?.trim()
+      ? input.login_client_id.trim()
+      : (existing.directory_idp?.client_id?.trim() || '')
+  );
+  const loginVerification = await verifyKeycloakLoginIdentityProvider({
+    idpUrl: input.login_idp_url,
+    realm: input.login_idp_realm,
   });
-  if (!verification.idp_ok) {
+  if (!loginVerification.idp_ok) {
     throw Object.assign(new Error('keycloak_idp_invalid'), { code: 'KEYCLOAK_IDP_INVALID' });
   }
-  if (input.workspace_admin_mode === 'directory_user' && !verification.directory_search_supported) {
+  const directoryVerification = await verifyKeycloakIdentityProvider({
+    idpUrl: input.login_idp_url,
+    realm: input.login_idp_realm,
+    clientId: effectiveDirectoryClientId,
+    clientSecret: input.directory_client_secret || existing.directory_idp?.client_secret,
+  });
+  if (input.workspace_admin_mode === 'directory_user' && !directoryVerification.directory_search_supported) {
     throw Object.assign(new Error('keycloak_directory_permission_required'), {
       code: 'KEYCLOAK_DIRECTORY_PERMISSION_REQUIRED',
     });
   }
   const workspaceAdmin = input.workspace_admin_mode === 'directory_user'
     ? await resolveKeycloakUserById({
-        idpUrl: input.idp_url,
-        realm: input.idp_realm,
-        clientId: input.idp_client_id,
-        clientSecret: input.idp_client_secret || existing.idp.client_secret,
+        idpUrl: input.login_idp_url,
+        realm: input.login_idp_realm,
+        clientId: effectiveDirectoryClientId,
+        clientSecret: input.directory_client_secret || existing.directory_idp?.client_secret,
         userId: input.workspace_admin_user_id ?? '',
       })
     : null;
@@ -174,4 +194,28 @@ export async function deleteSystemWorkspace(id: string): Promise<void> {
     });
   }
   await deletePersistedSystemWorkspace(id);
+}
+
+export async function bindPendingWorkspaceAdminByEmail(args: {
+  workspaceId: string;
+  user: WorkspaceIdentitySnapshot;
+}): Promise<SystemWorkspaceRecord | null> {
+  const existing = await getPersistedSystemWorkspace(args.workspaceId);
+  if (!existing || !existing.workspace_admin_binding_required) {
+    return existing;
+  }
+  if (existing.workspace_admin.trim().toLowerCase() !== args.user.email.trim().toLowerCase()) {
+    return existing;
+  }
+
+  const updated: SystemWorkspaceRecord = {
+    ...existing,
+    workspace_admin: args.user.email,
+    workspace_admin_user_id: args.user.user_id,
+    workspace_admin_name: args.user.name ?? null,
+    workspace_admin_binding_required: false,
+    updated_at: new Date().toISOString(),
+  };
+  await upsertPersistedSystemWorkspace(updated);
+  return updated;
 }

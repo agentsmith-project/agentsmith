@@ -53,7 +53,7 @@ describe('WorkspaceLoginPage', () => {
       json: async () => ({
         id: 'ws_alpha',
         name: 'Alpha Workspace',
-        idp: {
+        login_idp: {
           kind: 'keycloak',
           url: 'https://login.example.com',
           realm: 'alpha',
@@ -100,7 +100,7 @@ describe('WorkspaceLoginPage', () => {
     expect(mockPush).toHaveBeenCalledWith('/workspaces/ws_alpha');
   });
 
-  it('starts keycloak login with workspace-specific callback', async () => {
+  it('starts keycloak login with a locale-independent workspace callback', async () => {
     render(<WorkspaceLoginPage />);
 
     expect(await screen.findByTestId('workspace-login__keycloak-btn')).toBeInTheDocument();
@@ -108,7 +108,8 @@ describe('WorkspaceLoginPage', () => {
 
     await waitFor(() => expect(mockAssign).toHaveBeenCalledTimes(1));
     const [authUrl] = mockAssign.mock.calls[0] as [string];
-    expect(decodeURIComponent(authUrl)).toContain('/en-US/workspaces/ws_alpha/login/callback');
+    expect(decodeURIComponent(authUrl)).toContain('/workspaces/ws_alpha/login/callback');
+    expect(decodeURIComponent(authUrl)).not.toContain('/en-US/workspaces/ws_alpha/login/callback');
   });
 
   it('shows not found state when workspace login config is unavailable', async () => {

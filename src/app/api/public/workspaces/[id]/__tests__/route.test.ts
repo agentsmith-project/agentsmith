@@ -17,12 +17,11 @@ describe('/api/public/workspaces/[id]', () => {
     registryModule.getPublicSystemWorkspace.mockResolvedValue({
       id: 'ws_alpha',
       name: 'Alpha Workspace',
-      idp: {
+      login_idp: {
         kind: 'keycloak',
         url: 'https://login.example.com',
         realm: 'alpha',
         client_id: 'alpha-client',
-        client_secret: 'secret',
       },
     });
 
@@ -34,7 +33,7 @@ describe('/api/public/workspaces/[id]', () => {
     await expect(response.json()).resolves.toEqual({
       id: 'ws_alpha',
       name: 'Alpha Workspace',
-      idp: {
+      login_idp: {
         kind: 'keycloak',
         url: 'https://login.example.com',
         realm: 'alpha',

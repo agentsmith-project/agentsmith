@@ -355,3 +355,14 @@ export async function verifyKeycloakIdentityProvider(args: {
     code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
   });
 }
+
+export async function verifyKeycloakLoginIdentityProvider(args: {
+  idpUrl: string;
+  realm: string;
+}): Promise<{ idp_ok: boolean }> {
+  if (shouldUseMockKeycloakDirectory()) {
+    return { idp_ok: true };
+  }
+  await verifyRealmBase(args.idpUrl, args.realm);
+  return { idp_ok: true };
+}

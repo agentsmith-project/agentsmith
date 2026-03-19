@@ -1,10 +1,14 @@
 import type { buildWorkspaceTenantPreview } from '../config';
 
-export interface SystemWorkspaceIdpConfig {
+export interface SystemWorkspaceLoginIdpConfig {
   kind: 'keycloak';
   url: string;
   realm: string;
   client_id: string;
+}
+
+export interface SystemWorkspaceDirectoryIdpConfig {
+  client_id?: string;
   client_secret?: string;
 }
 
@@ -31,7 +35,8 @@ export interface SystemWorkspaceRecord {
   workspace_admin_name?: string | null;
   workspace_admin_binding_required?: boolean;
   project_creators: WorkspaceIdentitySnapshot[];
-  idp: SystemWorkspaceIdpConfig;
+  login_idp: SystemWorkspaceLoginIdpConfig;
+  directory_idp?: SystemWorkspaceDirectoryIdpConfig;
   tenant: ReturnType<typeof buildWorkspaceTenantPreview>;
   provisioning_status: WorkspaceProvisioningStatus;
   last_initialized_at: string | null;
@@ -40,8 +45,10 @@ export interface SystemWorkspaceRecord {
   updated_at: string;
 }
 
-export interface PublicSystemWorkspaceRecord extends Omit<SystemWorkspaceRecord, 'idp'> {
-  idp: Omit<SystemWorkspaceIdpConfig, 'client_secret'> & {
+export interface PublicSystemWorkspaceRecord extends Omit<SystemWorkspaceRecord, 'login_idp' | 'directory_idp'> {
+  login_idp: SystemWorkspaceLoginIdpConfig;
+  directory_idp: {
+    client_id?: string;
     has_client_secret: boolean;
   };
 }
@@ -51,10 +58,11 @@ export interface UpsertSystemWorkspaceInput {
   workspace_admin_mode: WorkspaceAdminBindingMode;
   workspace_admin_user_id?: string;
   workspace_admin_email: string;
-  idp_url: string;
-  idp_realm: string;
-  idp_client_id: string;
-  idp_client_secret?: string;
+  login_idp_url: string;
+  login_idp_realm: string;
+  login_client_id: string;
+  directory_client_id?: string;
+  directory_client_secret?: string;
 }
 
 export interface PublishSystemWorkspaceResult {

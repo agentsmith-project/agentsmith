@@ -63,7 +63,10 @@ describe('SystemWorkspaceCreatePage', () => {
       target: { value: 'ops' },
     });
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
-      target: { value: 'ops-client' },
+      target: { value: 'ops-login-client' },
+    });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-directory-client-id'), {
+      target: { value: 'ops-directory-client' },
     });
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-secret'), {
       target: { value: 'ops-secret' },
@@ -113,7 +116,7 @@ describe('SystemWorkspaceCreatePage', () => {
       target: { value: 'ops' },
     });
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
-      target: { value: 'ops-client' },
+      target: { value: 'ops-login-client' },
     });
     fireEvent.click(screen.getByTestId('system-workspaces__verify-idp'));
     await waitFor(() => expect(screen.getByTestId('system-workspaces__idp-status')).toHaveTextContent('idp_status_verified_without_directory'));

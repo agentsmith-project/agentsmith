@@ -17,11 +17,14 @@ export function makeWorkspace(overrides: WorkspaceOverrides = {}): PublicSystemW
     workspace_admin_user_id: `${workspaceKey}-admin-id`,
     workspace_admin_name: `${workspaceKey} admin`,
     project_creators: [],
-    idp: {
+    login_idp: {
       kind: 'keycloak',
       url: `https://${workspaceKey}.example.com`,
       realm: workspaceKey,
       client_id: `${workspaceKey}-client`,
+    },
+    directory_idp: {
+      client_id: `${workspaceKey}-directory-client`,
       has_client_secret: true,
     },
     tenant: {

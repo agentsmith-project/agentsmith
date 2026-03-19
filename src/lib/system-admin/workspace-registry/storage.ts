@@ -3,7 +3,8 @@ import { dirname } from 'node:path';
 import { buildWorkspaceTenantPreview } from '../config';
 import type {
   PublicSystemWorkspaceRecord,
-  SystemWorkspaceIdpConfig,
+  SystemWorkspaceDirectoryIdpConfig,
+  SystemWorkspaceLoginIdpConfig,
   SystemWorkspaceRecord,
   UpsertSystemWorkspaceInput,
   WorkspaceIdentitySnapshot,
@@ -13,12 +14,15 @@ export function sanitizeRecord(record: SystemWorkspaceRecord): PublicSystemWorks
   return {
     ...record,
     project_creators: record.project_creators.map((item) => ({ ...item })),
-    idp: {
-      kind: record.idp.kind,
-      url: record.idp.url,
-      realm: record.idp.realm,
-      client_id: record.idp.client_id,
-      has_client_secret: Boolean(record.idp.client_secret),
+    login_idp: {
+      kind: record.login_idp.kind,
+      url: record.login_idp.url,
+      realm: record.login_idp.realm,
+      client_id: record.login_idp.client_id,
+    },
+    directory_idp: {
+      client_id: record.directory_idp?.client_id,
+      has_client_secret: Boolean(record.directory_idp?.client_secret),
     },
   };
 }
@@ -46,12 +50,15 @@ export function createWorkspaceRecord(
     workspace_admin_name: workspaceAdmin?.name ?? null,
     workspace_admin_binding_required: workspaceAdmin ? false : true,
     project_creators: [],
-    idp: {
+    login_idp: {
       kind: 'keycloak',
-      url: input.idp_url.trim(),
-      realm: input.idp_realm.trim(),
-      client_id: input.idp_client_id.trim(),
-      client_secret: input.idp_client_secret?.trim() || undefined,
+      url: input.login_idp_url.trim(),
+      realm: input.login_idp_realm.trim(),
+      client_id: input.login_client_id.trim(),
+    },
+    directory_idp: {
+      client_id: input.directory_client_id?.trim() || (input.directory_client_secret?.trim() ? input.login_client_id.trim() : undefined),
+      client_secret: input.directory_client_secret?.trim() || undefined,
     },
     tenant,
     provisioning_status: 'draft',
@@ -67,22 +74,26 @@ export function buildUpdatedWorkspaceRecord(
   input: UpsertSystemWorkspaceInput,
   workspaceAdmin: WorkspaceIdentitySnapshot | null,
 ): SystemWorkspaceRecord {
-  const nextIdp: SystemWorkspaceIdpConfig = {
+  const nextLoginIdp: SystemWorkspaceLoginIdpConfig = {
     kind: 'keycloak',
-    url: input.idp_url.trim(),
-    realm: input.idp_realm.trim(),
-    client_id: input.idp_client_id.trim(),
-    client_secret: input.idp_client_secret?.trim() || existing.idp.client_secret,
+    url: input.login_idp_url.trim(),
+    realm: input.login_idp_realm.trim(),
+    client_id: input.login_client_id.trim(),
+  };
+  const nextDirectoryIdp: SystemWorkspaceDirectoryIdpConfig = {
+    client_id: input.directory_client_id?.trim() || (input.directory_client_secret?.trim() ? input.login_client_id.trim() : undefined),
+    client_secret: input.directory_client_secret?.trim() || existing.directory_idp?.client_secret,
   };
   const requiresRepublish =
     existing.name !== input.name.trim() ||
     existing.workspace_admin !== (workspaceAdmin?.email ?? input.workspace_admin_email.trim()) ||
     existing.workspace_admin_user_id !== workspaceAdmin?.user_id ||
     Boolean(existing.workspace_admin_binding_required) !== !workspaceAdmin ||
-    existing.idp.url !== nextIdp.url ||
-    existing.idp.realm !== nextIdp.realm ||
-    existing.idp.client_id !== nextIdp.client_id ||
-    (existing.idp.client_secret || '') !== (nextIdp.client_secret || '');
+    existing.login_idp.url !== nextLoginIdp.url ||
+    existing.login_idp.realm !== nextLoginIdp.realm ||
+    existing.login_idp.client_id !== nextLoginIdp.client_id ||
+    (existing.directory_idp?.client_id || '') !== (nextDirectoryIdp.client_id || '') ||
+    (existing.directory_idp?.client_secret || '') !== (nextDirectoryIdp.client_secret || '');
 
   return {
     ...existing,
@@ -91,7 +102,8 @@ export function buildUpdatedWorkspaceRecord(
     workspace_admin_user_id: workspaceAdmin?.user_id,
     workspace_admin_name: workspaceAdmin?.name ?? null,
     workspace_admin_binding_required: workspaceAdmin ? false : true,
-    idp: nextIdp,
+    login_idp: nextLoginIdp,
+    directory_idp: nextDirectoryIdp,
     provisioning_status: requiresRepublish ? 'draft' : existing.provisioning_status,
     last_initialized_at: requiresRepublish ? null : existing.last_initialized_at,
     last_init_error: requiresRepublish ? null : existing.last_init_error,

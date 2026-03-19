@@ -13,8 +13,8 @@ export function validateSystemWorkspaceInput(
   if (!body.workspace_admin_mode || !['directory_user', 'email_pending'].includes(body.workspace_admin_mode)) return null;
   if (!body.workspace_admin_email?.trim()) return null;
   if (body.workspace_admin_mode === 'directory_user' && !body.workspace_admin_user_id?.trim()) return null;
-  if (!body.idp_url?.trim()) return null;
-  if (!body.idp_realm?.trim()) return null;
-  if (!body.idp_client_id?.trim()) return null;
+  if (!body.login_idp_url?.trim()) return null;
+  if (!body.login_idp_realm?.trim()) return null;
+  if (!body.login_client_id?.trim()) return null;
   return body;
 }

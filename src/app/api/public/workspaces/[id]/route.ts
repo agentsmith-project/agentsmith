@@ -8,11 +8,11 @@ export async function GET(_request: Request, context: { params: Promise<{ id: st
     return NextResponse.json({
       id: record.id,
       name: record.name,
-      idp: {
-        kind: record.idp.kind,
-        url: record.idp.url,
-        realm: record.idp.realm,
-        client_id: record.idp.client_id,
+      login_idp: {
+        kind: record.login_idp.kind,
+        url: record.login_idp.url,
+        realm: record.login_idp.realm,
+        client_id: record.login_idp.client_id,
       },
     });
   }

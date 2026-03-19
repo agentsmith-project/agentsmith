@@ -8,6 +8,7 @@ import {
   UserRoundSearch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { slugifyWorkspaceId } from '@/lib/system-admin/config';
 import type { SystemWorkspaceAction, SystemWorkspaceEditorState } from './types';
 import { PreviewRow } from './PreviewRow';
 
@@ -24,6 +25,8 @@ type WorkspaceEditorPanelProps = {
   adminSearchError: string | null;
   idpVerificationNotice: string | null;
   onDraftChange: (patch: Partial<SystemWorkspaceEditorState['draft']>) => void;
+  onEnableEditMode: () => void;
+  onCancelEditMode: () => void;
   onVerifyIdp: () => void;
   onSubmit: () => void;
   onPublish: () => void;
@@ -44,6 +47,8 @@ export function WorkspaceEditorPanel({
   adminSearchError,
   idpVerificationNotice,
   onDraftChange,
+  onEnableEditMode,
+  onCancelEditMode,
   onVerifyIdp,
   onSubmit,
   onPublish,
@@ -80,6 +85,10 @@ export function WorkspaceEditorPanel({
   const workspaceStateTone = workspace?.workspace_admin_binding_required
     ? 'border-warning/30 bg-warning/10 text-warning'
     : 'border-success/30 bg-success/10 text-success';
+  const formLocked = !state.isEditMode;
+  const workspaceSlug = slugifyWorkspaceId((workspace?.name ?? state.draft.name) || 'workspace');
+  const workspaceLoginPath = `/{locale}/workspaces/${workspaceSlug}/login`;
+  const workspaceCallbackPath = `/workspaces/${workspaceSlug}/login/callback`;
 
   return (
     <aside
@@ -102,6 +111,25 @@ export function WorkspaceEditorPanel({
             <span className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-medium ${workspaceStateTone}`}>
               {workspaceStateLabel}
             </span>
+            {state.isEditMode ? (
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onCancelEditMode}
+                disabled={isSubmitting}
+                data-testid="system-workspaces__cancel-edit"
+              >
+                {t('cancel')}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={onEnableEditMode}
+                data-testid="system-workspaces__enable-edit"
+              >
+                {t('configure_workspace')}
+              </Button>
+            )}
             {workspace?.provisioning_status === 'ready' ? (
               <Link href={`/${locale}/workspaces/${workspace.id}/login`}>
                 <Button type="button" variant="outline" data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}>
@@ -135,6 +163,11 @@ export function WorkspaceEditorPanel({
             <p className="mt-2 truncate text-sm font-semibold text-foreground">{lastInitializedValue}</p>
           </div>
         </div>
+        {!state.isEditMode ? (
+          <div className="mt-4 rounded-[18px] border border-subtle bg-background/70 px-4 py-3 text-sm text-secondary" data-testid="system-workspaces__read-only-notice">
+            {t('workspace_editor_read_only_notice')}
+          </div>
+        ) : null}
       </div>
 
       <section className="space-y-4 rounded-[22px] border border-border bg-surface-high p-5" data-testid="system-workspaces__basics">
@@ -150,6 +183,7 @@ export function WorkspaceEditorPanel({
             value={state.draft.name}
             onChange={(event) => onDraftChange({ name: event.target.value })}
             placeholder={t('workspace_name_placeholder')}
+            disabled={formLocked}
             className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
             data-testid="system-workspaces__draft-name"
           />
@@ -168,38 +202,71 @@ export function WorkspaceEditorPanel({
         <div className="grid gap-3">
           <input
             type="text"
-            value={state.draft.idpUrl}
-            onChange={(event) => onDraftChange({ idpUrl: event.target.value })}
+            value={state.draft.loginIdpUrl}
+            onChange={(event) => onDraftChange({ loginIdpUrl: event.target.value })}
             placeholder={t('idp_url_placeholder')}
+            disabled={formLocked}
             className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
             data-testid="system-workspaces__draft-idp-url"
           />
           <div className="grid gap-3 md:grid-cols-2">
             <input
               type="text"
-              value={state.draft.idpRealm}
-              onChange={(event) => onDraftChange({ idpRealm: event.target.value })}
+              value={state.draft.loginIdpRealm}
+              onChange={(event) => onDraftChange({ loginIdpRealm: event.target.value })}
               placeholder={t('idp_realm_placeholder')}
+              disabled={formLocked}
               className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
               data-testid="system-workspaces__draft-idp-realm"
             />
-            <input
-              type="text"
-              value={state.draft.idpClientId}
-              onChange={(event) => onDraftChange({ idpClientId: event.target.value })}
-              placeholder={t('idp_client_id_placeholder')}
-              className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-              data-testid="system-workspaces__draft-idp-client-id"
-            />
+              <input
+                type="text"
+                value={state.draft.loginClientId}
+                onChange={(event) => onDraftChange({ loginClientId: event.target.value })}
+                placeholder={t('login_client_id_placeholder')}
+                disabled={formLocked}
+                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                data-testid="system-workspaces__draft-idp-client-id"
+              />
           </div>
-          <input
-            type="password"
-            value={state.draft.idpClientSecret}
-            onChange={(event) => onDraftChange({ idpClientSecret: event.target.value })}
-            placeholder={t('idp_client_secret_placeholder')}
-            className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-            data-testid="system-workspaces__draft-idp-client-secret"
-          />
+          <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+            <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
+            <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
+            <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <input
+                type="text"
+                value={state.draft.directoryClientId}
+                onChange={(event) => onDraftChange({ directoryClientId: event.target.value })}
+                placeholder={t('directory_client_id_placeholder')}
+                disabled={formLocked}
+                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                data-testid="system-workspaces__draft-directory-client-id"
+              />
+              <input
+                type="password"
+                value={state.draft.directoryClientSecret}
+                onChange={(event) => onDraftChange({ directoryClientSecret: event.target.value })}
+                placeholder={t('directory_client_secret_placeholder')}
+                disabled={formLocked}
+                className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                data-testid="system-workspaces__draft-idp-client-secret"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-[18px] border border-subtle bg-background/70 p-4 text-sm">
+            <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
+            <div className="mt-3 space-y-2">
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
+                <p className="mt-1 break-all text-secondary">{workspaceLoginPath}</p>
+              </div>
+              <div>
+                <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
+                <p className="mt-1 break-all text-secondary">{workspaceCallbackPath}</p>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div className={`rounded-[18px] border px-4 py-4 ${buildVerificationToneClass(state.idpVerificationState)}`}>
@@ -215,7 +282,7 @@ export function WorkspaceEditorPanel({
               type="button"
               variant="outline"
               onClick={onVerifyIdp}
-              disabled={isSubmitting || state.idpVerificationState === 'verifying'}
+              disabled={formLocked || isSubmitting || state.idpVerificationState === 'verifying'}
               data-testid="system-workspaces__verify-idp"
             >
               {state.idpVerificationState === 'verifying' ? t('idp_verify_loading') : t('idp_validate_continue')}
@@ -237,7 +304,7 @@ export function WorkspaceEditorPanel({
           <button
             type="button"
             onClick={() => onDraftChange({ adminMode: 'directory_user' })}
-            disabled={!state.directorySearchEnabled}
+            disabled={formLocked || !state.directorySearchEnabled}
             className={[
               'rounded-[18px] border p-4 text-left transition',
               state.draft.adminMode === 'directory_user'
@@ -253,6 +320,7 @@ export function WorkspaceEditorPanel({
           <button
             type="button"
             onClick={() => onDraftChange({ adminMode: 'email_pending' })}
+            disabled={formLocked}
             className={[
               'rounded-[18px] border p-4 text-left transition',
               state.draft.adminMode === 'email_pending'
@@ -279,7 +347,7 @@ export function WorkspaceEditorPanel({
                   admin: null,
                 })}
                 placeholder={t('workspace_admin_placeholder')}
-                disabled={!state.directorySearchEnabled}
+                disabled={formLocked || !state.directorySearchEnabled}
                 className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary disabled:cursor-not-allowed disabled:opacity-70"
                 data-testid="system-workspaces__draft-admin"
               />
@@ -311,6 +379,7 @@ export function WorkspaceEditorPanel({
                         adminQuery: user.email,
                         adminEmail: user.email,
                       })}
+                      disabled={formLocked}
                       data-testid={`system-workspaces__admin-option--${user.user_id}`}
                     >
                       <span>
@@ -343,6 +412,7 @@ export function WorkspaceEditorPanel({
                 value={state.draft.adminEmail}
                 onChange={(event) => onDraftChange({ adminEmail: event.target.value })}
                 placeholder={t('workspace_admin_email_placeholder')}
+                disabled={formLocked}
                 className="h-10 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                 data-testid="system-workspaces__draft-admin-email"
               />

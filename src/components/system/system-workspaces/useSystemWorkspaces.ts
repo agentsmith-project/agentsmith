@@ -22,10 +22,11 @@ const EMPTY_DRAFT: SystemWorkspaceDraft = {
   adminEmail: '',
   adminQuery: '',
   admin: null,
-  idpUrl: '',
-  idpRealm: '',
-  idpClientId: '',
-  idpClientSecret: '',
+  loginIdpUrl: '',
+  loginIdpRealm: '',
+  loginClientId: '',
+  directoryClientId: '',
+  directoryClientSecret: '',
 };
 
 type DirectorySearchResponse = {
@@ -55,6 +56,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeAction, setActiveAction] = useState<SystemWorkspaceAction>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveNotice, setSaveNotice] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -97,12 +99,13 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedStatus = selectedWorkspace?.provisioning_status ?? 'draft';
   const isProvisioning = selectedStatus === 'provisioning';
-  const effectiveIdpClientSecret = draft.idpClientSecret.trim() || (selectedWorkspace?.idp.has_client_secret ? '__persisted__' : '');
   const hasIdpInputs = Boolean(
-    draft.idpUrl.trim() &&
-    draft.idpRealm.trim() &&
-    draft.idpClientId.trim(),
+    draft.loginIdpUrl.trim() &&
+    draft.loginIdpRealm.trim() &&
+    draft.loginClientId.trim(),
   );
+  const effectiveDirectoryClientSecret = draft.directoryClientSecret.trim()
+    || (selectedWorkspace?.directory_idp.has_client_secret ? '__persisted__' : '');
   const idpVerified = idpVerificationState === 'verified_with_directory' || idpVerificationState === 'verified_without_directory';
   const canSubmitAdmin = draft.adminMode === 'directory_user'
     ? Boolean(draft.admin?.user_id.trim()) && idpVerificationState === 'verified_with_directory'
@@ -114,7 +117,9 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     selectedWorkspace,
     selectedStatus,
     isEditingWorkspace: Boolean(selectedWorkspaceId),
+    isEditMode,
     canSubmit:
+      isEditMode &&
       Boolean(draft.name.trim()) &&
       hasIdpInputs &&
       idpVerified &&
@@ -131,6 +136,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
 
   const resetDraft = () => {
     setSelectedWorkspaceId(null);
+    setIsEditMode(false);
     setDraft(EMPTY_DRAFT);
     setAdminSearchResults([]);
     setAdminSearchError(null);
@@ -140,6 +146,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
 
   const selectWorkspace = (workspace: PublicSystemWorkspaceRecord) => {
     setSelectedWorkspaceId(workspace.id);
+    setIsEditMode(false);
     setSaveError(null);
     setSaveNotice(null);
     setAdminSearchResults([]);
@@ -156,17 +163,36 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
             name: workspace.workspace_admin_name ?? null,
           }
         : null,
-      idpUrl: workspace.idp.url,
-      idpRealm: workspace.idp.realm,
-      idpClientId: workspace.idp.client_id,
-      idpClientSecret: '',
+      loginIdpUrl: workspace.login_idp.url,
+      loginIdpRealm: workspace.login_idp.realm,
+      loginClientId: workspace.login_idp.client_id,
+      directoryClientId: workspace.directory_idp.client_id || '',
+      directoryClientSecret: '',
     });
     setIdpVerificationState('idle');
     setIdpVerificationNotice(null);
   };
 
+  const enableEditMode = () => {
+    setIsEditMode(true);
+    setSaveError(null);
+    setSaveNotice(null);
+  };
+
+  const cancelEditMode = () => {
+    if (selectedWorkspace) {
+      selectWorkspace(selectedWorkspace);
+    } else {
+      setIsEditMode(false);
+    }
+  };
+
   const updateDraft = (patch: Partial<SystemWorkspaceDraft>) => {
-    const idpChanged = 'idpUrl' in patch || 'idpRealm' in patch || 'idpClientId' in patch || 'idpClientSecret' in patch;
+    const idpChanged = 'loginIdpUrl' in patch
+      || 'loginIdpRealm' in patch
+      || 'loginClientId' in patch
+      || 'directoryClientId' in patch
+      || 'directoryClientSecret' in patch;
     const modeChanged = 'adminMode' in patch;
     setDraft((current) => ({
       ...current,
@@ -185,7 +211,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
           }
         : {}),
     }));
-    if ('idpUrl' in patch || 'idpRealm' in patch || 'idpClientId' in patch || 'idpClientSecret' in patch) {
+    if (idpChanged) {
       setIdpVerificationState('idle');
       setIdpVerificationNotice(null);
       setAdminSearchResults([]);
@@ -195,9 +221,9 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
 
   const verifyIdentityProvider = async () => {
     if (
-      !draft.idpUrl.trim()
-      || !draft.idpRealm.trim()
-      || !draft.idpClientId.trim()
+      !draft.loginIdpUrl.trim()
+      || !draft.loginIdpRealm.trim()
+      || !draft.loginClientId.trim()
     ) {
       return;
     }
@@ -208,10 +234,11 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          idp_url: draft.idpUrl,
-          idp_realm: draft.idpRealm,
-          idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          login_idp_url: draft.loginIdpUrl,
+          login_idp_realm: draft.loginIdpRealm,
+          login_client_id: draft.loginClientId,
+          directory_client_id: draft.directoryClientId.trim() || undefined,
+          directory_client_secret: draft.directoryClientSecret.trim() || undefined,
           workspace_id: selectedWorkspaceId ?? undefined,
         }),
       });
@@ -241,10 +268,10 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     if (
       normalizedQuery.length < 2 ||
       idpVerificationState !== 'verified_with_directory' ||
-      !draft.idpUrl.trim() ||
-      !draft.idpRealm.trim() ||
-      !draft.idpClientId.trim() ||
-      !effectiveIdpClientSecret
+      !draft.loginIdpUrl.trim() ||
+      !draft.loginIdpRealm.trim() ||
+      !draft.directoryClientId.trim() ||
+      !effectiveDirectoryClientSecret
     ) {
       setAdminSearchResults([]);
       setAdminSearchError(null);
@@ -257,10 +284,11 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          idp_url: draft.idpUrl,
-          idp_realm: draft.idpRealm,
-          idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          login_idp_url: draft.loginIdpUrl,
+          login_idp_realm: draft.loginIdpRealm,
+          login_client_id: draft.loginClientId,
+          directory_client_id: draft.directoryClientId,
+          directory_client_secret: draft.directoryClientSecret.trim() || undefined,
           workspace_id: selectedWorkspaceId ?? undefined,
           query: normalizedQuery,
         }),
@@ -287,7 +315,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
       void searchAdminDirectory(draft.adminQuery);
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [draft.adminMode, draft.adminQuery, draft.idpClientId, draft.idpClientSecret, draft.idpRealm, draft.idpUrl, idpVerificationState, selectedWorkspaceId, effectiveIdpClientSecret]);
+  }, [draft.adminMode, draft.adminQuery, draft.directoryClientId, draft.directoryClientSecret, draft.loginIdpRealm, draft.loginIdpUrl, idpVerificationState, selectedWorkspaceId, effectiveDirectoryClientSecret]);
 
   const runMutation = async (action: Exclude<SystemWorkspaceAction, null>, execute: () => Promise<void>) => {
     setIsSubmitting(true);
@@ -314,10 +342,11 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
           workspace_admin_email: draft.adminMode === 'directory_user'
             ? draft.admin?.email || draft.adminEmail
             : draft.adminEmail,
-          idp_url: draft.idpUrl,
-          idp_realm: draft.idpRealm,
-          idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret.trim() || (selectedWorkspaceId ? undefined : draft.idpClientSecret),
+          login_idp_url: draft.loginIdpUrl,
+          login_idp_realm: draft.loginIdpRealm,
+          login_client_id: draft.loginClientId,
+          directory_client_id: draft.directoryClientId.trim() || undefined,
+          directory_client_secret: draft.directoryClientSecret.trim() || (selectedWorkspaceId ? undefined : draft.directoryClientSecret),
         }),
       });
       const data = await parseJson<FetchResponse>(response);
@@ -329,7 +358,8 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
       if (data?.id) {
         setSelectedWorkspaceId(data.id);
       }
-      setDraft((current) => ({ ...current, idpClientSecret: '' }));
+      setIsEditMode(false);
+      setDraft((current) => ({ ...current, directoryClientSecret: '' }));
       setAdminSearchResults([]);
       setIdpVerificationState('idle');
       setSaveNotice(selectedWorkspaceId ? t('update_success') : t('draft_success'));
@@ -346,7 +376,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         return;
       }
       await loadWorkspaces();
-      setDraft((current) => ({ ...current, idpClientSecret: '' }));
+      setDraft((current) => ({ ...current, directoryClientSecret: '' }));
       setSaveNotice(t('publish_success'));
     });
   };
@@ -361,7 +391,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         return;
       }
       await loadWorkspaces();
-      setDraft((current) => ({ ...current, idpClientSecret: '' }));
+      setDraft((current) => ({ ...current, directoryClientSecret: '' }));
       setSaveNotice(t('disable_success'));
     });
   };
@@ -406,5 +436,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     publish,
     disable,
     remove,
+    enableEditMode,
+    cancelEditMode,
   };
 }

@@ -3,10 +3,9 @@
 import { useParams } from 'next/navigation';
 import { WorkspaceLoginCallbackClient } from '@/components/auth/WorkspaceLoginCallbackClient';
 
-export default function LegacyWorkspaceLoginCallbackPage() {
+export default function WorkspaceLoginCallbackPage() {
   const params = useParams();
-  const locale = (params?.locale as string) || 'en-US';
   const workspaceId = (params?.workspace as string) || '';
 
-  return <WorkspaceLoginCallbackClient workspaceId={workspaceId} fallbackLocale={locale} />;
+  return <WorkspaceLoginCallbackClient workspaceId={workspaceId} />;
 }

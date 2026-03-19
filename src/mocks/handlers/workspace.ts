@@ -167,12 +167,33 @@ async function readSystemWorkspaces(request: Request): Promise<SystemWorkspaceRe
 }
 
 function mapSystemWorkspaceToPublicConfig(workspace: SystemWorkspaceRecord) {
+  const loginIdp = (workspace as SystemWorkspaceRecord & {
+    login_idp?: {
+      kind: 'keycloak';
+      url: string;
+      realm: string;
+      client_id: string;
+    };
+    idp?: {
+      kind: 'keycloak';
+      url: string;
+      realm: string;
+      client_id: string;
+    };
+  }).login_idp ?? (workspace as SystemWorkspaceRecord & {
+    idp?: {
+      kind: 'keycloak';
+      url: string;
+      realm: string;
+      client_id: string;
+    };
+  }).idp;
   if (
     workspace.provisioning_status !== 'ready' ||
-    workspace.idp?.kind !== 'keycloak' ||
-    !workspace.idp.url ||
-    !workspace.idp.realm ||
-    !workspace.idp.client_id
+    loginIdp?.kind !== 'keycloak' ||
+    !loginIdp.url ||
+    !loginIdp.realm ||
+    !loginIdp.client_id
   ) {
     return null;
   }
@@ -180,11 +201,11 @@ function mapSystemWorkspaceToPublicConfig(workspace: SystemWorkspaceRecord) {
   return {
     id: workspace.id,
     name: workspace.name,
-    idp: {
+    login_idp: {
       kind: 'keycloak' as const,
-      url: workspace.idp.url,
-      realm: workspace.idp.realm,
-      client_id: workspace.idp.client_id,
+      url: loginIdp.url,
+      realm: loginIdp.realm,
+      client_id: loginIdp.client_id,
     },
   };
 }
@@ -232,7 +253,7 @@ export const workspaceHandlers = [
       return HttpResponse.json({
         id: workspace.id,
         name: workspace.name,
-        idp: {
+        login_idp: {
           kind: 'keycloak',
           url: process.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() || 'http://localhost:8080',
           realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() || 'mbos',

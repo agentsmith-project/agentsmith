@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
+import { slugifyWorkspaceId } from '@/lib/system-admin/config';
 import type {
   SystemWorkspaceDraft,
   SystemWorkspaceDraftAdmin,
@@ -39,10 +40,11 @@ const EMPTY_DRAFT: SystemWorkspaceDraft = {
   adminEmail: '',
   adminQuery: '',
   admin: null,
-  idpUrl: '',
-  idpRealm: '',
-  idpClientId: '',
-  idpClientSecret: '',
+  loginIdpUrl: '',
+  loginIdpRealm: '',
+  loginClientId: '',
+  directoryClientId: '',
+  directoryClientSecret: '',
 };
 
 function isValidEmail(value: string): boolean {
@@ -78,7 +80,7 @@ export function SystemWorkspaceCreatePage() {
   const reviewRows = useMemo(
     () => [
       { label: t('workspace_name'), value: draft.name || t('none') },
-      { label: t('idp_title'), value: `${draft.idpRealm || t('none')} · ${draft.idpClientId || t('none')}` },
+      { label: t('idp_title'), value: `${draft.loginIdpRealm || t('none')} · ${draft.loginClientId || t('none')}` },
       {
         label: t('workspace_admin_title'),
         value: draft.adminMode === 'directory_user'
@@ -89,9 +91,16 @@ export function SystemWorkspaceCreatePage() {
     ],
     [draft, t],
   );
+  const workspaceSlug = slugifyWorkspaceId(draft.name || 'workspace');
+  const workspaceLoginPath = `/{locale}/workspaces/${workspaceSlug}/login`;
+  const workspaceCallbackPath = `/workspaces/${workspaceSlug}/login/callback`;
 
   const updateDraft = (patch: Partial<SystemWorkspaceDraft>) => {
-    const idpChanged = 'idpUrl' in patch || 'idpRealm' in patch || 'idpClientId' in patch || 'idpClientSecret' in patch;
+    const idpChanged = 'loginIdpUrl' in patch
+      || 'loginIdpRealm' in patch
+      || 'loginClientId' in patch
+      || 'directoryClientId' in patch
+      || 'directoryClientSecret' in patch;
     const modeChanged = 'adminMode' in patch;
     setDraft((current) => ({
       ...current,
@@ -119,7 +128,7 @@ export function SystemWorkspaceCreatePage() {
   };
 
   const verifyIdentityProvider = async () => {
-    if (!draft.idpUrl.trim() || !draft.idpRealm.trim() || !draft.idpClientId.trim()) return;
+    if (!draft.loginIdpUrl.trim() || !draft.loginIdpRealm.trim() || !draft.loginClientId.trim()) return;
     setIdpVerificationState('verifying');
     setIdpVerificationNotice(null);
     setAdminSearchResults([]);
@@ -129,10 +138,11 @@ export function SystemWorkspaceCreatePage() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          idp_url: draft.idpUrl,
-          idp_realm: draft.idpRealm,
-          idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          login_idp_url: draft.loginIdpUrl,
+          login_idp_realm: draft.loginIdpRealm,
+          login_client_id: draft.loginClientId,
+          directory_client_id: draft.directoryClientId.trim() || undefined,
+          directory_client_secret: draft.directoryClientSecret.trim() || undefined,
         }),
       });
       const data = await parseJson<IdpVerifyResponse>(response);
@@ -179,10 +189,11 @@ export function SystemWorkspaceCreatePage() {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          idp_url: draft.idpUrl,
-          idp_realm: draft.idpRealm,
-          idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          login_idp_url: draft.loginIdpUrl,
+          login_idp_realm: draft.loginIdpRealm,
+          login_client_id: draft.loginClientId,
+          directory_client_id: draft.directoryClientId.trim() || undefined,
+          directory_client_secret: draft.directoryClientSecret.trim() || undefined,
           query: query.trim(),
         }),
       });
@@ -212,10 +223,11 @@ export function SystemWorkspaceCreatePage() {
           workspace_admin_email: draft.adminMode === 'directory_user'
             ? draft.admin?.email || draft.adminEmail
             : draft.adminEmail,
-          idp_url: draft.idpUrl,
-          idp_realm: draft.idpRealm,
-          idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          login_idp_url: draft.loginIdpUrl,
+          login_idp_realm: draft.loginIdpRealm,
+          login_client_id: draft.loginClientId,
+          directory_client_id: draft.directoryClientId.trim() || undefined,
+          directory_client_secret: draft.directoryClientSecret.trim() || undefined,
         }),
       });
       const data = await parseJson<CreateResponse>(response);
@@ -306,8 +318,8 @@ export function SystemWorkspaceCreatePage() {
                   <div className="grid gap-3">
                     <input
                       type="text"
-                      value={draft.idpUrl}
-                      onChange={(event) => updateDraft({ idpUrl: event.target.value })}
+                      value={draft.loginIdpUrl}
+                      onChange={(event) => updateDraft({ loginIdpUrl: event.target.value })}
                       placeholder={t('idp_url_placeholder')}
                       className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                       data-testid="system-workspaces__draft-idp-url"
@@ -315,29 +327,56 @@ export function SystemWorkspaceCreatePage() {
                     <div className="grid gap-3 md:grid-cols-2">
                       <input
                         type="text"
-                        value={draft.idpRealm}
-                        onChange={(event) => updateDraft({ idpRealm: event.target.value })}
+                        value={draft.loginIdpRealm}
+                        onChange={(event) => updateDraft({ loginIdpRealm: event.target.value })}
                         placeholder={t('idp_realm_placeholder')}
                         className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
                         data-testid="system-workspaces__draft-idp-realm"
                       />
-                      <input
-                        type="text"
-                        value={draft.idpClientId}
-                        onChange={(event) => updateDraft({ idpClientId: event.target.value })}
-                        placeholder={t('idp_client_id_placeholder')}
-                        className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                        data-testid="system-workspaces__draft-idp-client-id"
-                      />
+                        <input
+                          type="text"
+                          value={draft.loginClientId}
+                          onChange={(event) => updateDraft({ loginClientId: event.target.value })}
+                          placeholder={t('login_client_id_placeholder')}
+                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          data-testid="system-workspaces__draft-idp-client-id"
+                        />
                     </div>
-                    <input
-                      type="password"
-                      value={draft.idpClientSecret}
-                      onChange={(event) => updateDraft({ idpClientSecret: event.target.value })}
-                      placeholder={t('idp_client_secret_placeholder')}
-                      className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
-                      data-testid="system-workspaces__draft-idp-client-secret"
-                    />
+                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4">
+                      <p className="text-sm font-medium text-foreground">{t('directory_client_section_title')}</p>
+                      <p className="mt-1 text-sm text-tertiary">{t('directory_client_section_body')}</p>
+                      <div className="mt-3 grid gap-3 md:grid-cols-2">
+                        <input
+                          type="text"
+                          value={draft.directoryClientId}
+                          onChange={(event) => updateDraft({ directoryClientId: event.target.value })}
+                          placeholder={t('directory_client_id_placeholder')}
+                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          data-testid="system-workspaces__draft-directory-client-id"
+                        />
+                        <input
+                          type="password"
+                          value={draft.directoryClientSecret}
+                          onChange={(event) => updateDraft({ directoryClientSecret: event.target.value })}
+                          placeholder={t('directory_client_secret_placeholder')}
+                          className="h-11 w-full rounded-xl border border-subtle bg-background px-3 text-sm text-foreground placeholder:text-tertiary"
+                          data-testid="system-workspaces__draft-idp-client-secret"
+                        />
+                      </div>
+                    </div>
+                    <div className="rounded-[18px] border border-subtle bg-background/70 p-4 text-sm">
+                      <p className="font-medium text-foreground">{t('workspace_login_preview_title')}</p>
+                      <div className="mt-3 space-y-2">
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_login_url_label')}</p>
+                          <p className="mt-1 break-all text-secondary">{workspaceLoginPath}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs uppercase tracking-[0.08em] text-tertiary">{t('workspace_callback_url_label')}</p>
+                          <p className="mt-1 break-all text-secondary">{workspaceCallbackPath}</p>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div className={`rounded-[18px] border px-4 py-4 ${buildVerificationToneClass(idpVerificationState)}`}>
                     <div className="flex flex-wrap items-start justify-between gap-3">

@@ -15,22 +15,33 @@ type WorkspaceCardProps = {
   t: (key: string, values?: Record<string, string>) => string;
   workspace: PublicSystemWorkspaceRecord;
   selected: boolean;
+  isEditMode: boolean;
   onSelect: (workspace: PublicSystemWorkspaceRecord) => void;
+  onConfigure: (workspace: PublicSystemWorkspaceRecord) => void;
 };
 
-export function WorkspaceCard({ locale, t, workspace, selected, onSelect }: WorkspaceCardProps) {
+export function WorkspaceCard({ locale, t, workspace, selected, isEditMode, onSelect, onConfigure }: WorkspaceCardProps) {
   const summary = buildStatusSummary(workspace, locale, t);
   const loginReady = workspace.provisioning_status === 'ready';
   const statusLabel = t(`provisioning_status.${workspace.provisioning_status}`);
 
   return (
     <article
+      role="button"
+      tabIndex={0}
       className={[
-        'rounded-[20px] border p-4 transition-colors',
+        'rounded-[20px] border p-4 transition-colors cursor-pointer',
         selected
           ? 'border-accent/45 bg-accent/10 shadow-[0_16px_30px_rgba(76,119,255,0.14)]'
           : 'border-border bg-surface-high hover:border-white/12 hover:bg-hover',
       ].join(' ')}
+      onClick={() => onSelect(workspace)}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect(workspace);
+        }
+      }}
       data-testid={`system-workspaces__card--${workspace.id}`}
     >
       <div className="flex items-start gap-3">
@@ -71,15 +82,19 @@ export function WorkspaceCard({ locale, t, workspace, selected, onSelect }: Work
             <Button
               type="button"
               variant={selected ? 'primary' : 'outline'}
-              onClick={() => onSelect(workspace)}
+              onClick={(event) => {
+                event.stopPropagation();
+                onConfigure(workspace);
+              }}
               data-testid={`system-workspaces__configure--${workspace.id}`}
             >
-              {selected ? t('workspace_selected_action') : t('configure_workspace')}
+              {selected ? (isEditMode ? t('workspace_editing_action') : t('configure_workspace')) : t('configure_workspace')}
             </Button>
             {loginReady ? (
               <Link
                 href={`/${locale}/workspaces/${workspace.id}/login`}
                 data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
+                onClick={(event) => event.stopPropagation()}
               >
                 <Button type="button" variant="outline">
                   {t('open_workspace_login')}

@@ -7,6 +7,9 @@ const provisioningModule = vi.hoisted(() => ({
 }));
 
 const keycloakDirectoryModule = vi.hoisted(() => ({
+  verifyKeycloakLoginIdentityProvider: vi.fn(async () => ({
+    idp_ok: true,
+  })),
   verifyKeycloakIdentityProvider: vi.fn(async () => ({
     idp_ok: true,
     directory_search_supported: true,
@@ -47,10 +50,11 @@ describe('publishSystemWorkspace retry semantics', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
       workspace_admin_email: 'admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'platform',
-      idp_client_id: 'agentsmith-platform',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'platform',
+      login_client_id: 'agentsmith-platform-login',
+      directory_client_id: 'agentsmith-platform-directory',
+      directory_client_secret: 'secret-1',
     });
 
     provisioningModule.initializeWorkspaceResources
@@ -90,10 +94,11 @@ describe('publishSystemWorkspace retry semantics', () => {
       workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
       workspace_admin_email: 'admin@example.com',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'platform',
-      idp_client_id: 'agentsmith-platform',
-      idp_client_secret: 'secret-1',
+      login_idp_url: 'https://idp.example.com',
+      login_idp_realm: 'platform',
+      login_client_id: 'agentsmith-platform-login',
+      directory_client_id: 'agentsmith-platform-directory',
+      directory_client_secret: 'secret-1',
     });
 
     provisioningModule.initializeWorkspaceResources.mockResolvedValue({

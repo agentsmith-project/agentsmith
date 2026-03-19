@@ -5,10 +5,11 @@ import { getSystemWorkspace } from '@/lib/system-admin/workspace-registry';
 
 type SearchDirectoryUsersBody = {
   workspace_id?: string;
-  idp_url?: string;
-  idp_realm?: string;
-  idp_client_id?: string;
-  idp_client_secret?: string;
+  login_idp_url?: string;
+  login_idp_realm?: string;
+  login_client_id?: string;
+  directory_client_id?: string;
+  directory_client_secret?: string;
   query?: string;
 };
 
@@ -26,12 +27,15 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as SearchDirectoryUsersBody | null;
   const workspaceId = body?.workspace_id?.trim() ?? '';
-  const idpUrl = body?.idp_url?.trim() ?? '';
-  const idpRealm = body?.idp_realm?.trim() ?? '';
-  const idpClientId = body?.idp_client_id?.trim() ?? '';
-  const providedClientSecret = body?.idp_client_secret?.trim() ?? '';
+  const idpUrl = body?.login_idp_url?.trim() ?? '';
+  const idpRealm = body?.login_idp_realm?.trim() ?? '';
+  const loginClientId = body?.login_client_id?.trim() ?? '';
+  const requestedDirectoryClientId = body?.directory_client_id?.trim() ?? '';
+  const providedClientSecret = body?.directory_client_secret?.trim() ?? '';
   const persisted = workspaceId ? await getSystemWorkspace(workspaceId) : null;
-  const idpClientSecret = providedClientSecret || persisted?.idp.client_secret?.trim() || '';
+  const idpClientId = requestedDirectoryClientId
+    || (providedClientSecret ? (loginClientId || persisted?.login_idp.client_id?.trim() || '') : (persisted?.directory_idp?.client_id?.trim() || ''));
+  const idpClientSecret = providedClientSecret || persisted?.directory_idp?.client_secret?.trim() || '';
   const query = body?.query?.trim() ?? '';
   if (!idpUrl || !idpRealm || !idpClientId || !idpClientSecret || query.length < 2) {
     return NextResponse.json({ items: [], total: 0 });

@@ -64,11 +64,14 @@ describe('workspace provisioning', () => {
           name: 'Creator Example',
         },
       ],
-      idp: {
+      login_idp: {
         kind: 'keycloak',
         url: 'https://idp.example.com',
         realm: 'platform',
         client_id: 'agentsmith-platform',
+      },
+      directory_idp: {
+        client_id: 'agentsmith-platform-directory',
       },
       tenant: {
         workspace_id: 'platform_ops',

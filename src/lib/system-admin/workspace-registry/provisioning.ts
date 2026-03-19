@@ -94,11 +94,11 @@ async function writeProvisioningArtifact(args: {
         project_creators: args.record.project_creators.map((item) => item.email),
         project_creator_user_ids: args.record.project_creators.map((item) => item.user_id),
         tenant: args.record.tenant,
-        idp: {
-          kind: args.record.idp.kind,
-          url: args.record.idp.url,
-          realm: args.record.idp.realm,
-          client_id: args.record.idp.client_id,
+        login_idp: {
+          kind: args.record.login_idp.kind,
+          url: args.record.login_idp.url,
+          realm: args.record.login_idp.realm,
+          client_id: args.record.login_idp.client_id,
         },
         provisioning_result: args.result,
         foundation_result: args.foundationResult,
@@ -122,7 +122,7 @@ export async function initializeWorkspaceResources(
   let result: PublishSystemWorkspaceResult;
   let foundationResult: WorkspaceFoundationInitializationResult | null = null;
 
-  if (!record.idp.url.trim() || !record.idp.realm.trim() || !record.idp.client_id.trim()) {
+  if (!record.login_idp.url.trim() || !record.login_idp.realm.trim() || !record.login_idp.client_id.trim()) {
     result = {
       status: 'failed',
       initialized_at: null,
@@ -168,10 +168,10 @@ export async function initializeWorkspaceResources(
       key_prefix: record.tenant.key_prefix,
     },
     idp: {
-      kind: record.idp.kind,
-      url: record.idp.url,
-      realm: record.idp.realm,
-      client_id: record.idp.client_id,
+      kind: record.login_idp.kind,
+      url: record.login_idp.url,
+      realm: record.login_idp.realm,
+      client_id: record.login_idp.client_id,
     },
   });
 

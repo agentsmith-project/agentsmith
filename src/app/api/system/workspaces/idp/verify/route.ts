@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
 import { isSystemAdminAuthenticated } from '@/lib/system-admin/session';
-import { verifyKeycloakIdentityProvider } from '@/lib/system-admin/keycloak-user-directory';
+import {
+  verifyKeycloakIdentityProvider,
+  verifyKeycloakLoginIdentityProvider,
+} from '@/lib/system-admin/keycloak-user-directory';
 import { getSystemWorkspace } from '@/lib/system-admin/workspace-registry';
 
 type VerifyIdpBody = {
   workspace_id?: string;
-  idp_url?: string;
-  idp_realm?: string;
-  idp_client_id?: string;
-  idp_client_secret?: string;
+  login_idp_url?: string;
+  login_idp_realm?: string;
+  login_client_id?: string;
+  directory_client_id?: string;
+  directory_client_secret?: string;
 };
 
 export async function POST(request: Request) {
@@ -19,14 +23,16 @@ export async function POST(request: Request) {
 
   const body = (await request.json().catch(() => null)) as VerifyIdpBody | null;
   const workspaceId = body?.workspace_id?.trim() ?? '';
-  const idpUrl = body?.idp_url?.trim() ?? '';
-  const idpRealm = body?.idp_realm?.trim() ?? '';
-  const idpClientId = body?.idp_client_id?.trim() ?? '';
-  const providedClientSecret = body?.idp_client_secret?.trim() ?? '';
+  const idpUrl = body?.login_idp_url?.trim() ?? '';
+  const idpRealm = body?.login_idp_realm?.trim() ?? '';
+  const loginClientId = body?.login_client_id?.trim() ?? '';
+  const requestedDirectoryClientId = body?.directory_client_id?.trim() ?? '';
+  const providedClientSecret = body?.directory_client_secret?.trim() ?? '';
   const persisted = workspaceId ? await getSystemWorkspace(workspaceId) : null;
-  const idpClientSecret = providedClientSecret || persisted?.idp.client_secret?.trim() || '';
+  const directoryClientId = requestedDirectoryClientId || (providedClientSecret ? loginClientId : (persisted?.directory_idp?.client_id?.trim() ?? ''));
+  const idpClientSecret = providedClientSecret || persisted?.directory_idp?.client_secret?.trim() || '';
 
-  if (!idpUrl || !idpRealm || !idpClientId) {
+  if (!idpUrl || !idpRealm || !loginClientId) {
     return NextResponse.json(
       { error_code: 'VALIDATION_ERROR', error_message: 'invalid_system_workspace_payload' },
       { status: 400 },
@@ -34,10 +40,23 @@ export async function POST(request: Request) {
   }
 
   try {
+    await verifyKeycloakLoginIdentityProvider({
+      idpUrl,
+      realm: idpRealm,
+    });
+
+    if (!directoryClientId) {
+      return NextResponse.json({
+        idp_ok: true,
+        directory_search_supported: false,
+        advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
+      });
+    }
+
     const result = await verifyKeycloakIdentityProvider({
       idpUrl,
       realm: idpRealm,
-      clientId: idpClientId,
+      clientId: directoryClientId,
       clientSecret: idpClientSecret || undefined,
     });
     return NextResponse.json(result);

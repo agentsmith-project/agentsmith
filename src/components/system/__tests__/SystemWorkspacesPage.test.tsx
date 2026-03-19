@@ -2,8 +2,12 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { makeWorkspace, mockWorkspaceListResponse } from './systemWorkspacesTestUtils';
 
+const replaceMock = vi.fn();
+
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US' }),
+  usePathname: () => '/en-US/system/workspaces',
+  useRouter: () => ({ replace: replaceMock }),
   useSearchParams: () => new URLSearchParams(),
 }));
 
@@ -29,6 +33,7 @@ describe('SystemWorkspacesPage', () => {
   const fetchMock = vi.fn();
 
   beforeEach(() => {
+    replaceMock.mockReset();
     fetchMock.mockReset();
     fetchMock.mockResolvedValue(
       mockWorkspaceListResponse([
@@ -45,11 +50,8 @@ describe('SystemWorkspacesPage', () => {
           workspace_admin: 'beta-admin@example.com',
           workspace_admin_user_id: undefined,
           workspace_admin_name: null,
-          idp: {
-            kind: 'keycloak',
-            url: 'https://beta.example.com',
-            realm: 'beta',
-            client_id: 'beta-client',
+          directory_idp: {
+            client_id: 'beta-directory-client',
             has_client_secret: false,
           },
         }),
@@ -72,6 +74,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
     expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
   });
 
   it('filters workspaces from the list without exposing tenant implementation details', async () => {
@@ -82,6 +85,17 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.queryByTestId('system-workspaces__card--ws_alpha')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_beta')).toBeInTheDocument();
     expect(screen.queryByText('workspace_tenant_card_label')).not.toBeInTheDocument();
+  });
+
+  it('updates the workspace query param when selecting another workspace from the list', async () => {
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__card--ws_beta'));
+
+    expect(replaceMock).toHaveBeenCalledWith('/en-US/system/workspaces?workspace=ws_beta', { scroll: false });
+    expect(await screen.findByDisplayValue('Beta Workspace')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__read-only-notice')).toBeInTheDocument();
   });
 
   it('shows retry state when loading fails', async () => {
@@ -127,11 +141,14 @@ describe('SystemWorkspacesPage', () => {
         workspace_admin: 'ops-admin@example.com',
         workspace_admin_user_id: 'kc-ops-admin',
         workspace_admin_name: 'Ops Admin',
-        idp: {
+        login_idp: {
           kind: 'keycloak',
           url: 'https://login.example.com',
           realm: 'alpha-prod',
           client_id: 'alpha-client-prod',
+        },
+        directory_idp: {
+          client_id: 'alpha-directory-client-prod',
           has_client_secret: true,
         },
       })]));
@@ -139,6 +156,7 @@ describe('SystemWorkspacesPage', () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
       target: { value: 'https://login.example.com' },
     });
@@ -148,8 +166,11 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
       target: { value: 'alpha-client-prod' },
     });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-directory-client-id'), {
+      target: { value: 'alpha-directory-client-prod' },
+    });
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-secret'), {
-      target: { value: 'secret-1' },
+      target: { value: 'directory-secret-1' },
     });
     fireEvent.click(screen.getByTestId('system-workspaces__verify-idp'));
     await waitFor(() => expect(screen.getByTestId('system-workspaces__idp-status')).toHaveTextContent('idp_status_verified_with_directory'));
@@ -184,6 +205,7 @@ describe('SystemWorkspacesPage', () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__enable-edit'));
     fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--email'));
     expect(screen.getByTestId('system-workspaces__admin-binding-warning')).toHaveTextContent('workspace_admin_pending_badge');
   });

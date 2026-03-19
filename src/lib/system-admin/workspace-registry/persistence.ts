@@ -7,6 +7,40 @@ const SYSTEM_WORKSPACE_COLLECTION = 'system_workspaces';
 let sharedDocStore: JsonDocStorePort | null = null;
 type StoredSystemWorkspaceRecord = SystemWorkspaceRecord;
 
+function normalizeStoredRecord(record: StoredSystemWorkspaceRecord): SystemWorkspaceRecord {
+  const legacyRecord = record as SystemWorkspaceRecord & {
+    idp?: {
+      kind: 'keycloak';
+      url: string;
+      realm: string;
+      client_id: string;
+      client_secret?: string;
+    };
+  };
+
+  if (legacyRecord.login_idp) {
+    return record;
+  }
+
+  if (!legacyRecord.idp) {
+    return record;
+  }
+
+  return {
+    ...record,
+    login_idp: {
+      kind: legacyRecord.idp.kind,
+      url: legacyRecord.idp.url,
+      realm: legacyRecord.idp.realm,
+      client_id: legacyRecord.idp.client_id,
+    },
+    directory_idp: {
+      client_id: legacyRecord.idp.client_id,
+      client_secret: legacyRecord.idp.client_secret,
+    },
+  };
+}
+
 function createDocStore(): JsonDocStorePort {
   const mongoUrl = process.env.MONGO_URL?.trim();
   if (mongoUrl) {
@@ -31,7 +65,7 @@ function sortRecords(records: SystemWorkspaceRecord[]): SystemWorkspaceRecord[] 
 
 async function listStoredRecords(docStore: JsonDocStorePort): Promise<SystemWorkspaceRecord[]> {
   const items = await docStore.list<StoredSystemWorkspaceRecord>(SYSTEM_WORKSPACE_COLLECTION, {});
-  return sortRecords(items);
+  return sortRecords(items.map(normalizeStoredRecord));
 }
 
 export async function ensureSystemWorkspaceRegistryReady(): Promise<JsonDocStorePort> {
@@ -46,7 +80,7 @@ export async function listPersistedSystemWorkspaces(): Promise<SystemWorkspaceRe
 export async function getPersistedSystemWorkspace(id: string): Promise<SystemWorkspaceRecord | null> {
   const docStore = await ensureSystemWorkspaceRegistryReady();
   const record = await docStore.get<StoredSystemWorkspaceRecord>(SYSTEM_WORKSPACE_COLLECTION, id);
-  return record ?? null;
+  return record ? normalizeStoredRecord(record) : null;
 }
 
 export async function upsertPersistedSystemWorkspace(record: SystemWorkspaceRecord): Promise<void> {

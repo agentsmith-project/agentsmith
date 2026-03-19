@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams, usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Filter, Plus, Search, Settings2 } from 'lucide-react';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -27,6 +27,8 @@ type WorkspaceListFilter = 'all' | 'attention' | 'ready' | 'draft' | 'disabled' 
 
 export function SystemWorkspacesPage() {
   const params = useParams();
+  const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
@@ -51,6 +53,8 @@ export function SystemWorkspacesPage() {
     setSearchQuery,
     loadWorkspaces,
     selectWorkspace,
+    enableEditMode,
+    cancelEditMode,
     updateDraft,
     verifyIdentityProvider,
     submit,
@@ -88,6 +92,28 @@ export function SystemWorkspacesPage() {
     }
     return filteredWorkspaces.filter((workspace) => workspace.provisioning_status === listFilter);
   }, [filteredWorkspaces, listFilter]);
+
+  const syncWorkspaceSelection = (workspaceId: string | null) => {
+    if (!pathname) return;
+    const nextParams = new URLSearchParams(searchParams.toString());
+    if (workspaceId) {
+      nextParams.set('workspace', workspaceId);
+    } else {
+      nextParams.delete('workspace');
+    }
+    const nextQuery = nextParams.toString();
+    router.replace(nextQuery ? `${pathname}?${nextQuery}` : pathname, { scroll: false });
+  };
+
+  const handleSelectWorkspace = (workspace: (typeof workspaces)[number]) => {
+    syncWorkspaceSelection(workspace.id);
+    selectWorkspace(workspace);
+  };
+
+  const handleConfigureWorkspace = (workspace: (typeof workspaces)[number]) => {
+    handleSelectWorkspace(workspace);
+    enableEditMode();
+  };
 
   useEffect(() => {
     if (workspaces.length === 0) return;
@@ -225,7 +251,9 @@ export function SystemWorkspacesPage() {
                         t={t}
                         workspace={workspace}
                         selected={editorState.selectedWorkspaceId === workspace.id}
-                        onSelect={selectWorkspace}
+                        isEditMode={editorState.selectedWorkspaceId === workspace.id && editorState.isEditMode}
+                        onSelect={handleSelectWorkspace}
+                        onConfigure={handleConfigureWorkspace}
                       />
                     ))}
                   </div>
@@ -246,6 +274,8 @@ export function SystemWorkspacesPage() {
                   adminSearchError={adminSearchError}
                   idpVerificationNotice={idpVerificationNotice}
                   onDraftChange={updateDraft}
+                  onEnableEditMode={enableEditMode}
+                  onCancelEditMode={cancelEditMode}
                   onVerifyIdp={() => void verifyIdentityProvider()}
                   onSubmit={() => void submit()}
                   onPublish={() => void publish()}

@@ -4,12 +4,16 @@ import { makeWorkspace, mockWorkspaceListResponse } from './systemWorkspacesTest
 
 vi.mock('next/navigation', () => ({
   useParams: () => ({ locale: 'en-US' }),
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 vi.mock('next-intl', () => ({
   useTranslations: () => (key: string, values?: Record<string, string>) => {
     if (key === 'updated_at' && values?.value) {
       return `updated_at:${values.value}`;
+    }
+    if (key === 'workspaces_summary_total_inline' || key === 'workspaces_attention_summary_inline' || key === 'workspaces_ready_summary_inline') {
+      return `${key}:${values?.count ?? ''}`;
     }
     return key;
   },
@@ -32,14 +36,6 @@ describe('SystemWorkspacesPage', () => {
           id: 'ws_alpha',
           name: 'Alpha Workspace',
           workspace_admin: 'alpha-admin@example.com',
-          tenant: {
-            workspace_id: 'ws_alpha',
-            workspace_name: 'Alpha Workspace',
-            substrate_label: 'primary',
-            database_name: 'agentsmith_ws_ws_alpha',
-            collection_prefix: 'ws_ws_alpha_',
-            key_prefix: 'ws:ws_alpha:',
-          },
         }),
         makeWorkspace({
           id: 'ws_beta',
@@ -47,6 +43,8 @@ describe('SystemWorkspacesPage', () => {
           provisioning_status: 'draft',
           last_initialized_at: null,
           workspace_admin: 'beta-admin@example.com',
+          workspace_admin_user_id: undefined,
+          workspace_admin_name: null,
           idp: {
             kind: 'keycloak',
             url: 'https://beta.example.com',
@@ -54,65 +52,41 @@ describe('SystemWorkspacesPage', () => {
             client_id: 'beta-client',
             has_client_secret: false,
           },
-          tenant: {
-            workspace_id: 'ws_beta',
-            workspace_name: 'Beta Workspace',
-            substrate_label: 'primary',
-            database_name: 'agentsmith_ws_ws_beta',
-            collection_prefix: 'ws_ws_beta_',
-            key_prefix: 'ws:ws_beta:',
-          },
-          updated_at: '2026-03-11T00:00:00.000Z',
         }),
       ]),
     );
     vi.stubGlobal('fetch', fetchMock);
-    vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('renders system workspace cards and simplified editor panel', async () => {
+  it('renders a lighter workspace directory and auto-selects the first workspace into settings', async () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__new-workspace')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__open-workspace-login--ws_alpha')).toHaveAttribute(
-      'href',
-      '/en-US/workspaces/ws_alpha/login',
-    );
-    expect(screen.getByTestId('system-workspaces__open-workspace-login--ws_beta')).toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__mode')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__identity-admin')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__status')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_idle');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_attention_label');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('provisioning_status.ready');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_admin_card_label');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha-admin@example.com');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_idp_card_label');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('alpha');
-    expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_attention_ready_title');
+    expect(screen.queryByText('workspace_idp_card_label')).not.toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__editor')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__lifecycle')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('Alpha Workspace')).toBeInTheDocument();
   });
 
-  it('filters workspaces and keeps workspace naming focused on the editable name only', async () => {
+  it('filters workspaces from the list without exposing tenant implementation details', async () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__search'), { target: { value: 'beta' } });
     expect(screen.queryByTestId('system-workspaces__card--ws_alpha')).not.toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__card--ws_beta')).toBeInTheDocument();
-
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), { target: { value: 'Platform Ops' } });
-    expect(screen.getByTestId('system-workspaces__draft-name')).toHaveValue('Platform Ops');
+    expect(screen.queryByText('workspace_tenant_card_label')).not.toBeInTheDocument();
   });
 
   it('shows retry state when loading fails', async () => {
     fetchMock.mockReset();
-    fetchMock.mockResolvedValue({
-      ok: false,
-    });
+    fetchMock.mockResolvedValue({ ok: false });
 
     render(<SystemWorkspacesPage />);
 
@@ -121,25 +95,14 @@ describe('SystemWorkspacesPage', () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
   });
 
-  it('loads existing workspace into the editor and saves updates', async () => {
+  it('loads an existing workspace into structured settings and saves updates', async () => {
     fetchMock
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'draft',
-            last_initialized_at: null,
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      })
+      .mockResolvedValueOnce(mockWorkspaceListResponse([makeWorkspace({
+        id: 'ws_alpha',
+        provisioning_status: 'draft',
+        last_initialized_at: null,
+        workspace_admin: 'alpha-admin@example.com',
+      })]))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
@@ -157,40 +120,25 @@ describe('SystemWorkspacesPage', () => {
         ok: true,
         json: async () => ({ id: 'ws_alpha' }),
       })
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'draft',
-            last_initialized_at: null,
-            workspace_admin: 'ops-admin@example.com',
-            idp: {
-              kind: 'keycloak',
-              url: 'https://login.example.com',
-              realm: 'alpha-prod',
-              client_id: 'alpha-client-prod',
-              has_client_secret: true,
-            },
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      });
+      .mockResolvedValueOnce(mockWorkspaceListResponse([makeWorkspace({
+        id: 'ws_alpha',
+        provisioning_status: 'draft',
+        last_initialized_at: null,
+        workspace_admin: 'ops-admin@example.com',
+        workspace_admin_user_id: 'kc-ops-admin',
+        workspace_admin_name: 'Ops Admin',
+        idp: {
+          kind: 'keycloak',
+          url: 'https://login.example.com',
+          realm: 'alpha-prod',
+          client_id: 'alpha-client-prod',
+          has_client_secret: true,
+        },
+      })]));
 
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
-    expect(screen.getByTestId('system-workspaces__mode')).toHaveTextContent('edit_mode_label');
-    expect(screen.getByTestId('system-workspaces__mode')).toHaveTextContent('editing_workspace');
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-admin'), {
-      target: { value: 'ops-admin@example.com' },
-    });
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
       target: { value: 'https://login.example.com' },
     });
@@ -206,6 +154,9 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.click(screen.getByTestId('system-workspaces__verify-idp'));
     await waitFor(() => expect(screen.getByTestId('system-workspaces__idp-status')).toHaveTextContent('idp_status_verified_with_directory'));
     fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--directory'));
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-admin'), {
+      target: { value: 'ops-admin@example.com' },
+    });
     await waitFor(() => expect(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin'));
     fireEvent.click(screen.getByTestId('system-workspaces__save'));
@@ -217,51 +168,87 @@ describe('SystemWorkspacesPage', () => {
       ),
     );
     expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_success');
     expect(screen.getByTestId('system-workspaces__publish')).not.toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
   });
 
-  it('shows a repair warning when a selected workspace still uses a historical admin binding', async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockWorkspaceListResponse([
-        makeWorkspace({
-          workspace_admin_user_id: undefined,
-          workspace_admin: 'legacy-admin@example.com',
-          workspace_admin_name: null,
-        }),
-      ]),
-    );
+  it('shows the pending admin status when a workspace is still bound by email only', async () => {
+    fetchMock.mockResolvedValueOnce(mockWorkspaceListResponse([
+      makeWorkspace({
+        id: 'ws_alpha',
+        workspace_admin_user_id: undefined,
+        workspace_admin: 'legacy-admin@example.com',
+        workspace_admin_name: null,
+      }),
+    ]));
 
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--email'));
+    expect(screen.getByTestId('system-workspaces__admin-binding-warning')).toHaveTextContent('workspace_admin_pending_badge');
+  });
 
-    expect(screen.getByTestId('system-workspaces__admin-binding-warning')).toHaveTextContent(
-      'workspace_admin_pending_badge',
+  it('publishes and disables a selected workspace from the lifecycle section', async () => {
+    fetchMock
+      .mockResolvedValueOnce(mockWorkspaceListResponse([
+        makeWorkspace({
+          id: 'ws_alpha',
+          provisioning_status: 'draft',
+          last_initialized_at: null,
+        }),
+      ]))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
+      })
+      .mockResolvedValueOnce(mockWorkspaceListResponse([
+        makeWorkspace({
+          id: 'ws_alpha',
+          provisioning_status: 'ready',
+          last_initialized_at: '2026-03-10T02:00:00.000Z',
+        }),
+      ]))
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 'ws_alpha', provisioning_status: 'disabled' }),
+      })
+      .mockResolvedValueOnce(mockWorkspaceListResponse([
+        makeWorkspace({
+          id: 'ws_alpha',
+          provisioning_status: 'disabled',
+          last_initialized_at: '2026-03-10T03:00:00.000Z',
+        }),
+      ]));
+
+    render(<SystemWorkspacesPage />);
+
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('system-workspaces__publish'));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha/publish',
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    fireEvent.click(screen.getByTestId('system-workspaces__disable'));
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/system/workspaces/ws_alpha/disable',
+        expect.objectContaining({ method: 'POST' }),
+      ),
     );
   });
 
-  it('deletes a disabled workspace', async () => {
+  it('opens a delete confirmation and removes a disabled workspace', async () => {
     fetchMock
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'disabled',
-            last_initialized_at: '2026-03-10T02:00:00.000Z',
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      })
+      .mockResolvedValueOnce(mockWorkspaceListResponse([
+        makeWorkspace({
+          id: 'ws_alpha',
+          provisioning_status: 'disabled',
+          last_initialized_at: '2026-03-10T02:00:00.000Z',
+        }),
+      ]))
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({ ok: true }),
@@ -273,8 +260,7 @@ describe('SystemWorkspacesPage', () => {
 
     render(<SystemWorkspacesPage />);
 
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
+    expect(await screen.findByDisplayValue('Alpha Workspace')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__delete'));
     expect(screen.getByTestId('system-workspaces__delete-dialog')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('system-workspaces__delete-confirm'));
@@ -285,310 +271,5 @@ describe('SystemWorkspacesPage', () => {
         expect.objectContaining({ method: 'DELETE' }),
       ),
     );
-    expect(screen.getByTestId('system-workspaces__save-notice')).toBeInTheDocument();
-    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_success');
-  });
-
-  it('shows validation failure feedback when saving fails', async () => {
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          idp_ok: true,
-          directory_search_supported: true,
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [{ user_id: 'kc-ops-admin', email: 'ops@example.com', name: 'Ops Admin' }],
-        }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        json: async () => ({ error_message: 'invalid_system_workspace_payload' }),
-      });
-
-    render(<SystemWorkspacesPage />);
-
-    expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), {
-      target: { value: 'Ops Workspace' },
-    });
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-admin'), {
-      target: { value: 'ops@example.com' },
-    });
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-url'), {
-      target: { value: 'https://login.example.com' },
-    });
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-realm'), {
-      target: { value: 'ops' },
-    });
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
-      target: { value: 'ops-client' },
-    });
-    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-secret'), {
-      target: { value: 'secret-1' },
-    });
-    fireEvent.click(screen.getByTestId('system-workspaces__verify-idp'));
-    await waitFor(() => expect(screen.getByTestId('system-workspaces__idp-status')).toHaveTextContent('idp_status_verified_with_directory'));
-    fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--directory'));
-    await waitFor(() => expect(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin')).toBeInTheDocument());
-    fireEvent.click(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin'));
-    fireEvent.click(screen.getByTestId('system-workspaces__save'));
-
-    await waitFor(() => {
-      expect(screen.getByTestId('system-workspaces__save-error')).toBeInTheDocument();
-    });
-    expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_error');
-  });
-
-  it('publishes a selected draft workspace and surfaces ready status', async () => {
-    fetchMock
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'draft',
-            last_initialized_at: null,
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
-      })
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'ready',
-            last_initialized_at: '2026-03-10T02:00:00.000Z',
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      });
-
-    render(<SystemWorkspacesPage />);
-
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
-    fireEvent.click(screen.getByTestId('system-workspaces__publish'));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/system/workspaces/ws_alpha/publish',
-        expect.objectContaining({ method: 'POST' }),
-      ),
-    );
-    expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('publish_success');
-  });
-
-  it('disables a ready workspace', async () => {
-    fetchMock
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'ready',
-            last_initialized_at: '2026-03-10T02:00:00.000Z',
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ id: 'ws_alpha', provisioning_status: 'disabled' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
-          items: [
-            {
-              id: 'ws_alpha',
-              name: 'Alpha Workspace',
-              provisioning_status: 'disabled',
-              last_initialized_at: '2026-03-10T02:00:00.000Z',
-              last_init_error: null,
-              workspace_admin: 'alpha-admin@example.com',
-              idp: {
-                kind: 'keycloak',
-                url: 'https://alpha.example.com',
-                realm: 'alpha',
-                client_id: 'alpha-client',
-                has_client_secret: true,
-              },
-              tenant: {
-                workspace_id: 'ws_alpha',
-                workspace_name: 'Alpha Workspace',
-                substrate_label: 'primary',
-                database_name: 'agentsmith_ws_ws_alpha',
-                collection_prefix: 'ws_ws_alpha_',
-                key_prefix: 'ws:ws_alpha:',
-              },
-              created_at: '2026-03-01T00:00:00.000Z',
-              updated_at: '2026-03-10T00:00:00.000Z',
-            },
-          ],
-        }),
-      });
-
-    render(<SystemWorkspacesPage />);
-
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
-    fireEvent.click(screen.getByTestId('system-workspaces__disable'));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/system/workspaces/ws_alpha/disable',
-        expect.objectContaining({ method: 'POST' }),
-      ),
-    );
-    expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('disable_success');
-  });
-
-  it('re-publishes a disabled workspace', async () => {
-    fetchMock
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'disabled',
-            last_initialized_at: '2026-03-10T02:00:00.000Z',
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ id: 'ws_alpha', provisioning_status: 'ready' }),
-      })
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'ready',
-            last_initialized_at: '2026-03-10T03:00:00.000Z',
-            workspace_admin: 'alpha-admin@example.com',
-            tenant: {
-              workspace_id: 'ws_alpha',
-              workspace_name: 'Alpha Workspace',
-              substrate_label: 'primary',
-              database_name: 'agentsmith_ws_ws_alpha',
-              collection_prefix: 'ws_ws_alpha_',
-              key_prefix: 'ws:ws_alpha:',
-            },
-          }),
-        ]),
-      });
-
-    render(<SystemWorkspacesPage />);
-
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
-    expect(screen.getByTestId('system-workspaces__publish')).not.toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
-    fireEvent.click(screen.getByTestId('system-workspaces__publish'));
-
-    await waitFor(() =>
-      expect(fetchMock).toHaveBeenCalledWith(
-        '/api/system/workspaces/ws_alpha/publish',
-        expect.objectContaining({ method: 'POST' }),
-      ),
-    );
-    expect(screen.getByTestId('system-workspaces__save-notice')).toHaveTextContent('publish_success');
-  });
-
-  it('locks editing controls while provisioning is in progress', async () => {
-    fetchMock.mockResolvedValueOnce(
-      mockWorkspaceListResponse([
-        makeWorkspace({
-          provisioning_status: 'provisioning',
-          last_initialized_at: null,
-          workspace_admin: 'alpha-admin@example.com',
-          tenant: {
-            workspace_id: 'ws_alpha',
-            workspace_name: 'Alpha Workspace',
-            substrate_label: 'primary',
-            database_name: 'agentsmith_ws_ws_alpha',
-            collection_prefix: 'ws_ws_alpha_',
-            key_prefix: 'ws:ws_alpha:',
-          },
-        }),
-      ]),
-    );
-
-    render(<SystemWorkspacesPage />);
-
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
-    expect(screen.getByTestId('system-workspaces__save')).toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__publish')).toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__disable')).toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__delete')).toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__notice')).toHaveTextContent('provisioning_notice');
-  });
-
-  it('only enables delete for disabled workspaces', async () => {
-    fetchMock
-      .mockResolvedValueOnce({
-        ...mockWorkspaceListResponse([
-          makeWorkspace({
-            provisioning_status: 'ready',
-            last_initialized_at: '2026-03-10T02:00:00.000Z',
-          }),
-          makeWorkspace({
-            id: 'ws_disabled',
-            name: 'Disabled Workspace',
-            provisioning_status: 'disabled',
-            last_initialized_at: '2026-03-10T02:00:00.000Z',
-          }),
-        ]),
-      });
-
-    render(<SystemWorkspacesPage />);
-
-    expect(await screen.findByTestId('system-workspaces__configure--ws_alpha')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
-    expect(screen.getByTestId('system-workspaces__delete')).toBeDisabled();
-
-    fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_disabled'));
-    expect(screen.getByTestId('system-workspaces__delete')).not.toBeDisabled();
   });
 });

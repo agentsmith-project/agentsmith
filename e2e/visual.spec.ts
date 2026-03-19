@@ -218,22 +218,29 @@ test.describe('Visual - System Pages', () => {
     await seedSystemWorkspaces(request, 'empty');
     await loginAsSystemAdmin(page);
     await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
-    await expect(page.getByTestId('system-workspaces__empty')).toBeVisible();
+    await expect(page.getByTestId('system-workspaces__new-workspace')).toBeVisible();
     await expect(page).toHaveScreenshot('system-workspaces.png', { fullPage: true });
   });
 
   test('system workspaces edit mode', async ({ page, request }) => {
     await seedSystemWorkspaces(request, 'with_workspace');
     await loginAsSystemAdmin(page);
-    await page.getByTestId('system-workspaces__configure--ws_seeded').click();
-    await expect(page.getByTestId('system-workspaces__mode')).toContainText('Editing ws_seeded');
+    await expect(page.getByTestId('system-workspaces__draft-name')).toHaveValue('Seeded Workspace');
     await expect(page).toHaveScreenshot('system-workspaces-edit-mode.png', { fullPage: true });
+  });
+
+  test('system workspaces create wizard', async ({ page, request }) => {
+    await seedSystemWorkspaces(request, 'empty');
+    await loginAsSystemAdmin(page);
+    await page.getByTestId('system-workspaces__new-workspace').click();
+    await page.waitForURL(/\/en-US\/system\/workspaces\/new/, { timeout: 15_000 });
+    await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible();
+    await expect(page).toHaveScreenshot('system-workspaces-create-wizard.png', { fullPage: true });
   });
 
   test('system workspaces failed state', async ({ page, request }) => {
     await seedSystemWorkspaces(request, 'with_failed_workspace');
     await loginAsSystemAdmin(page);
-    await page.getByTestId('system-workspaces__configure--ws_seeded').click();
     await expect(page.getByTestId('system-workspaces__status')).toContainText('Failed');
     await expect(page.getByTestId('system-workspaces__status')).toContainText('identity_provider_config_incomplete');
     await expect(page).toHaveScreenshot('system-workspaces-failed-state.png', { fullPage: true });

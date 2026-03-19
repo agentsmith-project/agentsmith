@@ -12,6 +12,12 @@ async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
 }
 
+async function openCreateWorkspace(page: import('@playwright/test').Page) {
+  await page.getByTestId('system-workspaces__new-workspace').click();
+  await page.waitForURL(/\/en-US\/system\/workspaces\/new$/, { timeout: 15_000 });
+  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible();
+}
+
 async function waitForWorkspaceId(page: import('@playwright/test').Page, workspaceName: string) {
   await expect
     .poll(
@@ -92,6 +98,7 @@ async function verifyIdentityProvider(page: import('@playwright/test').Page) {
 
 async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email: string) {
   const adminInput = page.getByTestId('system-workspaces__draft-admin');
+  await expect(adminInput).toBeVisible({ timeout: 15_000 });
   let lastFailure = 'directory_request_not_observed';
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -151,30 +158,35 @@ test.describe('System Admin', () => {
   test('system admin can create, update, and delete a workspace', async ({ page }) => {
     await mockWorkspaceAdminDirectory(page);
     await loginAsSystemAdmin(page);
+    await openCreateWorkspace(page);
 
     const workspaceName = `Platform Ops ${Date.now()}`;
     const updatedAdmin = 'integration-user@example.com';
     const initialRealm = 'platform-ops';
 
     await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
+    await page.getByTestId('system-workspace-create__next').click();
     await page.getByTestId('system-workspaces__draft-idp-url').fill('https://login.example.com');
     await page.getByTestId('system-workspaces__draft-idp-realm').fill(initialRealm);
     await page.getByTestId('system-workspaces__draft-idp-client-id').fill('platform-ops-client');
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('platform-ops-secret');
     await verifyIdentityProvider(page);
+    await page.getByTestId('system-workspace-create__next').click();
     await selectWorkspaceAdmin(page, 'dev-admin@example.com');
-    await page.getByTestId('system-workspaces__save').click();
+    await page.getByTestId('system-workspace-create__next').click();
+    await page.getByTestId('system-workspace-create__create').click();
 
     const createdWorkspaceId = await waitForWorkspaceId(page, workspaceName);
 
     expect(createdWorkspaceId).toBeTruthy();
     const workspaceCard = page.getByTestId(`system-workspaces__card--${createdWorkspaceId}`);
+    const cardLoginControl = workspaceCard.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`);
     await expect(workspaceCard).toBeVisible();
-    await expect(page.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`)).toBeDisabled();
+    await expect(cardLoginControl).toBeDisabled();
 
     await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
     await page.getByTestId('system-workspaces__publish').click();
-    const loginLink = page.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`);
+    const loginLink = workspaceCard.getByTestId(`system-workspaces__open-workspace-login--${createdWorkspaceId}`);
     await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${createdWorkspaceId}/login$`));
 
     await page.getByTestId(`system-workspaces__configure--${createdWorkspaceId}`).click();
@@ -184,7 +196,6 @@ test.describe('System Admin', () => {
     await page.getByTestId('system-workspaces__save').click();
 
     await expect(workspaceCard).toContainText(updatedAdmin);
-    await expect(workspaceCard).toContainText(initialRealm);
 
     await page.getByTestId('system-workspaces__publish').click();
     await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${createdWorkspaceId}/login$`));

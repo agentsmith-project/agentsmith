@@ -1,5 +1,12 @@
 import Link from 'next/link';
-import { AlertTriangle, ArrowRight, Building2, CheckCircle2, Clock3, PauseCircle, Wrench } from 'lucide-react';
+import {
+  AlertTriangle,
+  Building2,
+  CheckCircle2,
+  Clock3,
+  PauseCircle,
+  Wrench,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
 
@@ -15,7 +22,6 @@ export function WorkspaceCard({ locale, t, workspace, selected, onSelect }: Work
   const summary = buildStatusSummary(workspace, locale, t);
   const loginReady = workspace.provisioning_status === 'ready';
   const statusLabel = t(`provisioning_status.${workspace.provisioning_status}`);
-  const realm = workspace.idp?.realm?.trim();
 
   return (
     <article
@@ -31,79 +37,66 @@ export function WorkspaceCard({ locale, t, workspace, selected, onSelect }: Work
         <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[14px] bg-background text-icon-default">
           <Building2 className="h-5 w-5" />
         </div>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="truncate text-base font-semibold text-foreground">{workspace.name}</h2>
-              <p className="mt-1 truncate text-sm text-tertiary">{workspace.id}</p>
+              <p className="mt-1 truncate text-xs text-tertiary">{workspace.id}</p>
             </div>
             <StatusBadge label={statusLabel} tone={workspace.provisioning_status} />
           </div>
 
-          <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-            <div className="space-y-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</p>
-                <p className="mt-1 truncate text-sm font-medium text-foreground">{workspace.workspace_admin}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_attention_label')}</p>
-                <div className="mt-1 flex items-start gap-2">
-                  <summary.icon className={`mt-0.5 h-4 w-4 shrink-0 ${summary.iconClassName}`} />
-                  <div className="min-w-0">
-                    <p className="truncate text-sm font-medium text-foreground">{summary.title}</p>
-                    <p className="line-clamp-2 text-xs leading-5 text-tertiary">{summary.body}</p>
-                  </div>
-                </div>
-              </div>
+          <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_admin_card_label')}</p>
+              <p className="mt-1 truncate text-sm font-medium text-foreground">{workspace.workspace_admin}</p>
             </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</p>
+              <p className="mt-1 truncate text-sm font-medium text-foreground">{summary.timestamp}</p>
+            </div>
+          </div>
 
-            <div className="space-y-3">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('workspace_idp_card_label')}</p>
-                <p className="mt-1 truncate text-sm font-medium text-foreground">{realm || t('none')}</p>
-              </div>
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.14em] text-tertiary">{t('initialized_at_label')}</p>
-                <p className="mt-1 truncate text-sm font-medium text-foreground">{summary.timestamp}</p>
+          <div className="rounded-[16px] border border-subtle bg-background/70 px-3 py-3">
+            <div className="flex items-start gap-2">
+              <summary.icon className={`mt-0.5 h-4 w-4 shrink-0 ${summary.iconClassName}`} />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-foreground">{summary.title}</p>
+                <p className="line-clamp-2 text-xs leading-5 text-tertiary">{summary.body}</p>
               </div>
             </div>
           </div>
 
-          <p className="mt-4 text-xs text-tertiary">
-            {t('updated_at', { value: new Date(workspace.updated_at).toLocaleString(locale) })}
-          </p>
-        </div>
-      </div>
-
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant={selected ? 'primary' : 'outline'}
-          onClick={() => onSelect(workspace)}
-          data-testid={`system-workspaces__configure--${workspace.id}`}
-        >
-          {selected ? t('workspace_selected_action') : t('configure_workspace')}
-        </Button>
-        {loginReady ? (
-          <Link
-            href={`/${locale}/workspaces/${workspace.id}/login`}
-            data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
-          >
-            <Button type="button" variant="outline">
-              {t('open_workspace_login')}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              type="button"
+              variant={selected ? 'primary' : 'outline'}
+              onClick={() => onSelect(workspace)}
+              data-testid={`system-workspaces__configure--${workspace.id}`}
+            >
+              {selected ? t('workspace_selected_action') : t('configure_workspace')}
             </Button>
-          </Link>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className="inline-flex h-9 items-center rounded-xl border border-subtle px-3 text-xs text-tertiary disabled:opacity-100"
-            data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
-          >
-            {t('workspace_login_unavailable')}
-          </button>
-        )}
+            {loginReady ? (
+              <Link
+                href={`/${locale}/workspaces/${workspace.id}/login`}
+                data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
+              >
+                <Button type="button" variant="outline">
+                  {t('open_workspace_login')}
+                </Button>
+              </Link>
+            ) : (
+              <button
+                type="button"
+                disabled
+                className="inline-flex h-9 items-center rounded-xl border border-subtle px-3 text-xs text-tertiary disabled:opacity-100"
+                data-testid={`system-workspaces__open-workspace-login--${workspace.id}`}
+              >
+                {t('workspace_login_unavailable')}
+              </button>
+            )}
+          </div>
+        </div>
       </div>
     </article>
   );

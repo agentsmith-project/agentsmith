@@ -262,19 +262,27 @@ async function waitForWorkspaceId(page: Page, workspaceName: string): Promise<st
 
 async function createAndPublishWorkspace(page: Page): Promise<string> {
   const workspaceName = `Real Visual Workspace ${Date.now()}`;
+  await page.getByTestId('system-workspaces__new-workspace').click();
+  await page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
+  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
+  await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
   await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
   await verifyIdentityProvider(page);
+  await page.getByTestId('system-workspace-create__next').click();
   await page.getByTestId('system-workspaces__admin-mode--email').click();
   await page.getByTestId('system-workspaces__draft-admin-email').fill('dev-admin@example.com');
-  await page.getByTestId('system-workspaces__save').click();
+  await page.getByTestId('system-workspace-create__next').click();
+  await page.getByTestId('system-workspace-create__create').click();
 
   const workspaceId = await waitForWorkspaceId(page, workspaceName);
   await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
   await page.getByTestId('system-workspaces__publish').click();
-  await expect(page.getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`)).toHaveAttribute(
+  await expect(
+    page.getByTestId(`system-workspaces__card--${workspaceId}`).getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`),
+  ).toHaveAttribute(
     'href',
     new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login$`),
   );

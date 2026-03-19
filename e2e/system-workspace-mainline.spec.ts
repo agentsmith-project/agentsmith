@@ -12,6 +12,12 @@ async function loginAsSystemAdmin(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('system-workspaces__heading')).toBeVisible();
 }
 
+async function openCreateWorkspace(page: import('@playwright/test').Page) {
+  await page.getByTestId('system-workspaces__new-workspace').click();
+  await page.waitForURL(/\/en-US\/system\/workspaces\/new$/, { timeout: 15_000 });
+  await expect(page.getByTestId('system-workspace-create__heading')).toBeVisible();
+}
+
 async function waitForWorkspaceId(page: import('@playwright/test').Page, workspaceName: string) {
   await expect
     .poll(
@@ -77,6 +83,7 @@ async function verifyIdentityProvider(page: import('@playwright/test').Page) {
 
 async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email: string) {
   const adminInput = page.getByTestId('system-workspaces__draft-admin');
+  await expect(adminInput).toBeVisible({ timeout: 15_000 });
   let lastFailure = 'directory_request_not_observed';
 
   for (let attempt = 0; attempt < 3; attempt += 1) {
@@ -126,19 +133,23 @@ test.describe('System Workspace Mainline', () => {
   test('system admin can configure a workspace and a user can enter it and create a project', async ({ page }) => {
     await mockWorkspaceAdminDirectory(page);
     await loginAsSystemAdmin(page);
+    await openCreateWorkspace(page);
 
     const workspaceName = `Mainline Workspace ${Date.now()}`;
     const userEmail = `mainline-${Date.now()}@example.com`;
     const projectName = `Mainline Project ${Date.now()}`;
 
     await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
+    await page.getByTestId('system-workspace-create__next').click();
     await page.getByTestId('system-workspaces__draft-idp-url').fill('https://login.example.com');
     await page.getByTestId('system-workspaces__draft-idp-realm').fill('mainline');
     await page.getByTestId('system-workspaces__draft-idp-client-id').fill('mainline-client');
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('mainline-secret');
     await verifyIdentityProvider(page);
+    await page.getByTestId('system-workspace-create__next').click();
     await selectWorkspaceAdmin(page, 'dev-admin@example.com');
-    await page.getByTestId('system-workspaces__save').click();
+    await page.getByTestId('system-workspace-create__next').click();
+    await page.getByTestId('system-workspace-create__create').click();
 
     const workspaceId = await waitForWorkspaceId(page, workspaceName);
 
@@ -146,7 +157,7 @@ test.describe('System Workspace Mainline', () => {
 
     await page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
     await page.getByTestId('system-workspaces__publish').click();
-    const loginLink = page.getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`);
+    const loginLink = page.getByTestId(`system-workspaces__card--${workspaceId}`).getByTestId(`system-workspaces__open-workspace-login--${workspaceId}`);
     await expect(loginLink).toHaveAttribute('href', new RegExp(`/en-US/workspaces/${workspaceId}/login$`));
     await loginLink.click();
 

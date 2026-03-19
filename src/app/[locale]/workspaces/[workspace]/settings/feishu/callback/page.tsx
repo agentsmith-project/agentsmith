@@ -1,7 +1,7 @@
 'use client';
 
 import * as React from 'react';
-import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { PageState } from '@/components/layout/PageState';
 import { WorkspaceAPI, getApiClient, handleErrorForToast } from '@/lib/api';
@@ -9,7 +9,6 @@ import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
 export default function WorkspaceFeishuSettingsCallbackPage() {
   const params = useParams();
-  const router = useRouter();
   const searchParams = useSearchParams();
   const t = useTranslations('settings');
   const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
@@ -37,7 +36,7 @@ export default function WorkspaceFeishuSettingsCallbackPage() {
     void api.completeWorkspaceFeishuAuth(workspaceId, { code, state })
       .then((result) => {
         if (cancelled) return;
-        router.replace(result.redirect_path || `/${locale}/workspaces/${workspaceId}/settings/feishu?step=enable`);
+        window.location.replace(result.redirect_path || `/${locale}/workspaces/${workspaceId}/settings/feishu?step=enable`);
       })
       .catch((caughtError) => {
         if (cancelled) return;
@@ -47,7 +46,7 @@ export default function WorkspaceFeishuSettingsCallbackPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, locale, router, searchParams, workspaceId]);
+  }, [api, locale, searchParams, workspaceId]);
 
   return (
     <PageState state={error ? 'error' : 'loading'}>

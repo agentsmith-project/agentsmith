@@ -67,8 +67,8 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     docStore,
     chatResourceService: new ChatResourceService(docStore),
     endpointResourceService: new EndpointResourceService(docStore),
-    agentResourceService: new AgentResourceService(docStore),
-    agentExecutionService: new AgentExecutionService(new AgentResourceService(docStore)),
+    agentResourceService: new AgentResourceService(docStore, cache),
+    agentExecutionService: new AgentExecutionService(new AgentResourceService(docStore, cache)),
     fileLibraryBucket,
     createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
       fileLibraryCatalogRepo,
@@ -145,7 +145,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const fileLibraryCatalogRepo = new JsonDocFileLibraryCatalogRepo(docStore);
   const chatResourceService = new ChatResourceService(docStore);
   const endpointResourceService = new EndpointResourceService(docStore);
-  const agentResourceService = new AgentResourceService(docStore);
+  const agentResourceService = new AgentResourceService(docStore, cache);
   const agentExecutionService = new AgentExecutionService(agentResourceService);
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)

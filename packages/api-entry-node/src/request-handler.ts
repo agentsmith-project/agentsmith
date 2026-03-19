@@ -117,6 +117,7 @@ export async function handleRequest(
       method,
       requestUrl,
       user,
+      cache: deps.cache,
       docStore: deps.docStore,
       governanceIncidentsDir: deps.governanceIncidentsDir,
     })) {

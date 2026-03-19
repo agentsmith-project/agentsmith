@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -50,19 +50,20 @@ describe('AgentResourceService', () => {
   });
 
   it('deletes related keys and clears connection state on deleteAgent', async () => {
-    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const cache = new InMemoryCache();
+    const service = new AgentResourceService(new InMemoryJsonDocStore(), cache);
     const agent = await service.createAgent('ws_default', 'proj_1', {
       name: 'delete-test',
       mode: 'external',
     });
     await service.createAgentKey('ws_default', 'proj_1', agent.id);
-    service.markAgentConnected(agent.id, { protocol_version: '1.0', remote_ip: '127.0.0.1' });
+    await service.markAgentConnected(agent.id, { protocol_version: '1.0', remote_ip: '127.0.0.1' });
 
     const deleted = await service.deleteAgent('ws_default', 'proj_1', agent.id);
     expect(deleted).toBe(true);
     expect(await service.getAgent('ws_default', 'proj_1', agent.id)).toBeNull();
     expect(await service.listAgentKeys('ws_default', 'proj_1', agent.id)).toEqual([]);
-    expect(service.getConnectionInfo(agent.id)).toBeNull();
+    await expect(service.getConnectionInfo(agent.id)).resolves.toBeNull();
   });
 
   it('uses tenant-prefixed collections for agents and service keys', async () => {
@@ -210,5 +211,30 @@ describe('AgentResourceService', () => {
         writeFileSync(packageRegistryPath, packageRegistryBackup, 'utf-8');
       }
     }
+  });
+
+  it('hydrates external agent presence from shared cache', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
+    const writer = new AgentResourceService(docStore, cache);
+    const reader = new AgentResourceService(docStore, cache);
+    const agent = await writer.createAgent('ws_default', 'proj_1', {
+      name: 'shared-presence-agent',
+      mode: 'external',
+    });
+
+    await writer.markAgentConnected(agent.id, {
+      protocol_version: '1.0',
+      last_pong_at: '2026-03-18T00:00:00.000Z',
+    });
+
+    const loaded = await reader.getAgent('ws_default', 'proj_1', agent.id);
+    expect(loaded).toEqual(
+      expect.objectContaining({
+        id: agent.id,
+        presence: 'online',
+        last_seen_at: '2026-03-18T00:00:00.000Z',
+      }),
+    );
   });
 });

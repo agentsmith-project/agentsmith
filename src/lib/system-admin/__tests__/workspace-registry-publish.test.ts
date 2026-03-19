@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { resetSystemWorkspaceRegistryPersistenceForTest } from '../workspace-registry/persistence';
+import { getPersistedSystemWorkspace, upsertPersistedSystemWorkspace } from '../workspace-registry/persistence';
 
 const provisioningModule = vi.hoisted(() => ({
   initializeWorkspaceResources: vi.fn(),
@@ -32,9 +34,11 @@ describe('publishSystemWorkspace retry semantics', () => {
     const dir = mkdtempSync(join(tmpdir(), 'agentsmith-system-ws-publish-'));
     process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
     provisioningModule.initializeWorkspaceResources.mockReset();
+    resetSystemWorkspaceRegistryPersistenceForTest();
   });
 
   afterEach(() => {
+    resetSystemWorkspaceRegistryPersistenceForTest();
     process.env = originalEnv;
   });
 
@@ -98,14 +102,11 @@ describe('publishSystemWorkspace retry semantics', () => {
     const published = await publishSystemWorkspace('platform_ops');
     expect(published.provisioning_status).toBe('ready');
 
-    const registryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!;
-    const raw = await import('node:fs/promises');
-    const records = JSON.parse(await raw.readFile(registryPath, 'utf-8')) as Array<Record<string, unknown>>;
-    records[0] = {
-      ...records[0],
+    const persisted = await getPersistedSystemWorkspace('platform_ops');
+    await upsertPersistedSystemWorkspace({
+      ...(persisted as NonNullable<typeof persisted>),
       provisioning_status: 'provisioning',
-    };
-    await raw.writeFile(registryPath, `${JSON.stringify(records, null, 2)}\n`, 'utf-8');
+    });
 
     await expect(publishSystemWorkspace('platform_ops')).rejects.toMatchObject({
       code: 'WORKSPACE_ALREADY_PROVISIONING',

@@ -60,6 +60,7 @@ export async function handleInternalRoutes({
     try {
       await completeFeishuOAuthFromCallback({
         docStore: deps.docStore,
+        cache: deps.cache,
         code: requestUrl.searchParams.get('code') ?? undefined,
         state: requestUrl.searchParams.get('state') ?? undefined,
       });

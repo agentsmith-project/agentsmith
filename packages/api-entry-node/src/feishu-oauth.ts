@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import {
   upsertUserExternalConnectionByProvider,
   getUserExternalConnection,
@@ -13,7 +13,7 @@ type FeishuAuthSession = {
   expiresAt: number;
 };
 
-const FEISHU_AUTH_SESSIONS = new Map<string, FeishuAuthSession>();
+const FEISHU_AUTH_STATE_PREFIX = 'feishu:oauth:state:';
 
 type FeishuTokenPayload = {
   access_token: string;
@@ -70,6 +70,38 @@ export function getFeishuOAuthFrontendConfig() {
   };
 }
 
+function oauthStateKey(state: string): string {
+  return `${FEISHU_AUTH_STATE_PREFIX}${state}`;
+}
+
+async function writeFeishuOAuthSession(cache: CachePort, session: FeishuAuthSession): Promise<void> {
+  const ttlSeconds = Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000));
+  await cache.set(oauthStateKey(session.state), JSON.stringify(session), ttlSeconds);
+}
+
+async function readFeishuOAuthSession(cache: CachePort, state: string): Promise<FeishuAuthSession | null> {
+  const raw = await cache.get(oauthStateKey(state));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as FeishuAuthSession;
+    if (
+      typeof parsed?.userId !== 'string'
+      || typeof parsed?.state !== 'string'
+      || typeof parsed?.redirectUri !== 'string'
+      || typeof parsed?.expiresAt !== 'number'
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function deleteFeishuOAuthSession(cache: CachePort, state: string): Promise<void> {
+  await cache.del(oauthStateKey(state));
+}
+
 function parseFeishuTokenResponse(payload: unknown): FeishuTokenPayload {
   const raw = payload && typeof payload === 'object'
     ? payload as Record<string, unknown>
@@ -111,7 +143,7 @@ async function exchangeFeishuToken(body: Record<string, unknown>): Promise<Feish
   return parseFeishuTokenResponse(payload);
 }
 
-export function startFeishuOAuth(userId: string) {
+export async function startFeishuOAuth(cache: CachePort, userId: string) {
   const config = getFeishuOAuthConfig();
   if (!config.configured) {
     throw new Error('feishu_oauth_not_configured');
@@ -123,7 +155,7 @@ export function startFeishuOAuth(userId: string) {
     redirectUri: config.redirectUri,
     expiresAt: Date.now() + 10 * 60 * 1000,
   };
-  FEISHU_AUTH_SESSIONS.set(state, session);
+  await writeFeishuOAuthSession(cache, session);
   const authUrl = new URL(config.authorizeUrl);
   authUrl.searchParams.set('client_id', config.clientId);
   authUrl.searchParams.set('response_type', 'code');
@@ -154,6 +186,7 @@ function parseCallbackInput(callbackUrl?: string, code?: string, state?: string)
 }
 
 async function completeFeishuOAuthInternal(args: {
+  cache: CachePort;
   docStore: JsonDocStorePort;
   userId?: string;
   callbackUrl?: string;
@@ -164,7 +197,7 @@ async function completeFeishuOAuthInternal(args: {
   if (!parsed.code || !parsed.state) {
     throw new Error('feishu_callback_missing_code_or_state');
   }
-  const session = FEISHU_AUTH_SESSIONS.get(parsed.state);
+  const session = await readFeishuOAuthSession(args.cache, parsed.state);
   if (!session || session.expiresAt < Date.now()) {
     throw new Error('feishu_callback_state_invalid');
   }
@@ -179,7 +212,7 @@ async function completeFeishuOAuthInternal(args: {
     code: parsed.code,
     redirect_uri: session.redirectUri || config.redirectUri,
   });
-  FEISHU_AUTH_SESSIONS.delete(parsed.state);
+  await deleteFeishuOAuthSession(args.cache, parsed.state);
   const expiresAt = token.expires_in && token.expires_in > 0
     ? new Date(Date.now() + token.expires_in * 1000).toISOString()
     : null;
@@ -223,6 +256,7 @@ async function completeFeishuOAuthInternal(args: {
 }
 
 export async function completeFeishuOAuth(args: {
+  cache: CachePort;
   docStore: JsonDocStorePort;
   userId: string;
   callbackUrl?: string;
@@ -233,6 +267,7 @@ export async function completeFeishuOAuth(args: {
 }
 
 export async function completeFeishuOAuthFromCallback(args: {
+  cache: CachePort;
   docStore: JsonDocStorePort;
   callbackUrl?: string;
   code?: string;

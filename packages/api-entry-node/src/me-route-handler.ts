@@ -1,5 +1,5 @@
 import type http from 'node:http';
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { AuthenticatedUser } from './auth.js';
 import { json, readBody } from './http-utils.js';
 import {
@@ -92,10 +92,11 @@ export async function handleMeRoute(args: {
   method: string;
   requestUrl: URL;
   user: AuthenticatedUser;
+  cache: CachePort;
   docStore: JsonDocStorePort;
   governanceIncidentsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user, docStore, governanceIncidentsDir } = args;
+  const { req, res, method, requestUrl, user, cache, docStore, governanceIncidentsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;
@@ -218,7 +219,7 @@ export async function handleMeRoute(args: {
       return true;
     }
     try {
-      json(res, 200, startFeishuOAuth(user.id));
+      json(res, 200, await startFeishuOAuth(cache, user.id));
     } catch (error) {
       const message = error instanceof Error ? error.message : 'feishu_oauth_start_failed';
       json(res, 400, { error_code: 'INVALID_REQUEST', message });
@@ -235,6 +236,7 @@ export async function handleMeRoute(args: {
     try {
       const record = await completeFeishuOAuth({
         docStore,
+        cache,
         userId: user.id,
         callbackUrl: typeof body?.callback_url === 'string' ? body.callback_url : undefined,
         code: typeof body?.code === 'string' ? body.code : undefined,

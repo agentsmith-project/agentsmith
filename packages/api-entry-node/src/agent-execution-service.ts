@@ -407,7 +407,7 @@ export class AgentExecutionService {
           ...(resourceProxyBaseUrl ? { resourceProxyBaseUrl } : {}),
           pendingByRequestId: new Map(),
         });
-        this.agentResourceService.markAgentConnected(agentId, {
+        void this.agentResourceService.markAgentConnected(agentId, {
           remote_ip: inferRemoteIp(req),
           protocol_version: '1.0',
           last_pong_at: new Date().toISOString(),
@@ -520,7 +520,7 @@ export class AgentExecutionService {
       pending.close();
     }
     this.socketsByAgentId.delete(agentId);
-    this.agentResourceService.markAgentDisconnected(agentId);
+    void this.agentResourceService.markAgentDisconnected(agentId);
     void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, agentId).then((agent) => (
       this.agentResourceService.touchAgentPresence(
         socket.workspaceId,
@@ -556,7 +556,7 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.pong') {
-      this.agentResourceService.markAgentConnected(agentId, {
+      void this.agentResourceService.markAgentConnected(agentId, {
         protocol_version: '1.0',
         last_pong_at: new Date().toISOString(),
       });

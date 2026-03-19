@@ -3,10 +3,14 @@ import { resolveKeycloakUserById } from './keycloak-user-directory';
 import {
   buildUpdatedWorkspaceRecord,
   createWorkspaceRecord,
-  readRegistryFile,
   sanitizeRecord,
-  writeRegistryFile,
 } from './workspace-registry/storage';
+import {
+  deletePersistedSystemWorkspace,
+  getPersistedSystemWorkspace,
+  listPersistedSystemWorkspaces,
+  upsertPersistedSystemWorkspace,
+} from './workspace-registry/persistence';
 export type {
   PublicSystemWorkspaceRecord,
   PublishSystemWorkspaceResult,
@@ -22,7 +26,7 @@ import type {
 } from './workspace-registry/types';
 
 export async function listSystemWorkspaces(): Promise<SystemWorkspaceRecord[]> {
-  const records = await readRegistryFile();
+  const records = await listPersistedSystemWorkspaces();
   return records.sort((left, right) => left.name.localeCompare(right.name));
 }
 
@@ -32,8 +36,7 @@ export async function listPublicSystemWorkspaces(): Promise<PublicSystemWorkspac
 }
 
 export async function getSystemWorkspace(id: string): Promise<SystemWorkspaceRecord | null> {
-  const records = await readRegistryFile();
-  return records.find((record) => record.id === id) ?? null;
+  return getPersistedSystemWorkspace(id);
 }
 
 export async function getPublicSystemWorkspace(id: string): Promise<SystemWorkspaceRecord | null> {
@@ -45,14 +48,14 @@ export async function getPublicSystemWorkspace(id: string): Promise<SystemWorksp
 }
 
 export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): Promise<SystemWorkspaceRecord> {
-  const records = await readRegistryFile();
+  const records = await listPersistedSystemWorkspaces();
   const workspaceAdmin = await resolveKeycloakUserById({
     idpUrl: input.idp_url,
     realm: input.idp_realm,
     userId: input.workspace_admin_user_id,
   });
   const record = createWorkspaceRecord(records, input, workspaceAdmin);
-  await writeRegistryFile([...records, record]);
+  await upsertPersistedSystemWorkspace(record);
   return record;
 }
 
@@ -60,7 +63,7 @@ export async function updateSystemWorkspace(
   id: string,
   input: UpsertSystemWorkspaceInput,
 ): Promise<SystemWorkspaceRecord> {
-  const records = await readRegistryFile();
+  const records = await listPersistedSystemWorkspaces();
   const existing = records.find((record) => record.id === id);
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
@@ -71,12 +74,12 @@ export async function updateSystemWorkspace(
     userId: input.workspace_admin_user_id,
   });
   const updated = buildUpdatedWorkspaceRecord(existing, input, workspaceAdmin);
-  await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));
+  await upsertPersistedSystemWorkspace(updated);
   return updated;
 }
 
 export async function publishSystemWorkspace(id: string): Promise<SystemWorkspaceRecord> {
-  const records = await readRegistryFile();
+  const records = await listPersistedSystemWorkspaces();
   const existing = records.find((record) => record.id === id);
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
@@ -91,7 +94,7 @@ export async function publishSystemWorkspace(id: string): Promise<SystemWorkspac
     last_init_error: null,
     updated_at: new Date().toISOString(),
   };
-  await writeRegistryFile(records.map((record) => (record.id === id ? provisioningRecord : record)));
+  await upsertPersistedSystemWorkspace(provisioningRecord);
 
   const result = await initializeWorkspaceResources(provisioningRecord);
   const finalized: SystemWorkspaceRecord = {
@@ -104,12 +107,12 @@ export async function publishSystemWorkspace(id: string): Promise<SystemWorkspac
     last_init_error: result.init_error,
     updated_at: new Date().toISOString(),
   };
-  await writeRegistryFile(records.map((record) => (record.id === id ? finalized : record)));
+  await upsertPersistedSystemWorkspace(finalized);
   return finalized;
 }
 
 export async function disableSystemWorkspace(id: string): Promise<SystemWorkspaceRecord> {
-  const records = await readRegistryFile();
+  const records = await listPersistedSystemWorkspaces();
   const existing = records.find((record) => record.id === id);
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
@@ -119,12 +122,12 @@ export async function disableSystemWorkspace(id: string): Promise<SystemWorkspac
     provisioning_status: 'disabled',
     updated_at: new Date().toISOString(),
   };
-  await writeRegistryFile(records.map((record) => (record.id === id ? updated : record)));
+  await upsertPersistedSystemWorkspace(updated);
   return updated;
 }
 
 export async function deleteSystemWorkspace(id: string): Promise<void> {
-  const records = await readRegistryFile();
+  const records = await listPersistedSystemWorkspaces();
   const existing = records.find((record) => record.id === id);
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
@@ -134,6 +137,5 @@ export async function deleteSystemWorkspace(id: string): Promise<void> {
       code: 'WORKSPACE_DISABLE_REQUIRED_BEFORE_DELETE',
     });
   }
-  const nextRecords = records.filter((record) => record.id !== id);
-  await writeRegistryFile(nextRecords);
+  await deletePersistedSystemWorkspace(id);
 }

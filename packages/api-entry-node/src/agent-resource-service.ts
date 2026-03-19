@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { resolveRegisteredWorkspaceRegistryPath } from './workspace-registry.js';
@@ -10,6 +10,12 @@ interface AgentConnectionState {
   remote_ip?: string;
   last_pong_at?: string;
   protocol_version?: string;
+}
+
+const AGENT_PRESENCE_TTL_SECONDS = 45;
+
+function agentPresenceKey(agentId: string): string {
+  return `agent:presence:${agentId}`;
 }
 
 export interface AgentConnectionInfo {
@@ -24,7 +30,10 @@ export class AgentResourceService {
   private static readonly agentKeysCollection = 'agent_service_keys';
   private readonly agentConnectionState = new Map<string, AgentConnectionState>();
 
-  constructor(private readonly docStore: JsonDocStorePort) {}
+  constructor(
+    private readonly docStore: JsonDocStorePort,
+    private readonly cache?: CachePort,
+  ) {}
 
   private agentsCollection(workspaceId: string): string {
     return resolveWorkspaceScopedCollection(AgentResourceService.agentsCollection, workspaceId);
@@ -55,7 +64,8 @@ export class AgentResourceService {
       workspace_id: workspaceId,
       project_id: projectId,
     });
-    return items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+    const hydrated = await Promise.all(items.map((item) => this.hydratePresence(item)));
+    return hydrated.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
   async listVisibleAgents(
@@ -73,7 +83,7 @@ export class AgentResourceService {
     const item = await this.docStore.get<AgentRecord>(this.agentsCollection(workspaceId), agentId);
     if (!item) return null;
     if (item.workspace_id !== workspaceId || item.project_id !== projectId) return null;
-    return item;
+    return this.hydratePresence(item);
   }
 
   async createAgent(
@@ -150,6 +160,9 @@ export class AgentResourceService {
       await this.docStore.delete(this.agentKeysCollection(workspaceId), key.id);
     }
     this.agentConnectionState.delete(agentId);
+    if (this.cache) {
+      await this.cache.del(agentPresenceKey(agentId));
+    }
     return true;
   }
 
@@ -252,15 +265,28 @@ export class AgentResourceService {
     return [...collections];
   }
 
-  markAgentConnected(agentId: string, meta: Omit<AgentConnectionState, 'connected_at'>): void {
+  async markAgentConnected(agentId: string, meta: Omit<AgentConnectionState, 'connected_at'>): Promise<void> {
     this.agentConnectionState.set(agentId, {
       connected_at: new Date().toISOString(),
       ...meta,
     });
+    if (this.cache) {
+      await this.cache.set(
+        agentPresenceKey(agentId),
+        JSON.stringify({
+          connected_at: new Date().toISOString(),
+          ...meta,
+        } satisfies AgentConnectionState),
+        AGENT_PRESENCE_TTL_SECONDS,
+      );
+    }
   }
 
-  markAgentDisconnected(agentId: string): void {
+  async markAgentDisconnected(agentId: string): Promise<void> {
     this.agentConnectionState.delete(agentId);
+    if (this.cache) {
+      await this.cache.del(agentPresenceKey(agentId));
+    }
   }
 
   async touchAgentPresence(
@@ -277,8 +303,26 @@ export class AgentResourceService {
     });
   }
 
-  getConnectionInfo(agentId: string): AgentConnectionState | null {
-    return this.agentConnectionState.get(agentId) ?? null;
+  async getConnectionInfo(agentId: string): Promise<AgentConnectionState | null> {
+    const local = this.agentConnectionState.get(agentId);
+    if (local) return local;
+    if (!this.cache) return null;
+    const raw = await this.cache.get(agentPresenceKey(agentId));
+    if (!raw) return null;
+    try {
+      const parsed = JSON.parse(raw) as AgentConnectionState;
+      if (
+        typeof parsed?.connected_at !== 'string'
+        || (parsed.remote_ip !== undefined && typeof parsed.remote_ip !== 'string')
+        || (parsed.last_pong_at !== undefined && typeof parsed.last_pong_at !== 'string')
+        || (parsed.protocol_version !== undefined && typeof parsed.protocol_version !== 'string')
+      ) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
   }
 
   buildConnectionInfo(agentId: string): AgentConnectionInfo {
@@ -294,7 +338,7 @@ export class AgentResourceService {
   async getDiagnostics(workspaceId: string, projectId: string, agentId: string): Promise<Record<string, unknown>> {
     const agent = await this.getAgent(workspaceId, projectId, agentId);
     if (!agent) return {};
-    const conn = this.getConnectionInfo(agentId);
+    const conn = await this.getConnectionInfo(agentId);
     return {
       last_error: undefined,
       last_error_at: undefined,
@@ -305,5 +349,26 @@ export class AgentResourceService {
       last_pong_at: conn?.last_pong_at,
       presence: agent.presence,
     };
+  }
+
+  private async hydratePresence(agent: AgentRecord): Promise<AgentRecord> {
+    if (agent.mode === 'internal') {
+      return agent;
+    }
+    const connection = await this.getConnectionInfo(agent.id);
+    if (connection) {
+      return {
+        ...agent,
+        presence: 'online',
+        last_seen_at: connection.last_pong_at ?? connection.connected_at,
+      };
+    }
+    if (agent.presence === 'online') {
+      return {
+        ...agent,
+        presence: 'offline',
+      };
+    }
+    return agent;
   }
 }

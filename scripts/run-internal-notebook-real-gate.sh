@@ -247,6 +247,22 @@ cleanup() {
 }
 trap cleanup EXIT
 
+existing_sandbox_pid="$(lsof -tiTCP:${SANDBOX_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
+if [[ -n "${existing_sandbox_pid}" ]]; then
+  info "terminating stale sandbox manager on :${SANDBOX_PORT} (pid=${existing_sandbox_pid})"
+  kill "${existing_sandbox_pid}" >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do
+    if ! kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
+      break
+    fi
+    sleep 1
+  done
+  if kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
+    echo "[internal-real-gate] failed to stop stale sandbox manager on :${SANDBOX_PORT}" >&2
+    exit 1
+  fi
+fi
+
 info "starting local sandbox manager on :${SANDBOX_PORT}"
 (
   cd "${SANDBOX_ROOT}/manager-service" && \
@@ -263,13 +279,13 @@ info "starting local sandbox manager on :${SANDBOX_PORT}"
 SANDBOX_PID=$!
 
 for _ in $(seq 1 60); do
-  if curl -fsS "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
+  if curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
     break
   fi
   sleep 1
 done
 
-if ! curl -fsS "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
+if ! curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
   echo "[internal-real-gate] sandbox manager failed to become ready." >&2
   tail -n 120 "${SANDBOX_LOG}" >&2 || true
   exit 1

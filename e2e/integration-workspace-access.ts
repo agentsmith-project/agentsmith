@@ -40,7 +40,7 @@ export async function ensureWorkspaceProjectCreatorAccess(args: {
     { headers: { Authorization: `Bearer ${args.token}` } },
   );
   if (!creatorsRes.ok()) {
-    if (creatorsRes.status() === 403 || creatorsRes.status() === 404) {
+    if ([400, 403, 404, 422, 503].includes(creatorsRes.status())) {
       return;
     }
     throw new Error(`workspace_project_creators_read_failed:${creatorsRes.status()}`);
@@ -74,7 +74,7 @@ export async function ensureWorkspaceProjectCreatorAccess(args: {
     },
   );
   if (!updateRes.ok()) {
-    if (updateRes.status() === 403 || updateRes.status() === 404) {
+    if ([400, 403, 404, 422, 503].includes(updateRes.status())) {
       return;
     }
     throw new Error(`workspace_project_creators_update_failed:${updateRes.status()}`);

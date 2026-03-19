@@ -234,6 +234,8 @@ start_mock_server() {
     (
       cd "${ROOT_DIR}"
       exec env \
+        MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+        MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
         NEXT_PUBLIC_USE_MSW=true \
         AGENTSMITH_ENABLE_TEST_ROUTES=true \
         SYSTEM_WORKSPACE_PROVISIONING_PATH="${MOCK_WORKSPACE_PROVISIONING_PATH}" \

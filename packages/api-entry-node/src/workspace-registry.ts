@@ -3,7 +3,7 @@ import {
   getPersistedSystemWorkspace,
   listPersistedSystemWorkspaces,
   upsertPersistedSystemWorkspace,
-} from '../../../src/lib/system-admin/workspace-registry/persistence.js';
+} from './system-workspace-persistence.js';
 import type {
   SystemWorkspaceRecord,
   WorkspaceIdentitySnapshot,

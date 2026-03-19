@@ -6,10 +6,12 @@ import {
   isBuiltInProjectGroupId,
   isBuiltInProjectTemplateId,
 } from './project-governance-model.js';
-import type { ProjectGroupRecord } from './project-groups-store.js';
-import type { ProjectMembershipRecord } from './project-memberships-store.js';
-import type { ProjectMemberPermissionState } from './project-member-permissions-store.js';
-import type { ProjectPermissionTemplateRecord } from './project-permission-templates-store.js';
+import type {
+  ProjectGroupRecord,
+  ProjectMembershipRecord,
+  ProjectMemberPermissionState,
+  ProjectPermissionTemplateRecord,
+} from './project-member-governance-types.js';
 
 export type MemberChangeRecord = {
   id: string;

@@ -6,7 +6,7 @@ import {
   listProjectGroups,
   listProjectPermissionTemplates,
 } from './project-member-governance-persistence.js';
-import type { ProjectPermissionTemplateRecord } from './project-permission-templates-store.js';
+import type { ProjectPermissionTemplateRecord } from './project-member-governance-types.js';
 import {
   getProjectResourcePolicy,
 } from './project-resource-policy-store.js';

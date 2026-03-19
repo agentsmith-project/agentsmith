@@ -59,6 +59,8 @@ describe('/api/system/workspaces', () => {
     expect(response.status).toBe(201);
     expect(registryModule.createSystemWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({
+        workspace_admin_mode: 'directory_user',
+        workspace_admin_email: 'alpha-admin@example.com',
         name: 'Alpha Workspace',
         workspace_admin_user_id: 'kc-alpha-admin',
       }),

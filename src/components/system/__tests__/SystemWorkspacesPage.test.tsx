@@ -70,7 +70,7 @@ describe('SystemWorkspacesPage', () => {
     vi.stubGlobal('confirm', vi.fn(() => true));
   });
 
-  it('renders system workspace cards and preview panel', async () => {
+  it('renders system workspace cards and simplified editor panel', async () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByTestId('system-workspaces__heading')).toBeInTheDocument();
@@ -80,11 +80,11 @@ describe('SystemWorkspacesPage', () => {
       '/en-US/workspaces/ws_alpha/login',
     );
     expect(screen.getByTestId('system-workspaces__open-workspace-login--ws_beta')).toBeDisabled();
-    expect(screen.getByTestId('system-workspaces__preview')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__mode')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__basics')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__idp')).toBeInTheDocument();
+    expect(screen.getByTestId('system-workspaces__identity-admin')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__status')).toBeInTheDocument();
     expect(screen.getByTestId('system-workspaces__notice-status')).toHaveTextContent('status_idle');
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_attention_label');
@@ -96,7 +96,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__card--ws_alpha')).toHaveTextContent('workspace_attention_ready_title');
   });
 
-  it('filters workspaces and generates preview values', async () => {
+  it('filters workspaces and keeps workspace naming focused on the editable name only', async () => {
     render(<SystemWorkspacesPage />);
 
     expect(await screen.findByTestId('system-workspaces__card--ws_alpha')).toBeInTheDocument();
@@ -105,7 +105,7 @@ describe('SystemWorkspacesPage', () => {
     expect(screen.getByTestId('system-workspaces__card--ws_beta')).toBeInTheDocument();
 
     fireEvent.change(screen.getByTestId('system-workspaces__draft-name'), { target: { value: 'Platform Ops' } });
-    expect(screen.getByTestId('system-workspaces__preview')).toHaveTextContent('platform_ops');
+    expect(screen.getByTestId('system-workspaces__draft-name')).toHaveValue('Platform Ops');
   });
 
   it('shows retry state when loading fails', async () => {
@@ -139,6 +139,13 @@ describe('SystemWorkspacesPage', () => {
             },
           }),
         ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          idp_ok: true,
+          directory_search_supported: true,
+        }),
       })
       .mockResolvedValueOnce({
         ok: true,
@@ -193,6 +200,12 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
       target: { value: 'alpha-client-prod' },
     });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-secret'), {
+      target: { value: 'secret-1' },
+    });
+    fireEvent.click(screen.getByTestId('system-workspaces__verify-idp'));
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__idp-status')).toHaveTextContent('idp_status_verified_with_directory'));
+    fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--directory'));
     await waitFor(() => expect(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin'));
     fireEvent.click(screen.getByTestId('system-workspaces__save'));
@@ -226,7 +239,7 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.click(screen.getByTestId('system-workspaces__configure--ws_alpha'));
 
     expect(screen.getByTestId('system-workspaces__admin-binding-warning')).toHaveTextContent(
-      'workspace_admin_binding_warning_title',
+      'workspace_admin_pending_badge',
     );
   });
 
@@ -287,6 +300,13 @@ describe('SystemWorkspacesPage', () => {
       .mockResolvedValueOnce({
         ok: true,
         json: async () => ({
+          idp_ok: true,
+          directory_search_supported: true,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
           items: [{ user_id: 'kc-ops-admin', email: 'ops@example.com', name: 'Ops Admin' }],
         }),
       })
@@ -313,6 +333,12 @@ describe('SystemWorkspacesPage', () => {
     fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-id'), {
       target: { value: 'ops-client' },
     });
+    fireEvent.change(screen.getByTestId('system-workspaces__draft-idp-client-secret'), {
+      target: { value: 'secret-1' },
+    });
+    fireEvent.click(screen.getByTestId('system-workspaces__verify-idp'));
+    await waitFor(() => expect(screen.getByTestId('system-workspaces__idp-status')).toHaveTextContent('idp_status_verified_with_directory'));
+    fireEvent.click(screen.getByTestId('system-workspaces__admin-mode--directory'));
     await waitFor(() => expect(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin')).toBeInTheDocument());
     fireEvent.click(screen.getByTestId('system-workspaces__admin-option--kc-ops-admin'));
     fireEvent.click(screen.getByTestId('system-workspaces__save'));

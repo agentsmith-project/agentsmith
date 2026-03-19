@@ -41,16 +41,17 @@ export function SystemWorkspacesPage() {
     searchQuery,
     saveError,
     saveNotice,
-    preview,
     editorState,
     adminSearchResults,
     adminSearchLoading,
     adminSearchError,
+    idpVerificationNotice,
     setSearchQuery,
     loadWorkspaces,
     resetDraft,
     selectWorkspace,
     updateDraft,
+    verifyIdentityProvider,
     submit,
     publish,
     disable,
@@ -237,7 +238,6 @@ export function SystemWorkspacesPage() {
                 locale={locale}
                 t={t}
                 state={editorState}
-                preview={preview}
                 isSubmitting={isSubmitting}
                 activeAction={activeAction}
                 saveError={saveError}
@@ -245,7 +245,9 @@ export function SystemWorkspacesPage() {
                 adminSearchResults={adminSearchResults}
                 adminSearchLoading={adminSearchLoading}
                 adminSearchError={adminSearchError}
+                idpVerificationNotice={idpVerificationNotice}
                 onDraftChange={updateDraft}
+                onVerifyIdp={() => void verifyIdentityProvider()}
                 onSubmit={() => void submit()}
                 onPublish={() => void publish()}
                 onDisable={() => void disable()}

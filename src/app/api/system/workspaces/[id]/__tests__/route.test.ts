@@ -56,6 +56,7 @@ describe('/api/system/workspaces/[id]', () => {
     expect(registryModule.updateSystemWorkspace).toHaveBeenCalledWith(
       'ws_alpha',
       expect.objectContaining({
+        workspace_admin_mode: 'directory_user',
         workspace_admin_user_id: 'kc-ops-admin',
       }),
     );

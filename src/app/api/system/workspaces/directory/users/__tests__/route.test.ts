@@ -33,6 +33,8 @@ describe('/api/system/workspaces/directory/users', () => {
         body: JSON.stringify({
           idp_url: 'https://login.example.com',
           idp_realm: 'mainline',
+          idp_client_id: 'agentsmith',
+          idp_client_secret: 'secret-1',
           query: 'dev-admin',
         }),
       }),

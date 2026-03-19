@@ -6,7 +6,13 @@ export interface KeycloakDirectoryUser {
   name: string | null;
 }
 
-type KeycloakAdminTokenResponse = {
+export interface KeycloakIdpVerificationResult {
+  idp_ok: boolean;
+  directory_search_supported: boolean;
+  advice_code?: 'DIRECTORY_PERMISSION_RECOMMENDED';
+}
+
+type KeycloakTokenResponse = {
   access_token?: string;
 };
 
@@ -28,18 +34,6 @@ function shouldUseMockKeycloakDirectory(): boolean {
   return process.env.NEXT_PUBLIC_USE_MSW === 'true';
 }
 
-function getKeycloakAdminUsername(): string {
-  return process.env.KEYCLOAK_ADMIN?.trim() || 'admin';
-}
-
-function getKeycloakAdminPassword(): string {
-  return process.env.KEYCLOAK_ADMIN_PASSWORD?.trim() || 'admin';
-}
-
-function getKeycloakAdminClientId(): string {
-  return process.env.KEYCLOAK_ADMIN_CLIENT_ID?.trim() || 'admin-cli';
-}
-
 function deriveKeycloakBaseUrl(idpUrl: string): string {
   const trimmed = idpUrl.trim().replace(/\/+$/, '');
   const marker = '/realms';
@@ -56,18 +50,29 @@ function buildDisplayName(user: KeycloakUserRecord): string | null {
   return username || null;
 }
 
-async function getAdminToken(idpUrl: string): Promise<string> {
-  const keycloakBaseUrl = deriveKeycloakBaseUrl(idpUrl);
+async function getClientCredentialsToken(args: {
+  idpUrl: string;
+  realm: string;
+  clientId: string;
+  clientSecret?: string;
+}): Promise<string> {
+  const clientId = args.clientId.trim();
+  const clientSecret = args.clientSecret?.trim() ?? '';
+  if (!clientId || !clientSecret) {
+    throw Object.assign(new Error('keycloak_client_credentials_required'), {
+      code: 'KEYCLOAK_IDP_INVALID',
+    });
+  }
+  const keycloakBaseUrl = deriveKeycloakBaseUrl(args.idpUrl);
   const body = new URLSearchParams({
-    grant_type: 'password',
-    client_id: getKeycloakAdminClientId(),
-    username: getKeycloakAdminUsername(),
-    password: getKeycloakAdminPassword(),
+    grant_type: 'client_credentials',
+    client_id: clientId,
+    client_secret: clientSecret,
   });
 
   let response: Response;
   try {
-    response = await fetch(`${keycloakBaseUrl}/realms/master/protocol/openid-connect/token`, {
+    response = await fetch(`${keycloakBaseUrl}/realms/${encodeURIComponent(args.realm.trim())}/protocol/openid-connect/token`, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: body.toString(),
@@ -75,26 +80,54 @@ async function getAdminToken(idpUrl: string): Promise<string> {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'unknown_error';
-    throw Object.assign(new Error(`keycloak_admin_token_failed:network:${message}`), {
+    throw Object.assign(new Error(`keycloak_client_token_failed:network:${message}`), {
       code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
 
   if (!response.ok) {
     const text = await response.text();
-    throw Object.assign(new Error(`keycloak_admin_token_failed:${response.status}:${text}`), {
+    throw Object.assign(new Error(`keycloak_client_token_failed:${response.status}:${text}`), {
+      code: response.status === 400 || response.status === 401 || response.status === 403
+        ? 'KEYCLOAK_IDP_INVALID'
+        : 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
+    });
+  }
+
+  const payload = (await response.json()) as KeycloakTokenResponse;
+  const token = payload.access_token?.trim();
+  if (!token) {
+    throw Object.assign(new Error('keycloak_client_token_missing'), {
+      code: 'KEYCLOAK_IDP_INVALID',
+    });
+  }
+  return token;
+}
+
+async function verifyRealmBase(idpUrl: string, realm: string): Promise<void> {
+  const keycloakBaseUrl = deriveKeycloakBaseUrl(idpUrl);
+  let response: Response;
+  try {
+    response = await fetch(
+      `${keycloakBaseUrl}/realms/${encodeURIComponent(realm.trim())}/.well-known/openid-configuration`,
+      {
+        method: 'GET',
+        cache: 'no-store',
+      },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'unknown_error';
+    throw Object.assign(new Error(`keycloak_realm_probe_failed:network:${message}`), {
       code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
 
-  const payload = (await response.json()) as KeycloakAdminTokenResponse;
-  const token = payload.access_token?.trim();
-  if (!token) {
-    throw Object.assign(new Error('keycloak_admin_token_missing'), {
-      code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
+  if (!response.ok) {
+    const text = await response.text();
+    throw Object.assign(new Error(`keycloak_realm_probe_failed:${response.status}:${text}`), {
+      code: response.status === 400 || response.status === 404 ? 'KEYCLOAK_IDP_INVALID' : 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
     });
   }
-  return token;
 }
 
 async function adminFetch(idpUrl: string, token: string, path: string): Promise<Response> {
@@ -150,6 +183,8 @@ function toDirectoryUser(user: KeycloakUserRecord): KeycloakDirectoryUser | null
 export async function searchKeycloakUsers(args: {
   idpUrl: string;
   realm: string;
+  clientId: string;
+  clientSecret?: string;
   query: string;
   max?: number;
 }): Promise<KeycloakDirectoryUser[]> {
@@ -162,7 +197,12 @@ export async function searchKeycloakUsers(args: {
       return haystack.includes(normalizedQuery);
     }).slice(0, Math.max(1, Math.min(args.max ?? 10, 20)));
   }
-  const token = await getAdminToken(args.idpUrl);
+  const token = await getClientCredentialsToken({
+    idpUrl: args.idpUrl,
+    realm: args.realm,
+    clientId: args.clientId,
+    clientSecret: args.clientSecret,
+  });
   const max = Math.max(1, Math.min(args.max ?? 10, 20));
   const payload = query.includes('@')
     ? (() => {
@@ -200,6 +240,8 @@ export async function searchKeycloakUsers(args: {
 export async function resolveKeycloakUserById(args: {
   idpUrl: string;
   realm: string;
+  clientId: string;
+  clientSecret?: string;
   userId: string;
 }): Promise<WorkspaceIdentitySnapshot> {
   const userId = args.userId.trim();
@@ -221,7 +263,12 @@ export async function resolveKeycloakUserById(args: {
       name: user.name,
     };
   }
-  const token = await getAdminToken(args.idpUrl);
+  const token = await getClientCredentialsToken({
+    idpUrl: args.idpUrl,
+    realm: args.realm,
+    clientId: args.clientId,
+    clientSecret: args.clientSecret,
+  });
   const response = await adminFetch(
     args.idpUrl,
     token,
@@ -250,4 +297,61 @@ export async function resolveKeycloakUserById(args: {
     email: user.email,
     name: user.name,
   };
+}
+
+export async function verifyKeycloakIdentityProvider(args: {
+  idpUrl: string;
+  realm: string;
+  clientId: string;
+  clientSecret?: string;
+}): Promise<KeycloakIdpVerificationResult> {
+  if (shouldUseMockKeycloakDirectory()) {
+    return {
+      idp_ok: true,
+      directory_search_supported: true,
+    };
+  }
+
+  const clientSecret = args.clientSecret?.trim() ?? '';
+  if (!clientSecret) {
+    await verifyRealmBase(args.idpUrl, args.realm);
+    return {
+      idp_ok: true,
+      directory_search_supported: false,
+      advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
+    };
+  }
+
+  const token = await getClientCredentialsToken({
+    idpUrl: args.idpUrl,
+    realm: args.realm,
+    clientId: args.clientId,
+    clientSecret: args.clientSecret,
+  });
+
+  const response = await adminFetch(
+    args.idpUrl,
+    token,
+    `/admin/realms/${encodeURIComponent(args.realm.trim())}/users?max=1`,
+  );
+
+  if (response.ok) {
+    return {
+      idp_ok: true,
+      directory_search_supported: true,
+    };
+  }
+
+  if (response.status === 401 || response.status === 403) {
+    return {
+      idp_ok: true,
+      directory_search_supported: false,
+      advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
+    };
+  }
+
+  const text = await response.text();
+  throw Object.assign(new Error(`keycloak_user_probe_failed:${response.status}:${text}`), {
+    code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE',
+  });
 }

@@ -92,3 +92,29 @@ export async function updateRegisteredWorkspaceProjectCreators(
   await upsertPersistedSystemWorkspace(next);
   return next;
 }
+
+export async function bindRegisteredWorkspaceAdminIfMatched(args: {
+  workspaceId: string;
+  actorId: string;
+  actorEmail?: string;
+  actorName?: string;
+}): Promise<RegisteredWorkspaceConfig | null> {
+  const actorEmail = args.actorEmail?.trim().toLowerCase();
+  if (!actorEmail) return null;
+  const target = await getPersistedSystemWorkspace(args.workspaceId);
+  if (!target?.workspace_admin_binding_required || !target.workspace_admin) {
+    return target;
+  }
+  if (target.workspace_admin.trim().toLowerCase() !== actorEmail) {
+    return target;
+  }
+  const next: RegisteredWorkspaceConfig = {
+    ...target,
+    workspace_admin_user_id: args.actorId.trim(),
+    workspace_admin_name: args.actorName?.trim() || target.workspace_admin_name || null,
+    workspace_admin_binding_required: false,
+    updated_at: new Date().toISOString(),
+  };
+  await upsertPersistedSystemWorkspace(next);
+  return next;
+}

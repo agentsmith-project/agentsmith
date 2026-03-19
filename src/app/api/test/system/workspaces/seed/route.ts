@@ -35,8 +35,9 @@ function isSystemWorkspaceRecord(value: unknown): value is SystemWorkspaceRecord
   return typeof record['id'] === 'string'
     && typeof record['name'] === 'string'
     && typeof record['workspace_admin'] === 'string'
-    && typeof record['workspace_admin_user_id'] === 'string'
-    && typeof record['workspace_admin_name'] === 'string'
+    && (record['workspace_admin_user_id'] === undefined || typeof record['workspace_admin_user_id'] === 'string')
+    && (record['workspace_admin_name'] === undefined || record['workspace_admin_name'] === null || typeof record['workspace_admin_name'] === 'string')
+    && (record['workspace_admin_binding_required'] === undefined || typeof record['workspace_admin_binding_required'] === 'boolean')
     && isIdentitySnapshotArray(record['project_creators'])
     && typeof idpRecord['kind'] === 'string'
     && typeof idpRecord['url'] === 'string'

@@ -1,5 +1,9 @@
 import type { WorkspaceRecord } from './resource-models.js';
-import { getRegisteredWorkspaceConfig, readRegisteredWorkspaces } from './workspace-registry.js';
+import {
+  bindRegisteredWorkspaceAdminIfMatched,
+  getRegisteredWorkspaceConfig,
+  readRegisteredWorkspaces,
+} from './workspace-registry.js';
 import {
   WORKSPACE_BUILT_IN_GROUPS,
   WORKSPACE_BUILT_IN_TEMPLATE_IDS,
@@ -79,7 +83,11 @@ export async function resolveWorkspacePermissions(args: {
   defaultWorkspaceId?: string;
 }): Promise<readonly string[]> {
   const { workspaceId, actorId, actorEmail, defaultWorkspaceId } = args;
-  const registered = await getRegisteredWorkspaceConfig(workspaceId);
+  const registered = await bindRegisteredWorkspaceAdminIfMatched({
+    workspaceId,
+    actorId,
+    actorEmail,
+  }) ?? await getRegisteredWorkspaceConfig(workspaceId);
   if (registered) {
     if (
       (registered.workspace_admin_user_id && registered.workspace_admin && snapshotMatchesActor(actorId, actorEmail, {
@@ -122,7 +130,12 @@ export async function buildWorkspaceMembersFromConfig(args: {
   joined_at: string;
 }>> {
   const { workspaceId, actorId, actorEmail, actorName, workspaceCreatedAt, defaultWorkspaceId } = args;
-  const registered = await getRegisteredWorkspaceConfig(workspaceId);
+  const registered = await bindRegisteredWorkspaceAdminIfMatched({
+    workspaceId,
+    actorId,
+    actorEmail,
+    actorName,
+  }) ?? await getRegisteredWorkspaceConfig(workspaceId);
   const members = new Map<string, {
     id: string;
     user_id: string;

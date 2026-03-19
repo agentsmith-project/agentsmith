@@ -30,7 +30,7 @@ export async function ensureRegistryDir(pathname: string): Promise<void> {
 export function createWorkspaceRecord(
   existingRecords: SystemWorkspaceRecord[],
   input: UpsertSystemWorkspaceInput,
-  workspaceAdmin: WorkspaceIdentitySnapshot,
+  workspaceAdmin: WorkspaceIdentitySnapshot | null,
 ): SystemWorkspaceRecord {
   const tenant = buildWorkspaceTenantPreview(input.name);
   if (existingRecords.some((record) => record.id === tenant.workspace_id)) {
@@ -41,9 +41,10 @@ export function createWorkspaceRecord(
   return {
     id: tenant.workspace_id,
     name: input.name.trim(),
-    workspace_admin: workspaceAdmin.email,
-    workspace_admin_user_id: workspaceAdmin.user_id,
-    workspace_admin_name: workspaceAdmin.name,
+    workspace_admin: workspaceAdmin?.email ?? input.workspace_admin_email.trim(),
+    workspace_admin_user_id: workspaceAdmin?.user_id,
+    workspace_admin_name: workspaceAdmin?.name ?? null,
+    workspace_admin_binding_required: workspaceAdmin ? false : true,
     project_creators: [],
     idp: {
       kind: 'keycloak',
@@ -64,7 +65,7 @@ export function createWorkspaceRecord(
 export function buildUpdatedWorkspaceRecord(
   existing: SystemWorkspaceRecord,
   input: UpsertSystemWorkspaceInput,
-  workspaceAdmin: WorkspaceIdentitySnapshot,
+  workspaceAdmin: WorkspaceIdentitySnapshot | null,
 ): SystemWorkspaceRecord {
   const nextIdp: SystemWorkspaceIdpConfig = {
     kind: 'keycloak',
@@ -75,8 +76,9 @@ export function buildUpdatedWorkspaceRecord(
   };
   const requiresRepublish =
     existing.name !== input.name.trim() ||
-    existing.workspace_admin !== workspaceAdmin.email ||
-    existing.workspace_admin_user_id !== workspaceAdmin.user_id ||
+    existing.workspace_admin !== (workspaceAdmin?.email ?? input.workspace_admin_email.trim()) ||
+    existing.workspace_admin_user_id !== workspaceAdmin?.user_id ||
+    Boolean(existing.workspace_admin_binding_required) !== !workspaceAdmin ||
     existing.idp.url !== nextIdp.url ||
     existing.idp.realm !== nextIdp.realm ||
     existing.idp.client_id !== nextIdp.client_id ||
@@ -85,9 +87,10 @@ export function buildUpdatedWorkspaceRecord(
   return {
     ...existing,
     name: input.name.trim(),
-    workspace_admin: workspaceAdmin.email,
-    workspace_admin_user_id: workspaceAdmin.user_id,
-    workspace_admin_name: workspaceAdmin.name,
+    workspace_admin: workspaceAdmin?.email ?? input.workspace_admin_email.trim(),
+    workspace_admin_user_id: workspaceAdmin?.user_id,
+    workspace_admin_name: workspaceAdmin?.name ?? null,
+    workspace_admin_binding_required: workspaceAdmin ? false : true,
     idp: nextIdp,
     provisioning_status: requiresRepublish ? 'draft' : existing.provisioning_status,
     last_initialized_at: requiresRepublish ? null : existing.last_initialized_at,

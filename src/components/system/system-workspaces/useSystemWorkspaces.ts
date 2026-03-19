@@ -1,13 +1,13 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { buildWorkspaceTenantPreview } from '@/lib/system-admin/config';
 import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
 import type {
   SystemWorkspaceAction,
   SystemWorkspaceDraft,
   SystemWorkspaceDraftAdmin,
   SystemWorkspaceEditorState,
+  SystemWorkspaceIdpVerificationState,
 } from './types';
 
 type UseSystemWorkspacesArgs = {
@@ -18,6 +18,8 @@ type FetchResponse = { error_message?: string; id?: string };
 
 const EMPTY_DRAFT: SystemWorkspaceDraft = {
   name: '',
+  adminMode: 'directory_user',
+  adminEmail: '',
   adminQuery: '',
   admin: null,
   idpUrl: '',
@@ -30,6 +32,17 @@ type DirectorySearchResponse = {
   items?: SystemWorkspaceDraftAdmin[];
   error_message?: string;
 };
+
+type IdpVerifyResponse = {
+  idp_ok?: boolean;
+  directory_search_supported?: boolean;
+  advice_code?: string;
+  error_message?: string;
+};
+
+function isValidEmail(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
+}
 
 async function parseJson<T>(response: Response): Promise<T | null> {
   return (await response.json().catch(() => null)) as T | null;
@@ -49,6 +62,8 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   const [adminSearchResults, setAdminSearchResults] = useState<SystemWorkspaceDraftAdmin[]>([]);
   const [adminSearchLoading, setAdminSearchLoading] = useState(false);
   const [adminSearchError, setAdminSearchError] = useState<string | null>(null);
+  const [idpVerificationState, setIdpVerificationState] = useState<SystemWorkspaceIdpVerificationState>('idle');
+  const [idpVerificationNotice, setIdpVerificationNotice] = useState<string | null>(null);
 
   const loadWorkspaces = async () => {
     setIsLoading(true);
@@ -79,10 +94,19 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     ));
   }, [searchQuery, workspaces]);
 
-  const preview = useMemo(() => buildWorkspaceTenantPreview(draft.name || 'workspace'), [draft.name]);
   const selectedWorkspace = workspaces.find((workspace) => workspace.id === selectedWorkspaceId) ?? null;
   const selectedStatus = selectedWorkspace?.provisioning_status ?? 'draft';
   const isProvisioning = selectedStatus === 'provisioning';
+  const effectiveIdpClientSecret = draft.idpClientSecret.trim() || (selectedWorkspace?.idp.has_client_secret ? '__persisted__' : '');
+  const hasIdpInputs = Boolean(
+    draft.idpUrl.trim() &&
+    draft.idpRealm.trim() &&
+    draft.idpClientId.trim(),
+  );
+  const idpVerified = idpVerificationState === 'verified_with_directory' || idpVerificationState === 'verified_without_directory';
+  const canSubmitAdmin = draft.adminMode === 'directory_user'
+    ? Boolean(draft.admin?.user_id.trim()) && idpVerificationState === 'verified_with_directory'
+    : isValidEmail(draft.adminEmail) && idpVerified;
 
   const editorState: SystemWorkspaceEditorState = {
     draft,
@@ -92,16 +116,17 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     isEditingWorkspace: Boolean(selectedWorkspaceId),
     canSubmit:
       Boolean(draft.name.trim()) &&
-      Boolean(draft.admin?.user_id.trim()) &&
-      Boolean(draft.idpUrl.trim()) &&
-      Boolean(draft.idpRealm.trim()) &&
-      Boolean(draft.idpClientId.trim()),
+      hasIdpInputs &&
+      idpVerified &&
+      canSubmitAdmin,
     canPublish:
       Boolean(selectedWorkspaceId) &&
       (selectedStatus === 'draft' || selectedStatus === 'failed' || selectedStatus === 'disabled'),
     canDisable: Boolean(selectedWorkspaceId) && selectedStatus === 'ready',
     canDelete: Boolean(selectedWorkspaceId) && selectedStatus === 'disabled',
     isProvisioning,
+    idpVerificationState,
+    directorySearchEnabled: idpVerificationState === 'verified_with_directory',
   };
 
   const resetDraft = () => {
@@ -109,6 +134,8 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     setDraft(EMPTY_DRAFT);
     setAdminSearchResults([]);
     setAdminSearchError(null);
+    setIdpVerificationState('idle');
+    setIdpVerificationNotice(null);
   };
 
   const selectWorkspace = (workspace: PublicSystemWorkspaceRecord) => {
@@ -119,6 +146,8 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     setAdminSearchError(null);
     setDraft({
       name: workspace.name,
+      adminMode: workspace.workspace_admin_user_id ? 'directory_user' : 'email_pending',
+      adminEmail: workspace.workspace_admin,
       adminQuery: workspace.workspace_admin,
       admin: workspace.workspace_admin_user_id
         ? {
@@ -132,15 +161,91 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
       idpClientId: workspace.idp.client_id,
       idpClientSecret: '',
     });
+    setIdpVerificationState('idle');
+    setIdpVerificationNotice(null);
   };
 
   const updateDraft = (patch: Partial<SystemWorkspaceDraft>) => {
-    setDraft((current) => ({ ...current, ...patch }));
+    const idpChanged = 'idpUrl' in patch || 'idpRealm' in patch || 'idpClientId' in patch || 'idpClientSecret' in patch;
+    const modeChanged = 'adminMode' in patch;
+    setDraft((current) => ({
+      ...current,
+      ...patch,
+      ...(idpChanged && current.adminMode === 'directory_user' ? { admin: null } : {}),
+      ...(modeChanged && patch.adminMode === 'email_pending'
+        ? {
+            admin: null,
+            adminQuery: '',
+            adminEmail: patch.adminEmail ?? current.adminEmail ?? current.admin?.email ?? '',
+          }
+        : {}),
+      ...(modeChanged && patch.adminMode === 'directory_user'
+        ? {
+            adminQuery: patch.adminQuery ?? current.admin?.email ?? current.adminEmail,
+          }
+        : {}),
+    }));
+    if ('idpUrl' in patch || 'idpRealm' in patch || 'idpClientId' in patch || 'idpClientSecret' in patch) {
+      setIdpVerificationState('idle');
+      setIdpVerificationNotice(null);
+      setAdminSearchResults([]);
+      setAdminSearchError(null);
+    }
+  };
+
+  const verifyIdentityProvider = async () => {
+    if (
+      !draft.idpUrl.trim()
+      || !draft.idpRealm.trim()
+      || !draft.idpClientId.trim()
+    ) {
+      return;
+    }
+    setIdpVerificationState('verifying');
+    setIdpVerificationNotice(null);
+    try {
+      const response = await fetch('/api/system/workspaces/idp/verify', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          idp_url: draft.idpUrl,
+          idp_realm: draft.idpRealm,
+          idp_client_id: draft.idpClientId,
+          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          workspace_id: selectedWorkspaceId ?? undefined,
+        }),
+      });
+      const data = await parseJson<IdpVerifyResponse>(response);
+      if (!response.ok) {
+        setIdpVerificationState('failed');
+        setIdpVerificationNotice(data?.error_message || 'keycloak_idp_invalid');
+        return;
+      }
+      if (data?.directory_search_supported) {
+        setIdpVerificationState('verified_with_directory');
+        setIdpVerificationNotice('idp_directory_ready');
+        return;
+      }
+      setIdpVerificationState('verified_without_directory');
+      setIdpVerificationNotice(data?.advice_code === 'DIRECTORY_PERMISSION_RECOMMENDED'
+        ? 'idp_directory_recommended'
+        : 'idp_directory_unavailable_but_email_pending_allowed');
+    } catch {
+      setIdpVerificationState('failed');
+      setIdpVerificationNotice('keycloak_directory_unavailable');
+    }
   };
 
   const searchAdminDirectory = async (query: string) => {
     const normalizedQuery = query.trim();
-    if (normalizedQuery.length < 2 || !draft.idpUrl.trim() || !draft.idpRealm.trim()) {
+    if (
+      normalizedQuery.length < 2 ||
+      idpVerificationState !== 'verified_with_directory' ||
+      !draft.idpUrl.trim() ||
+      !draft.idpRealm.trim() ||
+      !draft.idpClientId.trim() ||
+      !effectiveIdpClientSecret
+    ) {
       setAdminSearchResults([]);
       setAdminSearchError(null);
       return;
@@ -154,6 +259,9 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         body: JSON.stringify({
           idp_url: draft.idpUrl,
           idp_realm: draft.idpRealm,
+          idp_client_id: draft.idpClientId,
+          idp_client_secret: draft.idpClientSecret.trim() || undefined,
+          workspace_id: selectedWorkspaceId ?? undefined,
           query: normalizedQuery,
         }),
       });
@@ -170,11 +278,16 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
   };
 
   useEffect(() => {
+    if (draft.adminMode !== 'directory_user') {
+      setAdminSearchResults([]);
+      setAdminSearchError(null);
+      return;
+    }
     const handle = window.setTimeout(() => {
       void searchAdminDirectory(draft.adminQuery);
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [draft.adminQuery, draft.idpRealm, draft.idpUrl]);
+  }, [draft.adminMode, draft.adminQuery, draft.idpClientId, draft.idpClientSecret, draft.idpRealm, draft.idpUrl, idpVerificationState, selectedWorkspaceId, effectiveIdpClientSecret]);
 
   const runMutation = async (action: Exclude<SystemWorkspaceAction, null>, execute: () => Promise<void>) => {
     setIsSubmitting(true);
@@ -196,11 +309,15 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: draft.name,
-          workspace_admin_user_id: draft.admin?.user_id,
+          workspace_admin_mode: draft.adminMode,
+          workspace_admin_user_id: draft.adminMode === 'directory_user' ? draft.admin?.user_id : undefined,
+          workspace_admin_email: draft.adminMode === 'directory_user'
+            ? draft.admin?.email || draft.adminEmail
+            : draft.adminEmail,
           idp_url: draft.idpUrl,
           idp_realm: draft.idpRealm,
           idp_client_id: draft.idpClientId,
-          idp_client_secret: draft.idpClientSecret || undefined,
+          idp_client_secret: draft.idpClientSecret.trim() || (selectedWorkspaceId ? undefined : draft.idpClientSecret),
         }),
       });
       const data = await parseJson<FetchResponse>(response);
@@ -214,6 +331,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
       }
       setDraft((current) => ({ ...current, idpClientSecret: '' }));
       setAdminSearchResults([]);
+      setIdpVerificationState('idle');
       setSaveNotice(selectedWorkspaceId ? t('update_success') : t('draft_success'));
     });
   };
@@ -273,7 +391,6 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     searchQuery,
     saveError,
     saveNotice,
-    preview,
     editorState,
     setSearchQuery,
     loadWorkspaces,
@@ -283,7 +400,8 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     adminSearchResults,
     adminSearchLoading,
     adminSearchError,
-    searchAdminDirectory,
+    idpVerificationNotice,
+    verifyIdentityProvider,
     submit,
     publish,
     disable,

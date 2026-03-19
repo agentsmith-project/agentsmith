@@ -21,6 +21,8 @@ export interface WorkspaceIdentitySnapshot {
   name: string | null;
 }
 
+export type WorkspaceAdminBindingMode = 'directory_user' | 'email_pending';
+
 export interface SystemWorkspaceRecord {
   id: string;
   name: string;
@@ -46,7 +48,9 @@ export interface PublicSystemWorkspaceRecord extends Omit<SystemWorkspaceRecord,
 
 export interface UpsertSystemWorkspaceInput {
   name: string;
-  workspace_admin_user_id: string;
+  workspace_admin_mode: WorkspaceAdminBindingMode;
+  workspace_admin_user_id?: string;
+  workspace_admin_email: string;
   idp_url: string;
   idp_realm: string;
   idp_client_id: string;

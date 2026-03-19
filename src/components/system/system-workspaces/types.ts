@@ -11,8 +11,19 @@ export type SystemWorkspaceDraftAdmin = {
   name: string | null;
 };
 
+export type SystemWorkspaceAdminMode = 'directory_user' | 'email_pending';
+
+export type SystemWorkspaceIdpVerificationState =
+  | 'idle'
+  | 'verifying'
+  | 'verified_with_directory'
+  | 'verified_without_directory'
+  | 'failed';
+
 export type SystemWorkspaceDraft = {
   name: string;
+  adminMode: SystemWorkspaceAdminMode;
+  adminEmail: string;
   adminQuery: string;
   admin: SystemWorkspaceDraftAdmin | null;
   idpUrl: string;
@@ -32,4 +43,6 @@ export type SystemWorkspaceEditorState = {
   canDisable: boolean;
   canDelete: boolean;
   isProvisioning: boolean;
+  idpVerificationState: SystemWorkspaceIdpVerificationState;
+  directorySearchEnabled: boolean;
 };

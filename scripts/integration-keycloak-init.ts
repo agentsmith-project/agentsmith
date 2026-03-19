@@ -18,6 +18,9 @@ type KeycloakClientConfig = {
   redirectUris?: string[];
   webOrigins?: string[];
   directAccessGrantsEnabled?: boolean;
+  standardFlowEnabled?: boolean;
+  publicClient?: boolean;
+  serviceAccountsEnabled?: boolean;
 };
 
 type KeycloakRealmConfig = {
@@ -289,6 +292,9 @@ async function ensureClientRedirects(token: string): Promise<void> {
   config.webOrigins = Array.from(nextOrigins);
   // Keep password grant fallback stable after deps reset.
   config.directAccessGrantsEnabled = true;
+  config.standardFlowEnabled = true;
+  config.publicClient = true;
+  config.serviceAccountsEnabled = false;
 
   const putRes = await adminFetch(
     token,

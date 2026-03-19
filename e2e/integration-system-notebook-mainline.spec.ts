@@ -5,7 +5,7 @@ import { readStoredAuthToken } from './integration-workspace-access';
 const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
-const KEYCLOAK_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
+const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const GLM_BASE_URL = process.env.INTEGRATION_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
 const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'GLM-5';
 const GLM_API_KEY = process.env.GLM_API_KEY;
@@ -152,10 +152,10 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
   await page.getByTestId('system-workspaces__draft-name').fill(workspaceName);
   await page.getByTestId('system-workspaces__draft-idp-url').fill(KEYCLOAK_BASE_URL);
   await page.getByTestId('system-workspaces__draft-idp-realm').fill(KEYCLOAK_REALM);
-  await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_CLIENT_ID);
-  await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('integration-client-secret');
-  await selectWorkspaceAdmin(page, 'dev-admin@example.com');
-  await expect(page.getByTestId('system-workspaces__selected-admin')).toContainText('dev-admin@example.com');
+  await page.getByTestId('system-workspaces__draft-idp-client-id').fill(KEYCLOAK_WORKSPACE_CLIENT_ID);
+  await verifyIdentityProvider(page);
+  await page.getByTestId('system-workspaces__admin-mode--email').click();
+  await page.getByTestId('system-workspaces__draft-admin-email').fill('dev-admin@example.com');
   await page.getByTestId('system-workspaces__save').click();
 
   const workspaceId = await waitForWorkspaceId(page, workspaceName);
@@ -167,6 +167,17 @@ async function createAndPublishWorkspace(page: Page): Promise<string> {
     new RegExp(`/${LOCALE}/workspaces/${workspaceId}/login$`),
   );
   return workspaceId;
+}
+
+async function verifyIdentityProvider(page: Page): Promise<void> {
+  const responsePromise = page.waitForResponse(
+    (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
+  await page.getByTestId('system-workspaces__verify-idp').click();
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
+  await expect(page.getByTestId('system-workspaces__idp-status')).toBeVisible({ timeout: 15_000 });
 }
 
 async function selectWorkspaceAdmin(page: Page, email: string): Promise<void> {

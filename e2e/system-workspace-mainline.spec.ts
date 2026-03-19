@@ -35,6 +35,17 @@ async function waitForWorkspaceId(page: import('@playwright/test').Page, workspa
 }
 
 async function mockWorkspaceAdminDirectory(page: import('@playwright/test').Page) {
+  await page.route('**/api/system/workspaces/idp/verify', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        idp_ok: true,
+        directory_search_supported: true,
+      }),
+    });
+  });
+
   await page.route('**/api/system/workspaces/directory/users', async (route) => {
     const request = route.request();
     const body = request.postDataJSON() as { query?: string } | undefined;
@@ -49,6 +60,19 @@ async function mockWorkspaceAdminDirectory(page: import('@playwright/test').Page
       body: JSON.stringify({ items: users, total: users.length }),
     });
   });
+}
+
+async function verifyIdentityProvider(page: import('@playwright/test').Page) {
+  const responsePromise = page.waitForResponse(
+    (candidate) =>
+      candidate.url().includes('/api/system/workspaces/idp/verify') &&
+      candidate.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
+  await page.getByTestId('system-workspaces__verify-idp').click();
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
+  await expect(page.getByTestId('system-workspaces__idp-status')).toBeVisible();
 }
 
 async function selectWorkspaceAdmin(page: import('@playwright/test').Page, email: string) {
@@ -112,6 +136,7 @@ test.describe('System Workspace Mainline', () => {
     await page.getByTestId('system-workspaces__draft-idp-realm').fill('mainline');
     await page.getByTestId('system-workspaces__draft-idp-client-id').fill('mainline-client');
     await page.getByTestId('system-workspaces__draft-idp-client-secret').fill('mainline-secret');
+    await verifyIdentityProvider(page);
     await selectWorkspaceAdmin(page, 'dev-admin@example.com');
     await page.getByTestId('system-workspaces__save').click();
 

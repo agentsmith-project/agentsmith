@@ -44,6 +44,21 @@ export async function POST(request: Request) {
         { status: 422 },
       );
     }
+    if (code === 'KEYCLOAK_IDP_INVALID') {
+      return NextResponse.json(
+        { error_code: 'KEYCLOAK_IDP_INVALID', error_message: 'keycloak_idp_invalid' },
+        { status: 422 },
+      );
+    }
+    if (code === 'KEYCLOAK_DIRECTORY_PERMISSION_REQUIRED') {
+      return NextResponse.json(
+        {
+          error_code: 'KEYCLOAK_DIRECTORY_PERMISSION_REQUIRED',
+          error_message: 'keycloak_directory_permission_required',
+        },
+        { status: 422 },
+      );
+    }
     if (code === 'KEYCLOAK_DIRECTORY_UNAVAILABLE') {
       return NextResponse.json(
         { error_code: 'KEYCLOAK_DIRECTORY_UNAVAILABLE', error_message: 'keycloak_directory_unavailable' },

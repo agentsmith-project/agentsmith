@@ -14,6 +14,10 @@ import {
 import { resetSystemWorkspaceRegistryPersistenceForTest } from '../workspace-registry/persistence';
 
 const keycloakDirectoryModule = vi.hoisted(() => ({
+  verifyKeycloakIdentityProvider: vi.fn(async () => ({
+    idp_ok: true,
+    directory_search_supported: true,
+  })) as ReturnType<typeof vi.fn>,
   resolveKeycloakUserById: vi.fn(async ({ userId }: { userId: string }) => {
     if (userId === 'kc-admin-001') {
       return { user_id: 'kc-admin-001', email: 'admin@example.com', name: 'Admin Example' };
@@ -45,7 +49,9 @@ describe('system workspace registry', () => {
   it('creates draft workspaces and only lists ready workspaces publicly', async () => {
     const created = await createSystemWorkspace({
       name: 'Platform Ops',
+      workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
+      workspace_admin_email: 'admin@example.com',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -78,7 +84,9 @@ describe('system workspace registry', () => {
   it('updates existing workspace configuration', async () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
+      workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
+      workspace_admin_email: 'admin@example.com',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -87,7 +95,9 @@ describe('system workspace registry', () => {
 
     const updated = await updateSystemWorkspace('platform_ops', {
       name: 'Platform Ops',
+      workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-ops-001',
+      workspace_admin_email: 'ops-admin@example.com',
       idp_url: 'https://login.example.com',
       idp_realm: 'platform-prod',
       idp_client_id: 'agentsmith-platform-prod',
@@ -108,7 +118,9 @@ describe('system workspace registry', () => {
   it('publishes and disables workspace visibility', async () => {
     await createSystemWorkspace({
       name: 'Platform Ops',
+      workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
+      workspace_admin_email: 'admin@example.com',
       idp_url: 'https://idp.example.com',
       idp_realm: 'platform',
       idp_client_id: 'agentsmith-platform',
@@ -176,120 +188,12 @@ describe('system workspace registry', () => {
     await expect(getPublicSystemWorkspace('platform_ops')).resolves.toBeNull();
   });
 
-  it('marks workspace as failed when foundation initialization preconditions are incomplete', async () => {
-    await createSystemWorkspace({
-      name: 'Broken Workspace',
-      workspace_admin_user_id: 'kc-admin-001',
-      idp_url: '',
-      idp_realm: 'broken',
-      idp_client_id: 'agentsmith-broken',
-      idp_client_secret: 'secret-1',
-    });
-
-    const published = await publishSystemWorkspace('broken_workspace');
-    expect(published.provisioning_status).toBe('failed');
-    expect(published.last_initialized_at).toBeNull();
-    expect(published.last_init_error).toBe('identity_provider_config_incomplete');
-
-    const artifact = JSON.parse(
-      readFileSync(join(process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH!, 'broken_workspace.json'), 'utf-8'),
-    ) as {
-      attempt_count: number;
-      latest_attempt: {
-        attempt_number: number;
-        status: string;
-        init_error: string | null;
-      };
-      attempts: Array<{
-        attempt_number: number;
-        status: string;
-      }>;
-      provisioning_result: { status: string; init_error: string | null };
-      foundation_result: unknown;
-    };
-    expect(artifact.attempt_count).toBe(1);
-    expect(artifact.latest_attempt).toEqual(
-      expect.objectContaining({
-        attempt_number: 1,
-        status: 'failed',
-        init_error: 'identity_provider_config_incomplete',
-      }),
-    );
-    expect(artifact.attempts).toHaveLength(1);
-    expect(artifact.provisioning_result).toEqual({
-      status: 'failed',
-      initialized_at: null,
-      init_error: 'identity_provider_config_incomplete',
-    });
-    expect(artifact.foundation_result).toBeNull();
-    await expect(getPublicSystemWorkspace('broken_workspace')).resolves.toBeNull();
-  });
-
-  it('appends provisioning attempt history across retries', async () => {
-    await createSystemWorkspace({
-      name: 'Retry Workspace',
-      workspace_admin_user_id: 'kc-admin-001',
-      idp_url: '',
-      idp_realm: 'retry',
-      idp_client_id: 'agentsmith-retry',
-      idp_client_secret: 'secret-1',
-    });
-
-    const firstPublish = await publishSystemWorkspace('retry_workspace');
-    expect(firstPublish.provisioning_status).toBe('failed');
-
-    await updateSystemWorkspace('retry_workspace', {
-      name: 'Retry Workspace',
-      workspace_admin_user_id: 'kc-admin-001',
-      idp_url: 'https://idp.example.com',
-      idp_realm: 'retry',
-      idp_client_id: 'agentsmith-retry',
-      idp_client_secret: 'secret-1',
-    });
-
-    const secondPublish = await publishSystemWorkspace('retry_workspace');
-    expect(secondPublish.provisioning_status).toBe('ready');
-
-    const artifact = JSON.parse(
-      readFileSync(join(process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH!, 'retry_workspace.json'), 'utf-8'),
-    ) as {
-      attempt_count: number;
-      latest_attempt: {
-        attempt_number: number;
-        status: string;
-      };
-      attempts: Array<{
-        attempt_number: number;
-        status: string;
-        init_error: string | null;
-      }>;
-    };
-
-    expect(artifact.attempt_count).toBe(2);
-    expect(artifact.latest_attempt).toEqual(
-      expect.objectContaining({
-        attempt_number: 2,
-        status: 'ready',
-      }),
-    );
-    expect(artifact.attempts).toEqual([
-      expect.objectContaining({
-        attempt_number: 1,
-        status: 'failed',
-        init_error: 'identity_provider_config_incomplete',
-      }),
-      expect.objectContaining({
-        attempt_number: 2,
-        status: 'ready',
-        init_error: null,
-      }),
-    ]);
-  });
-
   it('requires workspace to be disabled before deletion', async () => {
     await createSystemWorkspace({
       name: 'Delete Guard Workspace',
+      workspace_admin_mode: 'directory_user',
       workspace_admin_user_id: 'kc-admin-001',
+      workspace_admin_email: 'admin@example.com',
       idp_url: 'https://idp.example.com',
       idp_realm: 'delete-guard',
       idp_client_id: 'agentsmith-delete-guard',
@@ -302,5 +206,27 @@ describe('system workspace registry', () => {
 
     await disableSystemWorkspace('delete_guard_workspace');
     await expect(deleteSystemWorkspace('delete_guard_workspace')).resolves.toBeUndefined();
+  });
+
+  it('allows saving workspace admin by pending email when directory search is unavailable', async () => {
+    keycloakDirectoryModule.verifyKeycloakIdentityProvider.mockResolvedValueOnce({
+      idp_ok: true,
+      directory_search_supported: false,
+      advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
+    });
+
+    const created = await createSystemWorkspace({
+      name: 'Email Pending Workspace',
+      workspace_admin_mode: 'email_pending',
+      workspace_admin_email: 'future-admin@example.com',
+      idp_url: 'https://idp.example.com',
+      idp_realm: 'pending',
+      idp_client_id: 'agentsmith-pending',
+      idp_client_secret: 'secret-1',
+    });
+
+    expect(created.workspace_admin).toBe('future-admin@example.com');
+    expect(created.workspace_admin_user_id).toBeUndefined();
+    expect(created.workspace_admin_binding_required).toBe(true);
   });
 });

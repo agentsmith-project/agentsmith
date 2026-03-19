@@ -1,22 +1,15 @@
 import { NextResponse } from 'next/server';
 import { isSystemAdminAuthenticated } from '@/lib/system-admin/session';
-import { searchKeycloakUsers } from '@/lib/system-admin/keycloak-user-directory';
+import { verifyKeycloakIdentityProvider } from '@/lib/system-admin/keycloak-user-directory';
 import { getSystemWorkspace } from '@/lib/system-admin/workspace-registry';
 
-type SearchDirectoryUsersBody = {
+type VerifyIdpBody = {
   workspace_id?: string;
   idp_url?: string;
   idp_realm?: string;
   idp_client_id?: string;
   idp_client_secret?: string;
-  query?: string;
 };
-
-const MOCK_DIRECTORY_USERS = [
-  { user_id: 'kc-dev-admin', email: 'dev-admin@example.com', name: 'Dev Admin' },
-  { user_id: 'kc-integration-user', email: 'integration-user@example.com', name: 'Integration User' },
-  { user_id: 'kc-integration-member', email: 'integration-member@example.com', name: 'Integration Member' },
-];
 
 export async function POST(request: Request) {
   const authenticated = await isSystemAdminAuthenticated();
@@ -24,7 +17,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error_code: 'UNAUTHORIZED', error_message: 'unauthorized' }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => null)) as SearchDirectoryUsersBody | null;
+  const body = (await request.json().catch(() => null)) as VerifyIdpBody | null;
   const workspaceId = body?.workspace_id?.trim() ?? '';
   const idpUrl = body?.idp_url?.trim() ?? '';
   const idpRealm = body?.idp_realm?.trim() ?? '';
@@ -32,29 +25,22 @@ export async function POST(request: Request) {
   const providedClientSecret = body?.idp_client_secret?.trim() ?? '';
   const persisted = workspaceId ? await getSystemWorkspace(workspaceId) : null;
   const idpClientSecret = providedClientSecret || persisted?.idp.client_secret?.trim() || '';
-  const query = body?.query?.trim() ?? '';
-  if (!idpUrl || !idpRealm || !idpClientId || !idpClientSecret || query.length < 2) {
-    return NextResponse.json({ items: [], total: 0 });
-  }
 
-  if (process.env.NEXT_PUBLIC_USE_MSW === 'true') {
-    const normalizedQuery = query.toLowerCase();
-    const items = MOCK_DIRECTORY_USERS.filter((user) => (
-      user.email.toLowerCase().includes(normalizedQuery) ||
-      user.name.toLowerCase().includes(normalizedQuery)
-    ));
-    return NextResponse.json({ items, total: items.length });
+  if (!idpUrl || !idpRealm || !idpClientId) {
+    return NextResponse.json(
+      { error_code: 'VALIDATION_ERROR', error_message: 'invalid_system_workspace_payload' },
+      { status: 400 },
+    );
   }
 
   try {
-    const items = await searchKeycloakUsers({
+    const result = await verifyKeycloakIdentityProvider({
       idpUrl,
       realm: idpRealm,
       clientId: idpClientId,
-      clientSecret: idpClientSecret,
-      query,
+      clientSecret: idpClientSecret || undefined,
     });
-    return NextResponse.json({ items, total: items.length });
+    return NextResponse.json(result);
   } catch (error) {
     const code = typeof error === 'object' && error !== null && 'code' in error ? String((error as { code?: string }).code) : '';
     if (code === 'KEYCLOAK_IDP_INVALID') {

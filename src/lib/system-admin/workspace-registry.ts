@@ -1,5 +1,5 @@
 import { initializeWorkspaceResources } from './workspace-registry/provisioning';
-import { resolveKeycloakUserById } from './keycloak-user-directory';
+import { resolveKeycloakUserById, verifyKeycloakIdentityProvider } from './keycloak-user-directory';
 import {
   buildUpdatedWorkspaceRecord,
   createWorkspaceRecord,
@@ -49,11 +49,29 @@ export async function getPublicSystemWorkspace(id: string): Promise<SystemWorksp
 
 export async function createSystemWorkspace(input: UpsertSystemWorkspaceInput): Promise<SystemWorkspaceRecord> {
   const records = await listPersistedSystemWorkspaces();
-  const workspaceAdmin = await resolveKeycloakUserById({
+  const verification = await verifyKeycloakIdentityProvider({
     idpUrl: input.idp_url,
     realm: input.idp_realm,
-    userId: input.workspace_admin_user_id,
+    clientId: input.idp_client_id,
+    clientSecret: input.idp_client_secret,
   });
+  if (!verification.idp_ok) {
+    throw Object.assign(new Error('keycloak_idp_invalid'), { code: 'KEYCLOAK_IDP_INVALID' });
+  }
+  if (input.workspace_admin_mode === 'directory_user' && !verification.directory_search_supported) {
+    throw Object.assign(new Error('keycloak_directory_permission_required'), {
+      code: 'KEYCLOAK_DIRECTORY_PERMISSION_REQUIRED',
+    });
+  }
+  const workspaceAdmin = input.workspace_admin_mode === 'directory_user'
+    ? await resolveKeycloakUserById({
+        idpUrl: input.idp_url,
+        realm: input.idp_realm,
+        clientId: input.idp_client_id,
+        clientSecret: input.idp_client_secret,
+        userId: input.workspace_admin_user_id ?? '',
+      })
+    : null;
   const record = createWorkspaceRecord(records, input, workspaceAdmin);
   await upsertPersistedSystemWorkspace(record);
   return record;
@@ -68,11 +86,29 @@ export async function updateSystemWorkspace(
   if (!existing) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
-  const workspaceAdmin = await resolveKeycloakUserById({
+  const verification = await verifyKeycloakIdentityProvider({
     idpUrl: input.idp_url,
     realm: input.idp_realm,
-    userId: input.workspace_admin_user_id,
+    clientId: input.idp_client_id,
+    clientSecret: input.idp_client_secret || existing.idp.client_secret,
   });
+  if (!verification.idp_ok) {
+    throw Object.assign(new Error('keycloak_idp_invalid'), { code: 'KEYCLOAK_IDP_INVALID' });
+  }
+  if (input.workspace_admin_mode === 'directory_user' && !verification.directory_search_supported) {
+    throw Object.assign(new Error('keycloak_directory_permission_required'), {
+      code: 'KEYCLOAK_DIRECTORY_PERMISSION_REQUIRED',
+    });
+  }
+  const workspaceAdmin = input.workspace_admin_mode === 'directory_user'
+    ? await resolveKeycloakUserById({
+        idpUrl: input.idp_url,
+        realm: input.idp_realm,
+        clientId: input.idp_client_id,
+        clientSecret: input.idp_client_secret || existing.idp.client_secret,
+        userId: input.workspace_admin_user_id ?? '',
+      })
+    : null;
   const updated = buildUpdatedWorkspaceRecord(existing, input, workspaceAdmin);
   await upsertPersistedSystemWorkspace(updated);
   return updated;

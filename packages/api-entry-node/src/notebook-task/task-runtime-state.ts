@@ -8,7 +8,10 @@ export const TASKS_BY_PROJECT = new Map<string, TaskRecord[]>();
 export const MESSAGES_BY_TASK = new Map<string, TaskMessageRecord[]>();
 export const ARTIFACTS_BY_TASK = new Map<string, TaskArtifactRecord[]>();
 export const ACTIVE_RUNS_BY_TASK = new Set<string>();
-export const ACTIVE_RUN_CANCEL_BY_TASK = new Map<string, { runId: string; requestId: string; cancel: () => void }>();
+export const ACTIVE_RUN_CANCEL_BY_TASK = new Map<
+  string,
+  { runId: string; requestId: string; cancel: () => void; requestCancel: () => void }
+>();
 export const ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK = new Map<string, { runId: string; requestedAt: string }>();
 
 export function projectKey(workspaceId: string, projectId: string): string {

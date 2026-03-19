@@ -117,6 +117,40 @@ async function waitForAssistantToken(args: {
     .toBe(true);
 }
 
+async function waitForAssistantTokenOrArtifact(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  token: string;
+  artifactPath: string;
+  minAgentMessages?: number;
+}): Promise<void> {
+  const authToken = await readStoredAuthToken(args.page);
+  await expect
+    .poll(
+      async () => {
+        const [messageHasToken, artifactContent] = await Promise.all([
+          (async () => {
+            const response = await args.page.request.get(
+              `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+              { headers: { Authorization: `Bearer ${authToken}` } },
+            );
+            if (!response.ok()) return false;
+            const payload = (await response.json()) as Array<{ role?: string; content?: string }>;
+            const agentMessages = payload.filter((item) => item.role === 'agent');
+            if (agentMessages.length < (args.minAgentMessages ?? 1)) return false;
+            return agentMessages.some((item) => item.content?.includes(args.token));
+          })(),
+          readFile(args.artifactPath, 'utf-8').catch(() => null),
+        ]);
+        return messageHasToken || artifactContent?.includes(args.token) === true;
+      },
+      { timeout: 300_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(true);
+}
+
 async function sendTaskMessage(args: {
   page: Page;
   workspaceId: string;
@@ -343,12 +377,13 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
         ].join(' '),
       });
       console.log('[internal-real] wait for second token');
-      await waitForAssistantToken({
+      await waitForAssistantTokenOrArtifact({
         page,
         workspaceId: 'ws_default',
         projectId,
         taskId,
         token: secondToken,
+        artifactPath: path.join(localMount.mountPath, '.artifacts', secondArtifact),
         minAgentMessages: 2,
       });
       await capturePage(page, captures, 'internal-task-detail-resumed', 'internal-k8s workload reclaim 后再次恢复执行的任务详情页');

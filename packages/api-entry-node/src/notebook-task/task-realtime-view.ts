@@ -1,8 +1,9 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from '../node-api-deps.js';
+import { getNotebookTaskRunState } from './task-run-coordination.js';
 import type { TaskListItem, TaskRecord } from './task-models.js';
 import { loadTaskArtifacts, loadTaskMessages } from './task-store.js';
-import { ACTIVE_RUNS_BY_TASK, getTaskArtifacts, getTaskMessages } from './task-runtime-state.js';
+import { getTaskArtifacts, getTaskMessages } from './task-runtime-state.js';
 
 export async function buildTaskRealtimeView(
   deps: NodeApiDeps,
@@ -17,6 +18,7 @@ export async function buildTaskRealtimeView(
   const messages = getTaskMessages(task.id);
   const artifacts = getTaskArtifacts(task.id);
   const userTurnCount = messages.filter((item) => item.role === 'user').length;
+  const activeRun = await getNotebookTaskRunState(deps.cache, task.id);
   const agent = await deps.agentResourceService.getAgent(workspaceId, projectId, task.agent_id);
   const agentPresence: TaskListItem['agent_presence'] = (
     !agent ? 'unknown'
@@ -26,7 +28,7 @@ export async function buildTaskRealtimeView(
   return {
     ...task,
     agent_presence: agentPresence,
-    run_state: ACTIVE_RUNS_BY_TASK.has(task.id) ? 'running' : 'idle',
+    run_state: activeRun ? 'running' : 'idle',
     stats: {
       user_turn_count: userTurnCount,
       message_count: messages.length,

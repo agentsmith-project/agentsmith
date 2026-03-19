@@ -3,6 +3,11 @@ import http, { type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps } from '../index.js';
+import {
+  acquireNotebookTaskRunLease,
+  buildNotebookTaskRunState,
+  getNotebookTaskRunCancellationRequest,
+} from '../notebook-task/task-run-coordination.js';
 import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -269,6 +274,151 @@ describe('api-entry-node notebook task routes', () => {
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
       metadata_url: expect.any(String),
+    });
+  });
+
+  it('keeps notebook run_state visible after restart and accepts shared cancel requests', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const firstServer = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(firstServer.baseUrl, 'Restart Run Coordination Library');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'restartable-run-coordination-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      firstServer.baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Restart Run Coordination Task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    const active = buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_restart_shared',
+      startedAt: new Date().toISOString(),
+    });
+    await expect(acquireNotebookTaskRunLease(deps.cache, active)).resolves.toBe(true);
+
+    firstServer.server.closeAllConnections?.();
+    firstServer.server.closeIdleConnections?.();
+    await new Promise<void>((resolve) => firstServer.server.close(() => resolve()));
+
+    const secondServer = startServerWithDeps(deps);
+    const listRes = await apiFetch(
+      secondServer.baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+    );
+    expect(listRes.status).toBe(200);
+    await expect(listRes.json()).resolves.toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({
+          id: task.id,
+          run_state: 'running',
+        }),
+      ]),
+    });
+
+    const cancelRes = await apiFetch(
+      secondServer.baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/cancel`,
+      { method: 'POST' },
+    );
+    expect(cancelRes.status).toBe(202);
+    await expect(cancelRes.json()).resolves.toMatchObject({
+      status: 'cancelling',
+      task_id: task.id,
+      run_id: 'run_restart_shared',
+    });
+    await expect(getNotebookTaskRunCancellationRequest(deps.cache, task.id)).resolves.toMatchObject({
+      task_id: task.id,
+      run_id: 'run_restart_shared',
+      actor_user_id: 'user_test',
+    });
+  });
+
+  it('rejects starting a second notebook run when a shared active run already exists', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const { baseUrl } = startServerWithDeps(deps);
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Shared Conflict Library');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'shared-conflict-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Shared Conflict Task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string };
+
+    await expect(acquireNotebookTaskRunLease(deps.cache, buildNotebookTaskRunState({
+      taskId: task.id,
+      runId: 'run_conflict_shared',
+      startedAt: new Date().toISOString(),
+    }))).resolves.toBe(true);
+
+    const messageRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/messages`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: 'user',
+          content: 'hello shared state',
+        }),
+      },
+    );
+    expect(messageRes.status).toBe(409);
+    await expect(messageRes.json()).resolves.toMatchObject({
+      error_code: 'TASK_STREAM_CONFLICT',
+      message: 'task_stream_conflict',
     });
   });
 

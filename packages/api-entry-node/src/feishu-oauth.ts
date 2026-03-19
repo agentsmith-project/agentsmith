@@ -5,6 +5,7 @@ import {
   getUserExternalConnection,
   type UserExternalConnectionRecord,
 } from './user-external-connections-store.js';
+import { refreshWorkspaceFeishuOAuth } from './workspace-feishu-oauth.js';
 
 type FeishuAuthSession = {
   userId: string;
@@ -284,6 +285,9 @@ export async function refreshFeishuOAuth(args: {
   const connection = await getUserExternalConnection(args.docStore, args.userId, args.connectionId);
   if (!connection || connection.provider !== 'feishu') {
     throw new Error('feishu_connection_not_found');
+  }
+  if (connection.workspace_id) {
+    return refreshWorkspaceFeishuOAuth(args);
   }
   const refreshToken = connection.fields.find((field) => field.key === 'refresh_token')?.value ?? '';
   if (!refreshToken) {

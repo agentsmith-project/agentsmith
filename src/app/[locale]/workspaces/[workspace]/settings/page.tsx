@@ -4,7 +4,7 @@ import Link from 'next/link';
 import * as React from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { FolderOpen, Plus, Settings as SettingsIcon, Users } from 'lucide-react';
+import { FolderOpen, Link2, Plus, Settings as SettingsIcon, Users } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -292,6 +292,26 @@ export default function WorkspaceSettingsPage() {
                   data-testid="ws-settings__open-projects"
                 >
                   {t('workspace_open_projects')}
+                </Link>
+              </div>
+            </section>
+
+            <section
+              className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]"
+              data-testid="ws-settings__integrations"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <SectionHeading
+                  title={t('workspace_integrations_title')}
+                  subtitle={t('workspace_integrations_description')}
+                />
+                <Link
+                  href={`${workspaceBasePath}/settings/feishu`}
+                  className={cn(buttonVariants({ variant: 'outline', size: 'sm' }))}
+                  data-testid="ws-settings__open-feishu"
+                >
+                  <Link2 className="mr-2 h-4 w-4" />
+                  {t('workspace_open_feishu_setup')}
                 </Link>
               </div>
             </section>

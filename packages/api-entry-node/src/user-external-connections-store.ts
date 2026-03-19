@@ -30,6 +30,7 @@ export type UserExternalConnectionAccountIdentity = {
 export type UserExternalConnectionRecord = {
   id: string;
   user_id: string;
+  workspace_id?: string | null;
   provider: UserExternalConnectionProvider;
   custom_domain?: string | null;
   kind: UserExternalConnectionKind;
@@ -250,7 +251,10 @@ export async function upsertUserExternalConnectionByProvider(
   input: Omit<UserExternalConnectionRecord, 'id' | 'created_at' | 'updated_at'>,
 ): Promise<UserExternalConnectionRecord> {
   const existing = (await listUserExternalConnections(docStore, input.user_id)).find(
-    (item) => item.provider === input.provider && item.kind === input.kind,
+    (item) =>
+      item.provider === input.provider
+      && item.kind === input.kind
+      && (item.workspace_id ?? null) === (input.workspace_id ?? null),
   );
   if (!existing) {
     return createUserExternalConnection(docStore, input);

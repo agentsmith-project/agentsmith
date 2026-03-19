@@ -197,6 +197,10 @@ describe('WorkspaceSettingsPage', () => {
       'href',
       '/en/workspaces/ws_1/projects',
     );
+    expect(screen.getByTestId('ws-settings__open-feishu')).toHaveAttribute(
+      'href',
+      '/en/workspaces/ws_1/settings/feishu',
+    );
     expect(screen.queryByText('workspace_can_create_projects')).not.toBeInTheDocument();
   });
 

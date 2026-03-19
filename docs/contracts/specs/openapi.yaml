@@ -1237,6 +1237,165 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "503":
           description: Directory unavailable
+  /api/v1/workspaces/{workspaceId}/integrations/feishu:
+    get:
+      tags:
+        - Workspaces
+      operationId: get_workspaceFeishuSettings
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+    put:
+      tags:
+        - Workspaces
+      operationId: put_workspaceFeishuSettings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - app_id
+                - redirect_uri
+              properties:
+                app_id:
+                  type: string
+                app_secret:
+                  type: string
+                redirect_uri:
+                  type: string
+      responses:
+        "200":
+          description: Saved
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Validation error
+  /api/v1/workspaces/{workspaceId}/integrations/feishu/verify/start:
+    post:
+      tags:
+        - Workspaces
+      operationId: post_workspaceFeishuVerifyStart
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                post_redirect_path:
+                  type: string
+      responses:
+        "200":
+          description: Verification started
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Validation error
+  /api/v1/workspaces/{workspaceId}/integrations/feishu/enable:
+    post:
+      tags:
+        - Workspaces
+      operationId: post_workspaceFeishuEnable
+      responses:
+        "200":
+          description: Enabled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Verification required
+  /api/v1/workspaces/{workspaceId}/feishu/oauth/complete:
+    post:
+      tags:
+        - Workspaces
+      operationId: post_workspaceFeishuOAuthComplete
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - code
+                - state
+              properties:
+                code:
+                  type: string
+                state:
+                  type: string
+      responses:
+        "200":
+          description: OAuth completed
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          description: Validation error
+  /api/v1/workspaces/{workspaceId}/me/feishu/auth/start:
+    post:
+      tags:
+        - Workspaces
+      operationId: post_workspaceFeishuUserAuthStart
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                post_redirect_path:
+                  type: string
+      responses:
+        "200":
+          description: User auth started
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          description: Workspace Feishu not enabled
   /api/v1/workspaces/{workspaceId}/projects/{projectId}:
     get:
       tags:

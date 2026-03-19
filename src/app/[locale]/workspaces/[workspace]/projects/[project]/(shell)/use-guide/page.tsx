@@ -201,7 +201,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
               <Link href={`/${locale}/user/api-keys`} className="text-accent hover:underline" data-testid="use-guide__link-api-keys">
                 {t('quick_links.api_keys')}
               </Link>
-              <Link href={`/${locale}/user/third-party-accounts`} className="text-accent hover:underline" data-testid="use-guide__link-third-party-accounts">
+              <Link href={`/${locale}/workspaces/${workspaceId}/connections`} className="text-accent hover:underline" data-testid="use-guide__link-third-party-accounts">
                 {t('quick_links.third_party_accounts')}
               </Link>
               <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`} className="text-accent hover:underline" data-testid="use-guide__link-endpoints">

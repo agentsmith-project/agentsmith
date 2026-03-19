@@ -43,6 +43,7 @@ export interface UserExternalConnectionAccountIdentity {
 export interface UserExternalConnection {
   id: string;
   user_id: string;
+  workspace_id?: string | null;
   provider: UserExternalConnectionProvider;
   custom_domain?: string | null;
   kind: UserExternalConnectionKind;

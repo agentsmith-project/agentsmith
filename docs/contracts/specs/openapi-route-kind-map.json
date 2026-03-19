@@ -19,6 +19,26 @@
     "path": "/api/v1/workspaces/{workspaceId}/directory/users",
     "method": "get"
   },
+  "workspaceFeishuSettings": {
+    "path": "/api/v1/workspaces/{workspaceId}/integrations/feishu",
+    "method": "get"
+  },
+  "workspaceFeishuVerifyStart": {
+    "path": "/api/v1/workspaces/{workspaceId}/integrations/feishu/verify/start",
+    "method": "post"
+  },
+  "workspaceFeishuEnable": {
+    "path": "/api/v1/workspaces/{workspaceId}/integrations/feishu/enable",
+    "method": "post"
+  },
+  "workspaceFeishuOAuthComplete": {
+    "path": "/api/v1/workspaces/{workspaceId}/feishu/oauth/complete",
+    "method": "post"
+  },
+  "workspaceFeishuUserAuthStart": {
+    "path": "/api/v1/workspaces/{workspaceId}/me/feishu/auth/start",
+    "method": "post"
+  },
   "collection": {
     "path": "/api/v1/workspaces/{workspaceId}/projects",
     "method": "get"

@@ -84,6 +84,10 @@ export function Topbar({ className = '' }: TopbarProps) {
   };
 
   const handleThirdPartyAccounts = () => {
+    if (workspaceId) {
+      router.push(`/workspaces/${workspaceId}/connections`);
+      return;
+    }
     router.push(`/user/third-party-accounts`);
   };
 

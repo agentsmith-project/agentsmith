@@ -31,7 +31,7 @@ describe('UseGuidePage route', () => {
     expect(screen.getByTestId('use-guide__codex-sample')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__claude-sample')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__link-api-keys')).toHaveAttribute('href', '/en/user/api-keys');
-    expect(screen.getByTestId('use-guide__link-third-party-accounts')).toHaveAttribute('href', '/en/user/third-party-accounts');
+    expect(screen.getByTestId('use-guide__link-third-party-accounts')).toHaveAttribute('href', '/en/workspaces/ws_1/connections');
   });
 
   it('shows permission denied when token is missing', async () => {

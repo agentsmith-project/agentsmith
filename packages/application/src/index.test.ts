@@ -94,6 +94,13 @@ class InMemoryCache implements CachePort {
     this.map.set(key, value);
   }
 
+  async incr(key: string): Promise<number> {
+    const current = Number.parseInt(this.map.get(key) ?? '0', 10);
+    const next = (Number.isFinite(current) ? current : 0) + 1;
+    this.map.set(key, String(next));
+    return next;
+  }
+
   async del(key: string): Promise<void> {
     this.map.delete(key);
   }

@@ -139,6 +139,7 @@ export async function enforceEndpointGovernancePreflight(args: {
   }
 
   const rateCheck = await checkProjectEndpointRateLimitsForUser({
+    cache: deps.cache,
     docStore: deps.docStore,
     workspaceId,
     projectId,

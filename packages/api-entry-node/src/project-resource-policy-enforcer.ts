@@ -1,4 +1,4 @@
-import type { JsonDocStorePort } from '@mbos/ports';
+import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { ProjectResourcePolicyRecord } from './project-resource-policy-store.js';
 import { getAllProjectGroupIdsForUserPersisted } from './project-member-governance-persistence.js';
 import { listUsageFacts } from './audit-usage-store.js';
@@ -48,8 +48,6 @@ type LimitLimitDecision =
     current_requests_today?: number;
     scope: 'policy' | 'subject';
   };
-
-const RESOURCE_POLICY_RATE_COUNTERS = new Map<string, number>();
 
 function minuteBucket(nowMs: number): number {
   return Math.floor(nowMs / 60_000);
@@ -192,6 +190,7 @@ async function getEffectiveLimitRulePersisted(args: {
 }
 
 export async function checkAndConsumeProjectResourceRateLimitsForUser(args: {
+  cache: CachePort;
   docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
@@ -232,8 +231,9 @@ export async function checkAndConsumeProjectResourceRateLimitsForUser(args: {
     userId: args.userId,
     bucket,
   });
-  const current = RESOURCE_POLICY_RATE_COUNTERS.get(key) ?? 0;
-  if (current >= effective.value) {
+  const current = Number.parseInt((await args.cache.get(key)) ?? '0', 10);
+  const currentCount = Number.isFinite(current) ? current : 0;
+  if (currentCount >= effective.value) {
     const nextMinuteMs = (bucket + 1) * 60_000;
     const retryAfterSeconds = Math.max(1, Math.ceil((nextMinuteMs - nowMs) / 1000));
     return {
@@ -244,7 +244,7 @@ export async function checkAndConsumeProjectResourceRateLimitsForUser(args: {
       scope: effective.scope ?? 'policy',
     };
   }
-  RESOURCE_POLICY_RATE_COUNTERS.set(key, current + 1);
+  await args.cache.incr(key, Math.max(1, Math.ceil(((bucket + 1) * 60_000 - nowMs) / 1000)));
   return { allowed: true, effective_limit_per_minute: effective.value, scope: effective.scope };
 }
 
@@ -505,6 +505,7 @@ function estimateUsageFactCostUsd(args: {
 }
 
 export async function checkProjectEndpointRateLimitsForUser(args: {
+  cache?: CachePort;
   docStore: JsonDocStorePort;
   workspaceId: string;
   projectId: string;
@@ -544,6 +545,41 @@ export async function checkProjectEndpointRateLimitsForUser(args: {
   }> = [];
   for (const rule of rules) {
     const windowMs = endpointRateWindowMsForKey(rule.key);
+    if (rule.key === 'endpoint.requests_per_minute' && args.cache) {
+      const bucket = minuteBucket(nowMs);
+      const key = counterKey({
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        resourceType: 'endpoint',
+        resourceId: args.resourceId,
+        userId: args.userId,
+        bucket,
+      });
+      const currentRequests = await args.cache.incr(
+        key,
+        Math.max(1, Math.ceil((((bucket + 1) * 60_000) - nowMs) / 1000)),
+      );
+      details.push({
+        key: rule.key,
+        effective_limit: rule.value,
+        current_requests: currentRequests,
+        window_seconds: Math.floor(windowMs / 1000),
+        scope: rule.scope,
+      });
+      if (currentRequests > rule.value) {
+        return {
+          allowed: false,
+          reason: 'rate_limited',
+          rate_key: rule.key,
+          effective_limit: rule.value,
+          current_requests: currentRequests,
+          retry_after_seconds: Math.max(1, Math.ceil((((bucket + 1) * 60_000) - nowMs) / 1000)),
+          window_seconds: Math.floor(windowMs / 1000),
+          scope: rule.scope,
+        };
+      }
+      continue;
+    }
     const windowStartMs = nowMs - windowMs;
     const currentRequests = facts.reduce((sum, fact) => {
       const ts = Date.parse(fact.timestamp);
@@ -756,5 +792,5 @@ export async function checkProjectFileLibraryLimitRules(args: {
 }
 
 export function __resetProjectResourcePolicyRateCountersForTests(): void {
-  RESOURCE_POLICY_RATE_COUNTERS.clear();
+  // cache-backed runtime state has no shared singleton reset path in production.
 }

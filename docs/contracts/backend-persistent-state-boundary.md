@@ -82,6 +82,7 @@ Audience: 后端、前端、测试、发布负责人
 
 - 外部 OAuth callback state
 - agent presence / heartbeat 投影
+- resource policy 分钟级 rate counter
 
 要求：
 
@@ -108,6 +109,7 @@ Audience: 后端、前端、测试、发布负责人
 
 - Feishu OAuth state
 - agent presence
+- resource policy `requests_per_minute` minute bucket
 
 ### 仍保留但不应再作为生产主路径
 

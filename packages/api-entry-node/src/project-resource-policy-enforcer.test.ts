@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   __resetProjectResourcePolicyRateCountersForTests,
   checkAndConsumeProjectResourceRateLimitsForUser,
@@ -16,6 +16,7 @@ describe('project-resource-policy-enforcer', () => {
   it('enforces endpoint requests_per_minute at policy root', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'endpoint',
       resource_id: 'ep_1',
@@ -27,6 +28,7 @@ describe('project-resource-policy-enforcer', () => {
     };
     const first = await checkAndConsumeProjectResourceRateLimitsForUser({
       docStore,
+      cache,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'endpoint',
@@ -37,6 +39,7 @@ describe('project-resource-policy-enforcer', () => {
     });
     const second = await checkAndConsumeProjectResourceRateLimitsForUser({
       docStore,
+      cache,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'endpoint',
@@ -57,6 +60,7 @@ describe('project-resource-policy-enforcer', () => {
   it('supports subject-level override via group rule', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
     const workspaceId = `ws_${Math.random().toString(36).slice(2, 8)}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 8)}`;
     const userId = 'user_a';
@@ -82,9 +86,9 @@ describe('project-resource-policy-enforcer', () => {
       rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
     };
     const baseMs = 1_700_000_060_000;
-    const one = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs });
-    const two = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 1 });
-    const three = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 2 });
+    const one = await checkAndConsumeProjectResourceRateLimitsForUser({ cache, docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs });
+    const two = await checkAndConsumeProjectResourceRateLimitsForUser({ cache, docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 1 });
+    const three = await checkAndConsumeProjectResourceRateLimitsForUser({ cache, docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_2', userId, policy, nowMs: baseMs + 2 });
     expect(one.allowed).toBe(true);
     expect(two.allowed).toBe(true);
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
@@ -93,6 +97,7 @@ describe('project-resource-policy-enforcer', () => {
   it('supports subject-level override via the built-in admin group rule', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
     const workspaceId = `ws_${Math.random().toString(36).slice(2, 8)}`;
     const projectId = `proj_${Math.random().toString(36).slice(2, 8)}`;
     const userId = 'user_admin';
@@ -122,9 +127,9 @@ describe('project-resource-policy-enforcer', () => {
       rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
     };
     const baseMs = 1_700_000_160_000;
-    const one = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs });
-    const two = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 1 });
-    const three = await checkAndConsumeProjectResourceRateLimitsForUser({ docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 2 });
+    const one = await checkAndConsumeProjectResourceRateLimitsForUser({ cache, docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs });
+    const two = await checkAndConsumeProjectResourceRateLimitsForUser({ cache, docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 1 });
+    const three = await checkAndConsumeProjectResourceRateLimitsForUser({ cache, docStore, workspaceId, projectId, resourceType: 'endpoint', resourceId: 'ep_default_group', userId, policy, nowMs: baseMs + 2 });
     expect(one.allowed).toBe(true);
     expect(two.allowed).toBe(true);
     expect(three).toMatchObject({ allowed: false, scope: 'subject', effective_limit_per_minute: 2 });
@@ -133,6 +138,7 @@ describe('project-resource-policy-enforcer', () => {
   it('enforces file_library requests_per_minute at policy root', async () => {
     __resetProjectResourcePolicyRateCountersForTests();
     const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'file_library',
       resource_id: 'lib_1',
@@ -144,6 +150,7 @@ describe('project-resource-policy-enforcer', () => {
     };
     const first = await checkAndConsumeProjectResourceRateLimitsForUser({
       docStore,
+      cache,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'file_library',
@@ -154,6 +161,7 @@ describe('project-resource-policy-enforcer', () => {
     });
     const second = await checkAndConsumeProjectResourceRateLimitsForUser({
       docStore,
+      cache,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceType: 'file_library',
@@ -173,6 +181,7 @@ describe('project-resource-policy-enforcer', () => {
 
   it('enforces endpoint requests_per_5_hours using usage facts', async () => {
     const docStore = new InMemoryJsonDocStore();
+    const cache = new InMemoryCache();
     const policy: ProjectResourcePolicyRecord = {
       resource_type: 'endpoint',
       resource_id: 'ep_rate_5h',
@@ -194,6 +203,7 @@ describe('project-resource-policy-enforcer', () => {
     });
     const decision = await checkProjectEndpointRateLimitsForUser({
       docStore,
+      cache,
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       resourceId: 'ep_rate_5h',
@@ -201,12 +211,35 @@ describe('project-resource-policy-enforcer', () => {
       policy,
       nowMs: Date.UTC(2026, 1, 26, 10, 0, 0, 0),
     });
+    const second = await checkProjectEndpointRateLimitsForUser({
+      cache,
+      docStore,
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      resourceId: 'ep_rate_5h',
+      userId: 'user_1',
+      policy: {
+        ...policy,
+        rate_limits: { rules: [{ key: 'endpoint.requests_per_minute', value: 1 }] },
+      },
+      nowMs: Date.UTC(2026, 1, 26, 10, 0, 10, 0),
+    });
     expect(decision).toMatchObject({
       allowed: false,
       reason: 'rate_limited',
       rate_key: 'endpoint.requests_per_5_hours',
       effective_limit: 2,
       current_requests: 2,
+    });
+    expect(second).toMatchObject({
+      allowed: true,
+      limits: expect.arrayContaining([
+        expect.objectContaining({
+          key: 'endpoint.requests_per_minute',
+          current_requests: 1,
+          effective_limit: 1,
+        }),
+      ]),
     });
   });
 

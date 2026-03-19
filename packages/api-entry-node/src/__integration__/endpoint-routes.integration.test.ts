@@ -218,7 +218,7 @@ describe('api-entry-node endpoint and credential routes', () => {
         }),
       },
     );
-    expect(firstRateLimitedProxy.status).toBe(429);
+    expect(firstRateLimitedProxy.status).toBe(200);
 
     const secondRateLimitedProxy = await apiFetch(
       baseUrl,
@@ -232,8 +232,22 @@ describe('api-entry-node endpoint and credential routes', () => {
         }),
       },
     );
-    expect(secondRateLimitedProxy.status).toBe(429);
-    expect(await secondRateLimitedProxy.json()).toMatchObject({
+    expect(secondRateLimitedProxy.status).toBe(200);
+
+    const thirdRateLimitedProxy = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored',
+          messages: [{ role: 'user', content: 'blocked by rpm policy' }],
+        }),
+      },
+    );
+    expect(thirdRateLimitedProxy.status).toBe(429);
+    expect(await thirdRateLimitedProxy.json()).toMatchObject({
       error_code: 'RESOURCE_POLICY_RATE_LIMITED',
       resource_type: 'endpoint',
       resource_id: endpoint.id,

@@ -68,6 +68,12 @@ describe('adapters-private integration', () => {
     const missing = await cache.get(key);
     expect(missing).toBeNull();
 
+    const counterKey = `it:redis:counter:${Date.now()}`;
+    const first = await cache.incr(counterKey, 30);
+    const second = await cache.incr(counterKey, 30);
+    expect(first).toBe(1);
+    expect(second).toBe(2);
+
     await cache.close();
   });
 

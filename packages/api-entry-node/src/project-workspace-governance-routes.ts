@@ -29,21 +29,22 @@ function findWorkspaceRecord(args: {
     ?? (defaultWorkspace && workspaceId === defaultWorkspace.id ? defaultWorkspace : null);
 }
 
-function listWorkspaceProjectCreators(args: {
+async function listWorkspaceProjectCreators(args: {
   workspaceId: string;
   user: AuthenticatedUser;
   defaultWorkspace?: WorkspaceRecordLike;
   workspaceCreatedAt: string;
 }) {
   const { workspaceId, user, defaultWorkspace, workspaceCreatedAt } = args;
-  return buildWorkspaceMembersFromConfig({
+  const members = await buildWorkspaceMembersFromConfig({
     workspaceId,
     actorId: user.id,
     actorEmail: user.email,
     actorName: user.name,
     workspaceCreatedAt,
     defaultWorkspaceId: defaultWorkspace?.id,
-  })
+  });
+  return members
     .filter((member) => (
       member.permissions.includes('workspace:project:create')
       && !member.permissions.includes('workspace:governance:update')
@@ -56,8 +57,8 @@ function listWorkspaceProjectCreators(args: {
     }));
 }
 
-function getWorkspaceDirectoryConfig(workspaceId: string) {
-  const config = getRegisteredWorkspaceConfig(workspaceId);
+async function getWorkspaceDirectoryConfig(workspaceId: string) {
+  const config = await getRegisteredWorkspaceConfig(workspaceId);
   const idpUrl = config?.idp?.url?.trim() ?? '';
   const idpRealm = config?.idp?.realm?.trim() ?? '';
   if (!idpUrl || !idpRealm) {
@@ -101,7 +102,7 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
     return true;
   }
 
-  const actorPermissions = resolveWorkspacePermissions({
+  const actorPermissions = await resolveWorkspacePermissions({
     workspaceId,
     actorId: user.id,
     actorEmail: user.email,
@@ -113,7 +114,7 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
   }
 
   if (method === 'GET') {
-    const items = listWorkspaceProjectCreators({
+    const items = await listWorkspaceProjectCreators({
       workspaceId,
       user,
       defaultWorkspace,
@@ -125,12 +126,12 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
 
   if (method === 'PATCH') {
     const requestId = readRequestId(req);
-    const currentItems = listWorkspaceProjectCreators({
+    const currentItems = (await listWorkspaceProjectCreators({
       workspaceId,
       user,
       defaultWorkspace,
       workspaceCreatedAt: workspaceRecord.created_at,
-    }).map((member) => member.user_id);
+    })).map((member) => member.user_id);
     const body = await readBody(req) as { project_creator_user_ids?: unknown };
     if (!body || !Array.isArray(body.project_creator_user_ids)) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'project_creator_user_ids must be an array' });
@@ -141,7 +142,7 @@ export async function handleWorkspaceProjectCreatorsRoute(args: {
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
     try {
-      const directoryConfig = getWorkspaceDirectoryConfig(workspaceId);
+      const directoryConfig = await getWorkspaceDirectoryConfig(workspaceId);
       const resolvedCreators = await resolveKeycloakDirectoryUsersByIds({
         url: directoryConfig.url,
         realm: directoryConfig.realm,
@@ -213,7 +214,7 @@ export async function handleWorkspaceDirectoryUsersRoute(args: {
     return true;
   }
 
-  const actorPermissions = resolveWorkspacePermissions({
+  const actorPermissions = await resolveWorkspacePermissions({
     workspaceId,
     actorId: user.id,
     actorEmail: user.email,
@@ -232,7 +233,7 @@ export async function handleWorkspaceDirectoryUsersRoute(args: {
   }
 
   try {
-    const directoryConfig = getWorkspaceDirectoryConfig(workspaceId);
+    const directoryConfig = await getWorkspaceDirectoryConfig(workspaceId);
     const items = await searchKeycloakDirectoryUsers({
       url: directoryConfig.url,
       realm: directoryConfig.realm,

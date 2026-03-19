@@ -1,265 +1,64 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import type { WorkspaceRecord } from './resource-models.js';
-import { upsertPersistedSystemWorkspace } from '../../../src/lib/system-admin/workspace-registry/persistence.js';
+import {
+  getPersistedSystemWorkspace,
+  listPersistedSystemWorkspaces,
+  upsertPersistedSystemWorkspace,
+} from '../../../src/lib/system-admin/workspace-registry/persistence.js';
+import type {
+  SystemWorkspaceRecord,
+  WorkspaceIdentitySnapshot,
+} from '../../../src/lib/system-admin/workspace-registry/types.js';
 
-export type WorkspaceIdentitySnapshot = {
-  user_id: string;
-  email: string;
-  name: string | null;
-};
+export type { WorkspaceIdentitySnapshot } from '../../../src/lib/system-admin/workspace-registry/types.js';
 
-type RegistryRecord = {
-  id: string;
-  name: string;
-  provisioning_status?: string;
-  workspace_admin?: string;
-  workspace_admin_user_id?: string;
-  workspace_admin_name?: string | null;
-  project_creators?: Array<string | WorkspaceIdentitySnapshot>;
-  idp?: {
-    kind?: string;
-    url?: string;
-    realm?: string;
-    client_id?: string;
-    client_secret?: string;
-  };
-  tenant?: {
-    substrate_label?: string;
-    database_name?: string;
-    collection_prefix?: string;
-    key_prefix?: string;
-  };
-  last_initialized_at?: string | null;
-  last_init_error?: string | null;
-  created_at?: string;
-  updated_at?: string;
-};
+export type RegisteredWorkspaceConfig = SystemWorkspaceRecord;
+export type RegisteredWorkspaceTenantConfig = RegisteredWorkspaceConfig['tenant'];
 
-const moduleDir = dirname(fileURLToPath(import.meta.url));
-const packageRoot = resolve(moduleDir, '..');
-const repoRoot = resolve(moduleDir, '../../..');
-
-export function resolveRegisteredWorkspaceRegistryPath(): string {
-  const explicit = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim();
-  if (explicit) {
-    return explicit;
-  }
-
-  const repoRegistryPath = join(repoRoot, 'artifacts/system-workspaces.json');
-  if (existsSync(repoRegistryPath)) {
-    return repoRegistryPath;
-  }
-
-  const cwdRegistryPath = join(process.cwd(), 'artifacts/system-workspaces.json');
-  if (existsSync(cwdRegistryPath)) {
-    return cwdRegistryPath;
-  }
-
-  return join(packageRoot, 'artifacts/system-workspaces.json');
-}
-
-export function readRegisteredWorkspaces(): WorkspaceRecord[] {
-  try {
-    const raw = readFileSync(resolveRegisteredWorkspaceRegistryPath(), 'utf-8');
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed
-      .filter((item): item is RegistryRecord => typeof item === 'object' && item !== null)
-      .filter((item) => {
-        const status = typeof item.provisioning_status === 'string' ? item.provisioning_status.trim() : '';
-        return !status || status === 'ready';
-      })
-      .map((item) => ({
-        id: String(item.id ?? '').trim(),
-        name: String(item.name ?? '').trim(),
-        created_at: typeof item.created_at === 'string' ? item.created_at : new Date().toISOString(),
-        updated_at: typeof item.updated_at === 'string' ? item.updated_at : new Date().toISOString(),
-      }))
-      .filter((item) => item.id && item.name);
-  } catch {
-    return [];
-  }
-}
-
-export type RegisteredWorkspaceConfig = RegistryRecord & {
-  id: string;
-  name: string;
-  provisioning_status?: string;
-  workspace_admin?: string;
-  workspace_admin_user_id?: string;
-  workspace_admin_name?: string | null;
-  project_creators?: WorkspaceIdentitySnapshot[];
-  idp?: {
-    kind?: string;
-    url?: string;
-    realm?: string;
-    client_id?: string;
-    client_secret?: string;
-  };
-  tenant?: {
-    substrate_label?: string;
-    database_name?: string;
-    collection_prefix?: string;
-    key_prefix?: string;
-  };
-  created_at: string;
-  updated_at: string;
-};
-
-type PersistedWorkspaceRecord = {
-  id: string;
-  name: string;
-  workspace_admin: string;
-  workspace_admin_user_id?: string;
-  workspace_admin_name?: string | null;
-  workspace_admin_binding_required?: boolean;
-  project_creators: WorkspaceIdentitySnapshot[];
-  idp: {
-    kind: 'keycloak';
-    url: string;
-    realm: string;
-    client_id: string;
-    client_secret?: string;
-  };
-  tenant: {
-    substrate_label?: string;
-    database_name: string;
-    collection_prefix: string;
-    key_prefix: string;
-  };
-  provisioning_status: 'draft' | 'provisioning' | 'ready' | 'failed' | 'disabled';
-  last_initialized_at: string | null;
-  last_init_error: string | null;
-  created_at: string;
-  updated_at: string;
-};
-
-function normalizeLegacyIdentity(identifier: string): WorkspaceIdentitySnapshot {
-  const trimmed = identifier.trim();
-  return {
-    user_id: trimmed,
-    email: trimmed.includes('@') ? trimmed : `${trimmed}@workspace.local`,
-    name: trimmed,
-  };
-}
-
-function normalizeIdentitySnapshots(items: unknown): WorkspaceIdentitySnapshot[] {
-  if (!Array.isArray(items)) {
-    return [];
-  }
+function normalizeIdentitySnapshots(items: WorkspaceIdentitySnapshot[]): WorkspaceIdentitySnapshot[] {
   return Array.from(
     new Map(
       items
-        .map((item) => {
-          if (typeof item === 'string') {
-            const trimmed = item.trim();
-            return trimmed ? normalizeLegacyIdentity(trimmed) : null;
-          }
-          if (typeof item !== 'object' || item === null) {
-            return null;
-          }
-          const raw = item as Record<string, unknown>;
-          const userId = typeof raw.user_id === 'string' ? raw.user_id.trim() : '';
-          const email = typeof raw.email === 'string' ? raw.email.trim() : '';
-          if (!userId || !email) {
-            return null;
-          }
-          return {
-            user_id: userId,
-            email,
-            name: typeof raw.name === 'string' && raw.name.trim().length > 0 ? raw.name.trim() : null,
-          };
-        })
-        .filter((item): item is WorkspaceIdentitySnapshot => item !== null)
-        .map((item) => [item.user_id.trim().toLowerCase(), item]),
+        .map((item) => ({
+          user_id: item.user_id.trim(),
+          email: item.email.trim(),
+          name: item.name && item.name.trim().length > 0 ? item.name.trim() : null,
+        }))
+        .filter((item) => item.user_id.length > 0 && item.email.length > 0)
+        .map((item) => [item.user_id.toLowerCase(), item]),
     ).values(),
   );
 }
 
-function readRegisteredWorkspaceConfigs(): RegisteredWorkspaceConfig[] {
-  try {
-    const raw = readFileSync(resolveRegisteredWorkspaceRegistryPath(), 'utf-8');
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) {
-      return [];
+export async function readRegisteredWorkspaces(): Promise<WorkspaceRecord[]> {
+  const items = await listPersistedSystemWorkspaces();
+  return items
+    .filter((item) => item.provisioning_status === 'ready')
+    .map((item) => ({
+      id: item.id,
+      name: item.name,
+      created_at: item.created_at,
+      updated_at: item.updated_at,
+    }));
+}
+
+export async function listRegisteredWorkspaceIds(): Promise<string[]> {
+  const defaults = new Set<string>([(process.env.MBOS_DEFAULT_WORKSPACE_ID ?? 'ws_default').trim()]);
+  for (const item of await listPersistedSystemWorkspaces()) {
+    if (item.id.trim().length > 0) {
+      defaults.add(item.id.trim());
     }
-    const now = new Date().toISOString();
-    return parsed
-      .filter((item): item is RegistryRecord => typeof item === 'object' && item !== null)
-      .map((item) => ({
-        id: String(item.id ?? '').trim(),
-        name: String(item.name ?? '').trim(),
-        provisioning_status:
-          typeof item.provisioning_status === 'string' ? item.provisioning_status.trim() : undefined,
-        workspace_admin: typeof item.workspace_admin === 'string' ? item.workspace_admin.trim() : undefined,
-        workspace_admin_user_id:
-          typeof item.workspace_admin_user_id === 'string' ? item.workspace_admin_user_id.trim() : undefined,
-        workspace_admin_name:
-          typeof item.workspace_admin_name === 'string' && item.workspace_admin_name.trim().length > 0
-            ? item.workspace_admin_name.trim()
-            : null,
-        project_creators: normalizeIdentitySnapshots(item.project_creators),
-        idp:
-          typeof item.idp === 'object' && item.idp !== null
-            ? {
-                kind: typeof item.idp.kind === 'string' ? item.idp.kind.trim() : undefined,
-                url: typeof item.idp.url === 'string' ? item.idp.url.trim() : undefined,
-                realm: typeof item.idp.realm === 'string' ? item.idp.realm.trim() : undefined,
-                client_id: typeof item.idp.client_id === 'string' ? item.idp.client_id.trim() : undefined,
-                client_secret:
-                  typeof item.idp.client_secret === 'string' ? item.idp.client_secret.trim() : undefined,
-              }
-            : undefined,
-        tenant:
-          typeof item.tenant === 'object' && item.tenant !== null
-            ? {
-                substrate_label:
-                  typeof item.tenant.substrate_label === 'string' ? item.tenant.substrate_label.trim() : undefined,
-                database_name:
-                  typeof item.tenant.database_name === 'string' ? item.tenant.database_name.trim() : undefined,
-                collection_prefix:
-                  typeof item.tenant.collection_prefix === 'string'
-                    ? item.tenant.collection_prefix.trim()
-                    : undefined,
-                key_prefix:
-                  typeof item.tenant.key_prefix === 'string' ? item.tenant.key_prefix.trim() : undefined,
-              }
-            : undefined,
-        last_initialized_at:
-          typeof item.last_initialized_at === 'string' || item.last_initialized_at === null
-            ? item.last_initialized_at
-            : undefined,
-        last_init_error:
-          typeof item.last_init_error === 'string' || item.last_init_error === null
-            ? item.last_init_error
-            : undefined,
-        created_at: typeof item.created_at === 'string' ? item.created_at : now,
-        updated_at: typeof item.updated_at === 'string' ? item.updated_at : now,
-      }))
-      .filter((item) => item.id && item.name);
-  } catch {
-    return [];
   }
+  return [...defaults].filter((item) => item.length > 0);
 }
 
-function writeRegisteredWorkspaceConfigs(records: RegisteredWorkspaceConfig[]): void {
-  const pathname = resolveRegisteredWorkspaceRegistryPath();
-  mkdirSync(dirname(pathname), { recursive: true });
-  writeFileSync(pathname, `${JSON.stringify(records, null, 2)}\n`, 'utf-8');
+export async function getRegisteredWorkspaceConfig(workspaceId: string): Promise<RegisteredWorkspaceConfig | null> {
+  return getPersistedSystemWorkspace(workspaceId);
 }
 
-export function getRegisteredWorkspaceConfig(workspaceId: string): RegisteredWorkspaceConfig | null {
-  return readRegisteredWorkspaceConfigs().find((record) => record.id === workspaceId) ?? null;
-}
-
-export type RegisteredWorkspaceTenantConfig = NonNullable<RegisteredWorkspaceConfig['tenant']>;
-
-export function getRegisteredWorkspaceTenantConfig(workspaceId: string): RegisteredWorkspaceTenantConfig | null {
-  const record = getRegisteredWorkspaceConfig(workspaceId);
+export async function getRegisteredWorkspaceTenantConfig(
+  workspaceId: string,
+): Promise<RegisteredWorkspaceTenantConfig | null> {
+  const record = await getRegisteredWorkspaceConfig(workspaceId);
   if (!record?.tenant) return null;
   const collectionPrefix = record.tenant.collection_prefix?.trim();
   const keyPrefix = record.tenant.key_prefix?.trim();
@@ -272,70 +71,24 @@ export function getRegisteredWorkspaceTenantConfig(workspaceId: string): Registe
     database_name: databaseName,
     collection_prefix: collectionPrefix,
     key_prefix: keyPrefix,
+    workspace_id: record.tenant.workspace_id,
+    workspace_name: record.tenant.workspace_name,
   };
 }
 
-export function updateRegisteredWorkspaceProjectCreators(
+export async function updateRegisteredWorkspaceProjectCreators(
   workspaceId: string,
   projectCreators: WorkspaceIdentitySnapshot[],
 ): Promise<RegisteredWorkspaceConfig> {
-  return updateRegisteredWorkspaceProjectCreatorsPersisted(workspaceId, projectCreators);
-}
-
-function toPersistedWorkspaceRecord(record: RegisteredWorkspaceConfig): PersistedWorkspaceRecord {
-  return {
-    id: record.id,
-    name: record.name,
-    workspace_admin: record.workspace_admin ?? '',
-    workspace_admin_user_id: record.workspace_admin_user_id,
-    workspace_admin_name: record.workspace_admin_name ?? null,
-    workspace_admin_binding_required: undefined,
-    project_creators: normalizeIdentitySnapshots(record.project_creators),
-    idp: {
-      kind: 'keycloak',
-      url: record.idp?.url?.trim() ?? '',
-      realm: record.idp?.realm?.trim() ?? '',
-      client_id: record.idp?.client_id?.trim() ?? '',
-      ...(record.idp?.client_secret ? { client_secret: record.idp.client_secret.trim() } : {}),
-    },
-    tenant: {
-      database_name: record.tenant?.database_name?.trim() ?? '',
-      collection_prefix: record.tenant?.collection_prefix?.trim() ?? '',
-      key_prefix: record.tenant?.key_prefix?.trim() ?? '',
-      ...(record.tenant?.substrate_label ? { substrate_label: record.tenant.substrate_label.trim() } : {}),
-    },
-    provisioning_status:
-      record.provisioning_status === 'draft'
-      || record.provisioning_status === 'provisioning'
-      || record.provisioning_status === 'ready'
-      || record.provisioning_status === 'failed'
-      || record.provisioning_status === 'disabled'
-        ? record.provisioning_status
-        : 'ready',
-    last_initialized_at:
-      typeof record.last_initialized_at === 'string' || record.last_initialized_at === null
-        ? record.last_initialized_at
-        : null,
-    last_init_error:
-      typeof record.last_init_error === 'string' || record.last_init_error === null
-        ? record.last_init_error
-        : null,
-    created_at: record.created_at,
-    updated_at: record.updated_at,
-  };
-}
-
-async function updateRegisteredWorkspaceProjectCreatorsPersisted(
-  workspaceId: string,
-  projectCreators: WorkspaceIdentitySnapshot[],
-): Promise<RegisteredWorkspaceConfig> {
-  const records = readRegisteredWorkspaceConfigs();
-  const target = records.find((record) => record.id === workspaceId);
+  const target = await getPersistedSystemWorkspace(workspaceId);
   if (!target) {
     throw Object.assign(new Error('workspace_not_found'), { code: 'WORKSPACE_NOT_FOUND' });
   }
-  target.project_creators = normalizeIdentitySnapshots(projectCreators);
-  target.updated_at = new Date().toISOString();
-  await upsertPersistedSystemWorkspace(toPersistedWorkspaceRecord(target));
-  return target;
+  const next: RegisteredWorkspaceConfig = {
+    ...target,
+    project_creators: normalizeIdentitySnapshots(projectCreators),
+    updated_at: new Date().toISOString(),
+  };
+  await upsertPersistedSystemWorkspace(next);
+  return next;
 }

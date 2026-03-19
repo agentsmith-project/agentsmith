@@ -20,10 +20,10 @@ describe('buildWorkspaceRecords', () => {
     registryModule.readRegisteredWorkspaces.mockReset();
   });
 
-  it('includes default workspace and registered workspaces', () => {
+  it('includes default workspace and registered workspaces', async () => {
     process.env.MBOS_DEFAULT_WORKSPACE_ID = 'ws_default';
     process.env.MBOS_DEFAULT_WORKSPACE_NAME = 'Default Workspace';
-    registryModule.readRegisteredWorkspaces.mockReturnValue([
+    registryModule.readRegisteredWorkspaces.mockResolvedValue([
       {
         id: 'ws_alpha',
         name: 'Alpha Workspace',
@@ -32,7 +32,7 @@ describe('buildWorkspaceRecords', () => {
       },
     ]);
 
-    const records = buildWorkspaceRecords();
+    const records = await buildWorkspaceRecords();
 
     expect(records.map((item) => item.id)).toEqual(['ws_default', 'ws_alpha']);
     expect(records.find((item) => item.id === 'ws_alpha')).toMatchObject({
@@ -40,10 +40,10 @@ describe('buildWorkspaceRecords', () => {
     });
   });
 
-  it('lets registered workspaces override the default workspace record', () => {
+  it('lets registered workspaces override the default workspace record', async () => {
     process.env.MBOS_DEFAULT_WORKSPACE_ID = 'ws_default';
     process.env.MBOS_DEFAULT_WORKSPACE_NAME = 'Default Workspace';
-    registryModule.readRegisteredWorkspaces.mockReturnValue([
+    registryModule.readRegisteredWorkspaces.mockResolvedValue([
       {
         id: 'ws_default',
         name: 'Configured Default Workspace',
@@ -52,7 +52,7 @@ describe('buildWorkspaceRecords', () => {
       },
     ]);
 
-    const records = buildWorkspaceRecords();
+    const records = await buildWorkspaceRecords();
 
     expect(records).toHaveLength(1);
     expect(records[0]).toMatchObject({

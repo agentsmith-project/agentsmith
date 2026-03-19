@@ -1,8 +1,12 @@
-import { getRegisteredWorkspaceConfig } from './workspace-registry.js';
-
 export function resolveWorkspaceScopedCollection(baseCollection: string, workspaceId: string): string {
-  const workspace = getRegisteredWorkspaceConfig(workspaceId);
-  const prefix = workspace?.tenant?.collection_prefix?.trim();
+  const trimmedWorkspaceId = workspaceId.trim();
+  if (!trimmedWorkspaceId) {
+    return baseCollection;
+  }
+  const configuredPrefix = (process.env.SYSTEM_TENANT_COLLECTION_PREFIX || 'ws_').trim();
+  const prefix = trimmedWorkspaceId.startsWith(configuredPrefix)
+    ? `${trimmedWorkspaceId}_`
+    : `${configuredPrefix}${trimmedWorkspaceId}_`;
   if (!prefix) {
     return baseCollection;
   }

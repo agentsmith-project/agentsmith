@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { JsonDocStorePort } from '@mbos/ports';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
+import { listRegisteredWorkspaceIds } from './workspace-registry.js';
 
 const COLLECTION = 'governance_policy_overrides';
 
@@ -120,25 +121,13 @@ export async function updateGovernancePolicyOverrideDecision(
 ): Promise<GovernancePolicyOverrideRecord | null> {
   let existing: GovernancePolicyOverrideRecord | null = null;
   let collection = COLLECTION;
-  try {
-    const registryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH?.trim();
-    if (registryPath) {
-      const { readFileSync } = await import('node:fs');
-      const raw = readFileSync(registryPath, 'utf-8');
-      const parsed = JSON.parse(raw) as Array<{ id?: unknown }>;
-      for (const item of Array.isArray(parsed) ? parsed : []) {
-        const workspaceId = typeof item?.id === 'string' ? item.id.trim() : '';
-        if (!workspaceId) continue;
-        const scopedCollection = overridesCollection(workspaceId);
-        existing = await docStore.get<GovernancePolicyOverrideRecord>(scopedCollection, params.overrideId);
-        if (existing) {
-          collection = scopedCollection;
-          break;
-        }
-      }
+  for (const workspaceId of await listRegisteredWorkspaceIds()) {
+    const scopedCollection = overridesCollection(workspaceId);
+    existing = await docStore.get<GovernancePolicyOverrideRecord>(scopedCollection, params.overrideId);
+    if (existing) {
+      collection = scopedCollection;
+      break;
     }
-  } catch {
-    existing = null;
   }
   if (!existing) {
     existing = await docStore.get<GovernancePolicyOverrideRecord>(COLLECTION, params.overrideId);

@@ -41,7 +41,7 @@ export async function handleWorkspaceRoutes(context: ProjectRouteContext): Promi
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'workspace_not_found' });
       return true;
     }
-    const items = buildWorkspaceMembersFromConfig({
+    const items = await buildWorkspaceMembersFromConfig({
       workspaceId: route.workspaceId,
       actorId: user.id,
       actorEmail: user.email,

@@ -130,7 +130,7 @@ export async function handleRequest(
     }
     const rawBearerToken = extractBearerToken(req);
 
-    const workspaces = buildWorkspaceRecords();
+    const workspaces = await buildWorkspaceRecords();
     const defaultWorkspace = workspaces[0];
 
     if (routeHasProjectScope(route)) {

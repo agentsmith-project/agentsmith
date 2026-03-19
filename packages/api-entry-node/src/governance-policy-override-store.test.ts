@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import {
+  resetSystemWorkspaceRegistryPersistenceForTest,
+  upsertPersistedSystemWorkspace,
+} from '../../../src/lib/system-admin/workspace-registry/persistence.js';
 
 import {
   createGovernancePolicyOverride,
@@ -12,28 +13,30 @@ import {
 
 describe('governance-policy-override-store', () => {
   afterEach(() => {
-    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
+    resetSystemWorkspaceRegistryPersistenceForTest();
   });
 
   it('uses tenant-prefixed collections for workspace-scoped overrides', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-override-tenant-registry-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
-    writeFileSync(
-      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
-      JSON.stringify([
-        {
-          id: 'ws_default',
-          name: 'Default Workspace',
-          workspace_admin: 'owner@example.com',
-          tenant: {
-            database_name: 'agentsmith_ws_default',
-            collection_prefix: 'ws_default_',
-            key_prefix: 'ws_default:',
-          },
-        },
-      ]),
-      'utf-8',
-    );
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_default',
+      name: 'Default Workspace',
+      workspace_admin: 'owner@example.com',
+      project_creators: [],
+      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      tenant: {
+        workspace_id: 'ws_default',
+        workspace_name: 'Default Workspace',
+        database_name: 'agentsmith_ws_default',
+        collection_prefix: 'ws_default_',
+        key_prefix: 'ws_default:',
+        substrate_label: 'primary',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: '2026-03-18T00:00:00.000Z',
+      updated_at: '2026-03-18T00:00:00.000Z',
+    });
 
     const store = new InMemoryJsonDocStore();
     const created = await createGovernancePolicyOverride(store, {
@@ -70,7 +73,5 @@ describe('governance-policy-override-store', () => {
     });
     expect(updated?.status).toBe('approved');
     expect((await store.list('ws_default_governance_policy_overrides', {}))[0]?.status).toBe('approved');
-
-    rmSync(dir, { recursive: true, force: true });
   });
 });

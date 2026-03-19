@@ -41,8 +41,8 @@ describe('project-workspace-governance-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     writeProjectAuditEvent.mockResolvedValue(undefined);
-    resolveWorkspacePermissions.mockReturnValue(['workspace:governance:update']);
-    getRegisteredWorkspaceConfig.mockReturnValue({
+    resolveWorkspacePermissions.mockResolvedValue(['workspace:governance:update']);
+    getRegisteredWorkspaceConfig.mockResolvedValue({
       id: 'ws-1',
       name: 'Workspace One',
       idp: {
@@ -55,7 +55,7 @@ describe('project-workspace-governance-routes', () => {
   });
 
   it('lists non-admin workspace project creators', async () => {
-    buildWorkspaceMembersFromConfig.mockReturnValue([
+    buildWorkspaceMembersFromConfig.mockResolvedValue([
       {
         user_id: 'creator-1',
         name: 'Creator One',
@@ -96,7 +96,7 @@ describe('project-workspace-governance-routes', () => {
   });
 
   it('updates workspace project creators and records audit metadata', async () => {
-    buildWorkspaceMembersFromConfig.mockReturnValue([
+    buildWorkspaceMembersFromConfig.mockResolvedValue([
       {
         user_id: 'creator-old',
         name: 'Old Creator',

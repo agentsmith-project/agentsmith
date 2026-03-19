@@ -2928,7 +2928,6 @@
     "api_service_title": "API Service",
     "api_base_url_label": "API base URL",
     "workspace_registry_title": "Workspace Registry",
-    "workspace_registry_path_label": "Workspace registry path",
     "workspace_registry_status_label": "Registry status",
     "data_service_title": "Data Service",
     "substrate_label_label": "Substrate label",

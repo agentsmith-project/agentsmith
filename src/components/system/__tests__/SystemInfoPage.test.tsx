@@ -22,7 +22,6 @@ describe('SystemInfoPage', () => {
         snapshot={{
           system_admin_username: 'mbos-admin',
           api_base_url: 'http://localhost:20000',
-          workspace_registry_path: 'artifacts/system-workspaces.json',
           workspace_registry_status: 'available',
           substrate_label: 'primary',
           substrate_url: 'mongodb://localhost:27017',
@@ -67,7 +66,6 @@ describe('SystemInfoPage', () => {
     expect(screen.getByText('workspace_last_initialized_label')).toBeInTheDocument();
     expect(screen.getByText('workspace_last_init_error_label')).toBeInTheDocument();
     expect(screen.getByText('mongodb://localhost:27017')).toBeInTheDocument();
-    expect(screen.getByText('artifacts/system-workspaces.json')).toBeInTheDocument();
     expect(screen.getByText('https://login.example.com')).toBeInTheDocument();
     expect(screen.getAllByText('config_status.available').length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText('config_status.configured').length).toBeGreaterThanOrEqual(2);

@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const storageModule = vi.hoisted(() => ({
-  writeRegistryFile: vi.fn(),
+  listPersistedSystemWorkspaces: vi.fn(),
+  deletePersistedSystemWorkspace: vi.fn(),
+  upsertPersistedSystemWorkspace: vi.fn(),
 }));
 
-vi.mock('@/lib/system-admin/workspace-registry/storage', () => storageModule);
+vi.mock('@/lib/system-admin/workspace-registry/persistence', () => storageModule);
 
 import { POST } from '../route';
 
@@ -13,6 +15,9 @@ describe('/api/test/system/workspaces/seed', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    storageModule.listPersistedSystemWorkspaces.mockResolvedValue([]);
+    storageModule.deletePersistedSystemWorkspace.mockResolvedValue(undefined);
+    storageModule.upsertPersistedSystemWorkspace.mockResolvedValue(undefined);
     process.env = { ...originalEnv, NEXT_PUBLIC_USE_MSW: 'true' };
   });
 
@@ -38,7 +43,8 @@ describe('/api/test/system/workspaces/seed', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(storageModule.writeRegistryFile).toHaveBeenCalledWith([]);
+    expect(storageModule.listPersistedSystemWorkspaces).toHaveBeenCalled();
+    expect(storageModule.upsertPersistedSystemWorkspace).not.toHaveBeenCalled();
   });
 
   it('writes a seeded workspace state', async () => {
@@ -51,13 +57,13 @@ describe('/api/test/system/workspaces/seed', () => {
     );
 
     expect(response.status).toBe(200);
-    expect(storageModule.writeRegistryFile).toHaveBeenCalledWith([
+    expect(storageModule.upsertPersistedSystemWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({
         id: 'ws_seeded',
         provisioning_status: 'failed',
         last_init_error: 'identity_provider_config_incomplete',
       }),
-    ]);
+    );
   });
 
   it('returns not found outside mock lane', async () => {

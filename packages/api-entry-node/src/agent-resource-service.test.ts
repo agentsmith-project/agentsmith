@@ -1,16 +1,18 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import {
+  resetSystemWorkspaceRegistryPersistenceForTest,
+  upsertPersistedSystemWorkspace,
+} from '../../../src/lib/system-admin/workspace-registry/persistence.js';
 import { AgentResourceService } from './agent-resource-service.js';
 
 describe('AgentResourceService', () => {
-  const originalCwd = process.cwd();
+  beforeEach(() => {
+    resetSystemWorkspaceRegistryPersistenceForTest();
+  });
 
   afterEach(() => {
-    delete process.env.SYSTEM_WORKSPACE_REGISTRY_PATH;
-    process.chdir(originalCwd);
+    resetSystemWorkspaceRegistryPersistenceForTest();
   });
 
   it('creates external agent with expected defaults', async () => {
@@ -67,24 +69,26 @@ describe('AgentResourceService', () => {
   });
 
   it('uses tenant-prefixed collections for agents and service keys', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-agent-tenant-registry-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
-    writeFileSync(
-      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH,
-      JSON.stringify([
-        {
-          id: 'ws_default',
-          name: 'Default Workspace',
-          workspace_admin: 'owner@example.com',
-          tenant: {
-            database_name: 'agentsmith_ws_default',
-            collection_prefix: 'ws_default_',
-            key_prefix: 'ws_default:',
-          },
-        },
-      ]),
-      'utf-8',
-    );
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_default',
+      name: 'Default Workspace',
+      workspace_admin: 'owner@example.com',
+      project_creators: [],
+      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      tenant: {
+        workspace_id: 'ws_default',
+        workspace_name: 'Default Workspace',
+        database_name: 'agentsmith_ws_default',
+        collection_prefix: 'ws_default_',
+        key_prefix: 'ws_default:',
+        substrate_label: 'primary',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: '2026-03-18T00:00:00.000Z',
+      updated_at: '2026-03-18T00:00:00.000Z',
+    });
 
     const docStore = new InMemoryJsonDocStore();
     const service = new AgentResourceService(docStore);
@@ -100,32 +104,29 @@ describe('AgentResourceService', () => {
     expect(await docStore.list('ws_default_agent_service_keys', {})).toHaveLength(1);
     expect((await service.listAgents('ws_default', 'proj_1')).map((item) => item.id)).toContain(agent.id);
     expect((await service.listAgentKeys('ws_default', 'proj_1', agent.id)).map((item) => item.id)).toContain(record.id);
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
-  it('verifies agent keys from the default registry path when SYSTEM_WORKSPACE_REGISTRY_PATH is unset', async () => {
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-agent-default-registry-'));
-    const artifactsDir = join(dir, 'artifacts');
-    const registryPath = join(artifactsDir, 'system-workspaces.json');
-    mkdirSync(artifactsDir, { recursive: true });
-    writeFileSync(
-      registryPath,
-      JSON.stringify([
-        {
-          id: 'ws_default',
-          name: 'Default Workspace',
-          tenant: {
-            database_name: 'agentsmith_ws_default',
-            collection_prefix: 'ws_default_',
-            key_prefix: 'ws_default:',
-          },
-        },
-      ]),
-      'utf-8',
-    );
-    process.chdir(dir);
-
+  it('verifies agent keys from persisted workspace records', async () => {
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_default',
+      name: 'Default Workspace',
+      workspace_admin: 'owner@example.com',
+      project_creators: [],
+      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      tenant: {
+        workspace_id: 'ws_default',
+        workspace_name: 'Default Workspace',
+        database_name: 'agentsmith_ws_default',
+        collection_prefix: 'ws_default_',
+        key_prefix: 'ws_default:',
+        substrate_label: 'primary',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: '2026-03-18T00:00:00.000Z',
+      updated_at: '2026-03-18T00:00:00.000Z',
+    });
     const docStore = new InMemoryJsonDocStore();
     const service = new AgentResourceService(docStore);
     const agent = await service.createAgent('ws_default', 'proj_1', {
@@ -137,80 +138,41 @@ describe('AgentResourceService', () => {
     const verified = await service.verifyAgentKey(agent.id, key);
     expect(verified?.id).toBe(record.id);
     expect(verified?.workspace_id).toBe('ws_default');
-
-    rmSync(dir, { recursive: true, force: true });
   });
 
-  it('prefers the repo registry path over a stale package-local registry when verifying agent keys', async () => {
-    const repoRoot = originalCwd;
-    const packageRoot = join(repoRoot, 'packages/api-entry-node');
-    const repoRegistryPath = join(repoRoot, 'artifacts/system-workspaces.json');
-    const packageRegistryPath = join(packageRoot, 'artifacts/system-workspaces.json');
-    const repoRegistryBackup = existsSync(repoRegistryPath) ? readFileSync(repoRegistryPath, 'utf-8') : null;
-    const packageRegistryBackup = existsSync(packageRegistryPath) ? readFileSync(packageRegistryPath, 'utf-8') : null;
+  it('uses persisted workspace records instead of filesystem registry mirrors when verifying agent keys', async () => {
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_integration_mainline',
+      name: 'Integration Mainline Workspace',
+      workspace_admin: 'owner@example.com',
+      project_creators: [],
+      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      tenant: {
+        workspace_id: 'ws_integration_mainline',
+        workspace_name: 'Integration Mainline Workspace',
+        database_name: 'agentsmith_ws_integration_mainline',
+        collection_prefix: 'ws_integration_mainline_',
+        key_prefix: 'ws_integration_mainline:',
+        substrate_label: 'primary',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: '2026-03-18T00:00:00.000Z',
+      updated_at: '2026-03-18T00:00:00.000Z',
+    });
 
-    try {
-      mkdirSync(join(repoRoot, 'artifacts'), { recursive: true });
-      mkdirSync(join(packageRoot, 'artifacts'), { recursive: true });
+    const docStore = new InMemoryJsonDocStore();
+    const service = new AgentResourceService(docStore);
+    const agent = await service.createAgent('ws_integration_mainline', 'proj_1', {
+      name: 'repo-registry-agent',
+      mode: 'external',
+    });
+    const { record, key } = await service.createAgentKey('ws_integration_mainline', 'proj_1', agent.id);
 
-      writeFileSync(
-        repoRegistryPath,
-        JSON.stringify([
-          {
-            id: 'ws_integration_mainline',
-            name: 'Integration Mainline Workspace',
-            tenant: {
-              database_name: 'agentsmith_ws_integration_mainline',
-              collection_prefix: 'ws_integration_mainline_',
-              key_prefix: 'ws_integration_mainline:',
-            },
-          },
-        ]),
-        'utf-8',
-      );
-
-      writeFileSync(
-        packageRegistryPath,
-        JSON.stringify([
-          {
-            id: 'ws_stale_package',
-            name: 'Stale Package Workspace',
-            tenant: {
-              database_name: 'agentsmith_ws_stale_package',
-              collection_prefix: 'ws_stale_package_',
-              key_prefix: 'ws_stale_package:',
-            },
-          },
-        ]),
-        'utf-8',
-      );
-
-      process.chdir(packageRoot);
-
-      const docStore = new InMemoryJsonDocStore();
-      const service = new AgentResourceService(docStore);
-      const agent = await service.createAgent('ws_integration_mainline', 'proj_1', {
-        name: 'repo-registry-agent',
-        mode: 'external',
-      });
-      const { record, key } = await service.createAgentKey('ws_integration_mainline', 'proj_1', agent.id);
-
-      const verified = await service.verifyAgentKey(agent.id, key);
-      expect(verified?.id).toBe(record.id);
-      expect(verified?.workspace_id).toBe('ws_integration_mainline');
-    } finally {
-      if (repoRegistryBackup === null) {
-        rmSync(repoRegistryPath, { force: true });
-      } else {
-        writeFileSync(repoRegistryPath, repoRegistryBackup, 'utf-8');
-      }
-
-      if (packageRegistryBackup === null) {
-        rmSync(packageRegistryPath, { force: true });
-      } else {
-        writeFileSync(packageRegistryPath, packageRegistryBackup, 'utf-8');
-      }
-    }
+    const verified = await service.verifyAgentKey(agent.id, key);
+    expect(verified?.id).toBe(record.id);
+    expect(verified?.workspace_id).toBe('ws_integration_mainline');
   });
 
   it('hydrates external agent presence from shared cache', async () => {

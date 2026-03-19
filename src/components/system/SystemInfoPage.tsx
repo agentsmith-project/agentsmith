@@ -157,7 +157,6 @@ export function SystemInfoPage({ snapshot }: SystemInfoPageProps) {
                     <InfoGroup
                       title={t('workspace_registry_title')}
                       rows={[
-                        { label: t('workspace_registry_path_label'), value: snapshot.workspace_registry_path },
                         { label: t('workspace_registry_status_label'), value: t(`config_status.${snapshot.workspace_registry_status}`) },
                       ]}
                     />

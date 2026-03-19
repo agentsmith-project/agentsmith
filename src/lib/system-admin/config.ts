@@ -10,7 +10,6 @@ export interface WorkspaceTenantPreview {
 export interface SystemInfoSnapshot {
   system_admin_username: string;
   api_base_url: string;
-  workspace_registry_path: string;
   workspace_registry_status: 'available' | 'unavailable';
   substrate_label: string;
   substrate_url: string;
@@ -87,7 +86,6 @@ export function getBaseSystemInfoSnapshot(): Omit<
   return {
     system_admin_username: getSystemAdminUsername(),
     api_base_url: process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000',
-    workspace_registry_path: process.env.SYSTEM_WORKSPACE_REGISTRY_PATH || 'artifacts/system-workspaces.json',
     substrate_label: process.env.SYSTEM_SUBSTRATE_LABEL || DEFAULT_SUBSTRATE_LABEL,
     substrate_url: process.env.SYSTEM_SUBSTRATE_URL || DEFAULT_SUBSTRATE_URL,
     database_prefix: process.env.SYSTEM_TENANT_DATABASE_PREFIX || DEFAULT_DATABASE_PREFIX,

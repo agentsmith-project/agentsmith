@@ -1,5 +1,9 @@
 import { NextResponse } from 'next/server';
-import { writeRegistryFile } from '@/lib/system-admin/workspace-registry/storage';
+import {
+  deletePersistedSystemWorkspace,
+  listPersistedSystemWorkspaces,
+  upsertPersistedSystemWorkspace,
+} from '@/lib/system-admin/workspace-registry/persistence';
 import type { SystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
 
 type SeedState = 'empty' | 'with_workspace' | 'with_disabled_workspace' | 'with_failed_workspace';
@@ -60,7 +64,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error_code: 'VALIDATION_ERROR', error_message: 'invalid_seed_state' }, { status: 422 });
   }
 
+  const existing = await listPersistedSystemWorkspaces();
+  await Promise.all(existing.map((record) => deletePersistedSystemWorkspace(record.id)));
   const records = state === 'empty' ? [] : [buildWorkspace(state)];
-  await writeRegistryFile(records);
+  await Promise.all(records.map((record) => upsertPersistedSystemWorkspace(record)));
   return NextResponse.json({ ok: true, total: records.length });
 }

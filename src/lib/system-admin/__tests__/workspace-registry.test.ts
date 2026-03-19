@@ -33,7 +33,6 @@ describe('system workspace registry', () => {
   beforeEach(() => {
     process.env = { ...originalEnv };
     const dir = mkdtempSync(join(tmpdir(), 'agentsmith-system-ws-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
     process.env.SYSTEM_WORKSPACE_PROVISIONING_PATH = join(dir, 'provisioning');
     resetSystemWorkspaceRegistryPersistenceForTest();
   });
@@ -303,52 +302,5 @@ describe('system workspace registry', () => {
 
     await disableSystemWorkspace('delete_guard_workspace');
     await expect(deleteSystemWorkspace('delete_guard_workspace')).resolves.toBeUndefined();
-  });
-
-  it('imports legacy registry file records into the persisted registry on first read', async () => {
-    const registryPath = process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!;
-    await import('node:fs/promises').then((fs) =>
-      fs.writeFile(
-        registryPath,
-        `${JSON.stringify([
-          {
-            id: 'legacy_ws',
-            name: 'Legacy Workspace',
-            workspace_admin: 'admin@example.com',
-            workspace_admin_user_id: 'kc-admin-001',
-            workspace_admin_name: 'Admin Example',
-            project_creators: [],
-            idp: {
-              kind: 'keycloak',
-              url: 'https://idp.example.com',
-              realm: 'legacy',
-              client_id: 'agentsmith-legacy',
-            },
-            tenant: {
-              substrate_label: 'legacy',
-              database_name: 'agentsmith_legacy_ws',
-              collection_prefix: 'ws_legacy_',
-              key_prefix: 'ws_legacy:',
-            },
-            provisioning_status: 'ready',
-            last_initialized_at: '2026-03-18T00:00:00.000Z',
-            last_init_error: null,
-            created_at: '2026-03-18T00:00:00.000Z',
-            updated_at: '2026-03-18T00:00:00.000Z',
-          },
-        ], null, 2)}\n`,
-      ),
-    );
-
-    const items = await listPublicSystemWorkspaces();
-    expect(items).toEqual([
-      expect.objectContaining({
-        id: 'legacy_ws',
-        name: 'Legacy Workspace',
-      }),
-    ]);
-
-    const loaded = await getPublicSystemWorkspace('legacy_ws');
-    expect(loaded).toEqual(expect.objectContaining({ id: 'legacy_ws' }));
   });
 });

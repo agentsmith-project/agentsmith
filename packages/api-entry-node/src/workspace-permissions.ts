@@ -72,14 +72,14 @@ function snapshotMatchesActor(
     || normalizedActorEmail === snapshot.email.trim().toLowerCase();
 }
 
-export function resolveWorkspacePermissions(args: {
+export async function resolveWorkspacePermissions(args: {
   workspaceId: string;
   actorId: string;
   actorEmail?: string;
   defaultWorkspaceId?: string;
-}): readonly string[] {
+}): Promise<readonly string[]> {
   const { workspaceId, actorId, actorEmail, defaultWorkspaceId } = args;
-  const registered = getRegisteredWorkspaceConfig(workspaceId);
+  const registered = await getRegisteredWorkspaceConfig(workspaceId);
   if (registered) {
     if (
       (registered.workspace_admin_user_id && registered.workspace_admin && snapshotMatchesActor(actorId, actorEmail, {
@@ -98,14 +98,14 @@ export function resolveWorkspacePermissions(args: {
   return MEMBER_WORKSPACE_PERMISSIONS;
 }
 
-export function buildWorkspaceMembersFromConfig(args: {
+export async function buildWorkspaceMembersFromConfig(args: {
   workspaceId: string;
   actorId: string;
   actorEmail: string;
   actorName: string;
   workspaceCreatedAt: string;
   defaultWorkspaceId?: string;
-}): Array<{
+}): Promise<Array<{
   id: string;
   user_id: string;
   name: string;
@@ -120,9 +120,9 @@ export function buildWorkspaceMembersFromConfig(args: {
   permissions: readonly string[];
   status: 'active';
   joined_at: string;
-}> {
+}>> {
   const { workspaceId, actorId, actorEmail, actorName, workspaceCreatedAt, defaultWorkspaceId } = args;
-  const registered = getRegisteredWorkspaceConfig(workspaceId);
+  const registered = await getRegisteredWorkspaceConfig(workspaceId);
   const members = new Map<string, {
     id: string;
     user_id: string;
@@ -196,7 +196,7 @@ export function buildWorkspaceMembersFromConfig(args: {
     pushMember(creator, WORKSPACE_BUILT_IN_GROUPS.projectCreators, PROJECT_CREATOR_WORKSPACE_PERMISSIONS);
   }
 
-  const actorPermissions = resolveWorkspacePermissions({
+  const actorPermissions = await resolveWorkspacePermissions({
     workspaceId,
     actorId,
     actorEmail,
@@ -239,7 +239,7 @@ export function buildWorkspaceMembersFromConfig(args: {
   return [...members.values()];
 }
 
-export function buildWorkspaceRecords(): WorkspaceRecord[] {
+export async function buildWorkspaceRecords(): Promise<WorkspaceRecord[]> {
   const now = new Date().toISOString();
   const workspaceId = process.env.MBOS_DEFAULT_WORKSPACE_ID ?? 'ws_default';
   const workspaceName = process.env.MBOS_DEFAULT_WORKSPACE_NAME ?? 'Default Workspace';
@@ -253,7 +253,7 @@ export function buildWorkspaceRecords(): WorkspaceRecord[] {
   for (const item of defaults) {
     merged.set(item.id, item);
   }
-  for (const item of readRegisteredWorkspaces()) {
+  for (const item of await readRegisteredWorkspaces()) {
     merged.set(item.id, item);
   }
   return [...merged.values()];

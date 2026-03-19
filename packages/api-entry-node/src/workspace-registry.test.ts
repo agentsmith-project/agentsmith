@@ -1,13 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import {
   getPersistedSystemWorkspace,
+  upsertPersistedSystemWorkspace,
   resetSystemWorkspaceRegistryPersistenceForTest,
 } from '../../../src/lib/system-admin/workspace-registry/persistence.js';
 import {
   getRegisteredWorkspaceConfig,
+  listRegisteredWorkspaceIds,
   readRegisteredWorkspaces,
   updateRegisteredWorkspaceProjectCreators,
 } from './workspace-registry.js';
@@ -17,8 +16,6 @@ describe('readRegisteredWorkspaces', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    const dir = mkdtempSync(join(tmpdir(), 'agentsmith-api-workspace-registry-'));
-    process.env.SYSTEM_WORKSPACE_REGISTRY_PATH = join(dir, 'system-workspaces.json');
   });
 
   afterEach(() => {
@@ -26,81 +23,90 @@ describe('readRegisteredWorkspaces', () => {
     resetSystemWorkspaceRegistryPersistenceForTest();
   });
 
-  it('returns ready registered workspaces and skips disabled ones', () => {
-    writeFileSync(
-      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
-      `${JSON.stringify([
-        {
-          id: 'ws_ready',
-          name: 'Ready Workspace',
-          provisioning_status: 'ready',
-          created_at: '2026-03-12T00:00:00.000Z',
-          updated_at: '2026-03-12T00:00:00.000Z',
-        },
-        {
-          id: 'ws_disabled',
-          name: 'Disabled Workspace',
-          provisioning_status: 'disabled',
-          created_at: '2026-03-11T00:00:00.000Z',
-          updated_at: '2026-03-11T00:00:00.000Z',
-        },
-        {
-          id: 'ws_legacy',
-          name: 'Legacy Workspace',
-          created_at: '2026-03-10T00:00:00.000Z',
-          updated_at: '2026-03-10T00:00:00.000Z',
-        },
-      ], null, 2)}\n`,
-      'utf-8',
-    );
+  it('returns ready registered workspaces and skips disabled ones', async () => {
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_ready',
+      name: 'Ready Workspace',
+      workspace_admin: 'ready@example.com',
+      project_creators: [],
+      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      tenant: {
+        workspace_id: 'ws_ready',
+        workspace_name: 'Ready Workspace',
+        substrate_label: 'default',
+        database_name: 'agentsmith_ws_ready',
+        collection_prefix: 'ws_ready_',
+        key_prefix: 'ws_ready:',
+      },
+      provisioning_status: 'ready',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: '2026-03-12T00:00:00.000Z',
+      updated_at: '2026-03-12T00:00:00.000Z',
+    });
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_disabled',
+      name: 'Disabled Workspace',
+      workspace_admin: 'disabled@example.com',
+      project_creators: [],
+      idp: { kind: 'keycloak', url: 'http://localhost:18080', realm: 'mbos', client_id: 'agentsmith' },
+      tenant: {
+        workspace_id: 'ws_disabled',
+        workspace_name: 'Disabled Workspace',
+        substrate_label: 'default',
+        database_name: 'agentsmith_ws_disabled',
+        collection_prefix: 'ws_disabled_',
+        key_prefix: 'ws_disabled:',
+      },
+      provisioning_status: 'disabled',
+      last_initialized_at: null,
+      last_init_error: null,
+      created_at: '2026-03-11T00:00:00.000Z',
+      updated_at: '2026-03-11T00:00:00.000Z',
+    });
 
-    expect(readRegisteredWorkspaces()).toEqual([
+    await expect(readRegisteredWorkspaces()).resolves.toEqual([
       {
         id: 'ws_ready',
         name: 'Ready Workspace',
         created_at: '2026-03-12T00:00:00.000Z',
         updated_at: '2026-03-12T00:00:00.000Z',
       },
-      {
-        id: 'ws_legacy',
-        name: 'Legacy Workspace',
-        created_at: '2026-03-10T00:00:00.000Z',
-        updated_at: '2026-03-10T00:00:00.000Z',
-      },
     ]);
+    await expect(listRegisteredWorkspaceIds()).resolves.toContain('ws_default');
   });
 
   it('preserves published login configuration when project creators are updated', async () => {
-    writeFileSync(
-      process.env.SYSTEM_WORKSPACE_REGISTRY_PATH!,
-      `${JSON.stringify([
-        {
-          id: 'ws_ready',
-          name: 'Ready Workspace',
-          provisioning_status: 'ready',
-          workspace_admin: 'owner@example.com',
-          project_creators: ['creator@example.com'],
-          idp: {
-            kind: 'keycloak',
-            url: 'http://localhost:18080',
-            realm: 'mbos',
-            client_id: 'agentsmith',
-            client_secret: 'secret',
-          },
-          tenant: {
-            substrate_label: 'default',
-            database_name: 'agentsmith_ws_ready',
-            collection_prefix: 'ws_ready_',
-            key_prefix: 'ws_ready:',
-          },
-          last_initialized_at: '2026-03-12T00:00:00.000Z',
-          last_init_error: null,
-          created_at: '2026-03-12T00:00:00.000Z',
-          updated_at: '2026-03-12T00:00:00.000Z',
-        },
-      ], null, 2)}\n`,
-      'utf-8',
-    );
+    await upsertPersistedSystemWorkspace({
+      id: 'ws_ready',
+      name: 'Ready Workspace',
+      provisioning_status: 'ready',
+      workspace_admin: 'owner@example.com',
+      project_creators: [{
+        user_id: 'creator@example.com',
+        email: 'creator@example.com',
+        name: 'creator@example.com',
+      }],
+      idp: {
+        kind: 'keycloak',
+        url: 'http://localhost:18080',
+        realm: 'mbos',
+        client_id: 'agentsmith',
+        client_secret: 'secret',
+      },
+      tenant: {
+        workspace_id: 'ws_ready',
+        workspace_name: 'Ready Workspace',
+        substrate_label: 'default',
+        database_name: 'agentsmith_ws_ready',
+        collection_prefix: 'ws_ready_',
+        key_prefix: 'ws_ready:',
+      },
+      last_initialized_at: '2026-03-12T00:00:00.000Z',
+      last_init_error: null,
+      created_at: '2026-03-12T00:00:00.000Z',
+      updated_at: '2026-03-12T00:00:00.000Z',
+    });
 
     await updateRegisteredWorkspaceProjectCreators('ws_ready', [
       {
@@ -110,7 +116,7 @@ describe('readRegisteredWorkspaces', () => {
       },
     ]);
 
-    expect(getRegisteredWorkspaceConfig('ws_ready')).toEqual(
+    await expect(getRegisteredWorkspaceConfig('ws_ready')).resolves.toEqual(
       expect.objectContaining({
         project_creators: [
           {

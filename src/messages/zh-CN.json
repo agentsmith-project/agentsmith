@@ -2931,7 +2931,6 @@
     "api_service_title": "API 服务",
     "api_base_url_label": "API 地址",
     "workspace_registry_title": "工作区注册表",
-    "workspace_registry_path_label": "工作区注册表路径",
     "workspace_registry_status_label": "注册表状态",
     "data_service_title": "数据服务",
     "substrate_label_label": "Substrate 标识",

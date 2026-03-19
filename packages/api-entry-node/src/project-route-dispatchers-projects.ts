@@ -69,7 +69,7 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
     const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = CreateProjectRequestSchema.parse(raw);
-    const actorPermissions = resolveWorkspacePermissions({
+    const actorPermissions = await resolveWorkspacePermissions({
       workspaceId: route.workspaceId,
       actorId: user.id,
       actorEmail: user.email,
@@ -140,7 +140,7 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
     const requestId = readRequestId(req);
     const raw = await readBody(req);
     const input = UpdateProjectRequestSchema.parse(raw);
-    const actorWorkspacePermissions = resolveWorkspacePermissions({
+    const actorWorkspacePermissions = await resolveWorkspacePermissions({
       workspaceId: route.workspaceId,
       actorId: user.id,
       actorEmail: user.email,

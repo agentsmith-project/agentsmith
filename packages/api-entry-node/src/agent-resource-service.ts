@@ -2,8 +2,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
-import { resolveRegisteredWorkspaceRegistryPath } from './workspace-registry.js';
-import { readFileSync } from 'node:fs';
+import { listRegisteredWorkspaceIds } from './workspace-registry.js';
 
 interface AgentConnectionState {
   connected_at: string;
@@ -230,8 +229,9 @@ export class AgentResourceService {
     // Keys are discovered across registered workspace collections, then bound
     // back to the matched workspace_id/project_id. That bound scope is what the
     // websocket layer later enforces for notebook execution requests.
+    const collections = await this.listRegisteredWorkspaceCollections(AgentResourceService.agentKeysCollection);
     const allActiveKeys = await Promise.all(
-      this.listRegisteredWorkspaceCollections(AgentResourceService.agentKeysCollection).map((collection) =>
+      collections.map((collection) =>
         this.docStore.list<AgentServiceKeyRecord>(collection, {
           agent_id: agentId,
           status: 'active',
@@ -248,19 +248,11 @@ export class AgentResourceService {
     return touched;
   }
 
-  private listRegisteredWorkspaceCollections(baseCollection: string): string[] {
+  private async listRegisteredWorkspaceCollections(baseCollection: string): Promise<string[]> {
     const collections = new Set<string>([baseCollection]);
-    const registryPath = resolveRegisteredWorkspaceRegistryPath();
-    try {
-      const raw = readFileSync(registryPath, 'utf-8');
-      const parsed = JSON.parse(raw) as Array<{ id?: unknown }>;
-      for (const item of Array.isArray(parsed) ? parsed : []) {
-        const workspaceId = typeof item?.id === 'string' ? item.id.trim() : '';
-        if (!workspaceId) continue;
-        collections.add(resolveWorkspaceScopedCollection(baseCollection, workspaceId));
-      }
-    } catch {
-      // Ignore registry read failures and fall back to the base collection.
+    for (const workspaceId of await listRegisteredWorkspaceIds()) {
+      if (!workspaceId) continue;
+      collections.add(resolveWorkspaceScopedCollection(baseCollection, workspaceId));
     }
     return [...collections];
   }

@@ -19,6 +19,8 @@ export interface InternalAgentWorkspaceBinding {
   pvc_name: string;
   volume_handle: string;
   filesystem_name: string;
+  mount_options?: string[];
+  storage_class_name?: string;
   created_at: string;
   updated_at: string;
 }
@@ -46,6 +48,14 @@ interface InternalAgentWorkspaceK8sClient {
   deleteSecret(namespace: string, name: string): Promise<void>;
   deletePersistentVolume(name: string): Promise<void>;
   deletePersistentVolumeClaim(namespace: string, name: string): Promise<void>;
+}
+
+function parseCsiMountOptions(value: string | undefined): string[] {
+  if (!value) return [];
+  return value
+    .split(/[,\n]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 }
 
 function bindingsCollection(workspaceId: string): string {
@@ -227,6 +237,8 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       namespace: string;
       csiDriver?: string;
       storageCapacity?: string;
+      storageClassName?: string;
+      mountOptions?: string[];
       metadataHostOverride?: string;
       storageEndpointOverride?: string;
       storageCredentialSeed?: string;
@@ -270,11 +282,15 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       pvc_name: names.pvcName,
       volume_handle: names.volumeHandle,
       filesystem_name: library.filesystem_name,
+      mount_options: this.options.mountOptions?.filter(Boolean) ?? [],
+      storage_class_name: this.options.storageClassName?.trim() || '',
       created_at: now,
       updated_at: now,
     };
     binding.updated_at = now;
     binding.filesystem_name = library.filesystem_name;
+    binding.mount_options = this.options.mountOptions?.filter(Boolean) ?? binding.mount_options ?? [];
+    binding.storage_class_name = this.options.storageClassName?.trim() || binding.storage_class_name || '';
 
     await this.k8sClient.ensureSecret(
       binding.namespace,
@@ -363,7 +379,10 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         accessModes: ['ReadWriteMany'],
         persistentVolumeReclaimPolicy: 'Retain',
         volumeMode: 'Filesystem',
-        storageClassName: '',
+        storageClassName: binding.storage_class_name || '',
+        ...(binding.mount_options && binding.mount_options.length > 0
+          ? { mountOptions: binding.mount_options }
+          : {}),
         csi: {
           driver: this.options.csiDriver ?? 'csi.juicefs.com',
           volumeHandle: binding.volume_handle,
@@ -390,7 +409,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       },
       spec: {
         accessModes: ['ReadWriteMany'],
-        storageClassName: '',
+        storageClassName: binding.storage_class_name || '',
         volumeName: binding.pv_name,
         resources: {
           requests: {
@@ -401,3 +420,5 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     };
   }
 }
+
+export { parseCsiMountOptions };

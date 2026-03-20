@@ -39,6 +39,7 @@ import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import {
   InternalAgentWorkspaceProvisionerImpl,
   KubernetesInternalAgentWorkspaceK8sClient,
+  parseCsiMountOptions,
 } from './internal-agent-workspace-provisioner.js';
 import { SandboxManagerClient } from './sandbox-manager-client.js';
 import type { NodeApiDeps } from './node-api-deps.js';
@@ -166,6 +167,8 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
           namespace: internalAgentK8sNamespace,
           csiDriver: env.INTERNAL_AGENT_JUICEFS_CSI_DRIVER?.trim() || 'csi.juicefs.com',
           storageCapacity: env.INTERNAL_AGENT_WORKSPACE_CAPACITY?.trim() || '1Pi',
+          storageClassName: env.INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME?.trim() || '',
+          mountOptions: parseCsiMountOptions(env.INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS),
           metadataHostOverride: internalAgentMetadataHostOverride || undefined,
           storageEndpointOverride: internalAgentStorageEndpointOverride || undefined,
           storageCredentialSeed:

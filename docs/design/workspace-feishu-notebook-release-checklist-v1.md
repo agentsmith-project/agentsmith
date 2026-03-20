@@ -80,8 +80,7 @@
 必须满足：
 
 1. `mbos-sandbox-v1` README 与架构文档明确写清：
-   - snapshot/restore 是 legacy shell-session 路径
-   - AgentSmith 当前依赖的是 PVC/CSI-backed workload path
+   - AgentSmith 当前依赖的是 JuiceFS CSI-backed workspace binding + workload path
 2. workload volume 输入的基本约束在依赖项目中有显式校验
 3. JuiceFS CSI 配置项有清晰文档，不靠口头知识
 

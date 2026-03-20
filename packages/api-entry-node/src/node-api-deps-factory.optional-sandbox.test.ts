@@ -32,13 +32,6 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     })).toThrowError('sandbox_manager_config_incomplete');
   });
 
-  it('fails fast when workspace binding manager env is partially configured', () => {
-    expect(() => createNodeApiDepsFromEnv({
-      ...baseEnv,
-      INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-sandbox',
-    })).toThrowError('internal_agent_workspace_config_incomplete');
-  });
-
   it('does not fail startup when sandbox readyz preflight fails', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sandbox_down'));
 
@@ -46,7 +39,6 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       ...baseEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
       SANDBOX_SERVICE_KEY: 'svc-key',
-      INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-sandbox',
     });
 
     try {

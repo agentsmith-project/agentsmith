@@ -249,7 +249,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
 
     if (status.phase === 'offline') {
       const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`;
-      const mountPath = workspaceMount?.mountPath?.trim() || '/workspace';
       await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
         image: config.image,
         env: {
@@ -266,19 +265,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         memory_limit: config.memoryLimit ?? '4Gi',
         idle_timeout_sec: config.idleTimeoutSec ?? 1800,
         max_lifetime_sec: config.maxLifetimeSec ?? 86400,
-        workdir: mountPath,
-        use_image_command: true,
-        disable_snapshot: true,
-        ...(workspaceMount
-          ? {
-            volumes: [{
-              name: 'workspace',
-              mount_path: mountPath,
-              persistent_volume_claim_name: workspaceMount.claimName,
-              ...(workspaceMount.readOnly ? { read_only: true } : {}),
-            }],
-          }
-          : {}),
+        ...(workspaceMount?.bindingId ? { workspace_binding_id: workspaceMount.bindingId } : {}),
       });
       status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);
     }

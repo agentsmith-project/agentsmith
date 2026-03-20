@@ -23,16 +23,40 @@ export interface SandboxPodCreateBody {
   memory_limit?: string;
   idle_timeout_sec?: number;
   max_lifetime_sec?: number;
-  workdir?: string;
-  use_image_command?: boolean;
-  disable_snapshot?: boolean;
-  volumes?: Array<{
-    name: string;
-    mount_path: string;
-    persistent_volume_claim_name?: string;
-    size_limit?: string;
-    read_only?: boolean;
-  }>;
+  workspace_binding_id?: string;
+}
+
+export interface SandboxWorkspaceBindingBody {
+  file_library_id: string;
+  filesystem_name: string;
+  metadata_url: string;
+  storage_endpoint?: string;
+  storage_capacity?: string;
+  storage_class_name?: string;
+  mount_options?: string[];
+  subdir?: string;
+  mount_service_account?: string;
+  mount_image?: string;
+}
+
+export interface SandboxWorkspaceBindingResponse {
+  binding_id: string;
+  workspace_id: string;
+  project_id: string;
+  file_library_id: string;
+  status: string;
+  namespace: string;
+  secret_name: string;
+  pv_name: string;
+  pvc_name: string;
+  volume_handle: string;
+  filesystem_name: string;
+  mount_path: string;
+  storage_class_name?: string;
+  mount_options?: string[];
+  subdir?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export class SandboxManagerHttpError extends Error {
@@ -156,6 +180,52 @@ export class SandboxManagerClient {
       httpStatus: resp.status,
       pod: await resp.json() as PodStatusResponse,
     };
+  }
+
+  async ensureWorkspaceBinding(
+    workspaceId: string,
+    projectId: string,
+    bindingId: string,
+    body: SandboxWorkspaceBindingBody,
+  ): Promise<SandboxWorkspaceBindingResponse> {
+    const url = this.buildUrl(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/projects/${encodeURIComponent(projectId)}`
+      + `/workspace-bindings/${encodeURIComponent(bindingId)}`,
+    );
+    const resp = await this.expectOk('ensure_workspace_binding', async () => fetch(url, {
+      method: 'PUT',
+      headers: this.headers(true),
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(60_000),
+    }));
+    return await resp.json() as SandboxWorkspaceBindingResponse;
+  }
+
+  async deleteWorkspaceBinding(
+    workspaceId: string,
+    projectId: string,
+    bindingId: string,
+  ): Promise<void> {
+    const url = this.buildUrl(
+      `/v1/workspaces/${encodeURIComponent(workspaceId)}`
+      + `/projects/${encodeURIComponent(projectId)}`
+      + `/workspace-bindings/${encodeURIComponent(bindingId)}`,
+    );
+    const resp = await this.requestWithRetry('delete_workspace_binding', async () => fetch(url, {
+      method: 'DELETE',
+      headers: this.headers(),
+      signal: AbortSignal.timeout(15_000),
+    }));
+    if (!resp.ok && resp.status !== 404) {
+      const text = await resp.text().catch(() => '');
+      throw new SandboxManagerHttpError({
+        status: resp.status,
+        operation: 'delete_workspace_binding',
+        code: this.mapErrorCode(resp.status),
+        message: `sandbox_manager_error: delete_workspace_binding ${resp.status} ${text}`.trim(),
+      });
+    }
   }
 
   async getPodStatus(

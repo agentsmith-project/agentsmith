@@ -122,7 +122,7 @@ internal-k8s 应支持：
 
 对于这条 internal agent 路线：
 
-- 不再使用 snapshot/restore
+- 只使用 JuiceFS CSI 持久化工作区
 - 不留兼容
 
 ## 3.3 平台与部署

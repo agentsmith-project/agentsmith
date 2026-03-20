@@ -78,4 +78,45 @@ describe('SandboxManagerClient', () => {
       status: 403,
     });
   });
+
+  it('ensures workspace binding through the binding endpoint', async () => {
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      expect(String(input)).toBe('http://sandbox:8080/v1/workspaces/ws_1/projects/proj_1/workspace-bindings/flib_demo');
+      expect(init?.method).toBe('PUT');
+      const headers = init?.headers as Record<string, string>;
+      expect(headers['X-Service-Key']).toBe('svc-key');
+      return new Response(JSON.stringify({
+        binding_id: 'flib_demo',
+        workspace_id: 'ws_1',
+        project_id: 'proj_1',
+        file_library_id: 'flib_demo',
+        status: 'ready',
+        namespace: 'sandbox-workloads',
+        secret_name: 'secret',
+        pv_name: 'pv',
+        pvc_name: 'pvc',
+        volume_handle: 'ws_1/proj_1/flib_demo',
+        filesystem_name: 'agentsmith-workspace',
+        mount_path: '/workspace',
+      }), { status: 201 });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    const result = await client.ensureWorkspaceBinding('ws_1', 'proj_1', 'flib_demo', {
+      file_library_id: 'flib_demo',
+      filesystem_name: 'agentsmith-workspace',
+      metadata_url: 'postgres://postgres:postgres@db:5432/juicefs?sslmode=disable',
+    });
+
+    expect(result.binding_id).toBe('flib_demo');
+    expect(result.mount_path).toBe('/workspace');
+  });
+
+  it('treats delete workspace binding 404 as success', async () => {
+    globalThis.fetch = vi.fn(async () => new Response('', { status: 404 })) as unknown as typeof fetch;
+
+    const client = new SandboxManagerClient('http://sandbox:8080', 'svc-key');
+    await expect(client.deleteWorkspaceBinding('ws_1', 'proj_1', 'flib_demo')).resolves.toBeUndefined();
+  });
 });

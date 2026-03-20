@@ -38,7 +38,6 @@ import { AgentExecutionService } from './agent-execution-service.js';
 import { InternalAgentPodManagerImpl } from './internal-agent-pod-manager.js';
 import {
   InternalAgentWorkspaceProvisionerImpl,
-  KubernetesInternalAgentWorkspaceK8sClient,
   parseCsiMountOptions,
 } from './internal-agent-workspace-provisioner.js';
 import { SandboxManagerClient } from './sandbox-manager-client.js';
@@ -116,18 +115,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   );
   const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
-  const internalAgentK8sNamespace = env.INTERNAL_AGENT_K8S_NAMESPACE?.trim() || '';
   const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim() || '';
   const internalAgentMetadataHostOverride = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '';
   const internalAgentStorageEndpointOverride = env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
     throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
       code: 'SANDBOX_MANAGER_CONFIG_INCOMPLETE',
-    });
-  }
-  if (internalAgentK8sNamespace && !sandboxUrl) {
-    throw Object.assign(new Error('internal_agent_workspace_config_incomplete: SANDBOX_MANAGER_URL is required when INTERNAL_AGENT_K8S_NAMESPACE is set'), {
-      code: 'INTERNAL_AGENT_WORKSPACE_CONFIG_INCOMPLETE',
     });
   }
 
@@ -159,12 +152,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
     : undefined;
-  const internalAgentWorkspaceBindingManager = internalAgentK8sNamespace
+  const internalAgentWorkspaceBindingManager = sandboxClient
     ? new InternalAgentWorkspaceProvisionerImpl(
         docStore,
-        new KubernetesInternalAgentWorkspaceK8sClient(),
+        sandboxClient,
         {
-          namespace: internalAgentK8sNamespace,
+          namespace: '',
           csiDriver: env.INTERNAL_AGENT_JUICEFS_CSI_DRIVER?.trim() || 'csi.juicefs.com',
           storageCapacity: env.INTERNAL_AGENT_WORKSPACE_CAPACITY?.trim() || '1Pi',
           storageClassName: env.INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME?.trim() || '',

@@ -10,7 +10,7 @@ Release closure companion:
 Dependency truth:
 
 - internal notebook workloads depend on the workspace-backed PVC/CSI path documented in `../mbos-sandbox-v1/docs/JUICEFS_CSI_WORKSPACE_MODEL.md`
-- the legacy snapshot/restore sandbox path is not the product truth for current persistent notebook file libraries
+- JuiceFS CSI workspace binding is the only supported persistence model for current persistent notebook file libraries
 
 ## Scope of current MVP
 
@@ -68,7 +68,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - Codex runner per-task watchdog timeout and task auto-close protections.
   - Codex runner task namespace generation for `.codex/.mbos/.artifacts`.
   - Internal-k8s notebook execution path using JuiceFS CSI pre-mounted `/workspace`.
-  - Internal lazy start / reclaim / resume without snapshot restore.
+  - Internal lazy start / reclaim / resume on the same JuiceFS CSI-backed workspace binding.
 - Verified:
   - `packages/api-entry-node/src/http-utils.test.ts` (responses/chat translation) passing.
   - End-to-end Notebook external agent pipeline with real GLM (`glm-5`) returns `turn.completed`.
@@ -430,7 +430,7 @@ npm run test:internal:real:notebook-workspace
 - Contract notes:
   - internal runner uses `workspace_binding_mode=pre_mounted`
   - `workspace_path` is fixed to `/workspace`
-  - snapshot/restore no longer participates in this route
+  - workload recreation reuses the same JuiceFS CSI workspace binding
 
 ## 5.5 Important Codex Config Behavior (Root Cause Note)
 - Codex docs state project-scoped `.codex/config.toml` is only loaded for **trusted projects**.

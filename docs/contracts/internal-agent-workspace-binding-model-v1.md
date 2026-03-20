@@ -34,7 +34,6 @@ This record remains infrastructure-facing.
 This is the execution-facing contract:
 
 - `bindingId`
-- `claimName`
 - `mountPath`
 - optional `readOnly`
 
@@ -52,12 +51,10 @@ By separating:
 
 we keep the current implementation compatible while moving toward a more platform-owned binding lifecycle.
 
-## Current Limitation
+## Current Direction
 
-Today AgentSmith still owns `ensure Secret / PV / PVC` for the binding lifecycle.
+The target release model is:
 
-That is acceptable for the current release candidate baseline, but the intended long-term model is:
-
-- the binding lifecycle becomes a stable platform capability
+- sandbox owns the binding lifecycle
 - orchestration asks for a binding and receives a mount contract
-- lower layers own the storage resource lifecycle
+- lower layers own the JuiceFS CSI resource lifecycle

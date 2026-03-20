@@ -61,7 +61,6 @@ describe('internal-agent-pod-manager', () => {
       }),
       workspaceMount: {
         bindingId: 'flib_demo',
-        claimName: 'pvc-file-library-1',
       },
     });
 
@@ -71,16 +70,7 @@ describe('internal-agent-pod-manager', () => {
       'proj_1',
       'task_1',
       expect.objectContaining({
-        workdir: '/workspace',
-        use_image_command: true,
-        disable_snapshot: true,
-        volumes: [
-          expect.objectContaining({
-            name: 'workspace',
-            mount_path: '/workspace',
-            persistent_volume_claim_name: 'pvc-file-library-1',
-          }),
-        ],
+        workspace_binding_id: 'flib_demo',
       }),
     );
     expect(onlineStateStore.getAgentOnlineState).toHaveBeenCalled();

@@ -1,10 +1,9 @@
-import { ApiException, CoreV1Api, KubeConfig, type V1PersistentVolume, type V1PersistentVolumeClaim, type V1Secret } from '@kubernetes/client-node';
 import type { JsonDocStorePort } from '@mbos/ports';
-import { createHash } from 'node:crypto';
 import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
+import type { SandboxWorkspaceBindingBody, SandboxWorkspaceBindingResponse } from './sandbox-manager-client.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 const INTERNAL_AGENT_WORKSPACE_COLLECTION = 'internal_agent_file_library_workspaces';
@@ -28,7 +27,6 @@ export interface InternalAgentWorkspaceBinding {
 
 export interface InternalAgentWorkspaceMount {
   bindingId: string;
-  claimName: string;
   mountPath: '/workspace';
   readOnly?: boolean;
 }
@@ -51,12 +49,13 @@ export interface InternalAgentWorkspaceProvisioner {
 export type InternalAgentWorkspaceBindingManager = InternalAgentWorkspaceProvisioner;
 
 interface InternalAgentWorkspaceK8sClient {
-  ensureSecret(namespace: string, secret: V1Secret): Promise<void>;
-  ensurePersistentVolume(volume: V1PersistentVolume): Promise<void>;
-  ensurePersistentVolumeClaim(namespace: string, claim: V1PersistentVolumeClaim): Promise<void>;
-  deleteSecret(namespace: string, name: string): Promise<void>;
-  deletePersistentVolume(name: string): Promise<void>;
-  deletePersistentVolumeClaim(namespace: string, name: string): Promise<void>;
+  ensureWorkspaceBinding(
+    workspaceId: string,
+    projectId: string,
+    bindingId: string,
+    body: SandboxWorkspaceBindingBody,
+  ): Promise<SandboxWorkspaceBindingResponse>;
+  deleteWorkspaceBinding(workspaceId: string, projectId: string, bindingId: string): Promise<void>;
 }
 
 function parseCsiMountOptions(value: string | undefined): string[] {
@@ -82,30 +81,6 @@ export function sanitizeK8sName(value: string, fallback: string): string {
   return normalized || fallback;
 }
 
-function sanitizeSlug(value: string, fallback: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]+/g, '_')
-    .replace(/_{2,}/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 63) || fallback;
-}
-
-function deterministicBucket(fileLibraryId: string): string {
-  return `jfs-lib-${sanitizeSlug(fileLibraryId, 'library').replace(/_/g, '-')}`.slice(0, 63);
-}
-
-function deterministicMinioUser(fileLibraryId: string): string {
-  return `jfsm_${sanitizeSlug(fileLibraryId, 'library')}`.slice(0, 40);
-}
-
-function deriveSecret(seed: string, namespace: string, fileLibraryId: string, size = 32): string {
-  const digest = createHash('sha256')
-    .update(`${seed}:${namespace}:${fileLibraryId}`)
-    .digest('base64url');
-  return digest.slice(0, size);
-}
-
 function bindingNames(workspaceId: string, projectId: string, fileLibraryId: string): {
   secretName: string;
   pvName: string;
@@ -119,120 +94,6 @@ function bindingNames(workspaceId: string, projectId: string, fileLibraryId: str
     pvcName: sanitizeK8sName(`juicefs-pvc-${suffix}`, 'juicefs-pvc'),
     volumeHandle: sanitizeK8sName(`juicefs-${suffix}`, 'juicefs-volume'),
   };
-}
-
-export class KubernetesInternalAgentWorkspaceK8sClient implements InternalAgentWorkspaceK8sClient {
-  private readonly core: CoreV1Api;
-
-  constructor() {
-    const kubeConfig = new KubeConfig();
-    kubeConfig.loadFromDefault();
-    this.core = kubeConfig.makeApiClient(CoreV1Api);
-  }
-
-  async ensureSecret(namespace: string, secret: V1Secret): Promise<void> {
-    const name = secret.metadata?.name;
-    if (!name) throw new Error('secret_name_required');
-    try {
-      const existing = await this.core.readNamespacedSecret({
-        name,
-        namespace,
-      });
-      await this.core.replaceNamespacedSecret({
-        name,
-        namespace,
-        body: {
-        ...secret,
-        metadata: {
-          ...secret.metadata,
-          resourceVersion: existing.metadata?.resourceVersion,
-        },
-        },
-      });
-    } catch (error) {
-      if (error instanceof ApiException && error.code === 404) {
-        await this.core.createNamespacedSecret({
-          namespace,
-          body: secret,
-        });
-        return;
-      }
-      throw error;
-    }
-  }
-
-  async ensurePersistentVolume(volume: V1PersistentVolume): Promise<void> {
-    const name = volume.metadata?.name;
-    if (!name) throw new Error('persistent_volume_name_required');
-    try {
-      await this.core.readPersistentVolume({
-        name,
-      });
-    } catch (error) {
-      if (error instanceof ApiException && error.code === 404) {
-        await this.core.createPersistentVolume({
-          body: volume,
-        });
-        return;
-      }
-      throw error;
-    }
-  }
-
-  async ensurePersistentVolumeClaim(namespace: string, claim: V1PersistentVolumeClaim): Promise<void> {
-    const name = claim.metadata?.name;
-    if (!name) throw new Error('persistent_volume_claim_name_required');
-    try {
-      await this.core.readNamespacedPersistentVolumeClaim({
-        name,
-        namespace,
-      });
-    } catch (error) {
-      if (error instanceof ApiException && error.code === 404) {
-        await this.core.createNamespacedPersistentVolumeClaim({
-          namespace,
-          body: claim,
-        });
-        return;
-      }
-      throw error;
-    }
-  }
-
-  async deleteSecret(namespace: string, name: string): Promise<void> {
-    try {
-      await this.core.deleteNamespacedSecret({
-        name,
-        namespace,
-      });
-    } catch (error) {
-      if (error instanceof ApiException && error.code === 404) return;
-      throw error;
-    }
-  }
-
-  async deletePersistentVolume(name: string): Promise<void> {
-    try {
-      await this.core.deletePersistentVolume({
-        name,
-      });
-    } catch (error) {
-      if (error instanceof ApiException && error.code === 404) return;
-      throw error;
-    }
-  }
-
-  async deletePersistentVolumeClaim(namespace: string, name: string): Promise<void> {
-    try {
-      await this.core.deleteNamespacedPersistentVolumeClaim({
-        name,
-        namespace,
-      });
-    } catch (error) {
-      if (error instanceof ApiException && error.code === 404) return;
-      throw error;
-    }
-  }
 }
 
 export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorkspaceProvisioner {
@@ -305,18 +166,40 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     binding.storage_class_name = this.options.storageClassName?.trim() || binding.storage_class_name || '';
     binding.subdir = this.options.subdir?.trim() || binding.subdir || '';
 
-    await this.k8sClient.ensureSecret(
-      binding.namespace,
-      this.buildSecret(binding, this.resolveMetadataUrlForInternalMount(mountAccess.metadata_url)),
-    );
-    await this.k8sClient.ensurePersistentVolume(this.buildPersistentVolume(binding));
-    await this.k8sClient.ensurePersistentVolumeClaim(binding.namespace, this.buildPersistentVolumeClaim(binding));
+    const remoteBinding = await this.k8sClient.ensureWorkspaceBinding(input.workspaceId, input.projectId, input.fileLibraryId, {
+      file_library_id: input.fileLibraryId,
+      filesystem_name: library.filesystem_name,
+      metadata_url: this.resolveMetadataUrlForInternalMount(mountAccess.metadata_url),
+      ...(this.options.storageEndpointOverride?.trim()
+        ? { storage_endpoint: this.options.storageEndpointOverride.trim() }
+        : {}),
+      ...(this.options.storageCapacity?.trim()
+        ? { storage_capacity: this.options.storageCapacity.trim() }
+        : {}),
+      ...(this.options.storageClassName?.trim()
+        ? { storage_class_name: this.options.storageClassName.trim() }
+        : {}),
+      ...(binding.mount_options && binding.mount_options.length > 0
+        ? { mount_options: binding.mount_options }
+        : {}),
+      ...(binding.subdir ? { subdir: binding.subdir } : {}),
+      ...(this.options.mountServiceAccount?.trim()
+        ? { mount_service_account: this.options.mountServiceAccount.trim() }
+        : {}),
+      ...(this.options.mountImage?.trim()
+        ? { mount_image: this.options.mountImage.trim() }
+        : {}),
+    });
+    binding.namespace = remoteBinding.namespace || binding.namespace;
+    binding.secret_name = remoteBinding.secret_name || binding.secret_name;
+    binding.pv_name = remoteBinding.pv_name || binding.pv_name;
+    binding.pvc_name = remoteBinding.pvc_name || binding.pvc_name;
+    binding.volume_handle = remoteBinding.volume_handle || binding.volume_handle;
     await this.docStore.upsert(collection, input.fileLibraryId, binding);
 
     return {
       workspaceMount: {
         bindingId: binding.file_library_id,
-        claimName: binding.pvc_name,
         mountPath: '/workspace',
       },
       binding,
@@ -330,38 +213,8 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     const collection = bindingsCollection(input.workspaceId);
     const existing = await this.docStore.get<InternalAgentWorkspaceBinding>(collection, input.fileLibraryId);
     if (!existing) return;
-    await this.k8sClient.deletePersistentVolumeClaim(existing.namespace, existing.pvc_name);
-    await this.k8sClient.deletePersistentVolume(existing.pv_name);
-    await this.k8sClient.deleteSecret(existing.namespace, existing.secret_name);
+    await this.k8sClient.deleteWorkspaceBinding(input.workspaceId, existing.project_id, input.fileLibraryId);
     await this.docStore.delete(collection, input.fileLibraryId);
-  }
-
-  private buildSecret(binding: InternalAgentWorkspaceBinding, metadataUrl: string): V1Secret {
-    const storageEndpoint = this.options.storageEndpointOverride?.trim() || 'http://localhost:19000';
-    const bucketName = deterministicBucket(binding.file_library_id);
-    const storageCredentialSeed = this.options.storageCredentialSeed?.trim() || 'agentsmith-file-library-gateway-seed';
-    return {
-      apiVersion: 'v1',
-      kind: 'Secret',
-      metadata: {
-        name: binding.secret_name,
-        namespace: binding.namespace,
-        labels: {
-          'app.kubernetes.io/managed-by': 'agentsmith',
-          'mbos.io/file-library-id': binding.file_library_id,
-          'juicefs.com/validate-secret': 'true',
-        },
-      },
-      type: 'Opaque',
-      stringData: {
-        name: binding.filesystem_name,
-        metaurl: metadataUrl,
-        storage: 's3',
-        bucket: `${storageEndpoint.replace(/\/+$/, '')}/${bucketName}`,
-        'access-key': deterministicMinioUser(binding.file_library_id),
-        'secret-key': deriveSecret(storageCredentialSeed, 'minio-backend-user', binding.file_library_id, 32),
-      },
-    };
   }
 
   private resolveMetadataUrlForInternalMount(metadataUrl: string): string {
@@ -380,80 +233,6 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     return parsed.toString();
   }
 
-  private buildPersistentVolume(binding: InternalAgentWorkspaceBinding): V1PersistentVolume {
-    return {
-      apiVersion: 'v1',
-      kind: 'PersistentVolume',
-      metadata: {
-        name: binding.pv_name,
-        labels: {
-          'app.kubernetes.io/managed-by': 'agentsmith',
-          'mbos.io/file-library-id': binding.file_library_id,
-        },
-      },
-      spec: {
-        capacity: { storage: this.options.storageCapacity ?? '1Pi' },
-        accessModes: ['ReadWriteMany'],
-        persistentVolumeReclaimPolicy: 'Retain',
-        volumeMode: 'Filesystem',
-        storageClassName: binding.storage_class_name || '',
-        fsType: 'juicefs',
-        ...(binding.mount_options && binding.mount_options.length > 0
-          ? { mountOptions: binding.mount_options }
-          : {}),
-        csi: {
-          driver: this.options.csiDriver ?? 'csi.juicefs.com',
-          volumeHandle: binding.volume_handle,
-          ...(this.buildVolumeAttributes(binding)),
-          nodePublishSecretRef: {
-            name: binding.secret_name,
-            namespace: binding.namespace,
-          },
-        },
-      },
-    };
-  }
-
-  private buildPersistentVolumeClaim(binding: InternalAgentWorkspaceBinding): V1PersistentVolumeClaim {
-    return {
-      apiVersion: 'v1',
-      kind: 'PersistentVolumeClaim',
-      metadata: {
-        name: binding.pvc_name,
-        namespace: binding.namespace,
-        labels: {
-          'app.kubernetes.io/managed-by': 'agentsmith',
-          'mbos.io/file-library-id': binding.file_library_id,
-        },
-      },
-      spec: {
-        accessModes: ['ReadWriteMany'],
-        storageClassName: binding.storage_class_name || '',
-        volumeName: binding.pv_name,
-        resources: {
-          requests: {
-            storage: this.options.storageCapacity ?? '1Pi',
-          },
-        },
-      },
-    };
-  }
-
-  private buildVolumeAttributes(binding: InternalAgentWorkspaceBinding): { volumeAttributes?: Record<string, string> } {
-    const attributes: Record<string, string> = {};
-    if (binding.subdir) {
-      attributes.subdir = binding.subdir;
-    }
-    if (this.options.mountServiceAccount?.trim()) {
-      attributes['juicefs/mount-service-account'] = this.options.mountServiceAccount.trim();
-    }
-    if (this.options.mountImage?.trim()) {
-      attributes['juicefs/mount-image'] = this.options.mountImage.trim();
-    }
-    return Object.keys(attributes).length > 0
-      ? { volumeAttributes: attributes }
-      : {};
-  }
 }
 
 export { parseCsiMountOptions };

@@ -174,7 +174,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         ensureWorkspaceBinding: vi.fn(async () => ({
           workspaceMount: {
             bindingId: 'flib_internal',
-            claimName: 'juicefs-pvc-internal',
             mountPath: '/workspace',
           },
           binding: {

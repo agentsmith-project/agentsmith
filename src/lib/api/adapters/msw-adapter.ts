@@ -44,6 +44,15 @@ export class MSWApiClient implements ApiClient {
     // Add MSW flag to bypass mock when needed
     headers['X-MSW-Enable'] = 'true';
 
+    if (typeof window !== 'undefined') {
+      const testHeaders = (window as Window & {
+        __MBOS_MSW_TEST_HEADERS__?: Record<string, string>;
+      }).__MBOS_MSW_TEST_HEADERS__;
+      if (testHeaders && typeof testHeaders === 'object') {
+        Object.assign(headers, testHeaders);
+      }
+    }
+
     return headers;
   }
 

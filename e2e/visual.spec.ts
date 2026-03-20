@@ -132,6 +132,33 @@ async function seedSystemWorkspaces(request: APIRequestContext, state: 'empty' |
   expect(response.ok()).toBe(true);
 }
 
+async function seedVisualFeishuState(
+  page: Page,
+  options: {
+    status?: 'not_configured' | 'verification_required' | 'verified' | 'enabled' | 'error';
+    verifiedByEmail?: string;
+    appId?: string;
+    redirectUri?: string;
+    connectedEmail?: string;
+  } = {},
+) {
+  const headers = {
+    'x-mock-feishu-status': options.status ?? 'not_configured',
+    'x-mock-feishu-verified-email': options.verifiedByEmail ?? '',
+    'x-mock-feishu-app-id': options.appId ?? '',
+    'x-mock-feishu-redirect-uri': options.redirectUri ?? '',
+    'x-mock-connection-provider': options.connectedEmail ? 'feishu' : '',
+    'x-mock-connection-workspace': WS_ID,
+    'x-mock-connection-email': options.connectedEmail ?? '',
+  };
+  await page.addInitScript((nextHeaders) => {
+    (window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> }).__MBOS_MSW_TEST_HEADERS__ = nextHeaders;
+  }, headers);
+  await page.evaluate((nextHeaders) => {
+    (window as Window & { __MBOS_MSW_TEST_HEADERS__?: Record<string, string> }).__MBOS_MSW_TEST_HEADERS__ = nextHeaders;
+  }, headers).catch(() => {});
+}
+
 function projectPath(section: string) {
   return `/en-US/workspaces/${WS_ID}/projects/${PROJECT_ID}/${section}`;
 }
@@ -208,6 +235,57 @@ test.describe('Visual - Workspace Pages', () => {
     await authedPage.getByTestId('ws-settings__create-project').click();
     await expect(authedPage.getByRole('heading', { name: /Create Project/i })).toBeVisible();
     await expect(authedPage).toHaveScreenshot('workspace-settings-create-project.png', { fullPage: true });
+  });
+
+  test('workspace settings - Feishu enabled card', async ({ authedPage }) => {
+    await seedVisualFeishuState(authedPage, {
+      status: 'enabled',
+      appId: 'cli_visual_demo',
+      redirectUri: `http://localhost:3001/workspaces/${WS_ID}/feishu/callback`,
+      verifiedByEmail: 'visual.admin@example.com',
+    });
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings`);
+    await expect(authedPage.getByTestId('ws-settings__integration-feishu')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-settings-feishu-enabled.png', { fullPage: true });
+  });
+
+  test('workspace Feishu setup - credentials draft', async ({ authedPage }) => {
+    await seedVisualFeishuState(authedPage, { status: 'not_configured' });
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings/feishu?step=credentials`);
+    await expect(authedPage.getByTestId('ws-feishu__save-draft')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-feishu-setup-credentials.png', { fullPage: true });
+  });
+
+  test('workspace Feishu setup - enabled locked state', async ({ authedPage }) => {
+    await seedVisualFeishuState(authedPage, {
+      status: 'enabled',
+      appId: 'cli_visual_demo',
+      redirectUri: `http://localhost:3001/workspaces/${WS_ID}/feishu/callback`,
+      verifiedByEmail: 'visual.admin@example.com',
+    });
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/settings/feishu`);
+    await expect(authedPage.getByTestId('ws-feishu__locked')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-feishu-locked.png', { fullPage: true });
+  });
+
+  test('workspace connections - Feishu disabled state', async ({ authedPage }) => {
+    await seedVisualFeishuState(authedPage, { status: 'not_configured' });
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/connections`);
+    await expect(authedPage.getByTestId('workspace-connections__feishu-connect')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-connections-feishu-disabled.png', { fullPage: true });
+  });
+
+  test('workspace connections - Feishu connected state', async ({ authedPage }) => {
+    await seedVisualFeishuState(authedPage, {
+      status: 'enabled',
+      appId: 'cli_visual_demo',
+      redirectUri: `http://localhost:3001/workspaces/${WS_ID}/feishu/callback`,
+      verifiedByEmail: 'visual.admin@example.com',
+      connectedEmail: 'visual.tester@example.com',
+    });
+    await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/connections`);
+    await expect(authedPage.getByTestId('workspace-connections__feishu-connect')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('workspace-connections-feishu-connected.png', { fullPage: true });
   });
 });
 

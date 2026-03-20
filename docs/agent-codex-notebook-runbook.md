@@ -5,6 +5,7 @@
 Release closure companion:
 
 - [Workspace Feishu + Notebook Release Checklist](./design/workspace-feishu-notebook-release-checklist-v1.md)
+- [Internal Agent Workspace Binding Model](./contracts/internal-agent-workspace-binding-model-v1.md)
 
 Dependency truth:
 

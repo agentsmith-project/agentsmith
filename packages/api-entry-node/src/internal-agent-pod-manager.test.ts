@@ -60,6 +60,7 @@ describe('internal-agent-pod-manager', () => {
         _internal_raw_key: 'ask_xxx',
       }),
       workspaceMount: {
+        bindingId: 'flib_demo',
         claimName: 'pvc-file-library-1',
       },
     });

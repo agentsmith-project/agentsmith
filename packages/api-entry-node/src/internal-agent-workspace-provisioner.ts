@@ -26,14 +26,20 @@ export interface InternalAgentWorkspaceBinding {
   updated_at: string;
 }
 
+export interface InternalAgentWorkspaceMount {
+  bindingId: string;
+  claimName: string;
+  mountPath: '/workspace';
+  readOnly?: boolean;
+}
+
 export interface InternalAgentWorkspaceProvisioner {
   ensureWorkspaceBinding(input: {
     workspaceId: string;
     projectId: string;
     fileLibraryId: string;
   }): Promise<{
-    claimName: string;
-    mountPath: '/workspace';
+    workspaceMount: InternalAgentWorkspaceMount;
     binding: InternalAgentWorkspaceBinding;
   }>;
   deleteWorkspaceBinding(input: {
@@ -257,8 +263,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     projectId: string;
     fileLibraryId: string;
   }): Promise<{
-    claimName: string;
-    mountPath: '/workspace';
+    workspaceMount: InternalAgentWorkspaceMount;
     binding: InternalAgentWorkspaceBinding;
   }> {
     const library = await this.catalogRepo.getById(input.workspaceId, input.projectId, input.fileLibraryId);
@@ -307,8 +312,11 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     await this.docStore.upsert(collection, input.fileLibraryId, binding);
 
     return {
-      claimName: binding.pvc_name,
-      mountPath: '/workspace',
+      workspaceMount: {
+        bindingId: binding.file_library_id,
+        claimName: binding.pvc_name,
+        mountPath: '/workspace',
+      },
       binding,
     };
   }

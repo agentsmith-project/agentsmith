@@ -265,10 +265,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         projectId: task.project_id,
         workloadId,
         agent,
-        workspaceMount: {
-          claimName: workspaceBinding.claimName,
-          mountPath: workspaceBinding.mountPath,
-        },
+        workspaceMount: workspaceBinding.workspaceMount,
       });
       keepaliveTimer = setInterval(() => {
         void deps.internalAgentPodManager?.keepalive(

@@ -1,5 +1,6 @@
 import type { AgentRecord } from './resource-models.js';
 import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './sandbox-manager-client.js';
+import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
 
 interface SandboxManagerClientLike {
   createOrEnsurePod(
@@ -31,11 +32,7 @@ export interface InternalAgentPodManager {
     projectId: string;
     workloadId: string;
     agent: AgentRecord;
-    workspaceMount?: {
-      claimName: string;
-      mountPath?: string;
-      readOnly?: boolean;
-    };
+    workspaceMount?: InternalAgentWorkspaceMount;
   }): Promise<void>;
   keepalive(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
   releasePod(workspaceId: string, projectId: string, workloadId: string): Promise<void>;
@@ -151,11 +148,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     projectId: string;
     workloadId: string;
     agent: AgentRecord;
-    workspaceMount?: {
-      claimName: string;
-      mountPath?: string;
-      readOnly?: boolean;
-    };
+    workspaceMount?: InternalAgentWorkspaceMount;
   }): Promise<void> {
     const { workspaceId, projectId, workloadId, agent } = input;
     if (agent.mode !== 'internal') {
@@ -231,11 +224,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     projectId: string,
     workloadId: string,
     agent: AgentRecord,
-    workspaceMount?: {
-      claimName: string;
-      mountPath?: string;
-      readOnly?: boolean;
-    },
+    workspaceMount?: InternalAgentWorkspaceMount,
   ): Promise<void> {
     if (this.agentExecution.getAgentOnlineState(agent.id)) return;
 

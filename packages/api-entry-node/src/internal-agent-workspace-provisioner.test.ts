@@ -102,8 +102,9 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       fileLibraryId: 'flib_demo',
     });
 
-    expect(result.claimName).toBeTruthy();
-    expect(result.mountPath).toBe('/workspace');
+    expect(result.workspaceMount.claimName).toBeTruthy();
+    expect(result.workspaceMount.mountPath).toBe('/workspace');
+    expect(result.workspaceMount.bindingId).toBe('flib_demo');
     expect(ensured.secret?.stringData?.metaurl).toBe('postgres://juicefs:secret@kind-gateway:5432/juicefs_demo?sslmode=disable');
     expect(ensured.secret?.stringData?.bucket).toBe('http://minio.internal:19000/jfs-lib-flib-demo');
     expect(ensured.secret?.metadata?.labels?.['juicefs.com/validate-secret']).toBe('true');

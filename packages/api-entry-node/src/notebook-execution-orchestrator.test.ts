@@ -172,10 +172,14 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       },
       internalAgentWorkspaceProvisioner: {
         ensureWorkspaceBinding: vi.fn(async () => ({
-          fileLibraryId: 'flib_internal',
-          filesystemName: 'flib_internal',
-          claimName: 'juicefs-pvc-internal',
-          mountPath: '/workspace',
+          workspaceMount: {
+            bindingId: 'flib_internal',
+            claimName: 'juicefs-pvc-internal',
+            mountPath: '/workspace',
+          },
+          binding: {
+            file_library_id: 'flib_internal',
+          },
         })),
       },
     } as unknown as NodeApiDeps;

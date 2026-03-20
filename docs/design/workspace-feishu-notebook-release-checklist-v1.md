@@ -52,11 +52,14 @@
    - `.artifacts/tasks/<taskId>/`
 3. artifact 扫描只看当前 task namespace
 4. file library 稳定目录名不再按 task title/id 派生
+5. internal workspace binding 对 orchestration 暴露的是稳定 mount contract，而不是匿名 PVC 原语
 
 验收标准：
 
 - 同一 file library 下两个 task 并发运行时，task namespace 不互相污染
 - Codex session/credential/artifact 都按 task 隔离
+- internal orchestration 与 sandbox pod manager 的边界可由文档解释清楚：
+  - [internal-agent-workspace-binding-model-v1.md](../contracts/internal-agent-workspace-binding-model-v1.md)
 
 ## 4. Internal / External 执行
 

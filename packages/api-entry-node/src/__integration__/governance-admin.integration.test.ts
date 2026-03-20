@@ -7,7 +7,6 @@ import { createDefaultNodeApiDeps } from '../index.js';
 import {
   apiFetch,
   apiFetchWithToken,
-  startMockFeishuOAuthServer,
   startServer,
   startServerWithDeps,
 } from './test-support.js';
@@ -313,53 +312,6 @@ describe('governance admin integration', () => {
 
   it('creates, lists, updates, and deletes user external connections', async () => {
     const { baseUrl } = startServer();
-    const feishu = startMockFeishuOAuthServer();
-    process.env.FEISHU_APP_ID = 'cli_test';
-    process.env.FEISHU_APP_SECRET = 'secret_test';
-    process.env.FEISHU_OAUTH_REDIRECT_URI = 'http://localhost:20000/api/v1/me/external-connections/providers/feishu/callback';
-    process.env.FEISHU_OAUTH_AUTHORIZE_URL = feishu.authorizeUrl;
-    process.env.FEISHU_OAUTH_TOKEN_URL = feishu.tokenUrl;
-
-    const providerRes = await apiFetch(baseUrl, '/api/v1/me/external-connections/providers/feishu');
-    expect(providerRes.status).toBe(200);
-    const providerPayload = (await providerRes.json()) as {
-      provider: string;
-      interactive_login_required: boolean;
-      callback_uri?: string | null;
-      auth_configured?: boolean;
-    };
-    expect(providerPayload.provider).toBe('feishu');
-    expect(providerPayload.interactive_login_required).toBe(true);
-    expect(providerPayload.auth_configured).toBe(true);
-
-    const startRes = await apiFetch(baseUrl, '/api/v1/me/external-connections/providers/feishu/auth/start', {
-      method: 'POST',
-    });
-    expect(startRes.status).toBe(200);
-    const startPayload = (await startRes.json()) as {
-      authorization_url: string;
-      state: string;
-      redirect_uri: string;
-    };
-    expect(startPayload.authorization_url).toContain(feishu.authorizeUrl);
-    expect(startPayload.redirect_uri).toBe('http://localhost:20000/api/v1/me/external-connections/providers/feishu/callback');
-
-    const completeRes = await apiFetch(baseUrl, '/api/v1/me/external-connections/providers/feishu/auth/complete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        callback_url: `http://localhost:20000/api/v1/me/external-connections/providers/feishu/callback?code=oauth_code_1&state=${encodeURIComponent(startPayload.state)}`,
-      }),
-    });
-    expect(completeRes.status).toBe(200);
-    const feishuConnection = (await completeRes.json()) as {
-      id: string;
-      provider: string;
-      fields: Array<{ key: string; masked_value?: string | null }>;
-    };
-    expect(feishuConnection.provider).toBe('feishu');
-    expect(feishuConnection.fields.find((field) => field.key === 'refresh_token')?.masked_value).toBeDefined();
-
     const createRes = await apiFetch(baseUrl, '/api/v1/me/external-connections', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -386,7 +338,7 @@ describe('governance admin integration', () => {
     const listRes = await apiFetch(baseUrl, '/api/v1/me/external-connections');
     expect(listRes.status).toBe(200);
     const listPayload = (await listRes.json()) as { items: Array<{ id: string; display_name: string }> };
-    expect(listPayload.items).toHaveLength(2);
+    expect(listPayload.items).toHaveLength(1);
     expect(listPayload.items.some((item) => item.display_name === 'Team Jira')).toBe(true);
 
     const updateRes = await apiFetch(baseUrl, `/api/v1/me/external-connections/${created.id}`, {
@@ -402,37 +354,10 @@ describe('governance admin integration', () => {
     expect(updated.status).toBe('reauth_required');
     expect(updated.last_error).toBe('Token rotated');
 
-    const refreshRes = await apiFetch(baseUrl, `/api/v1/me/external-connections/${feishuConnection.id}/refresh`, {
-      method: 'POST',
-    });
-    expect(refreshRes.status).toBe(200);
-    const refreshed = (await refreshRes.json()) as {
-      status: string;
-      fields: Array<{ key: string; masked_value?: string | null }>;
-    };
-    expect(refreshed.status).toBe('active');
-    expect(refreshed.fields.find((field) => field.key === 'access_token')?.masked_value).toBeDefined();
-
-    const startCallbackRes = await apiFetch(baseUrl, '/api/v1/me/external-connections/providers/feishu/auth/start', {
-      method: 'POST',
-    });
-    const startCallbackPayload = (await startCallbackRes.json()) as { state: string };
-    const callbackRes = await fetch(
-      `${baseUrl}/api/v1/me/external-connections/providers/feishu/callback?code=oauth_code_2&state=${encodeURIComponent(startCallbackPayload.state)}`,
-      { redirect: 'manual' },
-    );
-    expect(callbackRes.status).toBe(302);
-    expect(callbackRes.headers.get('location')).toBe('http://localhost:3001/zh-CN/user/third-party-accounts?provider=feishu&connected=1');
-
     const deleteRes = await apiFetch(baseUrl, `/api/v1/me/external-connections/${created.id}`, {
       method: 'DELETE',
     });
     expect(deleteRes.status).toBe(204);
-
-    const deleteFeishuRes = await apiFetch(baseUrl, `/api/v1/me/external-connections/${feishuConnection.id}`, {
-      method: 'DELETE',
-    });
-    expect(deleteFeishuRes.status).toBe(204);
 
     const emptyRes = await apiFetch(baseUrl, '/api/v1/me/external-connections');
     const emptyPayload = (await emptyRes.json()) as { items: unknown[] };

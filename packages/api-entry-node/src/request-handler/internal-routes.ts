@@ -1,7 +1,6 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from '../node-api-deps.js';
 import { verifyBearerToken } from '../auth.js';
-import { completeFeishuOAuthFromCallback, getFeishuOAuthFrontendConfig } from '../feishu-oauth.js';
 import { completeWorkspaceFeishuOAuthFromState } from '../workspace-feishu-oauth.js';
 import { appendUserNotification } from '../me-notifications-store.js';
 import { getGovernanceIncidentDetail, listGovernanceIncidents } from '../governance-incident-store.js';
@@ -78,30 +77,6 @@ export async function handleInternalRoutes({
         ? 422
         : 400;
       json(res, status, { error_code: 'WORKSPACE_FEISHU_CALLBACK_FAILED', message });
-    }
-    return true;
-  }
-
-  if (requestUrl.pathname === '/api/v1/me/external-connections/providers/feishu/callback' && method === 'GET') {
-    try {
-      await completeFeishuOAuthFromCallback({
-        docStore: deps.docStore,
-        cache: deps.cache,
-        code: requestUrl.searchParams.get('code') ?? undefined,
-        state: requestUrl.searchParams.get('state') ?? undefined,
-      });
-      const frontend = getFeishuOAuthFrontendConfig();
-      const redirectUrl = new URL(`/${frontend.locale}/user/third-party-accounts`, `${frontend.webBaseUrl}/`);
-      redirectUrl.searchParams.set('provider', 'feishu');
-      redirectUrl.searchParams.set('connected', '1');
-      res.statusCode = 302;
-      res.setHeader('location', redirectUrl.toString());
-      res.end();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'feishu_callback_failed';
-      res.statusCode = 400;
-      res.setHeader('content-type', 'text/html; charset=utf-8');
-      res.end(`<!doctype html><html><body><h1>Feishu callback failed</h1><p>${message}</p></body></html>`);
     }
     return true;
   }

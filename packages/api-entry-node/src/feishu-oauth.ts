@@ -1,20 +1,9 @@
-import { randomUUID } from 'node:crypto';
-import type { CachePort, JsonDocStorePort } from '@mbos/ports';
+import type { JsonDocStorePort } from '@mbos/ports';
 import {
-  upsertUserExternalConnectionByProvider,
   getUserExternalConnection,
   type UserExternalConnectionRecord,
 } from './user-external-connections-store.js';
 import { refreshWorkspaceFeishuOAuth } from './workspace-feishu-oauth.js';
-
-type FeishuAuthSession = {
-  userId: string;
-  state: string;
-  redirectUri: string;
-  expiresAt: number;
-};
-
-const FEISHU_AUTH_STATE_PREFIX = 'feishu:oauth:state:';
 
 type FeishuTokenPayload = {
   access_token: string;
@@ -62,46 +51,6 @@ export function getFeishuOAuthConfig() {
   };
 }
 
-export function getFeishuOAuthFrontendConfig() {
-  const webBaseUrl = process.env.MBOS_WEB_BASE_URL?.trim() || 'http://localhost:3001';
-  const locale = process.env.MBOS_DEFAULT_LOCALE?.trim() || 'zh-CN';
-  return {
-    webBaseUrl: webBaseUrl.replace(/\/+$/, ''),
-    locale,
-  };
-}
-
-function oauthStateKey(state: string): string {
-  return `${FEISHU_AUTH_STATE_PREFIX}${state}`;
-}
-
-async function writeFeishuOAuthSession(cache: CachePort, session: FeishuAuthSession): Promise<void> {
-  const ttlSeconds = Math.max(1, Math.ceil((session.expiresAt - Date.now()) / 1000));
-  await cache.set(oauthStateKey(session.state), JSON.stringify(session), ttlSeconds);
-}
-
-async function readFeishuOAuthSession(cache: CachePort, state: string): Promise<FeishuAuthSession | null> {
-  const raw = await cache.get(oauthStateKey(state));
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as FeishuAuthSession;
-    if (
-      typeof parsed?.userId !== 'string'
-      || typeof parsed?.state !== 'string'
-      || typeof parsed?.redirectUri !== 'string'
-      || typeof parsed?.expiresAt !== 'number'
-    ) {
-      return null;
-    }
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-async function deleteFeishuOAuthSession(cache: CachePort, state: string): Promise<void> {
-  await cache.del(oauthStateKey(state));
-}
 
 function parseFeishuTokenResponse(payload: unknown): FeishuTokenPayload {
   const raw = payload && typeof payload === 'object'
@@ -142,139 +91,6 @@ async function exchangeFeishuToken(body: Record<string, unknown>): Promise<Feish
     throw new Error('feishu_token_exchange_failed');
   }
   return parseFeishuTokenResponse(payload);
-}
-
-export async function startFeishuOAuth(cache: CachePort, userId: string) {
-  const config = getFeishuOAuthConfig();
-  if (!config.configured) {
-    throw new Error('feishu_oauth_not_configured');
-  }
-  const state = `feishu_${randomUUID().replace(/-/g, '')}`;
-  const session: FeishuAuthSession = {
-    userId,
-    state,
-    redirectUri: config.redirectUri,
-    expiresAt: Date.now() + 10 * 60 * 1000,
-  };
-  await writeFeishuOAuthSession(cache, session);
-  const authUrl = new URL(config.authorizeUrl);
-  authUrl.searchParams.set('client_id', config.clientId);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('redirect_uri', config.redirectUri);
-  authUrl.searchParams.set('scope', config.scopes.join(' '));
-  authUrl.searchParams.set('state', state);
-  return {
-    authorization_url: authUrl.toString(),
-    state,
-    redirect_uri: config.redirectUri,
-    expires_at: new Date(session.expiresAt).toISOString(),
-    scopes: config.scopes,
-  };
-}
-
-function parseCallbackInput(callbackUrl?: string, code?: string, state?: string) {
-  if (callbackUrl?.trim()) {
-    const parsed = new URL(callbackUrl.trim());
-    return {
-      code: parsed.searchParams.get('code') ?? '',
-      state: parsed.searchParams.get('state') ?? '',
-    };
-  }
-  return {
-    code: code?.trim() ?? '',
-    state: state?.trim() ?? '',
-  };
-}
-
-async function completeFeishuOAuthInternal(args: {
-  cache: CachePort;
-  docStore: JsonDocStorePort;
-  userId?: string;
-  callbackUrl?: string;
-  code?: string;
-  state?: string;
-}): Promise<UserExternalConnectionRecord> {
-  const parsed = parseCallbackInput(args.callbackUrl, args.code, args.state);
-  if (!parsed.code || !parsed.state) {
-    throw new Error('feishu_callback_missing_code_or_state');
-  }
-  const session = await readFeishuOAuthSession(args.cache, parsed.state);
-  if (!session || session.expiresAt < Date.now()) {
-    throw new Error('feishu_callback_state_invalid');
-  }
-  if (args.userId && session.userId !== args.userId) {
-    throw new Error('feishu_callback_state_invalid');
-  }
-  const config = getFeishuOAuthConfig();
-  const token = await exchangeFeishuToken({
-    grant_type: 'authorization_code',
-    client_id: getRequiredEnv('FEISHU_APP_ID'),
-    client_secret: getRequiredEnv('FEISHU_APP_SECRET'),
-    code: parsed.code,
-    redirect_uri: session.redirectUri || config.redirectUri,
-  });
-  await deleteFeishuOAuthSession(args.cache, parsed.state);
-  const expiresAt = token.expires_in && token.expires_in > 0
-    ? new Date(Date.now() + token.expires_in * 1000).toISOString()
-    : null;
-  const scopes = token.scope
-    ? token.scope.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean)
-    : config.scopes;
-  return upsertUserExternalConnectionByProvider(args.docStore, {
-    user_id: session.userId,
-    provider: 'feishu',
-    kind: 'oauth_account',
-    custom_domain: null,
-    display_name: 'Feishu',
-    note: null,
-    status: 'active',
-    fields: [
-      {
-        key: 'access_token',
-        value: token.access_token,
-        description: 'Feishu user access token',
-        secret: true,
-      },
-      ...(token.refresh_token ? [{
-        key: 'refresh_token',
-        value: token.refresh_token,
-        description: 'Feishu refresh token',
-        secret: true,
-      }] : []),
-    ],
-    account_identity: {
-      external_user_id: token.union_id ?? token.open_id ?? null,
-      external_name: token.name ?? null,
-      external_email: token.email ?? null,
-      tenant_id: null,
-    },
-    scopes,
-    expires_at: expiresAt,
-    last_refreshed_at: new Date().toISOString(),
-    last_used_at: null,
-    last_error: null,
-  });
-}
-
-export async function completeFeishuOAuth(args: {
-  cache: CachePort;
-  docStore: JsonDocStorePort;
-  userId: string;
-  callbackUrl?: string;
-  code?: string;
-  state?: string;
-}): Promise<UserExternalConnectionRecord> {
-  return completeFeishuOAuthInternal(args);
-}
-
-export async function completeFeishuOAuthFromCallback(args: {
-  cache: CachePort;
-  docStore: JsonDocStorePort;
-  callbackUrl?: string;
-  code?: string;
-  state?: string;
-}): Promise<UserExternalConnectionRecord> {
-  return completeFeishuOAuthInternal(args);
 }
 
 export async function refreshFeishuOAuth(args: {

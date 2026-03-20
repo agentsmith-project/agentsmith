@@ -9,12 +9,12 @@ on:
   workflow_dispatch:
     inputs:
       run_l2:
-        description: "Run L2 mock full matrix (smoke+chromium)"
+        description: "Run mock functional lane"
         required: false
         default: true
         type: boolean
       run_l3:
-        description: "Run L3 real-lane smoke (requires GLM_API_KEY secret)"
+        description: "Run core real lane (requires GLM_API_KEY secret)"
         required: false
         default: false
         type: boolean
@@ -29,8 +29,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  l0:
-    name: L0 (lint/type/contracts)
+  gate-fast:
+    name: gate-fast
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -46,12 +46,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run L0 gate
-        run: make gate-l0
+      - name: Run gate-fast
+        run: make gate-fast
 
-  l1-mock-smoke:
-    name: L1 (mock smoke)
-    needs: l0
+  lane-mock:
+    name: lane-mock
+    needs: gate-fast
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -70,8 +70,8 @@ jobs:
       - name: Install Playwright (chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Run L1 gate
-        run: make lane-mock-smoke
+      - name: Run lane-mock
+        run: make lane-mock
 
       - name: Upload smoke artifacts
         if: always()
@@ -83,9 +83,9 @@ jobs:
             test-results/**
             playwright-report/**
 
-  l2-mock-full:
-    name: L2 (mock functional matrix)
-    needs: l1-mock-smoke
+  lane-visual:
+    name: lane-visual
+    needs: lane-mock
     if: ${{ github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.run_l2) }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -105,22 +105,22 @@ jobs:
       - name: Install Playwright (chromium)
         run: npx playwright install --with-deps chromium
 
-      - name: Run L2 gate
-        run: make lane-mock-full
+      - name: Run lane-visual
+        run: make lane-visual
 
-      - name: Upload L2 artifacts
+      - name: Upload visual artifacts
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: l2-mock-full-artifacts
+          name: lane-visual-artifacts
           if-no-files-found: ignore
           path: |
             test-results/**
             playwright-report/**
 
   visual-manual:
-    name: Visual (manual baseline lane)
-    needs: l1-mock-smoke
+    name: visual-manual
+    needs: lane-mock
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_visual }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
@@ -141,7 +141,7 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run visual lane (manual, non-blocking)
-        run: make lane-mock-visual
+        run: make lane-visual
 
       - name: Upload visual artifacts
         if: always()
@@ -153,9 +153,9 @@ jobs:
             test-results/**
             playwright-report/**
 
-  l3-real-smoke:
-    name: L3 (real lane smoke)
-    needs: l0
+  lane-real-core:
+    name: lane-real-core
+    needs: gate-fast
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_l3 }}
     runs-on: ubuntu-latest
     timeout-minutes: 120
@@ -187,10 +187,10 @@ jobs:
           set -euo pipefail
           make bootstrap
 
-      - name: Run L3 gate
+      - name: Run lane-real-core
         run: |
           set -euo pipefail
-          make lane-real-smoke
+          make lane-real-core
 
       - name: Upload L3 artifacts
         if: always()

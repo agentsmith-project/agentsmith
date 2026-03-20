@@ -11,10 +11,8 @@ import {
 } from './me-notifications-store.js';
 import { listGovernanceIncidents } from './governance-incident-store.js';
 import {
-  completeFeishuOAuth,
   getFeishuOAuthConfig,
   refreshFeishuOAuth,
-  startFeishuOAuth,
 } from './feishu-oauth.js';
 import {
   createUserExternalConnection,
@@ -210,43 +208,6 @@ export async function handleMeRoute(args: {
     }
 
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-    return true;
-  }
-
-  if (pathname === '/api/v1/me/external-connections/providers/feishu/auth/start') {
-    if (method !== 'POST') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    try {
-      json(res, 200, await startFeishuOAuth(cache, user.id));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'feishu_oauth_start_failed';
-      json(res, 400, { error_code: 'INVALID_REQUEST', message });
-    }
-    return true;
-  }
-
-  if (pathname === '/api/v1/me/external-connections/providers/feishu/auth/complete') {
-    if (method !== 'POST') {
-      json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'method_not_allowed' });
-      return true;
-    }
-    const body = (await readBody(req)) as Record<string, unknown> | null;
-    try {
-      const record = await completeFeishuOAuth({
-        docStore,
-        cache,
-        userId: user.id,
-        callbackUrl: typeof body?.callback_url === 'string' ? body.callback_url : undefined,
-        code: typeof body?.code === 'string' ? body.code : undefined,
-        state: typeof body?.state === 'string' ? body.state : undefined,
-      });
-      json(res, 200, presentUserExternalConnection(record));
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'feishu_oauth_complete_failed';
-      json(res, 400, { error_code: 'INVALID_REQUEST', message });
-    }
     return true;
   }
 

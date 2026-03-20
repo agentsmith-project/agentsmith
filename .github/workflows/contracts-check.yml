@@ -43,8 +43,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run L0 quality gate (lint + typecheck + contract checks)
-        run: make gate-l0
+      - name: Run gate-fast
+        run: make gate-fast
 
       - name: Run permission contract drift check
         run: npm run contracts:check

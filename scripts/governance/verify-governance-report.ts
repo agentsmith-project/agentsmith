@@ -91,9 +91,9 @@ const CHECK_DEFINITIONS: Array<{
     timeout: 30000,
   },
   {
-    id: 'smoke-main',
-    name: 'Mainline engineering smoke',
-    category: 'smoke-main',
+    id: 'lane-real-core',
+    name: 'Core real lane',
+    category: 'lane-real-core',
     command: 'make notebook-agent-engineering-smoke-full',
     timeout: 600000, // 10 minutes
   },
@@ -794,7 +794,7 @@ function buildCommand(
   def: { id: string; command: string },
   options: VerifyReleaseOptions,
 ): string {
-  if (def.id === 'smoke-governance') {
+  if (def.id === 'lane-governance') {
     const governanceEvidencePath = getGovernanceEvidencePath(options);
     return `GOVERNANCE_EVIDENCE_PATH=${shellQuote(governanceEvidencePath)} ${def.command}`;
   }
@@ -1367,7 +1367,7 @@ function calculateStats(execution: ExecutionResults) {
       ? { name: sortedByDuration[sortedByDuration.length - 1].name, duration_ms: sortedByDuration[sortedByDuration.length - 1].duration_ms }
       : { name: 'N/A', duration_ms: 0 },
     by_category: byCategory as Record<
-      'contract' | 'smoke-main' | 'smoke-governance' | 'typecheck' | 'unit' | 'e2e',
+      'contract' | 'lane-real-core' | 'lane-governance' | 'typecheck' | 'unit' | 'e2e',
       { total: number; passed: number; failed: number }
     >,
   };

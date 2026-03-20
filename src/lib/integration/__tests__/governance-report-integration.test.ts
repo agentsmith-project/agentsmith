@@ -52,8 +52,8 @@ describe('M3 Integration: Governance Report Generation', () => {
           slowest_check: { name: 'test', duration_ms: 1000 },
           by_category: {
             contract: { total: 0, passed: 0, failed: 0 },
-            'smoke-main': { total: 0, passed: 0, failed: 0 },
-            'smoke-governance': { total: 0, passed: 0, failed: 0 },
+            'lane-real-core': { total: 0, passed: 0, failed: 0 },
+            'lane-governance': { total: 0, passed: 0, failed: 0 },
             typecheck: { total: 0, passed: 0, failed: 0 },
             unit: { total: 0, passed: 0, failed: 0 },
             e2e: { total: 0, passed: 0, failed: 0 },
@@ -186,8 +186,8 @@ describe('M3 Integration: Governance Report Generation', () => {
           slowest_check: { name: 'test', duration_ms: 100 },
           by_category: {
             contract: { total: 0, passed: 0, failed: 0 },
-            'smoke-main': { total: 0, passed: 0, failed: 0 },
-            'smoke-governance': { total: 0, passed: 0, failed: 0 },
+            'lane-real-core': { total: 0, passed: 0, failed: 0 },
+            'lane-governance': { total: 0, passed: 0, failed: 0 },
             typecheck: { total: 0, passed: 0, failed: 0 },
             unit: { total: 0, passed: 0, failed: 0 },
             e2e: { total: 0, passed: 0, failed: 0 },
@@ -258,8 +258,8 @@ describe('M3 Integration: Governance Report Generation', () => {
           slowest_check: { name: 'test-2', duration_ms: 1000 },
           by_category: {
             contract: { total: 0, passed: 0, failed: 0 },
-            'smoke-main': { total: 0, passed: 0, failed: 0 },
-            'smoke-governance': { total: 0, passed: 0, failed: 0 },
+            'lane-real-core': { total: 0, passed: 0, failed: 0 },
+            'lane-governance': { total: 0, passed: 0, failed: 0 },
             typecheck: { total: 0, passed: 0, failed: 0 },
             unit: { total: 0, passed: 0, failed: 0 },
             e2e: { total: 0, passed: 0, failed: 0 },

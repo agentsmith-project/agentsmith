@@ -115,8 +115,8 @@ export interface CheckResult {
  * Check categories */
 export type CheckCategory =
   | 'contract'       // Contract verification (OpenAPI, types)
-  | 'smoke-main'     // Mainline smoke tests
-  | 'smoke-governance'  // Governance smoke tests
+  | 'lane-real-core' // Core real-lane checks
+  | 'lane-governance' // Governance real-lane checks
   | 'typecheck'      // TypeScript type checking
   | 'unit'           // Unit tests
   | 'e2e';           // End-to-end tests

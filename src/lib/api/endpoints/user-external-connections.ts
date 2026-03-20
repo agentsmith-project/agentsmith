@@ -3,7 +3,6 @@ import type {
   CreateUserExternalConnectionRequest,
   UpdateUserExternalConnectionRequest,
   UserExternalConnection,
-  UserExternalConnectionOAuthStartResponse,
   UserExternalConnectionProviderConfig,
 } from '../types';
 
@@ -40,19 +39,6 @@ export class UserExternalConnectionsAPI {
   async getProviderConfig(provider: string): Promise<UserExternalConnectionProviderConfig> {
     return this.client.get<UserExternalConnectionProviderConfig>(
       `/me/external-connections/providers/${encodeURIComponent(provider)}`
-    );
-  }
-
-  async startFeishuOAuth(): Promise<UserExternalConnectionOAuthStartResponse> {
-    return this.client.post<UserExternalConnectionOAuthStartResponse>(
-      '/me/external-connections/providers/feishu/auth/start'
-    );
-  }
-
-  async completeFeishuOAuth(data: { callback_url?: string; code?: string; state?: string }): Promise<UserExternalConnection> {
-    return this.client.post<UserExternalConnection>(
-      '/me/external-connections/providers/feishu/auth/complete',
-      data
     );
   }
 

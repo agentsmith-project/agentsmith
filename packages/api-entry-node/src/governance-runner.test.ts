@@ -42,8 +42,8 @@ describe('createGovernanceRunner', () => {
       total_checks: 6,
       passed_checks: 5,
       failed_checks: 1,
-      failed_step_names: ['Governance smoke'],
-      failed_check_ids: ['smoke-governance'],
+      failed_step_names: ['Governance real lane'],
+      failed_check_ids: ['lane-governance'],
       failure_categories: ['authorization'],
     }), 'utf-8');
 
@@ -63,7 +63,7 @@ describe('createGovernanceRunner', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(capturedArgs).toContain('--checks');
-    expect(capturedArgs).toContain('smoke-governance');
+    expect(capturedArgs).toContain('lane-governance');
     expect(capturedArgs).toContain('--rerun-of-run-id');
     expect(capturedArgs).toContain('sample-run');
   });

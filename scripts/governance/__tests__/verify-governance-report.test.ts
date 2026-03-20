@@ -124,7 +124,7 @@ describe('verify-governance-report: TDD Suite', () => {
         '--name', 'governance-report-test',
         '--dry-run',
         '--trigger', 'manual',
-        '--checks', 'typecheck,smoke-governance',
+        '--checks', 'typecheck,lane-governance',
         '--actor-user-id', 'user_owner',
         '--actor-name', 'Owner User',
         '--notes', 'rerun failed checks',
@@ -148,7 +148,7 @@ describe('verify-governance-report: TDD Suite', () => {
       expect(run.report_name).toBe('governance-report-test');
       expect(run.trigger).toBe('manual');
       expect(run.total_checks).toBeGreaterThan(0);
-      expect(run.requested_check_ids).toEqual(['typecheck', 'smoke-governance']);
+      expect(run.requested_check_ids).toEqual(['typecheck', 'lane-governance']);
       expect(run.actor_user_id).toBe('user_owner');
       expect(run.actor_name).toContain('Owner');
       expect(run.notes).toContain('rerun');

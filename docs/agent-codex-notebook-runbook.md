@@ -2,6 +2,15 @@
 
 术语边界：本文出现的 `release` / `engineering gate` 命令名是仓库内工程脚本命名（smoke、验收、诊断）；`permission gate` 仅表示产品权限门禁语义，不表示 AgentSmith 平台提供 DevOps 发布编排功能。
 
+Release closure companion:
+
+- [Workspace Feishu + Notebook Release Checklist](./design/workspace-feishu-notebook-release-checklist-v1.md)
+
+Dependency truth:
+
+- internal notebook workloads depend on the workspace-backed PVC/CSI path documented in `../mbos-sandbox-v1/docs/JUICEFS_CSI_WORKSPACE_MODEL.md`
+- the legacy snapshot/restore sandbox path is not the product truth for current persistent notebook file libraries
+
 ## Scope of current MVP
 
 This runbook covers the supported MVP path focused on `Files + Notebook + External Agent + Trace + Artifacts`.

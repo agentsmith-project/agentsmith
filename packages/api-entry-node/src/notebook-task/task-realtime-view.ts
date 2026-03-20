@@ -39,13 +39,16 @@ export async function buildTaskRealtimeView(
 }
 
 export function mapTaskMessagesForExecution(taskId: string, assistantMessageId: string): Array<Record<string, unknown>> {
-  return getTaskMessages(taskId)
-    .filter((item) => item.id !== assistantMessageId)
-    .filter((item) => item.role === 'user' || (item.role === 'agent' && item.content.trim().length > 0))
-    .map((item) => ({
-      role: item.role === 'agent' ? 'assistant' : 'user',
-      content: item.content,
-    }));
+  const latestUserTurn = [...getTaskMessages(taskId)]
+    .reverse()
+    .find((item) => item.id !== assistantMessageId && item.role === 'user' && item.content.trim().length > 0);
+  if (!latestUserTurn) {
+    return [];
+  }
+  return [{
+    role: 'user',
+    content: latestUserTurn.content,
+  }];
 }
 
 function firstHeaderValue(value: string | string[] | undefined): string | undefined {

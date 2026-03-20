@@ -1280,7 +1280,7 @@
     "steps": {
       "title": "Quick Setup",
       "step_1": "Create your personal API key in User > API Keys.",
-      "step_2": "If you need Feishu, Jira, GitHub, or Gitee credentials, bind them in User > Third-Party Accounts.",
+      "step_2": "Bind Feishu from the current workspace Connections page. Keep using User > Third-Party Accounts for Jira, GitHub, Gitee, and custom credentials.",
       "step_3": "Ask project manager to grant endpoint access in Resource Policy.",
       "step_4": "Ensure your endpoint has a unique model name configured in project endpoints.",
       "step_5": "Use the unified /llm-gateway base URL and set your client environment variables.",

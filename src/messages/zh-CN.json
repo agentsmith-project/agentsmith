@@ -1282,7 +1282,7 @@
     "steps": {
       "title": "快速开始",
       "step_1": "在用户中心创建个人 API Key（用户 > API 密钥）。",
-      "step_2": "如果你还需要飞书、Jira、GitHub 或 Gitee 凭据，请在用户 > 第三方账户中完成绑定。",
+      "step_2": "飞书请在当前工作区的连接页面完成绑定；Jira、GitHub、Gitee 与自定义凭据仍在用户 > 第三方账户中管理。",
       "step_3": "请项目管理员在资源策略里授予你对应 endpoint 访问权限。",
       "step_4": "确保目标 endpoint 在项目内配置了唯一模型名（model）。",
       "step_5": "使用统一的 /llm-gateway base URL，并设置客户端环境变量。",

@@ -24,7 +24,7 @@
 | [Audit & Usage](./audit-usage-reports.md) | Audit review and usage workflows under the current Usage/Audit MVP baseline. |
 | [Alert Center](./alert-center.md) | Alert rules and notification operations. |
 | [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |
-| [Third-Party Accounts & Feishu OAuth](./third-party-accounts-feishu.md) | User third-party account binding and Feishu OAuth callback flow. |
+| [Third-Party Accounts & Workspace Feishu](./third-party-accounts-feishu.md) | Current split between personal third-party credentials and workspace-scoped Feishu integration. |
 
 Quick links:
 

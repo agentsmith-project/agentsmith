@@ -1,4 +1,3 @@
-import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import {
   CreateFileLibraryFolderUseCase,
@@ -103,24 +102,6 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
   };
 }
 
-function resolveLocalSandboxGatewayHost(): string {
-  try {
-    const output = execFileSync(
-      'docker',
-      ['network', 'inspect', 'kind', '-f', '{{range .IPAM.Config}}{{println .Gateway}}{{end}}'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] },
-    );
-    const gateway = output
-      .split('\n')
-      .map((line) => line.trim())
-      .find((line) => /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/.test(line));
-    if (gateway) return gateway;
-  } catch {
-    // Fall back to Docker Desktop-compatible hostname below.
-  }
-  return 'host.docker.internal';
-}
-
 export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   deps: NodeApiDeps;
   lifecycle: Pick<ProjectRepoFactoryResult, 'shutdown'>;
@@ -132,24 +113,20 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       && env.MINIO_ACCESS_KEY
       && env.MINIO_SECRET_KEY,
   );
-  const normalizedNodeEnv = env.NODE_ENV?.trim() || '';
-  const isLocalDevFallbackEnabled = normalizedNodeEnv !== 'production' && normalizedNodeEnv !== 'test';
-  const localSandboxGatewayHost = isLocalDevFallbackEnabled ? resolveLocalSandboxGatewayHost() : '';
-  const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim()
-    || (isLocalDevFallbackEnabled ? 'http://127.0.0.1:28080' : '');
-  const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim()
-    || (isLocalDevFallbackEnabled ? 'agentsmith-internal-test-key' : '');
-  const internalAgentK8sNamespace = env.INTERNAL_AGENT_K8S_NAMESPACE?.trim()
-    || (isLocalDevFallbackEnabled ? 'agentsmith-sandbox' : '');
-  const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim()
-    || (isLocalDevFallbackEnabled ? `ws://${localSandboxGatewayHost}:${env.PORT ?? '20000'}` : '');
-  const internalAgentMetadataHostOverride = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim()
-    || (isLocalDevFallbackEnabled ? localSandboxGatewayHost : '');
-  const internalAgentStorageEndpointOverride = env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim()
-    || (isLocalDevFallbackEnabled ? `http://${localSandboxGatewayHost}:19000` : '');
+  const sandboxUrl = env.SANDBOX_MANAGER_URL?.trim() || '';
+  const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
+  const internalAgentK8sNamespace = env.INTERNAL_AGENT_K8S_NAMESPACE?.trim() || '';
+  const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim() || '';
+  const internalAgentMetadataHostOverride = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '';
+  const internalAgentStorageEndpointOverride = env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
     throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
       code: 'SANDBOX_MANAGER_CONFIG_INCOMPLETE',
+    });
+  }
+  if (internalAgentK8sNamespace && !sandboxUrl) {
+    throw Object.assign(new Error('internal_agent_workspace_config_incomplete: SANDBOX_MANAGER_URL is required when INTERNAL_AGENT_K8S_NAMESPACE is set'), {
+      code: 'INTERNAL_AGENT_WORKSPACE_CONFIG_INCOMPLETE',
     });
   }
 
@@ -208,14 +185,6 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
         },
       )
     : undefined;
-  if (
-    isLocalDevFallbackEnabled
-    && !env.SANDBOX_MANAGER_URL?.trim()
-    && !env.SANDBOX_SERVICE_KEY?.trim()
-    && sandboxClient
-  ) {
-    process.stderr.write(`[api-entry-node] using local sandbox manager fallback at ${sandboxUrl}\n`);
-  }
   if (sandboxClient) {
     void sandboxClient.checkReady().catch((error: unknown) => {
       const message = error instanceof Error ? error.message : 'unknown_error';

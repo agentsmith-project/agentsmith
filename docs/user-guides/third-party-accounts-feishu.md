@@ -1,20 +1,23 @@
-# Third-Party Accounts & Feishu OAuth
+# Third-Party Accounts & Workspace Feishu
 
-This guide covers the user-scoped `Third-Party Accounts` module and the current Feishu OAuth setup.
+This guide reflects the current baseline:
+
+- `Third-Party Accounts` is the user-owned credential center for Jira, GitHub, Gitee, and custom secret bundles.
+- `Feishu` is no longer configured or connected from that page.
+- `Feishu` is now a **workspace-level integration** that users connect from the current workspace after a workspace administrator enables it.
 
 ## Scope
 
 Use `Third-Party Accounts` for user-owned external credentials that agents or downstream tools may use on your behalf.
 
-Current provider types:
+Current provider types in `Third-Party Accounts`:
 
-- `Feishu` via OAuth account binding
 - `Jira` via API token bundle
 - `GitHub` via token bundle or SSH keypair
 - `Gitee` via SSH keypair
 - `Custom` via free-form secret bundle
 
-These connections are user-scoped. They are not project endpoint credentials.
+These credentials are user-scoped. They are not project endpoint credentials and they do not enable workspace Feishu by themselves.
 
 ## Security Model
 
@@ -30,73 +33,54 @@ USER_EXTERNAL_CONNECTIONS_SECRET_KEY=<strong-random-secret>
 
 If not set, the backend falls back to `AGENTSMITH_SECRET_KEY`, then to a development-only default.
 
-## Feishu OAuth Configuration
+## Workspace Feishu Model
 
-Required backend environment variables:
+Feishu is split into two layers:
 
-```bash
-FEISHU_APP_ID=<your-feishu-app-id>
-FEISHU_APP_SECRET=<your-feishu-app-secret>
-FEISHU_OAUTH_REDIRECT_URI=<callback-uri>
-```
+1. **Workspace admin setup**
+   - A workspace administrator opens `工作区设置 -> 飞书接入`
+   - They configure:
+     - `App ID`
+     - `App Secret`
+     - `Redirect URI`
+   - They must complete one Feishu login verification themselves
+   - They explicitly enable Feishu for the workspace
 
-Optional overrides:
+2. **User personal connection**
+   - A user opens the current workspace `Connections` page
+   - They connect their own Feishu account
+   - Their token stays user-scoped, but it is bound to the current `workspace_id`
 
-```bash
-FEISHU_OAUTH_AUTHORIZE_URL=https://accounts.feishu.cn/open-apis/authen/v1/authorize
-FEISHU_OAUTH_TOKEN_URL=https://open.feishu.cn/open-apis/authen/v2/oauth/token
-FEISHU_OAUTH_SCOPES=offline_access
-FEISHU_OAUTH_REFRESH_RUNNER_ENABLED=true
-FEISHU_OAUTH_REFRESH_RUNNER_INTERVAL_MS=300000
-```
+Once Feishu is enabled, it becomes available across all projects in the current workspace.
 
-## Feishu Callback Modes
+## Workspace Feishu Callback
 
-The system currently supports two callback modes.
-
-### 1. Product Mode: AgentSmith Handles the Callback
-
-Recommended for normal usage.
-
-Set Feishu redirect URI to an AgentSmith page, for example:
+The current product truth is a **single locale-neutral Feishu callback** per workspace, for example:
 
 ```bash
-http://localhost:3001/zh-CN/user/third-party-accounts/feishu/callback
+http://localhost:3001/workspaces/<workspace-id>/feishu/callback
 ```
 
-Or in production:
+The same technical callback is used for:
 
-```bash
-https://<your-domain>/<locale>/user/third-party-accounts/feishu/callback
-```
+- workspace admin verification
+- user personal Feishu connection
 
-Flow:
+The system distinguishes the flow internally through `state.intent`.
 
-1. Open `User -> Third-Party Accounts`
-2. Click `Connect Feishu`
-3. Complete Feishu login
-4. Feishu redirects back to AgentSmith
-5. AgentSmith exchanges the code and stores the connection automatically
+## Recommended Manual Verification
 
-### 2. Local Test Mode: Manual Callback URL Paste
+### Workspace Feishu
 
-Use this when Feishu is configured to redirect to a local helper address instead of AgentSmith.
-
-Current local test callback example:
-
-```bash
-http://127.0.0.1:18181/callback
-```
-
-Flow:
-
-1. Click `Connect Feishu`
-2. Complete Feishu login in the opened browser tab
-3. Copy the full callback URL after redirect
-4. Paste it into the Feishu bind dialog
-5. AgentSmith parses `code` and `state`, exchanges the token, and stores the connection
-
-## Manual Verification Checklist
+1. Open the target workspace home page
+2. Use the `工作区设置` entry
+3. Open `Feishu integration`
+4. Save the workspace Feishu app credentials
+5. Complete the admin Feishu verification flow
+6. Enable Feishu
+7. Open the same workspace `Connections` page
+8. Connect your own Feishu account
+9. Confirm the workspace connections page shows Feishu as connected
 
 ### Jira
 
@@ -112,25 +96,19 @@ Flow:
 
 ### GitHub SSH
 
-1. Create a `GitHub` connection
-2. Select `SSH Keypair`
-3. Fill:
+1. Open `User -> Third-Party Accounts`
+2. Create a `GitHub` connection
+3. Select `SSH Keypair`
+4. Fill:
    - display name
    - git host
    - public key
    - private key
-4. Save
-5. Re-open and confirm the private key field can be left empty during edits
-
-### Feishu
-
-1. Confirm backend env vars are configured
-2. Click `Connect Feishu`
-3. Complete login
-4. Confirm a `Feishu` OAuth account appears in the table
-5. Click the refresh action and confirm token refresh succeeds
+5. Save
+6. Re-open and confirm the private key field can be left empty during edits
 
 ## Notes
 
-- `Feishu` is bound through its dedicated OAuth flow, not through the generic create dialog.
+- Feishu is not part of the generic create dialog anymore.
+- `Third-Party Accounts` remains the right entry for Jira, GitHub, Gitee, and custom secret bundles.
 - `Custom` should only be used for simple secret bundles in MVP. It is not a custom OAuth provider system.

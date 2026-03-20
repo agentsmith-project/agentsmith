@@ -18,38 +18,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     const { deps, lifecycle } = createNodeApiDepsFromEnv({ ...baseEnv });
     try {
       expect(deps.internalAgentPodManager).toBeUndefined();
-    } finally {
-      await shutdownSafe(lifecycle);
-    }
-  });
-
-  it('uses local sandbox fallback automatically in development', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sandbox_down'));
-
-    const { deps, lifecycle } = createNodeApiDepsFromEnv({
-      NODE_ENV: 'development',
-    });
-
-    try {
-      expect(deps.internalAgentPodManager).toBeDefined();
-      expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      expect(fetchSpy).toHaveBeenCalled();
-    } finally {
-      await shutdownSafe(lifecycle);
-    }
-  });
-
-  it('uses local sandbox fallback automatically when NODE_ENV is unset', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sandbox_down'));
-
-    const { deps, lifecycle } = createNodeApiDepsFromEnv({});
-
-    try {
-      expect(deps.internalAgentPodManager).toBeDefined();
-      expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
-      await new Promise((resolve) => setTimeout(resolve, 1500));
-      expect(fetchSpy).toHaveBeenCalled();
+      expect(deps.internalAgentWorkspaceProvisioner).toBeUndefined();
     } finally {
       await shutdownSafe(lifecycle);
     }
@@ -62,6 +31,13 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     })).toThrowError('sandbox_manager_config_incomplete');
   });
 
+  it('fails fast when workspace provisioner env is partially configured', () => {
+    expect(() => createNodeApiDepsFromEnv({
+      ...baseEnv,
+      INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-sandbox',
+    })).toThrowError('internal_agent_workspace_config_incomplete');
+  });
+
   it('does not fail startup when sandbox readyz preflight fails', async () => {
     const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sandbox_down'));
 
@@ -69,10 +45,12 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
       ...baseEnv,
       SANDBOX_MANAGER_URL: 'http://sandbox-manager:8080',
       SANDBOX_SERVICE_KEY: 'svc-key',
+      INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-sandbox',
     });
 
     try {
       expect(deps.internalAgentPodManager).toBeDefined();
+      expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
       await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(fetchSpy).toHaveBeenCalled();
     } finally {

@@ -572,14 +572,22 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const executionContext = payload.execution_context ?? {};
   const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
+  debugLog('preparing task workspace', { request_id: requestId, task_id: taskId });
   const cwdResult = await prepareTaskWorkspace({
     executionContext,
     username,
     taskId,
   });
   const cwd = cwdResult.cwd;
+  const taskPaths = cwdResult.paths;
   await mkdir(cwd, { recursive: true });
   const builtinSkillsConfig = resolveBuiltinSkillsConfig();
+  debugLog('syncing builtin skills', {
+    request_id: requestId,
+    cwd,
+    source_dir: builtinSkillsConfig.sourceDir,
+    skills: builtinSkillsConfig.skills,
+  });
   const builtinSkillsResult = await syncBuiltinSkills({
     cwd,
     sourceDir: builtinSkillsConfig.sourceDir,
@@ -592,17 +600,23 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const credentialFiles = Array.isArray(executionContext.credential_files)
     ? executionContext.credential_files
     : [];
-  let artifactsDir = join(cwd, '.artifacts');
-  let taskInputsManifestPath = join(cwd, '.mbos', 'task-inputs.json');
+  let artifactsDir = taskPaths.artifactsTaskDir;
+  let taskInputsManifestPath = taskPaths.taskInputsManifestPath;
   if (isNotebookMode) {
+    debugLog('preparing notebook workspace assets', { request_id: requestId, cwd });
     const preparedAssets = await prepareNotebookWorkspaceAssets({
       cwd,
+      paths: taskPaths,
       executionContext,
       taskInputs,
     });
     artifactsDir = preparedAssets.artifactsDir;
     taskInputsManifestPath = preparedAssets.taskInputsManifestPath;
   }
+  debugLog('writing execution context files', {
+    request_id: requestId,
+    credential_files_count: credentialFiles.length,
+  });
   const executionFilesResult = await applyExecutionContextFiles(cwd, credentialFiles);
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
@@ -619,8 +633,12 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const wireApi = 'responses';
 
   const model = executionContext.model ?? payload.model ?? 'gpt-5-codex';
-  const codexConfigDir = join(cwd, '.codex');
+  const codexConfigDir = join(taskPaths.taskHomeDir, '.codex');
   await mkdir(codexConfigDir, { recursive: true });
+  debugLog('writing codex config', {
+    request_id: requestId,
+    config_path: join(codexConfigDir, 'config.toml'),
+  });
   await writeFile(
     join(codexConfigDir, 'config.toml'),
     buildTaskCodexConfig({
@@ -668,13 +686,15 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       cwd,
       env: {
         ...process.env,
+        HOME: taskPaths.taskHomeDir,
+        CODEX_HOME: join(taskPaths.taskHomeDir, '.codex'),
         NO_COLOR: '1',
         ...(isNotebookMode ? {
           MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
           MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
           MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
           MBOS_NOTEBOOK_USER_BEARER_TOKEN: executionContext.user_bearer_token ?? '',
-          MBOS_NOTEBOOK_TASK_INPUTS_MANIFEST: './.mbos/task-inputs.json',
+          MBOS_NOTEBOOK_TASK_INPUTS_MANIFEST: `./.mbos/tasks/${taskId}/task-inputs.json`,
         } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -711,21 +731,21 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       task_inputs_count: taskInputs.length,
       credential_files_count: executionFilesResult.written,
       builtin_skills_count: builtinSkillsResult.mounted.length,
-      artifacts_dir: isNotebookMode ? '.artifacts/' : null,
+      artifacts_dir: isNotebookMode ? `./.artifacts/tasks/${taskId}/` : null,
     },
   });
   if (isNotebookMode) {
     sendTraceEvent(requestId, {
       category: 'progress',
       phase: 'start',
-      status: 'running',
-      name: 'runner.policy',
-      summary: 'Notebook headless execution policy applied',
-      details: {
-        task_inputs_manifest: '.mbos/task-inputs.json',
-        artifacts_dir: '.artifacts/',
-      },
-    });
+        status: 'running',
+        name: 'runner.policy',
+        summary: 'Notebook headless execution policy applied',
+        details: {
+          task_inputs_manifest: `./.mbos/tasks/${taskId}/task-inputs.json`,
+          artifacts_dir: `./.artifacts/tasks/${taskId}/`,
+        },
+      });
   }
 
   let stdoutBuffer = '';
@@ -819,7 +839,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         }
       }
       const artifacts = isNotebookMode
-        ? filterNewArtifactsForCwd(reportedArtifactsByCwd, cwd, await scanArtifactsDirectory(cwd))
+        ? filterNewArtifactsForCwd(reportedArtifactsByCwd, cwd, await scanArtifactsDirectory(cwd, taskId))
         : [];
       for (const artifact of artifacts) {
         sendTraceEvent(requestId, {

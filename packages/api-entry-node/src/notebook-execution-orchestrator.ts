@@ -13,6 +13,7 @@ import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -35,15 +36,15 @@ type NotebookTaskRecord = {
   agent_id: string;
 };
 
-function sanitizeTaskWorkspaceDirName(title: string, taskId: string): string {
-  const slug = title
+function sanitizeFileLibraryWorkspaceDirName(fileLibraryName: string | undefined, fileLibraryId: string | undefined): string {
+  const slug = (fileLibraryName ?? '')
     .toLowerCase()
     .trim()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 48);
   if (slug) return slug;
-  return taskId.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'task-workspace';
+  return (fileLibraryId ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'file-library-workspace';
 }
 
 type NotebookTaskMessageRecord = {
@@ -290,7 +291,15 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
       deps.docStore,
       user.id,
+      { taskId: task.id },
     );
+    const workspaceLibrary = task.workspace_file_library_id
+      ? await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(
+        task.workspace_id,
+        task.project_id,
+        task.workspace_file_library_id,
+      )
+      : null;
     const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -313,7 +322,8 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         workspace_path: agent.mode === 'internal' ? '/workspace' : undefined,
         workspace_file_library_id: task.workspace_file_library_id ?? null,
         workspace_file_library_name: task.workspace_file_library_name ?? null,
-        workspace_dir_name: sanitizeTaskWorkspaceDirName(task.title, task.id),
+        workspace_dir_name: workspaceLibrary?.filesystem_name
+          ?? sanitizeFileLibraryWorkspaceDirName(task.workspace_file_library_name, task.workspace_file_library_id),
         task_inputs: taskInputs,
         credential_files: thirdPartyCredentialFiles,
         notebook_mode: true,

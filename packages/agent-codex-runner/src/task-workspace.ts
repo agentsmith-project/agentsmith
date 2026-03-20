@@ -31,7 +31,17 @@ type TaskWorkspaceAccessPayload = {
   created_at?: string;
 };
 
-const mountedWorkspaceByTaskId = new Map<string, string>();
+export type TaskWorkspacePaths = {
+  rootCwd: string;
+  sharedSkillsDir: string;
+  taskCodexDir: string;
+  taskHomeDir: string;
+  mbosTaskDir: string;
+  artifactsTaskDir: string;
+  taskInputsManifestPath: string;
+};
+
+const mountedWorkspaceByMountPath = new Set<string>();
 
 function sanitizeWorkspacePath(raw: string | undefined): string {
   const value = (raw ?? '').trim();
@@ -42,6 +52,19 @@ function sanitizePathPart(input: string | null | undefined, fallback: string): s
   const value = (input ?? '').trim();
   if (!value) return fallback;
   return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || fallback;
+}
+
+export function buildTaskWorkspacePaths(cwd: string, taskId: string): TaskWorkspacePaths {
+  const safeTaskId = sanitizePathPart(taskId, 'task');
+  return {
+    rootCwd: cwd,
+    sharedSkillsDir: join(cwd, '.codex', 'skills'),
+    taskCodexDir: join(cwd, '.codex', 'tasks', safeTaskId),
+    taskHomeDir: join(cwd, '.codex', 'tasks', safeTaskId, 'home'),
+    mbosTaskDir: join(cwd, '.mbos', 'tasks', safeTaskId),
+    artifactsTaskDir: join(cwd, '.artifacts', 'tasks', safeTaskId),
+    taskInputsManifestPath: join(cwd, '.mbos', 'tasks', safeTaskId, 'task-inputs.json'),
+  };
 }
 
 export function resolveTaskCwd(input: {
@@ -108,52 +131,75 @@ export async function fetchTaskWorkspaceAccess(
 
 async function mountTaskWorkspace(metadataUrl: string, mountPath: string): Promise<void> {
   await mkdir(mountPath, { recursive: true });
-  await execFile('juicefs', ['mount', metadataUrl, mountPath, '-d']);
+  const cacheRoot = (
+    process.env.MBOS_AGENT_JUICEFS_CACHE_ROOT?.trim()
+    || join(process.env.HOME || homedir() || '/tmp', '.juicefs', 'cache', 'agentsmith')
+  );
+  const cacheDir = join(cacheRoot, sanitizePathPart(mountPath, 'workspace'));
+  await mkdir(cacheDir, { recursive: true });
+  await execFile('juicefs', [
+    'mount',
+    metadataUrl,
+    mountPath,
+    '-d',
+    '--cache-dir',
+    cacheDir,
+    '-o',
+    'writeback_cache',
+  ]);
 }
 
 export async function prepareTaskWorkspace(input: {
   executionContext: FileLibraryWorkspaceExecutionContext;
   username: string;
   taskId: string;
-}): Promise<{ cwd: string; source: 'workspace_path' | 'tmp_fallback' | 'file_library_mount' }> {
+}): Promise<{
+  cwd: string;
+  source: 'workspace_path' | 'tmp_fallback' | 'file_library_mount';
+  paths: TaskWorkspacePaths;
+}> {
   if (input.executionContext.workspace_binding_mode === 'pre_mounted') {
-    return resolveTaskCwd({
+    const resolved = resolveTaskCwd({
       workspacePath: input.executionContext.workspace_path,
       username: input.username,
       taskId: input.taskId,
     });
+    return {
+      ...resolved,
+      paths: buildTaskWorkspacePaths(resolved.cwd, input.taskId),
+    };
   }
 
   if (input.executionContext.workspace_binding_mode === 'file_library') {
     const workspaceAccess = await fetchTaskWorkspaceAccess(input.executionContext);
-    const cached = mountedWorkspaceByTaskId.get(input.taskId);
-    if (cached) {
-      return {
-        cwd: cached,
-        source: 'file_library_mount',
-      };
-    }
     const mountPath = buildTaskWorkspaceMountPath({
       username: input.username,
       workspaceDirName: workspaceAccess.workspace_dir_name,
       taskId: input.taskId,
       workspaceRoot: process.env.MBOS_AGENT_WORKSPACE_ROOT,
     });
-    await mountTaskWorkspace(workspaceAccess.metadata_url, mountPath);
-    mountedWorkspaceByTaskId.set(input.taskId, mountPath);
+    if (!mountedWorkspaceByMountPath.has(mountPath)) {
+      await mountTaskWorkspace(workspaceAccess.metadata_url, mountPath);
+      mountedWorkspaceByMountPath.add(mountPath);
+    }
     return {
       cwd: mountPath,
       source: 'file_library_mount',
+      paths: buildTaskWorkspacePaths(mountPath, input.taskId),
     };
   }
 
-  return resolveTaskCwd({
+  const resolved = resolveTaskCwd({
     workspacePath: input.executionContext.workspace_path ?? process.env.WORKSPACE_PATH,
     username: input.username,
     taskId: input.taskId,
   });
+  return {
+    ...resolved,
+    paths: buildTaskWorkspacePaths(resolved.cwd, input.taskId),
+  };
 }
 
 export function clearPreparedTaskWorkspaces(): void {
-  mountedWorkspaceByTaskId.clear();
+  mountedWorkspaceByMountPath.clear();
 }

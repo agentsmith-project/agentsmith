@@ -210,11 +210,11 @@ describe('api-entry-node notebook task routes', () => {
     await expect(workspaceAccessRes.json()).resolves.toMatchObject({
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      workspace_dir_name: 'workspace-access-task',
+      workspace_dir_name: workspaceLibrary.filesystem_name,
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
       filesystem_name: expect.any(String),
-      metadata_url: expect.any(String),
+      metadata_url: expect.stringContaining('sslmode=disable'),
       recommended_mount_path: expect.any(String),
       created_at: expect.any(String),
     });
@@ -273,7 +273,7 @@ describe('api-entry-node notebook task routes', () => {
       task_id: task.id,
       file_library_id: workspaceLibrary.id,
       file_library_name: workspaceLibrary.name,
-      metadata_url: expect.any(String),
+      metadata_url: expect.stringContaining('sslmode=disable'),
     });
   });
 
@@ -578,7 +578,10 @@ describe('api-entry-node notebook task routes', () => {
             ? msg.payload.execution_context.credential_files.length
             : null,
           hasCredentialIndexFile: Array.isArray(msg.payload?.execution_context?.credential_files)
-            ? msg.payload.execution_context.credential_files.some((item) => item?.relative_path === '.codex/credential/index.json')
+            ? msg.payload.execution_context.credential_files.some((item) => {
+              const relativePath = typeof item?.relative_path === 'string' ? item.relative_path : '';
+              return relativePath.startsWith('.codex/tasks/') && relativePath.endsWith('/credential/index.json');
+            })
             : false,
           close: () => ws.close(),
         });
@@ -714,7 +717,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.workspaceBindingMode).toBe('file_library');
     expect(execution.workspaceFileLibraryId).toBe(workspaceLibrary.id);
     expect(execution.workspaceFileLibraryName).toBe(workspaceLibrary.name);
-    expect(execution.workspaceDirName).toBe('notebook-task');
+    expect(execution.workspaceDirName).toBe(workspaceLibrary.filesystem_name);
     expect(execution.taskInputsCount).toBe(0);
     expect(execution.credentialFilesCount).toBeGreaterThan(0);
     expect(execution.hasCredentialIndexFile).toBe(true);

@@ -21,6 +21,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 import {
+  buildTaskWorkspacePaths,
   buildTaskWorkspaceMountPath,
   clearPreparedTaskWorkspaces,
   fetchTaskWorkspaceAccess,
@@ -74,6 +75,18 @@ describe('task-workspace', () => {
       taskId: 'task_1',
     });
     expect(mountPath).toBe('/srv/ags-workspaces/market-analysis-q1');
+  });
+
+  it('builds stable task namespace paths within a persistent file library root', () => {
+    expect(buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_1')).toEqual({
+      rootCwd: '/srv/ags-workspaces/market-analysis-q1',
+      sharedSkillsDir: '/srv/ags-workspaces/market-analysis-q1/.codex/skills',
+      taskCodexDir: '/srv/ags-workspaces/market-analysis-q1/.codex/tasks/task_1',
+      taskHomeDir: '/srv/ags-workspaces/market-analysis-q1/.codex/tasks/task_1/home',
+      mbosTaskDir: '/srv/ags-workspaces/market-analysis-q1/.mbos/tasks/task_1',
+      artifactsTaskDir: '/srv/ags-workspaces/market-analysis-q1/.artifacts/tasks/task_1',
+      taskInputsManifestPath: '/srv/ags-workspaces/market-analysis-q1/.mbos/tasks/task_1/task-inputs.json',
+    });
   });
 
   it('fetches task-bound workspace access with bearer auth', async () => {
@@ -141,13 +154,21 @@ describe('task-workspace', () => {
     expect(mkdirMock).toHaveBeenCalledWith('/srv/ags-workspaces/market-analysis-q1', { recursive: true });
     expect(execFileMock).toHaveBeenCalledWith(
       'juicefs',
-      ['mount', 'postgres://juicefs-meta', '/srv/ags-workspaces/market-analysis-q1', '-d'],
+      expect.arrayContaining([
+        'mount',
+        'postgres://juicefs-meta',
+        '/srv/ags-workspaces/market-analysis-q1',
+        '-d',
+        '--cache-dir',
+        expect.stringContaining('.juicefs/cache/agentsmith'),
+        '-o',
+        'writeback_cache',
+      ]),
       expect.any(Function),
     );
-    expect(resolved).toEqual({
-      cwd: '/srv/ags-workspaces/market-analysis-q1',
-      source: 'file_library_mount',
-    });
+    expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
+    expect(resolved.source).toBe('file_library_mount');
+    expect(resolved.paths.artifactsTaskDir).toBe('/srv/ags-workspaces/market-analysis-q1/.artifacts/tasks/task_1');
   });
 
   it('reuses prepared file library workspace for subsequent task runs', async () => {
@@ -196,10 +217,8 @@ describe('task-workspace', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(execFileMock).not.toHaveBeenCalled();
     expect(mkdirMock).not.toHaveBeenCalled();
-    expect(resolved).toEqual({
-      cwd: '/srv/ags-workspaces/market-analysis-q1',
-      source: 'file_library_mount',
-    });
+    expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
+    expect(resolved.source).toBe('file_library_mount');
   });
 
   it('uses pre-mounted workspace path for internal task bindings', async () => {
@@ -215,9 +234,8 @@ describe('task-workspace', () => {
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mkdirMock).not.toHaveBeenCalled();
     expect(execFileMock).not.toHaveBeenCalled();
-    expect(resolved).toEqual({
-      cwd: '/workspace',
-      source: 'workspace_path',
-    });
+    expect(resolved.cwd).toBe('/workspace');
+    expect(resolved.source).toBe('workspace_path');
+    expect(resolved.paths.taskInputsManifestPath).toBe('/workspace/.mbos/tasks/task_internal/task-inputs.json');
   });
 });

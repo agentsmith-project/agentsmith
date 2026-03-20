@@ -45,6 +45,7 @@ describe('builtin-skills', () => {
       expect(result.missing).toEqual([]);
       expect(existsSync(join(cwdRoot, '.codex', 'skills', '.system', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(cwdRoot, '.codex', 'skills', 'feishu-docs', 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(cwdRoot, { recursive: true, force: true });
@@ -68,7 +69,7 @@ describe('builtin-skills', () => {
     }
   });
 
-  it('reuses existing mounted skill when overwrite is denied', async () => {
+  it('bootstraps shared skills once and preserves existing shared copies', async () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     const cwdRoot = mkdtempSync(join(tmpdir(), 'runner-skills-cwd-'));
     try {
@@ -84,17 +85,12 @@ describe('builtin-skills', () => {
         sourceDir: sourceRoot,
         skills: ['.system'],
         required: true,
-        copyFileTree: async (_source, target) => {
-        if (String(target).includes('.codex/skills/.system')) {
-          const error = Object.assign(new Error('permission denied'), { code: 'EACCES' });
-          throw error;
-        }
-        },
       });
 
       expect(result.mounted).toEqual(['.system']);
       expect(result.missing).toEqual([]);
       expect(existsSync(join(targetRoot, 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(cwdRoot, { recursive: true, force: true });

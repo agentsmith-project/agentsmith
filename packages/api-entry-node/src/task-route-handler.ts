@@ -28,12 +28,10 @@ import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
-import { getNotebookTaskMetricsPrometheusText, getNotebookTaskMetricsSnapshot } from './notebook-task/task-metrics-api.js';
 import {
   asObject,
   buildId,
   readTaskInputRefs,
-  type TaskInputRefRecord,
   type TaskListItem,
   type TaskRecord,
 } from './notebook-task/task-models.js';
@@ -59,13 +57,11 @@ import {
   ACTIVE_RUN_CANCEL_REQUESTED_BY_TASK,
   ARTIFACTS_BY_TASK,
   findTask,
-  findTaskById,
   getTaskArtifacts,
   getTaskMessages,
   getTasks,
   MESSAGES_BY_TASK,
   nowIso,
-  projectKey,
   readSortValue,
   sanitizePathPart,
   updateTaskActivity,
@@ -77,7 +73,6 @@ import {
   loadProjectTasks,
   loadTaskArtifacts,
   loadTaskMessages,
-  notebookTaskArtifactsCollection,
   notebookTaskMessagesCollection,
   notebookTasksCollection,
 } from './notebook-task/task-store.js';
@@ -98,17 +93,6 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
   if (process.env.DEBUG_NOTEBOOK_EXECUTION !== '1') return;
   const suffix = extra ? ` ${JSON.stringify(extra)}` : '';
   process.stdout.write(`[notebook-execution] ${message}${suffix}\n`);
-}
-
-function sanitizeTaskWorkspaceDirName(title: string, taskId: string): string {
-  const slug = title
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 48);
-  if (slug) return slug;
-  return taskId.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'task-workspace';
 }
 
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
@@ -285,7 +269,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
-      workspace_dir_name: sanitizeTaskWorkspaceDirName(task.title, task.id),
+      workspace_dir_name: workspaceFileLibrary.filesystem_name,
       file_library_id: workspaceFileLibrary.id,
       file_library_name: workspaceFileLibrary.name,
       filesystem_name: mountAccess.filesystem_name,
@@ -576,8 +560,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       updateTaskActivity(task);
       await deps.docStore.upsert<TaskRecord>(notebookTasksCollection(route.workspaceId), task.id, task);
       ACTIVE_RUNS_BY_TASK.add(route.taskId);
-      let heartbeatTimer: NodeJS.Timeout | undefined;
-      let cancelSyncTimer: NodeJS.Timeout | undefined;
 
       const syncSharedCancellationRequest = async (): Promise<void> => {
         const marker = await getNotebookTaskRunCancellationRequest(deps.cache, route.taskId);
@@ -592,14 +574,14 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         active.cancel();
       };
 
-      heartbeatTimer = setInterval(() => {
+      const heartbeatTimer = setInterval(() => {
         sharedRunState = {
           ...sharedRunState,
           heartbeat_at: nowIso(),
         };
         void refreshNotebookTaskRunLease(deps.cache, sharedRunState).catch(() => undefined);
       }, NOTEBOOK_RUN_LEASE_HEARTBEAT_MS);
-      cancelSyncTimer = setInterval(() => {
+      const cancelSyncTimer = setInterval(() => {
         void syncSharedCancellationRequest().catch(() => undefined);
       }, NOTEBOOK_RUN_CANCEL_POLL_MS);
 

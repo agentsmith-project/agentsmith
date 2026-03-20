@@ -21,6 +21,24 @@ type FileLibraryMountAccessSecretRecord = Omit<FileLibraryMountAccess, 'metadata
   encrypted_metadata_url: string;
 };
 
+export function normalizeFileLibraryMetadataUrl(metadataUrl: string): string {
+  try {
+    const parsed = new URL(metadataUrl);
+    if (parsed.protocol !== 'postgres:' && parsed.protocol !== 'postgresql:') {
+      return metadataUrl;
+    }
+    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
+      return metadataUrl;
+    }
+    if (!parsed.searchParams.has('sslmode')) {
+      parsed.searchParams.set('sslmode', 'disable');
+    }
+    return parsed.toString();
+  } catch {
+    return metadataUrl;
+  }
+}
+
 export function buildFileLibraryRecord(input: {
   workspaceId: string;
   projectId: string;
@@ -111,12 +129,15 @@ export class JsonDocProjectFileLibraryBackendRepo {
     libraryId: string,
     backend: FileLibraryBackendRecord & { metadata_url?: string },
   ): Promise<void> {
-    const { metadata_url, ...publicBackend } = backend;
+    const normalizedMetadataUrl = backend.metadata_url
+      ? normalizeFileLibraryMetadataUrl(backend.metadata_url)
+      : undefined;
+    const { metadata_url: _metadataUrl, ...publicBackend } = backend;
     const stored: FileLibraryBackendSecretRecord = {
       ...publicBackend,
       postgres: {
         ...publicBackend.postgres,
-        encrypted_metadata_url: metadata_url ? encryptSecretValue(metadata_url) : undefined,
+        encrypted_metadata_url: normalizedMetadataUrl ? encryptSecretValue(normalizedMetadataUrl) : undefined,
       },
     };
     await this.docStore.upsert(FILE_LIBRARY_BACKEND_COLLECTION, libraryId, {
@@ -198,9 +219,11 @@ export class JsonDocProjectFileLibraryMountAccessRepo {
     libraryId: string,
     access: FileLibraryMountAccess,
   ): Promise<void> {
+    const normalizedMetadataUrl = normalizeFileLibraryMetadataUrl(access.metadata_url);
+    const { metadata_url: _metadataUrl, ...publicAccess } = access;
     const stored: FileLibraryMountAccessSecretRecord = {
-      ...access,
-      encrypted_metadata_url: encryptSecretValue(access.metadata_url),
+      ...publicAccess,
+      encrypted_metadata_url: encryptSecretValue(normalizedMetadataUrl),
     };
     await this.docStore.upsert(FILE_LIBRARY_MOUNT_ACCESS_COLLECTION, libraryId, {
       ...stored,

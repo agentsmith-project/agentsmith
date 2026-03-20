@@ -40,6 +40,16 @@ function resolveSafeTargetPath(cwd: string, relativePath: string): string {
   return targetPath;
 }
 
+function resolveCredentialRoot(relativePath: string): string | null {
+  const normalized = normalizeRelativePath(relativePath);
+  if (normalized === '.codex/credential/index.json' || normalized.startsWith('.codex/credential/')) {
+    return '.codex/credential';
+  }
+  const taskScopedMatch = normalized.match(/^\.codex\/tasks\/([^/]+)\/credential(?:\/|$)/);
+  if (!taskScopedMatch) return null;
+  return `.codex/tasks/${taskScopedMatch[1]}/credential`;
+}
+
 export async function applyExecutionContextFiles(
   cwd: string,
   inputItems: ExecutionContextFileItem[] | undefined,
@@ -49,8 +59,18 @@ export async function applyExecutionContextFiles(
     throw new Error('execution_files_count_exceeded');
   }
 
-  const credentialRoot = join(cwd, '.codex', 'credential');
-  await rm(credentialRoot, { recursive: true, force: true });
+  const credentialRoots = new Set<string>();
+  for (const item of items) {
+    if (!item || typeof item !== 'object' || typeof item.relative_path !== 'string') continue;
+    const credentialRoot = resolveCredentialRoot(item.relative_path);
+    if (credentialRoot) {
+      credentialRoots.add(credentialRoot);
+    }
+  }
+  await Promise.all(
+    Array.from(credentialRoots, (credentialRoot) =>
+      rm(join(cwd, credentialRoot), { recursive: true, force: true })),
+  );
 
   let totalBytes = 0;
   let written = 0;

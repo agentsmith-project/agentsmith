@@ -39,9 +39,13 @@ function buildProviderCredentialFile(args: {
   userId: string;
   provider: string;
   connections: ProviderConnectionSnapshot[];
+  taskId?: string;
 }): ExecutionContextFile {
   const provider = sanitizeProviderName(args.provider);
-  const relativePath = `.codex/credential/${provider}/connections.json`;
+  const credentialRoot = args.taskId
+    ? `.codex/tasks/${args.taskId}/credential`
+    : '.codex/credential';
+  const relativePath = `${credentialRoot}/${provider}/connections.json`;
   const content = JSON.stringify(
     {
       schema_version: '1',
@@ -64,6 +68,7 @@ function buildProviderCredentialFile(args: {
 export async function buildThirdPartyCredentialFiles(
   docStore: JsonDocStorePort,
   userId: string,
+  options?: { taskId?: string },
 ): Promise<ExecutionContextFile[]> {
   const connections = await listUserExternalConnections(docStore, userId);
   if (connections.length === 0) {
@@ -103,6 +108,7 @@ export async function buildThirdPartyCredentialFiles(
       userId,
       provider,
       connections: providerConnections,
+      taskId: options?.taskId,
     });
     files.push(file);
     indexItems.push({
@@ -113,7 +119,9 @@ export async function buildThirdPartyCredentialFiles(
   }
 
   files.push({
-    relative_path: '.codex/credential/index.json',
+    relative_path: options?.taskId
+      ? `.codex/tasks/${options.taskId}/credential/index.json`
+      : '.codex/credential/index.json',
     description: 'index of generated credential files',
     content: JSON.stringify(
       {

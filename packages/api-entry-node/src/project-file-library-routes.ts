@@ -20,6 +20,7 @@ import {
   JsonDocProjectFileLibraryBackendRepo,
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
+  normalizeFileLibraryMetadataUrl,
 } from './file-library-persistence.js';
 import { getFileLibraryGatewayInternalCredentials } from './file-library-runtime.js';
 
@@ -409,6 +410,8 @@ export async function handleProjectFileLibraryRoutes(args: {
         filesystemName: created.filesystem_name,
         requestedByUserId: user.user_id,
       });
+      const normalizedMetadataUrl = normalizeFileLibraryMetadataUrl(provisioned.metadataUrl);
+      const recommendedCacheDir = `$HOME/.juicefs/cache/agentsmith/${created.filesystem_name}`;
       await backendRepo.save(workspaceId, projectId, created.id, {
         library_id: created.id,
         filesystem_name: provisioned.filesystemName,
@@ -416,21 +419,22 @@ export async function handleProjectFileLibraryRoutes(args: {
         gateway_status: 'not_started',
         postgres: provisioned.postgres,
         minio: provisioned.minio,
-        metadata_url: provisioned.metadataUrl,
+        metadata_url: normalizedMetadataUrl,
       });
       await mountAccessRepo.save(workspaceId, projectId, created.id, {
         filesystem_name: provisioned.filesystemName,
-        metadata_url: provisioned.metadataUrl,
+        metadata_url: normalizedMetadataUrl,
         recommended_mount_path: `~/Agentsmith/${created.name}`,
         platform_notes: [
           'Linux requires FUSE support.',
           'macOS requires macFUSE.',
           'Windows requires JuiceFS-supported filesystem dependencies.',
+          'Use a dedicated JuiceFS cache directory for this mounted environment.',
         ],
         recommended_mount_commands: {
-          linux: `juicefs mount '${provisioned.metadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}'`,
-          macos: `juicefs mount '${provisioned.metadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}'`,
-          windows: `juicefs mount "${provisioned.metadataUrl}" X:`,
+          linux: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --cache-dir '${recommendedCacheDir}' -o writeback_cache`,
+          macos: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --cache-dir '${recommendedCacheDir}' -o writeback_cache`,
+          windows: `juicefs mount "${normalizedMetadataUrl}" X: --cache-dir "%USERPROFILE%\\\\.juicefs\\\\cache\\\\agentsmith\\\\${created.filesystem_name}" -o writeback_cache`,
         },
         created_at: new Date().toISOString(),
       });

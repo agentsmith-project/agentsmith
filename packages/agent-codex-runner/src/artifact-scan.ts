@@ -80,8 +80,11 @@ function inferArtifactKind(filename: string): {
   return { artifactType: 'file', isText: false, isImage: false };
 }
 
-export async function scanArtifactsDirectory(cwd: string): Promise<ScannedArtifact[]> {
-  const artifactsDir = join(cwd, '.artifacts');
+export async function scanArtifactsDirectory(cwd: string, taskId?: string): Promise<ScannedArtifact[]> {
+  const artifactsDir = taskId
+    ? join(cwd, '.artifacts', 'tasks', taskId)
+    : join(cwd, '.artifacts');
+  const relativePrefix = taskId ? `.artifacts/tasks/${taskId}` : '.artifacts';
   let entries: Dirent[];
   try {
     entries = await readdir(artifactsDir, { withFileTypes: true, encoding: 'utf8' });
@@ -103,7 +106,7 @@ export async function scanArtifactsDirectory(cwd: string): Promise<ScannedArtifa
     const inferred = inferArtifactKind(entry.name);
     const artifact: ScannedArtifact = {
       filename: entry.name,
-      task_relative_path: `.artifacts/${entry.name}`,
+      task_relative_path: `${relativePrefix}/${entry.name}`,
       artifact_type: inferred.artifactType,
       ...(inferred.mimeType ? { mime_type: inferred.mimeType } : {}),
       file_size: fileStat.size,

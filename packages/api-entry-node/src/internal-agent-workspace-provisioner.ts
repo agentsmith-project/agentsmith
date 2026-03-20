@@ -21,6 +21,7 @@ export interface InternalAgentWorkspaceBinding {
   filesystem_name: string;
   mount_options?: string[];
   storage_class_name?: string;
+  subdir?: string;
   created_at: string;
   updated_at: string;
 }
@@ -239,6 +240,9 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       storageCapacity?: string;
       storageClassName?: string;
       mountOptions?: string[];
+      subdir?: string;
+      mountServiceAccount?: string;
+      mountImage?: string;
       metadataHostOverride?: string;
       storageEndpointOverride?: string;
       storageCredentialSeed?: string;
@@ -284,6 +288,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       filesystem_name: library.filesystem_name,
       mount_options: this.options.mountOptions?.filter(Boolean) ?? [],
       storage_class_name: this.options.storageClassName?.trim() || '',
+      subdir: this.options.subdir?.trim() || '',
       created_at: now,
       updated_at: now,
     };
@@ -291,6 +296,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
     binding.filesystem_name = library.filesystem_name;
     binding.mount_options = this.options.mountOptions?.filter(Boolean) ?? binding.mount_options ?? [];
     binding.storage_class_name = this.options.storageClassName?.trim() || binding.storage_class_name || '';
+    binding.subdir = this.options.subdir?.trim() || binding.subdir || '';
 
     await this.k8sClient.ensureSecret(
       binding.namespace,
@@ -333,6 +339,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         labels: {
           'app.kubernetes.io/managed-by': 'agentsmith',
           'mbos.io/file-library-id': binding.file_library_id,
+          'juicefs.com/validate-secret': 'true',
         },
       },
       type: 'Opaque',
@@ -380,12 +387,14 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         persistentVolumeReclaimPolicy: 'Retain',
         volumeMode: 'Filesystem',
         storageClassName: binding.storage_class_name || '',
+        fsType: 'juicefs',
         ...(binding.mount_options && binding.mount_options.length > 0
           ? { mountOptions: binding.mount_options }
           : {}),
         csi: {
           driver: this.options.csiDriver ?? 'csi.juicefs.com',
           volumeHandle: binding.volume_handle,
+          ...(this.buildVolumeAttributes(binding)),
           nodePublishSecretRef: {
             name: binding.secret_name,
             namespace: binding.namespace,
@@ -418,6 +427,22 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
         },
       },
     };
+  }
+
+  private buildVolumeAttributes(binding: InternalAgentWorkspaceBinding): { volumeAttributes?: Record<string, string> } {
+    const attributes: Record<string, string> = {};
+    if (binding.subdir) {
+      attributes.subdir = binding.subdir;
+    }
+    if (this.options.mountServiceAccount?.trim()) {
+      attributes['juicefs/mount-service-account'] = this.options.mountServiceAccount.trim();
+    }
+    if (this.options.mountImage?.trim()) {
+      attributes['juicefs/mount-image'] = this.options.mountImage.trim();
+    }
+    return Object.keys(attributes).length > 0
+      ? { volumeAttributes: attributes }
+      : {};
   }
 }
 

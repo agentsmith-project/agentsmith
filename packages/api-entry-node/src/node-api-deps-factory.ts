@@ -169,6 +169,9 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
           storageCapacity: env.INTERNAL_AGENT_WORKSPACE_CAPACITY?.trim() || '1Pi',
           storageClassName: env.INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME?.trim() || '',
           mountOptions: parseCsiMountOptions(env.INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS),
+          subdir: env.INTERNAL_AGENT_JUICEFS_SUBDIR?.trim() || '',
+          mountServiceAccount: env.INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT?.trim() || '',
+          mountImage: env.INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE?.trim() || '',
           metadataHostOverride: internalAgentMetadataHostOverride || undefined,
           storageEndpointOverride: internalAgentStorageEndpointOverride || undefined,
           storageCredentialSeed:

@@ -87,6 +87,9 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
         storageCapacity: '2Ti',
         storageClassName: 'juicefs-static',
         mountOptions: ['writeback_cache', 'cache-size=204800'],
+        subdir: '/workspaces/ws_demo/flib_demo',
+        mountServiceAccount: 'juicefs-mount',
+        mountImage: 'juicedata/mount:ce-v1.3.1',
         metadataHostOverride: 'kind-gateway',
         storageEndpointOverride: 'http://minio.internal:19000',
         storageCredentialSeed: 'seed-demo',
@@ -103,10 +106,18 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     expect(result.mountPath).toBe('/workspace');
     expect(ensured.secret?.stringData?.metaurl).toBe('postgres://juicefs:secret@kind-gateway:5432/juicefs_demo?sslmode=disable');
     expect(ensured.secret?.stringData?.bucket).toBe('http://minio.internal:19000/jfs-lib-flib-demo');
+    expect(ensured.secret?.metadata?.labels?.['juicefs.com/validate-secret']).toBe('true');
+    expect(ensured.pv?.spec?.fsType).toBe('juicefs');
     expect(ensured.pv?.spec?.storageClassName).toBe('juicefs-static');
     expect(ensured.pv?.spec?.mountOptions).toEqual(['writeback_cache', 'cache-size=204800']);
+    expect(ensured.pv?.spec?.csi?.volumeAttributes).toEqual({
+      subdir: '/workspaces/ws_demo/flib_demo',
+      'juicefs/mount-service-account': 'juicefs-mount',
+      'juicefs/mount-image': 'juicedata/mount:ce-v1.3.1',
+    });
     expect(ensured.pvc?.spec?.storageClassName).toBe('juicefs-static');
     expect(result.binding.storage_class_name).toBe('juicefs-static');
     expect(result.binding.mount_options).toEqual(['writeback_cache', 'cache-size=204800']);
+    expect(result.binding.subdir).toBe('/workspaces/ws_demo/flib_demo');
   });
 });

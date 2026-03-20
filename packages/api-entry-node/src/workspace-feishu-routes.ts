@@ -180,6 +180,7 @@ export async function handleWorkspaceFeishuRoute(args: {
         docStore: deps.docStore,
         workspaceId,
         userId: user.id,
+        userEmail: user.email,
         intent: 'admin_verify',
         postRedirectPath: normalizePostRedirectPath(
           body?.post_redirect_path,
@@ -213,6 +214,7 @@ export async function handleWorkspaceFeishuRoute(args: {
         docStore: deps.docStore,
         workspaceId,
         userId: user.id,
+        userEmail: user.email,
         intent: 'user_connect',
         postRedirectPath: normalizePostRedirectPath(
           body?.post_redirect_path,

@@ -44,13 +44,13 @@ Top-level properties:
 Search by keyword:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"csdata"}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"csdata"}'
 ```
 
 Search by owner and recent period:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"roadmap","filters":{"owners":["ou_xxx"],"sort_rule":"OPEN_TIME","open_time_relative":"last_30_days"}}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"roadmap","filters":{"owners":["ou_xxx"],"sort_rule":"OPEN_TIME","open_time_relative":"last_30_days"}}'
 ```
 
 ## Return Notes

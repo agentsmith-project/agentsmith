@@ -44,13 +44,13 @@ Default style when the user has no explicit formatting preference:
 Create a doc:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool create-doc --params '{"title":"项目计划","wiki_node":"wikcnXXXX","markdown":"## 目标\n\n- 目标 1"}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool create-doc --params '{"title":"项目计划","wiki_node":"wikcnXXXX","markdown":"## 目标\n\n- 目标 1"}'
 ```
 
 Poll async task:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool create-doc --params '{"task_id":"task_xxx"}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool create-doc --params '{"task_id":"task_xxx"}'
 ```
 
 ## When To Re-check Live Schema

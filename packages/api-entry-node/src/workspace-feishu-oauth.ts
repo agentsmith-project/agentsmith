@@ -15,6 +15,7 @@ type WorkspaceFeishuOAuthIntent = 'admin_verify' | 'user_connect';
 
 type WorkspaceFeishuAuthSession = {
   userId: string;
+  userEmail: string;
   workspaceId: string;
   state: string;
   redirectUri: string;
@@ -137,6 +138,7 @@ async function readWorkspaceFeishuOAuthSession(
     const parsed = JSON.parse(raw) as WorkspaceFeishuAuthSession;
     if (
       typeof parsed?.userId !== 'string'
+      || typeof parsed?.userEmail !== 'string'
       || typeof parsed?.workspaceId !== 'string'
       || typeof parsed?.state !== 'string'
       || typeof parsed?.redirectUri !== 'string'
@@ -202,6 +204,7 @@ export async function startWorkspaceFeishuOAuth(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;
   userId: string;
+  userEmail: string;
   intent: WorkspaceFeishuOAuthIntent;
   postRedirectPath: string;
   requireEnabled?: boolean;
@@ -220,6 +223,7 @@ export async function startWorkspaceFeishuOAuth(args: {
   const state = `workspace_feishu_${randomUUID().replace(/-/g, '')}`;
   const session: WorkspaceFeishuAuthSession = {
     userId: args.userId,
+    userEmail: args.userEmail,
     workspaceId: args.workspaceId,
     state,
     redirectUri: record.redirect_uri,
@@ -256,6 +260,50 @@ export async function completeWorkspaceFeishuOAuth(args: {
   redirect_path: string;
   connection?: UserExternalConnectionRecord;
 }> {
+  return completeWorkspaceFeishuOAuthInternal({
+    cache: args.cache,
+    docStore: args.docStore,
+    workspaceId: args.workspaceId,
+    code: args.code,
+    state: args.state,
+    expectedUserId: args.userId,
+    fallbackUserEmail: args.userEmail,
+  });
+}
+
+export async function completeWorkspaceFeishuOAuthFromState(args: {
+  cache: CachePort;
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  code?: string;
+  state?: string;
+}): Promise<{
+  intent: WorkspaceFeishuOAuthIntent;
+  redirect_path: string;
+  connection?: UserExternalConnectionRecord;
+}> {
+  return completeWorkspaceFeishuOAuthInternal({
+    cache: args.cache,
+    docStore: args.docStore,
+    workspaceId: args.workspaceId,
+    code: args.code,
+    state: args.state,
+  });
+}
+
+async function completeWorkspaceFeishuOAuthInternal(args: {
+  cache: CachePort;
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  code?: string;
+  state?: string;
+  expectedUserId?: string;
+  fallbackUserEmail?: string;
+}): Promise<{
+  intent: WorkspaceFeishuOAuthIntent;
+  redirect_path: string;
+  connection?: UserExternalConnectionRecord;
+}> {
   if (!args.code?.trim() || !args.state?.trim()) {
     throw new Error('feishu_callback_missing_code_or_state');
   }
@@ -267,10 +315,10 @@ export async function completeWorkspaceFeishuOAuth(args: {
       completed
       && completed.expiresAt >= Date.now()
       && completed.workspaceId === args.workspaceId
-      && completed.userId === args.userId
+      && (!args.expectedUserId || completed.userId === args.expectedUserId)
     ) {
       const connection = completed.connectionId
-        ? await getUserExternalConnection(args.docStore, args.userId, completed.connectionId)
+        ? await getUserExternalConnection(args.docStore, completed.userId, completed.connectionId)
         : null;
       return {
         intent: completed.intent,
@@ -280,7 +328,10 @@ export async function completeWorkspaceFeishuOAuth(args: {
     }
     throw new Error('feishu_callback_state_invalid');
   }
-  if (session.workspaceId !== args.workspaceId || session.userId !== args.userId) {
+  if (
+    session.workspaceId !== args.workspaceId
+    || (args.expectedUserId && session.userId !== args.expectedUserId)
+  ) {
     throw new Error('feishu_callback_state_invalid');
   }
   const record = assertFeishuConfigured(await getWorkspaceFeishuIntegration(args.docStore, args.workspaceId));
@@ -301,13 +352,13 @@ export async function completeWorkspaceFeishuOAuth(args: {
       ...record,
       status: 'verified',
       verified_at: new Date().toISOString(),
-      verified_by_user_id: args.userId,
-      verified_by_email: args.userEmail,
+      verified_by_user_id: session.userId,
+      verified_by_email: session.userEmail || args.fallbackUserEmail || null,
       last_error: null,
       updated_at: new Date().toISOString(),
     });
     await writeWorkspaceFeishuOAuthResult(args.cache, state, {
-      userId: args.userId,
+      userId: session.userId,
       workspaceId: args.workspaceId,
       intent: session.intent,
       redirectPath: session.postRedirectPath,
@@ -327,7 +378,7 @@ export async function completeWorkspaceFeishuOAuth(args: {
     ? token.scope.split(/[,\s]+/).map((item) => item.trim()).filter(Boolean)
     : endpoints.scopes;
   const connection = await upsertUserExternalConnectionByProvider(args.docStore, {
-    user_id: args.userId,
+    user_id: session.userId,
     workspace_id: args.workspaceId,
     provider: 'feishu',
     kind: 'oauth_account',
@@ -362,7 +413,7 @@ export async function completeWorkspaceFeishuOAuth(args: {
     last_error: null,
   });
   await writeWorkspaceFeishuOAuthResult(args.cache, state, {
-    userId: args.userId,
+    userId: session.userId,
     workspaceId: args.workspaceId,
     intent: session.intent,
     redirectPath: session.postRedirectPath,

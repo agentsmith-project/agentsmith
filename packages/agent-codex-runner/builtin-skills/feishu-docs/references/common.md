@@ -5,7 +5,7 @@
 Use:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name> --params '<json object>'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name> --params '<json object>'
 ```
 
 Notebook tasks now expose the workspace credential root through:
@@ -52,7 +52,7 @@ When consuming `tools/call` results in code:
 If a call contract is unclear, inspect the live schema first:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
 ```
 
 Read the tool-specific reference file before calling any complex mutation tool.

@@ -58,19 +58,19 @@ Allowed `mode` values:
 Append:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --params '{"doc_id":"docx123","mode":"append","markdown":"## 新章节\n\n追加内容"}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --params '{"doc_id":"docx123","mode":"append","markdown":"## 新章节\n\n追加内容"}'
 ```
 
 Replace by title:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --params '{"doc_id":"docx123","mode":"replace_range","selection_by_title":"## 功能说明","markdown":"## 功能说明\n\n更新后的内容"}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --params '{"doc_id":"docx123","mode":"replace_range","selection_by_title":"## 功能说明","markdown":"## 功能说明\n\n更新后的内容"}'
 ```
 
 Insert after an exact or range match:
 
 ```bash
-python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --params '{"doc_id":"docx123","mode":"insert_after","selection_with_ellipsis":"```python...```","markdown":"**输出示例**"}'
+python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --params '{"doc_id":"docx123","mode":"insert_after","selection_with_ellipsis":"```python...```","markdown":"**输出示例**"}'
 ```
 
 ## When To Re-check Live Schema

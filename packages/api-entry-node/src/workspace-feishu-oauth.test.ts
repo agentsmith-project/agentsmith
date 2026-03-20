@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   completeWorkspaceFeishuOAuth,
+  completeWorkspaceFeishuOAuthFromState,
   startWorkspaceFeishuOAuth,
 } from './workspace-feishu-oauth.js';
 import { upsertWorkspaceFeishuIntegration } from './workspace-feishu-settings-store.js';
@@ -64,6 +65,7 @@ describe('workspace Feishu oauth', () => {
       docStore,
       workspaceId: 'ws_1',
       userId: 'user_123',
+      userEmail: 'user@example.com',
       intent: 'user_connect',
       postRedirectPath: '/en-US/workspaces/ws_1/connections?provider=feishu',
       requireEnabled: true,
@@ -119,6 +121,7 @@ describe('workspace Feishu oauth', () => {
       docStore,
       workspaceId: 'ws_2',
       userId: 'admin_123',
+      userEmail: 'admin@example.com',
       intent: 'admin_verify',
       postRedirectPath: '/en-US/workspaces/ws_2/settings/feishu?step=enable',
     });
@@ -146,5 +149,50 @@ describe('workspace Feishu oauth', () => {
     expect(second.intent).toBe('admin_verify');
     expect(second.redirect_path).toBe('/en-US/workspaces/ws_2/settings/feishu?step=enable');
     expect(second.connection).toBeUndefined();
+  });
+
+  it('completes user connect from state without requiring an active bearer token context', async () => {
+    const cache = new InMemoryCache();
+    const docStore = new InMemoryJsonDocStore();
+
+    await upsertWorkspaceFeishuIntegration(docStore, {
+      id: 'workspace_feishu:ws_3',
+      workspace_id: 'ws_3',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'app_123',
+      app_secret: 'secret_123',
+      redirect_uri: 'http://localhost:3001/workspaces/ws_3/feishu/callback',
+      verified_at: null,
+      verified_by_user_id: null,
+      verified_by_email: null,
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+    });
+
+    const started = await startWorkspaceFeishuOAuth({
+      cache,
+      docStore,
+      workspaceId: 'ws_3',
+      userId: 'user_789',
+      userEmail: 'user789@example.com',
+      intent: 'user_connect',
+      postRedirectPath: '/zh-CN/workspaces/ws_3/connections?provider=feishu',
+      requireEnabled: true,
+    });
+
+    const completed = await completeWorkspaceFeishuOAuthFromState({
+      cache,
+      docStore,
+      workspaceId: 'ws_3',
+      code: 'code_789',
+      state: started.state,
+    });
+
+    expect(completed.intent).toBe('user_connect');
+    expect(completed.redirect_path).toBe('/zh-CN/workspaces/ws_3/connections?provider=feishu');
+    expect(completed.connection?.user_id).toBe('user_789');
+    expect(completed.connection?.workspace_id).toBe('ws_3');
   });
 });

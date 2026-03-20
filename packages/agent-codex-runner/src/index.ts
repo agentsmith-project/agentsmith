@@ -11,7 +11,7 @@ import {
 } from './notebook-assets.js';
 import {
   diffWorkspaceFileSnapshots,
-  filterNewArtifactsForCwd,
+  filterNewArtifactsForRun,
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
@@ -97,7 +97,7 @@ const runningByRequestId = new Map<string, RunningProcess>();
 const cancelRequestedByRequestId = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const runStartedAtByRequestId = new Map<string, number>();
-const reportedArtifactsByCwd = new Map<string, Set<string>>();
+const reportedArtifactsByRequestId = new Map<string, Set<string>>();
 let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
@@ -841,7 +841,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         }
       }
       const artifacts = isNotebookMode
-        ? filterNewArtifactsForCwd(reportedArtifactsByCwd, cwd, await scanArtifactsDirectory(cwd, taskId))
+        ? filterNewArtifactsForRun(reportedArtifactsByRequestId, requestId, await scanArtifactsDirectory(cwd, taskId))
         : [];
       for (const artifact of artifacts) {
         sendTraceEvent(requestId, {
@@ -930,6 +930,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         traceSeqByRequestId.delete(requestId);
         runStartedAtByRequestId.delete(requestId);
         filterStatsByRequestId.delete(requestId);
+        reportedArtifactsByRequestId.delete(requestId);
         return;
       }
       sendTraceEvent(requestId, {
@@ -961,6 +962,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       traceSeqByRequestId.delete(requestId);
       runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
+      reportedArtifactsByRequestId.delete(requestId);
     })().catch((error) => {
       sendTraceEvent(requestId, {
         category: 'warning',
@@ -978,6 +980,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       traceSeqByRequestId.delete(requestId);
       runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
+      reportedArtifactsByRequestId.delete(requestId);
     });
   });
 }

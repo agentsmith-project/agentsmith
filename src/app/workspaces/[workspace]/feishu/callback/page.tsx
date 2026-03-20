@@ -5,8 +5,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { PageState } from '@/components/layout/PageState';
 import { buttonVariants } from '@/components/ui/button';
-import { WorkspaceAPI, getApiClient, handleErrorForToast } from '@/lib/api';
-import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
+import { API_BASE, handleErrorForToast } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 
@@ -47,9 +46,6 @@ export default function WorkspaceFeishuCallbackPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const workspaceId = validateWorkspaceParam(params?.workspace);
-  const api = React.useMemo(() => new WorkspaceAPI(getApiClient()), []);
-  const hydrated = useAuthStoreHydration();
-  const token = useAuthStore((state) => state.token);
   const [error, setError] = React.useState<string | null>(null);
   const [showFallback, setShowFallback] = React.useState(false);
   const hasSubmittedRef = React.useRef(false);
@@ -63,15 +59,8 @@ export default function WorkspaceFeishuCallbackPage() {
   }, []);
 
   React.useEffect(() => {
-    if (!hydrated) {
-      return;
-    }
     if (!workspaceId) {
       setError('workspace_not_found');
-      return;
-    }
-    if (!token) {
-      setError('authentication_required');
       return;
     }
     const code = searchParams.get('code')?.trim() ?? '';
@@ -85,7 +74,23 @@ export default function WorkspaceFeishuCallbackPage() {
     }
     hasSubmittedRef.current = true;
     let cancelled = false;
-    void api.completeWorkspaceFeishuAuth(workspaceId, { code, state })
+    const publicApiBase = API_BASE.replace(/\/api\/v1$/i, '');
+    void fetch(`${publicApiBase}/api/public/workspaces/${encodeURIComponent(workspaceId)}/feishu/oauth/complete`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, state }),
+    })
+      .then(async (response) => {
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(
+            typeof payload?.message === 'string' && payload.message
+              ? payload.message
+              : 'workspace_feishu_callback_failed',
+          );
+        }
+        return payload as { redirect_path?: string };
+      })
       .then((result) => {
         if (cancelled) return;
         window.location.replace(result.redirect_path || `/${locale}/workspaces/${workspaceId}/connections`);
@@ -98,7 +103,7 @@ export default function WorkspaceFeishuCallbackPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, hydrated, locale, searchParams, token, workspaceId]);
+  }, [locale, searchParams, workspaceId]);
 
   return (
     <PageState state={error ? 'error' : 'loading'}>

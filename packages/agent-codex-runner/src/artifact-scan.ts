@@ -137,15 +137,15 @@ function artifactFingerprint(artifact: ScannedArtifact): string {
   ].join('|');
 }
 
-export function filterNewArtifactsForCwd(
-  seenByCwd: Map<string, Set<string>>,
-  cwd: string,
+export function filterNewArtifactsForRun(
+  seenByRun: Map<string, Set<string>>,
+  runKey: string,
   artifacts: ScannedArtifact[],
 ): ScannedArtifact[] {
-  let seen = seenByCwd.get(cwd);
+  let seen = seenByRun.get(runKey);
   if (!seen) {
     seen = new Set<string>();
-    seenByCwd.set(cwd, seen);
+    seenByRun.set(runKey, seen);
   }
   const next: ScannedArtifact[] = [];
   for (const artifact of artifacts) {

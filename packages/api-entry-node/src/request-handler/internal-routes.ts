@@ -2,6 +2,7 @@ import type http from 'node:http';
 import type { NodeApiDeps } from '../node-api-deps.js';
 import { verifyBearerToken } from '../auth.js';
 import { completeFeishuOAuthFromCallback, getFeishuOAuthFrontendConfig } from '../feishu-oauth.js';
+import { completeWorkspaceFeishuOAuthFromState } from '../workspace-feishu-oauth.js';
 import { appendUserNotification } from '../me-notifications-store.js';
 import { getGovernanceIncidentDetail, listGovernanceIncidents } from '../governance-incident-store.js';
 import {
@@ -56,6 +57,31 @@ export async function handleInternalRoutes({
   json,
   readBody,
 }: InternalRouteContext): Promise<boolean> {
+  const workspaceFeishuPublicCompleteMatched = requestUrl.pathname.match(
+    /^\/api\/public\/workspaces\/([^/]+)\/feishu\/oauth\/complete\/?$/,
+  );
+  if (workspaceFeishuPublicCompleteMatched && method === 'POST') {
+    try {
+      const body = await readBody(req) as { code?: unknown; state?: unknown } | undefined;
+      const normalizeString = (value: unknown) => typeof value === 'string' ? value.trim() : '';
+      const result = await completeWorkspaceFeishuOAuthFromState({
+        cache: deps.cache,
+        docStore: deps.docStore,
+        workspaceId: decodeURIComponent(workspaceFeishuPublicCompleteMatched[1]),
+        code: normalizeString(body?.code),
+        state: normalizeString(body?.state),
+      });
+      json(res, 200, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'workspace_feishu_callback_failed';
+      const status = message === 'feishu_callback_state_invalid' || message === 'feishu_callback_missing_code_or_state'
+        ? 422
+        : 400;
+      json(res, status, { error_code: 'WORKSPACE_FEISHU_CALLBACK_FAILED', message });
+    }
+    return true;
+  }
+
   if (requestUrl.pathname === '/api/v1/me/external-connections/providers/feishu/callback' && method === 'GET') {
     try {
       await completeFeishuOAuthFromCallback({

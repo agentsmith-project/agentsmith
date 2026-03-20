@@ -13,6 +13,8 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 PROJECT_ID="${PROJECT_ID:-$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)}"
 AGENT_ID="${AGENT_ID:-$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)}"
 WORKSPACE_FILE_LIBRARY_ID="${WORKSPACE_FILE_LIBRARY_ID:-$(cat /tmp/agentsmith_library_id.txt 2>/dev/null || true)}"
+WORKSPACE_MODE="${WORKSPACE_MODE:-}"
+WORKSPACE_NAME="${WORKSPACE_NAME:-}"
 PROMPT="${PROMPT:-reply exactly: chain ok}"
 POLL_MAX="${POLL_MAX:-40}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
@@ -49,6 +51,9 @@ fi
 BASE="${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}"
 
 discover_workspace_file_library_id() {
+  if [[ "${WORKSPACE_MODE}" == "create_new" ]]; then
+    return 0
+  fi
   if [[ -n "${WORKSPACE_FILE_LIBRARY_ID}" ]]; then
     if api_json_request GET "${BASE}/file-libraries/${WORKSPACE_FILE_LIBRARY_ID}" >/dev/null 2>&1; then
       return 0
@@ -151,9 +156,28 @@ run_attempt() {
   local agent_tail trace_info trace_count trace_rest trace_terminal_status trace_terminal_summary
   local final_messages_json final_agent_tail settle_attempt settle_deadline
 
-  create_task_resp="$(api_json_request POST "${BASE}/tasks" \
-    "$(node -e 'console.log(JSON.stringify({title:process.argv[1],agent_id:process.argv[2],workspace_file_library_id:process.argv[3]}))' \
-      "smoke-$(date +%s)" "${AGENT_ID}" "${WORKSPACE_FILE_LIBRARY_ID}")")"
+  local task_title payload
+  task_title="smoke-$(date +%s)"
+  payload="$(
+    node -e '
+      const title = process.argv[1];
+      const agentId = process.argv[2];
+      const workspaceMode = process.argv[3];
+      const workspaceLibraryId = process.argv[4];
+      const workspaceName = process.argv[5];
+      const body = { title, agent_id: agentId };
+      if (workspaceMode === "create_new") {
+        body.workspace_mode = "create_new";
+        body.workspace_name = workspaceName || `${title} Workspace`;
+      } else {
+        body.workspace_file_library_id = workspaceLibraryId;
+      }
+      console.log(JSON.stringify(body));
+    ' \
+      "${task_title}" "${AGENT_ID}" "${WORKSPACE_MODE}" "${WORKSPACE_FILE_LIBRARY_ID}" "${WORKSPACE_NAME}"
+  )"
+
+  create_task_resp="$(api_json_request POST "${BASE}/tasks" "${payload}")"
 
   TASK_ID="$(printf '%s' "${create_task_resp}" | json_get id)"
   if [[ -z "${TASK_ID}" ]]; then
@@ -237,6 +261,14 @@ if [[ "${WAIT_AGENT_ONLINE}" != "0" ]]; then
   wait_for_agent_online
 else
   echo "[smoke] skipping agent-online wait (WAIT_AGENT_ONLINE=0)"
+fi
+
+if [[ -z "${WORKSPACE_MODE}" ]]; then
+  if [[ -n "${WORKSPACE_FILE_LIBRARY_ID}" ]]; then
+    WORKSPACE_MODE="use_existing"
+  else
+    WORKSPACE_MODE="create_new"
+  fi
 fi
 
 discover_workspace_file_library_id

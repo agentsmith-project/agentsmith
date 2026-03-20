@@ -24,6 +24,7 @@ interface SandboxManagerClientLike {
 
 interface AgentExecutionLike {
   getAgentOnlineState(agentId: string): boolean;
+  getAgentSessionOnlineState?: (agentId: string, sessionId?: string) => boolean;
 }
 
 export interface InternalAgentPodManager {
@@ -31,6 +32,7 @@ export interface InternalAgentPodManager {
     workspaceId: string;
     projectId: string;
     workloadId: string;
+    sessionId: string;
     agent: AgentRecord;
     workspaceMount?: InternalAgentWorkspaceMount;
   }): Promise<void>;
@@ -160,10 +162,10 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
       const existing = this.locks.get(lockKey);
       if (!existing) break;
       await existing;
-      if (this.agentExecution.getAgentOnlineState(agent.id)) return;
+      if (this.getOnlineState(agent.id, input.sessionId)) return;
     }
 
-    if (this.agentExecution.getAgentOnlineState(agent.id)) return;
+    if (this.getOnlineState(agent.id, input.sessionId)) return;
 
     let releaseLock!: () => void;
     const lock = new Promise<void>((resolve) => {
@@ -172,7 +174,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     this.locks.set(lockKey, lock);
 
     try {
-      await this.doEnsure(workspaceId, projectId, workloadId, agent, input.workspaceMount);
+      await this.doEnsure(workspaceId, projectId, workloadId, input.sessionId, agent, input.workspaceMount);
     } finally {
       this.locks.delete(lockKey);
       releaseLock();
@@ -219,14 +221,30 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
   }
 
+  private async waitForAgentSessionOnline(agentId: string, sessionId: string, deadline: number): Promise<void> {
+    while (Date.now() < deadline) {
+      if (this.getOnlineState(agentId, sessionId)) return;
+      await this.sleep(this.onlinePollIntervalMs);
+    }
+    throw Object.assign(new Error('sandbox_startup_timeout'), { code: 'AGENT_SANDBOX_STARTUP_TIMEOUT' });
+  }
+
+  private getOnlineState(agentId: string, sessionId: string): boolean {
+    if (typeof this.agentExecution.getAgentSessionOnlineState === 'function') {
+      return this.agentExecution.getAgentSessionOnlineState(agentId, sessionId);
+    }
+    return this.agentExecution.getAgentOnlineState(agentId);
+  }
+
   private async doEnsure(
     workspaceId: string,
     projectId: string,
     workloadId: string,
+    sessionId: string,
     agent: AgentRecord,
     workspaceMount?: InternalAgentWorkspaceMount,
   ): Promise<void> {
-    if (this.agentExecution.getAgentOnlineState(agent.id)) return;
+    if (this.getOnlineState(agent.id, sessionId)) return;
 
     const config = readInternalConfig(agent);
     const deadline = Date.now() + this.startupTimeoutMs;
@@ -248,7 +266,7 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
 
     if (status.phase === 'offline') {
-      const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`;
+      const wsUrl = `${this.wsBaseUrl.replace(/\/+$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=${encodeURIComponent(sessionId)}`;
       await this.sandboxClient.createOrEnsurePod(workspaceId, projectId, workloadId, {
         image: config.image,
         env: {
@@ -276,6 +294,6 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     }
 
     this.checkDeadline(deadline);
-    await this.waitForAgentOnline(agent.id, deadline);
+    await this.waitForAgentSessionOnline(agent.id, sessionId, deadline);
   }
 }

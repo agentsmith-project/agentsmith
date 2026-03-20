@@ -8,10 +8,10 @@ Use:
 python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name> --params '<json object>'
 ```
 
-Notebook tasks now expose the task-scoped credential root through:
+Notebook tasks now expose the workspace credential root through:
 
 ```bash
-MBOS_TASK_CREDENTIAL_DIR=./.codex/tasks/<taskId>/credential
+MBOS_TASK_CREDENTIAL_DIR=./.codex/credential
 ```
 
 The helper script prefers that directory automatically. If the environment variable is absent and the workspace does not contain `.codex/credential`, pass:

@@ -676,7 +676,7 @@ describe('api-entry-node notebook task routes', () => {
           hasCredentialIndexFile: Array.isArray(msg.payload?.execution_context?.credential_files)
             ? msg.payload.execution_context.credential_files.some((item) => {
               const relativePath = typeof item?.relative_path === 'string' ? item.relative_path : '';
-              return relativePath.startsWith('.codex/tasks/') && relativePath.endsWith('/credential/index.json');
+              return relativePath === '.codex/credential/index.json';
             })
             : false,
           close: () => ws.close(),

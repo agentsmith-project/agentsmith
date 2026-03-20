@@ -52,9 +52,9 @@ function buildNotebookAgentsMd(): string {
     '',
     '1. This task runs in a headless environment. Do not open GUI windows or interactive viewers.',
     '2. Do not call blocking display APIs (for example: matplotlib.pyplot.show()).',
-    '3. Save generated files/charts/images into `./.artifacts/tasks/<taskId>/`.',
+    '3. Save generated files/charts/images into `./.artifacts/`.',
     '4. Put final conclusions in the response message, and mention generated artifact filenames.',
-    '5. Attached notebook inputs are described in the task-specific manifest under `./.mbos/tasks/<taskId>/`.',
+    '5. Attached notebook inputs are described in `./.mbos/task-inputs.json`.',
     '6. This file library root is the persistent notebook environment for this workspace binding.',
     '7. Use the local file-read skill helper to fetch attached project file-library inputs when needed.',
     '',
@@ -68,7 +68,7 @@ function buildNotebookAgentsMd(): string {
     '## Output Convention',
     '',
     '- Text summary -> final response message',
-    '- Files/images -> `./.artifacts/tasks/<taskId>/` (system will collect these as notebook artifacts)',
+    '- Files/images -> `./.artifacts/` (system will collect these as notebook artifacts)',
     '',
   ].join('\n');
 }
@@ -83,10 +83,10 @@ export async function prepareNotebookWorkspaceAssets(args: {
   taskInputsManifestPath: string;
 }> {
   const { cwd, paths, executionContext, taskInputs } = args;
-  const artifactsDir = paths.artifactsTaskDir;
+  const artifactsDir = paths.artifactsDir;
   const taskInputsManifestPath = paths.taskInputsManifestPath;
   await mkdir(artifactsDir, { recursive: true });
-  await mkdir(paths.mbosTaskDir, { recursive: true });
+  await mkdir(paths.mbosDir, { recursive: true });
   await writeFile(
     taskInputsManifestPath,
     JSON.stringify(

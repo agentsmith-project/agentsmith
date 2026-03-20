@@ -528,7 +528,7 @@
       "workspace_name_label": "新工作区名称",
       "workspace_name_placeholder": "输入工作区名称",
       "workspace_name_hint": "留空时会根据任务标题自动生成工作区名称。",
-      "select_workspace_file_library": "选择工作文件库",
+      "select_workspace_file_library": "选择已有工作区",
       "workspace_file_library_hint": "只有空闲工作区可以继续使用。活跃任务会一直占用自己的工作区，直到任务归档或删除。",
       "workspace_file_library_empty": "当前项目暂无空闲工作区可继续使用。",
       "agent_fixed_notice": "创建后 Agent 不可更改",

@@ -34,10 +34,10 @@ type TaskWorkspaceAccessPayload = {
 export type TaskWorkspacePaths = {
   rootCwd: string;
   sharedSkillsDir: string;
-  taskCodexDir: string;
-  taskHomeDir: string;
-  mbosTaskDir: string;
-  artifactsTaskDir: string;
+  codexDir: string;
+  homeDir: string;
+  mbosDir: string;
+  artifactsDir: string;
   taskInputsManifestPath: string;
 };
 
@@ -54,16 +54,15 @@ function sanitizePathPart(input: string | null | undefined, fallback: string): s
   return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || fallback;
 }
 
-export function buildTaskWorkspacePaths(cwd: string, taskId: string): TaskWorkspacePaths {
-  const safeTaskId = sanitizePathPart(taskId, 'task');
+export function buildTaskWorkspacePaths(cwd: string, _taskId: string): TaskWorkspacePaths {
   return {
     rootCwd: cwd,
     sharedSkillsDir: join(cwd, '.codex', 'skills'),
-    taskCodexDir: join(cwd, '.codex', 'tasks', safeTaskId),
-    taskHomeDir: join(cwd, '.codex', 'tasks', safeTaskId, 'home'),
-    mbosTaskDir: join(cwd, '.mbos', 'tasks', safeTaskId),
-    artifactsTaskDir: join(cwd, '.artifacts', 'tasks', safeTaskId),
-    taskInputsManifestPath: join(cwd, '.mbos', 'tasks', safeTaskId, 'task-inputs.json'),
+    codexDir: join(cwd, '.codex'),
+    homeDir: cwd,
+    mbosDir: join(cwd, '.mbos'),
+    artifactsDir: join(cwd, '.artifacts'),
+    taskInputsManifestPath: join(cwd, '.mbos', 'task-inputs.json'),
   };
 }
 

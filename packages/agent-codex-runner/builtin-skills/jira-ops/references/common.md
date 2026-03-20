@@ -2,7 +2,7 @@
 
 ## Authentication
 
-Use Bearer token auth. Prefer inspecting credentials from the current notebook task namespace when available:
+Use Bearer token auth. Prefer inspecting credentials from the current notebook workspace credential root when available:
 
 ```text
 MBOS_TASK_CREDENTIAL_DIR/jira/

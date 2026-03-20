@@ -28,8 +28,8 @@ describe('third-party-credential-files', () => {
 
     const files = await buildThirdPartyCredentialFiles(docStore, 'user_1', { taskId: 'task_1' });
     expect(files.length).toBe(2);
-    expect(files.some((item) => item.relative_path === '.codex/tasks/task_1/credential/index.json')).toBe(true);
-    const jiraFile = files.find((item) => item.relative_path === '.codex/tasks/task_1/credential/jira/connections.json');
+    expect(files.some((item) => item.relative_path === '.codex/credential/index.json')).toBe(true);
+    const jiraFile = files.find((item) => item.relative_path === '.codex/credential/jira/connections.json');
     expect(jiraFile?.content).toContain('"provider": "jira"');
     expect(jiraFile?.content).toContain('"api_token": "token_123"');
   });

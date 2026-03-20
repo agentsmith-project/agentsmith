@@ -177,6 +177,38 @@ describe('AgentExecutionService', () => {
     expect(updated?.presence).toBe('online');
   });
 
+  it('keeps multiple session-scoped sockets for the same agent without replacement', async () => {
+    const { agentResourceService, executionService, agent, wsBase } = await setupExecutionService();
+    const keyPair = await agentResourceService.createAgentKey('ws_default', 'proj_1', agent.id);
+
+    const sessionA = new WebSocket(
+      `${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=task_a`,
+      { headers: { Authorization: `Bearer ${keyPair.key}` } },
+    );
+    const sessionB = new WebSocket(
+      `${wsBase}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}&session_id=task_b`,
+      { headers: { Authorization: `Bearer ${keyPair.key}` } },
+    );
+    sockets.push(sessionA, sessionB);
+
+    await Promise.all([
+      new Promise<void>((resolve, reject) => {
+        sessionA.once('open', () => resolve());
+        sessionA.once('error', reject);
+      }),
+      new Promise<void>((resolve, reject) => {
+        sessionB.once('open', () => resolve());
+        sessionB.once('error', reject);
+      }),
+    ]);
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+
+    expect(executionService.getAgentSessionOnlineState(agent.id, 'task_a')).toBe(true);
+    expect(executionService.getAgentSessionOnlineState(agent.id, 'task_b')).toBe(true);
+    expect(executionService.getAgentOnlineState(agent.id)).toBe(true);
+  });
+
   it('emits protocol error when agent delta payload is invalid', async () => {
     const { executionService, agent, ws } = await setupExecutionService();
     ws.on('message', (raw) => {

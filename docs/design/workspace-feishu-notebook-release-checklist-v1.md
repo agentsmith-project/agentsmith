@@ -46,18 +46,18 @@
 必须满足：
 
 1. 一个 file library 是完整的持久化 notebook/agent 环境
-2. task 级运行时状态进入正式命名空间：
-   - `.codex/tasks/<taskId>/`
-   - `.mbos/tasks/<taskId>/`
-   - `.artifacts/tasks/<taskId>/`
-3. artifact 扫描只看当前 task namespace
+2. notebook 运行时状态直接使用工作区根目录：
+   - `.codex/`
+   - `.mbos/`
+   - `.artifacts/`
+3. artifact 扫描只看 `.artifacts/`
 4. file library 稳定目录名不再按 task title/id 派生
 5. internal workspace binding 对 orchestration 暴露的是稳定 mount contract，而不是匿名 PVC 原语
 
 验收标准：
 
-- 同一 file library 下两个 task 并发运行时，task namespace 不互相污染
-- Codex session/credential/artifact 都按 task 隔离
+- 同一时间一个 file library 只允许一个活跃 task 占用
+- Codex session/credential/artifact 都保留在工作区根目录
 - internal orchestration 与 sandbox pod manager 的边界可由文档解释清楚：
   - [internal-agent-workspace-binding-model-v1.md](../contracts/internal-agent-workspace-binding-model-v1.md)
 
@@ -67,7 +67,7 @@
 
 1. external agent 能使用当前用户飞书凭据搜索 `中证数据`
 2. internal agent 能使用同一 file library 和同一用户飞书凭据搜索 `中证数据`
-3. 两条链路都能产出 artifact 到 `.artifacts/tasks/<taskId>/...`
+3. 两条链路都能产出 artifact 到 `.artifacts/...`
 4. internal sandbox/JuiceFS 配置只通过显式 env 或正式平台配置注入
 
 验收标准：

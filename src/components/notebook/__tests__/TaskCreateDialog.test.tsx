@@ -159,7 +159,7 @@ vi.mock('next-intl', () => ({
       'workspace_name_label': 'New workspace name',
       'workspace_name_placeholder': 'Enter workspace name',
       'workspace_name_hint': 'Leave blank to generate a workspace name from the task title.',
-      'select_workspace_file_library': 'Select Workspace File Library',
+      'select_workspace_file_library': 'Select Existing Workspace',
       'workspace_file_library_hint': 'Only idle workspaces can be selected.',
       'workspace_file_library_empty': 'No idle workspaces are available in this project right now.',
       'agent_fixed_notice': 'The agent cannot be changed after creation',

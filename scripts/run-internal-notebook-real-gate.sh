@@ -281,6 +281,9 @@ info "starting local sandbox manager on :${SANDBOX_PORT}"
     env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
     CONFIG_PATH="${CONFIG_PATH}" \
     SERVICE_KEYS="${SANDBOX_SERVICE_KEY_VALUE}" \
+    JUICEFS_STORAGE_ENDPOINT="${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
+    JUICEFS_STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+    JUICEFS_STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
     STORAGE_ENDPOINT="localhost:19000" \
     STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
     STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \

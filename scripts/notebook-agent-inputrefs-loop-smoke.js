@@ -366,7 +366,7 @@ async function runScenario() {
   await postTaskMessage(taskId, {
     role: 'user',
     content:
-      `Use file-read helper to list and fetch the URL input. Then create ./.artifacts/tasks/${taskId}/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.`,
+      'Use file-read helper to list and fetch the URL input. Then create ./.artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
   });
   const firstTurn = await waitTaskTerminal(taskId);
   const firstTurnStatus = String(firstTurn?.terminal?.status || '');

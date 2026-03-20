@@ -45,9 +45,7 @@ function resolveCredentialRoot(relativePath: string): string | null {
   if (normalized === '.codex/credential/index.json' || normalized.startsWith('.codex/credential/')) {
     return '.codex/credential';
   }
-  const taskScopedMatch = normalized.match(/^\.codex\/tasks\/([^/]+)\/credential(?:\/|$)/);
-  if (!taskScopedMatch) return null;
-  return `.codex/tasks/${taskScopedMatch[1]}/credential`;
+  return null;
 }
 
 export async function applyExecutionContextFiles(

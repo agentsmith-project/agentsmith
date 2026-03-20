@@ -20,7 +20,7 @@ describe('prepareNotebookWorkspaceAssets', () => {
       });
 
       expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toBe('existing-agents');
-      expect(readFileSync(join(cwd, '.mbos', 'tasks', 'task_1', 'task-inputs.json'), 'utf8')).toContain('"task_id": "task_1"');
+      expect(readFileSync(join(cwd, '.mbos', 'task-inputs.json'), 'utf8')).toContain('"task_id": "task_1"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -37,7 +37,7 @@ describe('prepareNotebookWorkspaceAssets', () => {
       });
 
       expect(() => readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toThrow();
-      expect(readFileSync(join(cwd, '.mbos', 'tasks', 'task_2', 'task-inputs.json'), 'utf8')).toContain('"task_id": "task_2"');
+      expect(readFileSync(join(cwd, '.mbos', 'task-inputs.json'), 'utf8')).toContain('"task_id": "task_2"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -45,16 +45,16 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - Executor: OpenAI Codex CLI (`codex exec`, script/non-interactive mode).
 - Execution path: AgentSmith task message -> MBOS external-agent execution websocket -> `agent-codex-runner` -> endpoint proxy -> LLM.
 - Workdir rule:
-  - persistent workspace mode (Phase 1 current truth):
+  - persistent workspace mode (current truth):
     - external bare: `~/ags-workspaces/<workspace_dir_name>`
     - external docker: `/workspace/ags-workspaces/<workspace_dir_name>`
     - internal k8s: `/workspace`
   - the mounted workspace root is the selected notebook task file library root
-  - task runtime state is namespaced inside the persistent file library root:
-    - `.codex/tasks/<taskId>/`
-    - `.mbos/tasks/<taskId>/`
-    - `.artifacts/tasks/<taskId>/`
-  - deliverables should be written to `./.artifacts/tasks/<taskId>/`
+  - notebook runtime state uses the workspace root directly:
+    - `.codex/`
+    - `.mbos/`
+    - `.artifacts/`
+  - deliverables should be written to `./.artifacts/`
 
 ## 2. Current Delivery Status
 - Implemented:
@@ -66,13 +66,13 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - Integration keycloak redirect auto-fix for custom web ports.
   - Responses-to-chat compatibility translation in endpoint proxy (including streaming SSE translation).
   - Codex runner per-task watchdog timeout and task auto-close protections.
-  - Codex runner task namespace generation for `.codex/.mbos/.artifacts`.
+  - Codex runner uses the workspace root directly for `.codex/.mbos/.artifacts`.
   - Internal-k8s notebook execution path using JuiceFS CSI pre-mounted `/workspace`.
   - Internal lazy start / reclaim / resume on the same JuiceFS CSI-backed workspace binding.
 - Verified:
   - `packages/api-entry-node/src/http-utils.test.ts` (responses/chat translation) passing.
   - End-to-end Notebook external agent pipeline with real GLM (`glm-5`) returns `turn.completed`.
-  - Internal notebook workspace real gate writes task artifacts into `.artifacts/tasks/<taskId>/` inside the selected file library root and resumes after workload reclaim.
+  - Internal notebook workspace real gate writes artifacts into `.artifacts/` inside the selected file library root and resumes after workload reclaim.
 
 ## 3. End-to-End Flow
 1. User creates Notebook task with notebook-capable external agent.
@@ -86,7 +86,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
    - resolves task workspace access from AgentSmith;
    - in persistent workspace mode, mounts the task-bound JuiceFS file library root;
    - uses the mounted workspace as cwd;
-   - writes task-scoped runtime state under `.codex/tasks/<taskId>/`, `.mbos/tasks/<taskId>/`, and `.artifacts/tasks/<taskId>/`;
+   - writes runtime state under `.codex/`, `.mbos/`, and `.artifacts/`;
    - runs `codex exec` with explicit `-c model_provider=proxy` / `model_providers.proxy.*` overrides;
    - marks current task workdir as trusted project (`projects."<cwd>".trust_level="trusted"`) and disables git requirement (`project_root_markers=[]`, `--skip-git-repo-check`);
    - emits stream frames (`agent.response.delta`, `agent.response.done`/`error`).
@@ -173,7 +173,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 
 ### 5.3.1 Builtin Skills Bootstrap Policy (MVP)
 - Builtin skills are bootstrapped into the persistent workspace root once, under `.codex/skills/`.
-- Tasks reuse the shared skills directory instead of copying a new skills tree into each task namespace.
+- Tasks reuse the shared skills directory inside the same workspace instead of copying a new skills tree per task.
 - Default policy is fail-fast if required builtin skills are missing (`MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1`).
 
 ### 5.3.2 Unified Env Switch Reference (quick lookup)
@@ -926,20 +926,20 @@ Notebook tasks executed by `@mbos/agent-codex-runner` use a runner-enforced head
 
 - treat execution as headless (no visible GUI on the client)
 - avoid interactive display calls (for example `matplotlib.pyplot.show()`)
-- save generated charts/files into the task artifact directory:
-  - `<task_cwd>/.artifacts/tasks/<taskId>/`
+- save generated charts/files into the workspace artifact directory:
+  - `<task_cwd>/.artifacts/`
 
 Runner execution-context/task-input behavior:
 
 - notebook attached inputs are passed in `execution_context.task_inputs`
 - runner also receives `execution_context.api_base` for notebook helper tooling (source downloads)
 - runner writes a task input manifest to:
-  - `<task_cwd>/.mbos/tasks/<taskId>/task-inputs.json`
-- runner keeps a stable root `AGENTS.md` that documents persistent workspace conventions and task namespace rules
+  - `<task_cwd>/.mbos/task-inputs.json`
+- runner keeps a stable root `AGENTS.md` that documents persistent workspace conventions
 - runner reuses the shared Codex skill directory:
   - `./.codex/skills/file-read/`
   - helper command: `node ./.codex/skills/file-read/fetch_input.mjs ...`
-- Codex is instructed to use the task manifest and produce file outputs in `.artifacts/tasks/<taskId>/`
+- Codex is instructed to use the task manifest and produce file outputs in `.artifacts/`
 
 Session continuity behavior:
 
@@ -949,7 +949,7 @@ Session continuity behavior:
 
 Runner artifact reporting behavior:
 
-- after Codex process exit, runner scans `<task_cwd>/.artifacts/tasks/<taskId>/`
+- after Codex process exit, runner scans `<task_cwd>/.artifacts/`
 - for each discovered output, runner emits:
   - `agent.response.artifact` (structured artifact payload)
   - `agent.response.event` with `category=artifact` (diagnostic trace)

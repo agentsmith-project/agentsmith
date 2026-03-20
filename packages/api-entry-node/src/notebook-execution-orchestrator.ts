@@ -265,6 +265,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         workspaceId: task.workspace_id,
         projectId: task.project_id,
         workloadId,
+        sessionId: task.id,
         agent,
         workspaceMount: workspaceBinding.workspaceMount,
       });

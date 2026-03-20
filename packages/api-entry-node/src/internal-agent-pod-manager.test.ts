@@ -33,6 +33,10 @@ describe('internal-agent-pod-manager', () => {
         .mockReturnValueOnce(false)
         .mockReturnValueOnce(false)
         .mockReturnValueOnce(true),
+      getAgentSessionOnlineState: vi.fn()
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(false)
+        .mockReturnValueOnce(true),
     };
     const manager = new InternalAgentPodManagerImpl(
       {
@@ -55,6 +59,7 @@ describe('internal-agent-pod-manager', () => {
       workspaceId: 'ws_1',
       projectId: 'proj_1',
       workloadId: 'task_1',
+      sessionId: 'task_1',
       agent: buildAgent({
         image: 'runner:v1',
         _internal_raw_key: 'ask_xxx',
@@ -73,7 +78,7 @@ describe('internal-agent-pod-manager', () => {
         workspace_binding_id: 'flib_demo',
       }),
     );
-    expect(onlineStateStore.getAgentOnlineState).toHaveBeenCalled();
+    expect(onlineStateStore.getAgentSessionOnlineState).toHaveBeenCalledWith('ag_1', 'task_1');
   });
 
   it('fails fast when internal key is missing', async () => {
@@ -95,6 +100,7 @@ describe('internal-agent-pod-manager', () => {
         workspaceId: 'ws_1',
         projectId: 'proj_1',
         workloadId: 'task_1',
+        sessionId: 'task_1',
         agent: buildAgent({ image: 'runner:v1' }),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
@@ -119,6 +125,7 @@ describe('internal-agent-pod-manager', () => {
         workspaceId: 'ws_1',
         projectId: 'proj_1',
         workloadId: 'task_1',
+        sessionId: 'task_1',
         agent: buildAgent({ image: 'runner:v1', _internal_raw_key: 'ask_test' }),
       }),
     ).rejects.toMatchObject({ code: 'AGENT_SANDBOX_UNAVAILABLE' });

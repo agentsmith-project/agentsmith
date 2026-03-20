@@ -49,6 +49,8 @@ interface PendingStream {
 
 interface AgentSocketState {
   ws: WebSocket;
+  agentId: string;
+  sessionId?: string;
   workspaceId: string;
   projectId: string;
   connectedAt: string;
@@ -292,17 +294,16 @@ function mergeExecutionPreferences(
 
 export class AgentExecutionService {
   private readonly wsServer: WebSocketServer;
-  // Runtime sockets are indexed by agentId for the current MVP. The trusted
-  // workspace/project boundary still comes from the verified agent key record,
-  // and every dispatched request is checked against that scope again.
-  private readonly socketsByAgentId = new Map<string, AgentSocketState>();
+  private readonly socketsByKey = new Map<string, AgentSocketState>();
 
   constructor(private readonly agentResourceService: AgentResourceService) {
     this.wsServer = new WebSocketServer({ noServer: true });
     this.wsServer.on('connection', (ws, req) => {
       const url = new URL(req.url ?? '', 'http://localhost');
       const agentId = url.searchParams.get('agent_id') || '';
-      const socketState = this.socketsByAgentId.get(agentId);
+      const sessionId = url.searchParams.get('session_id') || undefined;
+      const socketKey = buildSocketKey(agentId, sessionId);
+      const socketState = this.socketsByKey.get(socketKey);
       if (!socketState || socketState.ws !== ws) {
         ws.close(1011, 'agent_state_missing');
         return;
@@ -326,9 +327,9 @@ export class AgentExecutionService {
         }),
       );
 
-      ws.on('message', (data) => this.handleAgentMessage(agentId, ws, data));
-      ws.on('close', () => this.handleSocketClose(agentId, ws));
-      ws.on('error', () => this.handleSocketClose(agentId, ws));
+      ws.on('message', (data) => this.handleAgentMessage(socketKey, ws, data));
+      ws.on('close', () => this.handleSocketClose(socketKey, ws));
+      ws.on('error', () => this.handleSocketClose(socketKey, ws));
     });
   }
 
@@ -341,6 +342,7 @@ export class AgentExecutionService {
     }
 
     const agentId = url.searchParams.get('agent_id') || '';
+    const sessionId = url.searchParams.get('session_id') || undefined;
     if (!agentId) {
       debugExecution('reject missing_agent_id');
       socket.write('HTTP/1.1 400 Bad Request\r\n\r\n');
@@ -385,7 +387,8 @@ export class AgentExecutionService {
           + `/endpoints/${encodeURIComponent(notebookEndpointId)}/proxy`
         : undefined;
 
-      const existing = this.socketsByAgentId.get(agentId);
+      const socketKey = buildSocketKey(agentId, sessionId);
+      const existing = this.socketsByKey.get(socketKey);
       if (existing) {
         for (const pending of existing.pendingByRequestId.values()) {
           pending.push({
@@ -399,8 +402,10 @@ export class AgentExecutionService {
       }
 
       this.wsServer.handleUpgrade(req, socket, head, (ws) => {
-        this.socketsByAgentId.set(agentId, {
+        this.socketsByKey.set(socketKey, {
           ws,
+          agentId,
+          ...(sessionId ? { sessionId } : {}),
           workspaceId: keyRecord.workspace_id,
           projectId: keyRecord.project_id,
           connectedAt: new Date().toISOString(),
@@ -436,7 +441,7 @@ export class AgentExecutionService {
     messages: Array<Record<string, unknown>>;
     executionContext?: Record<string, unknown>;
   }): Promise<{ requestId: string; stream: AsyncIterable<AgentStreamEvent>; cancel: () => void }> {
-    const socket = this.socketsByAgentId.get(input.agentId);
+    const socket = this.resolveSocket(input.agentId, input.sessionId);
     if (!socket || socket.ws.readyState !== socket.ws.OPEN) {
       throw new Error('agent_offline');
     }
@@ -504,8 +509,8 @@ export class AgentExecutionService {
     };
   }
 
-  private handleSocketClose(agentId: string, ws: WebSocket): void {
-    const socket = this.socketsByAgentId.get(agentId);
+  private handleSocketClose(socketKey: string, ws: WebSocket): void {
+    const socket = this.socketsByKey.get(socketKey);
     if (!socket) return;
     if (socket.ws !== ws) return;
     for (const pending of socket.pendingByRequestId.values()) {
@@ -519,20 +524,20 @@ export class AgentExecutionService {
       });
       pending.close();
     }
-    this.socketsByAgentId.delete(agentId);
-    void this.agentResourceService.markAgentDisconnected(agentId);
-    void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, agentId).then((agent) => (
+    this.socketsByKey.delete(socketKey);
+    void this.agentResourceService.markAgentDisconnected(socket.agentId);
+    void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((agent) => (
       this.agentResourceService.touchAgentPresence(
         socket.workspaceId,
         socket.projectId,
-        agentId,
+        socket.agentId,
         agent?.mode === 'internal' ? 'managed' : 'offline',
       )
     ));
   }
 
-  private handleAgentMessage(agentId: string, ws: WebSocket, raw: RawData): void {
-    const socket = this.socketsByAgentId.get(agentId);
+  private handleAgentMessage(socketKey: string, ws: WebSocket, raw: RawData): void {
+    const socket = this.socketsByKey.get(socketKey);
     if (!socket) return;
     if (socket.ws !== ws) return;
 
@@ -548,7 +553,7 @@ export class AgentExecutionService {
         payload?: Record<string, unknown>;
       };
     } catch {
-      const state = this.socketsByAgentId.get(agentId);
+      const state = this.socketsByKey.get(socketKey);
       if (state) {
         state.ws.close(1003, 'invalid_json');
       }
@@ -556,7 +561,7 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.pong') {
-      void this.agentResourceService.markAgentConnected(agentId, {
+      void this.agentResourceService.markAgentConnected(socket.agentId, {
         protocol_version: '1.0',
         last_pong_at: new Date().toISOString(),
       });
@@ -564,12 +569,12 @@ export class AgentExecutionService {
     }
 
     if (payload.type === 'agent.ready') {
-      void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, agentId).then((current) => {
+      void this.agentResourceService.getAgent(socket.workspaceId, socket.projectId, socket.agentId).then((current) => {
         const existing = isPlainObject(current?.execution_preferences_json)
           ? current.execution_preferences_json
           : {};
         const incoming = isPlainObject(payload.payload) ? payload.payload : {};
-        return this.agentResourceService.updateAgent(socket.workspaceId, socket.projectId, agentId, {
+        return this.agentResourceService.updateAgent(socket.workspaceId, socket.projectId, socket.agentId, {
           execution_preferences_json: mergeExecutionPreferences(existing, incoming),
         });
       });
@@ -691,11 +696,33 @@ export class AgentExecutionService {
   }
 
   getAgentOnlineState(agentId: string): boolean {
-    const socket = this.socketsByAgentId.get(agentId);
+    return [...this.socketsByKey.values()].some((socket) => (
+      socket.agentId === agentId && socket.ws.readyState === socket.ws.OPEN
+    ));
+  }
+
+  getAgentSessionOnlineState(agentId: string, sessionId?: string): boolean {
+    const socket = this.resolveSocket(agentId, sessionId);
     return !!socket && socket.ws.readyState === socket.ws.OPEN;
   }
 
   listOnlineAgentIds(): string[] {
-    return [...this.socketsByAgentId.keys()];
+    return [...new Set(
+      [...this.socketsByKey.values()]
+        .filter((socket) => socket.ws.readyState === socket.ws.OPEN)
+        .map((socket) => socket.agentId),
+    )];
   }
+
+  private resolveSocket(agentId: string, sessionId?: string): AgentSocketState | undefined {
+    if (sessionId) {
+      const exact = this.socketsByKey.get(buildSocketKey(agentId, sessionId));
+      if (exact) return exact;
+    }
+    return this.socketsByKey.get(buildSocketKey(agentId));
+  }
+}
+
+function buildSocketKey(agentId: string, sessionId?: string): string {
+  return sessionId && sessionId.trim().length > 0 ? `${agentId}::${sessionId.trim()}` : agentId;
 }

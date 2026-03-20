@@ -5,9 +5,11 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 FLOW="${FLOW:-user_connect}" # admin_verify | user_connect
 POST_REDIRECT_PATH="${POST_REDIRECT_PATH:-}"
 
@@ -52,4 +54,7 @@ fi
 
 info "flow=${FLOW}"
 info "open this URL in your browser and complete the Feishu confirmation:"
+state_set_string feishu.manual.flow "${FLOW}"
+state_set_string feishu.manual.authorization_url "${auth_url}"
+state_set_string feishu.manual.generated_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "${auth_url}"

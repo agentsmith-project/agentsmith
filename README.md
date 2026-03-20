@@ -61,11 +61,9 @@ make urls
 ### Real Backend Manual Testing
 
 ```bash
-make api-dev
-make web
-make notebook-agent-refresh-token
-make notebook-agent-init-resources
-make e2e-int-core-local-api
+make release-real-bootstrap
+make release-real-ready
+make lane-real-core
 ```
 
 ### No-Sandbox Deployment Baseline
@@ -81,16 +79,27 @@ This validates the required behavior for MVP deployment without sandbox:
 ### Quality Gates
 
 ```bash
-make gate-pr
-make gate-premerge
-make gate-governance
-make smoke-governance   # optional extended smoke, not part of default engineering gate
-make engineering-core-smoke
-make mvp-freeze-check
+make gate-fast
+make gate-main
+make gate-release
+make lane-mock
+make lane-visual
+make lane-real-release
 ```
-Note: `engineering`/`engineering gate` command names above are repository workflow terms, not product DevOps capabilities.
-`engineering-core-smoke` runs core real-lane smoke + endpoint requests/day rate-limit smoke, then archives an engineering verification report with contract/type checks (`typecheck`, `openapi-check`, `contracts-check`).
-`mvp-freeze-check` is the freeze-oriented bundle: contracts + core smoke + demo readiness check.
+
+Recommended release flow:
+
+```bash
+make release-real-reset
+make release-real-bootstrap
+make release-real-ready
+make manual-feishu-admin
+make manual-feishu-check
+make manual-feishu-user
+make manual-feishu-check
+make release-real-run
+make release-real-report
+```
 
 ### Dependency Recovery (only when environment is broken)
 
@@ -121,10 +130,10 @@ FEISHU_APP_SECRET=<your-feishu-app-secret>
 FEISHU_OAUTH_REDIRECT_URI=http://127.0.0.1:18181/callback
 ```
 
-For normal product flow, point `FEISHU_OAUTH_REDIRECT_URI` to an AgentSmith callback page such as:
+For normal product flow, point `FEISHU_OAUTH_REDIRECT_URI` to the workspace callback page:
 
 ```bash
-http://localhost:3001/zh-CN/user/third-party-accounts/feishu/callback
+http://localhost:3001/workspaces/ws_default/feishu/callback
 ```
 
 ## Permission Token Naming

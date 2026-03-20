@@ -4,9 +4,12 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 FLOW="${FLOW:-user_connect}" # admin_verify | user_connect
 
 if [[ ! -f "${TOKEN_FILE}" ]]; then
@@ -30,6 +33,7 @@ case "${FLOW}" in
       echo "[feishu-real-resume-check] expected workspace Feishu to be enabled. Complete verification and click Enable before resuming." >&2
       exit 2
     fi
+    state_set_string feishu.admin.status "${status}"
     echo "[feishu-real-resume-check] workspace_feishu_status=${status}"
     ;;
   user_connect)
@@ -46,9 +50,12 @@ case "${FLOW}" in
           process.stderr.write("[feishu-real-resume-check] active user Feishu connection not found for this workspace.\n");
           process.exit(2);
         }
+        process.stdout.write("");
         process.stdout.write(`[feishu-real-resume-check] workspace_feishu_status=${process.argv[2]}\n[feishu-real-resume-check] user_feishu_connection=active\n`);
       });
     ' "${WORKSPACE_ID}" "${status}" <<< "${connections_json}"
+    state_set_string feishu.admin.status "${status}"
+    state_set_string feishu.user.status "active"
     ;;
   *)
     echo "[feishu-real-resume-check] unsupported FLOW=${FLOW}" >&2

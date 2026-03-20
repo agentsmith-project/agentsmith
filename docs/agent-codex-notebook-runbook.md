@@ -308,7 +308,7 @@ make notebook-agent-runner
 Open browser:
 - Login: `http://localhost:3001/zh-CN/login`
 - Notebook project URL:
-  - project id from `/tmp/agentsmith_project_id.txt`
+  - project id from `artifacts/real-lane/current/state.json` at `project.id`
   - `http://localhost:3001/zh-CN/workspaces/ws_default/projects/<PROJECT_ID>/notebook`
 
 Expected behavior:
@@ -316,11 +316,9 @@ Expected behavior:
 - task completes -> final reply appears without page refresh
 - in `next dev`, notebook task page shows `SSE Debug (latest 5)` for frontend stream diagnostics
 
-Helper files written by bootstrap:
-- `/tmp/agentsmith_project_id.txt`
-- `/tmp/agentsmith_agent_id.txt`
-- `/tmp/agentsmith_agent_key.txt`
-- `/tmp/agentsmith_ws_url.txt`
+Helper state written by bootstrap:
+- `artifacts/real-lane/current/state.json`
+- `artifacts/real-lane/current/token.txt`
 
 ### 5.4.2 Stop Local Test Services (manual)
 - If you started services in separate terminals, stop with `Ctrl+C` in each terminal.
@@ -400,7 +398,7 @@ make governance-smoke
 make governance-policy-effect-smoke
 ```
 - Notes:
-  - Uses Playwright + Keycloak login and current `/tmp/agentsmith_project_id.txt`
+  - Uses Playwright + Keycloak login and current `artifacts/real-lane/current/state.json`
   - Fails fast with a clear error if the current project URL is stale after local in-memory backend reset
   - Intended for real backend mode page validation (not MSW-only UI smoke)
   - `governance-policy-effect-smoke` temporarily patches the current endpoint policy (RPM=1), validates a 429 rate-limit hit, checks Audit/Usage evidence, then restores the original policy
@@ -594,7 +592,7 @@ make notebook-agent-monitor
 - Common options:
 ```bash
 COUNT=30 INTERVAL_SEC=1 make notebook-agent-monitor
-API_BASE=http://localhost:20000 TOKEN_FILE=/tmp/agentsmith_user_token.txt make notebook-agent-monitor
+API_BASE=http://localhost:20000 TOKEN_FILE=artifacts/real-lane/current/token.txt make notebook-agent-monitor
 ```
 - Output is a compact line summary suitable for terminal monitoring during smoke/load runs.
 - It also includes `/traces` query indicators:
@@ -809,8 +807,7 @@ make notebook-agent-benchmark-compare
 make notebook-agent-traces-query-bench
 ```
 - Defaults:
-  - uses `/tmp/agentsmith_project_id.txt`
-  - uses `/tmp/agentsmith_last_task_id.txt`
+  - uses `artifacts/real-lane/current/state.json` (`project.id`, `task.last_id`)
   - resolves the latest agent `message_id` automatically
   - `REQUESTS=50`, `CONCURRENCY=5`, `WARMUP=5`
 - Useful overrides:

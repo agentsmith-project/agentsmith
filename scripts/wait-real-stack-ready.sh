@@ -4,10 +4,13 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+
 API_BASE="${API_BASE:-http://localhost:20000}"
 WEB_BASE="${BASE_URL:-http://localhost:3001}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 TIMEOUT_SEC="${READY_TIMEOUT_SEC:-180}"
 SLEEP_SEC="${READY_SLEEP_SEC:-2}"
 CSI_NAMESPACE="${CSI_NAMESPACE:-kube-system}"

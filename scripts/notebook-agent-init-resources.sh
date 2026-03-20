@@ -4,10 +4,12 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
@@ -51,6 +53,7 @@ fi
 
 TOKEN="$(cat "${TOKEN_FILE}")"
 BASE="${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}"
+state_set_string workspace.id "${WORKSPACE_ID}"
 
 userinfo_status="$(curl -sS -o /tmp/agentsmith_userinfo_check.json -w '%{http_code}' \
   "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/userinfo" \
@@ -80,7 +83,8 @@ if ! printf '%s' "${project_resp}" | node -e 'let s="";process.stdin.on("data",d
   exit 2
 fi
 PROJECT_ID="$(printf '%s' "${project_resp}" | json_get id)"
-echo "${PROJECT_ID}" > /tmp/agentsmith_project_id.txt
+state_set_string project.id "${PROJECT_ID}"
+state_set_string project.name "${PROJECT_NAME}"
 echo "[init] project_id=${PROJECT_ID}"
 
 PROJECT_BASE="${BASE}/projects/${PROJECT_ID}"
@@ -92,7 +96,8 @@ cred_resp="$(api_curl -X POST "${PROJECT_BASE}/credentials" \
   -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], type:"api_key", value:process.argv[2]}))' \
       "${CREDENTIAL_NAME}" "${GLM_API_KEY}")")"
 CRED_ID="$(printf '%s' "${cred_resp}" | json_get id)"
-echo "${CRED_ID}" > /tmp/agentsmith_cred_id.txt
+state_set_string credential.id "${CRED_ID}"
+state_set_string credential.name "${CREDENTIAL_NAME}"
 echo "[init] credential_id=${CRED_ID}"
 
 echo "[init] creating endpoint..."
@@ -102,7 +107,11 @@ endpoint_resp="$(api_curl -X POST "${PROJECT_BASE}/endpoints" \
   -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5]}))' \
       "${ENDPOINT_NAME}" "${ENDPOINT_PROTOCOL}" "${GLM_BASE_URL}" "${GLM_MODEL}" "${CRED_ID}")")"
 ENDPOINT_ID="$(printf '%s' "${endpoint_resp}" | json_get id)"
-echo "${ENDPOINT_ID}" > /tmp/agentsmith_endpoint_id.txt
+state_set_string endpoint.id "${ENDPOINT_ID}"
+state_set_string endpoint.name "${ENDPOINT_NAME}"
+state_set_string endpoint.protocol "${ENDPOINT_PROTOCOL}"
+state_set_string endpoint.base_url "${GLM_BASE_URL}"
+state_set_string endpoint.model "${GLM_MODEL}"
 echo "[init] endpoint_id=${ENDPOINT_ID}"
 
 echo "[init] creating external notebook agent..."
@@ -112,7 +121,8 @@ agent_resp="$(api_curl -X POST "${PROJECT_BASE}/agents" \
   -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[2], wire_api:process.argv[3], model:process.argv[4]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' \
       "${AGENT_NAME}" "${ENDPOINT_ID}" "${WIRE_API}" "${GLM_MODEL}")")"
 AGENT_ID="$(printf '%s' "${agent_resp}" | json_get id)"
-echo "${AGENT_ID}" > /tmp/agentsmith_agent_id.txt
+state_set_string agent.id "${AGENT_ID}"
+state_set_string agent.name "${AGENT_NAME}"
 echo "[init] agent_id=${AGENT_ID}"
 
 echo "[init] creating agent key..."
@@ -121,17 +131,17 @@ agent_key_resp="$(api_curl -X POST "${PROJECT_BASE}/agents/${AGENT_ID}/keys" \
   -H 'Content-Type: application/json' \
   -d '{}')"
 AGENT_KEY="$(printf '%s' "${agent_key_resp}" | json_get key)"
-echo "${AGENT_KEY}" > /tmp/agentsmith_agent_key.txt
-echo "[init] agent key written to /tmp/agentsmith_agent_key.txt"
+state_set_string agent.key "${AGENT_KEY}"
+echo "[init] agent key written to $(real_lane_state_file)"
 
 echo "[init] fetching connection info..."
 conn_resp="$(api_curl "${PROJECT_BASE}/agents/${AGENT_ID}/connection-info" \
   -H "Authorization: Bearer ${TOKEN}")"
 WS_URL="$(printf '%s' "${conn_resp}" | json_get ws_url)"
-echo "${WS_URL}" > /tmp/agentsmith_ws_url.txt
+state_set_string agent.ws_url "${WS_URL}"
 echo "[init] ws_url=${WS_URL}"
 
-cat > /tmp/agentsmith_init_summary.txt <<EOF
+cat > "$(real_lane_summary_file)" <<EOF
 API_BASE=${API_BASE}
 WORKSPACE_ID=${WORKSPACE_ID}
 PROJECT_ID=${PROJECT_ID}
@@ -145,12 +155,9 @@ ENDPOINT_PROTOCOL=${ENDPOINT_PROTOCOL}
 WIRE_API=${WIRE_API}
 EOF
 
+state_write_summary
+
 echo
 echo "[init] done. Files written:"
-echo "  /tmp/agentsmith_project_id.txt"
-echo "  /tmp/agentsmith_cred_id.txt"
-echo "  /tmp/agentsmith_endpoint_id.txt"
-echo "  /tmp/agentsmith_agent_id.txt"
-echo "  /tmp/agentsmith_agent_key.txt"
-echo "  /tmp/agentsmith_ws_url.txt"
-echo "  /tmp/agentsmith_init_summary.txt"
+echo "  $(real_lane_state_file)"
+echo "  $(real_lane_summary_file)"

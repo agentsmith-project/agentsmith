@@ -4,12 +4,14 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 ENV_FILE="${ROOT_DIR}/.env.local"
 
 PORT_API="${PORT_API:-20000}"
 PORT_WEB="${PORT_WEB:-3001}"
 WEB_PORT="${PORT_WEB}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 LOCALE="${LOCALE:-zh-CN}"
 
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
@@ -46,7 +48,7 @@ RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
 GLM_API_KEY="${GLM_API_KEY:-}"
 GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/anthropic}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 DEMO_REFRESH_TIMEOUT_SEC="${DEMO_REFRESH_TIMEOUT_SEC:-180}"
 DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"
 
@@ -80,11 +82,12 @@ init_demo_resources() {
 }
 
 has_demo_execution_metadata() {
-  [[ -s "/tmp/agentsmith_project_id.txt" ]] \
-    && [[ -s "/tmp/agentsmith_endpoint_id.txt" ]] \
-    && [[ -s "/tmp/agentsmith_agent_id.txt" ]] \
-    && [[ -s "/tmp/agentsmith_agent_key.txt" ]] \
-    && [[ -s "/tmp/agentsmith_ws_url.txt" ]]
+  [[ -s "${TOKEN_FILE}" ]] \
+    && [[ -n "$(state_get project.id)" ]] \
+    && [[ -n "$(state_get endpoint.id)" ]] \
+    && [[ -n "$(state_get agent.id)" ]] \
+    && [[ -n "$(state_get agent.key)" ]] \
+    && [[ -n "$(state_get agent.ws_url)" ]]
 }
 
 launch_detached() {
@@ -224,13 +227,13 @@ token_file_is_valid() {
 }
 
 agent_presence_status() {
-  [[ -f "/tmp/agentsmith_project_id.txt" ]] || return 1
-  [[ -f "/tmp/agentsmith_agent_id.txt" ]] || return 1
+  [[ -n "$(state_get project.id)" ]] || return 1
+  [[ -n "$(state_get agent.id)" ]] || return 1
   token_file_is_valid || return 1
   local token project_id agent_id body
   token="$(cat "${TOKEN_FILE}" 2>/dev/null || true)"
-  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  agent_id="$(state_get agent.id)"
   [[ -n "${token}" && -n "${project_id}" && -n "${agent_id}" ]] || return 1
   body="$(
     curl -sS "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agents/${agent_id}/diagnostics" \
@@ -272,8 +275,8 @@ refresh_runner_connection_metadata() {
   }
   local token project_id agent_id key_resp conn_resp new_key ws_url
   token="$(cat "${TOKEN_FILE}" 2>/dev/null || true)"
-  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  agent_id="$(state_get agent.id)"
   if [[ -z "${token}" || -z "${project_id}" || -z "${agent_id}" ]]; then
     err "missing token/project/agent metadata; cannot refresh runner connection metadata"
     return 1
@@ -293,7 +296,7 @@ refresh_runner_connection_metadata() {
     printf '%s\n' "${key_resp}" >&2
     return 1
   fi
-  printf '%s\n' "${new_key}" > /tmp/agentsmith_agent_key.txt
+  state_set_string agent.key "${new_key}"
 
   conn_resp="$(
     curl -sS \
@@ -306,7 +309,7 @@ refresh_runner_connection_metadata() {
     printf '%s\n' "${conn_resp}" >&2
     return 1
   fi
-  printf '%s\n' "${ws_url}" > /tmp/agentsmith_ws_url.txt
+  state_set_string agent.ws_url "${ws_url}"
   info "refreshed existing agent runner connection metadata"
 }
 
@@ -417,8 +420,8 @@ restart_demo_runner() {
   stop_pid_file_if_running "${RUNNER_PID_FILE}"
 
   local ws_url agent_key
-  ws_url="${AGENT_WS_URL:-$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)}"
-  agent_key="${AGENT_KEY:-$(cat /tmp/agentsmith_agent_key.txt 2>/dev/null || true)}"
+  ws_url="${AGENT_WS_URL:-$(state_get agent.ws_url)}"
+  agent_key="${AGENT_KEY:-$(state_get agent.key)}"
   if [[ -z "${ws_url}" || -z "${agent_key}" ]]; then
     err "missing ws url / agent key (run init resources first)"
     return 1
@@ -541,8 +544,8 @@ main() {
   }
 
   local project_id agent_id
-  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  agent_id="$(state_get agent.id)"
 
   info "demo environment ready"
   info "API:  http://localhost:${PORT_API}"

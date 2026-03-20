@@ -4,9 +4,11 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 PORT_API="${PORT_API:-20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
@@ -36,11 +38,11 @@ require_file() {
 
 has_demo_execution_metadata() {
   [[ -s "${TOKEN_FILE}" ]] \
-    && [[ -s /tmp/agentsmith_project_id.txt ]] \
-    && [[ -s /tmp/agentsmith_agent_id.txt ]] \
-    && [[ -s /tmp/agentsmith_endpoint_id.txt ]] \
-    && [[ -s /tmp/agentsmith_ws_url.txt ]] \
-    && [[ -s /tmp/agentsmith_agent_key.txt ]]
+    && [[ -n "$(state_get project.id)" ]] \
+    && [[ -n "$(state_get agent.id)" ]] \
+    && [[ -n "$(state_get endpoint.id)" ]] \
+    && [[ -n "$(state_get agent.ws_url)" ]] \
+    && [[ -n "$(state_get agent.key)" ]]
 }
 
 token_is_valid() {
@@ -68,21 +70,15 @@ main() {
     fi
   fi
   require_file "${TOKEN_FILE}"
-  require_file /tmp/agentsmith_project_id.txt
-  require_file /tmp/agentsmith_agent_id.txt
-  require_file /tmp/agentsmith_endpoint_id.txt
-  require_file /tmp/agentsmith_ws_url.txt
-  require_file /tmp/agentsmith_agent_key.txt
-
   token="$(cat "${TOKEN_FILE}")"
-  project_id="$(cat /tmp/agentsmith_project_id.txt)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt)"
-  endpoint_id="$(cat /tmp/agentsmith_endpoint_id.txt)"
-  ws_url="$(cat /tmp/agentsmith_ws_url.txt)"
-  agent_key="$(cat /tmp/agentsmith_agent_key.txt)"
+  project_id="$(state_get project.id)"
+  agent_id="$(state_get agent.id)"
+  endpoint_id="$(state_get endpoint.id)"
+  ws_url="$(state_get agent.ws_url)"
+  agent_key="$(state_get agent.key)"
 
   [[ -n "${token}" && -n "${project_id}" && -n "${agent_id}" && -n "${endpoint_id}" && -n "${ws_url}" && -n "${agent_key}" ]] || {
-    err "one or more /tmp metadata files are empty"
+    err "real-lane state is incomplete"
     exit 1
   }
   if ! token_is_valid "${token}"; then

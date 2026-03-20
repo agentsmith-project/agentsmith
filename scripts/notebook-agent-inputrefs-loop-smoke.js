@@ -3,13 +3,17 @@
 
 const fs = require('node:fs');
 const { execFileSync } = require('node:child_process');
+const path = require('node:path');
 
 const API_BASE = process.env.API_BASE || 'http://localhost:20000';
 const WORKSPACE_ID = process.env.WORKSPACE_ID || 'ws_default';
-const TOKEN_FILE = process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt';
+const STATE_DIR = process.env.REAL_LANE_STATE_DIR || path.resolve(process.cwd(), 'artifacts/real-lane/current');
+const STATE_FILE = process.env.REAL_LANE_STATE_FILE || path.join(STATE_DIR, 'state.json');
+const STATE = safeReadJson(STATE_FILE);
+const TOKEN_FILE = process.env.TOKEN_FILE || path.join(STATE_DIR, 'token.txt');
 const PROJECT_ID =
-  process.env.PROJECT_ID || safeRead('/tmp/agentsmith_project_id.txt') || '';
-const AGENT_ID = process.env.AGENT_ID || safeRead('/tmp/agentsmith_agent_id.txt') || '';
+  process.env.PROJECT_ID || STATE?.project?.id || '';
+const AGENT_ID = process.env.AGENT_ID || STATE?.agent?.id || '';
 
 const URL_INPUT =
   process.env.URL_INPUT || 'https://example.com/test-input';
@@ -36,9 +40,17 @@ function safeRead(path) {
   }
 }
 
+function safeReadJson(filePath) {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function assertConfig() {
   if (!PROJECT_ID || !AGENT_ID) {
-    throw new Error('Missing PROJECT_ID/AGENT_ID (or /tmp/agentsmith_project_id.txt / /tmp/agentsmith_agent_id.txt)');
+    throw new Error(`Missing PROJECT_ID/AGENT_ID (or state in ${STATE_FILE})`);
   }
   if (!fs.existsSync(TOKEN_FILE)) {
     throw new Error(`Token file not found: ${TOKEN_FILE}`);

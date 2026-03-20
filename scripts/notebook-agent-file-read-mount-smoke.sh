@@ -4,10 +4,12 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 RUN_SMOKE_FIRST="${RUN_SMOKE_FIRST:-1}"
-TASK_ID_FILE="${TASK_ID_FILE:-/tmp/agentsmith_last_task_id.txt}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TASK_ID_FILE="${TASK_ID_FILE:-}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
 
 info() { echo "[file-read-smoke] $*"; }
@@ -36,19 +38,20 @@ main() {
     (cd "${ROOT_DIR}" && make notebook-agent-smoke-task)
   fi
 
-  if [[ ! -f "${TASK_ID_FILE}" ]]; then
-    err "missing task id file: ${TASK_ID_FILE}"
-    exit 1
-  fi
   if [[ ! -f "${TOKEN_FILE}" ]]; then
     err "missing token file: ${TOKEN_FILE}"
     exit 1
   fi
 
   local task_id cwd
-  task_id="$(tr -d '\r\n' < "${TASK_ID_FILE}")"
+  if [[ -n "${TASK_ID_FILE}" ]]; then
+    [[ -f "${TASK_ID_FILE}" ]] || { err "missing task id file: ${TASK_ID_FILE}"; exit 1; }
+    task_id="$(tr -d '\r\n' < "${TASK_ID_FILE}")"
+  else
+    task_id="$(state_get task.last_id)"
+  fi
   if [[ -z "${task_id}" ]]; then
-    err "task id is empty"
+    err "task id is empty (set TASK_ID_FILE or populate task.last_id in $(real_lane_state_file))"
     exit 1
   fi
 

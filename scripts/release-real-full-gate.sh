@@ -94,23 +94,12 @@ run_real_cmd() {
   )
 }
 
-run_cmd "npm run contracts:check"
-run_cmd "npm run contracts:check-openapi"
-run_cmd "npm run openapi:check-generated"
-run_cmd "npx tsc --noEmit"
-run_cmd "npm run test:mainline:strict"
-run_cmd "npm run test:governance:strict"
-run_cmd "npm run test:visual:strict"
-run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npx tsx scripts/ensure-default-workspace.ts"
-run_cmd "BASE_URL='http://localhost:${WEB_PORT}' make notebook-agent-refresh-token"
-run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' TOKEN_FILE='/tmp/agentsmith_user_token.txt' bash scripts/wait-real-stack-ready.sh"
-run_real_cmd 20050 3051 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:mainline:strict:real"
-run_real_cmd 20060 3061 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:smoke:real:notebook-mainline"
-run_real_cmd 20065 3066 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:agents:real:codex"
-run_cmd "FILE_LIBRARY_GATE_API_PORT='20068' FILE_LIBRARY_GATE_API_LOG='/tmp/agentsmith-file-library-gate-api.log' GLM_API_KEY='${GLM_API_KEY_VALUE}' bash scripts/run-file-library-real-gate.sh"
-run_real_cmd 20070 3071 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:files:real:ui-sync"
-run_real_cmd 20072 3072 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:internal:real:notebook-workspace"
+run_cmd "npm run gate:main"
+run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run release:real:bootstrap"
+run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run release:real:ready"
+run_real_cmd 20050 3051 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run lane:real:core"
 run_real_cmd 20080 3081 "GLM_API_KEY='${GLM_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:real:review"
+run_cmd "npm run release:real:report"
 
 info "release-grade real verification passed"
 info "artifacts written to ${ARTIFACT_DIR}"

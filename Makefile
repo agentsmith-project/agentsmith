@@ -19,13 +19,14 @@
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
 	model-request-stream-bench model-request-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
-	dev-up dev-down smoke-main smoke-governance smoke-all verify-contracts verify-governance \
+	dev-up dev-down verify-contracts verify-governance \
 	mvp-freeze-check preprod-acceptance-check \
 	preprod-ensure-pgvector preprod-capture-baseline \
-	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
-	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-governance \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke \
-	ensure-default-workspace real-stack-ready feishu-real-manual-step feishu-real-resume-check
+	ensure-default-workspace real-stack-ready \
+	gate-fast gate-main gate-release lane-mock lane-visual lane-real-core lane-real-release \
+	manual-feishu-admin manual-feishu-user manual-feishu-check \
+	release-real-reset release-real-bootstrap release-real-ready release-real-run release-real-report
 
 NPM ?= npm
 
@@ -77,18 +78,21 @@ help-extended:
 	@echo "Recommended (Low Cognitive Load):"
 	@echo "  make quick-help     # show only the recommended day-to-day commands"
 	@echo "  make help-glossary  # explain common testing/engineering terms in plain language"
-	@echo "  make dev-up         # start/recover demo API+Web+Runner and refresh/init if needed"
-	@echo "  make dev-down       # stop demo API+Web+Runner"
-	@echo "  make demo-full-up   # kill leftovers + start deps + init deps + recover full demo(API/Web/Runner/resources)"
-	@echo "  make demo-full-down # stop demo(API/Web/Runner) and integration deps"
-	@echo "  make smoke-main     # mainline engineering smoke (auto demo-check + token fallback)"
-	@echo "  make smoke-governance # optional governance smoke (extended)"
-	@echo "  make smoke-all      # run mainline + governance smokes (extended)"
-	@echo "  make verify-governance # engineering gate (L0 + L2 + L3 mainline)"
-	@echo "  make mvp-freeze-check # freeze-oriented MVP check bundle (contracts + core smoke + demo readiness)"
-	@echo "  make gate-pr       # L0+L1 (fast PR gate: lint/type/contracts + mock smoke)"
-	@echo "  make gate-premerge # L0+L2 (pre-merge gate: lint/type/contracts + mock functional matrix)"
-	@echo "  make gate-governance  # L0+L2+L3 (default MVP engineering gate: mock functional matrix + mainline real smoke)"
+	@echo "  make gate-fast      # fast engineering gate"
+	@echo "  make gate-main      # default engineering gate"
+	@echo "  make gate-release   # release-grade gate"
+	@echo "  make lane-mock      # mock lane full run"
+	@echo "  make lane-visual    # visual lane"
+	@echo "  make lane-real-core # core real-lane"
+	@echo "  make lane-real-release # full real-lane"
+	@echo "  make release-real-reset      # clean real-lane reset"
+	@echo "  make release-real-bootstrap  # bootstrap deps/default workspace/token"
+	@echo "  make release-real-ready      # stack readiness gate"
+	@echo "  make manual-feishu-admin     # print admin Feishu confirmation URL"
+	@echo "  make manual-feishu-user      # print user Feishu confirmation URL"
+	@echo "  make manual-feishu-check     # verify latest Feishu manual step"
+	@echo "  make release-real-run        # run the real verification matrix"
+	@echo "  make release-real-report     # write real-lane report"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -114,7 +118,7 @@ help-extended:
 	@echo "Tests:"
 	@echo "  make e2e           # run default e2e gate (smoke+chromium, MSW)"
 	@echo "  make e2e-local     # run default e2e gate against a manually started web server (BASE_URL)"
-	@echo "  make lane-mock-visual # run visual lane only (manual baseline workflow)"
+	@echo "  make lane-visual   # run visual lane only"
 	@echo "  make e2e-int-minimal   # run minimal integration e2e (real backend)"
 	@echo "  make e2e-int-chat      # run chat integration e2e (real backend)"
 	@echo "  make e2e-int-agent     # run external-agent integration e2e (real backend)"
@@ -130,12 +134,25 @@ help-extended:
 	@echo "  make e2e-int-chat-ux-auto   # auto start deps+api+web and run targeted chat UX integration checks"
 	@echo "  make e2e-int-core-local-api # run MVP real-backend core smoke against already-running API/Web"
 	@echo "  make e2e-int-core-auto      # auto start deps+api+web and run MVP real-backend core smoke"
-	@echo "  make governance-core-smoke     # MVP engineering baseline: core real-lane smoke + endpoint rate/spending policy smoke + governance report"
+	@echo "  make gate-fast     # fast engineering gate"
+	@echo "  make gate-main     # main engineering gate"
+	@echo "  make gate-release  # release-grade gate"
+	@echo "  make lane-mock     # mock functional lane"
+	@echo "  make lane-real-core # core real-lane automation"
+	@echo "  make lane-real-release # full real-lane release flow"
+	@echo "  make manual-feishu-admin # print admin Feishu confirmation URL"
+	@echo "  make manual-feishu-user  # print user Feishu confirmation URL"
+	@echo "  make manual-feishu-check # verify the latest Feishu manual step"
+	@echo "  make release-real-reset      # clean real-lane reset"
+	@echo "  make release-real-bootstrap  # bootstrap deps, workspace, and token"
+	@echo "  make release-real-ready      # wait for stack readiness"
+	@echo "  make release-real-run        # run full real verification matrix"
+	@echo "  make release-real-report     # write real-lane report"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
-	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT and write /tmp/agentsmith_user_token.txt"
-	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write /tmp/agentsmith_*.txt"
-	@echo "  make notebook-agent-runner         # start codex runner using /tmp/agentsmith_ws_url.txt + agent_key (auto mounts builtin skills)"
+	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT into artifacts/real-lane/current/token.txt"
+	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write artifacts/real-lane/current/state.json"
+	@echo "  make notebook-agent-runner         # start codex runner using artifacts/real-lane/current/state.json"
 	@echo "  make notebook-agent-demo-up        # one-command demo bootstrap: start api/web, refresh token, init resources, start runner"
 	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
 	@echo "  make notebook-agent-demo-status    # show demo managed process/health/token/agent status"
@@ -150,8 +167,6 @@ help-extended:
 	@echo "  make notebook-agent-engineering-smoke-full # refresh token (if needed) + demo-check + engineering-smoke"
 	@echo "  make ensure-default-workspace # seed/update ws_default in real workspace persistence"
 	@echo "  make real-stack-ready         # wait for keycloak/api/web/juicefs-csi readiness"
-	@echo "  make feishu-real-manual-step FLOW=admin_verify|user_connect # print Feishu real-lane auth URL"
-	@echo "  make feishu-real-resume-check FLOW=admin_verify|user_connect # verify manual Feishu step completed"
 	@echo "  make governance-smoke # run governance real-backend page open + interaction smoke set"
 	@echo "  make governance-pages-real-backend-smoke # default tolerant mode for governance page-open smoke"
 	@echo "  make governance-pages-real-backend-smoke-strict # strict gate: governance page-open smoke fails on product error states"
@@ -195,67 +210,50 @@ help-extended:
 quick-help:
 	@echo "MBOS Recommended Commands"
 	@echo ""
-	@echo "  make dev-up"
-	@echo "    Start/recover demo environment (API/Web/Runner + token/resource init)."
+	@echo "  make gate-fast"
+	@echo "    Fast engineering gate."
 	@echo ""
-	@echo "  make smoke-main"
-	@echo "    Run notebook mainline engineering smoke."
+	@echo "  make gate-main"
+	@echo "    Default mainline gate."
 	@echo ""
-	@echo "  make notebook-agent-no-sandbox-smoke"
-	@echo "    Validate no-sandbox deployment baseline (services + endpoint proxy + internal fail-fast)."
+	@echo "  make gate-release"
+	@echo "    Release-grade gate."
 	@echo ""
-	@echo "  make smoke-governance"
-	@echo "    Run governance smoke with strict page checks."
+	@echo "  make lane-mock"
+	@echo "    Mock lane full run."
 	@echo ""
-	@echo "  make smoke-all"
-	@echo "    Run mainline + governance smokes."
+	@echo "  make lane-visual"
+	@echo "    Visual lane."
 	@echo ""
-	@echo "  make e2e-int-core-local-api"
-	@echo "    Run MVP core real-backend smoke against existing API/Web."
+	@echo "  make lane-real-core"
+	@echo "    Core real-lane verification."
 	@echo ""
-	@echo "  make governance-core-smoke"
-	@echo "    Run MVP engineering baseline (core real-lane + endpoint rate/spending policy + archived report)."
+	@echo "  make lane-real-release"
+	@echo "    Full real-lane release flow."
 	@echo ""
-	@echo "  make verify-contracts"
-	@echo "    Run typecheck + OpenAPI generated check + OpenAPI contract checks."
+	@echo "  make release-real-reset"
+	@echo "    Clean real-lane reset."
 	@echo ""
-	@echo "  make verify-governance"
-	@echo "    Run gate-governance (L0 + mock functional matrix + real smoke)."
+	@echo "  make release-real-bootstrap"
+	@echo "    Bootstrap deps, workspace, and token."
 	@echo ""
-	@echo "  make lane-mock-visual"
-	@echo "    Run visual lane only (manual baseline workflow, non-blocking)."
+	@echo "  make release-real-ready"
+	@echo "    Wait for stack readiness."
 	@echo ""
-	@echo "  make mvp-freeze-check"
-	@echo "    Run verify-contracts + governance-core-smoke + notebook-agent-demo-check."
+	@echo "  make manual-feishu-admin"
+	@echo "    Print the admin Feishu confirmation URL."
 	@echo ""
-	@echo "  make preprod-acceptance-check"
-	@echo "    Run minimal preprod readiness checks (openapi/web-login/cancel-route)."
+	@echo "  make manual-feishu-user"
+	@echo "    Print the user Feishu confirmation URL."
 	@echo ""
-	@echo "  make preprod-ensure-pgvector"
-	@echo "    Ensure pgvector extension is installed/enabled on preprod Postgres container."
+	@echo "  make manual-feishu-check"
+	@echo "    Verify the latest Feishu manual step."
 	@echo ""
-	@echo "  make preprod-capture-baseline"
-	@echo "    Capture current preprod rollback baseline and generate rollback script on server."
+	@echo "  make release-real-run"
+	@echo "    Run the real verification matrix."
 	@echo ""
-	@echo "  make gate-pr"
-	@echo "    L0 + L1 gate. Recommended pull request baseline."
-	@echo ""
-	@echo "  make gate-premerge"
-	@echo "    L0 + L2 gate. Recommended merge-to-main baseline."
-	@echo ""
-	@echo "  make gate-governance"
-	@echo "    L0 + L2 + L3 gate. Recommended governance baseline."
-	@echo ""
-	@echo "  make governance-report"
-	@echo "    Generate governance verification report (JSON + Markdown)."
-	@echo ""
-	@echo "  make verify-governance-with-report"
-	@echo "    Run verify-governance and generate report with archive."
-	@echo ""
-	@echo ""
-	@echo ""
-	@echo "  make dev-down"
-	@echo "    Stop managed demo processes."
+	@echo "  make release-real-report"
+	@echo "    Write the real-lane report."
 
 help-glossary:
 	@echo "MBOS Terms (Plain Language)"
@@ -303,19 +301,6 @@ demo-full-down:
 	$(MAKE) notebook-agent-demo-down; \
 	$(MAKE) deps-down
 
-smoke-main:
-	@set -e; \
-	$(MAKE) notebook-agent-no-sandbox-assert; \
-	$(MAKE) notebook-agent-engineering-smoke-full
-
-smoke-governance:
-	$(MAKE) governance-smoke
-
-smoke-all:
-	@set -e; \
-	$(MAKE) smoke-main; \
-	$(MAKE) smoke-governance
-
 build-reliability-smoke:
 	./scripts/build-reliability-smoke.sh
 
@@ -333,7 +318,7 @@ verify-contracts:
 
 verify-governance:
 	@set -e; \
-	$(MAKE) gate-governance
+	$(MAKE) gate-main
 
 mvp-freeze-check:
 	@set -e; \
@@ -349,78 +334,6 @@ preprod-ensure-pgvector:
 
 preprod-capture-baseline:
 	./scripts/preprod-capture-baseline.sh
-
-# ---------------------------------------------------------------------------
-# Lane / Gate Model (Best-practice baseline)
-#
-# L0: static quality gates (lint/type/contracts)
-# L1: mock-lane smoke
-# L2: mock-lane functional matrix (smoke + chromium)
-# L3: real-lane key smoke (default MVP mainline path)
-# ---------------------------------------------------------------------------
-
-lane-mock-smoke:
-	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/run-mock-lane-playwright.sh --project=smoke
-
-lane-mock-chromium:
-	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	PW_WORKERS=4 ./scripts/run-mock-lane-playwright.sh --project=chromium
-
-lane-mock-visual:
-	env -u BASE_URL -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	PW_WORKERS=1 ./scripts/run-mock-lane-playwright.sh --project=visual
-
-lane-mock-full:
-	@set -e; \
-	$(MAKE) lane-mock-smoke; \
-	$(MAKE) lane-mock-chromium
-
-lane-real-smoke:
-	$(MAKE) smoke-main
-
-lane-real-governance:
-	$(MAKE) smoke-governance
-
-lane-real-extended:
-	$(MAKE) smoke-all
-
-gate-l0:
-	@set -e; \
-	$(NPM) run lint; \
-	./scripts/ws-typecheck-safe.sh; \
-	$(NPM) run contracts:check-doc-governance; \
-	$(NPM) run openapi:check-generated; \
-	$(NPM) run contracts:check-openapi
-
-gate-l1:
-	@set -e; \
-	$(MAKE) gate-l0; \
-	$(MAKE) lane-mock-smoke
-
-gate-l2:
-	@set -e; \
-	$(MAKE) gate-l0; \
-	$(MAKE) lane-mock-full
-
-gate-l3:
-	@set -e; \
-	$(MAKE) gate-l0; \
-	$(MAKE) lane-real-smoke
-
-gate-pr:
-	@set -e; \
-	$(MAKE) gate-l1
-
-gate-premerge:
-	@set -e; \
-	$(MAKE) gate-l2
-
-gate-governance:
-	@set -e; \
-	$(MAKE) gate-l0; \
-	$(MAKE) lane-mock-full; \
-	$(MAKE) lane-real-smoke
 
 # Generate governance report (JSON + Markdown) after verify-governance
 # Use REPORT_NAME=name to customize, REPORT_COMMIT_RANGE=range to specify commits
@@ -508,17 +421,50 @@ real-stack-ready:
 	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 	bash scripts/wait-real-stack-ready.sh
 
-feishu-real-manual-step:
-	API_BASE=http://localhost:$(PORT_API) \
-	WORKSPACE_ID=$${WORKSPACE_ID:-ws_default} \
-	FLOW=$${FLOW:-user_connect} \
-	bash scripts/feishu-real-manual-step.sh
+gate-fast:
+	npm run gate:fast
 
-feishu-real-resume-check:
-	API_BASE=http://localhost:$(PORT_API) \
-	WORKSPACE_ID=$${WORKSPACE_ID:-ws_default} \
-	FLOW=$${FLOW:-user_connect} \
-	bash scripts/feishu-real-resume-check.sh
+gate-main:
+	npm run gate:main
+
+gate-release:
+	npm run gate:release
+
+lane-mock:
+	npm run lane:mock
+
+lane-visual:
+	npm run lane:visual
+
+lane-real-core:
+	npm run lane:real:core
+
+lane-real-release:
+	npm run lane:real:release
+
+manual-feishu-admin:
+	npm run manual:feishu:admin
+
+manual-feishu-user:
+	npm run manual:feishu:user
+
+manual-feishu-check:
+	npm run manual:feishu:check
+
+release-real-reset:
+	npm run release:real:reset
+
+release-real-bootstrap:
+	npm run release:real:bootstrap
+
+release-real-ready:
+	npm run release:real:ready
+
+release-real-run:
+	npm run release:real:run
+
+release-real-report:
+	npm run release:real:report
 
 check-api-port:
 	@PORT="$(PORT_API)"; \
@@ -756,10 +702,11 @@ notebook-agent-init-resources:
 
 notebook-agent-runner:
 	@set -e; \
-	WS_URL="$${AGENT_WS_URL:-$$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)}"; \
-	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(cat /tmp/agentsmith_agent_key.txt 2>/dev/null || true)}"; \
+	STATE_FILE="$${REAL_LANE_STATE_FILE:-$(CURDIR)/artifacts/real-lane/current/state.json}"; \
+	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no /tmp/agentsmith_ws_url.txt or /tmp/agentsmith_agent_key.txt found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no real-lane state agent metadata found."; \
 		exit 1; \
 	fi; \
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -993,10 +940,11 @@ governance-smoke:
 
 notebook-agent-smoke-full:
 	@set -e; \
-	WS_URL="$${AGENT_WS_URL:-$$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)}"; \
-	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(cat /tmp/agentsmith_agent_key.txt 2>/dev/null || true)}"; \
+	STATE_FILE="$${REAL_LANE_STATE_FILE:-$(CURDIR)/artifacts/real-lane/current/state.json}"; \
+	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
+	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no /tmp/agentsmith_ws_url.txt or /tmp/agentsmith_agent_key.txt found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no real-lane state agent metadata found."; \
 		exit 1; \
 	fi; \
 	echo "[make] refreshing token..."; \

@@ -4,15 +4,17 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-PROJECT_ID="${PROJECT_ID:-$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)}"
-AGENT_ID="${AGENT_ID:-$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)}"
-WORKSPACE_FILE_LIBRARY_ID="${WORKSPACE_FILE_LIBRARY_ID:-$(cat /tmp/agentsmith_library_id.txt 2>/dev/null || true)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
+AGENT_ID="${AGENT_ID:-$(state_get agent.id)}"
+WORKSPACE_FILE_LIBRARY_ID="${WORKSPACE_FILE_LIBRARY_ID:-$(state_get workspace.current_library_id)}"
 WORKSPACE_MODE="${WORKSPACE_MODE:-}"
 WORKSPACE_NAME="${WORKSPACE_NAME:-}"
 PROMPT="${PROMPT:-reply exactly: chain ok}"
@@ -27,7 +29,7 @@ WAIT_AGENT_ONLINE_INTERVAL_SEC="${WAIT_AGENT_ONLINE_INTERVAL_SEC:-1}"
 WAIT_AGENT_ONLINE="${WAIT_AGENT_ONLINE:-1}"
 
 if [[ -z "${PROJECT_ID}" || -z "${AGENT_ID}" ]]; then
-  echo "[smoke] Missing PROJECT_ID or AGENT_ID (or /tmp/agentsmith_project_id.txt / /tmp/agentsmith_agent_id.txt)." >&2
+  echo "[smoke] Missing PROJECT_ID or AGENT_ID in real-lane state." >&2
   exit 1
 fi
 if [[ ! -f "${TOKEN_FILE}" ]]; then
@@ -72,7 +74,7 @@ discover_workspace_file_library_id() {
     return 1
   fi
   WORKSPACE_FILE_LIBRARY_ID="${discovered}"
-  printf '%s' "${WORKSPACE_FILE_LIBRARY_ID}" > /tmp/agentsmith_library_id.txt
+  state_set_string workspace.current_library_id "${WORKSPACE_FILE_LIBRARY_ID}"
 }
 
 refresh_auth_token() {
@@ -184,7 +186,8 @@ run_attempt() {
     echo "[smoke] ERROR: task creation returned no task id" >&2
     return 1
   fi
-  echo "${TASK_ID}" > /tmp/agentsmith_last_task_id.txt
+  state_set_string task.last_id "${TASK_ID}"
+  state_set_string task.last_title "${task_title}"
   echo "[smoke] task_id=${TASK_ID} (attempt ${attempt}/${SCENARIO_ATTEMPTS})"
 
   api_json_request POST "${BASE}/tasks/${TASK_ID}/messages" \

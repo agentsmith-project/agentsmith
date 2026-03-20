@@ -4,16 +4,20 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 API_BASE="${API_BASE:-http://localhost:20000}"
 BASE_URL="${BASE_URL:-http://localhost:3001}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
-PROJECT_ID="${PROJECT_ID:-$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 PROMPT="${PROMPT:-check credential sync}"
+RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
+TASK_LOG="${TASK_LOG:-$(real_lane_state_root)/credential-sync-smoke-task.log}"
 
 if [[ -z "${PROJECT_ID}" ]]; then
-  echo "[credential-sync-smoke] missing PROJECT_ID (or /tmp/agentsmith_project_id.txt)" >&2
+  echo "[credential-sync-smoke] missing PROJECT_ID in $(real_lane_state_file)" >&2
   exit 1
 fi
 if [[ ! -f "${TOKEN_FILE}" ]]; then
@@ -74,18 +78,16 @@ echo "[credential-sync-smoke] running notebook smoke task"
   FINAL_MESSAGE_SETTLE_MAX_SEC=8 \
   WAIT_AGENT_ONLINE=1 \
   bash scripts/notebook-agent-smoke-task.sh
-) >/tmp/agentsmith_credential_sync_smoke_task.log 2>&1 || {
-  tail -n 120 /tmp/agentsmith_credential_sync_smoke_task.log >&2 || true
+) >"${TASK_LOG}" 2>&1 || {
+  tail -n 120 "${TASK_LOG}" >&2 || true
   exit 1
 }
 
-TASK_ID="$(cat /tmp/agentsmith_last_task_id.txt 2>/dev/null || true)"
+TASK_ID="$(state_get task.last_id)"
 if [[ -z "${TASK_ID}" ]]; then
-  echo "[credential-sync-smoke] missing /tmp/agentsmith_last_task_id.txt after task run" >&2
+  echo "[credential-sync-smoke] missing task.last_id in $(real_lane_state_file) after task run" >&2
   exit 1
 fi
-
-RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
 REQUEST_ID="$(
   rg -n "\"task_id\":\"${TASK_ID}\"" "${RUNNER_LOG}" | tail -n1 | \
   sed -nE 's/.*"request_id":"([^"]+)".*/\1/p'

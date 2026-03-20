@@ -26,8 +26,30 @@ async function main() {
   // Use dedicated env names for integration credentials.
   const username = process.env.MBOS_DEV_USERNAME || process.env.INTEGRATION_DEV_ADMIN_USERNAME || 'dev-admin';
   const password = process.env.MBOS_DEV_PASSWORD || process.env.INTEGRATION_DEV_ADMIN_PASSWORD || 'dev-admin-123';
-  const outFile = process.env.TOKEN_OUT_FILE || '/tmp/agentsmith_user_token.txt';
+  const stateDir = process.env.REAL_LANE_STATE_DIR || `${process.cwd()}/artifacts/real-lane/current`;
+  const stateFile = process.env.REAL_LANE_STATE_FILE || `${stateDir}/state.json`;
+  const outFile = process.env.TOKEN_OUT_FILE || `${stateDir}/token.txt`;
   const shouldReadAppSession = process.env.REFRESH_TOKEN_READ_APP_SESSION === '1';
+  fs.mkdirSync(stateDir, { recursive: true });
+  if (!fs.existsSync(stateFile)) {
+    fs.writeFileSync(stateFile, '{}\n', 'utf8');
+  }
+
+  function updateState(session) {
+    const state = JSON.parse(fs.readFileSync(stateFile, 'utf8'));
+    state.auth = {
+      ...(state.auth && typeof state.auth === 'object' ? state.auth : {}),
+      token_file: outFile,
+      refreshed_at: new Date().toISOString(),
+      keycloak_base_url: keycloakBase,
+      keycloak_realm: realm,
+      keycloak_client_id: clientId,
+      username,
+      access_token_expires_in: session.expiresIn,
+      refresh_token_present: Boolean(session.refreshToken),
+    };
+    fs.writeFileSync(stateFile, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+  }
 
   async function fetchSessionByPasswordGrant() {
     const tokenUrl = `${keycloakBase.replace(/\/+$/, '')}/realms/${realm}/protocol/openid-connect/token`;
@@ -91,6 +113,7 @@ async function main() {
   if (shouldUsePasswordGrantOnly) {
     const session = await fetchSessionByPasswordGrant();
     fs.writeFileSync(outFile, session.accessToken, 'utf8');
+    updateState(session);
     if (process.env.PRINT_SESSION_JSON === '1') {
       process.stdout.write(`${JSON.stringify({
         access_token: session.accessToken,
@@ -254,6 +277,7 @@ async function main() {
       }
     }
     fs.writeFileSync(outFile, session.accessToken, 'utf8');
+    updateState(session);
     if (process.env.PRINT_SESSION_JSON === '1') {
       process.stdout.write(`${JSON.stringify({
         access_token: session.accessToken,

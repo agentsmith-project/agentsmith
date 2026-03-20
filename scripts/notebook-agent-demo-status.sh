@@ -3,11 +3,15 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 PORT_API="${PORT_API:-20000}"
 LOCALE="${LOCALE:-zh-CN}"
 PORT_WEB_DEFAULT="${PORT_WEB:-3001}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 
@@ -85,8 +89,8 @@ token_status() {
 
 agent_status() {
   local project_id agent_id token
-  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  agent_id="$(state_get agent.id)"
   token="$(cat "${TOKEN_FILE}" 2>/dev/null || true)"
   if [[ -z "${project_id}" || -z "${agent_id}" || -z "${token}" ]]; then
     info "Agent: unknown (missing token/project/agent metadata)"

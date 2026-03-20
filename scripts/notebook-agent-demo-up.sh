@@ -192,14 +192,14 @@ stop_pid_file_if_running() {
   rm -f "${pid_file}"
 }
 
-wait_http_200() {
+wait_http_ready() {
   local url="$1"
   local label="$2"
   local max="${3:-60}"
   for i in $(seq 1 "${max}"); do
     local code
     code="$(curl -sS -o /dev/null -w '%{http_code}' "${url}" || true)"
-    if [[ "${code}" == "200" ]]; then
+    if [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
       info "${label} ready (${url})"
       return 0
     fi
@@ -263,6 +263,51 @@ print_health_summary() {
   info "  Runner ${runner_status}"
   info "  Token  ${token_status}"
   info "  Agent  ${presence}"
+}
+
+refresh_runner_connection_metadata() {
+  token_file_is_valid || {
+    err "cannot refresh runner connection metadata without a valid demo token"
+    return 1
+  }
+  local token project_id agent_id key_resp conn_resp new_key ws_url
+  token="$(cat "${TOKEN_FILE}" 2>/dev/null || true)"
+  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
+  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  if [[ -z "${token}" || -z "${project_id}" || -z "${agent_id}" ]]; then
+    err "missing token/project/agent metadata; cannot refresh runner connection metadata"
+    return 1
+  fi
+
+  info "refreshing existing agent runner key"
+  key_resp="$(
+    curl -sS -X POST \
+      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agents/${agent_id}/keys" \
+      -H "Authorization: Bearer ${token}" \
+      -H 'Content-Type: application/json' \
+      -d '{}' || true
+  )"
+  new_key="$(printf '%s' "${key_resp}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);if(typeof j.key==="string"&&j.key.trim()){process.stdout.write(j.key.trim());return;}process.exit(2)}catch{process.exit(2)}})' || true)"
+  if [[ -z "${new_key}" ]]; then
+    err "failed to refresh agent key"
+    printf '%s\n' "${key_resp}" >&2
+    return 1
+  fi
+  printf '%s\n' "${new_key}" > /tmp/agentsmith_agent_key.txt
+
+  conn_resp="$(
+    curl -sS \
+      "http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}/agents/${agent_id}/connection-info" \
+      -H "Authorization: Bearer ${token}" || true
+  )"
+  ws_url="$(printf '%s' "${conn_resp}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);if(typeof j.ws_url==="string"&&j.ws_url.trim()){process.stdout.write(j.ws_url.trim());return;}process.exit(2)}catch{process.exit(2)}})' || true)"
+  if [[ -z "${ws_url}" ]]; then
+    err "failed to refresh agent websocket url"
+    printf '%s\n' "${conn_resp}" >&2
+    return 1
+  fi
+  printf '%s\n' "${ws_url}" > /tmp/agentsmith_ws_url.txt
+  info "refreshed existing agent runner connection metadata"
 }
 
 start_api_if_needed() {
@@ -414,8 +459,8 @@ main() {
   start_api_if_needed
   start_web_if_needed
 
-  wait_http_200 "http://localhost:${PORT_API}/api/v1/openapi.json" "API" 90
-  wait_http_200 "http://localhost:${WEB_PORT}/${LOCALE}/login" "Web" 120
+  wait_http_ready "http://localhost:${PORT_API}/api/v1/openapi.json" "API" 90
+  wait_http_ready "http://localhost:${WEB_PORT}/${LOCALE}/login" "Web" 120
 
   if [[ "${DEMO_REFRESH_TOKEN}" == "1" ]]; then
     if [[ "${DEMO_REFRESH_TOKEN_FORCE}" != "1" ]] && token_file_is_valid; then
@@ -483,7 +528,11 @@ main() {
   restart_demo_runner || {
     rc=$?
     if [[ "${rc}" == "42" ]]; then
-      info "detected stale/invalid runner key; forcing one-time resource re-init and retry"
+      info "detected stale/invalid runner key; refreshing existing runner metadata first"
+      if refresh_runner_connection_metadata; then
+        restart_demo_runner || exit $?
+      fi
+      info "runner metadata refresh unavailable or failed; forcing one-time resource re-init and retry"
       init_demo_resources || exit 1
       restart_demo_runner || exit $?
     else

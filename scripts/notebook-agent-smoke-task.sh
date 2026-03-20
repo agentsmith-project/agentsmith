@@ -12,6 +12,7 @@ KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 PROJECT_ID="${PROJECT_ID:-$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)}"
 AGENT_ID="${AGENT_ID:-$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)}"
+WORKSPACE_FILE_LIBRARY_ID="${WORKSPACE_FILE_LIBRARY_ID:-$(cat /tmp/agentsmith_library_id.txt 2>/dev/null || true)}"
 PROMPT="${PROMPT:-reply exactly: chain ok}"
 POLL_MAX="${POLL_MAX:-40}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
@@ -46,6 +47,28 @@ if [[ "${userinfo_status}" != "200" ]]; then
 fi
 
 BASE="${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}"
+
+discover_workspace_file_library_id() {
+  if [[ -n "${WORKSPACE_FILE_LIBRARY_ID}" ]]; then
+    if api_json_request GET "${BASE}/file-libraries/${WORKSPACE_FILE_LIBRARY_ID}" >/dev/null 2>&1; then
+      return 0
+    fi
+    WORKSPACE_FILE_LIBRARY_ID=""
+  fi
+  local libraries_json discovered
+  libraries_json="$(api_json_request GET "${BASE}/file-libraries" || true)"
+  discovered="$(
+    printf '%s' "${libraries_json}" | \
+      node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);const items=Array.isArray(j.items)?j.items:[];const ready=items.find(item=>item&&item.status==="ready"&&typeof item.id==="string");if(ready?.id){process.stdout.write(ready.id);return;}process.exit(2);}catch{process.exit(2)}})' \
+      || true
+  )"
+  if [[ -z "${discovered}" ]]; then
+    echo "[smoke] ERROR: missing WORKSPACE_FILE_LIBRARY_ID and failed to discover a ready file library for project ${PROJECT_ID}" >&2
+    return 1
+  fi
+  WORKSPACE_FILE_LIBRARY_ID="${discovered}"
+  printf '%s' "${WORKSPACE_FILE_LIBRARY_ID}" > /tmp/agentsmith_library_id.txt
+}
 
 refresh_auth_token() {
   echo "[smoke] token expired during API request; refreshing..." >&2
@@ -129,9 +152,14 @@ run_attempt() {
   local final_messages_json final_agent_tail settle_attempt settle_deadline
 
   create_task_resp="$(api_json_request POST "${BASE}/tasks" \
-    "{\"title\":\"smoke-$(date +%s)\",\"agent_id\":\"${AGENT_ID}\"}")"
+    "$(node -e 'console.log(JSON.stringify({title:process.argv[1],agent_id:process.argv[2],workspace_file_library_id:process.argv[3]}))' \
+      "smoke-$(date +%s)" "${AGENT_ID}" "${WORKSPACE_FILE_LIBRARY_ID}")")"
 
   TASK_ID="$(printf '%s' "${create_task_resp}" | json_get id)"
+  if [[ -z "${TASK_ID}" ]]; then
+    echo "[smoke] ERROR: task creation returned no task id" >&2
+    return 1
+  fi
   echo "${TASK_ID}" > /tmp/agentsmith_last_task_id.txt
   echo "[smoke] task_id=${TASK_ID} (attempt ${attempt}/${SCENARIO_ATTEMPTS})"
 
@@ -210,6 +238,8 @@ if [[ "${WAIT_AGENT_ONLINE}" != "0" ]]; then
 else
   echo "[smoke] skipping agent-online wait (WAIT_AGENT_ONLINE=0)"
 fi
+
+discover_workspace_file_library_id
 
 for attempt in $(seq 1 "${SCENARIO_ATTEMPTS}"); do
   if run_attempt "${attempt}"; then

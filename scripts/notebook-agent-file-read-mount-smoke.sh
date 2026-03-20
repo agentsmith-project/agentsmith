@@ -8,49 +8,26 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RUN_SMOKE_FIRST="${RUN_SMOKE_FIRST:-1}"
 TASK_ID_FILE="${TASK_ID_FILE:-/tmp/agentsmith_last_task_id.txt}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
-KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
-KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
 
 info() { echo "[file-read-smoke] $*"; }
 err() { echo "[file-read-smoke] ERROR: $*" >&2; }
 
-sanitize_part() {
-  local input="$1"
-  local out
-  out="$(printf '%s' "${input}" | sed -E 's/[^a-zA-Z0-9._-]/_/g' | cut -c1-64)"
-  if [[ -z "${out}" ]]; then
-    out="unknown_user"
-  fi
-  printf '%s' "${out}"
-}
-
-read_preferred_username() {
-  local token="$1"
-  curl -sS \
-    "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/userinfo" \
-    -H "Authorization: Bearer ${token}" | \
-    node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{try{const j=JSON.parse(s);if(typeof j.preferred_username==="string"&&j.preferred_username.trim()){process.stdout.write(j.preferred_username.trim());return;}if(typeof j.email==="string"&&j.email.trim()){process.stdout.write(j.email.trim());return;}process.exit(2);}catch{process.exit(2);}})'
-}
-
 resolve_task_cwd() {
   local task_id="$1"
-  local preferred_username="$2"
-  local candidate
-
-  if [[ -n "${preferred_username}" ]]; then
-    candidate="/tmp/$(sanitize_part "${preferred_username}")/${task_id}"
-    if [[ -d "${candidate}" ]]; then
-      printf '%s' "${candidate}"
-      return 0
-    fi
-  fi
-
-  candidate="$(find /tmp -maxdepth 2 -mindepth 2 -type d -name "${task_id}" 2>/dev/null | head -n1 || true)"
-  if [[ -n "${candidate}" ]]; then
-    printf '%s' "${candidate}"
-    return 0
-  fi
-  return 1
+  local request_id cwd
+  request_id="$(
+    rg -n "\"task_id\":\"${task_id}\"" "${RUNNER_LOG}" | tail -n1 | \
+    sed -nE 's/.*"request_id":"([^"]+)".*/\1/p'
+  )"
+  [[ -n "${request_id}" ]] || return 1
+  cwd="$(
+    rg -n "\"request_id\":\"${request_id}\"" "${RUNNER_LOG}" | \
+      rg 'prepared task workspace' | tail -n1 | \
+      sed -nE 's/.*"cwd":"([^"]+)".*/\1/p'
+  )"
+  [[ -n "${cwd}" ]] || return 1
+  printf '%s' "${cwd}"
 }
 
 main() {
@@ -68,16 +45,14 @@ main() {
     exit 1
   fi
 
-  local task_id token preferred_username cwd
+  local task_id cwd
   task_id="$(tr -d '\r\n' < "${TASK_ID_FILE}")"
-  token="$(tr -d '\r\n' < "${TOKEN_FILE}")"
-  if [[ -z "${task_id}" || -z "${token}" ]]; then
-    err "task id or token is empty"
+  if [[ -z "${task_id}" ]]; then
+    err "task id is empty"
     exit 1
   fi
 
-  preferred_username="$(read_preferred_username "${token}" || true)"
-  cwd="$(resolve_task_cwd "${task_id}" "${preferred_username}" || true)"
+  cwd="$(resolve_task_cwd "${task_id}" || true)"
   if [[ -z "${cwd}" ]]; then
     err "failed to resolve task workspace path for task_id=${task_id}"
     exit 1

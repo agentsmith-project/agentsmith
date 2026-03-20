@@ -321,17 +321,17 @@ async function runScenario() {
   }
 
   process.stdout.write(`[inputrefs-loop] project=${PROJECT_ID} agent=${AGENT_ID}\n`);
-  const task = await post('/tasks', {
-    title: `inputrefs-loop-${Date.now()}`,
-    agent_id: AGENT_ID,
-  });
-  const taskId = task.id;
-  process.stdout.write(`[inputrefs-loop] task_id=${taskId}\n`);
-
   const defaultLibrary = await ensureProjectUploadsLibrary();
   process.stdout.write(
     `[inputrefs-loop] upload library=${defaultLibrary.id} name=${defaultLibrary.name || 'Project Uploads'}\n`,
   );
+  const task = await post('/tasks', {
+    title: `inputrefs-loop-${Date.now()}`,
+    agent_id: AGENT_ID,
+    workspace_file_library_id: defaultLibrary.id,
+  });
+  const taskId = task.id;
+  process.stdout.write(`[inputrefs-loop] task_id=${taskId}\n`);
 
   const uniqueUrlNoteName = `url-input-${taskId}.txt`;
   const uploaded = await uploadObject(
@@ -340,8 +340,8 @@ async function runScenario() {
     `URL input\n${URL_INPUT}\n`,
     `notebook/${taskId}/inputs`,
   );
-  const importedKey = uploaded.key || uploaded.object_key;
-  if (!importedKey) throw new Error('uploadObject response missing key/object_key');
+  const importedKey = uploaded.path || uploaded.key || uploaded.object_key;
+  if (!importedKey) throw new Error('uploadObject response missing path/key/object_key');
   process.stdout.write(`[inputrefs-loop] uploaded url note object key=${importedKey}\n`);
 
   await post(`/tasks/${taskId}/inputs`, {
@@ -366,7 +366,7 @@ async function runScenario() {
   await postTaskMessage(taskId, {
     role: 'user',
     content:
-      'Use file-read helper to list and fetch the URL input. Then create ./artifacts/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.',
+      `Use file-read helper to list and fetch the URL input. Then create ./.artifacts/tasks/${taskId}/url-summary.txt containing exactly the URL string only (no extra text). Reply with the filename only.`,
   });
   const firstTurn = await waitTaskTerminal(taskId);
   const firstTurnStatus = String(firstTurn?.terminal?.status || '');

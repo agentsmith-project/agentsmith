@@ -370,6 +370,13 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage).toHaveScreenshot('notebook.png', { fullPage: true });
   });
 
+  test('notebook create task dialog - create new workspace', async ({ authedPage }) => {
+    await stableNavigate(authedPage, projectPath('notebook'));
+    await authedPage.getByTestId('notebook__create-task-btn').click();
+    await expect(authedPage.getByRole('dialog')).toBeVisible();
+    await expect(authedPage).toHaveScreenshot('notebook-create-task-dialog.png', { fullPage: true });
+  });
+
   test('notebook task detail', async ({ authedPage }) => {
     await stableNavigate(authedPage, projectPath('notebook/tasks/task_001'));
     await expect(authedPage.getByTestId('notebook__task-header')).toBeVisible();

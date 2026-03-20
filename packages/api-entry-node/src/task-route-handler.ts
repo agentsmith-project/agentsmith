@@ -35,6 +35,7 @@ import {
   type TaskListItem,
   type TaskRecord,
 } from './notebook-task/task-models.js';
+import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
 import {
   buildTaskRealtimeView,
   mapTaskMessagesForExecution,
@@ -98,6 +99,21 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 
+function defaultWorkspaceNameFromTaskTitle(title: string): string {
+  const trimmed = title.trim();
+  return trimmed ? `${trimmed} Workspace` : 'Notebook Workspace';
+}
+
+function findActiveTaskUsingWorkspace(
+  workspaceId: string,
+  projectId: string,
+  fileLibraryId: string,
+): TaskRecord | undefined {
+  return getTasks(workspaceId, projectId).find((task) => (
+    task.status === 'active' && task.workspace_file_library_id === fileLibraryId
+  ));
+}
+
 async function maybeReleaseInternalAgentWorkload(
   deps: NodeApiDeps,
   workspaceId: string,
@@ -158,9 +174,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const body = asObject(await readBody(req));
     const title = typeof body.title === 'string' ? body.title.trim() : '';
     const agentId = typeof body.agent_id === 'string' ? body.agent_id.trim() : '';
+    const workspaceMode = typeof body.workspace_mode === 'string' ? body.workspace_mode.trim() : '';
     const workspaceFileLibraryId = typeof body.workspace_file_library_id === 'string'
       ? body.workspace_file_library_id.trim()
       : '';
+    const requestedWorkspaceName = typeof body.workspace_name === 'string' ? body.workspace_name.trim() : '';
     if (!title) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'task_title_required' });
       return true;
@@ -169,7 +187,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_id_required' });
       return true;
     }
-    if (!workspaceFileLibraryId) {
+    if (workspaceMode !== 'create_new' && !workspaceFileLibraryId) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' });
       return true;
     }
@@ -183,9 +201,48 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 409, { error_code: 'AGENT_OFFLINE', message: 'agent_offline' });
       return true;
     }
-    const workspaceFileLibrary = await catalogRepo.getById(route.workspaceId, route.projectId, workspaceFileLibraryId);
+    let workspaceFileLibrary = workspaceFileLibraryId
+      ? await catalogRepo.getById(route.workspaceId, route.projectId, workspaceFileLibraryId)
+      : null;
+    if (workspaceMode === 'create_new') {
+      try {
+        workspaceFileLibrary = await createAndProvisionProjectFileLibrary({
+          deps,
+          workspaceId: route.workspaceId,
+          projectId: route.projectId,
+          userId: user.id,
+          name: requestedWorkspaceName || defaultWorkspaceNameFromTaskTitle(title),
+          description: `Auto-initialized workspace for notebook task "${title}".`,
+        });
+      } catch (error) {
+        const mapped = mapFileLibraryInfraError(error);
+        json(res, mapped.statusCode, {
+          error_code: mapped.errorCode === 'FILE_LIBRARY_OPERATION_FAILED'
+            ? 'FILE_LIBRARY_PROVISIONING_FAILED'
+            : mapped.errorCode,
+          message: mapped.message,
+        });
+        return true;
+      }
+    }
     if (!workspaceFileLibrary) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+      return true;
+    }
+    if (workspaceFileLibrary.status !== 'ready') {
+      json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'file_library_not_ready' });
+      return true;
+    }
+    const activeTask = findActiveTaskUsingWorkspace(
+      route.workspaceId,
+      route.projectId,
+      workspaceFileLibrary.id,
+    );
+    if (activeTask) {
+      json(res, 409, {
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'workspace_file_library_in_use',
+      });
       return true;
     }
 

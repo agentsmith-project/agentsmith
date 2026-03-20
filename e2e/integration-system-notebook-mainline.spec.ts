@@ -719,6 +719,7 @@ async function runNotebookTask(
   await dialog.locator('#task-title').fill('Mainline Real Notebook Task');
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
+  await dialog.getByRole('radio', { name: /continue an existing workspace/i }).click();
   await dialog.getByTestId('task-create__file-library').click();
   await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
   await dialog.getByRole('button', { name: /create/i }).click();

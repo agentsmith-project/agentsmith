@@ -593,6 +593,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     sourceDir: builtinSkillsConfig.sourceDir,
     skills: builtinSkillsConfig.skills,
     required: builtinSkillsConfig.required,
+    strategy: executionContext.workspace_binding_mode === 'pre_mounted' ? 'symlink' : 'copy',
   });
   const isNotebookMode = executionContext.notebook_mode === true;
   const userPrompt = buildConversationPrompt(payload.messages);

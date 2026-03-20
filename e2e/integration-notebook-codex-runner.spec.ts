@@ -33,7 +33,7 @@ async function createNotebookTaskViaDialog(args: {
   workspaceId: string;
   projectId: string;
   agentName: string;
-  workspaceLibraryName: string;
+  workspaceLibraryName?: string;
   title: string;
 }): Promise<string> {
   const { page, workspaceId, projectId, agentName, workspaceLibraryName, title } = args;
@@ -44,8 +44,11 @@ async function createNotebookTaskViaDialog(args: {
   await dialog.locator('#task-title').fill(title);
   await dialog.locator('#task-agent').click();
   await page.getByRole('option', { name: new RegExp(agentName) }).click();
-  await dialog.getByTestId('task-create__file-library').click();
-  await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
+  if (workspaceLibraryName) {
+    await dialog.getByRole('radio', { name: /continue an existing workspace/i }).click();
+    await dialog.getByTestId('task-create__file-library').click();
+    await page.getByRole('option', { name: new RegExp(workspaceLibraryName) }).click();
+  }
   const createTaskResponse = page.waitForResponse((response) =>
     response.request().method() === 'POST'
     && new RegExp(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks$`).test(response.url()),

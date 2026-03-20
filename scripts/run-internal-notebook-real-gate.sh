@@ -22,9 +22,10 @@ SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-agentsmith-codex-runner:local}"
+BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
 WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
 STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}"
-MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-writeback_cache}"
+MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
 MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
@@ -51,9 +52,15 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
-if ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
+if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
+  info "building internal runner image ${RUNNER_IMAGE} from current workspace"
+  docker build \
+    -t "${RUNNER_IMAGE}" \
+    -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" \
+    "${ROOT_DIR}" >/dev/null
+elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[internal-real-gate] runner image not found: ${RUNNER_IMAGE}" >&2
-  echo "[internal-real-gate] build it first, for example via the external docker notebook path." >&2
+  echo "[internal-real-gate] build it first or leave INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=1." >&2
   exit 1
 fi
 

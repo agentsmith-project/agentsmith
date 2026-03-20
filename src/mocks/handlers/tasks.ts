@@ -43,10 +43,23 @@ export const taskHandlers = [
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/tasks', async ({ request, params }) => {
     const body: any = await request.json().catch(() => ({}));
-    if (typeof body?.workspace_file_library_id !== 'string' || body.workspace_file_library_id.trim().length === 0) {
+    const workspaceMode = typeof body?.workspace_mode === 'string' ? body.workspace_mode.trim() : '';
+    const workspaceFileLibraryId = typeof body?.workspace_file_library_id === 'string'
+      ? body.workspace_file_library_id.trim()
+      : '';
+    if (workspaceMode !== 'create_new' && workspaceFileLibraryId.length === 0) {
       return HttpResponse.json({ error_code: 'VALIDATION_ERROR', message: 'workspace_file_library_id_required' }, { status: 422 });
     }
+    if (workspaceFileLibraryId.length > 0) {
+      const occupied = tasks.find((task) => task.status === 'active' && task.workspace_file_library_id === workspaceFileLibraryId);
+      if (occupied) {
+        return HttpResponse.json({ error_code: 'RESOURCE_CONFLICT', message: 'workspace_file_library_in_use' }, { status: 409 });
+      }
+    }
     const now = new Date().toISOString();
+    const generatedWorkspaceName = typeof body?.workspace_name === 'string' && body.workspace_name.trim().length > 0
+      ? body.workspace_name.trim()
+      : `${body?.title ?? 'New Task'} Workspace`;
     const newTask = {
       id: `task_${Math.random().toString(36).slice(2, 8)}`,
       workspace_id: params.ws as string,
@@ -55,8 +68,12 @@ export const taskHandlers = [
       title: body?.title ?? 'New Task',
       agent_id: body?.agent_id ?? 'agent_001',
       agent_name: body?.agent_name ?? 'AgentA',
-      workspace_file_library_id: body.workspace_file_library_id,
-      workspace_file_library_name: body?.workspace_file_library_name ?? 'Project Uploads',
+      workspace_file_library_id: workspaceMode === 'create_new'
+        ? `flib_${Math.random().toString(36).slice(2, 10)}`
+        : workspaceFileLibraryId,
+      workspace_file_library_name: workspaceMode === 'create_new'
+        ? generatedWorkspaceName
+        : body?.workspace_file_library_name ?? 'Project Uploads',
       status: body?.status ?? 'active',
       attached_inputs: Array.isArray(body?.inputs) ? body.inputs.map((item: any, idx: number) => ({
         id: item?.id ?? `in_${idx}_${Math.random().toString(36).slice(2, 7)}`,

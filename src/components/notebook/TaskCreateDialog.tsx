@@ -11,7 +11,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2 } from 'lucide-react';
-import { useCreateTask } from '@/lib/hooks/use-task';
+import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
 import { useQuery } from '@tanstack/react-query';
 import { AgentAPI, getApiClient } from '@/lib/api';
@@ -38,6 +38,8 @@ export function TaskCreateDialog({
   const commonT = useTranslations('common');
   const [title, setTitle] = React.useState('');
   const [agentId, setAgentId] = React.useState<string>('');
+  const [workspaceMode, setWorkspaceMode] = React.useState<'create_new' | 'use_existing'>('create_new');
+  const [workspaceName, setWorkspaceName] = React.useState('');
   const [workspaceFileLibraryId, setWorkspaceFileLibraryId] = React.useState<string>('');
   const createTask = useCreateTask();
 
@@ -60,6 +62,16 @@ export function TaskCreateDialog({
     () => (fileLibrariesData?.items || []).filter((library) => library.status === 'ready'),
     [fileLibrariesData?.items],
   );
+  const { data: tasksData } = useTasks(workspaceId, projectId, { page: 1, page_size: 200 });
+  const occupiedLibraryIds = React.useMemo(() => new Set(
+    (tasksData?.items || [])
+      .filter((task) => task.status === 'active' && typeof task.workspace_file_library_id === 'string')
+      .map((task) => task.workspace_file_library_id as string),
+  ), [tasksData?.items]);
+  const availableFileLibraries = React.useMemo(
+    () => fileLibraries.filter((library) => !occupiedLibraryIds.has(library.id)),
+    [fileLibraries, occupiedLibraryIds],
+  );
   const isAgentSelectable = React.useCallback((agent: { mode: string; presence?: string }) => (
     agent.mode === 'internal' || agent.presence === 'online' || agent.presence === 'managed'
   ), []);
@@ -69,6 +81,8 @@ export function TaskCreateDialog({
     if (open) {
       setTitle('');
       setAgentId('');
+      setWorkspaceMode('create_new');
+      setWorkspaceName('');
       setWorkspaceFileLibraryId('');
     }
   }, [open]);
@@ -90,14 +104,24 @@ export function TaskCreateDialog({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!title.trim() || !agentId || !workspaceFileLibraryId) {
+    if (!title.trim() || !agentId) {
+      return;
+    }
+    if (workspaceMode === 'use_existing' && !workspaceFileLibraryId) {
       return;
     }
 
     const data: CreateTaskRequest = {
       title: title.trim(),
       agent_id: agentId,
-      workspace_file_library_id: workspaceFileLibraryId,
+      ...(workspaceMode === 'create_new'
+        ? {
+            workspace_mode: 'create_new' as const,
+            workspace_name: workspaceName.trim() || `${title.trim()} Workspace`,
+          }
+        : {
+            workspace_file_library_id: workspaceFileLibraryId,
+          }),
     };
 
     try {
@@ -117,7 +141,7 @@ export function TaskCreateDialog({
 
   const canSubmit = title.trim().length > 0
     && agentId.length > 0
-    && workspaceFileLibraryId.length > 0
+    && (workspaceMode === 'create_new' || workspaceFileLibraryId.length > 0)
     && !createTask.isPending;
 
   return (
@@ -157,34 +181,84 @@ export function TaskCreateDialog({
           />
 
           <div className="space-y-2">
-            <label htmlFor="task-workspace-file-library" className="text-sm font-medium text-foreground">
-              {t('select_workspace_file_library')}
-            </label>
-            <Select
-              value={workspaceFileLibraryId}
-              onValueChange={setWorkspaceFileLibraryId}
-              disabled={createTask.isPending || fileLibrariesLoading}
-            >
-              <SelectTrigger id="task-workspace-file-library" data-testid="task-create__file-library">
-                <SelectValue placeholder={t('select_workspace_file_library')} />
-              </SelectTrigger>
-              <SelectContent>
-                {fileLibrariesLoading ? (
-                  <div className="flex items-center justify-center py-4">
-                    <Loader2 className="h-4 w-4 animate-spin text-tertiary" />
-                  </div>
-                ) : fileLibraries.length === 0 ? (
-                  <div className="py-4 text-center text-sm text-tertiary">{t('workspace_file_library_empty')}</div>
-                ) : (
-                  fileLibraries.map((library) => (
-                    <SelectItem key={library.id} value={library.id}>
-                      {library.name}
-                    </SelectItem>
-                  ))
-                )}
-              </SelectContent>
-            </Select>
-            <p className="text-xs text-tertiary">{t('workspace_file_library_hint')}</p>
+            <span className="text-sm font-medium text-foreground">{t('workspace_source_label')}</span>
+            <div className="grid gap-2">
+              <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-surface/30 px-3 py-3">
+                <input
+                  type="radio"
+                  name="task-workspace-mode"
+                  value="create_new"
+                  checked={workspaceMode === 'create_new'}
+                  onChange={() => setWorkspaceMode('create_new')}
+                  disabled={createTask.isPending}
+                />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-foreground">{t('workspace_source_create_new')}</div>
+                  <p className="text-xs text-tertiary">{t('workspace_source_create_new_hint')}</p>
+                </div>
+              </label>
+              {workspaceMode === 'create_new' ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-white/10 bg-surface/20 p-3">
+                  <label htmlFor="task-workspace-name" className="text-sm font-medium text-foreground">
+                    {t('workspace_name_label')}
+                  </label>
+                  <Input
+                    id="task-workspace-name"
+                    value={workspaceName}
+                    onChange={(e) => setWorkspaceName(e.target.value)}
+                    placeholder={workspaceName.length === 0 && title.trim().length > 0 ? `${title.trim()} Workspace` : t('workspace_name_placeholder')}
+                    disabled={createTask.isPending}
+                  />
+                  <p className="text-xs text-tertiary">{t('workspace_name_hint')}</p>
+                </div>
+              ) : null}
+              <label className="flex items-start gap-3 rounded-lg border border-white/10 bg-surface/30 px-3 py-3">
+                <input
+                  type="radio"
+                  name="task-workspace-mode"
+                  value="use_existing"
+                  checked={workspaceMode === 'use_existing'}
+                  onChange={() => setWorkspaceMode('use_existing')}
+                  disabled={createTask.isPending}
+                />
+                <div className="space-y-1">
+                  <div className="text-sm font-medium text-foreground">{t('workspace_source_use_existing')}</div>
+                  <p className="text-xs text-tertiary">{t('workspace_source_use_existing_hint')}</p>
+                </div>
+              </label>
+              {workspaceMode === 'use_existing' ? (
+                <div className="space-y-2 rounded-lg border border-dashed border-white/10 bg-surface/20 p-3">
+                  <label htmlFor="task-workspace-file-library" className="text-sm font-medium text-foreground">
+                    {t('select_workspace_file_library')}
+                  </label>
+                  <Select
+                    value={workspaceFileLibraryId}
+                    onValueChange={setWorkspaceFileLibraryId}
+                    disabled={createTask.isPending || fileLibrariesLoading}
+                  >
+                    <SelectTrigger id="task-workspace-file-library" data-testid="task-create__file-library">
+                      <SelectValue placeholder={t('select_workspace_file_library')} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {fileLibrariesLoading ? (
+                        <div className="flex items-center justify-center py-4">
+                          <Loader2 className="h-4 w-4 animate-spin text-tertiary" />
+                        </div>
+                      ) : availableFileLibraries.length === 0 ? (
+                        <div className="py-4 text-center text-sm text-tertiary">{t('workspace_file_library_empty')}</div>
+                      ) : (
+                        availableFileLibraries.map((library) => (
+                          <SelectItem key={library.id} value={library.id}>
+                            {library.name}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-tertiary">{t('workspace_file_library_hint')}</p>
+                </div>
+              ) : null}
+            </div>
           </div>
 
           <ImportantNotice t={t} />

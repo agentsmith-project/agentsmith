@@ -26,9 +26,10 @@ export function TaskCard(args: {
   const { t, task, onClick } = args;
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className="rounded-md border border-border bg-surface hover:bg-hover transition-colors cursor-pointer"
+      className="w-full rounded-md border border-border bg-surface hover:bg-hover transition-colors cursor-pointer text-left"
       data-testid="notebook__task-card"
       data-task-id={task.id}
     >
@@ -72,6 +73,6 @@ export function TaskCard(args: {
         </div>
         <ChevronRight className="h-4 w-4 text-tertiary shrink-0" />
       </div>
-    </div>
+    </button>
   );
 }

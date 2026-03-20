@@ -83,7 +83,7 @@ async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): 
 }
 
 describe('api-entry-node notebook task routes', () => {
-  it('requires workspace file library when creating a notebook task', async () => {
+  it('requires workspace file library when creating a notebook task without create-new mode', async () => {
     const { baseUrl, deps } = startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
       name: 'internal-notebook-agent',
@@ -120,6 +120,46 @@ describe('api-entry-node notebook task routes', () => {
       error_code: 'VALIDATION_ERROR',
       message: 'workspace_file_library_id_required',
     });
+  });
+
+  it('auto-initializes a workspace file library when create-new mode is requested', async () => {
+    const { baseUrl, deps } = startServer();
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Notebook task with auto workspace',
+          agent_id: agent.id,
+          workspace_mode: 'create_new',
+          workspace_name: 'Auto Workspace',
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const createdTask = await createTaskRes.json() as { workspace_file_library_id: string; workspace_file_library_name: string };
+    expect(createdTask.workspace_file_library_id).toMatch(/^flib_/);
+    expect(createdTask.workspace_file_library_name).toBe('Auto Workspace');
   });
 
   it('rejects creating notebook task for offline external agents', async () => {
@@ -217,6 +257,62 @@ describe('api-entry-node notebook task routes', () => {
       metadata_url: expect.stringContaining('sslmode=disable'),
       recommended_mount_path: expect.any(String),
       created_at: expect.any(String),
+    });
+  });
+
+  it('rejects creating a second active task against an occupied workspace file library', async () => {
+    const { baseUrl, deps } = startServer();
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Occupied Workspace');
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+
+    const firstTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'First Task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(firstTaskRes.status).toBe(201);
+
+    const secondTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Second Task',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
+    );
+    expect(secondTaskRes.status).toBe(409);
+    await expect(secondTaskRes.json()).resolves.toMatchObject({
+      error_code: 'RESOURCE_CONFLICT',
+      message: 'workspace_file_library_in_use',
     });
   });
 

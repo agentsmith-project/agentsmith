@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, existsSync, lstatSync, readFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
@@ -90,6 +90,67 @@ describe('builtin-skills', () => {
       expect(result.mounted).toEqual(['.system']);
       expect(result.missing).toEqual([]);
       expect(existsSync(join(targetRoot, 'SKILL.md'))).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(cwdRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('uses symlink bootstrap for pre-mounted internal workspaces', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const cwdRoot = mkdtempSync(join(tmpdir(), 'runner-skills-cwd-'));
+    try {
+      mkdirSync(join(sourceRoot, 'file-read'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'file-read', 'SKILL.md'), 'file-read');
+
+      const result = await syncBuiltinSkills({
+        cwd: cwdRoot,
+        sourceDir: sourceRoot,
+        skills: ['file-read'],
+        required: true,
+        strategy: 'symlink',
+      });
+
+      const targetPath = join(cwdRoot, '.codex', 'skills', 'file-read');
+      expect(result.mounted).toEqual(['file-read']);
+      expect(lstatSync(targetPath).isSymbolicLink()).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(false);
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(cwdRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('replaces a stale symlink with a copied skill tree in copy mode', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const cwdRoot = mkdtempSync(join(tmpdir(), 'runner-skills-cwd-'));
+    try {
+      mkdirSync(join(sourceRoot, 'file-read'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'file-read', 'SKILL.md'), 'fresh-skill');
+
+      mkdirSync(join(cwdRoot, '.codex', 'skills'), { recursive: true });
+      const staleTarget = join(cwdRoot, '.codex', 'skills', 'file-read');
+      writeFileSync(join(cwdRoot, 'stale.txt'), 'stale');
+      await syncBuiltinSkills({
+        cwd: cwdRoot,
+        sourceDir: sourceRoot,
+        skills: ['file-read'],
+        required: true,
+        strategy: 'symlink',
+      });
+
+      const result = await syncBuiltinSkills({
+        cwd: cwdRoot,
+        sourceDir: sourceRoot,
+        skills: ['file-read'],
+        required: true,
+        strategy: 'copy',
+      });
+
+      expect(result.mounted).toEqual(['file-read']);
+      expect(lstatSync(staleTarget).isSymbolicLink()).toBe(false);
+      expect(readFileSync(join(staleTarget, 'SKILL.md'), 'utf-8')).toBe('fresh-skill');
       expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });

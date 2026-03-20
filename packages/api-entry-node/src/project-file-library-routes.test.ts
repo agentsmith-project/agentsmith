@@ -6,6 +6,7 @@ import {
   InMemoryFileLibraryGatewayManager,
   InMemoryFileLibraryOrchestrator,
 } from './file-library-runtime.js';
+import { notebookTasksCollection } from './notebook-task/task-store.js';
 
 describe('project-file-library-routes', () => {
   beforeEach(() => {
@@ -268,5 +269,71 @@ describe('project-file-library-routes', () => {
     });
     expect(res.statusCode).toBe(204);
     expect(res.end).toHaveBeenCalled();
+  });
+
+  it('rejects deleting a file library while an active task is using it', async () => {
+    const json = vi.fn();
+    const res = {
+      end: vi.fn(),
+      statusCode: 200,
+    } as unknown as never;
+    const deps = createDeps();
+
+    await handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraries',
+      method: 'POST',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      req: {} as never,
+      res,
+      deps,
+      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      json,
+      readBody: vi.fn().mockResolvedValue({
+        name: 'Workspace Library',
+      }),
+    });
+
+    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string; name: string };
+    await deps.docStore.upsert(notebookTasksCollection('ws_default'), 'task_active', {
+      id: 'task_active',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_1',
+      title: 'Active Task',
+      agent_id: 'agent_1',
+      agent_name: 'Agent One',
+      workspace_file_library_id: createdBody.id,
+      workspace_file_library_name: createdBody.name,
+      status: 'active',
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+    });
+
+    const deleteJson = vi.fn();
+    await expect(handleProjectFileLibraryRoutes({
+      routeKind: 'fileLibraryItem',
+      method: 'DELETE',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      libraryId: createdBody.id,
+      req: {} as never,
+      res,
+      deps,
+      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      json: deleteJson,
+      readBody: vi.fn(),
+    })).resolves.toBe(true);
+
+    expect(deleteJson).toHaveBeenCalledWith(
+      res,
+      409,
+      expect.objectContaining({
+        error_code: 'RESOURCE_CONFLICT',
+        message: 'file_library_task_in_use',
+      }),
+    );
   });
 });

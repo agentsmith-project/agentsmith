@@ -1,4 +1,4 @@
-import { copyFile, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { copyFile, lstat, mkdir, readdir, readlink, rm, symlink, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -43,6 +43,14 @@ export function resolveBuiltinSkillsConfig(): {
 }
 
 async function copyBuiltinSkillTree(sourcePath: string, targetPath: string): Promise<void> {
+  try {
+    const stat = await lstat(targetPath);
+    if (stat.isSymbolicLink()) {
+      await rm(targetPath, { recursive: true, force: true });
+    }
+  } catch {
+    // target does not exist yet
+  }
   const entries = await readdir(sourcePath, { withFileTypes: true });
   await mkdir(targetPath, { recursive: true });
   for (const entry of entries) {
@@ -59,12 +67,31 @@ async function copyBuiltinSkillTree(sourcePath: string, targetPath: string): Pro
   }
 }
 
+async function ensureBuiltinSkillSymlink(sourcePath: string, targetPath: string): Promise<void> {
+  await mkdir(dirname(targetPath), { recursive: true });
+  try {
+    const stat = await lstat(targetPath);
+    if (stat.isSymbolicLink()) {
+      const existingTarget = await readlink(targetPath);
+      if (resolve(dirname(targetPath), existingTarget) === resolve(sourcePath)) {
+        return;
+      }
+    }
+    await rm(targetPath, { recursive: true, force: true });
+  } catch {
+    // target missing
+  }
+  await symlink(sourcePath, targetPath, 'dir');
+}
+
 export async function syncBuiltinSkills(args: {
   cwd: string;
   sourceDir: string;
   skills: string[];
   required: boolean;
+  strategy?: 'copy' | 'symlink';
   copyFileTree?: (sourcePath: string, targetPath: string) => Promise<void>;
+  ensureSymlink?: (sourcePath: string, targetPath: string) => Promise<void>;
 }): Promise<{
   mounted: string[];
   missing: string[];
@@ -75,6 +102,8 @@ export async function syncBuiltinSkills(args: {
   const skillsRoot = join(args.cwd, '.codex', 'skills');
   await mkdir(skillsRoot, { recursive: true });
   const copyFileTree = args.copyFileTree ?? copyBuiltinSkillTree;
+  const ensureSymlink = args.ensureSymlink ?? ensureBuiltinSkillSymlink;
+  const strategy = args.strategy ?? 'copy';
   for (const skill of args.skills) {
     const sourcePath = join(args.sourceDir, skill);
     if (!existsSync(sourcePath)) {
@@ -82,22 +111,28 @@ export async function syncBuiltinSkills(args: {
       continue;
     }
     const targetPath = join(skillsRoot, skill);
-    await copyFileTree(sourcePath, targetPath);
+    if (strategy === 'symlink') {
+      await ensureSymlink(sourcePath, targetPath);
+    } else {
+      await copyFileTree(sourcePath, targetPath);
+    }
     mounted.push(skill);
   }
-  await writeFile(
-    join(skillsRoot, '.mbos-builtin-skills.json'),
-    JSON.stringify(
-      {
-        source_dir: args.sourceDir,
-        mounted_at: new Date().toISOString(),
-        skills: mounted,
-      },
-      null,
-      2,
-    ),
-    'utf-8',
-  );
+  if (strategy === 'copy') {
+    await writeFile(
+      join(skillsRoot, '.mbos-builtin-skills.json'),
+      JSON.stringify(
+        {
+          source_dir: args.sourceDir,
+          mounted_at: new Date().toISOString(),
+          skills: mounted,
+        },
+        null,
+        2,
+      ),
+      'utf-8',
+    );
+  }
   if (args.required && missing.length > 0) {
     throw new Error(`builtin_skills_missing:${missing.join(',')}`);
   }

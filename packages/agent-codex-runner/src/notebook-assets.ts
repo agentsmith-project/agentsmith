@@ -21,6 +21,7 @@ export type NotebookTaskInput = {
 export type NotebookExecutionContext = {
   task_id?: string;
   run_id?: string;
+  workspace_binding_mode?: 'file_library' | 'pre_mounted';
 };
 
 export function buildNotebookHeadlessPreamble(args: {
@@ -120,9 +121,11 @@ export async function prepareNotebookWorkspaceAssets(args: {
     ),
     'utf-8',
   );
-  const agentsPath = join(cwd, 'AGENTS.md');
-  if (!existsSync(agentsPath)) {
-    await writeFile(agentsPath, buildNotebookAgentsMd(), 'utf-8');
+  if (executionContext.workspace_binding_mode !== 'pre_mounted') {
+    const agentsPath = join(cwd, 'AGENTS.md');
+    if (!existsSync(agentsPath)) {
+      await writeFile(agentsPath, buildNotebookAgentsMd(), 'utf-8');
+    }
   }
   return { artifactsDir, taskInputsManifestPath };
 }

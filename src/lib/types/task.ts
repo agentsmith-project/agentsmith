@@ -147,7 +147,9 @@ export interface TaskTraceListResponse {
 export interface CreateTaskRequest {
   title: string;
   agent_id: string;
-  workspace_file_library_id: string;
+  workspace_file_library_id?: string;
+  workspace_mode?: 'create_new';
+  workspace_name?: string;
   initial_inputs?: Array<
     | { kind: 'library_object'; library_id: string; key: string; name?: string; content_type?: string; size_bytes?: number }
     | { kind: 'artifact'; task_id: string; artifact_id: string; task_relative_path?: string; name?: string; content_type?: string; size_bytes?: number }

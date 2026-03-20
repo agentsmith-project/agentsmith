@@ -51,7 +51,13 @@ test.describe('Notebook Page', () => {
       const titleInput = dialog.locator('#task-title');
       await expect(titleInput).toBeVisible();
       await titleInput.fill('Test Task');
-      await expect(dialog.getByTestId('task-create__file-library')).toBeVisible();
+      await expect(
+        dialog.getByRole('radio', { name: /initialize a new workspace automatically/i }),
+      ).toBeChecked();
+      await expect(dialog.locator('#task-workspace-name')).toBeVisible();
+      await expect(
+        dialog.getByRole('radio', { name: /continue an existing workspace/i }),
+      ).toBeVisible();
 
       // Close dialog
       await authedPage.keyboard.press('Escape');
@@ -161,11 +167,10 @@ test.describe('Notebook Page', () => {
       await expect(authedPage.getByTestId('notebook__task-list')).toBeVisible();
     });
 
-    test('should open add files dialog with disabled confirm before selection', async ({ authedPage }) => {
-      await authedPage.getByRole('button', { name: /^files$/i }).click();
-      const dialog = authedPage.getByRole('dialog');
-      await expect(dialog).toBeVisible();
-      await expect(dialog.getByRole('button', { name: /cancel/i })).toBeVisible();
+    test('should navigate to files page from task detail header', async ({ authedPage }) => {
+      await authedPage.getByTestId('notebook-task__open-files').click();
+      await authedPage.waitForURL(/\/files$/, { timeout: 10000 });
+      await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     });
 
     test('should expand execution details panel for agent messages', async ({ authedPage }) => {

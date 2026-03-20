@@ -15,12 +15,29 @@ describe('prepareNotebookWorkspaceAssets', () => {
       await prepareNotebookWorkspaceAssets({
         cwd,
         paths: buildTaskWorkspacePaths(cwd, 'task_1'),
-        executionContext: { task_id: 'task_1', run_id: 'run_1' },
+        executionContext: { task_id: 'task_1', run_id: 'run_1', workspace_binding_mode: 'file_library' },
         taskInputs: [],
       });
 
       expect(readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toBe('existing-agents');
       expect(readFileSync(join(cwd, '.mbos', 'tasks', 'task_1', 'task-inputs.json'), 'utf8')).toContain('"task_id": "task_1"');
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it('skips root AGENTS bootstrap for pre-mounted workspaces', async () => {
+    const cwd = mkdtempSync(join(tmpdir(), 'runner-notebook-assets-'));
+    try {
+      await prepareNotebookWorkspaceAssets({
+        cwd,
+        paths: buildTaskWorkspacePaths(cwd, 'task_2'),
+        executionContext: { task_id: 'task_2', run_id: 'run_2', workspace_binding_mode: 'pre_mounted' },
+        taskInputs: [],
+      });
+
+      expect(() => readFileSync(join(cwd, 'AGENTS.md'), 'utf8')).toThrow();
+      expect(readFileSync(join(cwd, '.mbos', 'tasks', 'task_2', 'task-inputs.json'), 'utf8')).toContain('"task_id": "task_2"');
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

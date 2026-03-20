@@ -220,10 +220,30 @@ describe('api-entry-node notebook task event routes', () => {
 
     await executionChannelReady;
 
+    const createLibraryRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Task SSE replay workspace' }),
+      },
+    );
+    expect(createLibraryRes.status).toBe(201);
+    const workspaceLibrary = (await createLibraryRes.json()) as { id: string };
+
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Task SSE replay', agent_id: agent.id }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Task SSE replay',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
     );
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };

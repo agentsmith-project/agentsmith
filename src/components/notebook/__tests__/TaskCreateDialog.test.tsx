@@ -31,6 +31,7 @@ let mockAgentListFn = vi.fn();
 // Mock hooks — use vi.fn() so we can control return value per-test
 vi.mock('@/lib/hooks/use-task', () => ({
   useCreateTask: vi.fn(),
+  useTasks: vi.fn(),
 }));
 
 vi.mock('@/lib/hooks/use-files', () => ({
@@ -86,6 +87,8 @@ vi.mock('@/components/ui/select', async () => {
         type="button"
         role="combobox"
         id={id}
+        aria-controls={id ? `${id}-listbox` : undefined}
+        aria-expanded="false"
         disabled={disabled ?? context.disabled}
         {...props}
       >
@@ -100,7 +103,7 @@ vi.mock('@/components/ui/select', async () => {
   }
 
   function SelectContent({ children }: { children: React.ReactNode }) {
-    return <div role="listbox">{children}</div>;
+    return <div role="listbox" id="mock-select-listbox">{children}</div>;
   }
 
   function SelectItem({
@@ -148,9 +151,17 @@ vi.mock('next-intl', () => ({
       'important': 'Important:',
       'create_title': 'Task Title',
       'select_agent': 'Select an Agent',
+      'workspace_source_label': 'Workspace',
+      'workspace_source_create_new': 'Initialize a new workspace automatically',
+      'workspace_source_create_new_hint': 'Recommended. We\'ll create a fresh persistent workspace for this task.',
+      'workspace_source_use_existing': 'Continue an existing workspace',
+      'workspace_source_use_existing_hint': 'Use an existing workspace library to keep working with previous files and agent context.',
+      'workspace_name_label': 'New workspace name',
+      'workspace_name_placeholder': 'Enter workspace name',
+      'workspace_name_hint': 'Leave blank to generate a workspace name from the task title.',
       'select_workspace_file_library': 'Select Workspace File Library',
-      'workspace_file_library_hint': 'This library becomes the persistent task workspace.',
-      'workspace_file_library_empty': 'No ready file libraries',
+      'workspace_file_library_hint': 'Only idle workspaces can be selected.',
+      'workspace_file_library_empty': 'No idle workspaces are available in this project right now.',
       'agent_fixed_notice': 'The agent cannot be changed after creation',
       'history_immutable_notice': 'Task history cannot be modified',
       'cancel': 'Cancel',
@@ -160,7 +171,7 @@ vi.mock('next-intl', () => ({
   },
 }));
 
-import { useCreateTask } from '@/lib/hooks/use-task';
+import { useCreateTask, useTasks } from '@/lib/hooks/use-task';
 import { useFileLibraries } from '@/lib/hooks/use-files';
 
 const mockAgents = [
@@ -199,6 +210,36 @@ const mockFileLibraries = [
     created_by_user_id: 'user-1',
     created_at: '2024-01-01T00:00:00Z',
     updated_at: '2024-01-01T00:00:00Z',
+  },
+  {
+    id: 'flib-occupied',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    name: 'Occupied Workspace',
+    status: 'ready' as const,
+    filesystem_name: 'flib-occupied-workspace',
+    created_by_user_id: 'user-1',
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+  },
+];
+
+const mockTasks = [
+  {
+    id: 'task-active-1',
+    workspace_id: 'workspace-1',
+    project_id: 'project-1',
+    owner_user_id: 'user-1',
+    title: 'Active Task',
+    agent_id: 'agent-1',
+    agent_name: 'Test Agent 1',
+    workspace_file_library_id: 'flib-occupied',
+    workspace_file_library_name: 'Occupied Workspace',
+    status: 'active' as const,
+    attached_inputs: [],
+    created_at: '2024-01-01T00:00:00Z',
+    updated_at: '2024-01-01T00:00:00Z',
+    last_activity_at: '2024-01-01T00:00:00Z',
   },
 ];
 
@@ -248,6 +289,10 @@ describe('TaskCreateDialog', () => {
     } as any);
     vi.mocked(useFileLibraries).mockReturnValue({
       data: { items: mockFileLibraries },
+      isLoading: false,
+    } as any);
+    vi.mocked(useTasks).mockReturnValue({
+      data: { items: mockTasks, total: mockTasks.length, page: 1, page_size: 200, has_more: false },
       isLoading: false,
     } as any);
   });
@@ -320,13 +365,15 @@ describe('TaskCreateDialog', () => {
     it('renders agent select', () => {
       renderComponent();
 
-      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getAllByRole('combobox').length).toBe(1);
     });
 
-    it('renders workspace file library select', () => {
+    it('renders workspace source options', () => {
       renderComponent();
 
-      expect(screen.getByTestId('task-create__file-library')).toBeInTheDocument();
+      const workspaceModeRadios = screen.getAllByRole('radio');
+      expect(workspaceModeRadios).toHaveLength(2);
+      expect(workspaceModeRadios[0]).toBeChecked();
     });
 
     it('shows placeholder in agent select', () => {
@@ -403,7 +450,7 @@ describe('TaskCreateDialog', () => {
       });
 
       // Verify the select trigger is present for agent selection
-      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getAllByRole('combobox').length).toBe(1);
     });
 
     it('shows loading state while fetching agents', () => {
@@ -426,7 +473,7 @@ describe('TaskCreateDialog', () => {
       // (Radix Select dropdown content only renders in portal when opened,
       // which is unreliable in jsdom — verify the form structure instead)
       expect(screen.getByRole('dialog')).toBeInTheDocument();
-      expect(screen.getAllByRole('combobox').length).toBeGreaterThanOrEqual(2);
+      expect(screen.getAllByRole('combobox').length).toBe(1);
     });
   });
 
@@ -460,18 +507,29 @@ describe('TaskCreateDialog', () => {
       expect(createButton).toBeDisabled();
     });
 
-    it('keeps create button disabled until agent and file library are selected', async () => {
+    it('enables create button after title and agent are selected in create-new mode', async () => {
       const user = userEvent.setup();
       renderComponent();
 
       const titleInput = screen.getByRole('textbox', { name: /Task Title/i });
       await user.type(titleInput, 'Test Task');
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
+      expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+    });
+
+    it('keeps create button disabled in existing-workspace mode until a workspace is selected', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getAllByRole('radio')[1]!);
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Test Task');
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
       expect(screen.getByRole('button', { name: 'Create' })).toBeDisabled();
     });
   });
 
   describe('Form Submission', () => {
-    it('submits form with valid data', async () => {
+    it('submits form with create-new workspace mode by default', async () => {
       const user = userEvent.setup();
       renderComponent();
 
@@ -479,7 +537,6 @@ describe('TaskCreateDialog', () => {
       await user.type(titleInput, 'Test Task');
 
       await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
-      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
       submitTaskCreateForm();
 
       await waitFor(() => {
@@ -488,6 +545,30 @@ describe('TaskCreateDialog', () => {
           projectId: mockProjectId,
           data: {
             title: 'Test Task',
+            agent_id: 'agent-1',
+            workspace_mode: 'create_new',
+            workspace_name: 'Test Task Workspace',
+          },
+        });
+      });
+    });
+
+    it('submits form with selected existing workspace when requested', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Continue Task');
+      await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
+      await user.click(screen.getAllByRole('radio')[1]!);
+      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
+      submitTaskCreateForm();
+
+      await waitFor(() => {
+        expect(mockMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          data: {
+            title: 'Continue Task',
             agent_id: 'agent-1',
             workspace_file_library_id: 'flib-1',
           },
@@ -514,7 +595,7 @@ describe('TaskCreateDialog', () => {
       expect(createButton).toBeDisabled();
     });
 
-    it('does not submit without agent and file library selection', async () => {
+    it('does not submit without agent selection', async () => {
       const user = userEvent.setup();
       renderComponent();
 
@@ -554,7 +635,6 @@ describe('TaskCreateDialog', () => {
 
       await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Created Task');
       await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
-      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
       submitTaskCreateForm();
 
       await waitFor(() => expect(mockOnSuccess).toHaveBeenCalledWith('new-task-id'));
@@ -566,7 +646,6 @@ describe('TaskCreateDialog', () => {
 
       await user.type(screen.getByRole('textbox', { name: /Task Title/i }), 'Created Task');
       await selectRadixOption(user, screen.getAllByRole('combobox')[0]!, 'Test Agent 1');
-      await selectRadixOption(user, screen.getByTestId('task-create__file-library'), 'Project Uploads');
       submitTaskCreateForm();
 
       await waitFor(() => expect(mockOnOpenChange).toHaveBeenCalledWith(false));

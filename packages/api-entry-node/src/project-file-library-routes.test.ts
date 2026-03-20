@@ -227,7 +227,7 @@ describe('project-file-library-routes', () => {
       docStore: new InMemoryJsonDocStore(),
       fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
       fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
-      internalAgentWorkspaceProvisioner: {
+      internalAgentWorkspaceBindingManager: {
         deleteWorkspaceBinding,
       },
     } as never;

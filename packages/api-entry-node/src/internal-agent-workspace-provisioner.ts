@@ -48,6 +48,8 @@ export interface InternalAgentWorkspaceProvisioner {
   }): Promise<void>;
 }
 
+export type InternalAgentWorkspaceBindingManager = InternalAgentWorkspaceProvisioner;
+
 interface InternalAgentWorkspaceK8sClient {
   ensureSecret(namespace: string, secret: V1Secret): Promise<void>;
   ensurePersistentVolume(volume: V1PersistentVolume): Promise<void>;

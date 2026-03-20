@@ -500,7 +500,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         filesystemName: library.filesystem_name,
       });
       await deps.fileLibraryGatewayManager?.stopGateway(libraryId);
-      await deps.internalAgentWorkspaceProvisioner?.deleteWorkspaceBinding({
+      await (deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner)?.deleteWorkspaceBinding({
         workspaceId,
         fileLibraryId: libraryId,
       });

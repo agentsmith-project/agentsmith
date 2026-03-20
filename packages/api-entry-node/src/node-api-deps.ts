@@ -23,7 +23,7 @@ import type { EndpointResourceService } from './endpoint-resource-service.js';
 import type { AgentResourceService } from './agent-resource-service.js';
 import type { AgentExecutionService } from './agent-execution-service.js';
 import type { InternalAgentPodManager } from './internal-agent-pod-manager.js';
-import type { InternalAgentWorkspaceProvisioner } from './internal-agent-workspace-provisioner.js';
+import type { InternalAgentWorkspaceBindingManager, InternalAgentWorkspaceProvisioner } from './internal-agent-workspace-provisioner.js';
 import type { GovernanceRunnerController } from './governance-runner.js';
 import type { FileLibraryOrchestrator } from './file-library-orchestrator.js';
 import type { FileLibraryGatewayManager } from './file-library-gateway-manager.js';
@@ -39,6 +39,8 @@ export interface NodeApiDeps {
   agentResourceService: AgentResourceService;
   agentExecutionService: AgentExecutionService;
   internalAgentPodManager?: InternalAgentPodManager;
+  internalAgentWorkspaceBindingManager?: InternalAgentWorkspaceBindingManager;
+  /** @deprecated use internalAgentWorkspaceBindingManager */
   internalAgentWorkspaceProvisioner?: InternalAgentWorkspaceProvisioner;
   fileLibraryBucket: string;
   createFileLibraryCatalogUseCase: CreateFileLibraryCatalogUseCase;

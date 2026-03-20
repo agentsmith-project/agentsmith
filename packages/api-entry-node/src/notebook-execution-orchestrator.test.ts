@@ -170,7 +170,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       internalAgentPodManager: {
         ensureAgentReady: vi.fn(async () => undefined),
       },
-      internalAgentWorkspaceProvisioner: {
+      internalAgentWorkspaceBindingManager: {
         ensureWorkspaceBinding: vi.fn(async () => ({
           workspaceMount: {
             bindingId: 'flib_internal',

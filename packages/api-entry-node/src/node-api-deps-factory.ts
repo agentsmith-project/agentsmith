@@ -159,7 +159,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const sandboxClient = sandboxUrl && sandboxServiceKey
     ? new SandboxManagerClient(sandboxUrl, sandboxServiceKey)
     : undefined;
-  const internalAgentWorkspaceProvisioner = internalAgentK8sNamespace
+  const internalAgentWorkspaceBindingManager = internalAgentK8sNamespace
     ? new InternalAgentWorkspaceProvisionerImpl(
         docStore,
         new KubernetesInternalAgentWorkspaceK8sClient(),
@@ -211,7 +211,12 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       agentResourceService,
       agentExecutionService,
       ...(internalAgentPodManager ? { internalAgentPodManager } : {}),
-      ...(internalAgentWorkspaceProvisioner ? { internalAgentWorkspaceProvisioner } : {}),
+      ...(internalAgentWorkspaceBindingManager
+        ? {
+          internalAgentWorkspaceBindingManager,
+          internalAgentWorkspaceProvisioner: internalAgentWorkspaceBindingManager,
+        }
+        : {}),
       fileLibraryBucket,
       createFileLibraryCatalogUseCase: new CreateFileLibraryCatalogUseCase(
         fileLibraryCatalogRepo,

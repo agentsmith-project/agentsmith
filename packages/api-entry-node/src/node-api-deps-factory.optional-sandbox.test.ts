@@ -18,6 +18,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     const { deps, lifecycle } = createNodeApiDepsFromEnv({ ...baseEnv });
     try {
       expect(deps.internalAgentPodManager).toBeUndefined();
+      expect(deps.internalAgentWorkspaceBindingManager).toBeUndefined();
       expect(deps.internalAgentWorkspaceProvisioner).toBeUndefined();
     } finally {
       await shutdownSafe(lifecycle);
@@ -31,7 +32,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     })).toThrowError('sandbox_manager_config_incomplete');
   });
 
-  it('fails fast when workspace provisioner env is partially configured', () => {
+  it('fails fast when workspace binding manager env is partially configured', () => {
     expect(() => createNodeApiDepsFromEnv({
       ...baseEnv,
       INTERNAL_AGENT_K8S_NAMESPACE: 'agentsmith-sandbox',
@@ -50,6 +51,7 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
 
     try {
       expect(deps.internalAgentPodManager).toBeDefined();
+      expect(deps.internalAgentWorkspaceBindingManager).toBeDefined();
       expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
       await new Promise((resolve) => setTimeout(resolve, 1500));
       expect(fetchSpy).toHaveBeenCalled();

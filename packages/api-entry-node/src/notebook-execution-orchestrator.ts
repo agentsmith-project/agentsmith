@@ -240,7 +240,8 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       if (!deps.internalAgentPodManager) {
         throw Object.assign(new Error('agent_sandbox_not_configured'), { code: 'AGENT_SANDBOX_NOT_CONFIGURED' });
       }
-      if (!deps.internalAgentWorkspaceProvisioner) {
+      const workspaceBindingManager = deps.internalAgentWorkspaceBindingManager ?? deps.internalAgentWorkspaceProvisioner;
+      if (!workspaceBindingManager) {
         throw Object.assign(new Error('internal_agent_workspace_not_configured'), {
           code: 'AGENT_SANDBOX_NOT_CONFIGURED',
         });
@@ -255,7 +256,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         data: buildSandboxStartingEvent(),
       });
       const workloadId = sanitizeWorkloadId(task.id);
-      const workspaceBinding = await deps.internalAgentWorkspaceProvisioner.ensureWorkspaceBinding({
+      const workspaceBinding = await workspaceBindingManager.ensureWorkspaceBinding({
         workspaceId: task.workspace_id,
         projectId: task.project_id,
         fileLibraryId: task.workspace_file_library_id,

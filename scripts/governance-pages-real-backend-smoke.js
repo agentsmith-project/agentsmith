@@ -356,6 +356,8 @@ async function resolveAccessibleProjectId({ page, baseUrl, apiBase, locale, work
 }
 
 async function main() {
+  const stateFile = process.env.STATE_FILE || path.join(process.cwd(), 'artifacts/real-lane/current/state.json');
+  const state = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : {};
   const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
   const strictMode = smokeMode === 'strict';
   const baseUrl = process.env.BASE_URL || 'http://localhost:3001';
@@ -367,12 +369,9 @@ async function main() {
   const clientId = process.env.KEYCLOAK_CLIENT_ID || 'agentsmith';
   const username = process.env.USERNAME || 'dev-admin';
   const password = process.env.PASSWORD || 'dev-admin-123';
-  const projectIdFile = process.env.PROJECT_ID_FILE || '/tmp/agentsmith_project_id.txt';
-
-  requireFile(projectIdFile);
-  const fallbackProjectId = fs.readFileSync(projectIdFile, 'utf8').trim();
-  if (!fallbackProjectId) throw new Error(`empty_project_id:${projectIdFile}`);
-  const tokenFile = process.env.TOKEN_FILE || '/tmp/agentsmith_user_token.txt';
+  const fallbackProjectId = process.env.PROJECT_ID || state?.project?.id || '';
+  if (!fallbackProjectId) throw new Error(`empty_project_id_from_state:${stateFile}`);
+  const tokenFile = process.env.TOKEN_FILE || path.join(process.cwd(), 'artifacts/real-lane/current/token.txt');
 
   const browser = await chromium.launch({ headless: true });
 

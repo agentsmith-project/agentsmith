@@ -10,7 +10,7 @@ ensure_real_lane_state
 RUN_SMOKE_FIRST="${RUN_SMOKE_FIRST:-1}"
 TASK_ID_FILE="${TASK_ID_FILE:-}"
 TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
-RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
+RUNNER_LOG="${RUNNER_LOG:-$(real_lane_demo_log_file runner)}"
 
 info() { echo "[file-read-smoke] $*"; }
 err() { echo "[file-read-smoke] ERROR: $*" >&2; }

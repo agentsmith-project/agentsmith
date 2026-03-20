@@ -4,9 +4,11 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
-PROJECT_ID_FILE="${PROJECT_ID_FILE:-/tmp/agentsmith_project_id.txt}"
-ENDPOINT_ID_FILE="${ENDPOINT_ID_FILE:-/tmp/agentsmith_endpoint_id.txt}"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
+ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
@@ -31,8 +33,8 @@ read_file_trim() {
 proxy_precheck_status() {
   local token project_id endpoint_id url
   token="$(read_file_trim "${TOKEN_FILE}" || true)"
-  project_id="$(read_file_trim "${PROJECT_ID_FILE}" || true)"
-  endpoint_id="$(read_file_trim "${ENDPOINT_ID_FILE}" || true)"
+  project_id="${PROJECT_ID}"
+  endpoint_id="${ENDPOINT_ID}"
   if [[ -z "${token}" || -z "${project_id}" || -z "${endpoint_id}" ]]; then
     echo "000"
     return 0
@@ -171,11 +173,11 @@ run_matplotlib_smoke() {
   local token project_id agent_id api_base ws
   api_base="${API_BASE:-http://localhost:20000/api/v1}"
   ws="${WORKSPACE_ID:-ws_default}"
-  token="$(cat /tmp/agentsmith_user_token.txt 2>/dev/null || true)"
-  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
+  token="$(cat "${TOKEN_FILE}" 2>/dev/null || true)"
+  project_id="${PROJECT_ID}"
+  agent_id="$(state_get agent.id)"
   if [[ -z "${token}" || -z "${project_id}" || -z "${agent_id}" ]]; then
-    err "missing token/project/agent metadata under /tmp; run demo-up or init-resources first"
+    err "missing token/project/agent metadata in $(real_lane_state_file); run bootstrap/init-resources first"
     return 1
   fi
   local task_id
@@ -213,6 +215,10 @@ run_matplotlib_smoke() {
 }
 
 main() {
+  [[ -n "${PROJECT_ID}" && -n "${ENDPOINT_ID}" ]] || {
+    err "missing project/endpoint metadata in $(real_lane_state_file)"
+    exit 1
+  }
   local failures=0
   if [[ "${RUN_BASIC_SMOKE}" == "1" ]]; then
     run_basic_smoke || failures=$((failures + 1))

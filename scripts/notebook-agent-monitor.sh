@@ -3,10 +3,15 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 API_BASE="${API_BASE:-http://localhost:20000}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 INTERVAL_SEC="${INTERVAL_SEC:-2}"
 COUNT="${COUNT:-0}" # 0 means run forever
+METRICS_FILE="${METRICS_FILE:-$(real_lane_tmp_file notebook-metrics.json)}"
 
 if [[ ! -f "${TOKEN_FILE}" ]]; then
   echo "[monitor] token file not found: ${TOKEN_FILE}" >&2
@@ -58,17 +63,17 @@ i=0
 while :; do
   i=$((i + 1))
   ts="$(date '+%Y-%m-%d %H:%M:%S')"
-  rm -f /tmp/agentsmith_notebook_metrics.json
+  rm -f "${METRICS_FILE}"
   http_code="$(
-    curl -sS -o /tmp/agentsmith_notebook_metrics.json -w '%{http_code}' \
+    curl -sS -o "${METRICS_FILE}" -w '%{http_code}' \
       "${URL}" -H "Authorization: Bearer ${TOKEN}" || true
   )"
   if [[ "${http_code}" != "200" ]]; then
     echo "[monitor][${ts}] http=${http_code} endpoint=${URL}" >&2
-    [[ -f /tmp/agentsmith_notebook_metrics.json ]] && cat /tmp/agentsmith_notebook_metrics.json >&2 || true
+    [[ -f "${METRICS_FILE}" ]] && cat "${METRICS_FILE}" >&2 || true
     echo >&2
   else
-    line="$(cat /tmp/agentsmith_notebook_metrics.json | json_line)"
+    line="$(cat "${METRICS_FILE}" | json_line)"
     echo "[monitor][${ts}] ${line}"
   fi
 

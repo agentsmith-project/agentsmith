@@ -4,6 +4,8 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 PORT_API="${PORT_API:-20000}"
 PORT_WEB="${PORT_WEB:-3001}"
 DEMO_INIT_RESOURCES="${DEMO_INIT_RESOURCES:-1}"
@@ -63,8 +65,8 @@ require_resources_or_key() {
   if [[ -n "${GLM_API_KEY:-}" ]]; then
     return 0
   fi
-  if [[ -s "/tmp/agentsmith_project_id.txt" && -s "/tmp/agentsmith_endpoint_id.txt" && -s "/tmp/agentsmith_agent_id.txt" && -s "/tmp/agentsmith_agent_key.txt" && -s "/tmp/agentsmith_ws_url.txt" ]]; then
-    info "GLM_API_KEY missing, falling back to existing /tmp demo metadata"
+  if [[ -s "$(real_lane_token_file)" && -n "$(state_get project.id)" && -n "$(state_get endpoint.id)" && -n "$(state_get agent.id)" && -n "$(state_get agent.key)" && -n "$(state_get agent.ws_url)" ]]; then
+    info "GLM_API_KEY missing, falling back to existing real-lane metadata"
     export DEMO_INIT_RESOURCES=0
     return 0
   fi
@@ -105,10 +107,10 @@ main() {
   fi
 
   local project_id endpoint_id agent_id ws_url
-  project_id="$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)"
-  endpoint_id="$(cat /tmp/agentsmith_endpoint_id.txt 2>/dev/null || true)"
-  agent_id="$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)"
-  ws_url="$(cat /tmp/agentsmith_ws_url.txt 2>/dev/null || true)"
+  project_id="$(state_get project.id)"
+  endpoint_id="$(state_get endpoint.id)"
+  agent_id="$(state_get agent.id)"
+  ws_url="$(state_get agent.ws_url)"
 
   info "done"
   info "web: http://localhost:${PORT_WEB}"

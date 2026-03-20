@@ -941,6 +941,7 @@ governance-smoke:
 notebook-agent-smoke-full:
 	@set -e; \
 	STATE_FILE="$${REAL_LANE_STATE_FILE:-$(CURDIR)/artifacts/real-lane/current/state.json}"; \
+	RUNNER_LOG="$${RUNNER_LOG:-$(CURDIR)/artifacts/real-lane/current/runner-smoke.log}"; \
 	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
@@ -959,18 +960,18 @@ notebook-agent-smoke-full:
 		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 		MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
 		MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
-		$(NPM) run agent:codex-runner ) > /tmp/agentsmith_runner.log 2>&1 & \
+		$(NPM) run agent:codex-runner ) > "$$RUNNER_LOG" 2>&1 & \
 	RUNNER_PID=$$!; \
 	trap 'kill $$RUNNER_PID >/dev/null 2>&1 || true' EXIT INT TERM; \
 	sleep 3; \
 	if ! kill -0 $$RUNNER_PID >/dev/null 2>&1; then \
-		echo "[make] runner exited early. tail /tmp/agentsmith_runner.log:"; \
-		tail -n 80 /tmp/agentsmith_runner.log || true; \
+		echo "[make] runner exited early. tail $$RUNNER_LOG:"; \
+		tail -n 80 "$$RUNNER_LOG" || true; \
 		exit 1; \
 	fi; \
 	echo "[make] waiting for agent runner websocket to be ready..."; \
 	for i in 1 2 3 4 5 6 7 8 9 10; do \
-		if rg -q "\\[agent-codex-runner\\] connected|websocket open" /tmp/agentsmith_runner.log 2>/dev/null; then \
+		if rg -q "\\[agent-codex-runner\\] connected|websocket open" "$$RUNNER_LOG" 2>/dev/null; then \
 			break; \
 		fi; \
 		sleep 1; \
@@ -988,7 +989,7 @@ notebook-agent-smoke-full:
 		exit "$$SMOKE_RC"; \
 	fi; \
 	echo "[make] smoke done. recent runner log:"; \
-	tail -n 40 /tmp/agentsmith_runner.log || true
+	tail -n 40 "$$RUNNER_LOG" || true
 
 notebook-agent-monitor:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

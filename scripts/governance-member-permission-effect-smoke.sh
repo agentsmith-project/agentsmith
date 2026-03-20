@@ -3,9 +3,13 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 BASE_URL="${BASE_URL:-http://localhost:3001}"
@@ -13,7 +17,7 @@ LOCALE="${LOCALE:-zh-CN}"
 
 MEMBER_USERNAME="${MEMBER_USERNAME:-integration-user}"
 MEMBER_PASSWORD="${MEMBER_PASSWORD:-integration-user-123}"
-MEMBER_USER_ID_FILE="${MEMBER_USER_ID_FILE:-/tmp/agentsmith_member_user_id.txt}"
+MEMBER_USER_ID="${MEMBER_USER_ID:-$(state_get governance.member_user_id)}"
 
 info() { echo "[gov-member-perm-smoke] $*"; }
 err() { echo "[gov-member-perm-smoke] ERROR: $*" >&2; }
@@ -61,11 +65,10 @@ refresh_member_token() {
 
 main() {
   require_file "${OWNER_TOKEN_FILE}"
-  require_file /tmp/agentsmith_project_id.txt
 
   local owner_token project_id
   owner_token="$(cat "${OWNER_TOKEN_FILE}")"
-  project_id="$(cat /tmp/agentsmith_project_id.txt)"
+  project_id="$(state_get project.id)"
   [[ -n "${owner_token}" && -n "${project_id}" ]] || {
     err "required owner token/project metadata is empty"
     exit 1
@@ -95,12 +98,12 @@ main() {
     err "member token invalid after refresh"
     exit 1
   fi
-  member_user_id="$(jwt_claim "${member_token}" "sub")"
+  member_user_id="${MEMBER_USER_ID:-$(jwt_claim "${member_token}" "sub")}"
   if [[ -z "${member_user_id}" ]]; then
     err "failed to read member user sub from token"
     exit 1
   fi
-  echo "${member_user_id}" > "${MEMBER_USER_ID_FILE}" 2>/dev/null || true
+  state_set_string governance.member_user_id "${member_user_id}"
   info "member user id = ${member_user_id}"
 
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"

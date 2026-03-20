@@ -29,20 +29,22 @@
 按下面顺序执行：
 
 ```bash
-npm run contracts:check
-npm run contracts:check-openapi
-npm run openapi:check-generated
-npx tsc --noEmit
-npm run test:mainline:strict
-npm run test:governance:strict
-npm run test:visual:strict
-npm run test:mainline:strict:real
-npm run test:smoke:real:notebook-mainline
-npm run test:visual:real:review
-npm run test:release:real:full
+make gate-fast
+make gate-main
+make lane-visual
+make release-real-reset
+make release-real-bootstrap
+make release-real-ready
+make manual-feishu-admin
+make manual-feishu-check
+make manual-feishu-user
+make manual-feishu-check
+make release-real-run
+make release-real-report
+make gate-release
 ```
 
-`npm run test:release:real:full` 会顺序执行发布级工程门禁、严格主线、真实 notebook 主线，以及真实环境截图巡检。
+`make gate-release` 会基于新的 release 状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。
 
 真实截图默认输出到：
 

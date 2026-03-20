@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 BASE_URL="${BASE_URL:-http://localhost:20000}"
-WS_ID="${WS_ID:-ws_default}"
-PROJECT_ID="${PROJECT_ID:-proj_001}"
+WS_ID="${WS_ID:-$(state_get workspace.id ws_default)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id proj_001)}"
 MODEL="${MODEL:-openai/gpt-4o-mini}"
 PROMPT="${PROMPT:-benchmark streaming request}"
 REQUESTS="${REQUESTS:-30}"
 CONCURRENCY="${CONCURRENCY:-5}"
 MAX_TIME_SECONDS="${MAX_TIME_SECONDS:-90}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 STRICT_GATE="${STRICT_GATE:-0}"
 THRESHOLD_P95_MS="${THRESHOLD_P95_MS:-12000}"
 THRESHOLD_ERROR_RATE="${THRESHOLD_ERROR_RATE:-0.05}"

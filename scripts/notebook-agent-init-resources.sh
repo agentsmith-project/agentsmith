@@ -55,7 +55,7 @@ TOKEN="$(cat "${TOKEN_FILE}")"
 BASE="${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}"
 state_set_string workspace.id "${WORKSPACE_ID}"
 
-userinfo_status="$(curl -sS -o /tmp/agentsmith_userinfo_check.json -w '%{http_code}' \
+userinfo_status="$(curl -sS -o "$(real_lane_tmp_file userinfo-check.json)" -w '%{http_code}' \
   "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/userinfo" \
   -H "Authorization: Bearer ${TOKEN}" || true)"
 if [[ "${userinfo_status}" != "200" ]]; then

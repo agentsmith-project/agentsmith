@@ -3,9 +3,13 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 BASE_URL="${BASE_URL:-http://localhost:3001}"
@@ -13,8 +17,7 @@ LOCALE="${LOCALE:-zh-CN}"
 
 MEMBER_USERNAME="${MEMBER_USERNAME:-integration-user}"
 MEMBER_PASSWORD="${MEMBER_PASSWORD:-integration-user-123}"
-MEMBER_USER_ID="${MEMBER_USER_ID:-}"
-MEMBER_USER_ID_FILE="${MEMBER_USER_ID_FILE:-/tmp/agentsmith_member_user_id.txt}"
+MEMBER_USER_ID="${MEMBER_USER_ID:-$(state_get governance.member_user_id)}"
 
 info() { echo "[gov-member-lifecycle-smoke] $*"; }
 err() { echo "[gov-member-lifecycle-smoke] ERROR: $*" >&2; }
@@ -112,11 +115,10 @@ is_probably_user_id() {
 
 main() {
   require_file "${OWNER_TOKEN_FILE}"
-  require_file /tmp/agentsmith_project_id.txt
 
   local owner_token project_id
   owner_token="$(cat "${OWNER_TOKEN_FILE}")"
-  project_id="$(cat /tmp/agentsmith_project_id.txt)"
+  project_id="$(state_get project.id)"
   [[ -n "${owner_token}" && -n "${project_id}" ]] || {
     err "required owner token/project metadata is empty"
     exit 1
@@ -142,15 +144,6 @@ main() {
     member_user_id="${MEMBER_USER_ID}"
     info "using member user id from MEMBER_USER_ID env"
   fi
-  if [[ -z "${member_user_id}" && -f "${MEMBER_USER_ID_FILE}" ]]; then
-    local cached_member_user_id
-    cached_member_user_id="$(cat "${MEMBER_USER_ID_FILE}" 2>/dev/null || true)"
-    if is_probably_user_id "${cached_member_user_id}"; then
-      member_user_id="${cached_member_user_id}"
-      info "using cached member user id from ${MEMBER_USER_ID_FILE}"
-    fi
-  fi
-
   if [[ -z "${member_user_id}" ]]; then
     member_user_id="$(resolve_member_user_id_from_members "${members_url}" "${owner_token}" "${MEMBER_USERNAME}" || true)"
   fi
@@ -168,7 +161,7 @@ main() {
     err "failed to resolve member user id"
     exit 1
   }
-  echo "${member_user_id}" > "${MEMBER_USER_ID_FILE}" 2>/dev/null || true
+  state_set_string governance.member_user_id "${member_user_id}"
   info "member user id = ${member_user_id}"
 
   local membership_url="${base}/memberships/${member_user_id}"

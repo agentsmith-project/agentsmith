@@ -2,10 +2,13 @@
 set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
-API_PID_FILE="${API_PID_FILE:-/tmp/agentsmith_demo_api.pid}"
-WEB_PID_FILE="${WEB_PID_FILE:-/tmp/agentsmith_demo_web.pid}"
-RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
+API_PID_FILE="${API_PID_FILE:-$(real_lane_demo_pid_file api)}"
+WEB_PID_FILE="${WEB_PID_FILE:-$(real_lane_demo_pid_file web)}"
+RUNNER_PID_FILE="${RUNNER_PID_FILE:-$(real_lane_demo_pid_file runner)}"
 
 info() { echo "[demo-down] $*"; }
 

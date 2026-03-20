@@ -3,11 +3,15 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
-PROJECT_ID="${PROJECT_ID:-$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)}"
-AGENT_ID="${AGENT_ID:-$(cat /tmp/agentsmith_agent_id.txt 2>/dev/null || true)}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
+AGENT_ID="${AGENT_ID:-$(state_get agent.id)}"
 PROMPT="${PROMPT:-reply exactly: chain ok}"
 REQUESTS="${REQUESTS:-10}"
 CONCURRENCY="${CONCURRENCY:-3}"
@@ -20,7 +24,7 @@ RESULT_JSON_PATH="${RESULT_JSON_PATH:-}"
 RESULT_CSV_PATH="${RESULT_CSV_PATH:-}"
 
 if [[ -z "${PROJECT_ID}" || -z "${AGENT_ID}" ]]; then
-  echo "[load] missing PROJECT_ID/AGENT_ID (or /tmp/agentsmith_project_id.txt / /tmp/agentsmith_agent_id.txt)" >&2
+  echo "[load] missing PROJECT_ID/AGENT_ID in $(real_lane_state_file)" >&2
   exit 1
 fi
 if [[ ! -f "${TOKEN_FILE}" ]]; then

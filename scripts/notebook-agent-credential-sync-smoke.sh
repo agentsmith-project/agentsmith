@@ -13,7 +13,7 @@ WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 PROMPT="${PROMPT:-check credential sync}"
-RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
+RUNNER_LOG="${RUNNER_LOG:-$(real_lane_demo_log_file runner)}"
 TASK_LOG="${TASK_LOG:-$(real_lane_state_root)/credential-sync-smoke-task.log}"
 
 if [[ -z "${PROJECT_ID}" ]]; then

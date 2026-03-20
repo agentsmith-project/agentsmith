@@ -15,8 +15,8 @@ SANDBOX_MANAGER_URL="${SANDBOX_MANAGER_URL:-}"
 SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY:-}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
 GLM_API_KEY="${GLM_API_KEY:-}"
-RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
-RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
+RUNNER_LOG="${RUNNER_LOG:-$(real_lane_demo_log_file runner)}"
+RUNNER_PID_FILE="${RUNNER_PID_FILE:-$(real_lane_demo_pid_file runner)}"
 DEMO_REQUIRE_RUNNER="${DEMO_REQUIRE_RUNNER:-1}"
 
 info() { echo "[demo-check] $*"; }

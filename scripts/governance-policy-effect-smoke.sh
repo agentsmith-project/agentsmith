@@ -4,9 +4,13 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
+ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
@@ -61,12 +65,10 @@ is_upstream_429_payload() {
 main() {
   local token project_id endpoint_id
   require_file "${TOKEN_FILE}"
-  require_file /tmp/agentsmith_project_id.txt
-  require_file /tmp/agentsmith_endpoint_id.txt
 
   token="$(cat "${TOKEN_FILE}")"
-  project_id="$(cat /tmp/agentsmith_project_id.txt)"
-  endpoint_id="$(cat /tmp/agentsmith_endpoint_id.txt)"
+  project_id="${PROJECT_ID}"
+  endpoint_id="${ENDPOINT_ID}"
   [[ -n "${token}" && -n "${project_id}" && -n "${endpoint_id}" ]] || {
     err "required metadata files are empty"
     exit 1
@@ -91,7 +93,7 @@ main() {
       "${endpoint_url}" -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${endpoint_code}" != "200" ]]; then
-    err "endpoint lookup failed (HTTP ${endpoint_code}); stale /tmp metadata? run init-resources"
+    err "endpoint lookup failed (HTTP ${endpoint_code}); stale real-lane state? run init-resources"
     exit 1
   fi
   endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_compatible"))')"

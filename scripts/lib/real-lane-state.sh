@@ -17,11 +17,28 @@ real_lane_summary_file() {
   printf '%s/summary.env\n' "$(real_lane_state_root)"
 }
 
+real_lane_demo_root() {
+  printf '%s/demo\n' "$(real_lane_state_root)"
+}
+
+real_lane_demo_log_file() {
+  printf '%s/%s.log\n' "$(real_lane_demo_root)" "$1"
+}
+
+real_lane_demo_pid_file() {
+  printf '%s/%s.pid\n' "$(real_lane_demo_root)" "$1"
+}
+
+real_lane_tmp_file() {
+  printf '%s/%s\n' "$(real_lane_state_root)" "$1"
+}
+
 ensure_real_lane_state() {
   local dir file
   dir="$(real_lane_state_root)"
   file="$(real_lane_state_file)"
   mkdir -p "${dir}"
+  mkdir -p "$(real_lane_demo_root)"
   if [[ ! -f "${file}" ]]; then
     printf '{}\n' > "${file}"
   fi

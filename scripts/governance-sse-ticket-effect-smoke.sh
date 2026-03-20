@@ -3,8 +3,12 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 PORT_API="${PORT_API:-20000}"
-OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+OWNER_TOKEN_FILE="${OWNER_TOKEN_FILE:-$(real_lane_token_file)}"
 ticket_file=""
 request_check_file=""
 query_token_check_file=""

@@ -40,7 +40,7 @@ TOKEN="$(cat "${TOKEN_FILE}")"
 DEFAULT_WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
 
 userinfo_status="$(
-  curl -sS -o /tmp/agentsmith_userinfo_check.json -w '%{http_code}' \
+  curl -sS -o "$(real_lane_tmp_file userinfo-check.json)" -w '%{http_code}' \
     "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/userinfo" \
     -H "Authorization: Bearer ${TOKEN}" || true
 )"

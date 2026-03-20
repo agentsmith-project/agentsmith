@@ -169,7 +169,7 @@ describe('Failure Classifier: TDD Suite (Epic D2)', () => {
       const steps = getTroubleshootingSteps(result.category);
 
       expect(steps).toBeDefined();
-      expect(steps.some(s => s.includes('/tmp/agentsmith_demo_api.log'))).toBe(true);
+      expect(steps.some(s => s.includes('artifacts/real-lane/current/demo/api.log'))).toBe(true);
     });
   });
 

@@ -3,12 +3,16 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
+
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-PROJECT_ID_FILE="${PROJECT_ID_FILE:-/tmp/agentsmith_project_id.txt}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 
 info() { echo "[gov-config-audit-smoke] $*"; }
 err() { echo "[gov-config-audit-smoke] ERROR: $*" >&2; }
@@ -51,11 +55,10 @@ cleanup() {
 
 main() {
   require_file "${TOKEN_FILE}"
-  require_file "${PROJECT_ID_FILE}"
 
   local token project_id
   token="$(cat "${TOKEN_FILE}")"
-  project_id="$(cat "${PROJECT_ID_FILE}")"
+  project_id="${PROJECT_ID}"
   [[ -n "${token}" && -n "${project_id}" ]] || {
     err "required metadata/token is empty"
     exit 1

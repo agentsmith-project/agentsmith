@@ -4,17 +4,19 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 PAGE_SIZES="${PAGE_SIZES:-20,50,200,500}"
 REQUESTS="${REQUESTS:-100}"
 CONCURRENCY="${CONCURRENCY:-10}"
 WARMUP="${WARMUP:-10}"
-OUT_DIR="${OUT_DIR:-/tmp/agentsmith-traces-query-sweep-$(date +%Y%m%d-%H%M%S)}"
+OUT_DIR="${OUT_DIR:-$(real_lane_state_root)/traces-query-sweep-$(date +%Y%m%d-%H%M%S)}"
 
 API_BASE="${API_BASE:-http://localhost:20000}"
-WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
-PROJECT_ID="${PROJECT_ID:-$(cat /tmp/agentsmith_project_id.txt 2>/dev/null || true)}"
+WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
+TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 TASK_ID="${TASK_ID:-}"
 MESSAGE_ID="${MESSAGE_ID:-}"
 PREPARE_TASK="${PREPARE_TASK:-1}"
@@ -31,7 +33,7 @@ if [[ -z "${TASK_ID}" && "${PREPARE_TASK}" == "1" ]]; then
         cd "${ROOT_DIR}"
         PROMPT="${TURN_PROMPT_PREFIX} ${i}" make notebook-agent-smoke-task >/dev/null
       )
-      TASK_ID="$(cat /tmp/agentsmith_last_task_id.txt)"
+      TASK_ID="$(state_get task.last_id)"
     else
       TOKEN="$(cat "${TOKEN_FILE}")"
       BASE="${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}"

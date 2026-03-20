@@ -15,11 +15,11 @@ TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 
-API_PID_FILE="${API_PID_FILE:-/tmp/agentsmith_demo_api.pid}"
-WEB_PID_FILE="${WEB_PID_FILE:-/tmp/agentsmith_demo_web.pid}"
-RUNNER_PID_FILE="${RUNNER_PID_FILE:-/tmp/agentsmith_demo_runner.pid}"
-WEB_LOG="${WEB_LOG:-/tmp/agentsmith_demo_web.log}"
-RUNNER_LOG="${RUNNER_LOG:-/tmp/agentsmith_demo_runner.log}"
+API_PID_FILE="${API_PID_FILE:-$(real_lane_demo_pid_file api)}"
+WEB_PID_FILE="${WEB_PID_FILE:-$(real_lane_demo_pid_file web)}"
+RUNNER_PID_FILE="${RUNNER_PID_FILE:-$(real_lane_demo_pid_file runner)}"
+WEB_LOG="${WEB_LOG:-$(real_lane_demo_log_file web)}"
+RUNNER_LOG="${RUNNER_LOG:-$(real_lane_demo_log_file runner)}"
 
 info() { echo "[demo-status] $*"; }
 

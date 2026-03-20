@@ -93,11 +93,11 @@ const FAILURE_PATTERNS: FailurePattern[] = [
       /server\s+error/i,
       /database\s+error/i,
     ],
-    recommendation: 'Backend error: Check API logs at /tmp/agentsmith_demo_api.log',
+    recommendation: 'Backend error: Check API logs at artifacts/real-lane/current/demo/api.log',
     documentationLink: '/docs/troubleshooting-guide-v1.md#backend-issues',
     priority: 100,
     steps: [
-      '1. Check API logs: `tail -100 /tmp/agentsmith_demo_api.log`',
+      '1. Check API logs: `tail -100 artifacts/real-lane/current/demo/api.log`',
       '2. Check backend status: `make notebook-agent-demo-status`',
       '3. Verify database is running: `docker ps | grep postgres`',
       '4. Verify Redis is running: `docker ps | grep redis`',
@@ -175,7 +175,7 @@ const FAILURE_PATTERNS: FailurePattern[] = [
       '2. Run: `make notebook-agent-refresh-token`',
       '3. If refresh fails, check Keycloak is running: `make notebook-agent-demo-status`',
       '4. Verify environment variables: KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID',
-      '5. Check token file: `cat /tmp/agentsmith_user_token.txt`',
+      '5. Check token file: `cat artifacts/real-lane/current/token.txt`',
     ],
   },
   // NETWORK - Connection issues (must come before timeout for ETIMEDOUT)

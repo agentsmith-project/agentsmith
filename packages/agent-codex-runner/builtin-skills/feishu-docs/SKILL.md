@@ -1,13 +1,13 @@
 ---
 name: feishu-docs
-description: Use for Feishu/Lark/飞书 document and wiki tasks when Codex should search, read, create, update, or comment on Feishu docs without registering a Codex MCP server. Trigger on requests about Feishu docs, Lark docs, knowledge base/wiki pages, comments, document search, or when the current workspace stores credentials under .codex/credential.
+description: Use for Feishu/Lark/飞书 document and wiki tasks when Codex should search, read, create, update, or comment on Feishu docs without registering a Codex MCP server. Trigger on requests about Feishu docs, Lark docs, knowledge base/wiki pages, comments, document search, or when the current workspace stores credentials under MBOS_TASK_CREDENTIAL_DIR or .codex/credential.
 ---
 
 # Feishu Docs
 
 ## Overview
 
-Call Feishu remote MCP directly over HTTP through a local helper script. Read credentials from the current workspace under `.codex/credential` (prefer `feishu/` subdirectory if present) instead of loading Feishu as a Codex MCP server.
+Call Feishu remote MCP directly over HTTP through a local helper script. Read credentials from `MBOS_TASK_CREDENTIAL_DIR` when present, otherwise from the current workspace under `.codex/credential` (prefer `feishu/` subdirectory if present), instead of loading Feishu as a Codex MCP server.
 
 ## Quick Start
 
@@ -22,7 +22,7 @@ The helper script now defaults to the full Feishu tool whitelist. For tighter co
 
 ## Workflow
 
-1. Confirm the current workspace contains `.codex/credential` (or `.codex/credential/feishu`), then inspect files directly. Do not assume fixed file names or fixed formats; use the file content to identify access token, refresh token, app id, and app secret.
+1. Confirm `MBOS_TASK_CREDENTIAL_DIR` or the current workspace contains credential files, then inspect them directly. Do not assume fixed file names or fixed formats; use the file content to identify access token, refresh token, app id, and app secret.
 2. If the request is vague about the target document, start with `search-doc`.
 3. If the user provides a doc URL or doc id, use `fetch-doc`.
 4. For edits, call only the specific mutation tool needed, for example `update-doc` or `add-comments`.
@@ -84,7 +84,7 @@ Practical defaults:
 ## Failure Recovery
 
 - If token or auth errors appear, run `python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token`
-- If refresh fails, inspect and update the current workspace files under `.codex/credential`
+- If refresh fails, inspect and update the credential files under `MBOS_TASK_CREDENTIAL_DIR` or `.codex/credential`
 - Do not re-register Feishu as a Codex MCP server for this skill; use the helper script directly
 
 ## Resources

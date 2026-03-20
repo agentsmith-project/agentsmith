@@ -39,6 +39,16 @@ def load_env_like_text(text: str) -> dict[str, str]:
 
 
 def find_credential_dir(start: Path | None = None) -> Path:
+    configured = os.environ.get("MBOS_TASK_CREDENTIAL_DIR", "").strip()
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if not configured_path.is_absolute():
+            configured_path = (start or Path.cwd()).resolve() / configured_path
+        configured_path = configured_path.resolve()
+        jira_path = configured_path / "jira"
+        if jira_path.is_dir():
+            return jira_path
+
     current = (start or Path.cwd()).resolve()
     for base in [current, *current.parents]:
         candidate = base / ".codex" / "credential" / "jira"

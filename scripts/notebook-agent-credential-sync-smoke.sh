@@ -103,8 +103,8 @@ if [[ -z "${CWD}" ]]; then
   echo "[credential-sync-smoke] failed to infer cwd from ${RUNNER_LOG} for task ${TASK_ID}" >&2
   exit 1
 fi
-INDEX_PATH="${CWD}/.codex/credential/index.json"
-PROVIDER_PATH="${CWD}/.codex/credential/jira/connections.json"
+INDEX_PATH="${CWD}/.codex/tasks/${TASK_ID}/credential/index.json"
+PROVIDER_PATH="${CWD}/.codex/tasks/${TASK_ID}/credential/jira/connections.json"
 
 echo "[credential-sync-smoke] checking generated files in ${CWD}"
 [[ -f "${INDEX_PATH}" ]] || { echo "[credential-sync-smoke] missing ${INDEX_PATH}" >&2; exit 1; }

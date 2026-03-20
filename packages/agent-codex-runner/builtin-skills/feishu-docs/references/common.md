@@ -8,7 +8,13 @@ Use:
 python ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool <tool-name> --params '<json object>'
 ```
 
-If the workspace does not contain `.codex/credential`, pass:
+Notebook tasks now expose the task-scoped credential root through:
+
+```bash
+MBOS_TASK_CREDENTIAL_DIR=./.codex/tasks/<taskId>/credential
+```
+
+The helper script prefers that directory automatically. If the environment variable is absent and the workspace does not contain `.codex/credential`, pass:
 
 ```bash
 --credential-dir /abs/path/to/.codex/credential
@@ -16,7 +22,7 @@ If the workspace does not contain `.codex/credential`, pass:
 
 ## Credential Contract
 
-- Inspect files under `.codex/credential` directly; do not assume fixed file names or formats.
+- Inspect files under `MBOS_TASK_CREDENTIAL_DIR` or `.codex/credential` directly; do not assume fixed file names or formats.
 - `tools-list` / `call-tool` need an access token for `X-Lark-MCP-UAT`.
 - `refresh-token` needs three values discoverable from file content:
   - refresh token

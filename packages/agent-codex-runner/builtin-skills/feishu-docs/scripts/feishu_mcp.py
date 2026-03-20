@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 import re
 import sys
 from pathlib import Path
@@ -28,6 +29,18 @@ def load_env_like_text(text: str) -> dict[str, str]:
 
 
 def find_credential_dir(start: Path | None = None) -> Path:
+    configured = os.environ.get("MBOS_TASK_CREDENTIAL_DIR", "").strip()
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if not configured_path.is_absolute():
+            configured_path = (start or Path.cwd()).resolve() / configured_path
+        configured_path = configured_path.resolve()
+        if configured_path.is_dir():
+            feishu_subdir = configured_path / "feishu"
+            if feishu_subdir.is_dir():
+                return feishu_subdir
+            return configured_path
+
     current = (start or Path.cwd()).resolve()
     for base in [current, *current.parents]:
         root = base / ".codex" / "credential"

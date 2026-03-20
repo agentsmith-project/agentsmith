@@ -2,7 +2,13 @@
 
 ## Authentication
 
-Use Bearer token auth. Prefer inspecting credentials from the current workspace:
+Use Bearer token auth. Prefer inspecting credentials from the current notebook task namespace when available:
+
+```text
+MBOS_TASK_CREDENTIAL_DIR/jira/
+```
+
+Otherwise inspect the shared workspace credential root:
 
 ```text
 .codex/credential/jira/
@@ -12,7 +18,7 @@ Do not assume fixed file names or fixed formats.
 
 Rules:
 
-- inspect the files actually present in `.codex/credential/jira/`
+- inspect the files actually present in `MBOS_TASK_CREDENTIAL_DIR/jira/` or `.codex/credential/jira/`
 - treat the contents as self-describing
 - locate the Jira token from the file contents
 - locate the Jira base URL from the file contents if present
@@ -56,7 +62,7 @@ Only use that against trusted internal Jira sites.
 
 ## Weak-Model Guidance
 
-- inspect `.codex/credential/jira/` before assuming auth inputs
+- inspect `MBOS_TASK_CREDENTIAL_DIR/jira/` or `.codex/credential/jira/` before assuming auth inputs
 - If the issue key is unknown, search first
 - If editing fields, inspect `editmeta` first
 - If transitioning, inspect transitions with field expansion first

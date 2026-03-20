@@ -689,6 +689,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         HOME: taskPaths.taskHomeDir,
         CODEX_HOME: join(taskPaths.taskHomeDir, '.codex'),
         NO_COLOR: '1',
+        MBOS_TASK_CREDENTIAL_DIR: `./.codex/tasks/${taskId}/credential`,
         ...(isNotebookMode ? {
           MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
           MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',

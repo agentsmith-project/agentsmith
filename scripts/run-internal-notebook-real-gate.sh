@@ -34,6 +34,9 @@ SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-/tmp/agentsmith-sandbox-manager.log
 CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-/tmp/agentsmith-sandbox-manager.yaml}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
 
@@ -41,6 +44,16 @@ if [[ -z "${GLM_API_KEY_VALUE}" ]]; then
   echo "[internal-real-gate] Missing GLM_API_KEY." >&2
   exit 1
 fi
+
+(
+  cd "${ROOT_DIR}" && \
+  MONGO_URL="${MONGO_URL}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME}" \
+  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  npx tsx scripts/ensure-default-workspace.ts >/dev/null
+)
 
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "[internal-real-gate] kubectl is required." >&2

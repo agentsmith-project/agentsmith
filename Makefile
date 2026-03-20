@@ -24,7 +24,8 @@
 	preprod-ensure-pgvector preprod-capture-baseline \
 	lane-mock-smoke lane-mock-chromium lane-mock-visual lane-mock-full \
 	lane-real-smoke lane-real-governance lane-real-extended gate-l0 gate-l1 gate-l2 gate-l3 gate-pr gate-premerge gate-governance \
-	sandbox-preflight sandbox-api-dev sandbox-joint-smoke
+	sandbox-preflight sandbox-api-dev sandbox-joint-smoke \
+	ensure-default-workspace real-stack-ready feishu-real-manual-step feishu-real-resume-check
 
 NPM ?= npm
 
@@ -147,6 +148,10 @@ help-extended:
 	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
 	@echo "  make notebook-agent-engineering-smoke # run engineering smoke set (basic + inputrefs loop; optional matplotlib)"
 	@echo "  make notebook-agent-engineering-smoke-full # refresh token (if needed) + demo-check + engineering-smoke"
+	@echo "  make ensure-default-workspace # seed/update ws_default in real workspace persistence"
+	@echo "  make real-stack-ready         # wait for keycloak/api/web/juicefs-csi readiness"
+	@echo "  make feishu-real-manual-step FLOW=admin_verify|user_connect # print Feishu real-lane auth URL"
+	@echo "  make feishu-real-resume-check FLOW=admin_verify|user_connect # verify manual Feishu step completed"
 	@echo "  make governance-smoke # run governance real-backend page open + interaction smoke set"
 	@echo "  make governance-pages-real-backend-smoke # default tolerant mode for governance page-open smoke"
 	@echo "  make governance-pages-real-backend-smoke-strict # strict gate: governance page-open smoke fails on product error states"
@@ -488,6 +493,32 @@ deps-init-postgres:
 
 deps-init-keycloak:
 	$(NPM) run integration:deps:init:keycloak
+
+ensure-default-workspace:
+	MONGO_URL=$(MONGO_URL) \
+	MONGO_DB_NAME=$(MONGO_DB_NAME) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+	KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	npx tsx scripts/ensure-default-workspace.ts
+
+real-stack-ready:
+	API_BASE=http://localhost:$(PORT_API) \
+	BASE_URL=http://localhost:$(PORT_WEB) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	bash scripts/wait-real-stack-ready.sh
+
+feishu-real-manual-step:
+	API_BASE=http://localhost:$(PORT_API) \
+	WORKSPACE_ID=$${WORKSPACE_ID:-ws_default} \
+	FLOW=$${FLOW:-user_connect} \
+	bash scripts/feishu-real-manual-step.sh
+
+feishu-real-resume-check:
+	API_BASE=http://localhost:$(PORT_API) \
+	WORKSPACE_ID=$${WORKSPACE_ID:-ws_default} \
+	FLOW=$${FLOW:-user_connect} \
+	bash scripts/feishu-real-resume-check.sh
 
 check-api-port:
 	@PORT="$(PORT_API)"; \

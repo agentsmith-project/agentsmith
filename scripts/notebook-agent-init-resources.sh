@@ -3,11 +3,16 @@ set -euo pipefail
 
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+
 API_BASE="${API_BASE:-http://localhost:20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 TOKEN_FILE="${TOKEN_FILE:-/tmp/agentsmith_user_token.txt}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 PROJECT_NAME="${PROJECT_NAME:-Codex Agent Regression}"
 AGENT_NAME="${AGENT_NAME:-codex-ext-$(date +%s)}"
@@ -33,6 +38,16 @@ if [[ -z "${GLM_API_KEY}" ]]; then
   echo "[init] example: GLM_API_KEY='***' make notebook-agent-init-resources" >&2
   exit 1
 fi
+
+(
+  cd "${ROOT_DIR}" && \
+  MONGO_URL="${MONGO_URL}" \
+  MONGO_DB_NAME="${MONGO_DB_NAME}" \
+  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  npx tsx scripts/ensure-default-workspace.ts >/dev/null
+)
 
 TOKEN="$(cat "${TOKEN_FILE}")"
 BASE="${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}"

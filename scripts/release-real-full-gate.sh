@@ -12,6 +12,13 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set +a
 fi
 GLM_API_KEY_VALUE="${GLM_API_KEY:-}"
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
+MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
+API_PORT="${PORT_API:-20000}"
+WEB_PORT="${PORT_WEB:-3001}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/${RUN_ID}}"
 
@@ -94,6 +101,9 @@ run_cmd "npx tsc --noEmit"
 run_cmd "npm run test:mainline:strict"
 run_cmd "npm run test:governance:strict"
 run_cmd "npm run test:visual:strict"
+run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npx tsx scripts/ensure-default-workspace.ts"
+run_cmd "BASE_URL='http://localhost:${WEB_PORT}' make notebook-agent-refresh-token"
+run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' TOKEN_FILE='/tmp/agentsmith_user_token.txt' bash scripts/wait-real-stack-ready.sh"
 run_real_cmd 20050 3051 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:mainline:strict:real"
 run_real_cmd 20060 3061 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:smoke:real:notebook-mainline"
 run_real_cmd 20065 3066 "GLM_API_KEY='${GLM_API_KEY_VALUE}' npm run test:agents:real:codex"

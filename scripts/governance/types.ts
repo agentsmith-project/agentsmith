@@ -139,13 +139,13 @@ export interface ReportSummary {
   upstream_transient?: UpstreamTransientSummary;
   /** Execution review evidence collected from the real-lane execution workflow */
   execution_review_evidence?: ExecutionReviewEvidence;
-  /** Governance execution evidence collected from governance smoke */
+  /** Governance execution evidence collected from the governance real lane */
   governance_evidence?: GovernanceReviewEvidence;
-  /** Build reliability evidence collected from build execution smoke lanes */
+  /** Build reliability evidence collected from build execution lanes */
   build_reliability_evidence?: BuildReliabilityReviewEvidence;
-  /** Workspace governance evidence collected from workspace governance smoke lane */
+  /** Workspace governance evidence collected from the workspace governance lane */
   workspace_governance_evidence?: WorkspaceGovernanceReviewEvidence;
-  /** Organization governance evidence collected from org governance smoke lane */
+  /** Organization governance evidence collected from the organization governance lane */
   organization_governance_evidence?: OrganizationGovernanceReviewEvidence;
   /** Troubleshooting recommendations (present if failed > 0) */
   recommendations?: string[];
@@ -285,7 +285,7 @@ export interface GovernanceReviewEvidence {
   blockers: string[];
   /** Warning-only governance debt */
   warnings: string[];
-  /** Focused governance effects that were exercised in the smoke lane */
+  /** Focused governance effects that were exercised in the governance lane */
   checks: {
     page_smoke: boolean;
     interaction_smoke: boolean;

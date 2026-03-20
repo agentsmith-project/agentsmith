@@ -1085,7 +1085,7 @@ function loadGovernanceReviewEvidence(options: VerifyReleaseOptions): Governance
         member_lifecycle_effect: true,
         sse_ticket_hardening: true,
       },
-      note: 'Dry-run evidence uses deterministic fixture data and does not call live governance effect smoke lanes.',
+      note: 'Dry-run evidence uses deterministic fixture data and does not call the live governance effect lanes.',
     };
   }
 
@@ -1179,7 +1179,7 @@ function loadWorkspaceGovernanceReviewEvidence(options: VerifyReleaseOptions): W
         workspace_explainability: true,
         workspace_attention_drilldown: true,
       },
-      note: 'Dry-run evidence uses deterministic fixture data and does not call live workspace governance smoke lanes.',
+      note: 'Dry-run evidence uses deterministic fixture data and does not call the live workspace governance lanes.',
     };
   }
 
@@ -1221,7 +1221,7 @@ function loadOrganizationGovernanceReviewEvidence(options: VerifyReleaseOptions)
         workspace_search: true,
         workspace_project_entry: true,
       },
-      note: 'Dry-run evidence uses deterministic fixture data and does not call live workspace overview smoke lanes.',
+      note: 'Dry-run evidence uses deterministic fixture data and does not call the live workspace overview lane.',
     };
   }
 

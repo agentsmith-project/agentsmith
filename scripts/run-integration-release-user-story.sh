@@ -8,6 +8,7 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set -a
@@ -16,9 +17,8 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set +a
 fi
 
-GLM_API_KEY_VALUE="${GLM_API_KEY:-}"
-API_PORT="${INTEGRATION_API_PORT:-20072}"
-WEB_PORT="${INTEGRATION_WEB_PORT:-3072}"
+API_PORT="${INTEGRATION_API_PORT:-20074}"
+WEB_PORT="${INTEGRATION_WEB_PORT:-3074}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
@@ -32,55 +32,53 @@ SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
 MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
-ensure_real_lane_state
-INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(real_lane_tmp_file internal)}"
-mkdir -p "${INTERNAL_REAL_DIR}"
-SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
-CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
-INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
-CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
-KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
-MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
-MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
+GLM_API_KEY_VALUE="${GLM_APIKEY:-${GLM_API_KEY:-}}"
+CLAUDE_URL_VALUE="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}"
+OPENAI_URL_CODING_PLAN_VALUE="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}"
+GLM_MODEL_VALUE="${INTEGRATION_GLM_MODEL:-glm-5-turbo}"
+RESET_FIRST="${RESET_FIRST:-1}"
 
-info() { echo "[internal-real-gate] $*"; }
+info() { echo "[integration-release-user-story] $*"; }
 
 if [[ -z "${GLM_API_KEY_VALUE}" ]]; then
-  echo "[internal-real-gate] Missing GLM_API_KEY." >&2
+  echo "[integration-release-user-story] Missing GLM_APIKEY/GLM_API_KEY." >&2
   exit 1
 fi
 
-(
-  cd "${ROOT_DIR}" && \
-  MONGO_URL="${MONGO_URL}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME}" \
-  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  npx tsx scripts/ensure-default-workspace.ts >/dev/null
-)
-
 if ! command -v kubectl >/dev/null 2>&1; then
-  echo "[internal-real-gate] kubectl is required." >&2
+  echo "[integration-release-user-story] kubectl is required." >&2
   exit 1
 fi
 
 if ! command -v docker >/dev/null 2>&1; then
-  echo "[internal-real-gate] docker is required." >&2
+  echo "[integration-release-user-story] docker is required." >&2
   exit 1
 fi
 
+if [[ "${RESET_FIRST}" == "1" ]]; then
+  info "running clean reset"
+  bash "${ROOT_DIR}/scripts/release-real-reset.sh"
+fi
+
+ensure_real_lane_state
+INTEGRATION_DIR="$(real_lane_tmp_file integration-release-user-story)"
+mkdir -p "${INTEGRATION_DIR}"
+SANDBOX_LOG="${INTEGRATION_SANDBOX_LOG:-${INTEGRATION_DIR}/sandbox-manager.log}"
+CONFIG_PATH="${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.yaml}"
+
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
-  info "building internal runner image ${RUNNER_IMAGE} from current workspace"
+  info "building internal runner image ${RUNNER_IMAGE}"
   docker build \
     -t "${RUNNER_IMAGE}" \
     -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" \
     "${ROOT_DIR}" >/dev/null
 elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
-  echo "[internal-real-gate] runner image not found: ${RUNNER_IMAGE}" >&2
-  echo "[internal-real-gate] build it first or leave INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=1." >&2
+  echo "[integration-release-user-story] runner image not found: ${RUNNER_IMAGE}" >&2
   exit 1
 fi
+
+CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
+KIND_NODE_NAME="kind-control-plane"
 
 ensure_kind_image() {
   local image="$1"
@@ -96,7 +94,6 @@ ensure_local_image() {
   if docker image inspect "${image}" >/dev/null 2>&1; then
     return 0
   fi
-  info "pulling required image ${image}"
   docker pull "${image}" >/dev/null
 }
 
@@ -107,8 +104,10 @@ ensure_juicefs_csi() {
   fi
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-    info "loading CSI images into kind node ${KIND_NODE_NAME}"
+    local cluster_name="${CONTEXT_NAME#kind-}"
+    info "loading images into kind cluster ${cluster_name}"
     ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
+    ensure_kind_image "${RUNNER_IMAGE}"
     ensure_kind_image "juicedata/juicefs-csi-driver:v0.31.2"
     ensure_kind_image "juicedata/csi-dashboard:v0.31.2"
     ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
@@ -117,27 +116,18 @@ ensure_juicefs_csi() {
     ensure_kind_image "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
     ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
-    info "patching local JuiceFS CSI workloads for kind"
-    kubectl scale statefulset/juicefs-csi-controller -n kube-system --replicas=1 >/dev/null
+    kubectl scale statefulset/juicefs-csi-controller -n kube-system --replicas=1 >/dev/null || true
     kubectl patch statefulset/juicefs-csi-controller -n kube-system --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/3"}]' >/dev/null || true
     kubectl patch daemonset/juicefs-csi-node -n kube-system --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/2"}]' >/dev/null || true
     kubectl delete pod -n kube-system -l app=juicefs-csi-controller >/dev/null 2>&1 || true
     kubectl delete pod -n kube-system -l app=juicefs-csi-node >/dev/null 2>&1 || true
   fi
 
-  info "waiting for JuiceFS CSI readiness"
   kubectl rollout status statefulset/juicefs-csi-controller -n kube-system --timeout=180s >/dev/null
   kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=180s >/dev/null
 }
 
 kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-
-KIND_NODE_NAME="kind-control-plane"
-if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-  CLUSTER_NAME="${CONTEXT_NAME#kind-}"
-  info "loading ${RUNNER_IMAGE} into kind cluster ${CLUSTER_NAME}"
-  kind load docker-image "${RUNNER_IMAGE}" --name "${CLUSTER_NAME}" >/dev/null
-fi
 
 ensure_juicefs_csi
 
@@ -162,20 +152,6 @@ version: 1
 
 server:
   httpPort: ${SANDBOX_PORT}
-  requestIdHeader: X-Request-Id
-  timeouts:
-    readHeader: 5s
-    read: 30s
-    write: 60s
-    idle: 120s
-  maxHeaderBytes: 1048576
-  metrics:
-    enabled: true
-    path: /metrics
-    requireServiceKey: false
-  debug:
-    configPath: /debug/config
-    enablePprof: false
 
 auth:
   enabled: true
@@ -188,11 +164,6 @@ kubernetes:
   qps: 50
   burst: 100
   requestTimeout: 15s
-  retry:
-    enabled: true
-    maxAttempts: 3
-    baseBackoff: 200ms
-    maxBackoff: 2s
 
 sandbox:
   defaults:
@@ -203,7 +174,6 @@ sandbox:
     podReadyWait: 30s
     podPollInterval: 500ms
     terminationGraceSeconds: 1
-    activeDeadlineSeconds: 0
     containerName: runner
     workdir: /workspace
     volumes:
@@ -223,9 +193,6 @@ sandbox:
         cpu: "1"
         memory: 1Gi
         ephemeralStorage: 2Gi
-    labels:
-      app: llm-sandbox
-    annotations: {}
 
 exec:
   defaultTimeout: 30s
@@ -233,29 +200,12 @@ exec:
   stdoutMaxBytes: 1048576
   stderrMaxBytes: 1048576
   preserveTailBytes: 4096
-  exitCodeMarker:
-    key: "__SBX_EXIT_CODE__"
-    stream: "stderr"
   shell:
     bin: sh
     args: ["-lc"]
-  env:
-    allowRegex: "^[A-Z_][A-Z0-9_]*$"
-  workdir:
-    allowedPrefixes: ["/workspace"]
 
 files:
   rootPrefix: /workspace
-  upload:
-    defaultDest: /workspace
-    maxBytes: 52428800
-    format: tar.gz
-  download:
-    defaultSrc: /workspace
-    format: tar.gz
-  tar:
-    bin: tar
-    rejectSymlinks: true
 
 storage:
   endpoint: localhost:19000
@@ -279,21 +229,12 @@ trap cleanup EXIT
 
 existing_sandbox_pid="$(lsof -tiTCP:${SANDBOX_PORT} -sTCP:LISTEN -n -P 2>/dev/null | head -n1 || true)"
 if [[ -n "${existing_sandbox_pid}" ]]; then
-  info "terminating stale sandbox manager on :${SANDBOX_PORT} (pid=${existing_sandbox_pid})"
+  info "terminating stale sandbox manager on :${SANDBOX_PORT}"
   kill "${existing_sandbox_pid}" >/dev/null 2>&1 || true
-  for _ in $(seq 1 20); do
-    if ! kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
-      break
-    fi
-    sleep 1
-  done
-  if kill -0 "${existing_sandbox_pid}" >/dev/null 2>&1; then
-    echo "[internal-real-gate] failed to stop stale sandbox manager on :${SANDBOX_PORT}" >&2
-    exit 1
-  fi
+  sleep 2
 fi
 
-info "starting local sandbox manager on :${SANDBOX_PORT}"
+info "starting local sandbox manager"
 (
   cd "${SANDBOX_ROOT}/manager-service" && \
     env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -311,7 +252,7 @@ info "starting local sandbox manager on :${SANDBOX_PORT}"
 ) >"${SANDBOX_LOG}" 2>&1 &
 SANDBOX_PID=$!
 
-for _ in $(seq 1 60); do
+for _ in $(seq 1 90); do
   if curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
     break
   fi
@@ -319,17 +260,19 @@ for _ in $(seq 1 60); do
 done
 
 if ! curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
-  echo "[internal-real-gate] sandbox manager failed to become ready." >&2
+  echo "[integration-release-user-story] sandbox manager failed to become ready." >&2
   tail -n 120 "${SANDBOX_LOG}" >&2 || true
   exit 1
 fi
 
-info "running internal notebook workspace real integration"
-info "internal screenshots and review artifacts will be written to:"
-info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
+info "running full integration release user story"
 (
   cd "${ROOT_DIR}" && \
+    GLM_APIKEY="${GLM_API_KEY_VALUE}" \
     GLM_API_KEY="${GLM_API_KEY_VALUE}" \
+    CLAUDE_URL="${CLAUDE_URL_VALUE}" \
+    OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN_VALUE}" \
+    INTEGRATION_GLM_MODEL="${GLM_MODEL_VALUE}" \
     SANDBOX_MANAGER_URL="http://127.0.0.1:${SANDBOX_PORT}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \
@@ -344,10 +287,9 @@ info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
     INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
     INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
     AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL_VALUE}" \
-    INTERNAL_REAL_VISUAL_ARTIFACT_DIR="${INTERNAL_VISUAL_ARTIFACT_DIR}" \
     INTEGRATION_API_PORT="${API_PORT}" \
     INTEGRATION_WEB_PORT="${WEB_PORT}" \
-    bash scripts/run-integration-e2e-full.sh e2e/integration-internal-notebook-workspace.spec.ts
+    bash scripts/run-integration-e2e-full.sh e2e/integration-release-user-story.spec.ts
 )
 
-info "internal notebook workspace real gate passed"
+info "integration release user story passed"

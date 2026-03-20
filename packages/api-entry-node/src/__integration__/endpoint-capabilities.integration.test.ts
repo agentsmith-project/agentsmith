@@ -355,7 +355,7 @@ describe('api-entry-node endpoint capability routes', () => {
     expect(cancelPayload.model).toBe('sora');
   });
 
-  it('records failed endpoint creation attempts in audit events', async () => {
+  it('allows multiple endpoints with the same model id when their configurations differ', async () => {
     const { baseUrl } = startServer();
     const credentialRes = await apiFetch(
       baseUrl,
@@ -376,52 +376,58 @@ describe('api-entry-node endpoint capability routes', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          name: 'audit-endpoint-conflict-a',
+          name: 'glm-5 anthropic',
           model: 'duplicate-model',
-          type: 'openai',
+          type: 'anthropic',
           mode: 'openai',
-          base_url: 'https://api.example.invalid',
+          base_url: 'https://open.bigmodel.cn/api/anthropic',
           credential_ref: credential.id,
+          protocol: 'anthropic_compatible',
         }),
       },
     );
     expect(firstEndpointRes.status).toBe(201);
+    const firstEndpoint = (await firstEndpointRes.json()) as { id: string; protocol: string };
+    expect(firstEndpoint.protocol).toBe('anthropic_compatible');
 
-    const failedEndpointRes = await apiFetch(
+    const secondEndpointRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/endpoints',
       {
         method: 'POST',
-        headers: { 'content-type': 'application/json', 'x-request-id': 'req_cfg_conflict' },
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_cfg_duplicate_model_allowed' },
         body: JSON.stringify({
-          name: 'audit-endpoint-conflict-b',
+          name: 'glm-5 openai',
           model: 'duplicate-model',
           type: 'openai',
           mode: 'openai',
-          base_url: 'https://api.example.invalid',
+          base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
           credential_ref: credential.id,
+          protocol: 'openai_compatible',
         }),
       },
     );
-    expect(failedEndpointRes.status).toBe(409);
+    expect(secondEndpointRes.status).toBe(201);
+    const secondEndpoint = (await secondEndpointRes.json()) as { id: string; protocol: string };
+    expect(secondEndpoint.protocol).toBe('openai_compatible');
+    expect(secondEndpoint.id).not.toBe(firstEndpoint.id);
 
     const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();
     const end = new Date(Date.now() + 60 * 60 * 1000).toISOString();
     const auditRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=20&result=error`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/audit?start_time=${encodeURIComponent(start)}&end_time=${encodeURIComponent(end)}&page=1&page_size=20`,
     );
     expect(auditRes.status).toBe(200);
     const audit = (await auditRes.json()) as {
-      items: Array<{ action: string; request_id: string; result: string; error_code?: string }>;
+      items: Array<{ action: string; request_id?: string; result: string; error_code?: string }>;
     };
     expect(
       audit.items.some(
         (item) =>
           item.action === 'endpoint.create'
-          && item.request_id === 'req_cfg_conflict'
-          && item.result === 'error'
-          && item.error_code === 'ENDPOINT_MODEL_CONFLICT',
+          && item.request_id === 'req_cfg_duplicate_model_allowed'
+          && item.result === 'ok',
       ),
     ).toBe(true);
   });

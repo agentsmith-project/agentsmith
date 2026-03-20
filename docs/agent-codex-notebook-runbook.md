@@ -726,7 +726,7 @@ POLL_MAX=120 POLL_INTERVAL_SEC=2 PROMPT='reply exactly: chain ok' make notebook-
 ```
 
 - Output:
-  - directory under `/tmp/agentsmith-load-matrix-<timestamp>/`
+  - directory under `artifacts/real-lane/current/benchmarks/load-matrix-<timestamp>/`
   - per-case:
     - `case-*/stdout.log`
     - `case-*/result.json` (summary + metrics snapshot)
@@ -752,8 +752,8 @@ make notebook-agent-benchmark-baseline
 MATRIX=10x2,10x4,20x4 make notebook-agent-benchmark-baseline
 ```
 - Output:
-  - `/tmp/agentsmith-benchmark-baseline-<timestamp>/summary.csv`
-  - `/tmp/agentsmith-benchmark-baseline-<timestamp>/summary.jsonl`
+  - `artifacts/real-lane/current/benchmarks/baseline-<timestamp>/summary.csv`
+  - `artifacts/real-lane/current/benchmarks/baseline-<timestamp>/summary.jsonl`
 - Team usage suggestion:
   - store selected baseline outputs (CSV/JSONL) as CI artifacts or benchmark snapshots for trend comparison
 
@@ -764,7 +764,7 @@ MATRIX=10x2,10x4,20x4 make notebook-agent-benchmark-baseline
     - Mongo `docStore`
 - Step 1: run baseline in memory mode (default API startup)
 ```bash
-OUT_DIR=/tmp/agentsmith-baseline-memory make notebook-agent-benchmark-baseline
+OUT_DIR=artifacts/real-lane/current/benchmarks/baseline-memory make notebook-agent-benchmark-baseline
 ```
 - Step 2: restart API with Mongo/docStore enabled, then re-init resources and runner, run baseline again
 ```bash
@@ -778,12 +778,12 @@ make notebook-agent-refresh-token
 GLM_API_KEY='***' make notebook-agent-init-resources
 make notebook-agent-runner
 
-OUT_DIR=/tmp/agentsmith-baseline-mongo make notebook-agent-benchmark-baseline
+OUT_DIR=artifacts/real-lane/current/benchmarks/baseline-mongo make notebook-agent-benchmark-baseline
 ```
 - Step 3: compare outputs
 ```bash
-BASELINE_A_LABEL=memory BASELINE_A_DIR=/tmp/agentsmith-baseline-memory \
-BASELINE_B_LABEL=mongo  BASELINE_B_DIR=/tmp/agentsmith-baseline-mongo \
+BASELINE_A_LABEL=memory BASELINE_A_DIR=artifacts/real-lane/current/benchmarks/baseline-memory \
+BASELINE_B_LABEL=mongo  BASELINE_B_DIR=artifacts/real-lane/current/benchmarks/baseline-mongo \
 make notebook-agent-benchmark-compare
 ```
 - What to compare first:
@@ -840,8 +840,8 @@ make notebook-agent-traces-query-sweep
   - `CONCURRENCY=10`
   - `WARMUP=10`
 - Output:
-  - `/tmp/agentsmith-traces-query-sweep-<timestamp>/summary.csv`
-  - `/tmp/agentsmith-traces-query-sweep-<timestamp>/summary.jsonl`
+  - `artifacts/real-lane/current/traces-query-sweep-<timestamp>/summary.csv`
+  - `artifacts/real-lane/current/traces-query-sweep-<timestamp>/summary.jsonl`
   - per-page directories with `result.json` and `stdout.log`
 - Usage patterns:
   - reuse an existing task/message:
@@ -857,8 +857,8 @@ PREPARE_TASK=1 TURNS=8 make notebook-agent-traces-query-sweep
   - compare `summary.csv` p95/p99 and Prometheus histogram `scope="message"`
   - or use the helper to compare two sweep output dirs by `page_size`:
 ```bash
-SWEEP_A_DIR=/tmp/agentsmith-traces-query-sweep-long-memory \
-SWEEP_B_DIR=/tmp/agentsmith-traces-query-sweep-long-mongo \
+SWEEP_A_DIR=artifacts/real-lane/current/traces-query-sweep-long-memory \
+SWEEP_B_DIR=artifacts/real-lane/current/traces-query-sweep-long-mongo \
 SWEEP_A_LABEL=memory \
 SWEEP_B_LABEL=mongo \
 make notebook-agent-traces-query-sweep-compare
@@ -871,7 +871,7 @@ make notebook-agent-traces-query-sweep-compare
   - attach metadata (commit SHA, environment parameters, source dir)
 - Command:
 ```bash
-SOURCE_DIR=/tmp/agentsmith-traces-query-sweep-final-long-mongo \
+SOURCE_DIR=artifacts/real-lane/current/traces-query-sweep-final-long-mongo \
 LABEL=mongo-traces-sweep-final \
 MODE_LABEL=mongo \
 COMMIT_SHA=$(git rev-parse HEAD) \

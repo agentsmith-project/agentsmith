@@ -99,7 +99,7 @@ AgentSmith 当前只采用一条治理主线：
 2. unit
 3. integration
 4. e2e
-5. real-lane smoke
+5. real-lane
 
 验收标准：
 

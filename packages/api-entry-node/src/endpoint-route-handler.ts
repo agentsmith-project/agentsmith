@@ -432,22 +432,6 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       });
       json(res, 201, created);
     } catch (error) {
-      if (error instanceof Error && error.message === 'endpoint_model_conflict') {
-        await writeProjectAuditEvent(deps, {
-          workspaceId: route.workspaceId,
-          projectId: route.projectId,
-          actor: { type: 'user', id: user.id },
-          action: 'endpoint.create',
-          result: 'error',
-          errorCode: 'ENDPOINT_MODEL_CONFLICT',
-          errorMessage: 'endpoint_model_conflict',
-          requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
-          resourceType: 'endpoint',
-          metadata: { name: raw.name, model: raw.model },
-        });
-        json(res, 409, { error_code: 'ENDPOINT_MODEL_CONFLICT', message: 'endpoint_model_conflict' });
-        return true;
-      }
       if (error instanceof Error && error.message === 'endpoint_model_required') {
         await writeProjectAuditEvent(deps, {
           workspaceId: route.workspaceId,

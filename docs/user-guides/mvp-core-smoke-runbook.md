@@ -15,7 +15,7 @@ Provide a single operational path to validate MVP core readiness on real backend
 Note:
 
 - Current command names use `engineering-*` / `governance-*` naming consistently.
-- In current MVP, these commands are used only for engineering smoke validation and evidence generation, not for DevOps engineering orchestration.
+- In current MVP, these commands are used only for focused engineering validation and evidence generation, not for DevOps orchestration.
 
 ## Prerequisites
 
@@ -64,8 +64,8 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 - Smoke artifacts (command name kept for compatibility):
   - `artifacts/governance-reports/` latest markdown/json outputs
 - Integration logs:
-  - `/tmp/agentsmith-api-node-integration.log`
-  - `/tmp/agentsmith-web-integration.log`
+  - `artifacts/real-lane/current/integration/api.log`
+  - `artifacts/real-lane/current/integration/web.log`
 
 ## Failure Triage
 

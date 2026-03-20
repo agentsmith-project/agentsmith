@@ -178,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${GLM_API_KEY:-}" ]]; then
-            echo "GLM_API_KEY secret is required for L3 real-lane smoke." >&2
+            echo "GLM_API_KEY secret is required for the L3 real lane." >&2
             exit 1
           fi
 
@@ -199,7 +199,6 @@ jobs:
           name: l3-real-lane-artifacts
           if-no-files-found: ignore
           path: |
-            /tmp/agentsmith*.log
-            /tmp/ci-*.log
+            artifacts/real-lane/current/**
             test-results/**
             playwright-report/**

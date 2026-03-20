@@ -356,10 +356,6 @@ export class EndpointResourceService {
     if (!normalized.model) {
       throw new Error('endpoint_model_required');
     }
-    const existing = await this.listEndpoints(workspaceId, projectId);
-    if (existing.some((item) => item.model === normalized.model)) {
-      throw new Error('endpoint_model_conflict');
-    }
     const now = new Date().toISOString();
     const protocol = this.inferProtocol(String(input.base_url ?? ''), input.protocol);
     const endpoint: EndpointRecord = {

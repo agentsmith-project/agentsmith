@@ -24,7 +24,7 @@ const evidence = {
     workspace_search: true,
     workspace_project_entry: true,
   },
-  note: 'Generated after workspace-overview-smoke completed successfully.',
+  note: 'Generated after the workspace overview lane completed successfully.',
 };
 
 writeFileSync(resolvedPath, JSON.stringify(evidence, null, 2), 'utf8');

@@ -4,9 +4,12 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+ensure_real_lane_state
 
 MATRIX="${MATRIX:-10x2,10x3,20x3}"
-OUT_DIR="${OUT_DIR:-/tmp/agentsmith-load-matrix-$(date +%Y%m%d-%H%M%S)}"
+OUT_DIR="${OUT_DIR:-$(real_lane_tmp_file benchmarks/load-matrix-$(date +%Y%m%d-%H%M%S))}"
 POLL_MAX="${POLL_MAX:-90}"
 POLL_INTERVAL_SEC="${POLL_INTERVAL_SEC:-2}"
 WAIT_AGENT_ONLINE="${WAIT_AGENT_ONLINE:-1}"
@@ -59,4 +62,3 @@ done
 echo "[matrix] done"
 echo "[matrix] csv:   ${CSV_PATH}"
 echo "[matrix] jsonl: ${JSONL_PATH}"
-

@@ -45,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -z "${GLM_API_KEY:-}" ]]; then
-            echo "GLM_API_KEY secret is required for engineering gate real-lane smoke." >&2
+            echo "GLM_API_KEY secret is required for the engineering gate real lane." >&2
             exit 1
           fi
 
@@ -77,7 +77,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/governance-reports/**
+            artifacts/real-lane/current/**
             test-results/**
             playwright-report/**
-            /tmp/agentsmith*.log
-            /tmp/ci-*.log

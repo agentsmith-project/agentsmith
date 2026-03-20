@@ -27,7 +27,7 @@ const evidence = {
     chat_recovery_integration: true,
     notebook_external_execution: true,
   },
-  note: 'Generated after build-reliability-smoke completed successfully.',
+  note: 'Generated after the build reliability lane completed successfully.',
 };
 
 writeFileSync(resolvedPath, JSON.stringify(evidence, null, 2), 'utf8');

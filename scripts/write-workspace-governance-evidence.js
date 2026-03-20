@@ -26,7 +26,7 @@ const evidence = {
     workspace_explainability: true,
     workspace_attention_drilldown: true,
   },
-  note: 'Generated after workspace-governance-smoke completed successfully.',
+  note: 'Generated after the workspace governance lane completed successfully.',
 };
 
 writeFileSync(resolvedPath, JSON.stringify(evidence, null, 2), 'utf8');

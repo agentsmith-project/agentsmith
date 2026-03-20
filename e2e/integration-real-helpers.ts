@@ -778,10 +778,23 @@ export async function openMountAccessAndRevealMetadataUrl(
   page: Page,
   libraryName: string,
 ): Promise<string> {
+  const dismissOpenDialog = async () => {
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
+      if (!(await visibleDialog.isVisible().catch(() => false))) {
+        return;
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(200);
+    }
+  };
+
+  await dismissOpenDialog();
   const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
   const mountButton = libraryItem.locator('[data-testid^="files__library-mount-access--"]').first();
-  await mountButton.click({ force: true });
+  await expect(mountButton).toBeVisible({ timeout: 15_000 });
+  await mountButton.click();
   const dialog = page.getByTestId('files__dialog__library-mount-access');
   await expect(dialog).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole('button', { name: /reveal|显示|show/i }).click();

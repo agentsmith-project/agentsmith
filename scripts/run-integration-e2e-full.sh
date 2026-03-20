@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
 shift || true
 
@@ -27,8 +31,11 @@ INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-node-integration.log}"
-WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-integration.log}"
+ensure_real_lane_state
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(real_lane_tmp_file integration)}"
+mkdir -p "${INTEGRATION_LOG_DIR}"
+API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
+WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 API_PID=""
 WEB_PID=""
 PLAYWRIGHT_PID=""
@@ -127,6 +134,7 @@ port_in_use() {
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
   run_clean npm run integration:deps:up
+  run_clean make deps-ready
 fi
 
 if [[ "${INIT_DEPS}" == "true" ]]; then

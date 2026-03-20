@@ -10,8 +10,8 @@
 1. Open job summary, read `Failure Tag`.
 2. Download artifacts:
    - `/tmp/ci-e2e-int-*.log`
-   - `/tmp/agentsmith-api-node-integration.log`
-   - `/tmp/agentsmith-web-integration.log`
+   - `artifacts/real-lane/current/integration/api.log`
+   - `artifacts/real-lane/current/integration/web.log`
    - `test-results/**`
 3. Reproduce locally with same make target and ports.
 

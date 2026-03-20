@@ -239,7 +239,7 @@ main() {
     err "engineering smoke completed with ${failures} failure(s)"
     exit 1
   fi
-  info "engineering smoke completed successfully"
+  info "engineering lane completed successfully"
 }
 
 main "$@"

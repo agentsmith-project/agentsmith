@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# shellcheck disable=SC1091
+source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+
 SPEC_FILE="${1:-}"
 if [[ -z "${SPEC_FILE}" ]]; then
   echo "Usage: $0 <spec-file>"
@@ -12,7 +16,10 @@ API_PORT="${INTEGRATION_API_PORT:-20010}"
 WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-node-integration.log}"
+ensure_real_lane_state
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(real_lane_tmp_file integration)}"
+mkdir -p "${INTEGRATION_LOG_DIR}"
+API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 
 # Always clear proxy-related env vars for deterministic local integration testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY

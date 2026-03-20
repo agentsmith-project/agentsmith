@@ -23,6 +23,15 @@ type WorkspaceFeishuAuthSession = {
   expiresAt: number;
 };
 
+type WorkspaceFeishuAuthResult = {
+  userId: string;
+  workspaceId: string;
+  intent: WorkspaceFeishuOAuthIntent;
+  redirectPath: string;
+  connectionId?: string | null;
+  expiresAt: number;
+};
+
 type FeishuTokenPayload = {
   access_token: string;
   refresh_token?: string | null;
@@ -37,9 +46,14 @@ type FeishuTokenPayload = {
 };
 
 const FEISHU_AUTH_STATE_PREFIX = 'workspace:feishu:oauth:state:';
+const FEISHU_AUTH_RESULT_PREFIX = 'workspace:feishu:oauth:result:';
 
 function oauthStateKey(state: string): string {
   return `${FEISHU_AUTH_STATE_PREFIX}${state}`;
+}
+
+function oauthResultKey(state: string): string {
+  return `${FEISHU_AUTH_RESULT_PREFIX}${state}`;
 }
 
 function getFeishuEndpoints() {
@@ -142,6 +156,38 @@ async function deleteWorkspaceFeishuOAuthSession(cache: CachePort, state: string
   await cache.del(oauthStateKey(state));
 }
 
+async function writeWorkspaceFeishuOAuthResult(
+  cache: CachePort,
+  state: string,
+  result: WorkspaceFeishuAuthResult,
+): Promise<void> {
+  const ttlSeconds = Math.max(60, Math.ceil((result.expiresAt - Date.now()) / 1000));
+  await cache.set(oauthResultKey(state), JSON.stringify(result), ttlSeconds);
+}
+
+async function readWorkspaceFeishuOAuthResult(
+  cache: CachePort,
+  state: string,
+): Promise<WorkspaceFeishuAuthResult | null> {
+  const raw = await cache.get(oauthResultKey(state));
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as WorkspaceFeishuAuthResult;
+    if (
+      typeof parsed?.userId !== 'string'
+      || typeof parsed?.workspaceId !== 'string'
+      || typeof parsed?.intent !== 'string'
+      || typeof parsed?.redirectPath !== 'string'
+      || typeof parsed?.expiresAt !== 'number'
+    ) {
+      return null;
+    }
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
 function assertFeishuConfigured(
   record: WorkspaceFeishuIntegrationRecord | null,
 ): WorkspaceFeishuIntegrationRecord {
@@ -213,8 +259,25 @@ export async function completeWorkspaceFeishuOAuth(args: {
   if (!args.code?.trim() || !args.state?.trim()) {
     throw new Error('feishu_callback_missing_code_or_state');
   }
-  const session = await readWorkspaceFeishuOAuthSession(args.cache, args.state.trim());
+  const state = args.state.trim();
+  const session = await readWorkspaceFeishuOAuthSession(args.cache, state);
   if (!session || session.expiresAt < Date.now()) {
+    const completed = await readWorkspaceFeishuOAuthResult(args.cache, state);
+    if (
+      completed
+      && completed.expiresAt >= Date.now()
+      && completed.workspaceId === args.workspaceId
+      && completed.userId === args.userId
+    ) {
+      const connection = completed.connectionId
+        ? await getUserExternalConnection(args.docStore, args.userId, completed.connectionId)
+        : null;
+      return {
+        intent: completed.intent,
+        redirect_path: completed.redirectPath,
+        ...(connection ? { connection } : {}),
+      };
+    }
     throw new Error('feishu_callback_state_invalid');
   }
   if (session.workspaceId !== args.workspaceId || session.userId !== args.userId) {
@@ -232,7 +295,6 @@ export async function completeWorkspaceFeishuOAuth(args: {
       redirect_uri: session.redirectUri,
     },
   });
-  await deleteWorkspaceFeishuOAuthSession(args.cache, args.state.trim());
 
   if (session.intent === 'admin_verify') {
     await upsertWorkspaceFeishuIntegration(args.docStore, {
@@ -244,6 +306,14 @@ export async function completeWorkspaceFeishuOAuth(args: {
       last_error: null,
       updated_at: new Date().toISOString(),
     });
+    await writeWorkspaceFeishuOAuthResult(args.cache, state, {
+      userId: args.userId,
+      workspaceId: args.workspaceId,
+      intent: session.intent,
+      redirectPath: session.postRedirectPath,
+      expiresAt: Date.now() + 10 * 60 * 1000,
+    });
+    await deleteWorkspaceFeishuOAuthSession(args.cache, state);
     return {
       intent: session.intent,
       redirect_path: session.postRedirectPath,
@@ -291,6 +361,15 @@ export async function completeWorkspaceFeishuOAuth(args: {
     last_used_at: null,
     last_error: null,
   });
+  await writeWorkspaceFeishuOAuthResult(args.cache, state, {
+    userId: args.userId,
+    workspaceId: args.workspaceId,
+    intent: session.intent,
+    redirectPath: session.postRedirectPath,
+    connectionId: connection.id,
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  });
+  await deleteWorkspaceFeishuOAuthSession(args.cache, state);
   return {
     intent: session.intent,
     redirect_path: session.postRedirectPath,

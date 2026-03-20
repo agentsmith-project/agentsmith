@@ -23,6 +23,38 @@ describe('createNodeApiDepsFromEnv optional sandbox integration', () => {
     }
   });
 
+  it('uses local sandbox fallback automatically in development', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sandbox_down'));
+
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({
+      NODE_ENV: 'development',
+    });
+
+    try {
+      expect(deps.internalAgentPodManager).toBeDefined();
+      expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      await shutdownSafe(lifecycle);
+    }
+  });
+
+  it('uses local sandbox fallback automatically when NODE_ENV is unset', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('sandbox_down'));
+
+    const { deps, lifecycle } = createNodeApiDepsFromEnv({});
+
+    try {
+      expect(deps.internalAgentPodManager).toBeDefined();
+      expect(deps.internalAgentWorkspaceProvisioner).toBeDefined();
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+      expect(fetchSpy).toHaveBeenCalled();
+    } finally {
+      await shutdownSafe(lifecycle);
+    }
+  });
+
   it('fails fast when sandbox env is partially configured', () => {
     expect(() => createNodeApiDepsFromEnv({
       ...baseEnv,

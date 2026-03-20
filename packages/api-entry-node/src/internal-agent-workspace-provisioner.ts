@@ -52,13 +52,14 @@ function bindingsCollection(workspaceId: string): string {
   return resolveWorkspaceScopedCollection(INTERNAL_AGENT_WORKSPACE_COLLECTION, workspaceId);
 }
 
-function sanitizeK8sName(value: string, fallback: string): string {
+export function sanitizeK8sName(value: string, fallback: string): string {
   const normalized = value
     .toLowerCase()
     .replace(/[^a-z0-9-]+/g, '-')
     .replace(/-{2,}/g, '-')
     .replace(/^-+|-+$/g, '')
-    .slice(0, 63);
+    .slice(0, 63)
+    .replace(/^-+|-+$/g, '');
   return normalized || fallback;
 }
 

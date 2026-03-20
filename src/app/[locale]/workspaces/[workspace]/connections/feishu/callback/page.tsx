@@ -7,7 +7,6 @@ import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 export default function WorkspaceFeishuCallbackPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const workspaceId = validateWorkspaceParam(params?.workspace);
   const query = searchParams.toString();
 
@@ -15,9 +14,9 @@ export default function WorkspaceFeishuCallbackPage() {
     if (!workspaceId) {
       return;
     }
-    const target = `/${locale}/workspaces/${workspaceId}/feishu/callback${query ? `?${query}` : ''}`;
+    const target = `/workspaces/${workspaceId}/feishu/callback${query ? `?${query}` : ''}`;
     window.location.replace(target);
-  }, [locale, query, workspaceId]);
+  }, [query, workspaceId]);
 
   return null;
 }

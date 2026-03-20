@@ -20,6 +20,7 @@ import {
   Plus,
   Pin,
   Search,
+  Settings as SettingsIcon,
   Sparkles,
 } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
@@ -27,7 +28,7 @@ import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import type { ProjectWithMembership } from '@/lib/hooks/use-permissions';
 import { useHasWorkspacePermission } from '@/lib/hooks/use-permissions';
 import { useSyncAuthFromUrl } from '@/lib/hooks/use-sync-auth-from-url';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { CreateProjectDialog } from '@/components/projects/CreateProjectDialog';
 import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { ProjectCard } from '@/components/projects/ProjectCard';
@@ -42,6 +43,7 @@ import { useProjects } from '@/lib/hooks/use-projects-queries';
 import { useWorkspace } from '@/lib/hooks/use-workspaces';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useQueryClient } from '@tanstack/react-query';
+import { cn } from '@/lib/utils';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { buildProjectAdminSummary, type Project } from '@/lib/projects/project-view';
 import { useCreateJoinRequest } from '@/lib/hooks/use-join-requests';
@@ -59,11 +61,13 @@ export function WorkspaceProjectsEntryPage({
   const router = useRouter();
   const queryClient = useQueryClient();
   const t = useTranslations('projects');
+  const tSettings = useTranslations('settings');
   const tErrors = useTranslations('errors');
   const { isAuthenticated } = useAuthStore();
   const hydrated = useAuthStoreHydration();
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
   const canCreateProjectByWorkspacePermissions = useHasWorkspacePermission('workspace:project:create');
+  const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
   const canDeleteProjectByWorkspacePermission = useHasWorkspacePermission('workspace:governance:update');
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -379,7 +383,7 @@ export function WorkspaceProjectsEntryPage({
                         </p>
                         <p className="mt-1 text-sm text-secondary">{t('summary.table_hint')}</p>
                       </div>
-                      <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto]">
+                      <div className="grid gap-3 sm:grid-cols-[minmax(0,320px)_auto_auto]">
                         <label className="relative block">
                           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-icon-default" />
                           <input
@@ -402,6 +406,17 @@ export function WorkspaceProjectsEntryPage({
                           <Plus className="h-4 w-4" />
                           {t('new_project')}
                         </Button>
+
+                        {canManageWorkspaceGovernance ? (
+                          <Link
+                            href={`${workspaceBasePath}/settings`}
+                            className={cn(buttonVariants({ variant: 'outline', size: 'default' }), 'h-11 px-5')}
+                            data-testid="projects__workspace-settings-btn"
+                          >
+                            <SettingsIcon className="mr-2 h-4 w-4" />
+                            {tSettings('workspace_title')}
+                          </Link>
+                        ) : null}
                       </div>
                     </div>
                   </div>

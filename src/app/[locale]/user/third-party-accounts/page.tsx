@@ -21,11 +21,9 @@ import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
-import { Textarea } from '@/components/ui/textarea';
 import { Plus, PlugZap, ShieldCheck, Link2 } from 'lucide-react';
 
 import { ConnectionFormFields } from './_components/ConnectionFormFields';
-import { FeishuOAuthCard } from './_components/FeishuOAuthCard';
 import { ThirdPartyAccountsTable } from './_components/ThirdPartyAccountsTable';
 import {
   allowedKindsForProvider,
@@ -43,10 +41,6 @@ export default function ThirdPartyAccountsPage() {
   const [createOpen, setCreateOpen] = React.useState(false);
   const [deleteId, setDeleteId] = React.useState<string | null>(null);
   const [editing, setEditing] = React.useState<UserExternalConnection | null>(null);
-  const [feishuBindOpen, setFeishuBindOpen] = React.useState(false);
-  const [feishuCallbackUrl, setFeishuCallbackUrl] = React.useState('');
-  const [feishuAuthState, setFeishuAuthState] = React.useState('');
-  const [feishuAuthUrl, setFeishuAuthUrl] = React.useState('');
 
   const [provider, setProvider] = React.useState<UserExternalConnectionProvider>('jira');
   const [kind, setKind] = React.useState<UserExternalConnectionKind>('secret_bundle');
@@ -65,11 +59,6 @@ export default function ThirdPartyAccountsPage() {
   const { data: items = [], isLoading } = useQuery({
     queryKey: ['me', 'external-connections'],
     queryFn: () => api.list(),
-  });
-
-  const { data: feishuConfig } = useQuery({
-    queryKey: ['me', 'external-connections', 'provider', 'feishu'],
-    queryFn: () => api.getProviderConfig('feishu'),
   });
 
   const invalidate = React.useCallback(() => {
@@ -126,33 +115,6 @@ export default function ThirdPartyAccountsPage() {
     onSuccess: () => {
       invalidate();
       setDeleteId(null);
-    },
-    onError: (error) => handleErrorForToast(error),
-  });
-
-  const startFeishuMutation = useMutation({
-    mutationFn: () => api.startFeishuOAuth(),
-    onSuccess: (data) => {
-      setFeishuAuthState(data.state);
-      setFeishuAuthUrl(data.authorization_url);
-      setFeishuCallbackUrl('');
-      setFeishuBindOpen(true);
-      window.open(data.authorization_url, '_blank', 'noopener,noreferrer');
-    },
-    onError: (error) => handleErrorForToast(error),
-  });
-
-  const completeFeishuMutation = useMutation({
-    mutationFn: () => api.completeFeishuOAuth({
-      callback_url: feishuCallbackUrl.trim() || undefined,
-      state: feishuAuthState || undefined,
-    }),
-    onSuccess: () => {
-      invalidate();
-      setFeishuBindOpen(false);
-      setFeishuCallbackUrl('');
-      setFeishuAuthState('');
-      setFeishuAuthUrl('');
     },
     onError: (error) => handleErrorForToast(error),
   });
@@ -278,10 +240,6 @@ export default function ThirdPartyAccountsPage() {
     () => items.filter((item) => item.status === 'active'),
     [items],
   );
-  const oauthItems = React.useMemo(
-    () => items.filter((item) => item.provider === 'feishu'),
-    [items],
-  );
   const providerCount = React.useMemo(
     () => new Set(items.map((item) => item.provider)).size,
     [items],
@@ -323,8 +281,8 @@ export default function ThirdPartyAccountsPage() {
                   <PlugZap className="h-3.5 w-3.5 text-accent" />
                   {t('summary_oauth_label')}
                 </div>
-                <div className="mt-3 text-2xl font-semibold text-foreground">{oauthItems.length}</div>
-                <p className="mt-1 text-sm text-tertiary">{t('summary_oauth_hint')}</p>
+                <div className="mt-3 text-2xl font-semibold text-foreground">{activeItems.length}</div>
+                <p className="mt-1 text-sm text-tertiary">{t('summary_workspace_hint')}</p>
               </div>
               <div className="rounded-xl border border-border/70 bg-surface-high p-4">
                 <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-secondary">
@@ -336,15 +294,6 @@ export default function ThirdPartyAccountsPage() {
               </div>
             </div>
           </section>
-
-          <FeishuOAuthCard
-            authConfigured={feishuConfig?.auth_configured}
-            callbackUri={feishuConfig?.callback_uri}
-            interactiveLoginRequired={feishuConfig?.interactive_login_required}
-            connectPending={startFeishuMutation.isPending}
-            onConnect={() => startFeishuMutation.mutate()}
-            t={t}
-          />
 
           <section className="rounded-2xl border border-border bg-surface shadow-sm shadow-black/10">
             <div className="border-b border-border px-5 py-4 md:px-6">
@@ -458,43 +407,6 @@ export default function ThirdPartyAccountsPage() {
                 disabled={isPending || !canSubmit}
               >
                 {editing ? t('save') : t('create')}
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        <Dialog open={feishuBindOpen} onOpenChange={setFeishuBindOpen}>
-          <DialogContent className="sm:max-w-[720px]" data-testid="third-party-accounts__feishu-dialog">
-            <DialogHeader>
-              <DialogTitle>{t('feishu_bind_title')}</DialogTitle>
-              <DialogDescription>{t('feishu_bind_description')}</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 py-4">
-              <div className="rounded-md border border-subtle bg-surface-high p-3 text-sm text-tertiary">
-                <div className="font-medium text-foreground mb-2">{t('authorization_url_label')}</div>
-                <code className="block break-all text-primary">{feishuAuthUrl || '—'}</code>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">{t('callback_url_input_label')}</label>
-                <Textarea
-                  value={feishuCallbackUrl}
-                  onChange={(event: React.ChangeEvent<HTMLTextAreaElement>) => setFeishuCallbackUrl(event.target.value)}
-                  rows={4}
-                  placeholder={t('callback_url_input_placeholder')}
-                />
-                <p className="text-xs text-tertiary">{t('callback_url_input_hint')}</p>
-              </div>
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setFeishuBindOpen(false)}>
-                {commonT('cancel')}
-              </Button>
-              <Button
-                variant="action"
-                onClick={() => completeFeishuMutation.mutate()}
-                disabled={completeFeishuMutation.isPending || !feishuCallbackUrl.trim()}
-              >
-                {t('complete_feishu_binding')}
               </Button>
             </div>
           </DialogContent>

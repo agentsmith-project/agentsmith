@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, ChevronRight, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, ChevronRight, PencilLine, ShieldCheck } from 'lucide-react';
 import { Topbar } from '@/components/app-shell/Topbar';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
@@ -51,12 +51,14 @@ export default function WorkspaceFeishuSettingsPage() {
   const [appSecret, setAppSecret] = React.useState('');
   const [redirectUri, setRedirectUri] = React.useState('');
   const [step, setStep] = React.useState<WizardStep>(1);
+  const [isEditing, setIsEditing] = React.useState(false);
 
   React.useEffect(() => {
     if (!integration) return;
     setAppId(integration.app_id ?? '');
     setRedirectUri(integration.redirect_uri ?? '');
     setStep(resolveStep(integration.status, searchParams.get('step')));
+    setIsEditing(integration.status !== 'enabled');
   }, [integration, searchParams]);
 
   const invalidate = React.useCallback(async () => {
@@ -73,6 +75,7 @@ export default function WorkspaceFeishuSettingsPage() {
       await invalidate();
       setAppSecret('');
       setStep(3);
+      setIsEditing(true);
     },
     onError: (mutationError) => handleErrorForToast(mutationError),
   });
@@ -92,6 +95,7 @@ export default function WorkspaceFeishuSettingsPage() {
     mutationFn: async () => api.enableFeishuIntegration(workspaceId ?? ''),
     onSuccess: async () => {
       await invalidate();
+      setIsEditing(false);
       setStep(4);
     },
     onError: (mutationError) => handleErrorForToast(mutationError),
@@ -100,11 +104,12 @@ export default function WorkspaceFeishuSettingsPage() {
   const recommendedCallback = React.useMemo(() => {
     if (!workspaceId) return '';
     if (typeof window === 'undefined') return '';
-    return `${window.location.origin}/${locale}/workspaces/${workspaceId}/feishu/callback`;
-  }, [locale, workspaceId]);
+    return `${window.location.origin}/workspaces/${workspaceId}/feishu/callback`;
+  }, [workspaceId]);
 
   const workspaceBasePath = workspaceId ? `/${locale}/workspaces/${workspaceId}` : `/${locale}/workspaces`;
   const status = integration?.status ?? 'not_configured';
+  const showLockedView = status === 'enabled' && !isEditing;
 
   if (!workspaceId) {
     return (
@@ -199,7 +204,51 @@ export default function WorkspaceFeishuSettingsPage() {
             </section>
 
             <section className="rounded-[24px] border border-border bg-surface/95 p-5 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-              {step === 1 ? (
+              {showLockedView ? (
+                <div className="space-y-5" data-testid="ws-feishu__locked">
+                  <SectionHeading
+                    title={t('feishu_locked_title')}
+                    subtitle={t('feishu_locked_description')}
+                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                      <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_status_label')}</div>
+                      <div className="mt-2 text-sm font-medium text-foreground">{t(`feishu_status_${status}`)}</div>
+                    </div>
+                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                      <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_verified_by_label')}</div>
+                      <div className="mt-2 text-sm font-medium text-foreground">{integration?.verified_by_email || t('feishu_not_verified_yet')}</div>
+                    </div>
+                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                      <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_redirect_uri_label')}</div>
+                      <div className="mt-2 break-all text-sm font-medium text-foreground">{integration?.redirect_uri || t('feishu_callback_unavailable')}</div>
+                    </div>
+                    <div className="rounded-[18px] border border-subtle bg-bg-base/20 p-4">
+                      <div className="text-xs uppercase tracking-[0.12em] text-tertiary">{t('feishu_scope_label')}</div>
+                      <div className="mt-2 text-sm text-foreground">{t('feishu_scope_description')}</div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap justify-between gap-3">
+                    <Button type="button" variant="outline" asChild>
+                      <Link href={`${workspaceBasePath}/connections`}>
+                        {t('feishu_open_connections')}
+                      </Link>
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="primary"
+                      onClick={() => {
+                        setIsEditing(true);
+                        setStep(2);
+                      }}
+                      data-testid="ws-feishu__edit"
+                    >
+                      <PencilLine className="mr-2 h-4 w-4" />
+                      {t('feishu_edit_cta')}
+                    </Button>
+                  </div>
+                </div>
+              ) : step === 1 ? (
                 <div className="space-y-5">
                   <SectionHeading
                     title={t('feishu_prepare_title')}
@@ -225,7 +274,7 @@ export default function WorkspaceFeishuSettingsPage() {
                 </div>
               ) : null}
 
-              {step === 2 ? (
+              {!showLockedView && step === 2 ? (
                 <div className="space-y-5">
                   <SectionHeading
                     title={t('feishu_credentials_title')}
@@ -251,6 +300,11 @@ export default function WorkspaceFeishuSettingsPage() {
                     <Label htmlFor="feishu-redirect-uri">{t('feishu_redirect_uri_label')}</Label>
                     <Input id="feishu-redirect-uri" value={redirectUri} onChange={(event) => setRedirectUri(event.target.value)} />
                   </div>
+                  {integration?.status === 'enabled' ? (
+                    <div className="rounded-[18px] border border-warning/30 bg-warning/10 p-4 text-sm text-secondary">
+                      {t('feishu_edit_warning')}
+                    </div>
+                  ) : null}
                   <div className="flex flex-wrap justify-between gap-3">
                     <Button type="button" variant="outline" onClick={() => setStep(1)}>
                       {t('feishu_back')}
@@ -273,7 +327,7 @@ export default function WorkspaceFeishuSettingsPage() {
                 </div>
               ) : null}
 
-              {step === 3 ? (
+              {!showLockedView && step === 3 ? (
                 <div className="space-y-5">
                   <SectionHeading
                     title={t('feishu_verify_title')}
@@ -300,7 +354,7 @@ export default function WorkspaceFeishuSettingsPage() {
                 </div>
               ) : null}
 
-              {step === 4 ? (
+              {!showLockedView && step === 4 ? (
                 <div className="space-y-5">
                   <SectionHeading
                     title={t('feishu_enable_title')}
@@ -334,7 +388,7 @@ export default function WorkspaceFeishuSettingsPage() {
                         disabled={enableMutation.isPending || (status !== 'verified' && status !== 'enabled')}
                         data-testid="ws-feishu__enable"
                       >
-                        {enableMutation.isPending ? t('feishu_enabling') : status === 'enabled' ? t('feishu_enabled_cta') : t('feishu_enable_cta')}
+                        {enableMutation.isPending ? t('feishu_enabling') : t('feishu_enable_cta')}
                       </Button>
                     </div>
                   </div>

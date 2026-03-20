@@ -165,6 +165,10 @@ describe('WorkspacePage', () => {
     expect(screen.getByRole('heading', { name: 'title' })).toBeInTheDocument();
     expect(screen.getByTestId('projects__table__row')).toBeInTheDocument();
     expect(screen.queryByTestId('projects__back-to-workspace')).not.toBeInTheDocument();
+    expect(screen.getByTestId('projects__workspace-settings-btn')).toHaveAttribute(
+      'href',
+      '/en-US/workspaces/ws_alpha/settings',
+    );
   });
 
   it('shows permission denied when workspace read is missing', async () => {
@@ -174,6 +178,17 @@ describe('WorkspacePage', () => {
     await waitFor(() => {
       expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     });
+  });
+
+  it('hides the workspace settings shortcut for non-admin workspace users', async () => {
+    mockUseHasWorkspacePermission.mockImplementation((permission: string) => permission === 'workspace:read');
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('projects__create-btn')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('projects__workspace-settings-btn')).not.toBeInTheDocument();
   });
 
   it('shows unavailable state when workspace can no longer be loaded', async () => {

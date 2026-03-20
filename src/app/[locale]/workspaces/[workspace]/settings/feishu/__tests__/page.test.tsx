@@ -101,15 +101,44 @@ describe('WorkspaceFeishuSettingsPage', () => {
     const redirectUriInput = document.getElementById('feishu-redirect-uri') as HTMLInputElement;
     await user.type(appIdInput, 'cli_demo');
     await user.type(appSecretInput, 'secret_demo');
-    await user.type(redirectUriInput, 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback');
+    await user.type(redirectUriInput, 'http://localhost:3001/workspaces/ws_1/feishu/callback');
     await user.click(screen.getByTestId('ws-feishu__save-draft'));
 
     await waitFor(() => {
       expect(mockUpdateFeishuIntegration).toHaveBeenCalledWith('ws_1', {
         app_id: 'cli_demo',
         app_secret: 'secret_demo',
-        redirect_uri: 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback',
+        redirect_uri: 'http://localhost:3001/workspaces/ws_1/feishu/callback',
       });
     });
+  });
+
+  it('locks the page into a read-only summary when Feishu is already enabled', async () => {
+    mockUseSearchParams.mockReturnValue(new URLSearchParams());
+    mockGetFeishuIntegration.mockResolvedValue({
+      id: 'workspace_feishu:ws_1',
+      workspace_id: 'ws_1',
+      provider: 'feishu',
+      status: 'enabled',
+      app_id: 'cli_demo',
+      redirect_uri: 'http://localhost:3001/workspaces/ws_1/feishu/callback',
+      verified_at: '2026-03-19T00:00:00.000Z',
+      verified_by_user_id: 'u_1',
+      verified_by_email: 'dev1@example.com',
+      last_error: null,
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+      has_app_secret: true,
+    });
+
+    renderPage();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('ws-feishu__locked')).toBeInTheDocument();
+    });
+
+    expect(screen.getByText('feishu_locked_title')).toBeInTheDocument();
+    expect(screen.getByTestId('ws-feishu__edit')).toBeInTheDocument();
+    expect(screen.queryByTestId('ws-feishu__enable')).not.toBeInTheDocument();
   });
 });

@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
-import { useTranslations } from 'next-intl';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api/client';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
@@ -42,6 +41,27 @@ type WorkspaceLoginConfig = {
   };
 };
 
+type WorkspaceLoginMessages = {
+  title: string;
+  description: string;
+  backToLogin: string;
+};
+
+function resolveWorkspaceLoginMessages(locale: string): WorkspaceLoginMessages {
+  if (locale === 'zh-CN') {
+    return {
+      title: '正在完成工作区登录',
+      description: '请稍候，系统正在完成当前工作区的登录。',
+      backToLogin: '返回工作区登录',
+    };
+  }
+  return {
+    title: 'Completing workspace sign in',
+    description: 'Please wait while we complete sign in for this workspace.',
+    backToLogin: 'Back to workspace sign in',
+  };
+}
+
 function readPkceContext(): StoredPkceContext | null {
   const raw = sessionStorage.getItem('mbos:keycloak:pkce');
   if (!raw) return null;
@@ -71,7 +91,6 @@ export function WorkspaceLoginCallbackClient({
   fallbackLocale?: string;
 }) {
   const searchParams = useSearchParams();
-  const t = useTranslations('auth');
   const { setAuth } = useAuthStore();
   const [error, setError] = useState<string | null>(null);
   const code = searchParams.get('code');
@@ -194,13 +213,14 @@ export function WorkspaceLoginCallbackClient({
   }, [code, config, fallbackLocale, providerError, realmBase, setAuth, state, workspaceId]);
 
   const retryLocale = readPkceContext()?.locale || fallbackLocale;
+  const messages = resolveWorkspaceLoginMessages(retryLocale);
 
   return (
     <PageState state="success">
       <PageLayout>
         <div className="min-h-screen bg-background flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-surface border border-border rounded-md p-8 text-center space-y-3">
-            <h1 className="text-xl font-semibold text-foreground">{t('keycloak_callback_title')}</h1>
+            <h1 className="text-xl font-semibold text-foreground">{messages.title}</h1>
             {error ? (
               <>
                 <p className="text-sm text-error" data-testid="workspace-login-callback__error">{error}</p>
@@ -209,11 +229,11 @@ export function WorkspaceLoginCallbackClient({
                   className="w-full h-10 px-4 bg-hover hover:bg-hover/80 text-foreground font-medium rounded-sm border border-subtle transition-colors duration-200"
                   onClick={() => window.location.replace(`/${retryLocale}/workspaces/${workspaceId}/login`)}
                 >
-                  {t('keycloak_back_to_login')}
+                  {messages.backToLogin}
                 </button>
               </>
             ) : (
-              <p className="text-sm text-tertiary">{t('keycloak_callback_description')}</p>
+              <p className="text-sm text-tertiary">{messages.description}</p>
             )}
           </div>
         </div>

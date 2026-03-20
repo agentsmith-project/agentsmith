@@ -16,6 +16,12 @@ const intlMiddleware = createMiddleware(routing);
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
+  // Keep technical OAuth/callback routes locale-neutral so external providers
+  // can whitelist a single stable redirect URI without being rewritten by i18n.
+  if (/^\/workspaces\/[^/]+\/(?:login|feishu)\/callback$/.test(pathname)) {
+    return NextResponse.next();
+  }
+
   // Custom: invalid task ID -> redirect to notebook list
   // Pattern: /[locale]/workspaces/[workspace]/projects/[project]/notebook/tasks/[taskId]
   const taskMatch = pathname.match(

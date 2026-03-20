@@ -7,9 +7,6 @@ const mockList = vi.fn();
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
 const mockRemove = vi.fn();
-const mockGetProviderConfig = vi.fn();
-const mockStartFeishuOAuth = vi.fn();
-const mockCompleteFeishuOAuth = vi.fn();
 const mockRefresh = vi.fn();
 
 vi.mock('next-intl', () => ({
@@ -24,9 +21,6 @@ vi.mock('@/lib/api', () => ({
       create: mockCreate,
       update: mockUpdate,
       remove: mockRemove,
-      getProviderConfig: mockGetProviderConfig,
-      startFeishuOAuth: mockStartFeishuOAuth,
-      completeFeishuOAuth: mockCompleteFeishuOAuth,
       refresh: mockRefresh,
     };
   }),
@@ -57,31 +51,17 @@ describe('ThirdPartyAccountsPage', () => {
     mockCreate.mockResolvedValue({ id: 'uec_1' });
     mockUpdate.mockResolvedValue({ id: 'uec_1' });
     mockRemove.mockResolvedValue(undefined);
-    mockGetProviderConfig.mockResolvedValue({
-      provider: 'feishu',
-      interactive_login_required: true,
-      refresh_supported: true,
-      auth_configured: false,
-      callback_uri: 'http://127.0.0.1:18181/callback',
-      auth_url: null,
-    });
-    mockStartFeishuOAuth.mockResolvedValue({
-      authorization_url: 'https://feishu.example/auth',
-      state: 'state_1',
-      redirect_uri: 'http://127.0.0.1:18181/callback',
-      expires_at: new Date().toISOString(),
-      scopes: ['offline_access'],
-    });
-    mockCompleteFeishuOAuth.mockResolvedValue({ id: 'uec_2' });
     mockRefresh.mockResolvedValue({ id: 'uec_3' });
   });
 
-  it('disables Feishu connect when auth is not configured', async () => {
+  it('does not render workspace-scoped Feishu connect controls on the personal accounts page', async () => {
     render(<ThirdPartyAccountsPage />, { wrapper });
 
-    const button = await screen.findByTestId('third-party-accounts__feishu-connect');
-    expect(button).toBeDisabled();
-    expect(screen.getByText('feishu_not_configured')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId('third-party-accounts__create-btn')).toBeInTheDocument();
+    });
+
+    expect(screen.queryByTestId('third-party-accounts__feishu-connect')).not.toBeInTheDocument();
   });
 
   it('creates a Jira secret bundle with provider-specific fields', async () => {

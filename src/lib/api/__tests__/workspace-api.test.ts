@@ -115,14 +115,14 @@ describe('WorkspaceAPI', () => {
     await api.updateFeishuIntegration('ws_1', {
       app_id: 'cli_xxx',
       app_secret: 'secret',
-      redirect_uri: 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback',
+      redirect_uri: 'http://localhost:3001/workspaces/ws_1/feishu/callback',
     });
 
     expect(mockGet).toHaveBeenCalledWith('/workspaces/ws_1/integrations/feishu');
     expect(mockPut).toHaveBeenCalledWith('/workspaces/ws_1/integrations/feishu', {
       app_id: 'cli_xxx',
       app_secret: 'secret',
-      redirect_uri: 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback',
+      redirect_uri: 'http://localhost:3001/workspaces/ws_1/feishu/callback',
     });
   });
 
@@ -130,7 +130,7 @@ describe('WorkspaceAPI', () => {
     const mockPost = vi.fn().mockResolvedValue({
       authorization_url: 'https://accounts.feishu.cn/auth',
       state: 'state_1',
-      redirect_uri: 'http://localhost:3001/en-US/workspaces/ws_1/feishu/callback',
+      redirect_uri: 'http://localhost:3001/workspaces/ws_1/feishu/callback',
       expires_at: '2026-03-19T00:00:00.000Z',
     });
     const client: ApiClient = {

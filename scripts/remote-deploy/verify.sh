@@ -18,6 +18,22 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
+RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+
+cleanup_verify_artifacts() {
+  mkdir -p "${REPORT_DIR}/verify-artifacts"
+  docker run --rm \
+    --user 0:0 \
+    --entrypoint /bin/sh \
+    -v "${REPORT_DIR}/verify-artifacts:/artifacts" \
+    minio/mc:latest \
+    -lc "chown -R $(id -u):$(id -g) /artifacts || true"
+}
+
+trap cleanup_verify_artifacts EXIT
+
+[[ -n "${VERIFY_RUNNER_IMAGE}" ]] || die "verify runner image missing from VERSION"
 
 wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
@@ -74,21 +90,31 @@ state_set verify.preset_external_agent_count "${EXTERNAL_AGENT_COUNT}"
 state_set verify.preset_internal_agent_count "${INTERNAL_AGENT_COUNT}"
 state_set verify.preset_external_runner connected
 
-(
-  cd "${ROOT_DIR}" && \
-    BASE_URL="${PUBLIC_WEB_BASE_URL}" \
-    INTEGRATION_API_BASE="${PUBLIC_API_BASE_URL}" \
-    KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
-    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-    KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-    INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
-    GLM_APIKEY="${GLM_APIKEY:-}" \
-    CLAUDE_URL="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}" \
-    OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}" \
-    INTEGRATION_GLM_MODEL="${GLM_MODEL:-glm-5-turbo}" \
-    RESET_FIRST=0 \
-    npx playwright test --config playwright.config.integration.ts e2e/integration-release-user-story.spec.ts --project=chromium --workers=1
-)
+mkdir -p "${REPORT_DIR}/verify-artifacts"
+docker run --rm \
+  --network host \
+  --privileged \
+  --device /dev/fuse \
+  --security-opt apparmor:unconfined \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
+  -e BASE_URL="${PUBLIC_WEB_BASE_URL}" \
+  -e INTEGRATION_API_BASE="${PUBLIC_API_BASE_URL}" \
+  -e KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+  -e KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+  -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+  -e INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
+  -e GLM_APIKEY="${GLM_APIKEY:-}" \
+  -e CLAUDE_URL="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}" \
+  -e OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}" \
+  -e INTEGRATION_GLM_MODEL="${GLM_MODEL:-glm-5-turbo}" \
+  -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
+  -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
+  -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \
+  -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR=/opt/agent-runner/builtin-skills \
+  -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \
+  -e RESET_FIRST=0 \
+  "${VERIFY_RUNNER_IMAGE}"
 
 state_set release.phase verify_completed
 log "verify ok"

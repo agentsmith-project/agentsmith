@@ -24,6 +24,8 @@ export type NotebookExecutionContext = {
   workspace_binding_mode?: 'file_library' | 'pre_mounted';
 };
 
+type NotebookAssetDebugLog = (message: string, extra?: Record<string, unknown>) => void;
+
 export function buildNotebookHeadlessPreamble(args: {
   artifactsDir: string;
   taskInputsManifestPath: string;
@@ -78,16 +80,29 @@ export async function prepareNotebookWorkspaceAssets(args: {
   paths: TaskWorkspacePaths;
   executionContext: NotebookExecutionContext;
   taskInputs: NotebookTaskInput[];
+  debugLog?: NotebookAssetDebugLog;
 }): Promise<{
   artifactsDir: string;
   taskInputsManifestPath: string;
 }> {
-  const { cwd, paths, executionContext, taskInputs } = args;
+  const { cwd, paths, executionContext, taskInputs, debugLog } = args;
   const artifactsDir = paths.artifactsDir;
   const taskInputsManifestPath = paths.taskInputsManifestPath;
-  await mkdir(artifactsDir, { recursive: true });
-  await mkdir(paths.mbosDir, { recursive: true });
-  await writeFile(
+  await withFsOpTimeout(
+    'notebook_assets_mkdir_artifacts',
+    mkdir(artifactsDir, { recursive: true }),
+    debugLog,
+    { cwd, target: artifactsDir },
+  );
+  await withFsOpTimeout(
+    'notebook_assets_mkdir_mbos',
+    mkdir(paths.mbosDir, { recursive: true }),
+    debugLog,
+    { cwd, target: paths.mbosDir },
+  );
+  await withFsOpTimeout(
+    'notebook_assets_write_task_inputs',
+    writeFile(
     taskInputsManifestPath,
     JSON.stringify(
       {
@@ -120,12 +135,49 @@ export async function prepareNotebookWorkspaceAssets(args: {
       2,
     ),
     'utf-8',
+    ),
+    debugLog,
+    { cwd, target: taskInputsManifestPath, task_inputs_count: taskInputs.length },
   );
   if (executionContext.workspace_binding_mode !== 'pre_mounted') {
     const agentsPath = join(cwd, 'AGENTS.md');
     if (!existsSync(agentsPath)) {
-      await writeFile(agentsPath, buildNotebookAgentsMd(), 'utf-8');
+      await withFsOpTimeout(
+        'notebook_assets_write_agents_md',
+        writeFile(agentsPath, buildNotebookAgentsMd(), 'utf-8'),
+        debugLog,
+        { cwd, target: agentsPath },
+      );
     }
   }
   return { artifactsDir, taskInputsManifestPath };
+}
+
+async function withFsOpTimeout<T>(
+  name: string,
+  promise: Promise<T>,
+  debugLog?: NotebookAssetDebugLog,
+  extra?: Record<string, unknown>,
+): Promise<T> {
+  const timeoutMs = Number.parseInt(process.env.MBOS_NOTEBOOK_ASSET_IO_TIMEOUT_MS ?? '30000', 10);
+  const startedAt = Date.now();
+  debugLog?.(`${name}_start`, extra);
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const result = await Promise.race<T>([
+      promise,
+      new Promise<T>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          reject(new Error(`${name}_timeout_after_${String(timeoutMs)}ms`));
+        }, timeoutMs);
+      }),
+    ]);
+    debugLog?.(`${name}_done`, {
+      ...extra,
+      duration_ms: Date.now() - startedAt,
+    });
+    return result;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

@@ -32,12 +32,12 @@ test.describe('@lane-real files web/local mount sync', () => {
       { headers: { Authorization: `Bearer ${token}` } },
     );
     expect(exchangeRes.ok()).toBeTruthy();
-    const exchangeBody = (await exchangeRes.json()) as { metadata_url: string };
+    const exchangeBody = (await exchangeRes.json()) as { metadata_url: string; storage_bucket_url?: string };
     const metadataUrl = exchangeBody.metadata_url;
 
     const mountRoot = await createTempMountDir('agentsmith-filelib-ui-sync-');
     const mountPoint = path.join(mountRoot, 'mount');
-    const unmount = await mountJuiceFs(metadataUrl, mountPoint);
+    const unmount = await mountJuiceFs(metadataUrl, mountPoint, exchangeBody.storage_bucket_url);
 
     try {
       await writeMountedFile(mountPoint, 'from-local.txt', 'hello-from-local\n');

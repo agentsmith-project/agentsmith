@@ -10,6 +10,7 @@ export interface FileLibraryProvisioningInput {
 export interface FileLibraryProvisioningResult {
   filesystemName: string;
   metadataUrl: string;
+  internalMetadataUrl: string;
   postgres: {
     host: string;
     port: number;

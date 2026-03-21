@@ -651,10 +651,17 @@ export async function startCodexRunnerDockerProcess(args: {
   stop: () => Promise<void>;
 }> {
   const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner:local';
+  const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
+  const builtinSkillsDir = embeddedRunner
+    ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/opt/agent-runner/builtin-skills'
+    : '/app/packages/agent-codex-runner/builtin-skills';
   const buildContext = path.resolve(__dirname, '..');
   const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner');
   const inspectResult = await spawnAndCapture('docker', ['image', 'inspect', imageTag]);
   if (inspectResult.code !== 0) {
+    if (embeddedRunner) {
+      throw new Error(`docker_runner_image_missing:${imageTag}`);
+    }
     const buildArgs = ['build'];
     if (DOCKER_BUILD_PROXY.trim()) {
       buildArgs.push('--build-arg', `HTTP_PROXY=${DOCKER_BUILD_PROXY.trim()}`);
@@ -671,6 +678,22 @@ export async function startCodexRunnerDockerProcess(args: {
   const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-docker-workspaces-${Date.now()}`);
   await mkdir(workspaceRoot, { recursive: true });
   const containerName = `agentsmith-codex-runner-${Date.now()}`;
+  const runnerLogDir = process.env.INTEGRATION_RUNNER_LOG_DIR?.trim() || path.join(process.cwd(), 'test-results', 'runner-logs');
+  await mkdir(runnerLogDir, { recursive: true });
+  const runnerLogPath = path.join(runnerLogDir, `${containerName}.log`);
+  const preserveRunnerLogs = async (): Promise<void> => {
+    const logs = await spawnAndCapture('docker', ['logs', containerName]).catch(() => ({
+      code: 1,
+      stdout: '',
+      stderr: '',
+    }));
+    const logBody = `${logs.stdout}${logs.stdout && logs.stderr ? '\n' : ''}${logs.stderr}`.trim();
+    if (logBody.length > 0) {
+      await writeFile(runnerLogPath, `${logBody}\n`, 'utf-8');
+    } else {
+      await writeFile(runnerLogPath, '[runner log unavailable]\n', 'utf-8');
+    }
+  };
   const runArgs = [
     'run',
     '--detach',
@@ -695,18 +718,19 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     'MBOS_AGENT_WORKSPACE_ROOT=/workspace/ags-workspaces',
     '--env',
-    'MBOS_AGENT_BUILTIN_SKILLS_DIR=/app/packages/agent-codex-runner/builtin-skills',
+    `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
     '--env',
     'MBOS_AGENT_BUILTIN_SKILLS=.system,feishu-docs,jira-ops,file-read',
     '--env',
     'MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1',
     '--volume',
-    `${buildContext}:/app`,
-    '--volume',
     `${workspaceRoot}:/workspace/ags-workspaces:rshared`,
   ];
   if (args.codeBin) {
     runArgs.push('--env', `CODEX_BIN=${args.codeBin}`);
+  }
+  if (!embeddedRunner) {
+    runArgs.push('--volume', `${buildContext}:/app`);
   }
   runArgs.push(imageTag);
 
@@ -724,11 +748,13 @@ export async function startCodexRunnerDockerProcess(args: {
   while (Date.now() < deadline) {
     const logs = await spawnAndCapture('docker', ['logs', containerName]);
     if (`${logs.stdout}\n${logs.stderr}`.includes('[agent-codex-runner] connected')) {
+      await preserveRunnerLogs();
       return {
         containerName,
         workspaceRoot,
         imageTag,
         stop: async () => {
+          await preserveRunnerLogs();
           await spawnAndCapture('docker', ['rm', '-f', containerName]);
           await unmountWorkspaceTree(workspaceRoot);
           await rm(workspaceRoot, { recursive: true, force: true }).catch(() => undefined);
@@ -742,17 +768,18 @@ export async function startCodexRunnerDockerProcess(args: {
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
 
+  await preserveRunnerLogs();
   const logs = await spawnAndCapture('docker', ['logs', containerName]);
   await spawnAndCapture('docker', ['rm', '-f', containerName]);
-  throw new Error(`docker_runner_connect_timeout:${`${logs.stdout}\n${logs.stderr}`.slice(-1200)}`);
+  throw new Error(`docker_runner_connect_timeout:${`${logs.stdout}\n${logs.stderr}`.slice(-1200)}:log=${runnerLogPath}`);
 }
 
-export async function mountFileLibraryLocally(metadataUrl: string): Promise<{
+export async function mountFileLibraryLocally(metadataUrl: string, storageBucketUrl?: string): Promise<{
   mountPath: string;
   stop: () => Promise<void>;
 }> {
   const mountPath = await mkdtemp(path.join(tmpdir(), 'agentsmith-real-file-library-'));
-  const mountResult = await spawnAndCapture('juicefs', [
+  const mountArgs = [
     'mount',
     metadataUrl,
     mountPath,
@@ -764,7 +791,11 @@ export async function mountFileLibraryLocally(metadataUrl: string): Promise<{
     '0',
     '--dir-entry-cache',
     '0',
-  ], { env: withoutProxyEnv() });
+  ];
+  if ((storageBucketUrl ?? '').trim()) {
+    mountArgs.push('--bucket', storageBucketUrl!.trim());
+  }
+  const mountResult = await spawnAndCapture('juicefs', mountArgs, { env: withoutProxyEnv() });
   if (mountResult.code !== 0) {
     await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
     throw new Error(`local_juicefs_mount_failed:${mountResult.stderr.slice(-800)}`);
@@ -823,10 +854,10 @@ export async function createFileLibraryViaUi(
   return libraryId;
 }
 
-export async function openMountAccessAndRevealMetadataUrl(
+export async function openMountAccessAndRevealMountDetails(
   page: Page,
   libraryName: string,
-): Promise<string> {
+): Promise<{ metadataUrl: string; storageBucketUrl: string | null }> {
   const dismissOpenDialog = async () => {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const visibleDialog = page.locator('[role="dialog"]:visible, [role="alertdialog"]:visible').last();
@@ -849,19 +880,27 @@ export async function openMountAccessAndRevealMetadataUrl(
   await dialog.getByRole('button', { name: /reveal|显示|show/i }).click();
   const metadataInput = dialog.getByTestId('files__library-mount__metadata-url');
   await expect(metadataInput).not.toHaveValue(/••••/);
-  return (await metadataInput.inputValue()).trim();
+  const bucketInput = dialog.getByTestId('files__library-mount__bucket-url');
+  return {
+    metadataUrl: (await metadataInput.inputValue()).trim(),
+    storageBucketUrl: (await bucketInput.inputValue()).trim() || null,
+  };
 }
 
 export async function createTempMountDir(prefix: string): Promise<string> {
   return mkdtemp(path.join(tmpdir(), prefix));
 }
 
-export async function mountJuiceFs(metadataUrl: string, mountPoint: string): Promise<() => Promise<void>> {
+export async function mountJuiceFs(metadataUrl: string, mountPoint: string, storageBucketUrl?: string): Promise<() => Promise<void>> {
   await mkdir(mountPoint, { recursive: true });
+  const mountArgs = ['mount', metadataUrl, mountPoint, '-d', '--attr-cache', '0', '--entry-cache', '0', '--dir-entry-cache', '0'];
+  if ((storageBucketUrl ?? '').trim()) {
+    mountArgs.push('--bucket', storageBucketUrl!.trim());
+  }
   await new Promise<void>((resolve, reject) => {
     const proc = spawn(
       'juicefs',
-      ['mount', metadataUrl, mountPoint, '-d', '--attr-cache', '0', '--entry-cache', '0', '--dir-entry-cache', '0'],
+      mountArgs,
       { stdio: ['ignore', 'pipe', 'pipe'], env: withoutProxyEnv() },
     );
     let stderr = '';

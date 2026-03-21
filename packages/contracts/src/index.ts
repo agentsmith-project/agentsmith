@@ -333,6 +333,7 @@ export const CreateFileLibraryShareLinkRequestSchema = z.object({
 export const StorageCredentialExchangeResponseSchema = z.object({
   filesystem_name: z.string().min(1),
   metadata_url: z.string().min(1),
+  storage_bucket_url: z.string().min(1).optional(),
   recommended_mount_path: z.string().min(1),
   platform_notes: z.array(z.string().min(1)).default([]),
   recommended_mount_commands: z.object({

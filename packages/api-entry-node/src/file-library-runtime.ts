@@ -29,6 +29,8 @@ interface FileLibraryRuntimeConfig {
   juicefsBin: string;
   mcBin: string;
   pgAdminUrl: string;
+  pgConnectHost: string;
+  pgConnectPort: number;
   pgPublicHost: string;
   pgPublicPort: number;
   pgPublicSslMode?: string;
@@ -37,6 +39,7 @@ interface FileLibraryRuntimeConfig {
   minioAdminUseSSL: boolean;
   minioAdminAccessKey: string;
   minioAdminSecretKey: string;
+  minioStorageEndpoint: string;
   minioPublicEndpoint: string;
   minioRegion: string;
   gatewayPortBase: number;
@@ -226,6 +229,14 @@ function buildPublicMetadataUrl(config: FileLibraryRuntimeConfig, dbUser: string
   return url.toString();
 }
 
+function buildInternalMetadataUrl(config: FileLibraryRuntimeConfig, dbUser: string, dbPassword: string, dbName: string): string {
+  const url = new URL(`postgres://${encodeURIComponent(dbUser)}:${encodeURIComponent(dbPassword)}@${config.pgConnectHost}:${config.pgConnectPort}/${dbName}`);
+  if (config.pgPublicSslMode) {
+    url.searchParams.set('sslmode', config.pgPublicSslMode);
+  }
+  return url.toString();
+}
+
 function buildMcHost(config: FileLibraryRuntimeConfig): string {
   const scheme = config.minioAdminUseSSL ? 'https' : 'http';
   return `${scheme}://${encodeURIComponent(config.minioAdminAccessKey)}:${encodeURIComponent(config.minioAdminSecretKey)}@${config.minioAdminEndPoint}:${config.minioAdminPort}`;
@@ -291,36 +302,68 @@ async function waitForGateway(url: string, timeoutMs = 15000): Promise<void> {
   throw new Error('file_library_gateway_start_timeout');
 }
 
-function buildRuntimeConfig(): FileLibraryRuntimeConfig {
-  const pgAdminUrl = requireEnv('DATABASE_URL');
+export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process.env): FileLibraryRuntimeConfig {
+  const pgAdminUrl = env.DATABASE_URL?.trim();
+  if (!pgAdminUrl) {
+    throw new Error('file_library_env_missing_database_url');
+  }
   const parsedPg = new URL(pgAdminUrl);
-  const minioAdminEndPoint = requireEnv('MINIO_ENDPOINT');
-  const minioAdminPort = envNumber('MINIO_PORT', 19000);
-  const minioAdminUseSSL = envBoolean('MINIO_USE_SSL', false);
+  const minioAdminEndPoint = env.MINIO_ENDPOINT?.trim();
+  if (!minioAdminEndPoint) {
+    throw new Error('file_library_env_missing_minio_endpoint');
+  }
+  const minioAdminPort = (() => {
+    const raw = env.MINIO_PORT;
+    if (!raw) return 19000;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : 19000;
+  })();
+  const minioAdminUseSSL = (() => {
+    const raw = env.MINIO_USE_SSL;
+    if (!raw) return false;
+    return raw === '1' || raw.toLowerCase() === 'true';
+  })();
   return {
-    juicefsBin: detectDefaultJuicefsBin(),
-    mcBin: detectDefaultMcBin(),
+    juicefsBin: env.JUICEFS_BIN?.trim() || detectDefaultJuicefsBin(),
+    mcBin: env.MC_BIN?.trim() || detectDefaultMcBin(),
     pgAdminUrl,
-    pgPublicHost: envString('FILE_LIBRARY_POSTGRES_PUBLIC_HOST') || parsedPg.hostname,
-    pgPublicPort: envNumber('FILE_LIBRARY_POSTGRES_PUBLIC_PORT', Number(parsedPg.port || '5432')),
-    pgPublicSslMode: envString('FILE_LIBRARY_POSTGRES_PUBLIC_SSLMODE'),
+    pgConnectHost: parsedPg.hostname,
+    pgConnectPort: Number(parsedPg.port || '5432'),
+    pgPublicHost: env.FILE_LIBRARY_POSTGRES_PUBLIC_HOST?.trim() || parsedPg.hostname,
+    pgPublicPort: (() => {
+      const raw = env.FILE_LIBRARY_POSTGRES_PUBLIC_PORT;
+      if (!raw) return Number(parsedPg.port || '5432');
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : Number(parsedPg.port || '5432');
+    })(),
+    pgPublicSslMode: env.FILE_LIBRARY_POSTGRES_PUBLIC_SSLMODE?.trim() || undefined,
     minioAdminEndPoint,
     minioAdminPort,
     minioAdminUseSSL,
-    minioAdminAccessKey: requireEnv('MINIO_ACCESS_KEY'),
-    minioAdminSecretKey: requireEnv('MINIO_SECRET_KEY'),
+    minioAdminAccessKey: env.MINIO_ACCESS_KEY?.trim() || requireEnv('MINIO_ACCESS_KEY'),
+    minioAdminSecretKey: env.MINIO_SECRET_KEY?.trim() || requireEnv('MINIO_SECRET_KEY'),
+    minioStorageEndpoint: `${minioAdminUseSSL ? 'https' : 'http'}://${minioAdminEndPoint}:${minioAdminPort}`,
     minioPublicEndpoint:
-      envString('FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT')
+      env.FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT?.trim()
       || `${minioAdminUseSSL ? 'https' : 'http'}://${minioAdminEndPoint}:${minioAdminPort}`,
-    minioRegion: envString('FILE_LIBRARY_MINIO_REGION') || 'us-east-1',
-    gatewayPortBase: envNumber('FILE_LIBRARY_GATEWAY_PORT_BASE', 39000),
-    gatewayRootUserPrefix: envString('FILE_LIBRARY_GATEWAY_ROOT_USER_PREFIX') || 'flgw',
+    minioRegion: env.FILE_LIBRARY_MINIO_REGION?.trim() || 'us-east-1',
+    gatewayPortBase: (() => {
+      const raw = env.FILE_LIBRARY_GATEWAY_PORT_BASE;
+      if (!raw) return 39000;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) && parsed > 0 ? parsed : 39000;
+    })(),
+    gatewayRootUserPrefix: env.FILE_LIBRARY_GATEWAY_ROOT_USER_PREFIX?.trim() || 'flgw',
     gatewayRootPasswordSeed:
-      envString('FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED')
-      || envString('AGENTSMITH_SECRET_KEY')
+      env.FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED?.trim()
+      || env.AGENTSMITH_SECRET_KEY?.trim()
       || 'agentsmith-file-library-gateway-seed',
-    gatewayLogDir: envString('FILE_LIBRARY_GATEWAY_LOG_DIR') || join(process.cwd(), 'artifacts/file-library-gateway'),
+    gatewayLogDir: env.FILE_LIBRARY_GATEWAY_LOG_DIR?.trim() || join(process.cwd(), 'artifacts/file-library-gateway'),
   };
+}
+
+function buildRuntimeConfig(): FileLibraryRuntimeConfig {
+  return resolveFileLibraryRuntimeConfig(process.env);
 }
 
 async function createPgDatabase(config: FileLibraryRuntimeConfig, libraryId: string): Promise<{ dbName: string; dbUser: string; dbPassword: string }> {
@@ -432,7 +475,7 @@ async function formatJuicefs(config: FileLibraryRuntimeConfig, metadataUrl: stri
   const bucket = deterministicBucket(libraryId);
   const accessKey = deterministicMinioUser(libraryId);
   const secretKey = deriveSecret(config.gatewayRootPasswordSeed, 'minio-backend-user', libraryId, 32);
-  const bucketUrl = `${config.minioPublicEndpoint.replace(/\/+$/, '')}/${bucket}`;
+  const bucketUrl = `${config.minioStorageEndpoint.replace(/\/+$/, '')}/${bucket}`;
   await execCommand(config.juicefsBin, [
     'format',
     metadataUrl,
@@ -461,6 +504,7 @@ export class InMemoryFileLibraryOrchestrator implements FileLibraryOrchestrator 
     return {
       filesystemName: input.filesystemName,
       metadataUrl: `postgres://${encodeURIComponent(dbUser)}:${encodeURIComponent(dbPassword)}@${host}:${port}/${dbName}`,
+      internalMetadataUrl: `postgres://${encodeURIComponent(dbUser)}:${encodeURIComponent(dbPassword)}@${host}:${port}/${dbName}`,
       postgres: {
         host,
         port,
@@ -490,11 +534,13 @@ export class RealFileLibraryOrchestrator implements FileLibraryOrchestrator {
     const { dbName, dbUser, dbPassword } = await createPgDatabase(this.config, input.libraryId);
     try {
       const { bucket } = await createMinioResources(this.config, input.libraryId);
+      const internalMetadataUrl = buildInternalMetadataUrl(this.config, dbUser, dbPassword, dbName);
       const metadataUrl = buildPublicMetadataUrl(this.config, dbUser, dbPassword, dbName);
-      await formatJuicefs(this.config, metadataUrl, input.filesystemName, input.libraryId);
+      await formatJuicefs(this.config, internalMetadataUrl, input.filesystemName, input.libraryId);
       return {
         filesystemName: input.filesystemName,
         metadataUrl,
+        internalMetadataUrl,
         postgres: {
           host: this.config.pgPublicHost,
           port: this.config.pgPublicPort,

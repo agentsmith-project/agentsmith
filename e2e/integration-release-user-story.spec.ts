@@ -8,7 +8,7 @@ import {
   createCredentialViaUi,
   createProjectInWorkspace,
   mountFileLibraryLocally,
-  openMountAccessAndRevealMetadataUrl,
+  openMountAccessAndRevealMountDetails,
   startCodexRunnerDockerProcess,
   startCodexRunnerProcess,
   waitForAgentPresenceOnline,
@@ -29,7 +29,10 @@ const SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
 const MEMBER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
 const MEMBER_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
 const MEMBER_EMAIL = 'integration-user@example.com';
-const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
+const INTERNAL_AGENT_IMAGE =
+  process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() ||
+  process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
+  'agentsmith-codex-runner:local';
 
 function requireGlmApiKey(): string {
   const value = GLM_API_KEY?.trim();
@@ -721,8 +724,11 @@ test.describe('@lane-real release user story end-to-end', () => {
         projectId,
         workspaceName: externalTaskOne.workspaceName,
       });
-      const externalMetadataUrl = await openMountAccessAndRevealMetadataUrl(page, externalTaskOne.workspaceName);
-      const mountedExternalWorkspace = await mountFileLibraryLocally(externalMetadataUrl);
+      const externalMountDetails = await openMountAccessAndRevealMountDetails(page, externalTaskOne.workspaceName);
+      const mountedExternalWorkspace = await mountFileLibraryLocally(
+        externalMountDetails.metadataUrl,
+        externalMountDetails.storageBucketUrl ?? undefined,
+      );
       try {
         const externalStoryPath = await waitForMountedWorkspacePath(
           mountedExternalWorkspace.mountPath,
@@ -832,8 +838,11 @@ test.describe('@lane-real release user story end-to-end', () => {
         projectId,
         workspaceName: internalTask.workspaceName,
       });
-      const internalMetadataUrl = await openMountAccessAndRevealMetadataUrl(page, internalTask.workspaceName);
-      const mountedInternalWorkspace = await mountFileLibraryLocally(internalMetadataUrl);
+      const internalMountDetails = await openMountAccessAndRevealMountDetails(page, internalTask.workspaceName);
+      const mountedInternalWorkspace = await mountFileLibraryLocally(
+        internalMountDetails.metadataUrl,
+        internalMountDetails.storageBucketUrl ?? undefined,
+      );
       try {
         const internalStoryPath = await waitForMountedWorkspacePath(
           mountedInternalWorkspace.mountPath,

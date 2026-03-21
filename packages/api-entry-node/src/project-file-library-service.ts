@@ -79,7 +79,9 @@ export async function createAndProvisionProjectFileLibrary(input: {
       requestedByUserId: input.userId,
     });
     const normalizedMetadataUrl = normalizeFileLibraryMetadataUrl(provisioned.metadataUrl);
+    const normalizedInternalMetadataUrl = normalizeFileLibraryMetadataUrl(provisioned.internalMetadataUrl);
     const recommendedCacheDir = `$HOME/.juicefs/cache/agentsmith/${created.filesystem_name}`;
+    const storageBucketUrl = `${provisioned.minio.endpoint.replace(/\/+$/, '')}/${provisioned.minio.bucket}`;
     await backendRepo.save(input.workspaceId, input.projectId, created.id, {
       library_id: created.id,
       filesystem_name: provisioned.filesystemName,
@@ -88,22 +90,25 @@ export async function createAndProvisionProjectFileLibrary(input: {
       postgres: provisioned.postgres,
       minio: provisioned.minio,
       metadata_url: normalizedMetadataUrl,
+      internal_metadata_url: normalizedInternalMetadataUrl,
     });
     await mountAccessRepo.save(input.workspaceId, input.projectId, created.id, {
       filesystem_name: provisioned.filesystemName,
       metadata_url: normalizedMetadataUrl,
+      storage_bucket_url: storageBucketUrl,
       recommended_mount_path: `~/Agentsmith/${created.name}`,
       platform_notes: [
         'Linux requires FUSE support.',
         'macOS requires macFUSE.',
         'Windows requires JuiceFS-supported filesystem dependencies.',
         'Use a dedicated JuiceFS cache directory for this mounted environment.',
+        'Use the provided bucket URL override so mount clients use a reachable object-storage endpoint for this deployment.',
         'For live observation and verification, prefer zero metadata cache settings so local mounts reflect recent agent writes promptly.',
       ],
       recommended_mount_commands: {
-        linux: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --cache-dir '${recommendedCacheDir}' --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
-        macos: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --cache-dir '${recommendedCacheDir}' --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
-        windows: `juicefs mount "${normalizedMetadataUrl}" X: --cache-dir "%USERPROFILE%\\\\.juicefs\\\\cache\\\\agentsmith\\\\${created.filesystem_name}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
+        linux: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --bucket '${storageBucketUrl}' --cache-dir '${recommendedCacheDir}' --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
+        macos: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --bucket '${storageBucketUrl}' --cache-dir '${recommendedCacheDir}' --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
+        windows: `juicefs mount "${normalizedMetadataUrl}" X: --bucket "${storageBucketUrl}" --cache-dir "%USERPROFILE%\\\\.juicefs\\\\cache\\\\agentsmith\\\\${created.filesystem_name}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
       },
       created_at: new Date().toISOString(),
     });

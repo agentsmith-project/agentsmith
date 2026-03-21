@@ -333,10 +333,16 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       { headers: { Authorization: `Bearer ${authToken}` } },
     );
     expect(workspaceAccessResponse.ok()).toBeTruthy();
-    const workspaceAccessBody = (await workspaceAccessResponse.json()) as { metadata_url: string };
+    const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
+      metadata_url: string;
+      storage_bucket_url?: string;
+    };
     expect(workspaceAccessBody.metadata_url).toBeTruthy();
 
-    const localMount = await mountFileLibraryLocally(workspaceAccessBody.metadata_url);
+    const localMount = await mountFileLibraryLocally(
+      workspaceAccessBody.metadata_url,
+      workspaceAccessBody.storage_bucket_url,
+    );
     try {
       console.log('[internal-real] verify first artifact via local mount');
       await expect

@@ -63,6 +63,9 @@ function resolveWorkspaceLoginMessages(locale: string): WorkspaceLoginMessages {
 }
 
 function readPkceContext(): StoredPkceContext | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
   const raw = sessionStorage.getItem('mbos:keycloak:pkce');
   if (!raw) return null;
   try {

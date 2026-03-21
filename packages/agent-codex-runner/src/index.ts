@@ -613,6 +613,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       paths: taskPaths,
       executionContext,
       taskInputs,
+      debugLog,
     });
     artifactsDir = preparedAssets.artifactsDir;
     taskInputsManifestPath = preparedAssets.taskInputsManifestPath;

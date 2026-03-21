@@ -171,6 +171,7 @@ describe('Agent dialogs', () => {
     });
     const payload = mockCreate.mock.calls[0][2];
     expect(payload.execution_preferences?.notebook?.endpoint_id).toBe('ep_active_1');
+    expect(payload.execution_preferences?.notebook?.model).toBeUndefined();
   });
 
   it('EditAgentDialog submits updated internal env and endpoint selection', async () => {
@@ -229,5 +230,6 @@ describe('Agent dialogs', () => {
     const payload = mockUpdate.mock.calls[0][3];
     expect(payload.config.env).toEqual({ FOO: 'baz' });
     expect(payload.execution_preferences.notebook.endpoint_id).toBe('ep_active_1');
+    expect(payload.execution_preferences.notebook.model).toBeUndefined();
   });
 });

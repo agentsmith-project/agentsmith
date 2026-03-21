@@ -1,0 +1,15 @@
+ARG VERIFY_RUNNER_BASE_IMAGE=agentsmith-verify-runner-base:local
+FROM ${VERIFY_RUNNER_BASE_IMAGE}
+
+WORKDIR /app
+
+COPY e2e ./e2e
+COPY tests ./tests
+COPY infra ./infra
+COPY scripts ./scripts
+COPY packages ./packages
+COPY playwright.config.integration.ts ./
+COPY tsconfig.json ./
+COPY package.json package-lock.json ./
+
+CMD ["npx", "playwright", "test", "--config", "playwright.config.integration.ts", "e2e/integration-release-user-story.spec.ts", "--project=chromium", "--workers=1"]

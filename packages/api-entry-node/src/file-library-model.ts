@@ -53,6 +53,7 @@ export interface FileLibraryBackendRecord {
 export interface FileLibraryMountAccess {
   filesystem_name: string;
   metadata_url: string;
+  storage_bucket_url?: string;
   recommended_mount_path: string;
   platform_notes: string[];
   recommended_mount_commands: {

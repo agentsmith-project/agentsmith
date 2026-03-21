@@ -95,6 +95,7 @@ describe('project-file-library-routes', () => {
       expect.objectContaining({
         filesystem_name: expect.any(String),
         metadata_url: expect.stringContaining('postgres://'),
+        storage_bucket_url: expect.stringContaining('http://localhost:19000/'),
       }),
     );
   });

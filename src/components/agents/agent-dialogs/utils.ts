@@ -81,7 +81,6 @@ export function buildCreateAgentPayload(params: {
         executor: 'codex_cli',
         endpoint_id: params.notebookEndpointId.trim(),
         wire_api: 'responses',
-        model: 'gpt-5-codex',
       },
     };
   }
@@ -92,7 +91,6 @@ export function buildCreateAgentPayload(params: {
         executor: 'codex_cli',
         endpoint_id: params.notebookEndpointId.trim(),
         wire_api: 'chat',
-        model: 'gpt-5-codex',
       },
     };
   }

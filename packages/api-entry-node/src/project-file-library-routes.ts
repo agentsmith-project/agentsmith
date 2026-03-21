@@ -167,7 +167,7 @@ async function createGatewayClient(args: {
     args.projectId,
     args.libraryId,
   );
-  if (!backend?.metadata_url) {
+  if (!backend?.internal_metadata_url) {
     throw new Error('file_library_backend_not_found');
   }
   if (!args.deps.fileLibraryGatewayManager) {
@@ -176,7 +176,7 @@ async function createGatewayClient(args: {
   const gateway = await args.deps.fileLibraryGatewayManager.ensureGateway({
     libraryId: args.libraryId,
     filesystemName: args.filesystemName,
-    metadataUrl: backend.metadata_url,
+    metadataUrl: backend.internal_metadata_url,
   });
   const url = new URL(gateway.loopbackUrl);
   const credentials = getFileLibraryGatewayInternalCredentials(args.libraryId);

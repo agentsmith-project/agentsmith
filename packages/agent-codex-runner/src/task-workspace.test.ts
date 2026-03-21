@@ -102,6 +102,7 @@ describe('task-workspace', () => {
         file_library_name: 'Project Workspace',
         filesystem_name: 'flib-market-analysis-q1',
         metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
       }),
     });
 
@@ -137,6 +138,7 @@ describe('task-workspace', () => {
         file_library_name: 'Project Workspace',
         filesystem_name: 'flib-market-analysis-q1',
         metadata_url: 'postgres://juicefs-meta',
+        storage_bucket_url: 'http://localhost:19000/jfs-lib-flib_1',
       }),
     });
 
@@ -161,6 +163,8 @@ describe('task-workspace', () => {
         'postgres://juicefs-meta',
         '/srv/ags-workspaces/market-analysis-q1',
         '-d',
+        '--bucket',
+        'http://localhost:19000/jfs-lib-flib_1',
         '--cache-dir',
         expect.stringContaining('.juicefs/cache/agentsmith'),
       ]),

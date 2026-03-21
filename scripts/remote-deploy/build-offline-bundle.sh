@@ -84,11 +84,26 @@ APP_BASE_HASH="$(hash_files \
   "${ROOT_DIR}/packages/domain/package.json" \
   "${ROOT_DIR}/packages/ports/package.json")"
 RUNNER_BASE_HASH="$(hash_files "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base")"
+VERIFY_RUNNER_BASE_HASH="$(hash_files \
+  "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" \
+  "${ROOT_DIR}/package.json" \
+  "${ROOT_DIR}/package-lock.json" \
+  "${ROOT_DIR}/packages/adapters-cf/package.json" \
+  "${ROOT_DIR}/packages/adapters-private/package.json" \
+  "${ROOT_DIR}/packages/agent-codex-runner/package.json" \
+  "${ROOT_DIR}/packages/api-entry-cf/package.json" \
+  "${ROOT_DIR}/packages/api-entry-node/package.json" \
+  "${ROOT_DIR}/packages/application/package.json" \
+  "${ROOT_DIR}/packages/contracts/package.json" \
+  "${ROOT_DIR}/packages/domain/package.json" \
+  "${ROOT_DIR}/packages/ports/package.json")"
 
 APP_BASE_IMAGE="${APP_BASE_IMAGE:-agentsmith-app-base:${APP_BASE_HASH}}"
 RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE:-agentsmith-codex-runner-base:${RUNNER_BASE_HASH}}"
+VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE:-agentsmith-verify-runner-base:${VERIFY_RUNNER_BASE_HASH}}"
 APP_IMAGE="${APP_IMAGE:-agentsmith-app:${RELEASE_ID}}"
 RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-codex-runner:${RELEASE_ID}}"
+VERIFY_RUNNER_IMAGE="${VERIFY_RUNNER_IMAGE:-agentsmith-verify-runner:${RELEASE_ID}}"
 SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE:-sandbox-manager:${RELEASE_ID}}"
 
 echo "[bundle] building app base image ${APP_BASE_IMAGE}"
@@ -102,6 +117,12 @@ docker build "${BUILD_ARGS[@]}" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/
 
 echo "[bundle] building external runner image ${RUNNER_IMAGE}"
 docker build "${BUILD_ARGS[@]}" --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${ROOT_DIR}"
+
+echo "[bundle] building verify runner base image ${VERIFY_RUNNER_BASE_IMAGE}"
+docker build "${BUILD_ARGS[@]}" -t "${VERIFY_RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" "${ROOT_DIR}"
+
+echo "[bundle] building verify runner image ${VERIFY_RUNNER_IMAGE}"
+docker build "${BUILD_ARGS[@]}" --build-arg VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE}" -t "${VERIFY_RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner" "${ROOT_DIR}"
 
 echo "[bundle] building sandbox manager image ${SANDBOX_MANAGER_IMAGE}"
 docker build "${BUILD_ARGS[@]}" -t "${SANDBOX_MANAGER_IMAGE}" -f "${SANDBOX_ROOT}/manager-service/Dockerfile" "${SANDBOX_ROOT}/manager-service"
@@ -133,6 +154,8 @@ BUILT_IMAGES=(
   "${APP_IMAGE}"
   "${RUNNER_BASE_IMAGE}"
   "${RUNNER_IMAGE}"
+  "${VERIFY_RUNNER_BASE_IMAGE}"
+  "${VERIFY_RUNNER_IMAGE}"
   "${SANDBOX_MANAGER_IMAGE}"
 )
 
@@ -183,6 +206,8 @@ agentsmith_app_base_image=${APP_BASE_IMAGE}
 agentsmith_app_image=${APP_IMAGE}
 agentsmith_runner_base_image=${RUNNER_BASE_IMAGE}
 agentsmith_runner_image=${RUNNER_IMAGE}
+agentsmith_verify_runner_base_image=${VERIFY_RUNNER_BASE_IMAGE}
+agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 EOF
 
@@ -221,6 +246,10 @@ for group in manifest.get("required_env", {}).values():
             raise SystemExit(f"missing_env_template_key:{key}")
 PY
 
-(cd "${OUT_DIR}" && tar -czf "agentsmith-${RELEASE_ID}.tar.gz" "agentsmith-${RELEASE_ID}")
+TMP_TAR_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz.tmp"
+FINAL_TAR_PATH="${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz"
+rm -f "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
+(cd "${OUT_DIR}" && tar -czf "${TMP_TAR_PATH##*/}" "agentsmith-${RELEASE_ID}")
+mv "${TMP_TAR_PATH}" "${FINAL_TAR_PATH}"
 
-echo "[bundle] wrote ${OUT_DIR}/agentsmith-${RELEASE_ID}.tar.gz"
+echo "[bundle] wrote ${FINAL_TAR_PATH}"

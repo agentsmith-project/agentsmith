@@ -11,6 +11,13 @@ if [[ -z "${RELEASE_ROOT:-}" ]]; then
   else
     RELEASE_ROOT="${REMOTE_DEPLOY_ROOT}/releases/${RELEASE_ID}"
   fi
+elif [[ -e "${RELEASE_ROOT}" ]]; then
+  RELEASE_ROOT="$(cd -P "${RELEASE_ROOT}" && pwd)"
+fi
+if [[ -d "${RELEASE_ROOT}/scripts/lib" ]]; then
+  RELEASE_SCRIPT_DIR="${RELEASE_ROOT}/scripts"
+else
+  RELEASE_SCRIPT_DIR="${RELEASE_ROOT}/scripts/remote-deploy"
 fi
 STATE_DIR="${REMOTE_DEPLOY_ROOT}/state"
 LOG_DIR="${REMOTE_DEPLOY_ROOT}/logs"
@@ -147,6 +154,16 @@ docker_compose() {
   else
     docker compose -f "${RELEASE_ROOT}/compose/docker-compose.yml" "$@"
   fi
+}
+
+write_compose_env() {
+  local app_image="${1:-}"
+  local runner_image="${2:-}"
+  mkdir -p "${RELEASE_ROOT}/compose"
+  cat > "${RELEASE_ROOT}/compose/.env" <<EOF
+AGENTSMITH_APP_IMAGE=${app_image}
+AGENTSMITH_RUNNER_IMAGE=${runner_image}
+EOF
 }
 
 kind_gateway_ip() {

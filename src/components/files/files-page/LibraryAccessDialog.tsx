@@ -144,6 +144,30 @@ export function LibraryAccessDialog({
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <Label htmlFor="file-library-bucket-url">{t('file_manager.bucket_url')}</Label>
+              <div className="flex gap-2">
+                <Input
+                  id="file-library-bucket-url"
+                  value={mountAccess.storage_bucket_url ?? ''}
+                  readOnly
+                  data-testid="files__library-mount__bucket-url"
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={!mountAccess.storage_bucket_url}
+                  onClick={() => copyText(
+                    mountAccess.storage_bucket_url ?? '',
+                    t('file_manager.bucket_url_copied'),
+                    t('file_manager.bucket_url_copy_failed'),
+                  )}
+                >
+                  {t('file_manager.copy')}
+                </Button>
+              </div>
+            </div>
+
             <div className="grid gap-4 md:grid-cols-3">
               <div className="space-y-1.5">
                 <Label htmlFor="file-library-mount-linux">{t('file_manager.mount_command_linux')}</Label>

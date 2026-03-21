@@ -85,6 +85,12 @@ export function buildUpdateAgentPayload(params: {
   notebookEndpointId: string;
   visibility: 'private' | 'public';
 }): UpdateAgentRequest {
+  const executionPreferencesRecord = params.executionPreferences as Record<string, unknown>;
+  const notebookExecutionPreferences = (
+    typeof executionPreferencesRecord.notebook === 'object' && executionPreferencesRecord.notebook !== null
+      ? (executionPreferencesRecord.notebook as Record<string, unknown>)
+      : {}
+  );
   const payload: UpdateAgentRequest = {
     name: params.name.trim(),
     description: params.description.trim() || undefined,
@@ -102,13 +108,10 @@ export function buildUpdateAgentPayload(params: {
           return undefined;
         }
         nextPreferences.notebook = {
-          ...(typeof nextPreferences.notebook === 'object' && nextPreferences.notebook !== null
-            ? (nextPreferences.notebook as Record<string, unknown>)
-            : {}),
+          ...notebookExecutionPreferences,
           endpoint_id: params.notebookEndpointId.trim(),
           executor: 'codex_cli',
-          wire_api: 'chat',
-          model: 'gpt-5-codex',
+          wire_api: params.agent.mode === 'internal' ? 'responses' : 'chat',
         };
       }
       return Object.keys(nextPreferences).length > 0 ? nextPreferences : undefined;

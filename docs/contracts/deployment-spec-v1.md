@@ -77,6 +77,8 @@ The deployment flow must not reuse public MinIO ports such as `19000` for contai
 
 These values are used by external and internal execution paths. They must be explicit in deployment env and must not fall back to `localhost` in deployed environments.
 
+During `deploy`, the generated runtime env must rewrite all three execution addresses to the current Docker host gateway used by the active local Compose network. The HTTP and WS variants must stay aligned to the same gateway identity for the current deployment.
+
 ### Agent Workspace Mount Options
 - `MBOS_AGENT_JUICEFS_MOUNT_OPTIONS`
 
@@ -227,12 +229,22 @@ The offline bundle must contain:
 - Compose dependency images
 - AgentSmith app image
 - external runner image
+- deployment verify runner image
 - sandbox manager image
 - kind node image
 - JuiceFS CSI images
 - CSI sidecar images
 
 The bundle build must fail if any required file, tool, image, or manifest reference is missing.
+
+### Verify Execution Contract
+- Deployment verification must run from a bundled verify image, not from ad hoc host source trees.
+- The verify image must include the Playwright integration configuration and all files needed for the release user story.
+- The verify image must be able to:
+  - reach the deployed Web/API/Keycloak endpoints over host networking
+  - use the host Docker daemon to start the external runner test container
+  - use `juicefs` locally to observe mounted file library contents
+- Deployment verification must not assume the target host already has repo source code, Node dependencies, or Playwright installed.
 
 ## Bootstrap Contract
 

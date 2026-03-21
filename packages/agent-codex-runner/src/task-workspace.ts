@@ -27,6 +27,7 @@ type TaskWorkspaceAccessPayload = {
   file_library_name: string;
   filesystem_name: string;
   metadata_url: string;
+  storage_bucket_url?: string;
   recommended_mount_path?: string;
   created_at?: string;
 };
@@ -148,7 +149,7 @@ export async function fetchTaskWorkspaceAccess(
   return await response.json() as TaskWorkspaceAccessPayload;
 }
 
-async function mountTaskWorkspace(metadataUrl: string, mountPath: string): Promise<void> {
+async function mountTaskWorkspace(metadataUrl: string, mountPath: string, storageBucketUrl?: string): Promise<void> {
   await mkdir(mountPath, { recursive: true });
   const cacheRoot = (
     process.env.MBOS_AGENT_JUICEFS_CACHE_ROOT?.trim()
@@ -164,6 +165,9 @@ async function mountTaskWorkspace(metadataUrl: string, mountPath: string): Promi
     '--cache-dir',
     cacheDir,
   ];
+  if ((storageBucketUrl ?? '').trim()) {
+    commandArgs.push('--bucket', storageBucketUrl!.trim());
+  }
   const mountOptions = parseJuicefsMountOptions(process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS);
   if (mountOptions.length > 0) {
     commandArgs.push('-o', mountOptions.join(','));
@@ -201,7 +205,7 @@ export async function prepareTaskWorkspace(input: {
       workspaceRoot: process.env.MBOS_AGENT_WORKSPACE_ROOT,
     });
     if (!mountedWorkspaceByMountPath.has(mountPath)) {
-      await mountTaskWorkspace(workspaceAccess.metadata_url, mountPath);
+      await mountTaskWorkspace(workspaceAccess.metadata_url, mountPath, workspaceAccess.storage_bucket_url);
       mountedWorkspaceByMountPath.add(mountPath);
     }
     return {

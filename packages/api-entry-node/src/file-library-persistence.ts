@@ -14,6 +14,7 @@ const FILE_LIBRARY_MOUNT_ACCESS_COLLECTION = 'project_file_library_mount_access'
 type FileLibraryBackendSecretRecord = Omit<FileLibraryBackendRecord, 'postgres'> & {
   postgres: FileLibraryBackendRecord['postgres'] & {
     encrypted_metadata_url?: string;
+    encrypted_internal_metadata_url?: string;
   };
 };
 
@@ -127,17 +128,23 @@ export class JsonDocProjectFileLibraryBackendRepo {
     workspaceId: string,
     projectId: string,
     libraryId: string,
-    backend: FileLibraryBackendRecord & { metadata_url?: string },
+    backend: FileLibraryBackendRecord & { metadata_url?: string; internal_metadata_url?: string },
   ): Promise<void> {
     const normalizedMetadataUrl = backend.metadata_url
       ? normalizeFileLibraryMetadataUrl(backend.metadata_url)
       : undefined;
-    const { metadata_url: _metadataUrl, ...publicBackend } = backend;
+    const normalizedInternalMetadataUrl = backend.internal_metadata_url
+      ? normalizeFileLibraryMetadataUrl(backend.internal_metadata_url)
+      : undefined;
+    const { metadata_url: _metadataUrl, internal_metadata_url: _internalMetadataUrl, ...publicBackend } = backend;
     const stored: FileLibraryBackendSecretRecord = {
       ...publicBackend,
       postgres: {
         ...publicBackend.postgres,
         encrypted_metadata_url: normalizedMetadataUrl ? encryptSecretValue(normalizedMetadataUrl) : undefined,
+        encrypted_internal_metadata_url: normalizedInternalMetadataUrl
+          ? encryptSecretValue(normalizedInternalMetadataUrl)
+          : undefined,
       },
     };
     await this.docStore.upsert(FILE_LIBRARY_BACKEND_COLLECTION, libraryId, {
@@ -169,7 +176,7 @@ export class JsonDocProjectFileLibraryBackendRepo {
     workspaceId: string,
     projectId: string,
     libraryId: string,
-  ): Promise<(FileLibraryBackendRecord & { metadata_url?: string }) | null> {
+  ): Promise<(FileLibraryBackendRecord & { metadata_url?: string; internal_metadata_url?: string }) | null> {
     const stored = await this.getStored(workspaceId, projectId, libraryId);
     if (!stored) return null;
     return {
@@ -182,6 +189,9 @@ export class JsonDocProjectFileLibraryBackendRepo {
       },
       metadata_url: stored.postgres.encrypted_metadata_url
         ? decryptSecretValue(stored.postgres.encrypted_metadata_url)
+        : undefined,
+      internal_metadata_url: stored.postgres.encrypted_internal_metadata_url
+        ? decryptSecretValue(stored.postgres.encrypted_internal_metadata_url)
         : undefined,
     };
   }
@@ -247,6 +257,7 @@ export class JsonDocProjectFileLibraryMountAccessRepo {
     return {
       filesystem_name: stored.filesystem_name,
       metadata_url: decryptSecretValue(stored.encrypted_metadata_url),
+      storage_bucket_url: stored.storage_bucket_url,
       recommended_mount_path: stored.recommended_mount_path,
       platform_notes: stored.platform_notes,
       recommended_mount_commands: stored.recommended_mount_commands,

@@ -13,7 +13,7 @@ ensure_dirs
 if [[ ! -f "${RELEASE_ROOT}/env/site.env" ]]; then
   cp "${RELEASE_ROOT}/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
 fi
-bash "${ROOT_DIR}/scripts/remote-deploy/render-env.sh"
+bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
@@ -24,15 +24,17 @@ image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
 }
 
-cat > "${RELEASE_ROOT}/compose/.env" <<EOF
-AGENTSMITH_APP_IMAGE=${APP_IMAGE}
-AGENTSMITH_RUNNER_IMAGE=${RUNNER_IMAGE}
-EOF
+write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}"
 
 mkdir -p "${REMOTE_DEPLOY_ROOT}/releases"
 ln -sfn "${RELEASE_ROOT}" "${CURRENT_LINK}"
 
-for tar_file in "${RELEASE_ROOT}"/images/*.tar; do
+shopt -s nullglob
+image_archives=("${RELEASE_ROOT}"/images/*.tar)
+shopt -u nullglob
+(( ${#image_archives[@]} > 0 )) || die "no image archives found under ${RELEASE_ROOT}/images"
+
+for tar_file in "${image_archives[@]}"; do
   log "loading $(basename "${tar_file}")"
   docker load -i "${tar_file}" >/dev/null
 done
@@ -59,7 +61,9 @@ kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=240s 
 
 KIND_GATEWAY="$(kind_gateway_ip)"
 sed -i.bak \
+  -e "s|^AGENT_EXECUTION_HTTP_BASE_URL=.*|AGENT_EXECUTION_HTTP_BASE_URL=http://${KIND_GATEWAY}:20000|" \
   -e "s|^AGENT_EXECUTION_WS_BASE_URL=.*|AGENT_EXECUTION_WS_BASE_URL=ws://${KIND_GATEWAY}:20000|" \
+  -e "s|^EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=.*|EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://${KIND_GATEWAY}:20000|" \
   -e "s|^INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=.*|INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=${KIND_GATEWAY}|" \
   -e "s|^INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=.*|INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://${KIND_GATEWAY}:19000|" \
   "${RELEASE_ROOT}/env/api.env" "${RELEASE_ROOT}/env/internal.env"

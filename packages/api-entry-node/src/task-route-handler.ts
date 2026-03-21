@@ -331,6 +331,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       file_library_name: workspaceFileLibrary.name,
       filesystem_name: mountAccess.filesystem_name,
       metadata_url: mountAccess.metadata_url,
+      storage_bucket_url: mountAccess.storage_bucket_url,
       recommended_mount_path: mountAccess.recommended_mount_path,
       created_at: mountAccess.created_at,
     });

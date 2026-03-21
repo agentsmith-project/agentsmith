@@ -202,7 +202,11 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         { headers: { Authorization: `Bearer ${token}` } },
       );
       expect(workspaceAccessResponse.ok()).toBeTruthy();
-      const workspaceAccessBody = (await workspaceAccessResponse.json()) as { workspace_dir_name: string; metadata_url: string };
+      const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
+        workspace_dir_name: string;
+        metadata_url: string;
+        storage_bucket_url?: string;
+      };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
 
@@ -230,7 +234,10 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         page.getByTestId('files__object-row').filter({ hasText: artifactName }).first(),
       ).toBeVisible({ timeout: 30_000 });
 
-      const localMount = await mountFileLibraryLocally(workspaceAccessBody.metadata_url);
+      const localMount = await mountFileLibraryLocally(
+        workspaceAccessBody.metadata_url,
+        workspaceAccessBody.storage_bucket_url,
+      );
       try {
         await expect
           .poll(
@@ -340,10 +347,16 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
         { headers: { Authorization: `Bearer ${token}` } },
       );
       expect(workspaceAccessResponse.ok()).toBeTruthy();
-      const workspaceAccessBody = (await workspaceAccessResponse.json()) as { metadata_url: string };
+      const workspaceAccessBody = (await workspaceAccessResponse.json()) as {
+        metadata_url: string;
+        storage_bucket_url?: string;
+      };
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
 
-      const localMount = await mountFileLibraryLocally(workspaceAccessBody.metadata_url);
+      const localMount = await mountFileLibraryLocally(
+        workspaceAccessBody.metadata_url,
+        workspaceAccessBody.storage_bucket_url,
+      );
       try {
         await expect
           .poll(

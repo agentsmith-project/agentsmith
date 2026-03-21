@@ -5,6 +5,13 @@ import { getSystemAdminPassword, getSystemAdminUsername } from './config';
 
 export const SYSTEM_ADMIN_SESSION_COOKIE = 'agentsmith-system-admin';
 
+function shouldUseSecureSystemAdminCookie(): boolean {
+  const explicit = process.env.SYSTEM_ADMIN_SESSION_COOKIE_SECURE?.trim().toLowerCase();
+  if (explicit === 'true') return true;
+  if (explicit === 'false') return false;
+  return process.env.NODE_ENV === 'production';
+}
+
 function getSessionSignature(): string {
   return createHash('sha256')
     .update(`${getSystemAdminUsername()}:${getSystemAdminPassword()}`)
@@ -33,7 +40,7 @@ export async function createSystemAdminSessionCookie() {
   cookieStore.set(SYSTEM_ADMIN_SESSION_COOKIE, getSessionSignature(), {
     httpOnly: true,
     sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    secure: shouldUseSecureSystemAdminCookie(),
     path: '/',
     maxAge: 60 * 60 * 12,
   });

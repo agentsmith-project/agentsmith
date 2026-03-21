@@ -6,6 +6,7 @@ const SYSTEM_WORKSPACE_COLLECTION = 'system_workspaces';
 
 let sharedDocStore: JsonDocStorePort | null = null;
 type StoredSystemWorkspaceRecord = SystemWorkspaceRecord;
+type ClosableJsonDocStore = JsonDocStorePort & { close?: () => Promise<void> };
 
 function normalizeStoredRecord(record: StoredSystemWorkspaceRecord): SystemWorkspaceRecord {
   const legacyRecord = record as SystemWorkspaceRecord & {
@@ -42,14 +43,21 @@ function normalizeStoredRecord(record: StoredSystemWorkspaceRecord): SystemWorks
 }
 
 function createDocStore(): JsonDocStorePort {
+  const mode = process.env.SYSTEM_WORKSPACE_REGISTRY_MODE?.trim().toLowerCase();
   const mongoUrl = process.env.MONGO_URL?.trim();
+  if (mode === 'memory') {
+    return new InMemoryJsonDocStore();
+  }
   if (mongoUrl) {
     return new MongoJsonDocStore({
       url: mongoUrl,
       dbName: process.env.MONGO_DB_NAME ?? 'mbos',
     });
   }
-  return new InMemoryJsonDocStore();
+  if (process.env.NODE_ENV === 'test') {
+    return new InMemoryJsonDocStore();
+  }
+  throw new Error('system_workspace_registry_unconfigured');
 }
 
 function getDocStore(): JsonDocStorePort {
@@ -57,6 +65,16 @@ function getDocStore(): JsonDocStorePort {
     sharedDocStore = createDocStore();
   }
   return sharedDocStore;
+}
+
+async function closeDocStore(docStore: JsonDocStorePort | null): Promise<void> {
+  if (!docStore) {
+    return;
+  }
+  const closableStore = docStore as ClosableJsonDocStore;
+  if (typeof closableStore.close === 'function') {
+    await closableStore.close();
+  }
 }
 
 function sortRecords(records: SystemWorkspaceRecord[]): SystemWorkspaceRecord[] {
@@ -91,6 +109,12 @@ export async function upsertPersistedSystemWorkspace(record: SystemWorkspaceReco
 export async function deletePersistedSystemWorkspace(id: string): Promise<void> {
   const docStore = await ensureSystemWorkspaceRegistryReady();
   await docStore.delete(SYSTEM_WORKSPACE_COLLECTION, id);
+}
+
+export async function disposeSystemWorkspaceRegistryPersistence(): Promise<void> {
+  const docStore = sharedDocStore;
+  sharedDocStore = null;
+  await closeDocStore(docStore);
 }
 
 export function resetSystemWorkspaceRegistryPersistenceForTest(): void {

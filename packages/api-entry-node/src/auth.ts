@@ -1,4 +1,9 @@
 import type http from 'node:http';
+import {
+  createRemoteJWKSet,
+  jwtVerify,
+  type JWTPayload,
+} from 'jose';
 import type { CachePort } from '@mbos/ports';
 import { resolveSSETicket } from './sse-ticket-store.js';
 
@@ -8,34 +13,77 @@ export interface AuthenticatedUser {
   name: string;
 }
 
-interface KeycloakUserInfoResponse {
-  sub?: string;
-  email?: string;
-  name?: string;
-  preferred_username?: string;
+function keycloakInternalRealmBaseFromEnv(): string | null {
+  const base = process.env.INTERNAL_KEYCLOAK_BASE_URL?.trim();
+  const realm = process.env.KEYCLOAK_REALM?.trim();
+  if (base && realm) {
+    if (base.endsWith('/realms')) {
+      return `${base}/${realm}`;
+    }
+
+    if (base.includes('/realms/')) {
+      return base.replace(/\/$/, '');
+    }
+
+    return `${base.replace(/\/$/, '')}/realms/${realm}`;
+  }
+
+  return null;
 }
 
-function keycloakRealmBaseFromEnv(): string | null {
+function keycloakIssuerFromEnv(): string | null {
   const directIssuer = process.env.KEYCLOAK_ISSUER_URL?.trim();
   if (directIssuer) {
     return directIssuer.replace(/\/$/, '');
   }
 
-  const base = process.env.KEYCLOAK_BASE_URL?.trim();
+  const publicBase = process.env.PUBLIC_KEYCLOAK_BASE_URL?.trim();
   const realm = process.env.KEYCLOAK_REALM?.trim();
-  if (!base || !realm) {
-    return null;
+  if (publicBase && realm) {
+    if (publicBase.endsWith('/realms')) {
+      return `${publicBase}/${realm}`;
+    }
+
+    if (publicBase.includes('/realms/')) {
+      return publicBase.replace(/\/$/, '');
+    }
+
+    return `${publicBase.replace(/\/$/, '')}/realms/${realm}`;
   }
 
-  if (base.endsWith('/realms')) {
-    return `${base}/${realm}`;
+  return keycloakInternalRealmBaseFromEnv();
+}
+
+function keycloakJwksUrlFromEnv(): string | null {
+  const internalRealmBase = keycloakInternalRealmBaseFromEnv();
+  if (internalRealmBase) {
+    return `${internalRealmBase}/protocol/openid-connect/certs`;
   }
 
-  if (base.includes('/realms/')) {
-    return base.replace(/\/$/, '');
+  const issuer = keycloakIssuerFromEnv();
+  if (issuer) {
+    return `${issuer}/protocol/openid-connect/certs`;
   }
 
-  return `${base.replace(/\/$/, '')}/realms/${realm}`;
+  return null;
+}
+
+const jwksCache = new Map<string, ReturnType<typeof createRemoteJWKSet>>();
+
+function getRemoteJwks(jwksUrl: string) {
+  const cached = jwksCache.get(jwksUrl);
+  if (cached) {
+    return cached;
+  }
+
+  const created = createRemoteJWKSet(new URL(jwksUrl));
+  jwksCache.set(jwksUrl, created);
+  return created;
+}
+
+function readStringClaim(payload: JWTPayload, key: string): string | null {
+  const value = payload[key];
+  return typeof value === 'string' && value.trim() ? value : null;
 }
 
 export function extractBearerToken(req: http.IncomingMessage): string | null {
@@ -89,29 +137,33 @@ export async function verifyBearerToken(
     return cached.user;
   }
 
-  const realmBase = keycloakRealmBaseFromEnv();
-  if (!realmBase) {
+  const issuer = keycloakIssuerFromEnv();
+  const jwksUrl = keycloakJwksUrlFromEnv();
+  if (!issuer || !jwksUrl) {
     return null;
   }
 
-  const userinfoUrl = `${realmBase}/protocol/openid-connect/userinfo`;
-  const response = await fetch(userinfoUrl, {
-    method: 'GET',
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) {
+  let payload: JWTPayload;
+  try {
+    ({ payload } = await jwtVerify(token, getRemoteJwks(jwksUrl), {
+      issuer,
+    }));
+  } catch {
     return null;
   }
 
-  const payload = (await response.json()) as KeycloakUserInfoResponse;
-  if (!payload.sub) {
+  const subject = readStringClaim(payload, 'sub');
+  if (!subject) {
     return null;
   }
 
   const user: AuthenticatedUser = {
-    id: payload.sub,
-    email: payload.email ?? `${payload.sub}@unknown.local`,
-    name: payload.name ?? payload.preferred_username ?? payload.email ?? payload.sub,
+    id: subject,
+    email: readStringClaim(payload, 'email') ?? `${subject}@unknown.local`,
+    name: readStringClaim(payload, 'name')
+      ?? readStringClaim(payload, 'preferred_username')
+      ?? readStringClaim(payload, 'email')
+      ?? subject,
   };
   userInfoCache.set(token, { user, expiresAt: now + 60_000 });
   return user;

@@ -203,4 +203,25 @@ describe('verifyKeycloakIdentityProvider', () => {
       advice_code: 'DIRECTORY_PERMISSION_RECOMMENDED',
     });
   });
+
+  it('maps public keycloak urls to internal fetch base when deployment env provides both', async () => {
+    process.env.PUBLIC_KEYCLOAK_BASE_URL = 'http://localhost:18080';
+    process.env.INTERNAL_KEYCLOAK_BASE_URL = 'http://keycloak:8080';
+    fetchMock
+      .mockResolvedValueOnce(new Response(JSON.stringify({ access_token: 'token-123' }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([]), { status: 200 }));
+
+    await expect(verifyKeycloakIdentityProvider({
+      idpUrl: 'http://localhost:18080',
+      realm: 'mbos',
+      clientId: 'agentsmith',
+      clientSecret: 'secret-1',
+    })).resolves.toEqual({
+      idp_ok: true,
+      directory_search_supported: true,
+    });
+
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('http://keycloak:8080/realms/mbos/protocol/openid-connect/token');
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain('http://keycloak:8080/admin/realms/mbos/users?max=1');
+  });
 });

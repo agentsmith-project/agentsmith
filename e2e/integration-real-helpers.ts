@@ -1,4 +1,4 @@
-import { appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
+import { access, appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
@@ -99,6 +99,19 @@ async function spawnAndCapture(command: string, args: string[], options?: { cwd?
       });
     });
   });
+}
+
+function withoutProxyEnv(baseEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const env = { ...(baseEnv ?? process.env) };
+  delete env.HTTP_PROXY;
+  delete env.HTTPS_PROXY;
+  delete env.ALL_PROXY;
+  delete env.http_proxy;
+  delete env.https_proxy;
+  delete env.all_proxy;
+  delete env.NO_PROXY;
+  delete env.no_proxy;
+  return env;
 }
 
 async function clearAppState(page: Page, workspaceId: string): Promise<void> {
@@ -544,6 +557,7 @@ export async function startCodexRunnerProcess(args: {
   return new Promise((resolve, reject) => {
     const logPath = path.join(tmpdir(), `agentsmith-codex-runner-${Date.now()}.log`);
     const workspaceRoot = path.join(tmpdir(), `agentsmith-codex-workspaces-${Date.now()}`);
+    const builtinSkillsDir = path.resolve(__dirname, '../packages/agent-codex-runner/builtin-skills');
     const proc = spawn(
       'npm',
       ['run', 'agent:codex-runner'],
@@ -555,6 +569,9 @@ export async function startCodexRunnerProcess(args: {
           MBOS_AGENT_CODEX_YOLO: '1',
           MBOS_AGENT_RUNNER_DEBUG: '1',
           MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
+          MBOS_AGENT_BUILTIN_SKILLS_DIR: builtinSkillsDir,
+          MBOS_AGENT_BUILTIN_SKILLS: '.system,feishu-docs,jira-ops,file-read',
+          MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
           ...(args.codeBin ? { CODEX_BIN: args.codeBin } : {}),
         },
         stdio: ['ignore', 'pipe', 'pipe'],
@@ -735,7 +752,19 @@ export async function mountFileLibraryLocally(metadataUrl: string): Promise<{
   stop: () => Promise<void>;
 }> {
   const mountPath = await mkdtemp(path.join(tmpdir(), 'agentsmith-real-file-library-'));
-  const mountResult = await spawnAndCapture('juicefs', ['mount', metadataUrl, mountPath, '-d']);
+  const mountResult = await spawnAndCapture('juicefs', [
+    'mount',
+    metadataUrl,
+    mountPath,
+    '-d',
+    '--check-storage',
+    '--attr-cache',
+    '0',
+    '--entry-cache',
+    '0',
+    '--dir-entry-cache',
+    '0',
+  ], { env: withoutProxyEnv() });
   if (mountResult.code !== 0) {
     await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
     throw new Error(`local_juicefs_mount_failed:${mountResult.stderr.slice(-800)}`);
@@ -747,6 +776,26 @@ export async function mountFileLibraryLocally(metadataUrl: string): Promise<{
       await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
     },
   };
+}
+
+export async function waitForMountedWorkspacePath(
+  mountPath: string,
+  relativePath: string,
+  timeoutMs = 30_000,
+): Promise<string> {
+  const absolutePath = path.join(mountPath, relativePath);
+  const startedAt = Date.now();
+  for (;;) {
+    try {
+      await access(absolutePath);
+      return absolutePath;
+    } catch {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error(`mounted_workspace_path_timeout:${relativePath}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+  }
 }
 
 export async function createFileLibraryViaUi(
@@ -813,7 +862,7 @@ export async function mountJuiceFs(metadataUrl: string, mountPoint: string): Pro
     const proc = spawn(
       'juicefs',
       ['mount', metadataUrl, mountPoint, '-d', '--attr-cache', '0', '--entry-cache', '0', '--dir-entry-cache', '0'],
-      { stdio: ['ignore', 'pipe', 'pipe'] },
+      { stdio: ['ignore', 'pipe', 'pipe'], env: withoutProxyEnv() },
     );
     let stderr = '';
     proc.stderr.on('data', (chunk) => {

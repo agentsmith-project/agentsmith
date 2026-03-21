@@ -1,0 +1,45 @@
+ARG APP_BASE_IMAGE=agentsmith-app-base:local
+
+FROM ${APP_BASE_IMAGE} AS build
+
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app
+
+COPY src ./src
+COPY public ./public
+COPY messages ./messages
+COPY packages ./packages
+COPY scripts ./scripts
+COPY infra ./infra
+COPY docs ./docs
+COPY e2e ./e2e
+COPY tests ./tests
+COPY assets ./assets
+COPY marketing ./marketing
+COPY .storybook ./.storybook
+COPY components.json ./
+COPY next.config.ts ./
+COPY next-env.d.ts ./
+COPY postcss.config.js ./
+COPY tailwind.config.js ./
+COPY tsconfig.json ./
+COPY eslint.config.mjs ./
+COPY playwright.config.ts ./
+COPY playwright.config.integration.ts ./
+COPY playwright.config.workspace-governance.ts ./
+
+RUN npx next build --no-lint
+
+FROM node:22-bookworm AS runtime
+
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+
+WORKDIR /app
+
+COPY --from=build /app /app
+
+EXPOSE 20000 3001
+
+CMD ["bash", "-lc", "echo 'Use service-specific command overrides for api or web' && sleep infinity"]

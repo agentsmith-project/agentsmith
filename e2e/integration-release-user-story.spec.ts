@@ -9,7 +9,10 @@ import {
   createProjectInWorkspace,
   mountFileLibraryLocally,
   openMountAccessAndRevealMetadataUrl,
+  startCodexRunnerDockerProcess,
   startCodexRunnerProcess,
+  waitForAgentPresenceOnline,
+  waitForMountedWorkspacePath,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
@@ -242,15 +245,32 @@ async function requestProjectAccess(page: Page, workspaceId: string, projectId: 
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
   const requestButton = page.getByTestId(`projects__join-request-btn--${projectId}`);
   await expect(requestButton).toBeVisible({ timeout: 30_000 });
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/join-requests`)
+      && response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
   await requestButton.click();
-  await expect.poll(async () => requestButton.textContent(), { timeout: 5_000 }).toMatch(/pending|request access/i);
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
+  await expect.poll(async () => requestButton.textContent(), { timeout: 15_000 }).toMatch(/pending/i);
 }
 
 async function approveJoinRequest(page: Page, workspaceId: string, projectId: string): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/members?member_tab=requests`);
   const requestCard = page.locator('div').filter({ hasText: /integration-user/i }).first();
   await expect(requestCard).toBeVisible({ timeout: 30_000 });
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/join-requests/`)
+      && response.url().includes('/approve')
+      && response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
   await requestCard.getByRole('button', { name: /^approve$/i }).click();
+  const response = await responsePromise;
+  expect(response.ok()).toBeTruthy();
   await expect(requestCard.getByText(/^approved$/i)).toBeVisible({ timeout: 30_000 });
 }
 
@@ -412,7 +432,18 @@ async function createTaskViaUi(args: {
   }
   const createButton = dialog.locator('button[type="submit"]');
   await expect(createButton).toBeEnabled({ timeout: 10_000 });
+  const createResponsePromise = page.waitForResponse(
+    (response) =>
+      response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks`)
+      && response.request().method() === 'POST',
+    { timeout: 15_000 },
+  );
   await createButton.click();
+  const createResponse = await createResponsePromise;
+  if (!createResponse.ok()) {
+    const body = await createResponse.text().catch(() => '');
+    throw new Error(`task_create_failed:${createResponse.status}:${body}`);
+  }
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
     timeout: 30_000,
   });
@@ -631,12 +662,13 @@ test.describe('@lane-real release user story end-to-end', () => {
     if (!externalAgent.wsUrl || !externalAgent.key) {
       throw new Error('external_agent_connection_info_missing');
     }
-    const externalRunner = await startCodexRunnerProcess({
+    const externalRunner = await startCodexRunnerDockerProcess({
       wsUrl: externalAgent.wsUrl,
       agentKey: externalAgent.key,
     });
 
     try {
+      await waitForAgentPresenceOnline(page, workspaceId, projectId, externalAgent.id);
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
 
       const externalTaskOne = await createTaskViaUi({
@@ -692,10 +724,18 @@ test.describe('@lane-real release user story end-to-end', () => {
       const externalMetadataUrl = await openMountAccessAndRevealMetadataUrl(page, externalTaskOne.workspaceName);
       const mountedExternalWorkspace = await mountFileLibraryLocally(externalMetadataUrl);
       try {
-        const externalStory = await readFile(path.join(mountedExternalWorkspace.mountPath, 'notes', 'external_story.txt'), 'utf-8');
+        const externalStoryPath = await waitForMountedWorkspacePath(
+          mountedExternalWorkspace.mountPath,
+          path.join('notes', 'external_story.txt'),
+        );
+        const externalSummaryPath = await waitForMountedWorkspacePath(
+          mountedExternalWorkspace.mountPath,
+          path.join('.artifacts', 'external_summary.md'),
+        );
+        const externalStory = await readFile(externalStoryPath, 'utf-8');
         expect(externalStory).toContain('external turn 1');
         expect(externalStory).toContain('external turn 2');
-        const externalSummary = await readFile(path.join(mountedExternalWorkspace.mountPath, '.artifacts', 'external_summary.md'), 'utf-8');
+        const externalSummary = await readFile(externalSummaryPath, 'utf-8');
         expect(externalSummary).toContain('external turn 2');
       } finally {
         await mountedExternalWorkspace.stop();
@@ -795,10 +835,18 @@ test.describe('@lane-real release user story end-to-end', () => {
       const internalMetadataUrl = await openMountAccessAndRevealMetadataUrl(page, internalTask.workspaceName);
       const mountedInternalWorkspace = await mountFileLibraryLocally(internalMetadataUrl);
       try {
-        const internalStory = await readFile(path.join(mountedInternalWorkspace.mountPath, 'notes', 'internal_story.txt'), 'utf-8');
+        const internalStoryPath = await waitForMountedWorkspacePath(
+          mountedInternalWorkspace.mountPath,
+          path.join('notes', 'internal_story.txt'),
+        );
+        const internalSummaryPath = await waitForMountedWorkspacePath(
+          mountedInternalWorkspace.mountPath,
+          path.join('.artifacts', 'internal_summary.md'),
+        );
+        const internalStory = await readFile(internalStoryPath, 'utf-8');
         expect(internalStory).toContain('internal turn 1');
         expect(internalStory).toContain('internal turn 2');
-        const internalSummary = await readFile(path.join(mountedInternalWorkspace.mountPath, '.artifacts', 'internal_summary.md'), 'utf-8');
+        const internalSummary = await readFile(internalSummaryPath, 'utf-8');
         expect(internalSummary).toContain('internal turn 2');
       } finally {
         await mountedInternalWorkspace.stop();

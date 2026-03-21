@@ -593,7 +593,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     sourceDir: builtinSkillsConfig.sourceDir,
     skills: builtinSkillsConfig.skills,
     required: builtinSkillsConfig.required,
-    strategy: executionContext.workspace_binding_mode === 'pre_mounted' ? 'symlink' : 'copy',
+    // Builtin skills are immutable runner assets, not task workspace state.
+    // Always mount them via symlink so file-library workspaces don't block on
+    // recursive copies into JuiceFS-backed directories.
+    strategy: 'symlink',
   });
   const isNotebookMode = executionContext.notebook_mode === true;
   const userPrompt = buildConversationPrompt(payload.messages);

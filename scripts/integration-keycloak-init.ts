@@ -50,13 +50,17 @@ interface SeedUser {
   email: string;
 }
 
-const keycloakBaseUrl = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
+const keycloakBaseUrl =
+  process.env.INTERNAL_KEYCLOAK_BASE_URL
+  ?? process.env.PUBLIC_KEYCLOAK_BASE_URL
+  ?? 'http://localhost:18080';
 const keycloakRealm = process.env.KEYCLOAK_REALM ?? 'mbos';
 const keycloakAdminUser = process.env.KEYCLOAK_ADMIN ?? 'admin';
 const keycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
 const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
 const integrationWebPortsRaw = process.env.INTEGRATION_WEB_PORTS ?? '3001,3011,3021,3041,3051,3061,3066,3069,3070,3071,3081';
+const integrationPublicWebBasesRaw = process.env.INTEGRATION_PUBLIC_WEB_BASES ?? '';
 const keycloakAccessTokenLifespanSec = Number(process.env.KEYCLOAK_ACCESS_TOKEN_LIFESPAN_SEC ?? '28800');
 const keycloakSsoIdleSec = Number(process.env.KEYCLOAK_SSO_IDLE_TIMEOUT_SEC ?? '43200');
 const keycloakSsoMaxSec = Number(process.env.KEYCLOAK_SSO_MAX_LIFESPAN_SEC ?? '604800');
@@ -278,6 +282,10 @@ async function ensureClientRedirects(token: string): Promise<void> {
     'http://localhost:3000',
     'http://localhost:3001',
     ...extraWebPorts.flatMap((port) => [`http://localhost:${port}`, `http://127.0.0.1:${port}`]),
+    ...integrationPublicWebBasesRaw
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0),
   ];
 
   const nextRedirects = new Set<string>(Array.isArray(config.redirectUris) ? config.redirectUris : []);
@@ -336,6 +344,7 @@ async function ensureRealmTokenLifespans(token: string): Promise<void> {
     offlineSessionMaxLifespan: keycloakOfflineIdleSec,
     actionTokenGeneratedByAdminLifespan: Math.max(900, Math.min(keycloakSsoIdleSec, 86400)),
     actionTokenGeneratedByUserLifespan: Math.max(900, Math.min(keycloakSsoIdleSec, 86400)),
+    sslRequired: 'NONE',
   };
 
   const putRes = await adminFetch(token, realmPath, {

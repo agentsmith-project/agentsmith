@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { JsonDocStorePort } from '@mbos/ports';
 import {
+  createWorkspaceFoundationStoreResourceFromEnv,
   getWorkspaceFoundationBaseCollections,
   initializeWorkspaceFoundations,
 } from './workspace-foundation-initializer.js';
@@ -40,6 +41,22 @@ class FailingRecordingDocStore extends RecordingDocStore {
 }
 
 describe('workspace foundation initializer', () => {
+  it('fails fast outside tests when workspace foundation store config is missing', () => {
+    expect(() =>
+      createWorkspaceFoundationStoreResourceFromEnv({
+        NODE_ENV: 'production',
+      }),
+    ).toThrowError('workspace_foundation_store_unconfigured');
+  });
+
+  it('allows explicit memory mode for local-only scenarios', () => {
+    const resource = createWorkspaceFoundationStoreResourceFromEnv({
+      NODE_ENV: 'production',
+      SYSTEM_WORKSPACE_REGISTRY_MODE: 'memory',
+    });
+    expect(resource.docStore).toBeDefined();
+  });
+
   it('materializes all tenant-scoped foundation collections', async () => {
     const docStore = new RecordingDocStore();
 

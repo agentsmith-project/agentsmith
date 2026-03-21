@@ -1,6 +1,9 @@
 #!/usr/bin/env tsx
 /* eslint-disable no-console */
-import { upsertPersistedSystemWorkspace } from '../src/lib/system-admin/workspace-registry/persistence';
+import {
+  disposeSystemWorkspaceRegistryPersistence,
+  upsertPersistedSystemWorkspace,
+} from '../src/lib/system-admin/workspace-registry/persistence';
 import type { SystemWorkspaceRecord, WorkspaceIdentitySnapshot } from '../src/lib/system-admin/workspace-registry/types';
 
 function nowIso(): string {
@@ -18,7 +21,7 @@ function requireEnv(name: string, fallback?: string): string {
 async function main() {
   const workspaceId = requireEnv('MBOS_DEFAULT_WORKSPACE_ID', 'ws_default');
   const workspaceName = requireEnv('MBOS_DEFAULT_WORKSPACE_NAME', 'Default Workspace');
-  const keycloakBaseUrl = requireEnv('KEYCLOAK_BASE_URL', 'http://localhost:18080');
+  const keycloakBaseUrl = requireEnv('PUBLIC_KEYCLOAK_BASE_URL', process.env.KEYCLOAK_BASE_URL || 'http://localhost:18080');
   const keycloakRealm = requireEnv('KEYCLOAK_REALM', 'mbos');
   const clientId = requireEnv('KEYCLOAK_CLIENT_ID', 'agentsmith');
   const workspaceAdminEmail = requireEnv('MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL', 'dev-admin@example.com');
@@ -69,8 +72,12 @@ async function main() {
   process.stdout.write(`[ensure-default-workspace] ensured ${workspaceId}\n`);
 }
 
-main().catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  process.stderr.write(`[ensure-default-workspace] failed: ${message}\n`);
-  process.exit(1);
-});
+main()
+  .catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    process.stderr.write(`[ensure-default-workspace] failed: ${message}\n`);
+    process.exitCode = 1;
+  })
+  .finally(async () => {
+    await disposeSystemWorkspaceRegistryPersistence();
+  });

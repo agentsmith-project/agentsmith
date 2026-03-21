@@ -1,8 +1,14 @@
 import type http from 'node:http';
 import { InMemoryCache } from '@mbos/adapters-private';
+import { createRemoteJWKSet, jwtVerify } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { extractBearerToken, verifyBearerToken } from './auth.js';
 import { issueSSETicket, resetSSETicketsForTest } from './sse-ticket-store.js';
+
+vi.mock('jose', () => ({
+  createRemoteJWKSet: vi.fn(() => Symbol('jwks')),
+  jwtVerify: vi.fn(),
+}));
 
 function makeRequest(args: {
   url: string;
@@ -17,9 +23,16 @@ function makeRequest(args: {
 describe('auth', () => {
   const cache = new InMemoryCache();
   const issuedTickets: string[] = [];
+  const issuer = 'http://issuer.test/realms/mbos';
+  const createRemoteJWKSetMock = vi.mocked(createRemoteJWKSet);
+  const jwtVerifyMock = vi.mocked(jwtVerify);
 
   beforeEach(() => {
-    process.env.KEYCLOAK_ISSUER_URL = 'http://issuer.test/realms/mbos';
+    process.env.KEYCLOAK_ISSUER_URL = issuer;
+    delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
+    createRemoteJWKSetMock.mockReset();
+    createRemoteJWKSetMock.mockReturnValue(Symbol('jwks') as never);
+    jwtVerifyMock.mockReset();
   });
 
   afterEach(() => {
@@ -27,6 +40,8 @@ describe('auth', () => {
       resetSSETicketsForTest(cache, issuedTickets.splice(0)),
       Promise.resolve().then(() => {
         vi.restoreAllMocks();
+        delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
+        delete process.env.KEYCLOAK_REALM;
         delete process.env.KEYCLOAK_ISSUER_URL;
       }),
     ]);
@@ -43,14 +58,13 @@ describe('auth', () => {
   });
 
   it('accepts issued sse tickets on sse routes', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
         sub: 'user_test',
         email: 'test@example.com',
         name: 'Test User',
-      }),
-    } as Response);
+      },
+    } as never);
     const issued = await issueSSETicket(cache, { bearerToken: 'jwt-token-123' });
     issuedTickets.push(issued.ticket);
 
@@ -59,24 +73,52 @@ describe('auth', () => {
     }), { cache });
 
     expect(user).toMatchObject({ id: 'user_test' });
-    expect(fetchSpy).toHaveBeenCalledWith(
-      'http://issuer.test/realms/mbos/protocol/openid-connect/userinfo',
-      expect.objectContaining({
-        headers: { Authorization: 'Bearer jwt-token-123' },
-      }),
+    expect(createRemoteJWKSetMock).toHaveBeenCalledWith(
+      new URL('http://issuer.test/realms/mbos/protocol/openid-connect/certs'),
+    );
+    expect(jwtVerifyMock).toHaveBeenCalledWith(
+      'jwt-token-123',
+      expect.any(Symbol),
+      expect.objectContaining({ issuer }),
+    );
+  });
+
+  it('prefers internal keycloak base url over public issuer url for jwks discovery', async () => {
+    process.env.INTERNAL_KEYCLOAK_BASE_URL = 'http://keycloak:8080';
+    process.env.KEYCLOAK_REALM = 'mbos';
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
+        sub: 'user_internal',
+        email: 'test@example.com',
+        name: 'Test User',
+      },
+    } as never);
+
+    const user = await verifyBearerToken(makeRequest({
+      url: '/api/v1/me/profile',
+      authorization: 'Bearer jwt-token-internal',
+    }));
+
+    expect(user).toMatchObject({ id: 'user_internal' });
+    expect(createRemoteJWKSetMock).toHaveBeenCalledWith(
+      new URL('http://keycloak:8080/realms/mbos/protocol/openid-connect/certs'),
+    );
+    expect(jwtVerifyMock).toHaveBeenCalledWith(
+      'jwt-token-internal',
+      expect.any(Symbol),
+      expect.objectContaining({ issuer }),
     );
   });
 
   it('consumes single-use sse tickets after the first successful resolve', async () => {
     const bearerToken = 'jwt-token-single-use';
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
         sub: 'user_single_use',
         email: 'test@example.com',
         name: 'Test User',
-      }),
-    } as Response);
+      },
+    } as never);
     const issued = await issueSSETicket(cache, { bearerToken });
     issuedTickets.push(issued.ticket);
 
@@ -89,36 +131,26 @@ describe('auth', () => {
 
     expect(first).toMatchObject({ id: 'user_single_use' });
     expect(second).toBeNull();
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(jwtVerifyMock).toHaveBeenCalledTimes(1);
   });
 
   it('rejects query-token fallback', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        sub: 'user_test',
-        email: 'test@example.com',
-        name: 'Test User',
-      }),
-    } as Response);
-
     const user = await verifyBearerToken(makeRequest({
       url: '/api/v1/events?token=jwt-token-123',
     }));
 
     expect(user).toBeNull();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 
   it('rejects ticket query on non-sse routes', async () => {
-    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-      ok: true,
-      json: async () => ({
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
         sub: 'user_test',
         email: 'test@example.com',
         name: 'Test User',
-      }),
-    } as Response);
+      },
+    } as never);
     const issued = await issueSSETicket(cache, { bearerToken: 'jwt-token-123' });
     issuedTickets.push(issued.ticket);
 
@@ -127,6 +159,6 @@ describe('auth', () => {
     }), { cache });
 
     expect(user).toBeNull();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 });

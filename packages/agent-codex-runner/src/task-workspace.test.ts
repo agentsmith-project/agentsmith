@@ -33,13 +33,15 @@ describe('task-workspace', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     clearPreparedTaskWorkspaces();
-    execFileMock.mockImplementation((_file, _args, callback: (error: Error | null) => void) => {
+    execFileMock.mockImplementation((_file, _args, maybeOptions, maybeCallback) => {
+      const callback = typeof maybeOptions === 'function' ? maybeOptions : maybeCallback;
       callback(null);
     });
     mkdirMock.mockResolvedValue(undefined);
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     delete process.env.MBOS_AGENT_WORKSPACE_ROOT;
+    delete process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS;
     delete process.env.WORKSPACE_PATH;
   });
 
@@ -161,14 +163,75 @@ describe('task-workspace', () => {
         '-d',
         '--cache-dir',
         expect.stringContaining('.juicefs/cache/agentsmith'),
-        '-o',
-        'writeback_cache',
       ]),
+      expect.objectContaining({
+        env: expect.not.objectContaining({
+          HTTP_PROXY: expect.any(String),
+          HTTPS_PROXY: expect.any(String),
+          ALL_PROXY: expect.any(String),
+          http_proxy: expect.any(String),
+          https_proxy: expect.any(String),
+          all_proxy: expect.any(String),
+        }),
+      }),
       expect.any(Function),
     );
+    expect(execFileMock.mock.calls[0]?.[1]).not.toContain('-o');
     expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
     expect(resolved.source).toBe('file_library_mount');
     expect(resolved.paths.artifactsDir).toBe('/srv/ags-workspaces/market-analysis-q1/.artifacts');
+  });
+
+  it('passes explicit JuiceFS mount options when configured', async () => {
+    process.env.MBOS_AGENT_WORKSPACE_ROOT = '/srv/ags-workspaces';
+    process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS = 'writeback_cache,cache-size=204800';
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        task_id: 'task_1',
+        workspace_binding_mode: 'file_library',
+        workspace_dir_name: 'market-analysis-q1',
+        file_library_id: 'flib_1',
+        file_library_name: 'Project Workspace',
+        filesystem_name: 'flib-market-analysis-q1',
+        metadata_url: 'postgres://juicefs-meta',
+      }),
+    });
+
+    await prepareTaskWorkspace({
+      executionContext: {
+        api_base: 'http://localhost:20000',
+        workspace_id: 'ws_default',
+        project_id: 'proj_1',
+        task_id: 'task_1',
+        user_bearer_token: 'test-token',
+        workspace_binding_mode: 'file_library',
+      },
+      username: 'alice',
+      taskId: 'task_1',
+    });
+
+    expect(execFileMock).toHaveBeenCalledWith(
+      'juicefs',
+      expect.arrayContaining([
+        'mount',
+        'postgres://juicefs-meta',
+        '/srv/ags-workspaces/market-analysis-q1',
+        '-o',
+        'writeback_cache,cache-size=204800',
+      ]),
+      expect.objectContaining({
+        env: expect.not.objectContaining({
+          HTTP_PROXY: expect.any(String),
+          HTTPS_PROXY: expect.any(String),
+          ALL_PROXY: expect.any(String),
+          http_proxy: expect.any(String),
+          https_proxy: expect.any(String),
+          all_proxy: expect.any(String),
+        }),
+      }),
+      expect.any(Function),
+    );
   });
 
   it('reuses prepared file library workspace for subsequent task runs', async () => {

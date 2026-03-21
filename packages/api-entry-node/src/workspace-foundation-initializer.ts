@@ -91,6 +91,10 @@ async function materializeCollection(args: {
 export function createWorkspaceFoundationStoreResourceFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): WorkspaceFoundationStoreResource {
+  const explicitMode = env.SYSTEM_WORKSPACE_REGISTRY_MODE?.trim().toLowerCase();
+  if (explicitMode === 'memory') {
+    return { docStore: new InMemoryJsonDocStore() };
+  }
   const mongoUrl = env.MONGO_URL?.trim();
   if (mongoUrl) {
     const store = new MongoJsonDocStore({
@@ -102,7 +106,10 @@ export function createWorkspaceFoundationStoreResourceFromEnv(
       close: () => store.close(),
     };
   }
-  return { docStore: new InMemoryJsonDocStore() };
+  if (env.NODE_ENV === 'test') {
+    return { docStore: new InMemoryJsonDocStore() };
+  }
+  throw new Error('workspace_foundation_store_unconfigured');
 }
 
 export async function initializeWorkspaceFoundations(

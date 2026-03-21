@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [[ "$(basename "${SCRIPT_DIR}")" == "remote-deploy" ]]; then
+  ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+  source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
+else
+  ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+  source "${ROOT_DIR}/scripts/lib/common.sh"
+fi
+
+load_release_env
+
+PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
+PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-http://localhost:20000}"
+PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
+KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
+INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
+INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
+
+wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
+wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
+wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240
+wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
+
+kubectl get csidriver csi.juicefs.com >/dev/null
+kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
+docker_compose ps --status running external-runner | grep -q external-runner || die "preset verify failed: external-runner not running"
+docker_compose logs external-runner 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
+
+token_json="$(
+  curl -fsS "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+    -H 'content-type: application/x-www-form-urlencoded' \
+    --data-urlencode 'grant_type=password' \
+    --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
+    --data-urlencode "username=${INTEGRATION_DEV_ADMIN_USERNAME}" \
+    --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD}" \
+    --data-urlencode 'scope=openid profile email'
+)"
+ACCESS_TOKEN="$(printf '%s' "${token_json}" | jq -r '.access_token // empty')"
+[[ -n "${ACCESS_TOKEN}" ]] || die "failed to obtain dev-admin token during verify"
+
+PROJECTS_JSON="$(
+  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}"
+)"
+DEMO_PROJECT_ID="$(
+  printf '%s' "${PROJECTS_JSON}" | jq -r '.items[]? | select(.name=="Demo Project") | .id' | head -n1
+)"
+[[ -n "${DEMO_PROJECT_ID}" ]] || die "preset verify failed: Demo Project missing in ws_default"
+
+ENDPOINT_COUNT="$(
+  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/endpoints?page=1&page_size=100" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    | jq '[.items[]? | select(.model=="glm-5-turbo")] | length'
+)"
+[[ "${ENDPOINT_COUNT}" -ge 2 ]] || die "preset verify failed: expected two glm-5-turbo endpoints"
+
+AGENT_COUNTS_JSON="$(
+  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/agents?page=1&page_size=100" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+    | jq '{external: ([.items[]? | select(.mode=="external")] | length), internal: ([.items[]? | select(.mode=="internal")] | length)}'
+)"
+EXTERNAL_AGENT_COUNT="$(printf '%s' "${AGENT_COUNTS_JSON}" | jq -r '.external')"
+INTERNAL_AGENT_COUNT="$(printf '%s' "${AGENT_COUNTS_JSON}" | jq -r '.internal')"
+[[ "${EXTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: external agent missing"
+[[ "${INTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: internal agent missing"
+
+state_set verify.preset_workspace_id ws_default
+state_set verify.preset_project_id "${DEMO_PROJECT_ID}"
+state_set verify.preset_endpoint_count "${ENDPOINT_COUNT}"
+state_set verify.preset_external_agent_count "${EXTERNAL_AGENT_COUNT}"
+state_set verify.preset_internal_agent_count "${INTERNAL_AGENT_COUNT}"
+state_set verify.preset_external_runner connected
+
+(
+  cd "${ROOT_DIR}" && \
+    BASE_URL="${PUBLIC_WEB_BASE_URL}" \
+    INTEGRATION_API_BASE="${PUBLIC_API_BASE_URL}" \
+    KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+    KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+    INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
+    GLM_APIKEY="${GLM_APIKEY:-}" \
+    CLAUDE_URL="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}" \
+    OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}" \
+    INTEGRATION_GLM_MODEL="${GLM_MODEL:-glm-5-turbo}" \
+    RESET_FIRST=0 \
+    npx playwright test --config playwright.config.integration.ts e2e/integration-release-user-story.spec.ts --project=chromium --workers=1
+)
+
+state_set release.phase verify_completed
+log "verify ok"

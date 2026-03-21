@@ -54,6 +54,26 @@ function sanitizePathPart(input: string | null | undefined, fallback: string): s
   return value.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 64) || fallback;
 }
 
+function parseJuicefsMountOptions(raw: string | undefined): string[] {
+  return (raw ?? '')
+    .split(/[,\n]/)
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function buildJuicefsMountEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
+  delete env.HTTP_PROXY;
+  delete env.HTTPS_PROXY;
+  delete env.ALL_PROXY;
+  delete env.http_proxy;
+  delete env.https_proxy;
+  delete env.all_proxy;
+  delete env.NO_PROXY;
+  delete env.no_proxy;
+  return env;
+}
+
 export function buildTaskWorkspacePaths(cwd: string, _taskId: string): TaskWorkspacePaths {
   return {
     rootCwd: cwd,
@@ -136,16 +156,19 @@ async function mountTaskWorkspace(metadataUrl: string, mountPath: string): Promi
   );
   const cacheDir = join(cacheRoot, sanitizePathPart(mountPath, 'workspace'));
   await mkdir(cacheDir, { recursive: true });
-  await execFile('juicefs', [
+  const commandArgs = [
     'mount',
     metadataUrl,
     mountPath,
     '-d',
     '--cache-dir',
     cacheDir,
-    '-o',
-    'writeback_cache',
-  ]);
+  ];
+  const mountOptions = parseJuicefsMountOptions(process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS);
+  if (mountOptions.length > 0) {
+    commandArgs.push('-o', mountOptions.join(','));
+  }
+  await execFile('juicefs', commandArgs, { env: buildJuicefsMountEnv() });
 }
 
 export async function prepareTaskWorkspace(input: {

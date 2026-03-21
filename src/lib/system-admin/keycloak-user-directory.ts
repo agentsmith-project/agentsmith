@@ -41,6 +41,21 @@ function deriveKeycloakBaseUrl(idpUrl: string): string {
   return markerIndex >= 0 ? trimmed.slice(0, markerIndex) : trimmed;
 }
 
+function resolveKeycloakFetchBaseUrl(idpUrl: string): string {
+  const requestedBase = deriveKeycloakBaseUrl(idpUrl);
+  const publicBase = process.env.PUBLIC_KEYCLOAK_BASE_URL?.trim();
+  const internalBase = process.env.INTERNAL_KEYCLOAK_BASE_URL?.trim();
+  if (!publicBase || !internalBase) {
+    return requestedBase;
+  }
+  const normalizedRequested = requestedBase.replace(/\/+$/, '');
+  const normalizedPublic = deriveKeycloakBaseUrl(publicBase).replace(/\/+$/, '');
+  if (normalizedRequested !== normalizedPublic) {
+    return requestedBase;
+  }
+  return deriveKeycloakBaseUrl(internalBase);
+}
+
 function buildDisplayName(user: KeycloakUserRecord): string | null {
   const first = user.firstName?.trim() ?? '';
   const last = user.lastName?.trim() ?? '';
@@ -63,7 +78,7 @@ async function getClientCredentialsToken(args: {
       code: 'KEYCLOAK_IDP_INVALID',
     });
   }
-  const keycloakBaseUrl = deriveKeycloakBaseUrl(args.idpUrl);
+  const keycloakBaseUrl = resolveKeycloakFetchBaseUrl(args.idpUrl);
   const body = new URLSearchParams({
     grant_type: 'client_credentials',
     client_id: clientId,
@@ -105,7 +120,7 @@ async function getClientCredentialsToken(args: {
 }
 
 async function verifyRealmBase(idpUrl: string, realm: string): Promise<void> {
-  const keycloakBaseUrl = deriveKeycloakBaseUrl(idpUrl);
+  const keycloakBaseUrl = resolveKeycloakFetchBaseUrl(idpUrl);
   let response: Response;
   try {
     response = await fetch(
@@ -131,7 +146,7 @@ async function verifyRealmBase(idpUrl: string, realm: string): Promise<void> {
 }
 
 async function adminFetch(idpUrl: string, token: string, path: string): Promise<Response> {
-  const keycloakBaseUrl = deriveKeycloakBaseUrl(idpUrl);
+  const keycloakBaseUrl = resolveKeycloakFetchBaseUrl(idpUrl);
   try {
     return await fetch(`${keycloakBaseUrl}${path}`, {
       method: 'GET',

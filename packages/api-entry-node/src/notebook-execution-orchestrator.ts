@@ -101,6 +101,10 @@ function deriveHttpBaseFromWebSocketBase(value: string | undefined | null): stri
 }
 
 function resolveExecutionApiBase(publicBaseUrl: string, agentMode: 'external' | 'internal'): string {
+  const explicitExternalBase = sanitizeBaseUrl(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL);
+  if (agentMode === 'external' && explicitExternalBase) {
+    return explicitExternalBase;
+  }
   if (agentMode === 'internal') {
     const explicitInternalBase = sanitizeBaseUrl(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
     if (explicitInternalBase) {

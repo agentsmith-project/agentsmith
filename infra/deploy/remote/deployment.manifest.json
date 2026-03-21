@@ -1,0 +1,145 @@
+{
+  "schema_version": 1,
+  "release_flow": [
+    "prepare",
+    "reset",
+    "deploy",
+    "bootstrap",
+    "verify",
+    "report"
+  ],
+  "compose_services": [
+    "postgres",
+    "mongo",
+    "redis",
+    "minio",
+    "keycloak",
+    "api",
+    "web",
+    "external-runner"
+  ],
+  "kind_components": [
+    "juicefs-csi-controller",
+    "juicefs-csi-node",
+    "sandbox-manager",
+    "internal-workloads"
+  ],
+  "required_tools": [
+    "kind",
+    "kubectl",
+    "jq",
+    "juicefs",
+    "mc"
+  ],
+  "required_env": {
+    "storage": [
+      "POSTGRES_USER",
+      "POSTGRES_PASSWORD",
+      "POSTGRES_DB",
+      "POSTGRES_PORT",
+      "MONGO_ROOT_USERNAME",
+      "MONGO_ROOT_PASSWORD",
+      "MONGO_DB",
+      "MONGO_PORT",
+      "REDIS_PORT",
+      "MINIO_ROOT_USER",
+      "MINIO_ROOT_PASSWORD",
+      "MINIO_BUCKET",
+      "MINIO_API_PORT",
+      "MINIO_CONSOLE_PORT"
+    ],
+    "identity": [
+      "KEYCLOAK_ADMIN",
+      "KEYCLOAK_ADMIN_PASSWORD",
+      "KEYCLOAK_DB",
+      "KEYCLOAK_PORT",
+      "KEYCLOAK_REALM",
+      "KEYCLOAK_CLIENT_ID",
+      "SYSTEM_ADMIN_USERNAME",
+      "SYSTEM_ADMIN_PASSWORD",
+      "SYSTEM_ADMIN_SESSION_COOKIE_SECURE"
+    ],
+    "public_runtime": [
+      "PUBLIC_WEB_BASE_URL",
+      "PUBLIC_API_BASE_URL",
+      "PUBLIC_KEYCLOAK_BASE_URL"
+    ],
+    "internal_runtime": [
+      "INTERNAL_API_BASE_URL",
+      "INTERNAL_KEYCLOAK_BASE_URL"
+    ],
+    "execution": [
+      "SYSTEM_WORKSPACE_REGISTRY_MODE",
+      "EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL",
+      "AGENT_EXECUTION_HTTP_BASE_URL",
+      "AGENT_EXECUTION_WS_BASE_URL",
+      "SANDBOX_MANAGER_URL",
+      "SANDBOX_SERVICE_KEY",
+      "SANDBOX_HOST_PORT",
+      "MBOS_AGENT_BUILTIN_SKILLS_DIR",
+      "MBOS_AGENT_JUICEFS_MOUNT_OPTIONS",
+      "FILE_LIBRARY_POSTGRES_PUBLIC_HOST",
+      "FILE_LIBRARY_POSTGRES_PUBLIC_PORT",
+      "FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT"
+    ],
+    "juicefs_csi": [
+      "INTERNAL_AGENT_K8S_NAMESPACE",
+      "INTERNAL_AGENT_JUICEFS_CSI_DRIVER",
+      "INTERNAL_AGENT_WORKSPACE_CAPACITY",
+      "INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME",
+      "INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS",
+      "INTERNAL_AGENT_JUICEFS_SUBDIR",
+      "INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT",
+      "INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE",
+      "INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE",
+      "INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE"
+    ],
+    "bootstrap": [
+      "INTEGRATION_PUBLIC_WEB_BASES",
+      "INTEGRATION_DEV_ADMIN_USERNAME",
+      "INTEGRATION_DEV_ADMIN_PASSWORD",
+      "INTEGRATION_USER_USERNAME",
+      "INTEGRATION_USER_PASSWORD",
+      "INTEGRATION_MEMBER_USERNAME",
+      "INTEGRATION_MEMBER_PASSWORD",
+      "MBOS_DEFAULT_WORKSPACE_ID",
+      "MBOS_DEFAULT_WORKSPACE_NAME",
+      "MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL",
+      "MBOS_DEFAULT_WORKSPACE_ADMIN_USER_ID",
+      "MBOS_DEMO_PROJECT_NAME",
+      "MBOS_DEMO_CREDENTIAL_NAME",
+      "MBOS_DEMO_ANTHROPIC_ENDPOINT_NAME",
+      "MBOS_DEMO_OPENAI_ENDPOINT_NAME",
+      "MBOS_DEMO_EXTERNAL_AGENT_NAME",
+      "MBOS_DEMO_INTERNAL_AGENT_NAME",
+      "GLM_APIKEY",
+      "CLAUDE_URL",
+      "OPENAI_URL_CODING_PLAN",
+      "GLM_MODEL"
+    ]
+  },
+  "bundle_files": [
+    "compose/docker-compose.yml",
+    "env/site.env.example",
+    "kind/config.yaml",
+    "k8s/juicefs-csi.yaml",
+    "scripts/prepare.sh",
+    "scripts/reset.sh",
+    "scripts/deploy.sh",
+    "scripts/bootstrap.sh",
+    "scripts/verify.sh",
+    "scripts/report.sh",
+    "scripts/render-env.sh",
+    "docs/contracts/deployment-spec-v1.md",
+    "tools/kind",
+    "tools/kubectl",
+    "tools/juicefs",
+    "tools/mc",
+    "checksums.txt",
+    "VERSION"
+  ],
+  "verify_stories": [
+    "preset-story",
+    "new-workspace-story"
+  ]
+}

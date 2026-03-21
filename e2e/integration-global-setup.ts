@@ -47,6 +47,29 @@ async function seedPersistedWorkspaces(): Promise<void> {
   }
 }
 
+async function verifyPreseededWorkspaces(): Promise<void> {
+  const baseUrl = process.env.BASE_URL?.trim() || 'http://localhost:3001';
+  const response = await fetch(`${baseUrl}/api/public/workspaces`, {
+    method: 'GET',
+    headers: { accept: 'application/json' },
+  }).catch(() => null);
+  if (!response?.ok) {
+    const status = response?.status ?? 'n/a';
+    throw new Error(`failed_to_read_public_workspaces status=${status}`);
+  }
+  const payload = (await response.json()) as {
+    items?: Array<{ id?: string; provisioning_status?: string }>;
+  };
+  const hasDefaultWorkspace = payload.items?.some((item) => item.id === 'ws_default');
+  if (!hasDefaultWorkspace) {
+    throw new Error('preseeded_workspace_missing:ws_default');
+  }
+}
+
 export default async function globalSetup(): Promise<void> {
+  if (process.env.INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES?.trim() === 'true') {
+    await verifyPreseededWorkspaces();
+    return;
+  }
   await seedPersistedWorkspaces();
 }

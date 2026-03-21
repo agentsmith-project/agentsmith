@@ -184,7 +184,8 @@ fi
 METADATA_URL="$(cat "${BODY_FILE}" | json_field "j.metadata_url")"
 
 info "mounting ${LIBRARY_ID} at ${MOUNT_POINT}"
-juicefs mount "${METADATA_URL}" "${MOUNT_POINT}" -d --log "${MOUNT_LOG}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0 >/dev/null 2>&1
+env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy \
+  juicefs mount "${METADATA_URL}" "${MOUNT_POINT}" -d --log "${MOUNT_LOG}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0 >/dev/null 2>&1
 MOUNTED="1"
 
 mkdir -p "${MOUNT_POINT}/local-sync"

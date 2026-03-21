@@ -210,6 +210,8 @@ The offline bundle must contain:
 - this deployment spec
 - the machine-readable deployment manifest
 
+The bundle build must always create a fresh directory for the current `release_id`. It must not reuse an existing bundle directory, and it must not carry forward historical image tar files from earlier local experiments.
+
 ### Layered Image Contract
 - Stable and heavy dependencies must be built into reusable base images.
 - Frequently changing business code must be built into thin derived images.

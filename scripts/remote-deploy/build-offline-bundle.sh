@@ -68,6 +68,8 @@ for proxy_key in HTTP_PROXY HTTPS_PROXY NO_PROXY http_proxy https_proxy no_proxy
   fi
 done
 
+mkdir -p "${OUT_DIR}"
+rm -rf "${BUNDLE_DIR}"
 mkdir -p "${BUNDLE_DIR}" "${IMAGES_DIR}" "${TOOLS_DIR}"
 
 APP_BASE_HASH="$(hash_files \

@@ -8,6 +8,12 @@
 - Run Compose on the host for system services.
 - Run kind + JuiceFS CSI + sandbox manager for internal agents.
 
+## Only Two Operator Inputs
+- The offline bundle for the current release
+- `env/site.env`
+
+Everything else in the release is generated or fixed by the deployment scripts.
+
 ## Standard Flow
 1. Build a local offline bundle.
 2. Upload the bundle to the target host.
@@ -21,6 +27,22 @@
    - `scripts/remote-deploy/bootstrap.sh`
    - `scripts/remote-deploy/verify.sh`
    - `scripts/remote-deploy/report.sh`
+
+## What Success Looks Like
+- `prepare`, `reset`, `deploy`, `bootstrap`, `verify`, and `report` all exit successfully.
+- `verify` passes both:
+  - preset story
+  - new workspace story
+- `reports/` contains the release report for this run.
+
+## If Something Fails
+- Do not patch containers, databases, Keycloak, or compiled assets by hand.
+- First check the current stage name and report output.
+- Then inspect:
+  - `state/deploy-state.json`
+  - `reports/<release-id>.md`
+  - container logs from the failed stage
+- If the failure indicates a missing image, missing tool, or wrong env value, fix the bundle or `site.env` and rerun the formal stage.
 
 ## Notes
 - The target host must not pull public images during deploy.

@@ -59,8 +59,8 @@ async function listWorkspaceProjectCreators(args: {
 
 async function getWorkspaceDirectoryConfig(workspaceId: string) {
   const config = await getRegisteredWorkspaceConfig(workspaceId);
-  const idpUrl = config?.idp?.url?.trim() ?? '';
-  const idpRealm = config?.idp?.realm?.trim() ?? '';
+  const idpUrl = config?.login_idp?.url?.trim() ?? '';
+  const idpRealm = config?.login_idp?.realm?.trim() ?? '';
   if (!idpUrl || !idpRealm) {
     throw Object.assign(new Error('workspace_directory_not_configured'), {
       code: 'WORKSPACE_DIRECTORY_NOT_CONFIGURED',

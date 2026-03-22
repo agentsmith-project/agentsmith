@@ -371,7 +371,14 @@ async function createAgentViaUi(args: {
   } else {
     await dialog.locator('#notebook-endpoint-id').selectOption(endpointId);
   }
+  const createResponse = page.waitForResponse((response) =>
+    response.request().method() === 'POST'
+    && response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/agents`),
+  );
   await dialog.getByRole('button', { name: /^create$/i }).click();
+  const response = await createResponse;
+  expect(response.ok()).toBeTruthy();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
   await expect(page.getByText(name)).toBeVisible({ timeout: 30_000 });
 }
 

@@ -7,6 +7,7 @@ const {
   buildWorkspaceMembersFromConfig,
   resolveWorkspacePermissions,
   resolveKeycloakDirectoryUsersByIds,
+  searchKeycloakDirectoryUsers,
 } = vi.hoisted(() => ({
   writeProjectAuditEvent: vi.fn(),
   getRegisteredWorkspaceConfig: vi.fn(),
@@ -14,6 +15,7 @@ const {
   buildWorkspaceMembersFromConfig: vi.fn(),
   resolveWorkspacePermissions: vi.fn(),
   resolveKeycloakDirectoryUsersByIds: vi.fn(),
+  searchKeycloakDirectoryUsers: vi.fn(),
 }));
 
 vi.mock('./audit-usage-recorders.js', () => ({
@@ -32,10 +34,13 @@ vi.mock('./workspace-permissions.js', () => ({
 
 vi.mock('./keycloak-user-directory.js', () => ({
   resolveKeycloakDirectoryUsersByIds,
-  searchKeycloakDirectoryUsers: vi.fn(),
+  searchKeycloakDirectoryUsers,
 }));
 
-import { handleWorkspaceProjectCreatorsRoute } from './project-workspace-governance-routes.js';
+import {
+  handleWorkspaceDirectoryUsersRoute,
+  handleWorkspaceProjectCreatorsRoute,
+} from './project-workspace-governance-routes.js';
 
 describe('project-workspace-governance-routes', () => {
   beforeEach(() => {
@@ -45,10 +50,12 @@ describe('project-workspace-governance-routes', () => {
     getRegisteredWorkspaceConfig.mockResolvedValue({
       id: 'ws-1',
       name: 'Workspace One',
-      idp: {
+      login_idp: {
         url: 'http://localhost:18080',
         realm: 'mbos',
+        client_id: 'agentsmith',
       },
+      project_creators: [],
       created_at: '2026-03-01T00:00:00Z',
       updated_at: '2026-03-01T00:00:00Z',
     });
@@ -174,6 +181,46 @@ describe('project-workspace-governance-routes', () => {
         },
       ],
       total: 2,
+    });
+  });
+
+  it('searches workspace directory users from login_idp config', async () => {
+    const json = vi.fn();
+    const res = {} as never;
+    searchKeycloakDirectoryUsers.mockResolvedValue([
+      {
+        user_id: 'user-2',
+        email: 'integration-user@example.com',
+        name: 'Integration User',
+      },
+    ]);
+
+    await expect(handleWorkspaceDirectoryUsersRoute({
+      req: {
+        headers: {},
+        url: '/api/v1/workspaces/ws-1/directory/users?query=integration-user%40example.com',
+      } as never,
+      res,
+      user: { id: 'admin-1', email: 'admin-1@example.com', name: 'Admin One' },
+      workspaces: [{ id: 'ws-1', created_at: '2026-03-01T00:00:00Z' }],
+      workspaceId: 'ws-1',
+      json,
+    })).resolves.toBe(true);
+
+    expect(searchKeycloakDirectoryUsers).toHaveBeenCalledWith({
+      url: 'http://localhost:18080',
+      realm: 'mbos',
+      query: 'integration-user@example.com',
+    });
+    expect(json).toHaveBeenCalledWith(res, 200, {
+      items: [
+        {
+          user_id: 'user-2',
+          email: 'integration-user@example.com',
+          name: 'Integration User',
+        },
+      ],
+      total: 1,
     });
   });
 });

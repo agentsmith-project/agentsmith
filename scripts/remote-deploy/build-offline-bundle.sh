@@ -19,6 +19,14 @@ require_cmd kubectl
 require_cmd juicefs
 require_cmd mc
 
+if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
+  (cd "${ROOT_DIR}" && npm run test:bundle:inputs)
+fi
+
+if [[ "${SKIP_RELEASE_PRECHECK:-0}" != "1" ]]; then
+  (cd "${ROOT_DIR}" && npm run test:release:precheck)
+fi
+
 docker_bridge_gateway() {
   docker network inspect bridge -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null \
     | awk '/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { print; exit }'

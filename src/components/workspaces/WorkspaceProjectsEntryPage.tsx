@@ -63,7 +63,7 @@ export function WorkspaceProjectsEntryPage({
   const t = useTranslations('projects');
   const tSettings = useTranslations('settings');
   const tErrors = useTranslations('errors');
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, token } = useAuthStore();
   const hydrated = useAuthStoreHydration();
   const canWorkspaceRead = useHasWorkspacePermission('workspace:read');
   const canCreateProjectByWorkspacePermissions = useHasWorkspacePermission('workspace:project:create');
@@ -86,7 +86,10 @@ export function WorkspaceProjectsEntryPage({
     data: currentWorkspace,
     isFetched: isWorkspaceFetched,
   } = useWorkspace(workspaceId ?? '');
-  const { data: workspaceMembers = [] } = useWorkspaceMembers(workspaceId ?? '');
+  const {
+    data: workspaceMembers = [],
+    isFetched: isWorkspaceMembersFetched,
+  } = useWorkspaceMembers(workspaceId ?? '');
   const {
     data: allProjects = [],
     isLoading: isProjectsLoading,
@@ -231,6 +234,17 @@ export function WorkspaceProjectsEntryPage({
           <h2 className="text-lg font-semibold">{tErrors('validation_error')}</h2>
           <p className="text-sm text-tertiary">{tErrors('badRequest.description')}</p>
         </div>
+      </PageState>
+    );
+  }
+
+  const isWaitingForWorkspaceAccess =
+    isAuthenticated && (!token || !isWorkspaceFetched || !isWorkspaceMembersFetched);
+
+  if (isWaitingForWorkspaceAccess) {
+    return (
+      <PageState state="loading">
+        <PageLoading />
       </PageState>
     );
   }

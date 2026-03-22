@@ -43,7 +43,26 @@ const mockUseWorkspace = vi.fn<
     isFetched: boolean;
   }
 >(() => ({ data: mockWorkspaceData, isFetched: true }));
-const mockUseAuthStore = vi.fn(() => ({ isAuthenticated: true }));
+const mockUseAuthStore = vi.fn<
+  () => {
+    isAuthenticated: boolean;
+    token: string | null;
+  }
+>(() => ({ isAuthenticated: true, token: 'token-1' }));
+const mockUseWorkspaceMembers = vi.fn(() => ({
+  data: [
+    {
+      id: 'wm_1',
+      user_id: 'user_1',
+      name: 'Test User',
+      email: 'test@example.com',
+      groups: [{ id: 'grp_workspace_project_creators', name: 'Project Creators', permission_template_id: 'tpl_workspace_project_creator', built_in: true, system_key: 'project_creators' }],
+      status: 'active',
+      joined_at: '2026-02-01T00:00:00Z',
+    },
+  ],
+  isFetched: true,
+}));
 const mockUseProjects = vi.fn<
   () => {
     data: typeof mockProjectsData;
@@ -91,19 +110,7 @@ vi.mock('@/lib/hooks/use-sync-auth-from-url', () => ({
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspace: () => mockUseWorkspace(),
-  useWorkspaceMembers: () => ({
-    data: [
-      {
-        id: 'wm_1',
-        user_id: 'user_1',
-        name: 'Test User',
-        email: 'test@example.com',
-        groups: [{ id: 'grp_workspace_project_creators', name: 'Project Creators', permission_template_id: 'tpl_workspace_project_creator', built_in: true, system_key: 'project_creators' }],
-        status: 'active',
-        joined_at: '2026-02-01T00:00:00Z',
-      },
-    ],
-  }),
+  useWorkspaceMembers: () => mockUseWorkspaceMembers(),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -161,7 +168,21 @@ describe('ProjectsPage route', () => {
     mockCreateJoinRequestMutateAsync.mockResolvedValue(undefined);
     mockUseHasWorkspacePermission.mockReturnValue(true);
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData, isFetched: true }));
-    mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true }));
+    mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true, token: 'token-1' }));
+    mockUseWorkspaceMembers.mockImplementation(() => ({
+      data: [
+        {
+          id: 'wm_1',
+          user_id: 'user_1',
+          name: 'Test User',
+          email: 'test@example.com',
+          groups: [{ id: 'grp_workspace_project_creators', name: 'Project Creators', permission_template_id: 'tpl_workspace_project_creator', built_in: true, system_key: 'project_creators' }],
+          status: 'active',
+          joined_at: '2026-02-01T00:00:00Z',
+        },
+      ],
+      isFetched: true,
+    }));
     mockUseProjects.mockImplementation(() => ({
       data: mockProjectsData,
       isLoading: false,
@@ -225,7 +246,7 @@ describe('ProjectsPage route', () => {
 
   it('shows permission denied when user lacks project list permissions', async () => {
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData, isFetched: true }));
-    mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false }));
+    mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: false, token: null }));
     mockUseHasWorkspacePermission.mockImplementation((permission: string) => {
       if (permission === 'workspace:read') {
         return false;
@@ -324,5 +345,20 @@ describe('ProjectsPage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('projects__join-request-btn--proj_request')).toHaveTextContent('join_request.pending');
     });
+  });
+
+  it('keeps loading while authenticated workspace membership is still resolving', async () => {
+    mockUseHasWorkspacePermission.mockReturnValue(false);
+    mockUseWorkspaceMembers.mockImplementation(() => ({
+      data: [],
+      isFetched: false,
+    }));
+
+    render(<ProjectsPage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__loading')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('permission_denied_title')).not.toBeInTheDocument();
   });
 });

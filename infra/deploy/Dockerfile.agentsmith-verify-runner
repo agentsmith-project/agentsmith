@@ -12,4 +12,4 @@ COPY playwright.config.integration.ts ./
 COPY tsconfig.json ./
 COPY package.json package-lock.json ./
 
-CMD ["npx", "playwright", "test", "--config", "playwright.config.integration.ts", "e2e/integration-release-user-story.spec.ts", "--project=chromium", "--workers=1"]
+CMD ["npx", "playwright", "test", "--config", "playwright.config.integration.ts", "e2e/integration-workspace-entry.spec.ts", "e2e/integration-release-user-story.spec.ts", "--project=chromium", "--workers=1"]

@@ -20,7 +20,7 @@ if [[ ! -f "${SITE_ENV}" ]]; then
   cp "${SITE_ENV_EXAMPLE}" "${SITE_ENV}"
 fi
 
-for deprecated_key in KEYCLOAK_INTERNAL_BASE_URL KEYCLOAK_PUBLIC_BASE_URL MBOS_API_BASE; do
+for deprecated_key in KEYCLOAK_INTERNAL_BASE_URL KEYCLOAK_PUBLIC_BASE_URL MBOS_API_BASE MBOS_DEFAULT_WORKSPACE_ADMIN_USER_ID MBOS_INTEGRATION_USER_ID; do
   if grep -Eq "^[[:space:]]*${deprecated_key}=" "${SITE_ENV}"; then
     die "deprecated site.env key detected: ${deprecated_key}; update ${SITE_ENV} to deployment-spec-v1"
   fi

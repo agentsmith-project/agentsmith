@@ -7,18 +7,12 @@ import { PageState } from '@/components/layout/PageState';
 import { useAuthStore } from '@/lib/stores/authStore';
 import { getApiClient } from '@/lib/api/client';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
+import { readAccessTokenClaims } from '@/lib/auth/token-claims';
 
 interface KeycloakTokenResponse {
   access_token: string;
   refresh_token?: string;
   expires_in?: number;
-}
-
-interface KeycloakUserInfo {
-  sub: string;
-  email?: string;
-  name?: string;
-  preferred_username?: string;
 }
 
 interface StoredPkceContext {
@@ -168,26 +162,18 @@ export function WorkspaceLoginCallbackClient({
       }
 
       const token = (await tokenRes.json()) as KeycloakTokenResponse;
-      const userinfoRes = await fetch(`${realmBase}/protocol/openid-connect/userinfo`, {
-        headers: { Authorization: `Bearer ${token.access_token}` },
-      });
-      if (!userinfoRes.ok) {
-        setError(`userinfo_failed_${userinfoRes.status}`);
-        return;
-      }
-
-      const userinfo = (await userinfoRes.json()) as KeycloakUserInfo;
-      if (!userinfo.sub) {
-        setError('userinfo_missing_sub');
+      const claims = readAccessTokenClaims(token.access_token);
+      if (!claims?.sub) {
+        setError('access_token_missing_sub');
         return;
       }
 
       const locale = pkce.locale || fallbackLocale;
       setAuth(
         {
-          id: userinfo.sub,
-          email: userinfo.email ?? `${userinfo.sub}@unknown.local`,
-          name: userinfo.name ?? userinfo.preferred_username ?? userinfo.email ?? userinfo.sub,
+          id: claims.sub,
+          email: claims.email ?? `${claims.sub}@unknown.local`,
+          name: claims.name ?? claims.preferred_username ?? claims.email ?? claims.sub,
           locale: locale as 'en-US' | 'zh-CN',
         },
         token.access_token,

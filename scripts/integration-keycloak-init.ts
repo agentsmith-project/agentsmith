@@ -25,6 +25,7 @@ type KeycloakClientConfig = {
 
 type KeycloakRealmConfig = {
   realm?: string;
+  attributes?: Record<string, string>;
   accessTokenLifespan?: number;
   accessTokenLifespanForImplicitFlow?: number;
   ssoSessionIdleTimeout?: number;
@@ -61,6 +62,7 @@ const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
 const integrationWebPortsRaw = process.env.INTEGRATION_WEB_PORTS ?? '3001,3011,3021,3041,3051,3061,3066,3069,3070,3071,3081';
 const integrationPublicWebBasesRaw = process.env.INTEGRATION_PUBLIC_WEB_BASES ?? '';
+const publicKeycloakBaseUrlRaw = process.env.PUBLIC_KEYCLOAK_BASE_URL ?? '';
 const keycloakAccessTokenLifespanSec = Number(process.env.KEYCLOAK_ACCESS_TOKEN_LIFESPAN_SEC ?? '28800');
 const keycloakSsoIdleSec = Number(process.env.KEYCLOAK_SSO_IDLE_TIMEOUT_SEC ?? '43200');
 const keycloakSsoMaxSec = Number(process.env.KEYCLOAK_SSO_MAX_LIFESPAN_SEC ?? '604800');
@@ -328,8 +330,13 @@ async function ensureRealmTokenLifespans(token: string): Promise<void> {
   }
   const config = (await getRes.json()) as KeycloakRealmConfig;
 
+  const publicKeycloakBaseUrl = publicKeycloakBaseUrlRaw.trim().replace(/\/+$/, '');
   const next: KeycloakRealmConfig = {
     ...config,
+    attributes: {
+      ...(config.attributes ?? {}),
+      ...(publicKeycloakBaseUrl ? { frontendUrl: publicKeycloakBaseUrl } : {}),
+    },
     accessTokenLifespan: keycloakAccessTokenLifespanSec,
     accessTokenLifespanForImplicitFlow: keycloakAccessTokenLifespanSec,
     ssoSessionIdleTimeout: keycloakSsoIdleSec,

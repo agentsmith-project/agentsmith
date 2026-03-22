@@ -115,6 +115,8 @@ services:
       KC_DB_USERNAME: ${POSTGRES_USER:-mbos}
       KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-mbos_dev_password}
       KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: ${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}
+      KC_HOSTNAME_STRICT: "false"
       KC_PROXY_HEADERS: xforwarded
     ports:
       - "${KEYCLOAK_PORT:-18080}:8080"

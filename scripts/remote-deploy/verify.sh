@@ -57,6 +57,10 @@ token_json="$(
 ACCESS_TOKEN="$(printf '%s' "${token_json}" | json_extract access_token)"
 [[ -n "${ACCESS_TOKEN}" ]] || die "failed to obtain dev-admin token during verify"
 
+curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/me/profile" \
+  -H "Authorization: Bearer ${ACCESS_TOKEN}" >/dev/null \
+  || die "public auth chain failed: authenticated /api/v1/me/profile unavailable"
+
 PROJECTS_JSON="$(
   curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
@@ -111,7 +115,13 @@ docker run --rm \
   -e INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR=/opt/agent-runner/builtin-skills \
   -e INTEGRATION_RUNNER_LOG_DIR=/app/test-results/runner-logs \
   -e RESET_FIRST=0 \
-  "${VERIFY_RUNNER_IMAGE}"
+  "${VERIFY_RUNNER_IMAGE}" \
+  npx playwright test \
+    --config playwright.config.integration.ts \
+    e2e/integration-workspace-entry.spec.ts \
+    e2e/integration-release-user-story.spec.ts \
+    --project=chromium \
+    --workers=1
 
 state_set release.phase verify_completed
 log "verify ok"

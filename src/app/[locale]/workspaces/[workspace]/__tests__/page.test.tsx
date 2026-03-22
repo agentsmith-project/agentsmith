@@ -60,6 +60,8 @@ const mockUseProjects = vi.fn<
   error: null,
   refetch: vi.fn(),
 }));
+const mockUseAuthStore = vi.fn(() => ({ isAuthenticated: true, token: 'token-1' }));
+const mockUseWorkspaceMembers = vi.fn(() => ({ data: [], isFetched: true }));
 
 vi.mock('next/navigation', () => ({
   useParams: () => mockUseParams(),
@@ -80,7 +82,7 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 
 vi.mock('@/lib/hooks/use-workspaces', () => ({
   useWorkspace: () => mockUseWorkspace(),
-  useWorkspaceMembers: () => ({ data: [] }),
+  useWorkspaceMembers: () => mockUseWorkspaceMembers(),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -98,7 +100,7 @@ vi.mock('@/components/app-shell/Topbar', () => ({
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
-  useAuthStore: () => ({ isAuthenticated: true }),
+  useAuthStore: () => mockUseAuthStore(),
   useAuthStoreHydration: () => true,
 }));
 
@@ -133,6 +135,8 @@ describe('WorkspacePage', () => {
       data: { id: 'ws_alpha', name: 'Alpha Workspace' },
       isFetched: true,
     });
+    mockUseAuthStore.mockReturnValue({ isAuthenticated: true, token: 'token-1' });
+    mockUseWorkspaceMembers.mockReturnValue({ data: [], isFetched: true });
     mockUseProjects.mockReturnValue({
       data: [
         {
@@ -203,5 +207,20 @@ describe('WorkspacePage', () => {
       expect(screen.getByText('workspace_unavailable_title')).toBeInTheDocument();
     });
     expect(screen.getByText('workspace_unavailable_description')).toBeInTheDocument();
+  });
+
+  it('keeps loading while authenticated workspace membership is still hydrating', async () => {
+    mockUseWorkspace.mockReturnValue({
+      data: { id: 'ws_alpha', name: 'Alpha Workspace' },
+      isFetched: false,
+    });
+    mockUseWorkspaceMembers.mockReturnValue({ data: [], isFetched: false });
+
+    render(<WorkspacePage />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId('page-state__loading')).toBeInTheDocument();
+    });
+    expect(screen.queryByText('permission_denied_title')).not.toBeInTheDocument();
   });
 });

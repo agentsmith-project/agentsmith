@@ -113,6 +113,8 @@ Deployment configuration has a single editable source:
 
 Service-specific env files are generated from `site.env` by the formal render step. Operators must not edit generated service env files directly.
 
+Preset workspace admin and project creator identities are selected by stable username/email and resolved to the current Keycloak `sub` during bootstrap. Deployment inputs must not contain fixed user UUIDs.
+
 ### Storage and Ports
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
@@ -282,6 +284,8 @@ Verification must run in two layers.
 ### Layer 2: Product Usability Gates
 
 #### Preset Seed Story
+- a real public Keycloak token can access `/api/v1/me/profile`
+- `Default Workspace -> Projects` opens without a transient denied state while membership data is still loading
 - `dev-admin` can log in
 - `ws_default` is visible
 - `Demo Project` is visible

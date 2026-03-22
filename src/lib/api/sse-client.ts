@@ -10,18 +10,11 @@
  * controlled local/test environments.
  */
 
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
+
 // Environment variables for SSE ticket migration
-const SSE_TICKET_ENABLED =
-  typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_TICKET_ENABLED === 'true';
-const SSE_TICKET_PERCENTAGE = Number(
-  typeof process !== 'undefined' && process.env?.NEXT_PUBLIC_SSE_TICKET_PERCENTAGE || '0',
-);
 const IS_PRODUCTION =
   typeof process !== 'undefined' && process.env?.NODE_ENV === 'production';
-const SSE_ALLOW_JWT_FALLBACK =
-  typeof process !== 'undefined'
-  && process.env?.NEXT_PUBLIC_SSE_ALLOW_JWT_FALLBACK === 'true'
-  && !IS_PRODUCTION;
 
 /**
  * Configuration for SSE ticket migration
@@ -37,9 +30,10 @@ export interface SSETicketConfig {
  * Get the current SSE ticket configuration from environment variables
  */
 export function getSSETicketConfig(): SSETicketConfig {
+  const runtimeConfig = getPublicRuntimeConfig();
   return {
-    enabled: SSE_TICKET_ENABLED,
-    percentage: SSE_TICKET_PERCENTAGE,
+    enabled: runtimeConfig.sseTicketEnabled,
+    percentage: runtimeConfig.sseTicketPercentage,
   };
 }
 
@@ -189,6 +183,8 @@ async function exchangeSSETicket(
   token: string | null,
   apiBase: string,
 ): Promise<SSETicketFetchResult> {
+  const runtimeConfig = getPublicRuntimeConfig();
+  const allowJwtFallback = runtimeConfig.sseAllowJwtFallback && !IS_PRODUCTION;
   if (!token) return { ticket: null };
   const url = `${apiBase.replace(/\/+$/, '')}/sse-ticket`;
   try {
@@ -197,7 +193,7 @@ async function exchangeSSETicket(
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) {
-      if (SSE_ALLOW_JWT_FALLBACK) {
+      if (allowJwtFallback) {
         return { ticket: token };
       }
       return {
@@ -209,7 +205,7 @@ async function exchangeSSETicket(
     if (typeof data?.ticket === 'string' && data.ticket.length > 0) {
       return { ticket: data.ticket };
     }
-    if (!SSE_ALLOW_JWT_FALLBACK) {
+    if (!allowJwtFallback) {
       return {
         ticket: null,
         error: new SSETicketError(
@@ -220,7 +216,7 @@ async function exchangeSSETicket(
     }
   } catch {
     // Network or parse error
-    return SSE_ALLOW_JWT_FALLBACK
+    return allowJwtFallback
       ? { ticket: token }
       : {
         ticket: null,
@@ -230,7 +226,7 @@ async function exchangeSSETicket(
         ),
       };
   }
-  return SSE_ALLOW_JWT_FALLBACK ? { ticket: token } : { ticket: null };
+  return allowJwtFallback ? { ticket: token } : { ticket: null };
 }
 
 /**

@@ -12,6 +12,7 @@ import { Logo } from '@/components/app-shell/Logo';
 import { useAuthStore, useAuthStoreHydration } from '@/lib/stores/authStore';
 import { createPkceChallenge, randomBase64Url } from '@/lib/auth/pkce';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import { ArrowRight } from 'lucide-react';
 
 type WorkspaceLoginConfig = {
@@ -24,8 +25,6 @@ type WorkspaceLoginConfig = {
     client_id: string;
   };
 };
-
-const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
 
 export default function WorkspaceLoginPage() {
   const router = useRouter();
@@ -41,6 +40,7 @@ export default function WorkspaceLoginPage() {
   const [userEmail, setUserEmail] = useState('');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [keycloakError, setKeycloakError] = useState<string | null>(null);
+  const useMsw = getPublicRuntimeConfig().useMsw;
 
   useEffect(() => {
     if (!hydrated || !isAuthenticated) return;

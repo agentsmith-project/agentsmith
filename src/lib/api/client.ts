@@ -11,6 +11,7 @@
 
 import { FetchApiClient } from './adapters/fetch-adapter';
 import { MSWApiClient } from './adapters/msw-adapter';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 // MSWApiClient is dynamically imported to exclude it from production bundle.
 // It will only be loaded when NEXT_PUBLIC_USE_MSW=true at build time.
@@ -84,9 +85,9 @@ export interface ApiClient {
   connectSSE(path: string, options?: ApiRequestOptions): Promise<EventSource>;
 }
 
-const rawApiBase = (process.env.NEXT_PUBLIC_API_BASE ?? '').trim();
+const rawApiBase = getPublicRuntimeConfig().apiBase.trim();
 const hasExplicitRemoteApiBase = /^https?:\/\//i.test(rawApiBase);
-export const USE_MSW = process.env.NEXT_PUBLIC_USE_MSW === 'true' && !hasExplicitRemoteApiBase;
+export const USE_MSW = getPublicRuntimeConfig().useMsw && !hasExplicitRemoteApiBase;
 
 function normalizeApiBase(base: string): string {
   const trimmed = base.trim().replace(/\/+$/, '');

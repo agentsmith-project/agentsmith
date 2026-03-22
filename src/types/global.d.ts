@@ -1,4 +1,5 @@
 import type { AuthState } from '@/lib/stores/authStore';
+import type { PublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 /**
  * Global window extensions for development/testing
@@ -26,6 +27,8 @@ declare global {
       userEmail: string;
       userId: string;
     };
+
+    __MBOS_PUBLIC_RUNTIME_CONFIG__?: PublicRuntimeConfig;
   }
 }
 

@@ -25,6 +25,7 @@ import { TaskPageDialogs } from '@/components/notebook/task-page/TaskPageDialogs
 import { TaskPageLoadingState, TaskPageNotFoundState } from '@/components/notebook/task-page/TaskPageStates';
 import { useTaskTraceState } from '@/components/notebook/task-page/useTaskTraceState';
 import { useTaskInputActions } from '@/components/notebook/task-page/useTaskInputActions';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -177,7 +178,7 @@ export function TaskPage({
 
   // SSE connection for real-time updates
   const isDev = process.env.NODE_ENV === 'development';
-  const showSseDebugPanel = isDev && process.env.NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL === '1';
+  const showSseDebugPanel = isDev && getPublicRuntimeConfig().notebookSseDebugPanel;
   const { connectionStatus, connectionErrorCode, connectionErrorMessage } = useTaskSSE(workspaceId, projectId, taskId, {
     onMessage: (message: TaskMessage) => {
       // Update streaming content for the active streaming message

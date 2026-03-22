@@ -1,13 +1,12 @@
-const keycloakRealmsBase = process.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() ?? '';
-const keycloakRealm = process.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() ?? '';
-const keycloakClientId = process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID?.trim() ?? '';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 export function getKeycloakClientId(): string {
-  return keycloakClientId;
+  return getPublicRuntimeConfig().keycloakClientId;
 }
 
 export function getKeycloakRealmBase(): string | null {
-  return resolveKeycloakRealmBase(keycloakRealmsBase, keycloakRealm);
+  const config = getPublicRuntimeConfig();
+  return resolveKeycloakRealmBase(config.keycloakUrl, config.keycloakRealm);
 }
 
 export function resolveKeycloakRealmBase(realmsBase: string, realm: string): string | null {

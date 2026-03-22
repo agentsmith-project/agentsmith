@@ -27,5 +27,17 @@ test.describe('@lane-real integration workspace public login truth', () => {
     await expect(page.getByTestId('workspace-login__heading')).toHaveText(detailBody.name, { timeout: 30_000 });
     await expect(page.getByTestId('workspace-login__keycloak-btn')).toBeVisible({ timeout: 30_000 });
     await expect(page.getByTestId('workspace-login__error')).toHaveCount(0);
+
+    const runtimeConfig = await page.evaluate(() => window.__MBOS_PUBLIC_RUNTIME_CONFIG__);
+    expect(runtimeConfig?.apiBase).toBeTruthy();
+    expect(runtimeConfig?.keycloakUrl).toBeTruthy();
+
+    const pageHost = new URL(page.url()).hostname;
+    if (pageHost !== 'localhost' && pageHost !== '127.0.0.1') {
+      expect(new URL(runtimeConfig!.apiBase).hostname).not.toBe('localhost');
+      expect(new URL(runtimeConfig!.apiBase).hostname).not.toBe('127.0.0.1');
+      expect(new URL(runtimeConfig!.keycloakUrl).hostname).not.toBe('localhost');
+      expect(new URL(runtimeConfig!.keycloakUrl).hostname).not.toBe('127.0.0.1');
+    }
   });
 });

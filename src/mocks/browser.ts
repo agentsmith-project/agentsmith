@@ -1,10 +1,11 @@
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import type { SetupWorker } from 'msw/browser';
 
 let worker: SetupWorker | null = null;
 let started = false;
 
 export async function initMSW() {
-  const useMsw = process.env.NEXT_PUBLIC_USE_MSW === 'true';
+  const useMsw = getPublicRuntimeConfig().useMsw;
   const hasServiceWorkerSupport = typeof navigator !== 'undefined' && 'serviceWorker' in navigator;
   if (!useMsw || typeof window === 'undefined' || !hasServiceWorkerSupport || started) {
     return;

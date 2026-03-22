@@ -9,15 +9,17 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { initMSW } from '@/mocks/browser';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 export function MSWProvider({ children }: { children: React.ReactNode }) {
+  const runtimeConfig = useMemo(() => getPublicRuntimeConfig(), []);
   const useMsw = useMemo(
-    () => process.env.NEXT_PUBLIC_USE_MSW === 'true',
-    [],
+    () => runtimeConfig.useMsw,
+    [runtimeConfig],
   );
   const strictReady = useMemo(
-    () => process.env.NEXT_PUBLIC_MSW_STRICT_READY === 'true',
-    [],
+    () => runtimeConfig.mswStrictReady,
+    [runtimeConfig],
   );
   const [ready, setReady] = useState(!useMsw);
 

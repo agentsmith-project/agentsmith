@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { useHasPermission, useHasAllPermissions, useIsAuthenticated } from '@/lib/hooks/use-permissions';
 import { useAuthStoreHydration } from '@/lib/stores/authStore';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -67,7 +68,7 @@ export function ProtectedRoute({
 
   // Mock development check - bypass auth in dev if needed
   const isDev = process.env.NODE_ENV === 'development';
-  const bypassAuth = isDev && process.env.NEXT_PUBLIC_BYPASS_AUTH === 'true';
+  const bypassAuth = isDev && getPublicRuntimeConfig().bypassAuth;
 
   // Extract locale from pathname for login redirect
   const loginPath = useMemo(() => {

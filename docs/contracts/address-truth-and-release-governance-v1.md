@@ -353,6 +353,17 @@ Agent 的业务语义仍然只有两种：
 - operator 不再填写 docker/kind 特有 IP
 - `deploy` 不再改写真相
 - external runner / internal agent / 浏览器 / 宿主机都使用各自正确地址
+- 浏览器 public 配置属于运行时真相，不允许再依赖 Next.js 构建期 `NEXT_PUBLIC_*` 固化
+
+## Browser Public Config Rule
+
+浏览器侧的 `api_base`、Keycloak URL/realm/client_id、MSW 开关、SSE 开关等 public 配置，必须通过运行时注入提供，不能作为“同一个 bundle 在不同环境下共用”的构建期常量。
+
+约束：
+- 同一个 bundle 必须可以在本地完整部署和远端部署中复用
+- 浏览器读取 public 配置时，优先读取运行时注入的 `window.__MBOS_PUBLIC_RUNTIME_CONFIG__`
+- `NEXT_PUBLIC_*` 只允许作为服务器生成该运行时配置时的输入，不允许再成为浏览器逻辑的最终真相
+- 当页面 origin 不是 loopback 时，runtime public config 也不允许指向 loopback 地址
 - 最容易晚暴露的问题已经前移到打包前
 - 最终 deploy verify 仍完整兜底
 - fresh 本地完整部署验证通过

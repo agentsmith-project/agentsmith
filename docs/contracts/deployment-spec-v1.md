@@ -197,6 +197,8 @@ Preset workspace admin and project creator identities are selected by stable use
 
 All deployment configuration keys must be declared in `env/site.env`. Generated service env files derive container-specific and runtime-specific values such as `DATABASE_URL`, `MONGO_URL`, `KEYCLOAK_ISSUER_URL`, `MBOS_API_BASE`, `NEXT_PUBLIC_API_BASE`, execution host URLs, and JuiceFS internal overrides. Deployment-specific defaults belong in `site.env`; runtime-derived host identities belong in the formal runtime address resolution step, not hidden in deploy-time sed rewrites.
 
+Browser-facing public configuration is runtime truth. The web application must read browser `api_base`, Keycloak public coordinates, and browser-only feature flags from the runtime-injected public config contract, not from build-time-baked `NEXT_PUBLIC_*` values. A release bundle is only valid when the same built web image can run against local and remote `site.env` values without rebuilding.
+
 ## Offline Bundle Contract
 
 The offline bundle must contain:

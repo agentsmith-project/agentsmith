@@ -12,6 +12,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { useAlertStore } from '@/lib/stores/alertStore';
 import { createAuthenticatedSSEAsync } from '@/lib/api/sse-client';
+import { API_BASE } from '@/lib/api';
 import type { Alert, InAppAlertType } from '@/lib/types/alerts';
 
 const ALERT_STREAM_PATH = '/api/v1/alerts/stream';
@@ -137,7 +138,7 @@ export function useAlertsSSE(options: UseAlertsSSEOptions = {}) {
         ALERT_STREAM_PATH,
         token,
         undefined,
-        process.env.NEXT_PUBLIC_API_BASE || ''
+        API_BASE
       );
 
       // Set up event handlers

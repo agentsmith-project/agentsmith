@@ -1,3 +1,4 @@
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 import * as React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -16,9 +17,7 @@ import rehypeSanitize, { defaultSchema } from 'rehype-sanitize';
  * This prevents the placeholder domain vulnerability where example.com or similar
  * placeholder domains could inadvertently allow arbitrary images.
  */
-const TRUSTED_IMAGE_DOMAINS = process.env.NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS
-  ? process.env.NEXT_PUBLIC_TRUSTED_IMAGE_DOMAINS.split(',').map(d => d.trim().toLowerCase()).filter(Boolean)
-  : [];
+const TRUSTED_IMAGE_DOMAINS = getPublicRuntimeConfig().trustedImageDomains;
 
 /**
  * Build a strict sanitization schema that prevents XSS attacks

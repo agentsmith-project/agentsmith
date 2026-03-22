@@ -1,3 +1,5 @@
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
+
 export type FeatureAvailability = 'available' | 'partial' | 'mock_only' | 'coming_soon';
 
 export type GovernedFeature = 'audit' | 'usage' | 'members' | 'resource_policy';
@@ -10,7 +12,7 @@ export const FEATURE_AVAILABILITY: Record<GovernedFeature, FeatureAvailability> 
 };
 
 export function isRealBackendMode(): boolean {
-  return process.env.NEXT_PUBLIC_USE_MSW === 'false';
+  return !getPublicRuntimeConfig().useMsw;
 }
 
 export function getFeatureAvailability(feature: GovernedFeature): FeatureAvailability {

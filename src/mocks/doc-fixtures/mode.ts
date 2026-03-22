@@ -1,2 +1,3 @@
-export const DOC_FIXTURES_ENABLED = process.env.NEXT_PUBLIC_DOC_FIXTURES === 'true';
+import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
+export const DOC_FIXTURES_ENABLED = getPublicRuntimeConfig().docFixtures;

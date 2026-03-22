@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
+import { readPublicRuntimeConfigFromEnv, serializePublicRuntimeConfigScript } from '@/lib/public-runtime-config';
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default async function RootLayout({
   // Derive locale from the Accept-Language header or URL path set by middleware
   const headersList = await headers();
   const locale = headersList.get('x-next-intl-locale') || 'en-US';
+  const runtimeConfig = readPublicRuntimeConfigFromEnv();
 
   return (
     <html lang={locale} className="dark" suppressHydrationWarning>
@@ -22,6 +24,10 @@ export default async function RootLayout({
         className="font-sans antialiased"
         suppressHydrationWarning
       >
+        <script
+          id="mbos-public-runtime-config"
+          dangerouslySetInnerHTML={{ __html: serializePublicRuntimeConfigScript(runtimeConfig) }}
+        />
         {children}
       </body>
     </html>

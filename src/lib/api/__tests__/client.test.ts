@@ -30,6 +30,33 @@ describe('API_BASE', () => {
 
     expect(API_BASE).toBe('/api/v1');
   });
+
+  it('uses browser runtime config instead of baked localhost fallback', async () => {
+    vi.stubEnv('NEXT_PUBLIC_USE_MSW', 'false');
+    vi.stubEnv('NEXT_PUBLIC_API_BASE', 'http://localhost:20000');
+    vi.stubGlobal('window', {
+      __MBOS_PUBLIC_RUNTIME_CONFIG__: {
+        apiBase: 'http://mbos.imotion.ai:20000',
+        keycloakUrl: 'http://mbos.imotion.ai:18080/realms',
+        keycloakRealm: 'mbos',
+        keycloakClientId: 'agentsmith',
+        useMsw: false,
+        mswStrictReady: false,
+        sseTicketEnabled: false,
+        sseTicketPercentage: 0,
+        sseAllowJwtFallback: false,
+        trustedImageDomains: [],
+        bypassAuth: false,
+        notebookSseDebugPanel: false,
+        docFixtures: false,
+      },
+    });
+    vi.resetModules();
+
+    const { API_BASE } = await import('../client');
+
+    expect(API_BASE).toBe('http://mbos.imotion.ai:20000/api/v1');
+  });
 });
 
 describe('API Client - Dynamic Imports', () => {

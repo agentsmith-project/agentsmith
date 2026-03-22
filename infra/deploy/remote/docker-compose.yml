@@ -185,6 +185,11 @@ services:
   external-runner:
     image: ${AGENTSMITH_RUNNER_IMAGE}
     restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/fuse:/dev/fuse
+    security_opt:
+      - apparmor:unconfined
     depends_on:
       api:
         condition: service_healthy

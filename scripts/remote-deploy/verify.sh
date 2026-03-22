@@ -91,6 +91,8 @@ state_set verify.preset_external_agent_count "${EXTERNAL_AGENT_COUNT}"
 state_set verify.preset_internal_agent_count "${INTERNAL_AGENT_COUNT}"
 state_set verify.preset_external_runner connected
 
+bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
+
 mkdir -p "${REPORT_DIR}/verify-artifacts"
 docker run --rm \
   --network host \

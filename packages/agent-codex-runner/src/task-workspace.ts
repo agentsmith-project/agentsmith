@@ -1,10 +1,13 @@
-import { execFile as execFileCallback } from 'node:child_process';
-import { mkdir } from 'node:fs/promises';
+import { execFile as execFileCallback, spawn } from 'node:child_process';
+import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
 const execFile = promisify(execFileCallback);
+const DEFAULT_MOUNT_READY_TIMEOUT_MS = 30_000;
+const DEFAULT_MOUNT_READY_POLL_MS = 250;
 
 type FileLibraryWorkspaceExecutionContext = {
   workspace_id?: string;
@@ -73,6 +76,81 @@ function buildJuicefsMountEnv(): NodeJS.ProcessEnv {
   delete env.NO_PROXY;
   delete env.no_proxy;
   return env;
+}
+
+function buildJuicefsMountArgs(input: {
+  metadataUrl: string;
+  mountPath: string;
+  cacheDir: string;
+  logPath: string;
+  storageBucketUrl?: string;
+}): string[] {
+  const commandArgs = [
+    'mount',
+    input.metadataUrl,
+    input.mountPath,
+    '--cache-dir',
+    input.cacheDir,
+    '--log',
+    input.logPath,
+    '--check-storage',
+    '--attr-cache',
+    '0',
+    '--entry-cache',
+    '0',
+    '--dir-entry-cache',
+    '0',
+  ];
+  if ((input.storageBucketUrl ?? '').trim()) {
+    commandArgs.push('--bucket', input.storageBucketUrl!.trim());
+  }
+  const mountOptions = parseJuicefsMountOptions(process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS);
+  if (mountOptions.length > 0) {
+    commandArgs.push('-o', mountOptions.join(','));
+  }
+  return commandArgs;
+}
+
+async function isMountPointReady(mountPath: string): Promise<boolean> {
+  try {
+    await execFile('mountpoint', ['-q', mountPath]);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readMountLogExcerpt(logPath: string): Promise<string> {
+  try {
+    const content = (await readFile(logPath, 'utf8')).trim();
+    if (!content) {
+      return '';
+    }
+    return content
+      .split('\n')
+      .slice(-20)
+      .join('\n');
+  } catch {
+    return '';
+  }
+}
+
+async function waitForMountPointReady(mountPath: string, logPath: string): Promise<void> {
+  const timeoutMs = Number.parseInt(process.env.MBOS_AGENT_JUICEFS_MOUNT_READY_TIMEOUT_MS ?? '', 10)
+    || DEFAULT_MOUNT_READY_TIMEOUT_MS;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await isMountPointReady(mountPath)) {
+      return;
+    }
+    await sleep(DEFAULT_MOUNT_READY_POLL_MS);
+  }
+  const logExcerpt = await readMountLogExcerpt(logPath);
+  throw new Error(
+    logExcerpt
+      ? `task_workspace_mount_not_ready:${logExcerpt}`
+      : 'task_workspace_mount_not_ready',
+  );
 }
 
 export function buildTaskWorkspacePaths(cwd: string, _taskId: string): TaskWorkspacePaths {
@@ -156,23 +234,34 @@ async function mountTaskWorkspace(metadataUrl: string, mountPath: string, storag
     || join(process.env.HOME || homedir() || '/tmp', '.juicefs', 'cache', 'agentsmith')
   );
   const cacheDir = join(cacheRoot, sanitizePathPart(mountPath, 'workspace'));
+  const logRoot = join(process.env.HOME || homedir() || '/tmp', '.juicefs', 'log', 'agentsmith');
+  const logPath = join(logRoot, `${sanitizePathPart(mountPath, 'workspace')}.log`);
   await mkdir(cacheDir, { recursive: true });
-  const commandArgs = [
-    'mount',
-    metadataUrl,
-    mountPath,
-    '-d',
-    '--cache-dir',
-    cacheDir,
-  ];
-  if ((storageBucketUrl ?? '').trim()) {
-    commandArgs.push('--bucket', storageBucketUrl!.trim());
+  await mkdir(logRoot, { recursive: true });
+  if (await isMountPointReady(mountPath)) {
+    return;
   }
-  const mountOptions = parseJuicefsMountOptions(process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS);
-  if (mountOptions.length > 0) {
-    commandArgs.push('-o', mountOptions.join(','));
-  }
-  await execFile('juicefs', commandArgs, { env: buildJuicefsMountEnv() });
+  const child = spawn(
+    'juicefs',
+    buildJuicefsMountArgs({
+      metadataUrl,
+      mountPath,
+      cacheDir,
+      logPath,
+      storageBucketUrl,
+    }),
+    {
+      env: buildJuicefsMountEnv(),
+      detached: true,
+      stdio: 'ignore',
+    },
+  );
+  await new Promise<void>((resolve, reject) => {
+    child.once('spawn', resolve);
+    child.once('error', reject);
+  });
+  child.unref();
+  await waitForMountPointReady(mountPath, logPath);
 }
 
 export async function prepareTaskWorkspace(input: {

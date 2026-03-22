@@ -188,6 +188,8 @@ until docker_compose logs external-runner 2>&1 | grep -q '\[agent-codex-runner\]
   sleep 2
 done
 
+bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
+
 state_set release.phase bootstrap_completed
 state_set workspace.id "${WORKSPACE_ID}"
 state_set project.id "${PROJECT_ID}"

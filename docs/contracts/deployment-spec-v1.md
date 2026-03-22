@@ -255,6 +255,8 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 - The local precheck must fail fast if:
   - a public Keycloak token cannot access `/api/v1/me/profile`
   - `Default Workspace -> Projects` shows a denied state before membership data has finished loading
+  - a newly published workspace cannot be opened by its admin and queried through `/api/v1/workspaces/{id}/projects`
+  - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
   - the system-to-notebook mainline story fails in the local real lane
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
 - `scripts/remote-deploy/build-offline-bundle.sh` must run both checks before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.

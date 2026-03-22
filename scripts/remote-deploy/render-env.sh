@@ -88,6 +88,66 @@ for required_nonempty_key in \
   fi
 done
 
+validate_http_url() {
+  local key="$1"
+  local value="$2"
+  python3 - "$key" "$value" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+key, value = sys.argv[1], sys.argv[2]
+parsed = urlparse(value)
+if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    raise SystemExit(f"invalid {key}: expected absolute http(s) URL, got {value}")
+PY
+}
+
+for url_key in \
+  PUBLIC_WEB_BASE_URL \
+  PUBLIC_API_BASE_URL \
+  PUBLIC_KEYCLOAK_BASE_URL \
+  INTERNAL_API_BASE_URL \
+  INTERNAL_KEYCLOAK_BASE_URL \
+  AGENT_EXECUTION_HTTP_BASE_URL \
+  EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL \
+  SANDBOX_MANAGER_URL; do
+  validate_http_url "${url_key}" "${!url_key}"
+done
+
+public_web_host="$(python3 - "${PUBLIC_WEB_BASE_URL}" <<'PY'
+import sys
+from urllib.parse import urlparse
+print(urlparse(sys.argv[1]).hostname or '')
+PY
+)"
+public_api_host="$(python3 - "${PUBLIC_API_BASE_URL}" <<'PY'
+import sys
+from urllib.parse import urlparse
+print(urlparse(sys.argv[1]).hostname or '')
+PY
+)"
+public_keycloak_host="$(python3 - "${PUBLIC_KEYCLOAK_BASE_URL}" <<'PY'
+import sys
+from urllib.parse import urlparse
+print(urlparse(sys.argv[1]).hostname or '')
+PY
+)"
+
+is_local_host() {
+  case "$1" in
+    localhost|127.0.0.1|::1) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! is_local_host "${public_web_host}" && is_local_host "${public_api_host}"; then
+  die "PUBLIC_API_BASE_URL points to a local host while PUBLIC_WEB_BASE_URL is public"
+fi
+
+if ! is_local_host "${public_web_host}" && is_local_host "${public_keycloak_host}"; then
+  die "PUBLIC_KEYCLOAK_BASE_URL points to a local host while PUBLIC_WEB_BASE_URL is public"
+fi
+
 cat > "${RELEASE_ROOT}/env/base.env" <<EOF
 POSTGRES_USER=${POSTGRES_USER}
 POSTGRES_PASSWORD=${POSTGRES_PASSWORD}

@@ -39,20 +39,40 @@ async function resolveDemoProjectAndAgent(page: Page): Promise<{ projectId: stri
 
 async function createTask(page: Page, projectId: string, agentId: string): Promise<string> {
   const token = await readStoredAuthToken(page);
-  const response = await page.request.post(
-    `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${projectId}/tasks`,
-    {
-      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-      data: {
-        title: `Preset External File Library ${Date.now()}`,
-        agent_id: agentId,
-        workspace_mode: 'create_new',
-        workspace_name: `preset-ext-flib-${Date.now()}`,
-      },
-    },
-  );
-  expect(response.ok()).toBeTruthy();
-  const payload = (await response.json()) as { id?: string };
+  const title = `Preset External File Library ${Date.now()}`;
+  const workspaceName = `preset-ext-flib-${Date.now()}`;
+  let lastStatus = 0;
+  let lastBody = '';
+
+  await expect
+    .poll(async () => {
+      const response = await page.request.post(
+        `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${projectId}/tasks`,
+        {
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          data: {
+            title,
+            agent_id: agentId,
+            workspace_mode: 'create_new',
+            workspace_name: workspaceName,
+          },
+        },
+      );
+      lastStatus = response.status();
+      lastBody = await response.text();
+      if (!response.ok()) {
+        return null;
+      }
+      const payload = JSON.parse(lastBody) as { id?: string };
+      return payload.id ?? null;
+    }, {
+      timeout: 60_000,
+      intervals: [1_000, 2_000, 5_000],
+      message: () => `task creation never became ready, last status=${lastStatus}, body=${lastBody}`,
+    })
+    .not.toBeNull();
+
+  const payload = JSON.parse(lastBody) as { id?: string };
   expect(payload.id).toBeTruthy();
   return payload.id ?? '';
 }

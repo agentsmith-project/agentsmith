@@ -8,7 +8,7 @@ import {
   UserRoundSearch,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { slugifyWorkspaceId } from '@/lib/system-admin/config';
+import { slugifyWorkspaceId } from '@/lib/system-admin/slugify-workspace-id';
 import type { SystemWorkspaceAction, SystemWorkspaceEditorState } from './types';
 import { PreviewRow } from './PreviewRow';
 

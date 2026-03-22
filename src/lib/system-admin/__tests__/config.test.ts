@@ -2,8 +2,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import {
   buildWorkspaceTenantPreview,
   getBaseSystemInfoSnapshot,
-  slugifyWorkspaceId,
 } from '../config';
+import { slugifyWorkspaceId } from '../slugify-workspace-id';
 
 describe('system admin config helpers', () => {
   const env = { ...process.env };
@@ -47,14 +47,14 @@ describe('system admin config helpers', () => {
     process.env.SYSTEM_TENANT_KEY_PREFIX = 'ws:';
     process.env.MBOS_DEFAULT_WORKSPACE_ID = 'ws_platform';
     process.env.MBOS_DEFAULT_WORKSPACE_NAME = 'Platform Workspace';
-    process.env.NEXT_PUBLIC_API_BASE = 'http://localhost:20000';
+    process.env.NEXT_PUBLIC_API_BASE = 'https://api.example.com';
     process.env.NEXT_PUBLIC_KEYCLOAK_URL = 'https://login.example.com';
     process.env.NEXT_PUBLIC_KEYCLOAK_REALM = 'platform';
     process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID = 'agentsmith-web';
 
     expect(getBaseSystemInfoSnapshot()).toEqual({
       system_admin_username: 'root-admin',
-      api_base_url: 'http://localhost:20000',
+      api_base_url: 'https://api.example.com',
       substrate_label: 'mongo-main',
       substrate_url: 'mongodb://db.internal:27017',
       database_prefix: 'agentsmith_',

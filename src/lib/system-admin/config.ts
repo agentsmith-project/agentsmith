@@ -1,3 +1,6 @@
+import { readPublicRuntimeConfigFromEnv } from '@/lib/public-runtime-config';
+import { slugifyWorkspaceId } from './slugify-workspace-id';
+
 export interface WorkspaceTenantPreview {
   workspace_id: string;
   workspace_name: string;
@@ -53,15 +56,6 @@ export function getSystemAdminPassword(): string {
   return process.env.SYSTEM_ADMIN_PASSWORD || DEFAULT_SYSTEM_ADMIN_PASSWORD;
 }
 
-export function slugifyWorkspaceId(input: string): string {
-  return input
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 48) || 'workspace';
-}
-
 export function buildWorkspaceTenantPreview(workspaceNameOrId: string): WorkspaceTenantPreview {
   const workspaceId = slugifyWorkspaceId(workspaceNameOrId);
   const substrateLabel = process.env.SYSTEM_SUBSTRATE_LABEL || DEFAULT_SUBSTRATE_LABEL;
@@ -83,9 +77,10 @@ export function getBaseSystemInfoSnapshot(): Omit<
   SystemInfoSnapshot,
   'workspace_registry_status' | 'data_service_status' | 'default_idp_status' | 'workspace_provisioning'
 > {
+  const publicConfig = readPublicRuntimeConfigFromEnv(process.env);
   return {
     system_admin_username: getSystemAdminUsername(),
-    api_base_url: process.env.NEXT_PUBLIC_API_BASE || 'http://localhost:20000',
+    api_base_url: publicConfig.apiBase,
     substrate_label: process.env.SYSTEM_SUBSTRATE_LABEL || DEFAULT_SUBSTRATE_LABEL,
     substrate_url: process.env.SYSTEM_SUBSTRATE_URL || DEFAULT_SUBSTRATE_URL,
     database_prefix: process.env.SYSTEM_TENANT_DATABASE_PREFIX || DEFAULT_DATABASE_PREFIX,
@@ -93,8 +88,8 @@ export function getBaseSystemInfoSnapshot(): Omit<
     key_prefix: process.env.SYSTEM_TENANT_KEY_PREFIX || DEFAULT_KEY_PREFIX,
     default_workspace_id: process.env.MBOS_DEFAULT_WORKSPACE_ID || 'ws_default',
     default_workspace_name: process.env.MBOS_DEFAULT_WORKSPACE_NAME || 'Default Workspace',
-    default_idp_url: process.env.NEXT_PUBLIC_KEYCLOAK_URL || '',
-    default_idp_realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM || '',
-    default_idp_client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID || '',
+    default_idp_url: publicConfig.keycloakUrl,
+    default_idp_realm: publicConfig.keycloakRealm,
+    default_idp_client_id: publicConfig.keycloakClientId,
   };
 }

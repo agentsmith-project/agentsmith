@@ -44,4 +44,20 @@ if [[ -n "${forbidden_public_env_matches}" ]]; then
   exit 1
 fi
 
+forbidden_system_admin_config_imports="$(
+  rg -n \
+    "import(?!\\s+type\\b).+(@/lib/system-admin/config|\\./\\.?/.*system-admin/config)" \
+    src/components src/app \
+    --glob '**/*.tsx' \
+    --glob '**/*.ts' \
+    -P \
+    || true
+)"
+
+if [[ -n "${forbidden_system_admin_config_imports}" ]]; then
+  echo "[client-public-runtime] forbidden system-admin/config import found in app or component code:" >&2
+  printf '%s\n' "${forbidden_system_admin_config_imports}" >&2
+  exit 1
+fi
+
 echo "[client-public-runtime] ok"

@@ -96,6 +96,7 @@ bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
 mkdir -p "${REPORT_DIR}/verify-artifacts"
 docker run --rm \
   --network host \
+  --ipc host \
   --privileged \
   --device /dev/fuse \
   --security-opt apparmor:unconfined \

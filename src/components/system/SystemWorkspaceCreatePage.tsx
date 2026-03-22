@@ -8,7 +8,7 @@ import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageState } from '@/components/layout/PageState';
 import { Button } from '@/components/ui/button';
-import { slugifyWorkspaceId } from '@/lib/system-admin/config';
+import { slugifyWorkspaceId } from '@/lib/system-admin/slugify-workspace-id';
 import type {
   SystemWorkspaceDraft,
   SystemWorkspaceDraftAdmin,

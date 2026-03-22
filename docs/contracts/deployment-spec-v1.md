@@ -255,6 +255,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 - The local precheck must use locally started Web/API services and real Keycloak dependencies instead of a release bundle.
 - The local precheck must fail fast if:
   - the system administrator login flow cannot reach `/system/workspaces`
+  - the public workspace list, workspace detail, and workspace login page disagree about the workspace identity provider truth
   - a public Keycloak token cannot access `/api/v1/me/profile`
   - `Default Workspace -> Projects` shows a denied state before membership data has finished loading
   - a newly published workspace cannot be opened by its admin and queried through `/api/v1/workspaces/{id}/projects`

@@ -251,15 +251,17 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 ### Local Precheck Contract
 - Before building release images or an offline bundle, developers must run `npm run test:release:precheck`.
 - Before building release images or an offline bundle, developers must also run `npm run test:bundle:inputs`.
+- Before building release images or an offline bundle, developers must also run `npm run test:rendered-env`.
 - The local precheck must use locally started Web/API services and real Keycloak dependencies instead of a release bundle.
 - The local precheck must fail fast if:
+  - the system administrator login flow cannot reach `/system/workspaces`
   - a public Keycloak token cannot access `/api/v1/me/profile`
   - `Default Workspace -> Projects` shows a denied state before membership data has finished loading
   - a newly published workspace cannot be opened by its admin and queried through `/api/v1/workspaces/{id}/projects`
   - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
   - the system-to-notebook mainline story fails in the local real lane
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
-- `scripts/remote-deploy/build-offline-bundle.sh` must run both checks before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
+- `scripts/remote-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
 
 ## Bootstrap Contract
 

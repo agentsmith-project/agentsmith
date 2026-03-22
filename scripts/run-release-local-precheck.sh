@@ -312,7 +312,7 @@ curl -fsS "${INTEGRATION_API_BASE}/api/v1/me/profile" \
   }
 
 info "public-auth gate passed"
-info "running workspace entry, publish usable, directory search, and system-to-notebook precheck"
+info "running system admin entry, workspace entry, publish usable, directory search, and system-to-notebook precheck"
 
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
@@ -325,6 +325,7 @@ KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
 run_clean npx playwright test \
   --config playwright.config.integration.ts \
+  e2e/integration-system-admin-entry.spec.ts \
   e2e/integration-workspace-entry.spec.ts \
   e2e/integration-workspace-publish-usable.spec.ts \
   e2e/integration-workspace-settings-directory.spec.ts \

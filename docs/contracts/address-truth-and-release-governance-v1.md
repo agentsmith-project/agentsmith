@@ -364,6 +364,7 @@ Agent 的业务语义仍然只有两种：
 - 浏览器读取 public 配置时，优先读取运行时注入的 `window.__MBOS_PUBLIC_RUNTIME_CONFIG__`
 - `NEXT_PUBLIC_*` 只允许作为服务器生成该运行时配置时的输入，不允许再成为浏览器逻辑的最终真相
 - 当页面 origin 不是 loopback 时，runtime public config 也不允许指向 loopback 地址
+- 浏览器侧页面、示例文案、网关样例和连接入口，必须通过运行时 public config 构造 public URL，不允许直接把 `localhost`、docker bridge 地址或 `host.docker.internal` 写进客户端代码
 - 最容易晚暴露的问题已经前移到打包前
 - 最终 deploy verify 仍完整兜底
 - fresh 本地完整部署验证通过

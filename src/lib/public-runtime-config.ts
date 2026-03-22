@@ -14,6 +14,10 @@ export interface PublicRuntimeConfig {
   docFixtures: boolean;
 }
 
+function trimTrailingSlashes(value: string): string {
+  return value.trim().replace(/\/+$/, '');
+}
+
 function parseBoolean(value: string | undefined, fallback = false): boolean {
   if (value === undefined) return fallback;
   return value.trim().toLowerCase() === 'true' || value.trim() === '1';
@@ -56,6 +60,26 @@ export function getPublicRuntimeConfig(): PublicRuntimeConfig {
     return window.__MBOS_PUBLIC_RUNTIME_CONFIG__;
   }
   return readPublicRuntimeConfigFromEnv(process.env);
+}
+
+export function getPublicApiBaseUrl(): string {
+  const apiBase = trimTrailingSlashes(getPublicRuntimeConfig().apiBase);
+  if (!apiBase) {
+    if (typeof window !== 'undefined' && window.location?.origin) {
+      return `${trimTrailingSlashes(window.location.origin)}/api/v1`;
+    }
+    return 'http://localhost:20000/api/v1';
+  }
+  return /\/api\/v1$/i.test(apiBase) ? apiBase : `${apiBase}/api/v1`;
+}
+
+export function buildPublicApiUrl(path: string): string {
+  const apiBase = getPublicApiBaseUrl();
+  const trimmedPath = path.trim();
+  if (!trimmedPath || trimmedPath === '/') {
+    return apiBase;
+  }
+  return `${apiBase}/${trimmedPath.replace(/^\/+/, '')}`;
 }
 
 export function serializePublicRuntimeConfigScript(config: PublicRuntimeConfig): string {

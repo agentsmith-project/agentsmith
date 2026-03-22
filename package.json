@@ -58,6 +58,7 @@
     "test:release:precheck": "bash scripts/run-release-local-precheck.sh",
     "test:bundle:inputs": "bash scripts/remote-deploy/check-bundle-inputs.sh",
     "test:rendered-env": "bash scripts/remote-deploy/check-rendered-env.sh",
+    "test:client-public-runtime": "bash scripts/check-client-public-runtime.sh",
     "gate:fast": "npm run contracts:check && npx tsc --noEmit && npm run test:e2e:lane:mock:smoke",
     "gate:main": "npm run test:mainline:strict && npm run test:governance:strict && npm run test:visual:strict",
     "gate:release": "bash scripts/release-real-full-gate.sh",

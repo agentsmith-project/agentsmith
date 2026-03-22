@@ -11,7 +11,7 @@
 
 import { FetchApiClient } from './adapters/fetch-adapter';
 import { MSWApiClient } from './adapters/msw-adapter';
-import { getPublicRuntimeConfig } from '@/lib/public-runtime-config';
+import { getPublicApiBaseUrl, getPublicRuntimeConfig } from '@/lib/public-runtime-config';
 
 // MSWApiClient is dynamically imported to exclude it from production bundle.
 // It will only be loaded when NEXT_PUBLIC_USE_MSW=true at build time.
@@ -89,12 +89,6 @@ const rawApiBase = getPublicRuntimeConfig().apiBase.trim();
 const hasExplicitRemoteApiBase = /^https?:\/\//i.test(rawApiBase);
 export const USE_MSW = getPublicRuntimeConfig().useMsw && !hasExplicitRemoteApiBase;
 
-function normalizeApiBase(base: string): string {
-  const trimmed = base.trim().replace(/\/+$/, '');
-  if (!trimmed) return 'http://localhost:20000/api/v1';
-  return /\/api\/v1$/i.test(trimmed) ? trimmed : `${trimmed}/api/v1`;
-}
-
 /**
  * API Base URL configuration
  *
@@ -103,7 +97,7 @@ function normalizeApiBase(base: string): string {
  */
 export const API_BASE = USE_MSW
   ? '/api/v1'  // Use relative path for MSW interception
-  : normalizeApiBase(rawApiBase || 'http://localhost:20000');
+  : getPublicApiBaseUrl();
 
 /**
  * Create API client instance.

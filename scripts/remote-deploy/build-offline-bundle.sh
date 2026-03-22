@@ -22,6 +22,7 @@ require_cmd mc
 if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
   (cd "${ROOT_DIR}" && npm run test:bundle:inputs)
   (cd "${ROOT_DIR}" && npm run test:rendered-env)
+  (cd "${ROOT_DIR}" && npm run test:client-public-runtime)
 fi
 
 if [[ "${SKIP_RELEASE_PRECHECK:-0}" != "1" ]]; then

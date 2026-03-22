@@ -10,6 +10,7 @@ import { PageLoading } from '@/components/ui/loading';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { buildPublicApiUrl } from '@/lib/public-runtime-config';
 
 interface UseGuidePageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -77,7 +78,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     );
   }
 
-  const gatewayBaseUrl = `http://localhost:20000/api/v1/workspaces/${workspaceId}/projects/${projectId}/llm-gateway`;
+  const gatewayBaseUrl = buildPublicApiUrl(`workspaces/${workspaceId}/projects/${projectId}/llm-gateway`);
 
   const claudeEnvSample = `export ANTHROPIC_BASE_URL=${gatewayBaseUrl}\nexport ANTHROPIC_AUTH_TOKEN=<YOUR_PERSONAL_API_KEY>\nexport ANTHROPIC_DEFAULT_HAIKU_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_SONNET_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_OPUS_MODEL=<project-model-name>\nexport CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nexport CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`;
 

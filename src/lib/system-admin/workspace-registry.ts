@@ -201,10 +201,16 @@ export async function bindPendingWorkspaceAdminByEmail(args: {
   user: WorkspaceIdentitySnapshot;
 }): Promise<SystemWorkspaceRecord | null> {
   const existing = await getPersistedSystemWorkspace(args.workspaceId);
-  if (!existing || !existing.workspace_admin_binding_required) {
+  if (!existing) {
     return existing;
   }
   if (existing.workspace_admin.trim().toLowerCase() !== args.user.email.trim().toLowerCase()) {
+    return existing;
+  }
+  if (
+    !existing.workspace_admin_binding_required
+    && existing.workspace_admin_user_id === args.user.user_id
+  ) {
     return existing;
   }
 

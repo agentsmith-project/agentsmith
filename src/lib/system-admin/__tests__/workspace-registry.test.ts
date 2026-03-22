@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  bindPendingWorkspaceAdminByEmail,
   createSystemWorkspace,
   deleteSystemWorkspace,
   disableSystemWorkspace,
@@ -11,7 +12,10 @@ import {
   publishSystemWorkspace,
   updateSystemWorkspace,
 } from '../workspace-registry';
-import { resetSystemWorkspaceRegistryPersistenceForTest } from '../workspace-registry/persistence';
+import {
+  resetSystemWorkspaceRegistryPersistenceForTest,
+  seedPersistedSystemWorkspacesForTest,
+} from '../workspace-registry/persistence';
 
 const keycloakDirectoryModule = vi.hoisted(() => ({
   verifyKeycloakLoginIdentityProvider: vi.fn(async () => ({
@@ -240,5 +244,58 @@ describe('system workspace registry', () => {
     expect(created.workspace_admin).toBe('future-admin@example.com');
     expect(created.workspace_admin_user_id).toBeUndefined();
     expect(created.workspace_admin_binding_required).toBe(true);
+  });
+
+  it('repairs stale workspace admin binding when email matches but user id changed', async () => {
+    seedPersistedSystemWorkspacesForTest([
+      {
+        id: 'ws_alpha',
+        name: 'Alpha Workspace',
+        workspace_admin: 'dev-admin@example.com',
+        workspace_admin_user_id: 'kc-old-admin',
+        workspace_admin_name: 'Dev Admin',
+        workspace_admin_binding_required: false,
+        project_creators: [],
+        login_idp: {
+          kind: 'keycloak',
+          url: 'https://idp.example.com',
+          realm: 'alpha',
+          client_id: 'agentsmith-alpha',
+        },
+        directory_idp: {
+          client_id: 'agentsmith-alpha',
+          client_secret: 'secret-1',
+        },
+        tenant: {
+          workspace_id: 'ws_alpha',
+          workspace_name: 'Alpha Workspace',
+          substrate_label: 'default',
+          database_name: 'agentsmith_ws_alpha',
+          collection_prefix: 'ws_alpha_',
+          key_prefix: 'ws_alpha:',
+        },
+        provisioning_status: 'ready',
+        last_initialized_at: '2026-03-22T00:00:00.000Z',
+        last_init_error: null,
+        created_at: '2026-03-22T00:00:00.000Z',
+        updated_at: '2026-03-22T00:00:00.000Z',
+      },
+    ]);
+
+    const updated = await bindPendingWorkspaceAdminByEmail({
+      workspaceId: 'ws_alpha',
+      user: {
+        user_id: 'kc-new-admin',
+        email: 'dev-admin@example.com',
+        name: 'Dev Admin',
+      },
+    });
+
+    expect(updated).toEqual(
+      expect.objectContaining({
+        workspace_admin_user_id: 'kc-new-admin',
+        workspace_admin_binding_required: false,
+      }),
+    );
   });
 });

@@ -831,6 +831,32 @@ export async function waitForMountedWorkspacePath(
   }
 }
 
+export async function waitForAnyMountedWorkspacePath(
+  mountPath: string,
+  relativePaths: string[],
+  timeoutMs = 30_000,
+): Promise<string> {
+  const candidates = relativePaths.map((relativePath) => ({
+    relativePath,
+    absolutePath: path.join(mountPath, relativePath),
+  }));
+  const startedAt = Date.now();
+  for (;;) {
+    for (const candidate of candidates) {
+      try {
+        await access(candidate.absolutePath);
+        return candidate.absolutePath;
+      } catch {
+        // keep polling until one candidate becomes visible
+      }
+    }
+    if (Date.now() - startedAt > timeoutMs) {
+      throw new Error(`mounted_workspace_path_timeout_any:${relativePaths.join(',')}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+}
+
 export async function createFileLibraryViaUi(
   page: Page,
   workspaceId: string,

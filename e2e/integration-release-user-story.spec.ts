@@ -12,6 +12,7 @@ import {
   startCodexRunnerDockerProcess,
   startCodexRunnerProcess,
   waitForAgentPresenceOnline,
+  waitForAnyMountedWorkspacePath,
   waitForMountedWorkspacePath,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
@@ -893,9 +894,12 @@ test.describe('@lane-real release user story end-to-end', () => {
         internalMountDetails.storageBucketUrl ?? undefined,
       );
       try {
-        const internalStoryPath = await waitForMountedWorkspacePath(
+        const internalStoryPath = await waitForAnyMountedWorkspacePath(
           mountedInternalWorkspace.mountPath,
-          path.join('notes', 'internal_story.txt'),
+          [
+            path.join('notes', 'internal_story.txt'),
+            path.join('.artifacts', 'internal_story.txt'),
+          ],
         );
         const internalSummaryPath = await waitForMountedWorkspacePath(
           mountedInternalWorkspace.mountPath,

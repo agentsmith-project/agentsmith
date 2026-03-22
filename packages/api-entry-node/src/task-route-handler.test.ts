@@ -39,6 +39,41 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('rewrites loopback mount access for compose-managed external runner execution', () => {
+    const previousDatabaseUrl = process.env.DATABASE_URL;
+    const previousMinioEndpoint = process.env.MINIO_ENDPOINT;
+    const previousMinioPort = process.env.MINIO_PORT;
+    const previousMinioUseSsl = process.env.MINIO_USE_SSL;
+    process.env.DATABASE_URL = 'postgresql://mbos:secret@postgres:5432/mbos';
+    process.env.MINIO_ENDPOINT = 'minio';
+    process.env.MINIO_PORT = '9000';
+    process.env.MINIO_USE_SSL = 'false';
+    try {
+      const resolved = resolveTaskWorkspaceMountAccess({
+        agentMode: 'external',
+        agentConfig: {
+          runner_runtime: 'compose_managed',
+        },
+        metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
+      });
+
+      expect(resolved).toEqual({
+        metadataUrl: 'postgres://jfsu_user:secret@postgres:5432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://minio:9000/jfs-lib-demo',
+      });
+    } finally {
+      if (previousDatabaseUrl === undefined) delete process.env.DATABASE_URL;
+      else process.env.DATABASE_URL = previousDatabaseUrl;
+      if (previousMinioEndpoint === undefined) delete process.env.MINIO_ENDPOINT;
+      else process.env.MINIO_ENDPOINT = previousMinioEndpoint;
+      if (previousMinioPort === undefined) delete process.env.MINIO_PORT;
+      else process.env.MINIO_PORT = previousMinioPort;
+      if (previousMinioUseSsl === undefined) delete process.env.MINIO_USE_SSL;
+      else process.env.MINIO_USE_SSL = previousMinioUseSsl;
+    }
+  });
+
   it('rewrites loopback mount access for internal agent execution', () => {
     const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
     const previousStorageEndpoint = process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;

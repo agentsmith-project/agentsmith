@@ -24,6 +24,18 @@
     "sandbox-manager",
     "internal-workloads"
   ],
+  "address_roles": [
+    "PUBLIC_*",
+    "COMPOSE_INTERNAL_*",
+    "HOST_LOCAL_*",
+    "K8S_EXPOSED_*"
+  ],
+  "runner_runtimes": [
+    "dev_direct",
+    "docker_manual",
+    "compose_managed",
+    "k8s_internal"
+  ],
   "required_tools": [
     "kind",
     "kubectl",

@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   getFileLibraryRuntimeReadiness,
+  resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
   resolveFileLibraryMetadataUrlForExternalExecution,
   resolveFileLibraryMetadataUrlForInternalExecution,
   resolveFileLibraryRuntimeConfig,
+  resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
   resolveFileLibraryStorageBucketUrlForExternalExecution,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
 } from './file-library-runtime.js';
@@ -67,6 +69,29 @@ describe('file-library-runtime readiness', () => {
         env,
       ),
     ).toBe('http://172.18.0.1:19000/jfs-lib-demo');
+  });
+
+  it('rewrites loopback file library access for compose-managed external runner execution', () => {
+    const env = {
+      DATABASE_URL: 'postgresql://mbos:secret@postgres:5432/mbos',
+      MINIO_ENDPOINT: 'minio',
+      MINIO_PORT: '9000',
+      MINIO_USE_SSL: 'false',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(
+        'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@postgres:5432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(
+        'http://localhost:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://minio:9000/jfs-lib-demo');
   });
 
   it('preserves non-loopback file library access for external runner execution', () => {

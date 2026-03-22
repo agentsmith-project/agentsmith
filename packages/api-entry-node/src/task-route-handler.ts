@@ -29,11 +29,14 @@ import {
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
 import {
+  resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
   resolveFileLibraryMetadataUrlForExternalExecution,
   resolveFileLibraryMetadataUrlForInternalExecution,
+  resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
   resolveFileLibraryStorageBucketUrlForExternalExecution,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
 } from './file-library-runtime.js';
+import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
 import {
   asObject,
   buildId,
@@ -107,6 +110,7 @@ const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 
 export function resolveTaskWorkspaceMountAccess(input: {
   agentMode: 'external' | 'internal' | null;
+  agentConfig?: Record<string, unknown> | null;
   metadataUrl: string;
   storageBucketUrl?: string;
 }): {
@@ -114,6 +118,12 @@ export function resolveTaskWorkspaceMountAccess(input: {
   storageBucketUrl?: string;
 } {
   if (input.agentMode === 'external') {
+    if (isComposeManagedExternalAgent({ mode: 'external', config: input.agentConfig })) {
+      return {
+        metadataUrl: resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(input.metadataUrl),
+        storageBucketUrl: resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(input.storageBucketUrl),
+      };
+    }
     return {
       metadataUrl: resolveFileLibraryMetadataUrlForExternalExecution(input.metadataUrl),
       storageBucketUrl: resolveFileLibraryStorageBucketUrlForExternalExecution(input.storageBucketUrl),
@@ -362,6 +372,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     );
     const executionMountAccess = resolveTaskWorkspaceMountAccess({
       agentMode: agent?.mode ?? null,
+      agentConfig: agent?.config,
       metadataUrl: mountAccess.metadata_url,
       storageBucketUrl: mountAccess.storage_bucket_url,
     });

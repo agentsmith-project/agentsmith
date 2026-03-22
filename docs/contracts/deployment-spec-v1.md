@@ -252,6 +252,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 - Before building release images or an offline bundle, developers must run `npm run test:release:precheck`.
 - Before building release images or an offline bundle, developers must also run `npm run test:bundle:inputs`.
 - Before building release images or an offline bundle, developers must also run `npm run test:rendered-env`.
+- Developers running an external runner directly from source must use `npm run agent:external:dev` with the same `site.env` schema instead of ad hoc env exports.
 - The local precheck must use locally started Web/API services and real Keycloak dependencies instead of a release bundle.
 - The local precheck must fail fast if:
   - the system administrator login flow cannot reach `/system/workspaces`
@@ -283,6 +284,23 @@ Bootstrap is complete only when:
 - both demo agents exist
 - preset external agent key and websocket URL have been generated into `env/runner-runtime.env`
 - the compose `external-runner` service has connected successfully
+
+## Runner Runtime Contract
+
+Agent mode and runner runtime are separate truths.
+
+- `external` agents may run as:
+  - `dev_direct`
+  - `docker_manual`
+  - `compose_managed`
+- `internal` agents run as:
+  - `k8s_internal`
+
+The deployment seed must create the preset external agent with `runner_runtime=compose_managed`.
+
+Except for `dev_direct`, every runner mode must use the same runner image. Different behavior must come from runtime env and runtime access contracts, not from image forks.
+
+Task workspace access and connection info must branch on `runner_runtime`, not on host-specific address guesses.
 
 ## Verify Contract
 

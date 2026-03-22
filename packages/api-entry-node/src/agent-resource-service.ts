@@ -3,6 +3,7 @@ import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import type { AgentRecord, AgentServiceKeyRecord } from './resource-models.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 import { listRegisteredWorkspaceIds } from './workspace-registry.js';
+import { resolveAgentRunnerRuntime } from './agent-runner-profile.js';
 
 interface AgentConnectionState {
   connected_at: string;
@@ -42,8 +43,15 @@ function deriveWebSocketBaseFromHttpBase(value: string | undefined | null): stri
   }
 }
 
-function resolveConnectionWsBase(agentMode: 'external' | 'internal'): string {
-  if (agentMode === 'external') {
+function resolveConnectionWsBase(agent: Pick<AgentRecord, 'mode' | 'config'>): string {
+  const runtime = resolveAgentRunnerRuntime(agent);
+  if (agent.mode === 'external') {
+    if (runtime === 'compose_managed') {
+      return (
+        deriveWebSocketBaseFromHttpBase(process.env.INTERNAL_API_BASE_URL)
+        ?? 'ws://api:20000'
+      );
+    }
     return (
       deriveWebSocketBaseFromHttpBase(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL)
       ?? deriveWebSocketBaseFromHttpBase(process.env.PUBLIC_API_BASE_URL)
@@ -179,9 +187,12 @@ export class AgentResourceService {
   ): Promise<AgentRecord | null> {
     const existing = await this.getAgent(workspaceId, projectId, agentId);
     if (!existing) return null;
+    const definedPatch = Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined),
+    ) as Partial<AgentRecord>;
     const updated: AgentRecord = {
       ...existing,
-      ...patch,
+      ...definedPatch,
       name: patch.name !== undefined ? String(patch.name).trim() : existing.name,
       description: patch.description !== undefined ? patch.description?.trim() || undefined : existing.description,
       updated_at: new Date().toISOString(),
@@ -357,8 +368,8 @@ export class AgentResourceService {
     }
   }
 
-  buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode'>): AgentConnectionInfo {
-    const wsBase = resolveConnectionWsBase(agent.mode);
+  buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode' | 'config'>): AgentConnectionInfo {
+    const wsBase = resolveConnectionWsBase(agent);
     return {
       ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
       agent_id: agent.id,

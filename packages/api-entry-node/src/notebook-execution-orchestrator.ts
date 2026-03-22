@@ -14,6 +14,7 @@ import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
+import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -100,12 +101,18 @@ function deriveHttpBaseFromWebSocketBase(value: string | undefined | null): stri
   }
 }
 
-function resolveExecutionApiBase(publicBaseUrl: string, agentMode: 'external' | 'internal'): string {
+function resolveExecutionApiBase(
+  publicBaseUrl: string,
+  agent: { mode: 'external' | 'internal'; config?: Record<string, unknown> | null },
+): string {
+  if (agent.mode === 'external' && isComposeManagedExternalAgent(agent)) {
+    return sanitizeBaseUrl(process.env.INTERNAL_API_BASE_URL) ?? 'http://api:20000';
+  }
   const explicitExternalBase = sanitizeBaseUrl(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL);
-  if (agentMode === 'external' && explicitExternalBase) {
+  if (agent.mode === 'external' && explicitExternalBase) {
     return explicitExternalBase;
   }
-  if (agentMode === 'internal') {
+  if (agent.mode === 'internal') {
     const explicitInternalBase = sanitizeBaseUrl(process.env.AGENT_EXECUTION_HTTP_BASE_URL);
     if (explicitInternalBase) {
       return explicitInternalBase;
@@ -317,7 +324,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         run_id: runId,
         username: userHandle,
         endpoint_id: endpointId,
-        api_base: resolveExecutionApiBase(publicBaseUrl, agent.mode),
+        api_base: resolveExecutionApiBase(publicBaseUrl, agent),
         user_bearer_token: rawBearerToken,
         wire_api: wireApi,
         model,

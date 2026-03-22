@@ -419,6 +419,23 @@ export function resolveFileLibraryMetadataUrlForExternalExecution(
   }
 }
 
+export function resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(
+  metadataUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const databaseUrl = env.DATABASE_URL?.trim();
+  if (!databaseUrl) return metadataUrl;
+  try {
+    const parsed = new URL(metadataUrl);
+    const database = new URL(databaseUrl);
+    parsed.hostname = database.hostname;
+    parsed.port = database.port;
+    return parsed.toString();
+  } catch {
+    return metadataUrl;
+  }
+}
+
 export function resolveFileLibraryStorageBucketUrlForExternalExecution(
   storageBucketUrl: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
@@ -432,6 +449,26 @@ export function resolveFileLibraryStorageBucketUrlForExternalExecution(
       return storageBucketUrl;
     }
     parsed.hostname = executionHost;
+    return parsed.toString();
+  } catch {
+    return storageBucketUrl;
+  }
+}
+
+export function resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(
+  storageBucketUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const endpoint = env.MINIO_ENDPOINT?.trim();
+  if (!endpoint) return storageBucketUrl;
+  const port = env.MINIO_PORT?.trim() || '9000';
+  const useSsl = env.MINIO_USE_SSL?.trim() === 'true';
+  try {
+    const parsed = new URL(storageBucketUrl);
+    parsed.protocol = useSsl ? 'https:' : 'http:';
+    parsed.hostname = endpoint;
+    parsed.port = port;
     return parsed.toString();
   } catch {
     return storageBucketUrl;

@@ -1,12 +1,45 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE_DEPLOY_ROOT_DEFAULT="${HOME}/agentsmith-deploy"
-REMOTE_DEPLOY_ROOT="${REMOTE_DEPLOY_ROOT:-${REMOTE_DEPLOY_ROOT_DEFAULT}}"
+
+infer_release_root_from_common_dir() {
+  local candidate
+  candidate="$(cd "${COMMON_DIR}/../.." && pwd)"
+  if [[ -f "${candidate}/VERSION" ]]; then
+    cd -P "${candidate}" && pwd
+  fi
+}
+
+infer_remote_deploy_root_from_release_root() {
+  local candidate="$1"
+  local parent
+  parent="$(basename "$(dirname "${candidate}")")"
+  if [[ "$(basename "${candidate}")" == "current" ]]; then
+    dirname "${candidate}"
+    return 0
+  fi
+  if [[ "${parent}" == "releases" ]]; then
+    dirname "$(dirname "${candidate}")"
+    return 0
+  fi
+  return 1
+}
+
+INFERRED_RELEASE_ROOT="$(infer_release_root_from_common_dir || true)"
+INFERRED_REMOTE_DEPLOY_ROOT=""
+if [[ -n "${INFERRED_RELEASE_ROOT}" ]]; then
+  INFERRED_REMOTE_DEPLOY_ROOT="$(infer_remote_deploy_root_from_release_root "${INFERRED_RELEASE_ROOT}" || true)"
+fi
+
+REMOTE_DEPLOY_ROOT="${REMOTE_DEPLOY_ROOT:-${INFERRED_REMOTE_DEPLOY_ROOT:-${REMOTE_DEPLOY_ROOT_DEFAULT}}}"
 CURRENT_LINK="${REMOTE_DEPLOY_ROOT}/current"
 RELEASE_ID="${RELEASE_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 if [[ -z "${RELEASE_ROOT:-}" ]]; then
-  if [[ -f "${CURRENT_LINK}/VERSION" ]]; then
+  if [[ -n "${INFERRED_RELEASE_ROOT}" ]]; then
+    RELEASE_ROOT="${INFERRED_RELEASE_ROOT}"
+  elif [[ -f "${CURRENT_LINK}/VERSION" ]]; then
     RELEASE_ROOT="$(readlink -f "${CURRENT_LINK}")"
   else
     RELEASE_ROOT="${REMOTE_DEPLOY_ROOT}/releases/${RELEASE_ID}"

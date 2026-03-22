@@ -123,10 +123,15 @@ if [[ -z "${EXTERNAL_AGENT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/agents" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${GLM_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${GLM_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
   )"
   EXTERNAL_AGENT_ID="$(printf '%s' "${external_agent_resp}" | json_extract id)"
 fi
+
+curl -sS -X PATCH "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({config:{runner_runtime:"compose_managed"}}))')" >/dev/null
 
 EXTERNAL_AGENT_KEY="${MBOS_AGENT_KEY:-}"
 if [[ -z "${EXTERNAL_AGENT_KEY}" ]]; then

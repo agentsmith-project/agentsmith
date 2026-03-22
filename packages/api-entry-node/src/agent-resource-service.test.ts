@@ -15,6 +15,7 @@ describe('AgentResourceService', () => {
     resetSystemWorkspaceRegistryPersistenceForTest();
     delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     delete process.env.PUBLIC_API_BASE_URL;
+    delete process.env.INTERNAL_API_BASE_URL;
     delete process.env.AGENT_EXECUTION_WS_BASE_URL;
     delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   });
@@ -33,6 +34,59 @@ describe('AgentResourceService', () => {
     expect(created.capabilities?.streaming_completion).toBe(true);
     expect(created.capabilities?.multimodal_completion).toBe(false);
     expect(created.capabilities?.accepted_mime_types).toContain('image/png');
+  });
+
+  it('builds compose-internal connection info for compose-managed external agents', async () => {
+    process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const connectionInfo = service.buildConnectionInfo({
+      id: 'ag_external_compose',
+      mode: 'external',
+      config: {
+        runner_runtime: 'compose_managed',
+      },
+    });
+
+    expect(connectionInfo.ws_url).toBe(
+      'ws://api:20000/api/v1/agent-execution/ws?agent_id=ag_external_compose',
+    );
+  });
+
+  it('preserves existing agent fields when partial updates omit them', async () => {
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const created = await service.createAgent('ws_default', 'proj_1', {
+      name: 'compose external',
+      mode: 'external',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      visibility: 'private',
+      config: {
+        endpoint_id: 'ep_1',
+      },
+    });
+
+    const updated = await service.updateAgent('ws_default', 'proj_1', created.id, {
+      config: {
+        ...created.config,
+        runner_runtime: 'compose_managed',
+      },
+    });
+
+    expect(updated).toEqual(
+      expect.objectContaining({
+        id: created.id,
+        mode: 'external',
+        interaction_mode: 'notebook',
+        status: 'enabled',
+        visibility: 'private',
+        config: expect.objectContaining({
+          endpoint_id: 'ep_1',
+          runner_runtime: 'compose_managed',
+        }),
+      }),
+    );
   });
 
   it('creates, verifies and revokes service key', async () => {

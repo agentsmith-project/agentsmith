@@ -121,6 +121,7 @@ docker run --rm \
     --config playwright.config.integration.ts \
     e2e/integration-workspace-entry.spec.ts \
     e2e/integration-workspace-publish-usable.spec.ts \
+    e2e/integration-preset-external-file-library.spec.ts \
     e2e/integration-release-user-story.spec.ts \
     --project=chromium \
     --workers=1

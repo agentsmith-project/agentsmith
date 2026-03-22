@@ -50,12 +50,29 @@
 - runner 执行地址
 - k8s workload 地址
 
-### 4. Email 选人，ID 落库
+### 4. Runner 运行模式是正式 Runtime Truth
+Agent 的业务语义仍然只有两种：
+- `external`
+- `internal`
+
+但运行方式必须单独建模：
+- `dev_direct`
+- `docker_manual`
+- `compose_managed`
+- `k8s_internal`
+
+规则：
+- external 可运行在 `dev_direct` / `docker_manual` / `compose_managed`
+- internal 固定运行在 `k8s_internal`
+- 除 `dev_direct` 外，所有 runner 必须使用同一个 runner image
+- 地址解析、workspace access、file library access 都必须按 `runner_runtime` 分流，而不是靠“是不是 external”去猜
+
+### 5. Email 选人，ID 落库
 - 界面和 preset 配置用 email/username 选人
 - 系统内部唯一主键仍然是 `user_id = Keycloak sub`
 - `sub` 必须运行时解析，不能写死进部署输入
 
-### 5. 不靠最后一次部署才发现问题
+### 6. 不靠最后一次部署才发现问题
 - 开发测试和本地预检必须提前覆盖最容易晚暴露的真相问题
 - 最终 deploy verify 仍然保留，而且必须更完整
 - 不是“把 verify 简化”，而是“把关键检查前移一遍，再在 verify 中完整兜底”
@@ -109,7 +126,7 @@
   - runner 可见 host
   - kind/k8s 可见 host
   - sandbox manager 对应入口
-  - file library 对 external/internal 执行方可见的地址
+  - file library 对 `dev_direct` / `docker_manual` / `compose_managed` / `k8s_internal` 可见的地址
 
 要求：
 - 解析失败立即退出
@@ -157,12 +174,15 @@
 
 ### 2. `external_runner_mount_access`
 用途：
-- external runner 容器自动挂载任务工作区
+- external runner 自动挂载任务工作区
 
 特点：
 - 必须是 runner 可见地址
 - 禁止 loopback
 - 不能复用 local/human 地址
+- 其中：
+  - `dev_direct` 使用 host-local truth
+  - `docker_manual` / `compose_managed` 使用 runner-visible truth
 
 ### 3. `internal_agent_mount_access`
 用途：
@@ -193,6 +213,7 @@
 - 新增地址相关逻辑时，先写 contract 和测试，再改实现
 - 不允许再把环境偶然地址写进正式配置
 - 不允许再用“运行时猜环境”的方式补丁式修复
+- 开发机直接运行 external runner 必须走正式入口 `scripts/run-external-runner-dev.sh`
 
 ### 开发阶段必须覆盖的测试
 - token claims / callback auth chain
@@ -203,6 +224,7 @@
 - directory search truth
 - runtime address resolution
 - file library local/external/internal access 分流
+- runner runtime resolution
 - external runner access 不能返回 loopback
 - internal agent access 不能返回 host-local truth
 

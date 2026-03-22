@@ -170,6 +170,7 @@ export interface AgentRecord {
     max_lifetime_sec?: number;
     _internal_key_id?: string;
     _internal_raw_key?: string;
+    runner_runtime?: 'dev_direct' | 'docker_manual' | 'compose_managed' | 'k8s_internal';
     max_concurrent_sessions_override?: number;
   };
   execution_preferences_json?: Record<string, unknown>;

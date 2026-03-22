@@ -104,6 +104,7 @@
     "models:sync-catalog": "tsx scripts/models/sync-catalog.ts",
     "agent:test-runner": "tsx packages/api-entry-node/examples/external-agent-test-runner.ts",
     "agent:codex-runner": "npm run dev -w @mbos/agent-codex-runner",
+    "agent:external:dev": "bash scripts/run-external-runner-dev.sh",
     "api:node:dev": "npm run dev -w @mbos/api-entry-node",
     "ws:typecheck": "npm run --workspaces typecheck --if-present",
     "ws:build": "npm run --workspaces build --if-present",

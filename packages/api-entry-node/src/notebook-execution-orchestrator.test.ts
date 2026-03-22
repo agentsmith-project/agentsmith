@@ -258,4 +258,121 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       }),
     );
   });
+
+  it('uses compose-internal api base for compose-managed external agents', async () => {
+    const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
+    const previousExternalApiBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_external_compose',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_external_compose',
+          status: 'enabled',
+          mode: 'external',
+          config: {
+            runner_runtime: 'compose_managed',
+          },
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_external',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_external',
+          workspace_id: 'ws_external',
+          project_id: 'proj_external',
+          status: 'active',
+          model: 'glm-5',
+          credential_ref: 'cred_1',
+          name: 'endpoint-external',
+          type: 'openai',
+          base_url: 'https://example.com',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_external_compose',
+      workspace_id: 'ws_external',
+      project_id: 'proj_external',
+      owner_user_id: 'user_external',
+      title: 'external compose task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_external_compose',
+      workspace_file_library_id: 'flib_external',
+      workspace_file_library_name: 'External Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_external_compose',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_external_compose',
+        user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
+        rawBearerToken: 'token',
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_external_compose',
+        buildProxyUsername: () => 'external_user',
+        mapTaskMessagesForExecution: () => [],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_external',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
+      else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
+      if (previousExternalApiBase === undefined) delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+      else process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalApiBase;
+    }
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          api_base: 'http://api:20000',
+          workspace_binding_mode: 'file_library',
+          workspace_file_library_id: 'flib_external',
+        }),
+      }),
+    );
+  });
 });

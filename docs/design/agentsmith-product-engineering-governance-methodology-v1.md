@@ -51,6 +51,12 @@ AgentSmith 当前只采用一条治理主线：
 - 关注“请求最终如何被允许/拒绝、为何触发限流/限额、证据是否完整”
 - 这里强调的是系统运行事实，不是独立产品模块；落到实现时应尽量拆成具体职责名，而不是继续使用模糊的 `runtime` 大词
 
+补充发布与部署真相：
+- 地址、身份主键、执行方访问 contract 都属于 Runtime Truth，不属于“配置想象”
+- 配置只表达稳定角色，不表达 docker bridge、临时 IP、宿主机偶然网络细节
+- 同一关键真相必须在开发 gate、本地预检、部署后 verify 三层逐步证明
+- deploy verify 是最终兜底，不是第一次发现设计漏洞的地方
+
 补充身份真相：
 - Authn 来源于 workspace IdP。
 - Authz 来源于 AgentSmith permission token 与授权关系。
@@ -100,6 +106,11 @@ AgentSmith 当前只采用一条治理主线：
 3. integration
 4. e2e
 5. real-lane
+
+补充发布验证原则：
+- 对真实发布最脆弱的检查点，必须更早在开发 gate 和本地预检中做一遍
+- 最终 deploy verify 不做轻量化，继续完整兜底真实部署环境问题
+- external runner 的开发直跑、手动 docker、compose 托管，以及 internal k8s 执行，必须共享同一业务代码与同一地址真相方法
 
 验收标准：
 

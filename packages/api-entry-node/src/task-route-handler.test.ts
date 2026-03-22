@@ -39,6 +39,29 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('rewrites non-loopback mount access to the docker-manual runner host', () => {
+    const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    try {
+      const resolved = resolveTaskWorkspaceMountAccess({
+        agentMode: 'external',
+        metadataUrl: 'postgres://jfsu_user:secret@mbos.imotion.ai:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://mbos.imotion.ai:19000/jfs-lib-demo',
+      });
+
+      expect(resolved).toEqual({
+        metadataUrl: 'postgres://jfsu_user:secret@host.docker.internal:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://host.docker.internal:19000/jfs-lib-demo',
+      });
+    } finally {
+      if (previousExternalExecutionBase === undefined) {
+        delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+      } else {
+        process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
+      }
+    }
+  });
+
   it('rewrites loopback mount access for compose-managed external runner execution', () => {
     const previousDatabaseUrl = process.env.DATABASE_URL;
     const previousMinioEndpoint = process.env.MINIO_ENDPOINT;

@@ -104,14 +104,14 @@ describe('file-library-runtime readiness', () => {
         'postgres://jfsu_user:secret@postgres.example.internal:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
-    ).toBe('postgres://jfsu_user:secret@postgres.example.internal:15432/jfs_lib_demo?sslmode=disable');
+    ).toBe('postgres://jfsu_user:secret@172.18.0.1:15432/jfs_lib_demo?sslmode=disable');
 
     expect(
       resolveFileLibraryStorageBucketUrlForExternalExecution(
         'http://minio.example.internal:19000/jfs-lib-demo',
         env,
       ),
-    ).toBe('http://minio.example.internal:19000/jfs-lib-demo');
+    ).toBe('http://172.18.0.1:19000/jfs-lib-demo');
   });
 
   it('rewrites loopback file library access for internal agent execution', () => {

@@ -409,9 +409,6 @@ export function resolveFileLibraryMetadataUrlForExternalExecution(
   if (!executionHost) return metadataUrl;
   try {
     const parsed = new URL(metadataUrl);
-    if (!isLoopbackHost(parsed.hostname)) {
-      return metadataUrl;
-    }
     parsed.hostname = executionHost;
     return parsed.toString();
   } catch {
@@ -445,9 +442,6 @@ export function resolveFileLibraryStorageBucketUrlForExternalExecution(
   if (!executionHost) return storageBucketUrl;
   try {
     const parsed = new URL(storageBucketUrl);
-    if (!isLoopbackHost(parsed.hostname)) {
-      return storageBucketUrl;
-    }
     parsed.hostname = executionHost;
     return parsed.toString();
   } catch {

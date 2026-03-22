@@ -27,7 +27,6 @@
   "required_tools": [
     "kind",
     "kubectl",
-    "jq",
     "juicefs",
     "mc"
   ],

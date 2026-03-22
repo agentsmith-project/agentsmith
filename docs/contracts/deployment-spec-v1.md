@@ -223,7 +223,6 @@ The bundle build must always create a fresh directory for the current `release_i
 ### Required Tools in Bundle
 - `kind`
 - `kubectl`
-- `jq`
 - `juicefs`
 - `mc`
 

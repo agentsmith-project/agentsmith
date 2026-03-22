@@ -54,32 +54,29 @@ token_json="$(
     --data-urlencode "password=${INTEGRATION_DEV_ADMIN_PASSWORD}" \
     --data-urlencode 'scope=openid profile email'
 )"
-ACCESS_TOKEN="$(printf '%s' "${token_json}" | jq -r '.access_token // empty')"
+ACCESS_TOKEN="$(printf '%s' "${token_json}" | json_extract access_token)"
 [[ -n "${ACCESS_TOKEN}" ]] || die "failed to obtain dev-admin token during verify"
 
 PROJECTS_JSON="$(
   curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
-DEMO_PROJECT_ID="$(
-  printf '%s' "${PROJECTS_JSON}" | jq -r '.items[]? | select(.name=="Demo Project") | .id' | head -n1
-)"
+DEMO_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "Demo Project")"
 [[ -n "${DEMO_PROJECT_ID}" ]] || die "preset verify failed: Demo Project missing in ws_default"
 
 ENDPOINT_COUNT="$(
   curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/endpoints?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-    | jq '[.items[]? | select(.model=="glm-5-turbo")] | length'
+    | json_count_items_by_field model "glm-5-turbo"
 )"
 [[ "${ENDPOINT_COUNT}" -ge 2 ]] || die "preset verify failed: expected two glm-5-turbo endpoints"
 
-AGENT_COUNTS_JSON="$(
+AGENTS_JSON="$(
   curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/agents?page=1&page_size=100" \
-    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-    | jq '{external: ([.items[]? | select(.mode=="external")] | length), internal: ([.items[]? | select(.mode=="internal")] | length)}'
+    -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
-EXTERNAL_AGENT_COUNT="$(printf '%s' "${AGENT_COUNTS_JSON}" | jq -r '.external')"
-INTERNAL_AGENT_COUNT="$(printf '%s' "${AGENT_COUNTS_JSON}" | jq -r '.internal')"
+EXTERNAL_AGENT_COUNT="$(printf '%s' "${AGENTS_JSON}" | json_count_items_by_field mode external)"
+INTERNAL_AGENT_COUNT="$(printf '%s' "${AGENTS_JSON}" | json_count_items_by_field mode internal)"
 [[ "${EXTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: external agent missing"
 [[ "${INTERNAL_AGENT_COUNT}" -ge 1 ]] || die "preset verify failed: internal agent missing"
 

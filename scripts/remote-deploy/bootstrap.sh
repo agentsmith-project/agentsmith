@@ -54,30 +54,6 @@ docker_compose exec -T api bash -lc '
   npx tsx scripts/ensure-default-workspace.ts >/dev/null
 '
 
-json_extract() {
-  local path="$1"
-  docker_compose exec -T api node -e '
-    let s = "";
-    process.stdin.on("data", (d) => (s += d));
-    process.stdin.on("end", () => {
-      const data = JSON.parse(s);
-      let value = data;
-      for (const part of process.argv[1].split(".")) {
-        if (!part) continue;
-        value = value?.[part];
-      }
-      if (value == null) process.exit(2);
-      process.stdout.write(String(value));
-    });
-  ' "${path}"
-}
-
-find_named_id() {
-  local json_payload="$1"
-  local item_name="$2"
-  printf '%s' "${json_payload}" | jq -r --arg item_name "${item_name}" '.items[]? | select(.name == $item_name) | .id' | head -n1
-}
-
 token_resp="$(
   curl -sS "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
     -H 'content-type: application/x-www-form-urlencoded' \
@@ -95,7 +71,7 @@ project_list_resp="$(
   curl -sS "${WORKSPACE_BASE}/projects?page=1&page_size=100" \
     -H "Authorization: Bearer ${TOKEN}"
 )"
-PROJECT_ID="$(find_named_id "${project_list_resp}" "${DEMO_PROJECT_NAME}")"
+PROJECT_ID="$(printf '%s' "${project_list_resp}" | json_find_named_id "${DEMO_PROJECT_NAME}")"
 if [[ -z "${PROJECT_ID}" ]]; then
   project_resp="$(
     curl -sS -X POST "${WORKSPACE_BASE}/projects" \
@@ -111,7 +87,7 @@ credential_list_resp="$(
   curl -sS "${PROJECT_BASE}/credentials?page=1&page_size=100" \
     -H "Authorization: Bearer ${TOKEN}"
 )"
-CREDENTIAL_ID="$(find_named_id "${credential_list_resp}" "${DEMO_CREDENTIAL_NAME}")"
+CREDENTIAL_ID="$(printf '%s' "${credential_list_resp}" | json_find_named_id "${DEMO_CREDENTIAL_NAME}")"
 if [[ -z "${CREDENTIAL_ID}" ]]; then
   credential_resp="$(
     curl -sS -X POST "${PROJECT_BASE}/credentials" \
@@ -126,7 +102,7 @@ endpoint_list_resp="$(
   curl -sS "${PROJECT_BASE}/endpoints?page=1&page_size=100" \
     -H "Authorization: Bearer ${TOKEN}"
 )"
-ANTHROPIC_ENDPOINT_ID="$(find_named_id "${endpoint_list_resp}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
+ANTHROPIC_ENDPOINT_ID="$(printf '%s' "${endpoint_list_resp}" | json_find_named_id "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
 if [[ -z "${ANTHROPIC_ENDPOINT_ID}" ]]; then
   anthropic_endpoint_resp="$(
     curl -sS -X POST "${PROJECT_BASE}/endpoints" \
@@ -141,7 +117,7 @@ agent_list_resp="$(
   curl -sS "${PROJECT_BASE}/agents?page=1&page_size=100" \
     -H "Authorization: Bearer ${TOKEN}"
 )"
-EXTERNAL_AGENT_ID="$(find_named_id "${agent_list_resp}" "${DEMO_EXTERNAL_AGENT_NAME}")"
+EXTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${DEMO_EXTERNAL_AGENT_NAME}")"
 if [[ -z "${EXTERNAL_AGENT_ID}" ]]; then
   external_agent_resp="$(
     curl -sS -X POST "${PROJECT_BASE}/agents" \
@@ -169,7 +145,7 @@ external_connection_resp="$(
 )"
 EXTERNAL_AGENT_WS_URL="$(printf '%s' "${external_connection_resp}" | json_extract ws_url)"
 
-OPENAI_ENDPOINT_ID="$(find_named_id "${endpoint_list_resp}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
+OPENAI_ENDPOINT_ID="$(printf '%s' "${endpoint_list_resp}" | json_find_named_id "${DEMO_OPENAI_ENDPOINT_NAME}")"
 if [[ -z "${OPENAI_ENDPOINT_ID}" ]]; then
   openai_endpoint_resp="$(
     curl -sS -X POST "${PROJECT_BASE}/endpoints" \
@@ -180,7 +156,7 @@ if [[ -z "${OPENAI_ENDPOINT_ID}" ]]; then
   OPENAI_ENDPOINT_ID="$(printf '%s' "${openai_endpoint_resp}" | json_extract id)"
 fi
 
-INTERNAL_AGENT_ID="$(find_named_id "${agent_list_resp}" "${DEMO_INTERNAL_AGENT_NAME}")"
+INTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${DEMO_INTERNAL_AGENT_NAME}")"
 if [[ -z "${INTERNAL_AGENT_ID}" ]]; then
   internal_agent_resp="$(
     curl -sS -X POST "${PROJECT_BASE}/agents" \

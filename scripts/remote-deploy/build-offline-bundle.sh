@@ -197,9 +197,6 @@ cp "$(command -v kind)" "${TOOLS_DIR}/kind"
 cp "$(command -v kubectl)" "${TOOLS_DIR}/kubectl"
 cp "$(command -v juicefs)" "${TOOLS_DIR}/juicefs"
 cp "$(command -v mc)" "${TOOLS_DIR}/mc"
-if command -v jq >/dev/null 2>&1; then
-  cp "$(command -v jq)" "${TOOLS_DIR}/jq"
-fi
 chmod +x "${TOOLS_DIR}"/*
 
 cat > "${BUNDLE_DIR}/VERSION" <<EOF

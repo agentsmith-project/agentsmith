@@ -37,20 +37,9 @@ resolve_tool() {
 
 KIND_BIN="$(resolve_tool "${TOOLS_DIR}/kind" kind --version)"
 KUBECTL_BIN="$(resolve_tool "${TOOLS_DIR}/kubectl" kubectl version --client)"
-JQ_BIN=""
-if PATH="${ORIGINAL_PATH}" command -v jq >/dev/null 2>&1 || [[ -x "${TOOLS_DIR}/jq" ]]; then
-  JQ_BIN="$(resolve_tool "${TOOLS_DIR}/jq" jq --version || true)"
-fi
 
 kind() { "${KIND_BIN}" "$@"; }
 kubectl() { "${KUBECTL_BIN}" "$@"; }
-jq() {
-  if [[ -z "${JQ_BIN}" ]]; then
-    printf 'jq not available\n' >&2
-    return 127
-  fi
-  "${JQ_BIN}" "$@"
-}
 
 log() { printf '[remote-deploy] %s\n' "$*"; }
 die() { printf '[remote-deploy] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -220,4 +209,62 @@ PY
     fi
     sleep 2
   done
+}
+
+json_extract() {
+  local path="$1"
+  python3 -c '
+import json
+import sys
+
+path = [part for part in sys.argv[1].split(".") if part]
+data = json.load(sys.stdin)
+value = data
+for part in path:
+    if isinstance(value, dict):
+        value = value.get(part)
+    else:
+        value = None
+    if value is None:
+        break
+if value is None:
+    sys.exit(2)
+if isinstance(value, (dict, list)):
+    print(json.dumps(value))
+else:
+    print(value)
+' "$path"
+}
+
+json_find_named_id() {
+  local item_name="$1"
+  python3 -c '
+import json
+import sys
+
+item_name = sys.argv[1]
+data = json.load(sys.stdin)
+for item in data.get("items", []) or []:
+    if isinstance(item, dict) and item.get("name") == item_name and item.get("id"):
+        print(item["id"])
+        break
+' "$item_name"
+}
+
+json_count_items_by_field() {
+  local field_name="$1"
+  local expected_value="$2"
+  python3 -c '
+import json
+import sys
+
+field_name = sys.argv[1]
+expected_value = sys.argv[2]
+data = json.load(sys.stdin)
+count = 0
+for item in data.get("items", []) or []:
+    if isinstance(item, dict) and str(item.get(field_name, "")) == expected_value:
+        count += 1
+print(count)
+' "$field_name" "$expected_value"
 }

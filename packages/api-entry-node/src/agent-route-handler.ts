@@ -413,7 +413,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 403, { error_code: 'FORBIDDEN', message: 'agent_not_visible' });
       return true;
     }
-    json(res, 200, deps.agentResourceService.buildConnectionInfo(route.agentId));
+    json(res, 200, deps.agentResourceService.buildConnectionInfo(item));
     return true;
   }
 

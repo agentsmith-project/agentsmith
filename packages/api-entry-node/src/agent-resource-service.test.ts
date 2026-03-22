@@ -13,6 +13,10 @@ describe('AgentResourceService', () => {
 
   afterEach(() => {
     resetSystemWorkspaceRegistryPersistenceForTest();
+    delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    delete process.env.PUBLIC_API_BASE_URL;
+    delete process.env.AGENT_EXECUTION_WS_BASE_URL;
+    delete process.env.AGENT_EXECUTION_HTTP_BASE_URL;
   });
 
   it('creates external agent with expected defaults', async () => {
@@ -197,6 +201,36 @@ describe('AgentResourceService', () => {
         presence: 'online',
         last_seen_at: '2026-03-18T00:00:00.000Z',
       }),
+    );
+  });
+
+  it('builds external agent connection info from external execution base', () => {
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://10.88.0.1:20000';
+
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const connectionInfo = service.buildConnectionInfo({
+      id: 'ag_external_1',
+      mode: 'external',
+    });
+
+    expect(connectionInfo.ws_url).toBe(
+      'ws://host.docker.internal:20000/api/v1/agent-execution/ws?agent_id=ag_external_1',
+    );
+  });
+
+  it('builds internal agent connection info from internal execution base', () => {
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    process.env.AGENT_EXECUTION_WS_BASE_URL = 'ws://10.88.0.1:20000';
+
+    const service = new AgentResourceService(new InMemoryJsonDocStore());
+    const connectionInfo = service.buildConnectionInfo({
+      id: 'ag_internal_1',
+      mode: 'internal',
+    });
+
+    expect(connectionInfo.ws_url).toBe(
+      'ws://10.88.0.1:20000/api/v1/agent-execution/ws?agent_id=ag_internal_1',
     );
   });
 });

@@ -48,6 +48,11 @@ interface FileLibraryRuntimeConfig {
   gatewayLogDir: string;
 }
 
+function isLoopbackHost(hostname: string | null | undefined): boolean {
+  if (!hostname) return false;
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
 function envNumber(name: string, fallback: number): number {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -360,6 +365,113 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
       || 'agentsmith-file-library-gateway-seed',
     gatewayLogDir: env.FILE_LIBRARY_GATEWAY_LOG_DIR?.trim() || join(process.cwd(), 'artifacts/file-library-gateway'),
   };
+}
+
+function resolveExternalExecutionHost(env: NodeJS.ProcessEnv = process.env): string | null {
+  const candidates = [
+    env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim(),
+    env.AGENT_EXECUTION_HTTP_BASE_URL?.trim(),
+  ].filter(Boolean) as string[];
+  for (const candidate of candidates) {
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.hostname) {
+        return parsed.hostname;
+      }
+    } catch {
+      // Ignore malformed values here; render-env catches them earlier.
+    }
+  }
+  return null;
+}
+
+function resolveInternalExecutionHost(env: NodeJS.ProcessEnv = process.env): string | null {
+  const host = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  return host || null;
+}
+
+function replaceUrlOrigin(urlValue: string, replacementBase: string): string {
+  const parsed = new URL(urlValue);
+  const replacement = new URL(replacementBase);
+  parsed.protocol = replacement.protocol;
+  parsed.username = replacement.username;
+  parsed.password = replacement.password;
+  parsed.hostname = replacement.hostname;
+  parsed.port = replacement.port;
+  return parsed.toString();
+}
+
+export function resolveFileLibraryMetadataUrlForExternalExecution(
+  metadataUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const executionHost = resolveExternalExecutionHost(env);
+  if (!executionHost) return metadataUrl;
+  try {
+    const parsed = new URL(metadataUrl);
+    if (!isLoopbackHost(parsed.hostname)) {
+      return metadataUrl;
+    }
+    parsed.hostname = executionHost;
+    return parsed.toString();
+  } catch {
+    return metadataUrl;
+  }
+}
+
+export function resolveFileLibraryStorageBucketUrlForExternalExecution(
+  storageBucketUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const executionHost = resolveExternalExecutionHost(env);
+  if (!executionHost) return storageBucketUrl;
+  try {
+    const parsed = new URL(storageBucketUrl);
+    if (!isLoopbackHost(parsed.hostname)) {
+      return storageBucketUrl;
+    }
+    parsed.hostname = executionHost;
+    return parsed.toString();
+  } catch {
+    return storageBucketUrl;
+  }
+}
+
+export function resolveFileLibraryMetadataUrlForInternalExecution(
+  metadataUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const executionHost = resolveInternalExecutionHost(env);
+  if (!executionHost) return metadataUrl;
+  try {
+    const parsed = new URL(metadataUrl);
+    if (!isLoopbackHost(parsed.hostname)) {
+      return metadataUrl;
+    }
+    parsed.hostname = executionHost;
+    return parsed.toString();
+  } catch {
+    return metadataUrl;
+  }
+}
+
+export function resolveFileLibraryStorageBucketUrlForInternalExecution(
+  storageBucketUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const overrideEndpoint = env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  if (!overrideEndpoint) return storageBucketUrl;
+  try {
+    const parsed = new URL(storageBucketUrl);
+    if (!isLoopbackHost(parsed.hostname)) {
+      return storageBucketUrl;
+    }
+    return replaceUrlOrigin(storageBucketUrl, overrideEndpoint);
+  } catch {
+    return storageBucketUrl;
+  }
 }
 
 function buildRuntimeConfig(): FileLibraryRuntimeConfig {

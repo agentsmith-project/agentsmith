@@ -5,6 +5,12 @@ This document is the single source of truth for AgentSmith deployment topology, 
 
 Every deployment-facing script, env template, bundle manifest, and runbook must follow this document. If code, scripts, or env examples disagree with this spec, the implementation must be corrected. Deployments must not rely on manual fixes, container patching, ad hoc SQL, or Keycloak admin console changes.
 
+This specification defines the required deployment contract. The higher-level guidance for address truth, config ownership, release gates, and testing responsibilities is documented in:
+
+- `docs/contracts/address-truth-and-release-governance-v1.md`
+
+That governance document does not override this spec. It explains how development, precheck, packaging, deployment, and verify must work together so this spec remains true in practice.
+
 ## Deployment Model
 
 ### Topology
@@ -49,19 +55,19 @@ These six stages are the only supported deployment flow.
 These values are used for browser navigation, login redirects, and public callbacks.
 
 ### Container-Internal Addresses
-- `INTERNAL_API_BASE_URL`
-- `INTERNAL_KEYCLOAK_BASE_URL`
+- `COMPOSE_INTERNAL_API_BASE_URL`
+- `COMPOSE_INTERNAL_KEYCLOAK_BASE_URL`
 
 These values are used by containers talking to each other inside Compose.
 
-### File Library Public Access Addresses
-- `FILE_LIBRARY_POSTGRES_PUBLIC_HOST`
-- `FILE_LIBRARY_POSTGRES_PUBLIC_PORT`
-- `FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT`
+### Host-Local Access Addresses
+- `HOST_LOCAL_POSTGRES_HOST`
+- `HOST_LOCAL_POSTGRES_PORT`
+- `HOST_LOCAL_MINIO_ENDPOINT`
 
-These values are used when generating file library metadata URLs and local mount access details for operators and end users.
+These values are used when generating host-local file library mount access details for operators and end users.
 
-They are intentionally separate from container-internal object storage/database addresses.
+They are intentionally separate from container-internal object storage/database addresses and from runner/k8s execution addresses.
 
 The API container must use the container-internal MinIO admin address:
 - `MINIO_ENDPOINT=minio`
@@ -71,13 +77,11 @@ The API container must use the container-internal MinIO admin address:
 The deployment flow must not reuse public MinIO ports such as `19000` for container-internal admin traffic.
 
 ### Agent Execution Addresses
-- `EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL`
-- `AGENT_EXECUTION_HTTP_BASE_URL`
-- `AGENT_EXECUTION_WS_BASE_URL`
-
-These values are used by external and internal execution paths. They must be explicit in deployment env and must not fall back to `localhost` in deployed environments.
-
-During `deploy`, the generated runtime env must rewrite all three execution addresses to the current Docker host gateway used by the active local Compose network. The HTTP and WS variants must stay aligned to the same gateway identity for the current deployment.
+- These addresses are runtime-derived, not operator-provided.
+- External runner execution uses a runner-visible host alias derived by the deployment environment.
+- Internal agent execution uses the current kind gateway derived by the deployment environment.
+- The HTTP and WS variants must stay aligned to the same resolved host identity for the current deployment.
+- The deployment flow must fail fast if runtime execution hosts cannot be resolved.
 
 ### Agent Workspace Mount Options
 - `MBOS_AGENT_JUICEFS_MOUNT_OPTIONS`
@@ -85,9 +89,9 @@ During `deploy`, the generated runtime env must rewrite all three execution addr
 This value controls user-space JuiceFS mount options for external runner file-library workspaces. The default deployed value should be empty so mounts prefer consistency-oriented behavior. Performance-oriented options such as `writeback_cache` must only be enabled explicitly and documented for the target environment.
 
 ### Internal Sandbox Address
-- `SANDBOX_MANAGER_URL`
+- `SANDBOX_HOST_PORT`
 
-This is the API-to-sandbox control-plane address. It must point to the sandbox manager exposed from the local kind cluster.
+The operator provides the exposed host port only. The runtime sandbox manager URL is derived by the deployment environment and must not be edited directly.
 
 ## Shared Persistent Truth
 
@@ -149,17 +153,15 @@ Preset workspace admin and project creator identities are selected by stable use
 
 ### Execution and Shared Runtime
 - `SYSTEM_WORKSPACE_REGISTRY_MODE`
-- `EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL`
-- `AGENT_EXECUTION_HTTP_BASE_URL`
-- `AGENT_EXECUTION_WS_BASE_URL`
-- `SANDBOX_MANAGER_URL`
+- `COMPOSE_INTERNAL_API_BASE_URL`
+- `COMPOSE_INTERNAL_KEYCLOAK_BASE_URL`
+- `HOST_LOCAL_POSTGRES_HOST`
+- `HOST_LOCAL_POSTGRES_PORT`
+- `HOST_LOCAL_MINIO_ENDPOINT`
 - `SANDBOX_SERVICE_KEY`
 - `SANDBOX_HOST_PORT`
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR`
 - `MBOS_AGENT_JUICEFS_MOUNT_OPTIONS`
-- `FILE_LIBRARY_POSTGRES_PUBLIC_HOST`
-- `FILE_LIBRARY_POSTGRES_PUBLIC_PORT`
-- `FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT`
 
 ### Internal JuiceFS CSI
 - `INTERNAL_AGENT_K8S_NAMESPACE`
@@ -170,8 +172,6 @@ Preset workspace admin and project creator identities are selected by stable use
 - `INTERNAL_AGENT_JUICEFS_SUBDIR`
 - `INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT`
 - `INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE`
-- `INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE`
-- `INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE`
 
 ### Bootstrap and Demo Seed
 - `INTEGRATION_PUBLIC_WEB_BASES`
@@ -195,7 +195,7 @@ Preset workspace admin and project creator identities are selected by stable use
 - `OPENAI_URL_CODING_PLAN`
 - `GLM_MODEL`
 
-All deployment configuration keys must be declared in `env/site.env`. Generated service env files derive container-specific values such as `DATABASE_URL`, `MONGO_URL`, `KEYCLOAK_ISSUER_URL`, `MBOS_API_BASE`, `NEXT_PUBLIC_API_BASE`, and `NEXT_PUBLIC_KEYCLOAK_URL`. Deployment-specific defaults belong in `site.env`, not hidden in scripts.
+All deployment configuration keys must be declared in `env/site.env`. Generated service env files derive container-specific and runtime-specific values such as `DATABASE_URL`, `MONGO_URL`, `KEYCLOAK_ISSUER_URL`, `MBOS_API_BASE`, `NEXT_PUBLIC_API_BASE`, execution host URLs, and JuiceFS internal overrides. Deployment-specific defaults belong in `site.env`; runtime-derived host identities belong in the formal runtime address resolution step, not hidden in deploy-time sed rewrites.
 
 ## Offline Bundle Contract
 

@@ -23,6 +23,7 @@ STATE_DIR="${REMOTE_DEPLOY_ROOT}/state"
 LOG_DIR="${REMOTE_DEPLOY_ROOT}/logs"
 REPORT_DIR="${REMOTE_DEPLOY_ROOT}/reports"
 TOOLS_DIR="${RELEASE_ROOT}/tools"
+export REMOTE_DEPLOY_ROOT CURRENT_LINK RELEASE_ID RELEASE_ROOT RELEASE_SCRIPT_DIR STATE_DIR LOG_DIR REPORT_DIR TOOLS_DIR
 ORIGINAL_PATH="${PATH}"
 resolve_tool() {
   local bundled="$1"
@@ -155,7 +156,7 @@ AGENTSMITH_RUNNER_IMAGE=${runner_image}
 EOF
 }
 
-kind_gateway_ip() {
+detect_kind_gateway_ip() {
   local gateway
   gateway="$(
     docker network inspect kind -f '{{range .IPAM.Config}}{{println .Gateway}}{{end}}' 2>/dev/null \
@@ -164,8 +165,12 @@ kind_gateway_ip() {
   if [[ -n "${gateway}" ]]; then
     printf '%s\n' "${gateway}"
   else
-    printf '172.18.0.1\n'
+    return 1
   fi
+}
+
+kind_gateway_ip() {
+  detect_kind_gateway_ip || die "unable to resolve kind gateway ip"
 }
 
 wait_http() {

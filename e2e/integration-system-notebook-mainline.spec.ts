@@ -19,6 +19,12 @@ const MEMBER_EMAIL = 'integration-member@example.com';
 const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
 const NOTEBOOK_EXPECTED_TOKEN = `MAINLINE_REAL_NOTEBOOK_OK_${Date.now()}`;
 
+function executionHostForExternalWorkspaceAccess(apiBase: string): string {
+  const explicit = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim();
+  const source = explicit || apiBase;
+  return new URL(source).hostname;
+}
+
 type ExecutionWsMessage = {
   type?: string;
   request_id?: string;
@@ -704,10 +710,12 @@ async function waitForAgentPresenceOnline(
 
 async function runNotebookTask(
   page: Page,
+  apiBase: string,
   workspaceId: string,
   projectId: string,
   agentName: string,
   workspaceLibraryName: string,
+  token: string,
   expectedToken: string,
 ): Promise<void> {
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook`);
@@ -727,6 +735,26 @@ async function runNotebookTask(
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/notebook/tasks/.+`), {
     timeout: 30_000,
   });
+  const taskId = page.url().match(/\/tasks\/([^/?#]+)/)?.[1];
+  if (!taskId) {
+    throw new Error('task_id_not_found_after_create');
+  }
+  const workspaceAccessResponse = await page.request.post(
+    `${apiBase}/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${taskId}/workspace-access`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  expect(workspaceAccessResponse.ok()).toBeTruthy();
+  const workspaceAccess = (await workspaceAccessResponse.json()) as {
+    metadata_url: string;
+    storage_bucket_url?: string;
+  };
+  const expectedHost = executionHostForExternalWorkspaceAccess(apiBase);
+  expect(new URL(workspaceAccess.metadata_url).hostname).toBe(expectedHost);
+  if (workspaceAccess.storage_bucket_url) {
+    expect(new URL(workspaceAccess.storage_bucket_url).hostname).toBe(expectedHost);
+  }
   await expect(page.getByTestId('notebook__conversation-input')).toBeVisible({ timeout: 30_000 });
 
   const input = page.getByTestId('notebook__conversation-input').locator('textarea').first();
@@ -781,7 +809,16 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
       await bridge.ready;
       await waitForAgentPresenceOnline(page, apiBase, workspaceId, projectId, agentId, token);
       await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
-      await runNotebookTask(page, workspaceId, projectId, agentName, workspaceLibraryName, NOTEBOOK_EXPECTED_TOKEN);
+      await runNotebookTask(
+        page,
+        apiBase,
+        workspaceId,
+        projectId,
+        agentName,
+        workspaceLibraryName,
+        token,
+        NOTEBOOK_EXPECTED_TOKEN,
+      );
       const observedReply = await bridge.observedReply;
       expect(observedReply).toContain(NOTEBOOK_EXPECTED_TOKEN);
     } finally {

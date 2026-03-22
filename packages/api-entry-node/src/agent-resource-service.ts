@@ -17,6 +17,46 @@ function agentPresenceKey(agentId: string): string {
   return `agent:presence:${agentId}`;
 }
 
+function sanitizeBaseUrl(value: string | undefined | null): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/\/+$/, '');
+}
+
+function deriveWebSocketBaseFromHttpBase(value: string | undefined | null): string | null {
+  const trimmed = sanitizeBaseUrl(value);
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    if (parsed.protocol === 'http:') {
+      parsed.protocol = 'ws:';
+    } else if (parsed.protocol === 'https:') {
+      parsed.protocol = 'wss:';
+    }
+    parsed.pathname = '';
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString().replace(/\/+$/, '');
+  } catch {
+    return null;
+  }
+}
+
+function resolveConnectionWsBase(agentMode: 'external' | 'internal'): string {
+  if (agentMode === 'external') {
+    return (
+      deriveWebSocketBaseFromHttpBase(process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL)
+      ?? deriveWebSocketBaseFromHttpBase(process.env.PUBLIC_API_BASE_URL)
+      ?? 'ws://localhost:20000'
+    );
+  }
+  return (
+    sanitizeBaseUrl(process.env.AGENT_EXECUTION_WS_BASE_URL)
+    ?? deriveWebSocketBaseFromHttpBase(process.env.AGENT_EXECUTION_HTTP_BASE_URL)
+    ?? 'ws://localhost:20000'
+  );
+}
+
 export interface AgentConnectionInfo {
   ws_url: string;
   agent_id: string;
@@ -317,11 +357,11 @@ export class AgentResourceService {
     }
   }
 
-  buildConnectionInfo(agentId: string): AgentConnectionInfo {
-    const wsBase = process.env.AGENT_EXECUTION_WS_BASE_URL?.trim() || 'ws://localhost:20000';
+  buildConnectionInfo(agent: Pick<AgentRecord, 'id' | 'mode'>): AgentConnectionInfo {
+    const wsBase = resolveConnectionWsBase(agent.mode);
     return {
-      ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agentId)}`,
-      agent_id: agentId,
+      ws_url: `${wsBase.replace(/\/$/, '')}/api/v1/agent-execution/ws?agent_id=${encodeURIComponent(agent.id)}`,
+      agent_id: agent.id,
       protocol_version: '1.0',
       heartbeat_interval_sec: 15,
     };

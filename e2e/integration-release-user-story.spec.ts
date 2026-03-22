@@ -544,6 +544,36 @@ async function waitForTaskArtifacts(args: {
   }, { timeout: 120_000, intervals: [1_000, 2_000, 5_000] }).toBe(true);
 }
 
+function externalExecutionHost(): string {
+  const source = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim() || API_BASE;
+  return new URL(source).hostname;
+}
+
+async function expectExternalTaskWorkspaceAccessReachable(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<void> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/workspace-access`,
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  const workspaceAccess = (await response.json()) as {
+    metadata_url: string;
+    storage_bucket_url?: string;
+  };
+  const expectedHost = externalExecutionHost();
+  expect(new URL(workspaceAccess.metadata_url).hostname).toBe(expectedHost);
+  if (workspaceAccess.storage_bucket_url) {
+    expect(new URL(workspaceAccess.storage_bucket_url).hostname).toBe(expectedHost);
+  }
+}
+
 async function waitForUsageFacts(args: {
   page: Page;
   workspaceId: string;
@@ -690,6 +720,12 @@ test.describe('@lane-real release user story end-to-end', () => {
         workspaceMode: 'create_new',
         workspaceName: `External Workspace ${Date.now()}`,
       });
+      await expectExternalTaskWorkspaceAccessReachable({
+        page,
+        workspaceId,
+        projectId,
+        taskId: externalTaskOne.taskId,
+      });
       await sendNotebookMessage(page, 'Create notes/external_story.txt with exactly one line: external turn 1. Then reply with exactly EXT_T1_OK.');
       await waitForAgentReply({
         page,
@@ -767,6 +803,12 @@ test.describe('@lane-real release user story end-to-end', () => {
         agentName: externalAgentName,
         workspaceMode: 'use_existing',
         existingWorkspaceName: externalTaskOne.workspaceName,
+      });
+      await expectExternalTaskWorkspaceAccessReachable({
+        page,
+        workspaceId,
+        projectId,
+        taskId: externalTaskTwo.taskId,
       });
       expect(externalTaskTwo.workspaceName).toBe(externalTaskOne.workspaceName);
       await sendNotebookMessage(page, 'Read notes/external_story.txt and reply with exactly EXT_REUSE_T1_OK if it still contains both lines.');

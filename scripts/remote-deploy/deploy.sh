@@ -13,8 +13,6 @@ ensure_dirs
 if [[ ! -f "${RELEASE_ROOT}/env/site.env" ]]; then
   cp "${RELEASE_ROOT}/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
 fi
-bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
-load_release_env
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
@@ -39,11 +37,6 @@ for tar_file in "${image_archives[@]}"; do
   docker load -i "${tar_file}" >/dev/null
 done
 
-docker_compose up -d postgres mongo redis minio minio-init keycloak api web
-wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
-wait_tcp "127.0.0.1" "${API_PORT}" 240
-wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240
-
 if ! kind get clusters 2>/dev/null | grep -qx 'agentsmith'; then
   log "creating kind cluster"
   kind create cluster --config "${RELEASE_ROOT}/kind/config.yaml"
@@ -59,15 +52,17 @@ kubectl apply -f "${RELEASE_ROOT}/k8s/juicefs-csi.yaml" >/dev/null
 kubectl rollout status statefulset/juicefs-csi-controller -n kube-system --timeout=240s >/dev/null
 kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=240s >/dev/null
 
+rm -f "${RELEASE_ROOT}/env/runtime-addresses.env"
+bash "${RELEASE_SCRIPT_DIR}/resolve-runtime-addresses.sh"
+bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
+load_release_env
+
+docker_compose up -d postgres mongo redis minio minio-init keycloak api web
+wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
+wait_tcp "127.0.0.1" "${API_PORT}" 240
+wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240
+
 KIND_GATEWAY="$(kind_gateway_ip)"
-sed -i.bak \
-  -e "s|^AGENT_EXECUTION_HTTP_BASE_URL=.*|AGENT_EXECUTION_HTTP_BASE_URL=http://${KIND_GATEWAY}:20000|" \
-  -e "s|^AGENT_EXECUTION_WS_BASE_URL=.*|AGENT_EXECUTION_WS_BASE_URL=ws://${KIND_GATEWAY}:20000|" \
-  -e "s|^EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=.*|EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://${KIND_GATEWAY}:20000|" \
-  -e "s|^INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=.*|INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=${KIND_GATEWAY}|" \
-  -e "s|^INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=.*|INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://${KIND_GATEWAY}:19000|" \
-  "${RELEASE_ROOT}/env/api.env" "${RELEASE_ROOT}/env/internal.env"
-rm -f "${RELEASE_ROOT}/env/"*.bak
 
 cat > "${REMOTE_DEPLOY_ROOT}/state/sandbox-manager.yaml" <<EOF
 apiVersion: v1

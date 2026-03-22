@@ -29,6 +29,12 @@ import {
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
 import {
+  resolveFileLibraryMetadataUrlForExternalExecution,
+  resolveFileLibraryMetadataUrlForInternalExecution,
+  resolveFileLibraryStorageBucketUrlForExternalExecution,
+  resolveFileLibraryStorageBucketUrlForInternalExecution,
+} from './file-library-runtime.js';
+import {
   asObject,
   buildId,
   readTaskInputRefs,
@@ -98,6 +104,32 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
 
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
+
+export function resolveTaskWorkspaceMountAccess(input: {
+  agentMode: 'external' | 'internal' | null;
+  metadataUrl: string;
+  storageBucketUrl?: string;
+}): {
+  metadataUrl: string;
+  storageBucketUrl?: string;
+} {
+  if (input.agentMode === 'external') {
+    return {
+      metadataUrl: resolveFileLibraryMetadataUrlForExternalExecution(input.metadataUrl),
+      storageBucketUrl: resolveFileLibraryStorageBucketUrlForExternalExecution(input.storageBucketUrl),
+    };
+  }
+  if (input.agentMode === 'internal') {
+    return {
+      metadataUrl: resolveFileLibraryMetadataUrlForInternalExecution(input.metadataUrl),
+      storageBucketUrl: resolveFileLibraryStorageBucketUrlForInternalExecution(input.storageBucketUrl),
+    };
+  }
+  return {
+    metadataUrl: input.metadataUrl,
+    storageBucketUrl: input.storageBucketUrl,
+  };
+}
 
 function defaultWorkspaceNameFromTaskTitle(title: string): string {
   const trimmed = title.trim();
@@ -323,6 +355,16 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
       return true;
     }
+    const agent = await deps.agentResourceService.getAgent(
+      route.workspaceId,
+      route.projectId,
+      task.agent_id,
+    );
+    const executionMountAccess = resolveTaskWorkspaceMountAccess({
+      agentMode: agent?.mode ?? null,
+      metadataUrl: mountAccess.metadata_url,
+      storageBucketUrl: mountAccess.storage_bucket_url,
+    });
     json(res, 200, {
       task_id: task.id,
       workspace_binding_mode: 'file_library',
@@ -330,8 +372,8 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       file_library_id: workspaceFileLibrary.id,
       file_library_name: workspaceFileLibrary.name,
       filesystem_name: mountAccess.filesystem_name,
-      metadata_url: mountAccess.metadata_url,
-      storage_bucket_url: mountAccess.storage_bucket_url,
+      metadata_url: executionMountAccess.metadataUrl,
+      storage_bucket_url: executionMountAccess.storageBucketUrl,
       recommended_mount_path: mountAccess.recommended_mount_path,
       created_at: mountAccess.created_at,
     });

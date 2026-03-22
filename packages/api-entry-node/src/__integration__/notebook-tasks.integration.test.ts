@@ -260,6 +260,72 @@ describe('api-entry-node notebook task routes', () => {
     });
   });
 
+  it('rewrites task workspace mount access for external runner containers', async () => {
+    const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';
+    try {
+      const { baseUrl, deps } = startServer();
+      const workspaceLibrary = await createFileLibrary(baseUrl, 'External Runner Workspace Access Library');
+      const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+        name: 'external-notebook-agent',
+        mode: 'external',
+        interaction_mode: 'notebook',
+        status: 'enabled',
+        config: {
+          _external_key_source: 'generated',
+        } as never,
+        owner_id: 'user_test',
+        visibility: 'private',
+        execution_preferences_json: {
+          notebook: {
+            endpoint_id: 'ep_external',
+            wire_api: 'responses',
+            model: 'glm-5-turbo',
+          },
+        },
+      });
+      await deps.agentResourceService.markAgentConnected(agent.id, {
+        remote_ip: '127.0.0.1',
+        protocol_version: '1.0',
+        last_pong_at: new Date().toISOString(),
+      });
+
+      const createTaskRes = await apiFetch(
+        baseUrl,
+        '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'External Runner Workspace Access Task',
+            agent_id: agent.id,
+            workspace_file_library_id: workspaceLibrary.id,
+          }),
+        },
+      );
+      expect(createTaskRes.status).toBe(201);
+      const task = (await createTaskRes.json()) as { id: string };
+
+      const workspaceAccessRes = await apiFetch(
+        baseUrl,
+        `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+        { method: 'POST' },
+      );
+      expect(workspaceAccessRes.status).toBe(200);
+      await expect(workspaceAccessRes.json()).resolves.toMatchObject({
+        task_id: task.id,
+        metadata_url: expect.stringContaining('@172.18.0.1:15432/'),
+        storage_bucket_url: expect.stringContaining('http://172.18.0.1:19000/'),
+      });
+    } finally {
+      if (previousExternalExecutionBase === undefined) {
+        delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+      } else {
+        process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
+      }
+    }
+  });
+
   it('rejects creating a second active task against an occupied workspace file library', async () => {
     const { baseUrl, deps } = startServer();
     const workspaceLibrary = await createFileLibrary(baseUrl, 'Occupied Workspace');

@@ -702,6 +702,8 @@ export async function startCodexRunnerDockerProcess(args: {
     containerName,
     '--network',
     'host',
+    '--add-host',
+    'host.docker.internal:host-gateway',
     '--privileged',
     '--device',
     '/dev/fuse',

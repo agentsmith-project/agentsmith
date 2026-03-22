@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { getFileLibraryRuntimeReadiness, resolveFileLibraryRuntimeConfig } from './file-library-runtime.js';
+import {
+  getFileLibraryRuntimeReadiness,
+  resolveFileLibraryMetadataUrlForExternalExecution,
+  resolveFileLibraryMetadataUrlForInternalExecution,
+  resolveFileLibraryRuntimeConfig,
+  resolveFileLibraryStorageBucketUrlForExternalExecution,
+  resolveFileLibraryStorageBucketUrlForInternalExecution,
+} from './file-library-runtime.js';
 
 describe('file-library-runtime readiness', () => {
   it('reports missing executables and env explicitly', async () => {
@@ -40,5 +47,66 @@ describe('file-library-runtime readiness', () => {
     expect(config.pgPublicPort).toBe(15432);
     expect(config.minioStorageEndpoint).toBe('http://minio:9000');
     expect(config.minioPublicEndpoint).toBe('http://localhost:19000');
+  });
+
+  it('rewrites loopback file library access for external runner execution', () => {
+    const env = {
+      EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL: 'http://172.18.0.1:20000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForExternalExecution(
+        'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@172.18.0.1:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForExternalExecution(
+        'http://localhost:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://172.18.0.1:19000/jfs-lib-demo');
+  });
+
+  it('preserves non-loopback file library access for external runner execution', () => {
+    const env = {
+      EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL: 'http://172.18.0.1:20000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForExternalExecution(
+        'postgres://jfsu_user:secret@postgres.example.internal:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@postgres.example.internal:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForExternalExecution(
+        'http://minio.example.internal:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://minio.example.internal:19000/jfs-lib-demo');
+  });
+
+  it('rewrites loopback file library access for internal agent execution', () => {
+    const env = {
+      INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: '10.88.0.1',
+      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://10.88.0.1:19000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForInternalExecution(
+        'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@10.88.0.1:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForInternalExecution(
+        'http://localhost:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://10.88.0.1:19000/jfs-lib-demo');
   });
 });

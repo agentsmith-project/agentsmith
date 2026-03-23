@@ -897,6 +897,7 @@ test.describe('@lane-real release user story end-to-end', () => {
         const internalStoryPath = await waitForAnyMountedWorkspacePath(
           mountedInternalWorkspace.mountPath,
           [
+            'internal_story.txt',
             path.join('notes', 'internal_story.txt'),
             path.join('.artifacts', 'internal_story.txt'),
           ],

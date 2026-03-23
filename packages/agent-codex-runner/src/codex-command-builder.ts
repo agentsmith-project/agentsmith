@@ -15,6 +15,7 @@ export function buildTaskCodexConfig(args: {
   wireApi: 'responses' | 'chat';
   modelContextWindow?: number;
   modelAutoCompactTokenLimit?: number;
+  modelCatalogPath?: string;
   userBearerToken?: string;
 }): string {
   const lines: string[] = [
@@ -27,11 +28,6 @@ export function buildTaskCodexConfig(args: {
     'web_search = "disabled"',
     '# Keep notebook output compact; reasoning is still available in tool/provider responses when needed.',
     'hide_agent_reasoning = true',
-    '',
-    '[model_providers.proxy]',
-    `name = ${tomlString('Proxy')}`,
-    `base_url = ${tomlString(args.endpointProxyBase)}`,
-    `wire_api = ${tomlString(args.wireApi)}`,
   ];
   if (typeof args.modelContextWindow === 'number') {
     lines.push(`model_context_window = ${tomlNumber(args.modelContextWindow)}`);
@@ -39,9 +35,23 @@ export function buildTaskCodexConfig(args: {
   if (typeof args.modelAutoCompactTokenLimit === 'number') {
     lines.push(`model_auto_compact_token_limit = ${tomlNumber(args.modelAutoCompactTokenLimit)}`);
   }
-  if (args.userBearerToken && args.userBearerToken.trim().length > 0) {
-    lines.push(`experimental_bearer_token = ${tomlString(args.userBearerToken)}`);
+  if (args.modelCatalogPath && args.modelCatalogPath.trim().length > 0) {
+    lines.push(`model_catalog_json = ${tomlString(args.modelCatalogPath)}`);
   }
+  if (args.userBearerToken && args.userBearerToken.trim().length > 0) {
+    lines.push('');
+    lines.push('[model_providers.proxy]');
+    lines.push(`name = ${tomlString('Proxy')}`);
+    lines.push(`base_url = ${tomlString(args.endpointProxyBase)}`);
+    lines.push(`wire_api = ${tomlString(args.wireApi)}`);
+    lines.push(`experimental_bearer_token = ${tomlString(args.userBearerToken)}`);
+    return `${lines.join('\n')}\n`;
+  }
+  lines.push('');
+  lines.push('[model_providers.proxy]');
+  lines.push(`name = ${tomlString('Proxy')}`);
+  lines.push(`base_url = ${tomlString(args.endpointProxyBase)}`);
+  lines.push(`wire_api = ${tomlString(args.wireApi)}`);
   return `${lines.join('\n')}\n`;
 }
 
@@ -53,6 +63,7 @@ export function buildCodexExecArgs(args: {
   wireApi: 'responses' | 'chat';
   modelContextWindow?: number;
   modelAutoCompactTokenLimit?: number;
+  modelCatalogPath?: string;
   userBearerToken?: string;
   notebookMode?: boolean;
   yolo?: boolean;
@@ -92,6 +103,12 @@ export function buildCodexExecArgs(args: {
       `model_auto_compact_token_limit=${tomlNumber(args.modelAutoCompactTokenLimit)}`,
     );
   }
+  if (args.modelCatalogPath && args.modelCatalogPath.trim().length > 0) {
+    cliArgs.push(
+      '-c',
+      `model_catalog_json=${JSON.stringify(args.modelCatalogPath)}`,
+    );
+  }
   if (args.yolo) {
     cliArgs.splice(1, 0, '--dangerously-bypass-approvals-and-sandbox');
   } else {
@@ -108,4 +125,58 @@ export function buildCodexExecArgs(args: {
   }
   cliArgs.push(args.prompt);
   return cliArgs;
+}
+
+export function buildTaskCodexModelCatalog(args: {
+  model: string;
+  modelContextWindow: number;
+  modelAutoCompactTokenLimit: number;
+  inputModalities?: string[];
+  supportsSearchTool?: boolean;
+  supportsParallelToolCalls?: boolean;
+}): string {
+  const inputModalities = Array.isArray(args.inputModalities) && args.inputModalities.length > 0
+    ? [...new Set(args.inputModalities.map((item) => item.trim()).filter((item) => item.length > 0))]
+    : ['text'];
+  const catalog = {
+    models: [
+      {
+        slug: args.model,
+        display_name: args.model,
+        description: 'AgentSmith endpoint-backed Codex model.',
+        default_reasoning_level: 'medium',
+        supported_reasoning_levels: [
+          { effort: 'low', description: 'Fast responses with lighter reasoning' },
+          { effort: 'medium', description: 'Balances speed and reasoning depth for everyday tasks' },
+          { effort: 'high', description: 'Greater reasoning depth for complex problems' },
+          { effort: 'xhigh', description: 'Extra high reasoning depth for complex problems' },
+        ],
+        shell_type: 'shell_command',
+        visibility: 'list',
+        supported_in_api: true,
+        priority: 0,
+        availability_nux: null,
+        upgrade: null,
+        base_instructions:
+          'You are Codex, a coding agent based on GPT-5. You and the user share the same workspace and collaborate to achieve the user\'s goals.',
+        model_messages: null,
+        supports_reasoning_summaries: false,
+        default_reasoning_summary: 'auto',
+        support_verbosity: false,
+        default_verbosity: null,
+        apply_patch_tool_type: 'freeform',
+        web_search_tool_type: 'text',
+        truncation_policy: { mode: 'bytes', limit: 10000 },
+        supports_parallel_tool_calls: args.supportsParallelToolCalls ?? false,
+        supports_image_detail_original: false,
+        context_window: Math.floor(args.modelContextWindow),
+        auto_compact_token_limit: Math.floor(args.modelAutoCompactTokenLimit),
+        effective_context_window_percent: 95,
+        experimental_supported_tools: [],
+        input_modalities: inputModalities,
+        supports_search_tool: args.supportsSearchTool ?? false,
+      },
+    ],
+  };
+  return `${JSON.stringify(catalog, null, 2)}\n`;
 }

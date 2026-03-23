@@ -64,14 +64,15 @@ function normalizeProxyPath(value: string): string {
 
 function routePathForProxyPath(proxyPath: string): string | null {
   const normalized = normalizeProxyPath(proxyPath);
-  if (normalized === 'chat/completions') return '/openai/v1/chat/completions';
-  if (normalized === 'responses') return '/openai/v1/responses';
-  if (normalized === 'messages') return '/anthropic/v1/messages';
+  if (normalized === 'openai/chat/completions') return '/openai/v1/chat/completions';
+  if (normalized === 'openai/responses') return '/openai/v1/responses';
+  if (normalized === 'anthropic/messages') return '/anthropic/v1/messages';
   return null;
 }
 
 function fixedUpstreamFormat(protocol?: EndpointProtocol): RuntimeUpstreamConfig['fixed_upstream_format'] | undefined {
   if (protocol === 'anthropic_compatible') return 'anthropic';
+  if (protocol === 'openai_compatible') return 'openai-completion';
   if (protocol === 'google_gemini') return 'google';
   return undefined;
 }

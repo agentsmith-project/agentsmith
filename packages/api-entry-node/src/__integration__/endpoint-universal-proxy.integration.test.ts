@@ -172,7 +172,7 @@ describe('api-entry-node universal proxy integration', () => {
 
     const proxyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/responses`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -225,7 +225,7 @@ describe('api-entry-node universal proxy integration', () => {
 
     const proxyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/messages`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/anthropic/messages`,
       {
         method: 'POST',
         headers: {
@@ -281,7 +281,7 @@ describe('api-entry-node universal proxy integration', () => {
 
     const proxyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/responses`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

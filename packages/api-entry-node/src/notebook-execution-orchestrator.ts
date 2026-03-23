@@ -156,6 +156,31 @@ function deriveNotebookModelWindow(profile: { max_context_tokens?: number } | nu
   };
 }
 
+function deriveNotebookCodexModelCatalog(args: {
+  capabilities?: Array<{ type?: string; enabled?: boolean }> | null;
+}): {
+  input_modalities: string[];
+  supports_search_tool: boolean;
+  supports_parallel_tool_calls: boolean;
+} {
+  const inputModalities = new Set<string>(['text']);
+  if (Array.isArray(args.capabilities)) {
+    for (const capability of args.capabilities) {
+      if (capability?.enabled !== true) continue;
+      if (capability.type === 'multimodal_completion') {
+        inputModalities.add('image');
+      }
+    }
+  }
+  return {
+    input_modalities: [...inputModalities],
+    supports_search_tool: false,
+    // We only expose parallel tool calling when endpoint truth explicitly models it.
+    // `supports_tool_call` alone is not enough, and overclaiming breaks compat upstreams.
+    supports_parallel_tool_calls: false,
+  };
+}
+
 export async function runNotebookTaskWithExecutionAgent(input: {
   deps: NodeApiDeps;
   task: NotebookTaskRecord;
@@ -259,9 +284,19 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     let endpointModel = endpoint.model?.trim() ?? '';
     let modelContextWindow: number | undefined;
     let modelAutoCompactTokenLimit: number | undefined;
+    let modelCatalog:
+      | {
+        input_modalities: string[];
+        supports_search_tool: boolean;
+        supports_parallel_tool_calls: boolean;
+      }
+      | undefined;
     const modelWindow = deriveNotebookModelWindow(endpoint.model_profile);
     modelContextWindow = modelWindow.modelContextWindow;
     modelAutoCompactTokenLimit = modelWindow.modelAutoCompactTokenLimit;
+    modelCatalog = deriveNotebookCodexModelCatalog({
+      capabilities: endpoint.capabilities,
+    });
     if (agent.mode !== 'internal') {
       const preflight = await enforceEndpointGovernancePreflight({
         deps,
@@ -365,6 +400,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         model,
         model_context_window: modelContextWindow,
         model_auto_compact_token_limit: modelAutoCompactTokenLimit,
+        model_catalog: modelCatalog,
         workspace_binding_mode: agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
         workspace_path: agent.mode === 'internal' ? '/workspace' : undefined,
         workspace_file_library_id: task.workspace_file_library_id ?? null,

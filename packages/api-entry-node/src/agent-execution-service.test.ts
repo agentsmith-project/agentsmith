@@ -102,7 +102,7 @@ describe('AgentExecutionService', () => {
     expect(payload.heartbeat_interval_sec).toBe(15);
     expect(payload.resource_proxy?.base_url).toBe(
       `${wsBase.replace(/^ws:\/\//, 'http://')}`
-      + `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_hello/proxy`,
+      + `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_hello/proxy/openai`,
     );
   });
 

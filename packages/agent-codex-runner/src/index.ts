@@ -3,7 +3,11 @@ import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import type { Readable } from 'node:stream';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
-import { buildCodexExecArgs, buildTaskCodexConfig } from './codex-command-builder.js';
+import {
+  buildCodexExecArgs,
+  buildTaskCodexConfig,
+  buildTaskCodexModelCatalog,
+} from './codex-command-builder.js';
 import { sanitizeAgentDeltaChunk, sanitizeStderrChunk, type RunnerFilterStats } from './codex-output-filter.js';
 import {
   buildNotebookHeadlessPreamble,
@@ -41,6 +45,11 @@ type ServerStartPayload = {
     model?: string;
     model_context_window?: number;
     model_auto_compact_token_limit?: number;
+    model_catalog?: {
+      input_modalities?: string[];
+      supports_search_tool?: boolean;
+      supports_parallel_tool_calls?: boolean;
+    };
     workspace_binding_mode?: 'file_library' | 'pre_mounted';
     workspace_file_library_id?: string | null;
     workspace_file_library_name?: string | null;
@@ -649,6 +658,14 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       && Number.isFinite(executionContext.model_auto_compact_token_limit)
       ? Math.floor(executionContext.model_auto_compact_token_limit)
       : undefined;
+  const modelCatalogInputModalities = Array.isArray(executionContext.model_catalog?.input_modalities)
+    ? executionContext.model_catalog?.input_modalities
+      ?.filter((item): item is string => typeof item === 'string')
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0)
+    : ['text'];
+  const modelCatalogSupportsSearchTool = executionContext.model_catalog?.supports_search_tool === true;
+  const modelCatalogSupportsParallelToolCalls = executionContext.model_catalog?.supports_parallel_tool_calls === true;
   const sessionStateResult = await ensureCodexSessionStateCompatible({
     codexDir: taskPaths.codexDir,
     model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
@@ -657,6 +674,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     notebookMode: isNotebookMode,
     modelContextWindow,
     modelAutoCompactTokenLimit,
+    modelCatalogSignature: JSON.stringify({
+      input_modalities: modelCatalogInputModalities,
+      supports_search_tool: modelCatalogSupportsSearchTool,
+      supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
+    }),
   });
   debugLog('validated codex session state', {
     request_id: requestId,
@@ -670,9 +692,23 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const model = executionContext.model ?? payload.model ?? 'gpt-5-codex';
   const codexConfigDir = taskPaths.codexDir;
   await mkdir(codexConfigDir, { recursive: true });
+  const modelCatalogPath = join(codexConfigDir, 'catalog.json');
+  await writeFile(
+    modelCatalogPath,
+    buildTaskCodexModelCatalog({
+      model,
+      modelContextWindow: modelContextWindow ?? 128000,
+      modelAutoCompactTokenLimit: modelAutoCompactTokenLimit ?? Math.floor((modelContextWindow ?? 128000) * 0.95),
+      inputModalities: modelCatalogInputModalities,
+      supportsSearchTool: modelCatalogSupportsSearchTool,
+      supportsParallelToolCalls: modelCatalogSupportsParallelToolCalls,
+    }),
+    'utf-8',
+  );
   debugLog('writing codex config', {
     request_id: requestId,
     config_path: join(codexConfigDir, 'config.toml'),
+    model_catalog_path: modelCatalogPath,
   });
   await writeFile(
     join(codexConfigDir, 'config.toml'),
@@ -682,6 +718,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       wireApi,
       modelContextWindow,
       modelAutoCompactTokenLimit,
+      modelCatalogPath,
       userBearerToken: executionContext.user_bearer_token,
     }),
     'utf-8',
@@ -696,6 +733,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     proxy_source: 'server_hello',
     model_context_window: modelContextWindow ?? null,
     model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
+    model_catalog_path: modelCatalogPath,
+    model_input_modalities: modelCatalogInputModalities,
+    model_supports_search_tool: modelCatalogSupportsSearchTool,
+    model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
     has_user_bearer_token: Boolean(executionContext.user_bearer_token && executionContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,
@@ -715,6 +756,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     wireApi,
     modelContextWindow,
     modelAutoCompactTokenLimit,
+    modelCatalogPath,
     userBearerToken: executionContext.user_bearer_token,
     notebookMode: isNotebookMode,
     yolo: codexYolo,
@@ -770,6 +812,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       wire_api: wireApi,
       model_context_window: modelContextWindow ?? null,
       model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
+      model_catalog_path: modelCatalogPath,
+      model_input_modalities: modelCatalogInputModalities,
+      model_supports_search_tool: modelCatalogSupportsSearchTool,
+      model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
       yolo: codexYolo,
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,

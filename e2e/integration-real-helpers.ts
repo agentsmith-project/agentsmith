@@ -7,13 +7,23 @@ import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './inte
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
-export const GLM_BASE_URL = process.env.INTEGRATION_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
-export const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'GLM-5';
+export const GLM_BASE_URL =
+  process.env.INTEGRATION_MINIMAX_CLAUDE_URL
+  ?? process.env.INTEGRATION_GLM_BASE_URL
+  ?? process.env.MINIMAX_CLAUDE_URL
+  ?? 'https://open.bigmodel.cn/api/anthropic';
+export const GLM_MODEL =
+  process.env.INTEGRATION_MODEL_NAME
+  ?? process.env.INTEGRATION_GLM_MODEL
+  ?? process.env.MODEL_NAME
+  ?? 'GLM-5';
 export const OPENAI_COMPAT_BASE_URL =
+  process.env.INTEGRATION_MINIMAX_OPENAI_URL ??
   process.env.INTEGRATION_OPENAI_COMPAT_BASE_URL ??
   process.env.OPENAI_URL_CODING_PLAN ??
   'https://open.bigmodel.cn/api/coding/paas/v4';
 export const OPENAI_COMPAT_MODEL =
+  process.env.INTEGRATION_MODEL_NAME ??
   process.env.INTEGRATION_OPENAI_COMPAT_MODEL ??
   process.env.OPENAI_MODEL_CODING_PLAN ??
   'glm-5-turbo';

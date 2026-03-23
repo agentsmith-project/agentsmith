@@ -172,7 +172,7 @@ describe('api-entry-node endpoint proxy bridge routes', () => {
 
     const proxyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -233,7 +233,7 @@ describe('api-entry-node endpoint proxy bridge routes', () => {
 
     const proxyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/messages`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/anthropic/messages`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -295,7 +295,7 @@ describe('api-entry-node endpoint proxy bridge routes', () => {
 
     const proxyRes = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/responses`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -353,7 +353,7 @@ describe('api-entry-node endpoint proxy bridge routes', () => {
 
     const gatewayRes = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages',
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/anthropic/messages',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -372,7 +372,7 @@ describe('api-entry-node endpoint proxy bridge routes', () => {
 
     const gatewayResInternalModel = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages',
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/anthropic/messages',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -389,7 +389,7 @@ describe('api-entry-node endpoint proxy bridge routes', () => {
 
     const gatewayResInternalName = await apiFetch(
       baseUrl,
-      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/messages',
+      '/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/anthropic/messages',
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

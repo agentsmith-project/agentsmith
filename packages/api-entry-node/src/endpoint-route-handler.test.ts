@@ -3,11 +3,11 @@ import { resolveEffectiveEndpointProxyPath } from './endpoint-route-handler.js';
 
 describe('resolveEffectiveEndpointProxyPath', () => {
   it('preserves explicit responses path for chat actions', () => {
-    expect(resolveEffectiveEndpointProxyPath('chat', 'responses', 'chat/completions')).toBe('responses');
+    expect(resolveEffectiveEndpointProxyPath('chat', 'openai/responses', 'chat/completions')).toBe('openai/responses');
   });
 
   it('preserves explicit anthropic messages path for chat actions', () => {
-    expect(resolveEffectiveEndpointProxyPath('chat', 'messages', 'chat/completions')).toBe('messages');
+    expect(resolveEffectiveEndpointProxyPath('chat', 'anthropic/messages', 'chat/completions')).toBe('anthropic/messages');
   });
 
   it('preserves explicit anthropic count tokens path for chat actions', () => {

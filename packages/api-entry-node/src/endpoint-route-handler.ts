@@ -87,21 +87,38 @@ export function resolveEffectiveEndpointProxyPath(
     .replace(/^v1\//i, '')
     .replace(/\/+$/, '');
   const preserveClientWirePath = action === 'chat' && new Set([
-    'chat/completions',
-    'responses',
-    'messages',
+    'openai/chat/completions',
+    'openai/responses',
+    'anthropic/messages',
     'messages/count_tokens',
   ]).has(normalizedOriginal);
 
   return preserveClientWirePath ? normalizedOriginal : (resolvedProxyPath || originalProxyPath);
 }
 
+function legacyBridgeProxyPath(proxyPath: string): string {
+  const normalized = proxyPath
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/^v1\//i, '')
+    .replace(/\/+$/, '');
+  if (normalized === 'openai/chat/completions') return 'chat/completions';
+  if (normalized === 'openai/responses') return 'responses';
+  if (normalized === 'anthropic/messages') return 'messages';
+  return normalized;
+}
+
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
-    if (proxyPath.startsWith('rerank')) return 'rerank';
-    if (proxyPath.startsWith('images/generations')) return 'image_generation';
-    if (proxyPath.startsWith('videos/generations')) return 'video_generation_create';
+    const normalized = proxyPath
+      .trim()
+      .replace(/^\/+/, '')
+      .replace(/^v1\//i, '')
+      .replace(/^(openai|anthropic|google)(?:\/v1beta)?\//i, '');
+    if (normalized.startsWith('rerank')) return 'rerank';
+    if (normalized.startsWith('images/generations')) return 'image_generation';
+    if (normalized.startsWith('videos/generations')) return 'video_generation_create';
     return 'chat';
   };
   const normalizeGatewayProxyPath = (value: string): string =>
@@ -263,13 +280,14 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         typeof requestBody !== 'undefined'
           ? requestBody
           : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
+      const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
+        action,
+        normalizedOriginalProxyPath,
+        resolved.proxyPath,
+      );
+      const legacyProxyPath = legacyBridgeProxyPath(effectiveProxyPath);
       const proxyResult = canUseUniversalProxy
         ? await (async () => {
-          const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
-            action,
-            normalizedOriginalProxyPath,
-            resolved.proxyPath,
-          );
           const namespace = await universalProxyService.ensureEndpointNamespace(
             route.workspaceId,
             route.projectId,
@@ -295,7 +313,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
           ),
           apiKey,
           endpointProtocol: endpoint.protocol,
-          proxyPath,
+          proxyPath: legacyProxyPath,
           model: resolvedModel,
           timeoutSeconds: endpoint.limits?.timeout_seconds,
           requestBody: resolvedRequestBody,
@@ -606,11 +624,11 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
   if (route.kind === 'llmGatewayProxy' && method === 'POST' && route.workspaceId && route.projectId && route.proxyPath) {
     const normalizedProxyPath = normalizeGatewayProxyPath(route.proxyPath);
-    const proxyPath = normalizedProxyPath === 'completions' ? 'chat/completions' : normalizedProxyPath;
+    const proxyPath = normalizedProxyPath === 'completions' ? 'openai/chat/completions' : normalizedProxyPath;
     const supportedProxyPaths = new Set([
-      'chat/completions',
-      'responses',
-      'messages',
+      'openai/chat/completions',
+      'openai/responses',
+      'anthropic/messages',
       'messages/count_tokens',
     ]);
     if (!supportedProxyPaths.has(proxyPath)) {

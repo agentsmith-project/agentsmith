@@ -384,7 +384,7 @@ export class AgentExecutionService {
       const resourceProxyBaseUrl = notebookEndpointId && origin
         ? `${origin}/api/v1/workspaces/${encodeURIComponent(keyRecord.workspace_id)}`
           + `/projects/${encodeURIComponent(keyRecord.project_id)}`
-          + `/endpoints/${encodeURIComponent(notebookEndpointId)}/proxy`
+          + `/endpoints/${encodeURIComponent(notebookEndpointId)}/proxy/openai`
         : undefined;
 
       const socketKey = buildSocketKey(agentId, sessionId);

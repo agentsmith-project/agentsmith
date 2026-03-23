@@ -74,13 +74,13 @@ describe('matchProjectsRoute', () => {
     });
 
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/proxy/chat/completions'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/proxy/openai/chat/completions'),
     ).toEqual({
       kind: 'endpointProxy',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
       endpointId: 'ep_1',
-      proxyPath: 'chat/completions',
+      proxyPath: 'openai/chat/completions',
     });
 
     expect(
@@ -140,12 +140,12 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
-      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/v1/messages'),
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/llm-gateway/anthropic/messages'),
     ).toEqual({
       kind: 'llmGatewayProxy',
       workspaceId: 'ws_default',
       projectId: 'proj_1',
-      proxyPath: 'v1/messages',
+      proxyPath: 'anthropic/messages',
     });
     expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/project-pricing'),

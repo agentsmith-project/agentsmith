@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const SESSION_FINGERPRINT_FILE = '.mbos-session-fingerprint.json';
-const SESSION_STATE_VERSION = 'runner_session_v2';
+const SESSION_STATE_VERSION = 'runner_session_v3';
 const PROMPT_POLICY_VERSION = 'latest_user_only_v1';
 
 type SessionFingerprint = {
@@ -14,6 +14,7 @@ type SessionFingerprint = {
   notebook_mode: boolean;
   model_context_window: number | null;
   model_auto_compact_token_limit: number | null;
+  model_catalog_signature: string | null;
 };
 
 function buildSessionFingerprint(input: {
@@ -23,6 +24,7 @@ function buildSessionFingerprint(input: {
   notebookMode: boolean;
   modelContextWindow?: number;
   modelAutoCompactTokenLimit?: number;
+  modelCatalogSignature?: string;
 }): SessionFingerprint {
   return {
     session_state_version: SESSION_STATE_VERSION,
@@ -35,6 +37,10 @@ function buildSessionFingerprint(input: {
     model_auto_compact_token_limit: Number.isFinite(input.modelAutoCompactTokenLimit)
       ? Math.floor(input.modelAutoCompactTokenLimit!)
       : null,
+    model_catalog_signature:
+      typeof input.modelCatalogSignature === 'string' && input.modelCatalogSignature.trim().length > 0
+        ? input.modelCatalogSignature
+        : null,
   };
 }
 
@@ -55,6 +61,7 @@ export async function ensureCodexSessionStateCompatible(input: {
   notebookMode: boolean;
   modelContextWindow?: number;
   modelAutoCompactTokenLimit?: number;
+  modelCatalogSignature?: string;
 }): Promise<{ resetPerformed: boolean; reason: 'missing' | 'unchanged' | 'changed' }> {
   await mkdir(input.codexDir, { recursive: true });
   const fingerprintPath = join(input.codexDir, SESSION_FINGERPRINT_FILE);
@@ -65,6 +72,7 @@ export async function ensureCodexSessionStateCompatible(input: {
     notebookMode: input.notebookMode,
     modelContextWindow: input.modelContextWindow,
     modelAutoCompactTokenLimit: input.modelAutoCompactTokenLimit,
+    modelCatalogSignature: input.modelCatalogSignature,
   });
 
   let previousFingerprint: SessionFingerprint | null = null;

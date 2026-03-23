@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { listAuditEvents } from './audit-usage-store.js';
+import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 
@@ -271,6 +272,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           api_base: 'http://172.19.0.1:20072',
           model_context_window: 256000,
           model_auto_compact_token_limit: 243200,
+          model_catalog: {
+            input_modalities: ['text'],
+            supports_search_tool: false,
+            supports_parallel_tool_calls: false,
+          },
           workspace_binding_mode: 'pre_mounted',
           workspace_path: '/workspace',
           workspace_file_library_id: 'flib_internal',
@@ -318,6 +324,10 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           name: 'endpoint-external',
           type: 'openai',
           base_url: 'https://example.com',
+          capabilities: [
+            { type: 'chat_completion', enabled: true },
+            { type: 'multimodal_completion', enabled: true },
+          ],
           model_profile: {
             max_context_tokens: 128000,
           },
@@ -392,6 +402,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect.objectContaining({
         executionContext: expect.objectContaining({
           api_base: 'http://api:20000',
+          model_catalog: {
+            input_modalities: ['text', 'image'],
+            supports_search_tool: false,
+            supports_parallel_tool_calls: false,
+          },
           workspace_binding_mode: 'file_library',
           workspace_file_library_id: 'flib_external',
         }),
@@ -722,6 +737,11 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         executionContext: expect.objectContaining({
           model_context_window: 200000,
           model_auto_compact_token_limit: 190000,
+          model_catalog: {
+            input_modalities: ['text'],
+            supports_search_tool: false,
+            supports_parallel_tool_calls: false,
+          },
         }),
       }),
     );

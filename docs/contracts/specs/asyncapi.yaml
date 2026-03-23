@@ -259,6 +259,18 @@ components:
                   model_auto_compact_token_limit:
                     type: integer
                     minimum: 1
+                  model_catalog:
+                    type: object
+                    additionalProperties: false
+                    properties:
+                      input_modalities:
+                        type: array
+                        items:
+                          type: string
+                      supports_search_tool:
+                        type: boolean
+                      supports_parallel_tool_calls:
+                        type: boolean
                   notebook_mode:
                     type: boolean
                   task_inputs:

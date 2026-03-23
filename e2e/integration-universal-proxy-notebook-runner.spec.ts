@@ -17,6 +17,7 @@ import {
 type UpstreamServer = {
   baseUrl: string;
   stop: () => Promise<void>;
+  requests?: Array<Record<string, unknown>>;
 };
 
 function requireGlmApiKey(): string {
@@ -427,10 +428,11 @@ async function createWorkspaceFileLibraryViaApi(args: {
   return body.id!;
 }
 
-async function startOpenAiResponsesUpstream(replyText: string): Promise<UpstreamServer> {
+async function startOpenAiChatCompletionsUpstream(replyText: string): Promise<UpstreamServer> {
+  const requests: Array<Record<string, unknown>> = [];
   const server = http.createServer((req, res) => {
     void (async () => {
-      if (req.method !== 'POST' || req.url !== '/v1/responses') {
+      if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
         res.statusCode = 404;
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ error: 'not_found' }));
@@ -441,118 +443,20 @@ async function startOpenAiResponsesUpstream(replyText: string): Promise<Upstream
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const bodyText = Buffer.concat(chunks).toString('utf-8');
-      const body = bodyText ? JSON.parse(bodyText) as { stream?: boolean } : {};
+      const body = bodyText ? JSON.parse(bodyText) as Record<string, unknown> & { stream?: boolean } : {};
+      requests.push(body);
       if (body.stream) {
         res.statusCode = 200;
         res.setHeader('content-type', 'text/event-stream');
-        res.write('event: response.created\n');
-        res.write(
-          'data: {"type":"response.created","sequence_number":1,"response":{"id":"resp_mock","object":"response","created_at":1,"status":"in_progress","background":false,"error":null,"output":[]}}\n\n',
-        );
-        res.write('event: response.in_progress\n');
-        res.write(
-          'data: {"type":"response.in_progress","sequence_number":2,"response":{"id":"resp_mock","object":"response","created_at":1,"status":"in_progress"}}\n\n',
-        );
-        res.write('event: response.output_item.added\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.output_item.added',
-            sequence_number: 3,
-            output_index: 0,
-            item: {
-              id: 'msg_resp_1',
-              type: 'message',
-              role: 'assistant',
-              content: [],
-            },
-          })}\n\n`,
-        );
-        res.write('event: response.content_part.added\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.content_part.added',
-            sequence_number: 4,
-            item_id: 'msg_resp_1',
-            output_index: 0,
-            content_index: 0,
-            part: {
-              type: 'output_text',
-              text: '',
-            },
-          })}\n\n`,
-        );
-        res.write('event: response.output_text.delta\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.output_text.delta',
-            sequence_number: 5,
-            item_id: 'msg_resp_1',
-            output_index: 0,
-            content_index: 0,
-            delta: replyText,
-          })}\n\n`,
-        );
-        res.write('event: response.output_text.done\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.output_text.done',
-            sequence_number: 6,
-            item_id: 'msg_resp_1',
-            output_index: 0,
-            content_index: 0,
-            text: replyText,
-          })}\n\n`,
-        );
-        res.write('event: response.content_part.done\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.content_part.done',
-            sequence_number: 7,
-            item_id: 'msg_resp_1',
-            output_index: 0,
-            content_index: 0,
-            part: {
-              type: 'output_text',
-              text: replyText,
-            },
-          })}\n\n`,
-        );
-        res.write('event: response.output_item.done\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.output_item.done',
-            sequence_number: 8,
-            output_index: 0,
-            item: {
-              id: 'msg_resp_1',
-              type: 'message',
-              role: 'assistant',
-              content: [{ type: 'output_text', text: replyText }],
-            },
-          })}\n\n`,
-        );
-        res.write('event: response.completed\n');
-        res.write(
-          `data: ${JSON.stringify({
-            type: 'response.completed',
-            sequence_number: 9,
-            response: {
-              id: 'resp_mock',
-              object: 'response',
-              created_at: 1,
-              status: 'completed',
-              output: [
-                {
-                  id: 'msg_resp_1',
-                  type: 'message',
-                  role: 'assistant',
-                  content: [{ type: 'output_text', text: replyText }],
-                },
-              ],
-              usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 },
-            },
-          })}\n\n`,
-        );
+        const payload = JSON.stringify({
+          id: 'chatcmpl_it',
+          object: 'chat.completion.chunk',
+          created: Math.floor(Date.now() / 1000),
+          model: 'glm-5',
+          choices: [{ index: 0, delta: { content: replyText }, finish_reason: 'stop' }],
+        });
+        res.write(`data: ${payload}\n\n`);
+        res.write('data: [DONE]\n\n');
         res.end();
         return;
       }
@@ -560,19 +464,19 @@ async function startOpenAiResponsesUpstream(replyText: string): Promise<Upstream
       res.setHeader('content-type', 'application/json');
       res.end(
         JSON.stringify({
-          id: 'resp_mock',
-          object: 'response',
-          created_at: 1,
-          status: 'completed',
-          output: [
+          object: 'chat.completion',
+          id: 'chatcmpl_it',
+          choices: [
             {
-              id: 'msg_resp_1',
-              type: 'message',
-              role: 'assistant',
-              content: [{ type: 'output_text', text: replyText }],
+              index: 0,
+              finish_reason: 'stop',
+              message: {
+                role: 'assistant',
+                content: replyText,
+              },
             },
           ],
-          usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
+          usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
         }),
       );
     })();
@@ -583,6 +487,7 @@ async function startOpenAiResponsesUpstream(replyText: string): Promise<Upstream
   return {
     baseUrl: `http://127.0.0.1:${address.port}/v1`,
     stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    requests,
   };
 }
 
@@ -658,7 +563,7 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
       {
         kind: 'openai' as const,
         replyToken: `UPX_NOTEBOOK_OPENAI_${Date.now()}`,
-        startUpstream: startOpenAiResponsesUpstream,
+        startUpstream: startOpenAiChatCompletionsUpstream,
         protocol: 'openai_compatible' as const,
       },
       {
@@ -733,6 +638,21 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
             taskId,
             expectedText: scenario.replyToken,
           });
+          if (scenario.kind === 'openai') {
+            expect(upstream.requests?.length).toBeGreaterThan(0);
+            const requestBody = upstream.requests?.at(-1);
+            expect(requestBody?.messages).toBeTruthy();
+            expect(requestBody?.model).toBe('glm-5-turbo');
+            expect(requestBody?.store).toBeUndefined();
+            expect(requestBody?.reasoning).toBeUndefined();
+            expect(requestBody?.messages).toEqual(
+              expect.arrayContaining([
+                expect.objectContaining({
+                  role: 'user',
+                }),
+              ]),
+            );
+          }
         } finally {
           await runner.stop();
         }
@@ -857,6 +777,17 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
         const configText = await readFile(configPath!, 'utf8');
         expect(configText).toContain('model_context_window = 128000');
         expect(configText).toContain(`model_auto_compact_token_limit = ${scenario.expectedCompactLimit}`);
+        expect(configText).toContain('model_catalog_json = ');
+
+        const catalogPath = await findFileRecursively(runner.workspaceRoot, ['.codex', 'catalog.json']);
+        expect(catalogPath).toBeTruthy();
+        const catalog = JSON.parse(await readFile(catalogPath!, 'utf8')) as {
+          models?: Array<Record<string, unknown>>;
+        };
+        expect(catalog.models?.[0]?.context_window).toBe(128000);
+        expect(catalog.models?.[0]?.auto_compact_token_limit).toBe(scenario.expectedCompactLimit);
+        expect(catalog.models?.[0]?.input_modalities).toEqual(['text']);
+        expect(catalog.models?.[0]?.supports_search_tool).toBe(false);
 
         await sendNotebookMessage({
           page,

@@ -124,7 +124,7 @@ describe('UniversalProxyService', () => {
       req: createRequest(),
       res,
       namespace: 'ws_default__proj_1__ep_1',
-      proxyPath: 'responses',
+      proxyPath: 'openai/responses',
       model: 'glm-5-turbo',
       requestBody: { input: 'hello' },
     });

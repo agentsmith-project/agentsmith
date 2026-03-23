@@ -29,6 +29,7 @@ describe('ensureCodexSessionStateCompatible', () => {
       notebookMode: true,
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
     expect(result).toEqual({ resetPerformed: false, reason: 'missing' });
   });
@@ -43,6 +44,7 @@ describe('ensureCodexSessionStateCompatible', () => {
       notebookMode: true,
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
     await writeFile(join(codexDir, 'state_5.sqlite'), 'keep');
     const result = await ensureCodexSessionStateCompatible({
@@ -53,6 +55,7 @@ describe('ensureCodexSessionStateCompatible', () => {
       notebookMode: true,
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
     expect(result).toEqual({ resetPerformed: false, reason: 'unchanged' });
     await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDir, 'state_5.sqlite'), 'utf8'))).resolves.toBe('keep');
@@ -68,6 +71,7 @@ describe('ensureCodexSessionStateCompatible', () => {
       notebookMode: true,
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
     await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
     await writeFile(join(codexDir, 'state_5.sqlite-wal'), 'stale');
@@ -84,6 +88,7 @@ describe('ensureCodexSessionStateCompatible', () => {
       notebookMode: true,
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
     });
 
     expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
@@ -113,6 +118,36 @@ describe('ensureCodexSessionStateCompatible', () => {
       notebookMode: true,
       modelContextWindow: 256000,
       modelAutoCompactTokenLimit: 243200,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
+    });
+
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
+  });
+
+  it('resets persisted session files when model catalog signature changes', async () => {
+    const codexDir = await createCodexDir();
+    await ensureCodexSessionStateCompatible({
+      codexDir,
+      model: 'glm-5-turbo',
+      wireApi: 'responses',
+      resourceProxyBase: 'http://proxy-a',
+      notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"],"supports_search_tool":false}',
+    });
+    await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir,
+      model: 'glm-5-turbo',
+      wireApi: 'responses',
+      resourceProxyBase: 'http://proxy-a',
+      notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text","image"],"supports_search_tool":false}',
     });
 
     expect(result).toEqual({ resetPerformed: true, reason: 'changed' });

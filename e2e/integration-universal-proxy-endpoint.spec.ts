@@ -12,6 +12,29 @@ type UpstreamServer = {
   stop: () => Promise<void>;
 };
 
+function extractResponsesText(body: unknown): string | null {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null;
+  const record = body as {
+    output_text?: unknown;
+    output?: Array<{
+      type?: unknown;
+      content?: Array<{ type?: unknown; text?: unknown }>;
+    }>;
+  };
+  if (typeof record.output_text === 'string' && record.output_text.trim()) {
+    return record.output_text;
+  }
+  for (const item of record.output ?? []) {
+    if (item?.type !== 'message') continue;
+    for (const content of item.content ?? []) {
+      if (content?.type === 'output_text' && typeof content.text === 'string' && content.text.trim()) {
+        return content.text;
+      }
+    }
+  }
+  return null;
+}
+
 async function issueDevToken(page: Page): Promise<string> {
   const response = await page.request.post('http://localhost:18080/realms/mbos/protocol/openid-connect/token', {
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -106,10 +129,10 @@ async function createEndpointViaApi(
   return body.id;
 }
 
-async function startOpenAiResponsesUpstream(replyText: string): Promise<UpstreamServer> {
+async function startOpenAiChatCompletionsUpstream(replyText: string): Promise<UpstreamServer> {
   const server = http.createServer((req, res) => {
     void (async () => {
-      if (req.method !== 'POST' || req.url !== '/v1/responses') {
+      if (req.method !== 'POST' || req.url !== '/v1/chat/completions') {
         res.statusCode = 404;
         res.setHeader('content-type', 'application/json');
         res.end(JSON.stringify({ error: 'not_found' }));
@@ -119,19 +142,19 @@ async function startOpenAiResponsesUpstream(replyText: string): Promise<Upstream
       res.setHeader('content-type', 'application/json');
       res.end(
         JSON.stringify({
-          object: 'response',
-          status: 'completed',
-          output: [
+          object: 'chat.completion',
+          id: 'chatcmpl_it',
+          choices: [
             {
-              id: 'msg_resp_1',
-              type: 'message',
-              role: 'assistant',
-              status: 'completed',
-              content: [{ type: 'output_text', text: replyText }],
+              index: 0,
+              finish_reason: 'stop',
+              message: {
+                role: 'assistant',
+                content: replyText,
+              },
             },
           ],
-          output_text: replyText,
-          usage: { input_tokens: 3, output_tokens: 4, total_tokens: 7 },
+          usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
         }),
       );
     })();
@@ -179,7 +202,7 @@ async function startAnthropicStreamingUpstream(replyText: string): Promise<Upstr
 test.describe('@lane-real integration universal proxy endpoint routes', () => {
   test('responses proxy works against openai-compatible endpoint in dev environment', async ({ page }) => {
     test.setTimeout(240_000);
-    const upstream = await startOpenAiResponsesUpstream('dev-universal-responses-ok');
+    const upstream = await startOpenAiChatCompletionsUpstream('dev-universal-responses-ok');
 
     try {
       const token = await issueDevToken(page);
@@ -194,7 +217,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
       });
 
       const response = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/responses`,
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
         {
           headers: {
             Authorization: `Bearer ${token}`,
@@ -208,8 +231,8 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
         },
       );
       expect(response.ok()).toBeTruthy();
-      const body = (await response.json()) as { output_text?: string };
-      expect(body.output_text).toBe('dev-universal-responses-ok');
+      const body = (await response.json()) as unknown;
+      expect(extractResponsesText(body)).toBe('dev-universal-responses-ok');
     } finally {
       await upstream.stop();
     }
@@ -232,7 +255,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
       });
 
       const response = await page.request.post(
-        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/messages`,
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/anthropic/messages`,
         {
           headers: {
             Authorization: `Bearer ${token}`,

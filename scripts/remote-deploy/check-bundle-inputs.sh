@@ -40,6 +40,8 @@ for relative in manifest.get("bundle_files", []):
       source = root_dir / "infra" / "deploy" / "remote" / "kind" / pathlib.Path(relative).name
     elif relative.startswith("k8s/"):
       source = root_dir / "infra" / "deploy" / "remote" / "k8s" / pathlib.Path(relative).name
+    elif relative.startswith("universal-proxy/"):
+      source = root_dir / "infra" / "deploy" / "remote" / "universal-proxy" / pathlib.Path(relative).name
     elif relative.startswith("docs/contracts/"):
       source = root_dir / relative
     elif relative in {"checksums.txt", "VERSION"}:

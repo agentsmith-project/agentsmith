@@ -254,6 +254,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 - Before building release images or an offline bundle, developers must run `npm run test:release:precheck`.
 - Before building release images or an offline bundle, developers must also run `npm run test:bundle:inputs`.
 - Before building release images or an offline bundle, developers must also run `npm run test:rendered-env`.
+- Before building release images or an offline bundle, developers must also run `npm run test:client-public-runtime`.
 - Developers running an external runner directly from source must use `npm run agent:external:dev` with the same `site.env` schema instead of ad hoc env exports.
 - The local precheck must use locally started Web/API services and real Keycloak dependencies instead of a release bundle.
 - The local precheck must fail fast if:
@@ -265,7 +266,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
   - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
   - the system-to-notebook mainline story fails in the local real lane
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
-- `scripts/remote-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
+- `scripts/remote-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, the client-public-runtime check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
 
 ## Bootstrap Contract
 

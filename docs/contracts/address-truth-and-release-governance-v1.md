@@ -240,6 +240,7 @@ Agent 的业务语义仍然只有两种：
 - 类型检查
 - 关键单测/集成
 - 地址解析与 contract 测试
+- `npm run test:client-public-runtime`
 
 ### Layer B：本地真实预检
 作用：
@@ -291,11 +292,12 @@ Agent 的业务语义仍然只有两种：
 1. 开发快速 gate
 2. `npm run test:bundle:inputs`
 3. `npm run test:rendered-env`
-4. `npm run test:release:precheck`
-5. `build-offline-bundle.sh`
-6. fresh 本地完整部署
+4. `npm run test:client-public-runtime`
+5. `npm run test:release:precheck`
+6. `build-offline-bundle.sh`
+7. fresh 本地完整部署
    - `prepare -> reset -> deploy -> bootstrap -> verify -> report`
-7. 远端部署
+8. 远端部署
    - `prepare -> reset -> deploy -> bootstrap -> verify -> report`
 
 ### 规则

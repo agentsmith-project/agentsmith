@@ -33,9 +33,9 @@ MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
 GLM_API_KEY_VALUE="${GLM_APIKEY:-${GLM_API_KEY:-}}"
-CLAUDE_URL_VALUE="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}"
-OPENAI_URL_CODING_PLAN_VALUE="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}"
-GLM_MODEL_VALUE="${INTEGRATION_GLM_MODEL:-glm-5-turbo}"
+CLAUDE_URL_VALUE="${CLAUDE_URL:-https://api.minimaxi.com/anthropic/v1}"
+OPENAI_URL_CODING_PLAN_VALUE="${OPENAI_URL_CODING_PLAN:-https://api.minimaxi.com/v1}"
+GLM_MODEL_VALUE="${INTEGRATION_GLM_MODEL:-MiniMax-M2.7-highspeed}"
 RESET_FIRST="${RESET_FIRST:-1}"
 
 info() { echo "[integration-release-user-story] $*"; }

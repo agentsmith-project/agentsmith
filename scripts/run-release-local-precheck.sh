@@ -319,9 +319,9 @@ info "running system admin entry, workspace public/login truth, workspace entry,
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
 GLM_APIKEY="${GLM_API_KEY_VALUE}" \
-CLAUDE_URL="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}" \
-OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}" \
-INTEGRATION_GLM_MODEL="${INTEGRATION_GLM_MODEL:-glm-5-turbo}" \
+CLAUDE_URL="${CLAUDE_URL:-https://api.minimaxi.com/anthropic/v1}" \
+OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://api.minimaxi.com/v1}" \
+INTEGRATION_GLM_MODEL="${INTEGRATION_GLM_MODEL:-MiniMax-M2.7-highspeed}" \
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
 KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \

@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-const SESSION_FINGERPRINT_FILE = '.mbos-session-fingerprint.json';
+const SESSION_FINGERPRINT_FILE = '.codex-session-fingerprint.json';
 const SESSION_STATE_VERSION = 'runner_session_v3';
 const PROMPT_POLICY_VERSION = 'latest_user_only_v1';
 

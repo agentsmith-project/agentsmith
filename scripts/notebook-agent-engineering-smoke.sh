@@ -14,8 +14,6 @@ API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
 GLM_MODEL="${GLM_MODEL:-GLM-5}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
-RUN_SOURCE_READ_MOUNT_SMOKE="${RUN_SOURCE_READ_MOUNT_SMOKE:-1}"
-RUN_INPUTREFS_LOOP="${RUN_INPUTREFS_LOOP:-1}"
 RUN_CREDENTIAL_SYNC_SMOKE="${RUN_CREDENTIAL_SYNC_SMOKE:-1}"
 RUN_MATPLOTLIB_SMOKE="${RUN_MATPLOTLIB_SMOKE:-0}"
 MATPLOTLIB_TIMEOUT_SEC="${MATPLOTLIB_TIMEOUT_SEC:-180}"
@@ -153,16 +151,6 @@ run_basic_smoke() {
   run_make_target_with_token_retry notebook-agent-smoke-task notebook-agent-smoke-task
 }
 
-run_inputrefs_loop_smoke() {
-  info "running notebook-agent-inputrefs-loop-smoke"
-  run_make_target_with_token_retry notebook-agent-inputrefs-loop-smoke notebook-agent-inputrefs-loop-smoke
-}
-
-run_file_read_mount_smoke() {
-  info "running notebook-agent-file-read-mount-smoke"
-  run_make_target_with_token_retry notebook-agent-file-read-mount-smoke notebook-agent-file-read-mount-smoke
-}
-
 run_credential_sync_smoke() {
   info "running notebook-agent-credential-sync-smoke"
   run_make_target_with_token_retry notebook-agent-credential-sync-smoke notebook-agent-credential-sync-smoke
@@ -222,12 +210,6 @@ main() {
   local failures=0
   if [[ "${RUN_BASIC_SMOKE}" == "1" ]]; then
     run_basic_smoke || failures=$((failures + 1))
-  fi
-  if [[ "${RUN_SOURCE_READ_MOUNT_SMOKE}" == "1" ]]; then
-    run_file_read_mount_smoke || failures=$((failures + 1))
-  fi
-  if [[ "${RUN_INPUTREFS_LOOP}" == "1" ]]; then
-    run_inputrefs_loop_smoke || failures=$((failures + 1))
   fi
   if [[ "${RUN_CREDENTIAL_SYNC_SMOKE}" == "1" ]]; then
     run_credential_sync_smoke || failures=$((failures + 1))

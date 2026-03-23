@@ -40,9 +40,7 @@ export type TaskWorkspacePaths = {
   sharedSkillsDir: string;
   codexDir: string;
   homeDir: string;
-  mbosDir: string;
   artifactsDir: string;
-  taskInputsManifestPath: string;
 };
 
 const mountedWorkspaceByMountPath = new Set<string>();
@@ -159,9 +157,7 @@ export function buildTaskWorkspacePaths(cwd: string, _taskId: string): TaskWorks
     sharedSkillsDir: join(cwd, '.codex', 'skills'),
     codexDir: join(cwd, '.codex'),
     homeDir: cwd,
-    mbosDir: join(cwd, '.mbos'),
     artifactsDir: join(cwd, '.artifacts'),
-    taskInputsManifestPath: join(cwd, '.mbos', 'task-inputs.json'),
   };
 }
 

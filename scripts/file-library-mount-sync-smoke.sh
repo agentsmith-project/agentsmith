@@ -13,6 +13,7 @@ MBOS_DEV_USERNAME="${MBOS_DEV_USERNAME:-dev-admin}"
 MBOS_DEV_PASSWORD="${MBOS_DEV_PASSWORD:-dev-admin-123}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 PROJECT_ID="${PROJECT_ID:-}"
+PROJECT_CREATED="0"
 
 TMP_DIR="$(mktemp -d /tmp/agentsmith-filelib-mount.XXXXXX)"
 TOKEN_FILE="${TMP_DIR}/token.txt"
@@ -40,6 +41,11 @@ cleanup() {
     curl -sS -o /dev/null -X DELETE \
       -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
       "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/file-libraries/${LIBRARY_ID}" || true
+  fi
+  if [[ "${PROJECT_CREATED}" == "1" && -n "${WORKSPACE_ID}" && -n "${PROJECT_ID}" ]]; then
+    curl -sS -o /dev/null -X DELETE \
+      -H "Authorization: Bearer $(cat "${TOKEN_FILE}" 2>/dev/null || true)" \
+      "${API_BASE%/}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}" || true
   fi
   rm -rf "${TMP_DIR}"
 }
@@ -101,7 +107,18 @@ discover_project() {
   local discovered
   discovered="$(cat "${BODY_FILE}" | json_field "Array.isArray(j.items) && j.items[0] ? j.items[0].id : ''" || true)"
   PROJECT_ID="${PROJECT_ID:-${discovered}}"
-  [[ -n "${PROJECT_ID}" ]] || { err "failed to discover project id"; exit 1; }
+  if [[ -z "${PROJECT_ID}" ]]; then
+    info "no existing project found; creating temporary project"
+    local create_status
+    create_status="$(api_json POST "/api/v1/workspaces/${WORKSPACE_ID}/projects" '{"name":"File Library Mount Sync Project","visibility":"private","join_policy":"approval_required"}')"
+    if [[ "${create_status}" != "201" ]]; then
+      err "failed to create temporary project: ${create_status}"
+      cat "${BODY_FILE}" >&2
+      exit 1
+    fi
+    PROJECT_ID="$(cat "${BODY_FILE}" | json_field "j.id")"
+    PROJECT_CREATED="1"
+  fi
 }
 
 wait_library_ready() {

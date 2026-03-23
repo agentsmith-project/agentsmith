@@ -77,6 +77,7 @@ test.describe('Files Page (file library browser)', () => {
 
     const createdLibrary = authedPage.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
     await expect(createdLibrary).toBeVisible();
+    await createdLibrary.click();
     await createdLibrary.getByRole('button', { name: /delete/i }).click();
 
     const deleteDialog = authedPage.getByTestId('files__dialog__library-delete');

@@ -48,7 +48,6 @@
 1. 一个 file library 是完整的持久化 notebook/agent 环境
 2. notebook 运行时状态直接使用工作区根目录：
    - `.codex/`
-   - `.mbos/`
    - `.artifacts/`
 3. artifact 扫描只看 `.artifacts/`
 4. file library 稳定目录名不再按 task title/id 派生

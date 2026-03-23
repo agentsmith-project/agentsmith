@@ -7,7 +7,6 @@
 	e2e-int-chat-auto e2e-int-agent-auto e2e-int-notebook-agent-auto e2e-int-chat-ux-auto \
 	e2e-int-core-local-api e2e-int-core-auto governance-core-smoke \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
-	notebook-agent-file-read-mount-smoke notebook-agent-inputrefs-loop-smoke \
 	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
@@ -161,9 +160,7 @@ help-extended:
 	@echo "  make notebook-agent-demo-restart-runner # restart only the managed demo runner"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-credential-sync-smoke # verify execution_context credential files are written under .codex/credential/"
-	@echo "  make notebook-agent-file-read-mount-smoke # verify file-read skill mounted under task workspace (.codex/skills/file-read)"
-	@echo "  make notebook-agent-inputrefs-loop-smoke # notebook url input -> artifact -> artifact input loop smoke"
-	@echo "  make notebook-agent-engineering-smoke # run engineering smoke set (basic + inputrefs loop; optional matplotlib)"
+	@echo "  make notebook-agent-engineering-smoke # run engineering smoke set (basic notebook mainline; optional matplotlib)"
 	@echo "  make notebook-agent-engineering-smoke-full # refresh token (if needed) + demo-check + engineering-smoke"
 	@echo "  make ensure-default-workspace # seed/update ws_default in real workspace persistence"
 	@echo "  make real-stack-ready         # wait for keycloak/api/web/juicefs-csi readiness"
@@ -674,7 +671,7 @@ agent-codex-runner:
 	MBOS_AGENT_WS_URL="$(AGENT_WS_URL)" \
 	MBOS_AGENT_KEY="$(AGENT_KEY)" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
-	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops,file-read}" \
+	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
 	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 	$(NPM) run agent:codex-runner
 
@@ -713,7 +710,7 @@ notebook-agent-runner:
 	MBOS_AGENT_WS_URL="$$WS_URL" \
 	MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
 	MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
-	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops,file-read}" \
+	MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
 	MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 	MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 	MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \
@@ -758,14 +755,6 @@ notebook-agent-smoke-task:
 notebook-agent-credential-sync-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-credential-sync-smoke.sh
-
-notebook-agent-file-read-mount-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-file-read-mount-smoke.sh
-
-notebook-agent-inputrefs-loop-smoke:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	node ./scripts/notebook-agent-inputrefs-loop-smoke.js
 
 notebook-agent-engineering-smoke:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -955,7 +944,7 @@ notebook-agent-smoke-full:
 		MBOS_AGENT_WS_URL="$$WS_URL" \
 		MBOS_AGENT_KEY="$$AGENT_KEY_VALUE" \
 		MBOS_AGENT_BUILTIN_SKILLS_DIR="$${MBOS_AGENT_BUILTIN_SKILLS_DIR:-$(BUILTIN_SKILLS_DIR_DEFAULT)}" \
-		MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops,file-read}" \
+		MBOS_AGENT_BUILTIN_SKILLS="$${MBOS_AGENT_BUILTIN_SKILLS:-.system,feishu-docs,jira-ops}" \
 		MBOS_AGENT_BUILTIN_SKILLS_REQUIRED="$${MBOS_AGENT_BUILTIN_SKILLS_REQUIRED:-1}" \
 		MBOS_AGENT_RUNNER_DEBUG="$${MBOS_AGENT_RUNNER_DEBUG:-1}" \
 		MBOS_AGENT_TASK_TIMEOUT_SEC="$${MBOS_AGENT_TASK_TIMEOUT_SEC:-120}" \

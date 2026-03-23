@@ -16,7 +16,7 @@ describe('builtin-skills', () => {
       const config = resolveBuiltinSkillsConfig();
       expect(config.sourceDir).toBe(resolve(process.cwd(), 'packages/agent-codex-runner/builtin-skills'));
       expect(config.required).toBe(true);
-      expect(config.skills).toEqual(['.system', 'feishu-docs', 'jira-ops', 'file-read']);
+      expect(config.skills).toEqual(['.system', 'feishu-docs', 'jira-ops']);
     } finally {
       if (previousDir === undefined) delete process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR;
       else process.env.MBOS_AGENT_BUILTIN_SKILLS_DIR = previousDir;
@@ -45,7 +45,7 @@ describe('builtin-skills', () => {
       expect(result.missing).toEqual([]);
       expect(existsSync(join(cwdRoot, '.codex', 'skills', '.system', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(cwdRoot, '.codex', 'skills', 'feishu-docs', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.builtin-skills.json'))).toBe(true);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(cwdRoot, { recursive: true, force: true });
@@ -90,7 +90,7 @@ describe('builtin-skills', () => {
       expect(result.mounted).toEqual(['.system']);
       expect(result.missing).toEqual([]);
       expect(existsSync(join(targetRoot, 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.builtin-skills.json'))).toBe(true);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(cwdRoot, { recursive: true, force: true });
@@ -101,21 +101,21 @@ describe('builtin-skills', () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     const cwdRoot = mkdtempSync(join(tmpdir(), 'runner-skills-cwd-'));
     try {
-      mkdirSync(join(sourceRoot, 'file-read'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'file-read', 'SKILL.md'), 'file-read');
+      mkdirSync(join(sourceRoot, 'custom-skill'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'custom-skill', 'SKILL.md'), 'custom-skill');
 
       const result = await syncBuiltinSkills({
         cwd: cwdRoot,
         sourceDir: sourceRoot,
-        skills: ['file-read'],
+        skills: ['custom-skill'],
         required: true,
         strategy: 'symlink',
       });
 
-      const targetPath = join(cwdRoot, '.codex', 'skills', 'file-read');
-      expect(result.mounted).toEqual(['file-read']);
+      const targetPath = join(cwdRoot, '.codex', 'skills', 'custom-skill');
+      expect(result.mounted).toEqual(['custom-skill']);
       expect(lstatSync(targetPath).isSymbolicLink()).toBe(true);
-      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(false);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.builtin-skills.json'))).toBe(false);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(cwdRoot, { recursive: true, force: true });
@@ -126,16 +126,16 @@ describe('builtin-skills', () => {
     const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
     const cwdRoot = mkdtempSync(join(tmpdir(), 'runner-skills-cwd-'));
     try {
-      mkdirSync(join(sourceRoot, 'file-read'), { recursive: true });
-      writeFileSync(join(sourceRoot, 'file-read', 'SKILL.md'), 'fresh-skill');
+      mkdirSync(join(sourceRoot, 'custom-skill'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'custom-skill', 'SKILL.md'), 'fresh-skill');
 
       mkdirSync(join(cwdRoot, '.codex', 'skills'), { recursive: true });
-      const staleTarget = join(cwdRoot, '.codex', 'skills', 'file-read');
+      const staleTarget = join(cwdRoot, '.codex', 'skills', 'custom-skill');
       writeFileSync(join(cwdRoot, 'stale.txt'), 'stale');
       await syncBuiltinSkills({
         cwd: cwdRoot,
         sourceDir: sourceRoot,
-        skills: ['file-read'],
+        skills: ['custom-skill'],
         required: true,
         strategy: 'symlink',
       });
@@ -143,15 +143,15 @@ describe('builtin-skills', () => {
       const result = await syncBuiltinSkills({
         cwd: cwdRoot,
         sourceDir: sourceRoot,
-        skills: ['file-read'],
+        skills: ['custom-skill'],
         required: true,
         strategy: 'copy',
       });
 
-      expect(result.mounted).toEqual(['file-read']);
+      expect(result.mounted).toEqual(['custom-skill']);
       expect(lstatSync(staleTarget).isSymbolicLink()).toBe(false);
       expect(readFileSync(join(staleTarget, 'SKILL.md'), 'utf-8')).toBe('fresh-skill');
-      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.mbos-builtin-skills.json'))).toBe(true);
+      expect(existsSync(join(cwdRoot, '.codex', 'skills', '.builtin-skills.json'))).toBe(true);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
       rmSync(cwdRoot, { recursive: true, force: true });

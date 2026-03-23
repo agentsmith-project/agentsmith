@@ -88,6 +88,31 @@ describe('useFilesUrlState', () => {
     });
   });
 
+  it('defaults to the first library when no query selection is present', async () => {
+    const { result } = renderHook(() => useFilesUrlState(libraries));
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+  });
+
+  it('clears selection when the library list is empty', async () => {
+    const { result, rerender } = renderHook(
+      ({ nextLibraries }: { nextLibraries: FileLibrary[] }) => useFilesUrlState(nextLibraries),
+      { initialProps: { nextLibraries: libraries } },
+    );
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBe('lib_a');
+    });
+
+    rerender({ nextLibraries: [] });
+
+    await waitFor(() => {
+      expect(result.current.selectedLibraryId).toBeNull();
+    });
+  });
+
   it('writes search to url with trim and debounce', async () => {
     vi.useFakeTimers();
     mockSearchState.value = 'library_id=lib_a';

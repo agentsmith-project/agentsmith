@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 const DEFAULT_SKILLS_DIR = resolve(MODULE_DIR, '../builtin-skills');
-const DEFAULT_BUILTIN_SKILLS = ['.system', 'feishu-docs', 'jira-ops', 'file-read'];
+const DEFAULT_BUILTIN_SKILLS = ['.system', 'feishu-docs', 'jira-ops'];
 
 function parseBooleanFlag(input: string | undefined, fallback: boolean): boolean {
   if (typeof input !== 'string') return fallback;
@@ -120,7 +120,7 @@ export async function syncBuiltinSkills(args: {
   }
   if (strategy === 'copy') {
     await writeFile(
-      join(skillsRoot, '.mbos-builtin-skills.json'),
+      join(skillsRoot, '.builtin-skills.json'),
       JSON.stringify(
         {
           source_dir: args.sourceDir,

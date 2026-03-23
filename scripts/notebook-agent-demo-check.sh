@@ -149,11 +149,6 @@ main() {
       err "runner log does not show websocket connection (${RUNNER_LOG})"
       exit 1
     fi
-    if rg -q "builtin_skills_mounted\"\\s*:\\s*\\[[^]]*\"file-read\"" "${RUNNER_LOG}" 2>/dev/null; then
-      info "runner log shows file-read mounted"
-    else
-      info "runner log has no file-read mount evidence yet (expected before first task execution)"
-    fi
   else
     info "runner log not found; skip runner log check (${RUNNER_LOG})"
   fi

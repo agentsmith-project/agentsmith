@@ -113,9 +113,7 @@ describe('task-workspace', () => {
       sharedSkillsDir: '/srv/ags-workspaces/market-analysis-q1/.codex/skills',
       codexDir: '/srv/ags-workspaces/market-analysis-q1/.codex',
       homeDir: '/srv/ags-workspaces/market-analysis-q1',
-      mbosDir: '/srv/ags-workspaces/market-analysis-q1/.mbos',
       artifactsDir: '/srv/ags-workspaces/market-analysis-q1/.artifacts',
-      taskInputsManifestPath: '/srv/ags-workspaces/market-analysis-q1/.mbos/task-inputs.json',
     });
   });
 
@@ -383,6 +381,6 @@ describe('task-workspace', () => {
     expect(execFileMock).not.toHaveBeenCalled();
     expect(resolved.cwd).toBe('/workspace');
     expect(resolved.source).toBe('workspace_path');
-    expect(resolved.paths.taskInputsManifestPath).toBe('/workspace/.mbos/task-inputs.json');
+    expect(resolved.paths.artifactsDir).toBe('/workspace/.artifacts');
   });
 });

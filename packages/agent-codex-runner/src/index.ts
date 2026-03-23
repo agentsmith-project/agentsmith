@@ -620,7 +620,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     ? executionContext.credential_files
     : [];
   let artifactsDir = taskPaths.artifactsDir;
-  let taskInputsManifestPath = taskPaths.taskInputsManifestPath;
   if (isNotebookMode) {
     debugLog('preparing notebook workspace assets', { request_id: requestId, cwd });
     const preparedAssets = await prepareNotebookWorkspaceAssets({
@@ -631,7 +630,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       debugLog,
     });
     artifactsDir = preparedAssets.artifactsDir;
-    taskInputsManifestPath = preparedAssets.taskInputsManifestPath;
   }
   debugLog('writing execution context files', {
     request_id: requestId,
@@ -641,8 +639,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
       artifactsDir,
-      taskInputsManifestPath,
-      taskInputsCount: taskInputs.length,
     })}User request:\n${userPrompt}`
     : userPrompt;
   const endpointProxyBase = connectedResourceProxyBase;
@@ -778,7 +774,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
           MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
           MBOS_NOTEBOOK_USER_BEARER_TOKEN: executionContext.user_bearer_token ?? '',
-          MBOS_NOTEBOOK_TASK_INPUTS_MANIFEST: './.mbos/task-inputs.json',
         } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -832,7 +827,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         name: 'runner.policy',
         summary: 'Notebook headless execution policy applied',
         details: {
-          task_inputs_manifest: './.mbos/task-inputs.json',
           artifacts_dir: './.artifacts/',
         },
       });

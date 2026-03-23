@@ -28,6 +28,8 @@ const {
   mockUseFileObjects: vi.fn(),
 }));
 
+let mockLibraries = [createFileLibrary()];
+
 vi.mock('react-virtuoso', () => ({
   Virtuoso: ({ data, itemContent, components }: {
     data: Array<unknown>;
@@ -68,7 +70,7 @@ vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
 vi.mock('@/lib/hooks/use-files', () => ({
   useFileLibraries: () => ({
     data: {
-      items: [createFileLibrary()],
+      items: mockLibraries,
     },
     isLoading: false,
   }),
@@ -90,6 +92,7 @@ describe('FilesPage (object browser)', () => {
   beforeEach(() => {
     mockUseFileObjectsInfinite.mockReset();
     mockUseFileObjects.mockReset();
+    mockLibraries = [createFileLibrary()];
     Object.defineProperty(window.navigator, 'platform', {
       configurable: true,
       value: 'MacIntel',
@@ -134,6 +137,26 @@ describe('FilesPage (object browser)', () => {
 
     expect(await screen.findByTestId('files__library-list')).toBeInTheDocument();
     expect(screen.getByTestId('files__objects-table')).toBeInTheDocument();
+  });
+
+  it('selects the first library by default and only shows active-library actions', async () => {
+    mockLibraries = [
+      createFileLibrary({ id: 'lib_a', name: 'Library A' }),
+      createFileLibrary({ id: 'lib_b', name: 'Library B', filesystem_name: 'flib-ws-default-proj-001-library-b' }),
+    ];
+
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    expect(await screen.findByTestId('files__library-mount-access--lib_a')).toBeInTheDocument();
+    expect(screen.queryByTestId('files__library-mount-access--lib_b')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('files__library-item--lib_b'));
+
+    await waitFor(() => {
+      expect(screen.getByTestId('files__library-mount-access--lib_b')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('files__library-mount-access--lib_a')).not.toBeInTheDocument();
   });
 
   it('navigates into a folder prefix row on double click', async () => {

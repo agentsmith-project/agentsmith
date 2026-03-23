@@ -1,5 +1,6 @@
-import { Pencil, Plus, Trash2 } from 'lucide-react';
+import { Download, Pencil, Plus, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { FileLibrary } from '@/lib/api/types';
 
@@ -30,6 +31,8 @@ export function FilesLibrariesPane({
   onRenameLibrary,
   onDeleteLibrary,
 }: FilesLibrariesPaneProps) {
+  const showActions = canManage || canExchangeCredentials;
+
   return (
     <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
       <div className="flex items-center justify-between border-b border-white/6 px-3 py-2">
@@ -78,61 +81,87 @@ export function FilesLibrariesPane({
                   tabIndex={0}
                   data-testid={`files__library-item--${library.id}`}
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
                     <div className="min-w-0 flex-1">
-                      <div className="truncate text-sm">{library.name}</div>
+                      <div className={cn('truncate text-sm transition-colors', active ? 'text-strong' : 'text-primary')}>
+                        {library.name}
+                      </div>
                       {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
                     </div>
-                    {canManage ? (
-                      <div className="flex items-center gap-1 shrink-0">
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onRenameLibrary(library);
-                          }}
-                          aria-label={t('file_manager.library_rename')}
-                          data-testid={`files__library-rename-btn--${library.id}`}
-                        >
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          type="button"
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7"
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            onDeleteLibrary(library);
-                          }}
-                          aria-label={t('file_manager.library_delete')}
-                          data-testid={`files__library-delete-btn--${library.id}`}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    ) : null}
                   </div>
-                  {canExchangeCredentials ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      className="h-8 w-full justify-center rounded-full border-accent/20 bg-accent/6 px-3 text-[11px] font-medium text-accent hover:bg-accent/12 hover:text-accent"
-                      onClick={(event) => {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onOpenMountAccess(library);
-                      }}
-                      data-testid={`files__library-mount-access--${library.id}`}
-                    >
-                      {t('file_manager.mount_access')}
-                    </Button>
+                  {active && showActions ? (
+                    <TooltipProvider delayDuration={120}>
+                      <div className="flex items-center gap-1.5 border-t border-white/6 pt-1">
+                        {canExchangeCredentials ? (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                type="button"
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 rounded-full border border-accent/20 bg-accent/6 text-accent hover:bg-accent/12 hover:text-accent"
+                                onClick={(event) => {
+                                  event.preventDefault();
+                                  event.stopPropagation();
+                                  onOpenMountAccess(library);
+                                }}
+                                aria-label={t('file_manager.mount_access')}
+                                data-testid={`files__library-mount-access--${library.id}`}
+                              >
+                                <Download className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{t('file_manager.mount_access')}</TooltipContent>
+                          </Tooltip>
+                        ) : null}
+                        {!canManage ? null : (
+                          <>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 rounded-full border border-white/8 bg-transparent text-secondary hover:bg-hover/55 hover:text-primary"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onRenameLibrary(library);
+                                  }}
+                                  aria-label={t('file_manager.library_rename')}
+                                  data-testid={`files__library-rename-inline--${library.id}`}
+                                >
+                                  <Pencil className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{t('file_manager.library_rename')}</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  type="button"
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 rounded-full border border-white/8 bg-transparent text-secondary hover:bg-error/12 hover:text-error"
+                                  onClick={(event) => {
+                                    event.preventDefault();
+                                    event.stopPropagation();
+                                    onDeleteLibrary(library);
+                                  }}
+                                  aria-label={t('file_manager.library_delete')}
+                                  data-testid={`files__library-delete-inline--${library.id}`}
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>{t('file_manager.library_delete')}</TooltipContent>
+                            </Tooltip>
+                          </>
+                        )}
+                      </div>
+                    </TooltipProvider>
+                  ) : active ? (
+                    <div className="border-t border-white/6 pt-1" />
                   ) : null}
                 </div>
               );

@@ -28,8 +28,6 @@ type NotebookAssetDebugLog = (message: string, extra?: Record<string, unknown>) 
 
 export function buildNotebookHeadlessPreamble(args: {
   artifactsDir: string;
-  taskInputsManifestPath: string;
-  taskInputsCount: number;
 }): string {
   return [
     'Notebook execution policy (headless execution):',
@@ -37,11 +35,8 @@ export function buildNotebookHeadlessPreamble(args: {
     '- Do not call blocking UI display operations such as matplotlib plt.show().',
     `- Save charts/images/files to the artifacts directory: ${args.artifactsDir}`,
     '- Put final textual conclusions in your response; put generated files in artifacts.',
-    `- Task inputs metadata is available at: ${args.taskInputsManifestPath}`,
-    `- Attached inputs count: ${String(args.taskInputsCount)}`,
     '',
-    'Use attached inputs to complete the user request and mention generated artifact filenames in your final response.',
-    '- Inputs may be library-object-based, artifact-based, or URL-based. Inspect `kind` in the task inputs manifest.',
+    'Use files already present in the workspace to complete the user request and mention generated artifact filenames in your final response.',
     '',
   ].join('\n');
 }
@@ -56,16 +51,7 @@ function buildNotebookAgentsMd(): string {
     '2. Do not call blocking display APIs (for example: matplotlib.pyplot.show()).',
     '3. Save generated files/charts/images into `./.artifacts/`.',
     '4. Put final conclusions in the response message, and mention generated artifact filenames.',
-    '5. Attached notebook inputs are described in `./.mbos/task-inputs.json`.',
-    '6. This file library root is the persistent notebook environment for this workspace binding.',
-    '7. Use the local file-read skill helper to fetch attached project file-library inputs when needed.',
-    '',
-    '## Notebook Inputs Helper',
-    '',
-    '- List attached inputs:',
-    '  - `node ./.codex/skills/file-read/fetch_input.mjs list`',
-    '- Fetch a specific attached input into `./inputs/`:',
-    '  - `node ./.codex/skills/file-read/fetch_input.mjs fetch <input_id>`',
+    '5. This workspace root is the persistent notebook environment for this task.',
     '',
     '## Output Convention',
     '',
@@ -83,74 +69,29 @@ export async function prepareNotebookWorkspaceAssets(args: {
   debugLog?: NotebookAssetDebugLog;
 }): Promise<{
   artifactsDir: string;
-  taskInputsManifestPath: string;
 }> {
   const { cwd, paths, executionContext, taskInputs, debugLog } = args;
   const artifactsDir = paths.artifactsDir;
-  const taskInputsManifestPath = paths.taskInputsManifestPath;
   await withFsOpTimeout(
     'notebook_assets_mkdir_artifacts',
     mkdir(artifactsDir, { recursive: true }),
     debugLog,
     { cwd, target: artifactsDir },
   );
-  await withFsOpTimeout(
-    'notebook_assets_mkdir_mbos',
-    mkdir(paths.mbosDir, { recursive: true }),
-    debugLog,
-    { cwd, target: paths.mbosDir },
-  );
-  await withFsOpTimeout(
-    'notebook_assets_write_task_inputs',
-    writeFile(
-    taskInputsManifestPath,
-    JSON.stringify(
-      {
-        task_id: executionContext.task_id ?? null,
-        run_id: executionContext.run_id ?? null,
-        generated_at: new Date().toISOString(),
-        task_inputs: taskInputs.map((item) => ({
-          kind:
-            item?.kind === 'library_object'
-              ? 'library_object'
-              : item?.kind === 'url'
-                ? 'url'
-                : item?.kind === 'artifact'
-                  ? 'artifact'
-                  : undefined,
-          library_id: typeof item?.library_id === 'string' ? item.library_id : undefined,
-          key: typeof item?.key === 'string' ? item.key : undefined,
-          task_id: typeof item?.task_id === 'string' ? item.task_id : undefined,
-          artifact_id: typeof item?.artifact_id === 'string' ? item.artifact_id : undefined,
-          task_relative_path: typeof item?.task_relative_path === 'string' ? item.task_relative_path : undefined,
-          url: typeof item?.url === 'string' ? item.url : undefined,
-          imported_library_id: typeof item?.imported_library_id === 'string' ? item.imported_library_id : undefined,
-          imported_key: typeof item?.imported_key === 'string' ? item.imported_key : undefined,
-          filename: typeof item?.filename === 'string' ? item.filename : undefined,
-          file_type: typeof item?.file_type === 'string' ? item.file_type : undefined,
-          file_size: typeof item?.file_size === 'number' ? item.file_size : undefined,
-        })),
-      },
-      null,
-      2,
-    ),
-    'utf-8',
-    ),
-    debugLog,
-    { cwd, target: taskInputsManifestPath, task_inputs_count: taskInputs.length },
-  );
-  if (executionContext.workspace_binding_mode !== 'pre_mounted') {
-    const agentsPath = join(cwd, 'AGENTS.md');
-    if (!existsSync(agentsPath)) {
-      await withFsOpTimeout(
-        'notebook_assets_write_agents_md',
-        writeFile(agentsPath, buildNotebookAgentsMd(), 'utf-8'),
-        debugLog,
-        { cwd, target: agentsPath },
-      );
-    }
+  debugLog?.('notebook_assets_inputs_ignored', {
+    cwd,
+    task_inputs_count: taskInputs.length,
+  });
+  const agentsPath = join(cwd, 'AGENTS.md');
+  if (!existsSync(agentsPath)) {
+    await withFsOpTimeout(
+      'notebook_assets_write_agents_md',
+      writeFile(agentsPath, buildNotebookAgentsMd(), 'utf-8'),
+      debugLog,
+      { cwd, target: agentsPath, workspace_binding_mode: executionContext.workspace_binding_mode ?? null },
+    );
   }
-  return { artifactsDir, taskInputsManifestPath };
+  return { artifactsDir };
 }
 
 async function withFsOpTimeout<T>(

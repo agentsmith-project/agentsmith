@@ -52,7 +52,6 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - the mounted workspace root is the selected notebook task file library root
   - notebook runtime state uses the workspace root directly:
     - `.codex/`
-    - `.mbos/`
     - `.artifacts/`
   - deliverables should be written to `./.artifacts/`
 
@@ -66,7 +65,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - Integration keycloak redirect auto-fix for custom web ports.
   - Responses-to-chat compatibility translation in endpoint proxy (including streaming SSE translation).
   - Codex runner per-task watchdog timeout and task auto-close protections.
-  - Codex runner uses the workspace root directly for `.codex/.mbos/.artifacts`.
+  - Codex runner uses the workspace root directly for `.codex/.artifacts` and a stable root `AGENTS.md`.
   - Internal-k8s notebook execution path using JuiceFS CSI pre-mounted `/workspace`.
   - Internal lazy start / reclaim / resume on the same JuiceFS CSI-backed workspace binding.
 - Verified:
@@ -86,7 +85,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
    - resolves task workspace access from AgentSmith;
    - in persistent workspace mode, mounts the task-bound JuiceFS file library root;
    - uses the mounted workspace as cwd;
-   - writes runtime state under `.codex/`, `.mbos/`, and `.artifacts/`;
+   - writes runtime state under `.codex/` and `.artifacts/`;
    - runs `codex exec` with explicit `-c model_provider=proxy` / `model_providers.proxy.*` overrides;
    - marks current task workdir as trusted project (`projects."<cwd>".trust_level="trusted"`) and disables git requirement (`project_root_markers=[]`, `--skip-git-repo-check`);
    - emits stream frames (`agent.response.delta`, `agent.response.done`/`error`).
@@ -152,7 +151,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 - `MBOS_AGENT_RUNNER_DEBUG=1` (optional; logs spawn args/workdir/timeout)
 - `MBOS_AGENT_CODEX_YOLO=1` (optional; run codex with `--dangerously-bypass-approvals-and-sandbox`)
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR` (optional; default `<repo>/packages/agent-codex-runner/builtin-skills`)
-- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops,file-read`)
+- `MBOS_AGENT_BUILTIN_SKILLS` (optional; default `.system,feishu-docs,jira-ops`)
 - `MBOS_AGENT_BUILTIN_SKILLS_REQUIRED` (optional; default `1`, fail-fast when builtin skill missing)
 - `MBOS_AGENT_WORKSPACE_ROOT` (optional; base directory for mounted notebook workspaces)
 
@@ -215,10 +214,6 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
 ### 5.3.4 Notebook URL Inputs (object-first)
 - Notebook "Add URL" now stores the generated URL note file in the backend project upload file library, then attaches it as a first-class `url` input ref (with imported object provenance) to the task.
 - This keeps notebook URL inputs aligned with the object-first input architecture while preserving URL semantics in `attached_inputs`.
-
-### 5.3.5 Notebook Artifact Inputs (output-to-input loop)
-- Notebook artifacts can be attached back into task inputs as first-class `artifact` refs.
-- The runner `file-read` helper can fetch artifact inputs via the task artifact download route, enabling output-to-input iteration in Codex notebook flows.
 
 ### 5.3.6 Notebook Local Upload Inputs (object-first)
 - Notebook local file uploads now follow the same object-first flow as Chat uploads:
@@ -368,8 +363,7 @@ make notebook-agent-engineering-smoke
 ```
 - Default bundle includes:
   - `make notebook-agent-smoke-task`
-  - `make notebook-agent-file-read-mount-smoke`
-  - `make notebook-agent-inputrefs-loop-smoke`
+  - `make notebook-agent-credential-sync-smoke`
 - Smoke auth behavior:
   - notebook smoke scripts now auto-refresh token once on `401` and retry the failed API call (including initial `POST /tasks`).
   - if refresh still fails or retry remains `401`, smoke fails fast with the concrete HTTP error body.
@@ -929,14 +923,10 @@ Notebook tasks executed by `@mbos/agent-codex-runner` use a runner-enforced head
 Runner execution-context/task-input behavior:
 
 - notebook attached inputs are passed in `execution_context.task_inputs`
-- runner also receives `execution_context.api_base` for notebook helper tooling (source downloads)
-- runner writes a task input manifest to:
-  - `<task_cwd>/.mbos/task-inputs.json`
+- runner no longer materializes task input manifests under the workspace
+- user-provided files are expected to already exist directly in the workspace tree
 - runner keeps a stable root `AGENTS.md` that documents persistent workspace conventions
-- runner reuses the shared Codex skill directory:
-  - `./.codex/skills/file-read/`
-  - helper command: `node ./.codex/skills/file-read/fetch_input.mjs ...`
-- Codex is instructed to use the task manifest and produce file outputs in `.artifacts/`
+- Codex is instructed to work directly from the workspace root and produce file outputs in `.artifacts/`
 
 Session continuity behavior:
 

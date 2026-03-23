@@ -423,6 +423,8 @@ test.describe('Visual - Project Pages', () => {
     await expect(authedPage.getByTestId('project-workbench__heading')).toBeVisible();
     await expect(authedPage.getByTestId('project-workbench__heading')).toContainText('Files');
     await expect(authedPage.getByText('Project Surface')).toHaveCount(0);
+    await expect(authedPage.getByTestId('files__library-item--lib_shared_default')).toBeVisible();
+    await expect(authedPage.getByTestId('files__library-mount-access--lib_shared_default')).toBeVisible();
     await authedPage.waitForTimeout(1500);
     await expect(authedPage).toHaveScreenshot('files.png', { fullPage: true });
   });

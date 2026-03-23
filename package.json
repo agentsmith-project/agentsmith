@@ -53,7 +53,7 @@
     "test:files:real:smoke": "bash scripts/file-library-real-smoke.sh",
     "test:files:real:sync": "bash scripts/file-library-mount-sync-smoke.sh",
     "test:files:real:ui-sync": "bash scripts/run-integration-e2e-full.sh e2e/integration-files-mount-sync.spec.ts",
-    "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'Visual - Project Pages › files$|files - create folder dialog|files - rename dialog|files - selection with details panel|files - mount access dialog|files - create library dialog|files - delete non-empty library dialog' && bash scripts/run-file-library-real-gate.sh",
+    "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'files' && bash scripts/run-file-library-real-gate.sh",
     "test:visual:real:review": "bash scripts/release-real-visual-review.sh",
     "test:release:precheck": "bash scripts/run-release-local-precheck.sh",
     "test:bundle:inputs": "bash scripts/remote-deploy/check-bundle-inputs.sh",

@@ -21,6 +21,7 @@ import { applyExecutionContextFiles, type ExecutionContextFileItem } from './exe
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
+import { ensureCodexSessionStateCompatible } from './session-state.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 
 type ServerStartPayload = {
@@ -637,6 +638,19 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   if (!endpointProxyBase) {
     throw new Error('resource_proxy_base_missing');
   }
+  const sessionStateResult = await ensureCodexSessionStateCompatible({
+    codexDir: taskPaths.codexDir,
+    model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
+    wireApi: executionContext.wire_api ?? 'responses',
+    resourceProxyBase: endpointProxyBase,
+    notebookMode: isNotebookMode,
+  });
+  debugLog('validated codex session state', {
+    request_id: requestId,
+    codex_dir: taskPaths.codexDir,
+    reset_performed: sessionStateResult.resetPerformed,
+    reason: sessionStateResult.reason,
+  });
   // codex-cli >=0.104 no longer accepts wire_api=chat in provider config.
   const wireApi = 'responses';
 

@@ -76,6 +76,26 @@ interface EndpointHandlerArgs {
   ) => Promise<{ upstream_status: number; tokens_total?: number }>;
 }
 
+export function resolveEffectiveEndpointProxyPath(
+  action: EndpointTaskAction,
+  originalProxyPath: string,
+  resolvedProxyPath: string,
+): string {
+  const normalizedOriginal = originalProxyPath
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/^v1\//i, '')
+    .replace(/\/+$/, '');
+  const preserveClientWirePath = action === 'chat' && new Set([
+    'chat/completions',
+    'responses',
+    'messages',
+    'messages/count_tokens',
+  ]).has(normalizedOriginal);
+
+  return preserveClientWirePath ? normalizedOriginal : (resolvedProxyPath || originalProxyPath);
+}
+
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
   const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
@@ -231,10 +251,11 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
     const startedAtMs = Date.now();
     try {
-      const effectiveProxyPath =
-        action === 'chat' && normalizeGatewayProxyPath(proxyPath) === 'messages/count_tokens'
-          ? normalizeGatewayProxyPath(proxyPath)
-          : (resolved.proxyPath || proxyPath);
+      const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
+        action,
+        normalizeGatewayProxyPath(proxyPath),
+        resolved.proxyPath,
+      );
       const universalProxyService = deps.universalProxyService;
       const canUseUniversalProxy =
         universalProxyService

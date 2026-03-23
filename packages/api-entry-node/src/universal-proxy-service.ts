@@ -45,6 +45,19 @@ function sanitizeBaseUrl(value: string): string {
   return value.trim().replace(/\/+$/, '');
 }
 
+function normalizeEndpointApiRoot(endpoint: EndpointRecord): string {
+  const normalized = sanitizeBaseUrl(endpoint.base_url)
+    .replace(/\/chat\/completions$/i, '')
+    .replace(/\/responses$/i, '')
+    .replace(/\/messages(?:\/count_tokens)?$/i, '');
+
+  if (endpoint.protocol === 'anthropic_compatible' && !/\/v\d+$/i.test(normalized)) {
+    return `${normalized}/v1`;
+  }
+
+  return normalized;
+}
+
 function normalizeProxyPath(value: string): string {
   return value.trim().replace(/^\/+/, '').replace(/^v1\//i, '').replace(/\/+$/, '');
 }
@@ -64,11 +77,15 @@ function fixedUpstreamFormat(protocol?: EndpointProtocol): RuntimeUpstreamConfig
 }
 
 function buildRevision(endpoint: EndpointRecord, apiKey: string): string {
+  const normalizedApiRoot = normalizeEndpointApiRoot(endpoint);
+  const upstreamFormat = fixedUpstreamFormat(endpoint.protocol) ?? null;
   const fingerprint = createHash('sha256')
     .update(JSON.stringify({
       endpoint_id: endpoint.id,
       base_url: endpoint.base_url,
+      normalized_api_root: normalizedApiRoot,
       protocol: endpoint.protocol ?? null,
+      upstream_format: upstreamFormat,
       model: endpoint.model,
       updated_at: endpoint.updated_at,
       api_key: apiKey,
@@ -126,7 +143,7 @@ export class UniversalProxyService {
         upstream_timeout_secs: endpoint.limits?.timeout_seconds ?? 120,
         upstreams: [{
           name: 'primary',
-          api_root: sanitizeBaseUrl(endpoint.base_url),
+          api_root: normalizeEndpointApiRoot(endpoint),
           fixed_upstream_format: fixedUpstreamFormat(endpoint.protocol),
           fallback_credential_actual: apiKey,
           auth_policy: 'force_server',
@@ -214,4 +231,3 @@ export class UniversalProxyService {
     };
   }
 }
-

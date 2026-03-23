@@ -70,10 +70,37 @@ describe('UniversalProxyService', () => {
     };
     expect(payload.revision).toContain('2026-03-22T00:00:00.000Z:');
     expect(payload.config.upstreams[0]).toMatchObject({
-      api_root: 'https://open.bigmodel.cn/api/anthropic',
+      api_root: 'https://open.bigmodel.cn/api/anthropic/v1',
       fixed_upstream_format: 'anthropic',
       auth_policy: 'force_server',
     });
+  });
+
+  it('normalizes explicit upstream route suffixes out of api_root snapshots', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: 'applied' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const service = new UniversalProxyService('http://proxy.internal:8080');
+    await service.ensureEndpointNamespace(
+      'ws_default',
+      'proj_1',
+      createEndpoint({
+        protocol: 'openai_compatible',
+        base_url: 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions',
+      }),
+      'secret-key',
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const payload = JSON.parse(String(init.body)) as {
+      config: { upstreams: Array<{ api_root: string }> };
+    };
+    expect(payload.config.upstreams[0]?.api_root).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
   });
 
   it('forwards a unified request through the namespaced proxy route', async () => {
@@ -112,4 +139,3 @@ describe('UniversalProxyService', () => {
     expect(res.end).toHaveBeenCalled();
   });
 });
-

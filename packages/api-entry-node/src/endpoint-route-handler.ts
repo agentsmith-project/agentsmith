@@ -251,22 +251,25 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
     const startedAtMs = Date.now();
     try {
-      const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
-        action,
-        normalizeGatewayProxyPath(proxyPath),
-        resolved.proxyPath,
-      );
+      const normalizedOriginalProxyPath = normalizeGatewayProxyPath(proxyPath);
       const universalProxyService = deps.universalProxyService;
       const canUseUniversalProxy =
         universalProxyService
         && universalProxyService.supportsEndpoint(endpoint)
-        && universalProxyService.supportsProxyPath(effectiveProxyPath);
+        && universalProxyService.supportsProxyPath(
+          resolveEffectiveEndpointProxyPath(action, normalizedOriginalProxyPath, resolved.proxyPath),
+        );
       const resolvedRequestBody =
         typeof requestBody !== 'undefined'
           ? requestBody
           : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
       const proxyResult = canUseUniversalProxy
         ? await (async () => {
+          const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
+            action,
+            normalizedOriginalProxyPath,
+            resolved.proxyPath,
+          );
           const namespace = await universalProxyService.ensureEndpointNamespace(
             route.workspaceId,
             route.projectId,
@@ -284,7 +287,12 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
           });
         })()
         : await proxyJsonRequest(req, res, {
-          upstreamUrl: buildUpstreamUrl(endpoint.base_url, effectiveProxyPath),
+          upstreamUrl: buildUpstreamUrl(
+            endpoint.base_url,
+            normalizedOriginalProxyPath === 'messages/count_tokens'
+              ? normalizedOriginalProxyPath
+              : resolved.proxyPath,
+          ),
           apiKey,
           endpointProtocol: endpoint.protocol,
           proxyPath,

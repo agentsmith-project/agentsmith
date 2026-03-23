@@ -40,8 +40,8 @@ const chromiumMvpSpecMatch = [
 
 export default defineConfig({
   testDir: './e2e',
-  grepInvert: /@lane-real/,
-  globalSetup: './e2e/mock-global-setup.ts',
+  grepInvert: useManagedDevServer ? /@lane-real/ : undefined,
+  globalSetup: useManagedDevServer ? './e2e/mock-global-setup.ts' : undefined,
   fullyParallel: true,
   forbidOnly: isCI,
   retries: isCI ? 2 : 0,
@@ -114,6 +114,20 @@ export default defineConfig({
     {
       name: 'visual',
       testMatch: /visual\.spec\.ts/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
+      fullyParallel: false,
+      workers: 1,
+    },
+    {
+      name: 'real-lane',
+      grep: /@lane-real/,
+      testMatch: /integration-.*\.spec\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
         viewport: desktopViewport,

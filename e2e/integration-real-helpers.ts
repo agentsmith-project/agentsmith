@@ -278,12 +278,15 @@ export async function createEndpointViaApi(
     upstreamBaseUrl: string;
     credentialName: string;
     capability?: 'chat_completion' | 'multimodal_completion';
+    protocol?: 'openai_compatible' | 'anthropic_compatible';
   },
 ): Promise<string> {
   const token = await readStoredAuthToken(page);
   const capability = args.capability ?? 'chat_completion';
   const normalizedBaseUrl = args.upstreamBaseUrl.trim().toLowerCase();
-  const useAnthropicCompat = normalizedBaseUrl.includes('/anthropic') || normalizedBaseUrl.includes('api.anthropic.com');
+  const useAnthropicCompat = args.protocol
+    ? args.protocol === 'anthropic_compatible'
+    : normalizedBaseUrl.includes('/anthropic') || normalizedBaseUrl.includes('api.anthropic.com');
   const credentialsRes = await page.request.get(
     `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/credentials`,
     { headers: { Authorization: `Bearer ${token}` } },

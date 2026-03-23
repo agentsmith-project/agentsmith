@@ -1,5 +1,9 @@
 export function buildUpstreamUrl(baseUrl: string, proxyPath: string): string {
-  const cleanBase = baseUrl.replace(/\/+$/, '');
+  const cleanBase = baseUrl
+    .replace(/\/+$/, '')
+    .replace(/\/chat\/completions$/i, '')
+    .replace(/\/responses$/i, '')
+    .replace(/\/messages(?:\/count_tokens)?$/i, '');
   const cleanPath = proxyPath.replace(/^\/+/, '');
   if (!cleanPath) return cleanBase;
   if (cleanPath.toLowerCase() === 'messages' || cleanPath.toLowerCase().startsWith('messages/')) {

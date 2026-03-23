@@ -376,6 +376,125 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     );
   });
 
+  it('keeps responses wire_api stable for external notebook dispatch regardless of endpoint protocol', async () => {
+    const previousInternalApiBase = process.env.INTERNAL_API_BASE_URL;
+    process.env.INTERNAL_API_BASE_URL = 'http://api:20000';
+
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_external_responses',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_external_responses',
+          status: 'enabled',
+          mode: 'external',
+          config: {
+            runner_runtime: 'compose_managed',
+          },
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_anthropic',
+              wire_api: 'responses',
+              model: 'glm-5-turbo',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_anthropic',
+          workspace_id: 'ws_external',
+          project_id: 'proj_external',
+          status: 'active',
+          model: 'glm-5-turbo',
+          credential_ref: 'cred_1',
+          name: 'endpoint-anthropic',
+          type: 'anthropic',
+          protocol: 'anthropic_compatible',
+          base_url: 'https://anthropic.example.com/v1',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_external_responses',
+      workspace_id: 'ws_external',
+      project_id: 'proj_external',
+      owner_user_id: 'user_external',
+      title: 'external responses task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_external_responses',
+      workspace_file_library_id: 'flib_external',
+      workspace_file_library_name: 'External Workspace',
+    };
+    const assistantMessage = {
+      id: 'msg_external_responses',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    try {
+      await runNotebookTaskWithExecutionAgent({
+        deps,
+        task,
+        assistantMessage,
+        agentId: 'agent_external_responses',
+        user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
+        rawBearerToken: 'token',
+        publicBaseUrl: 'http://localhost:20000',
+        buildRunId: () => 'run_external_responses',
+        buildProxyUsername: () => 'external_user',
+        mapTaskMessagesForExecution: () => [{ role: 'user', content: 'reply exactly OK' }],
+        updateTaskActivity: () => undefined,
+        emitTaskEvent: () => undefined,
+        onFinalize: () => undefined,
+        debugLog: () => undefined,
+        taskCollections: {
+          tasks: 'project_tasks',
+          messages: 'project_task_messages',
+        },
+        createTaskArtifact: async () => ({
+          id: 'artifact_external_responses',
+          task_id: task.id,
+          type: 'file',
+          created_at: new Date().toISOString(),
+        }),
+      });
+    } finally {
+      if (previousInternalApiBase === undefined) delete process.env.INTERNAL_API_BASE_URL;
+      else process.env.INTERNAL_API_BASE_URL = previousInternalApiBase;
+    }
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: 'glm-5-turbo',
+        messages: [{ role: 'user', content: 'reply exactly OK' }],
+        executionContext: expect.objectContaining({
+          endpoint_id: 'ep_anthropic',
+          wire_api: 'responses',
+          model: 'glm-5-turbo',
+          api_base: 'http://api:20000',
+        }),
+      }),
+    );
+  });
+
   it('persists a fallback assistant message when execution fails before any visible output', async () => {
     const docStore = new InMemoryJsonDocStore();
     const deps = {

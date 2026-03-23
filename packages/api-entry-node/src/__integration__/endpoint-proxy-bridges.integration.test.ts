@@ -1,7 +1,19 @@
 import type { AddressInfo } from 'node:net';
 import http, { type Server } from 'node:http';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, startServer } from './test-support.js';
+
+vi.mock('../auth.js', async () => {
+  const actual = await vi.importActual<typeof import('../auth.js')>('../auth.js');
+  return {
+    ...actual,
+    verifyBearerToken: vi.fn(async () => ({
+      id: 'user_test',
+      email: 'test@example.com',
+      name: 'Test User',
+    })),
+  };
+});
 
 const upstreamServers: Server[] = [];
 

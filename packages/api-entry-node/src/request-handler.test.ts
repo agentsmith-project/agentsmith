@@ -43,4 +43,16 @@ describe('buildUpstreamUrl', () => {
       'https://open.bigmodel.cn/api/anthropic/v1/messages/count_tokens',
     );
   });
+
+  it('normalizes openai chat suffix before switching to anthropic messages path', () => {
+    expect(buildUpstreamUrl('https://open.bigmodel.cn/api/anthropic/chat/completions', 'messages')).toBe(
+      'https://open.bigmodel.cn/api/anthropic/v1/messages',
+    );
+  });
+
+  it('normalizes responses suffix before switching to anthropic messages path', () => {
+    expect(buildUpstreamUrl('https://open.bigmodel.cn/api/anthropic/responses', 'messages')).toBe(
+      'https://open.bigmodel.cn/api/anthropic/v1/messages',
+    );
+  });
 });

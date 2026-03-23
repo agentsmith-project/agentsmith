@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { FilesPage } from '../FilesPage';
@@ -90,6 +90,16 @@ describe('FilesPage (object browser)', () => {
   beforeEach(() => {
     mockUseFileObjectsInfinite.mockReset();
     mockUseFileObjects.mockReset();
+    Object.defineProperty(window.navigator, 'platform', {
+      configurable: true,
+      value: 'MacIntel',
+    });
+    Object.defineProperty(window.navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: vi.fn().mockResolvedValue(undefined),
+      },
+    });
 
     mockUseFileObjectsInfinite.mockReturnValue({
       data: {
@@ -183,6 +193,25 @@ describe('FilesPage (object browser)', () => {
 
     expect(await screen.findByTestId('files__dialog__library-mount-access')).toBeInTheDocument();
     expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
+    expect(screen.getByTestId('files__library-mount__tab-macos')).toHaveAttribute('data-state', 'active');
+    expect(screen.getByTestId('files__library-mount__command-macos')).toHaveValue(
+      'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 ~/JuiceFS/shared-docs',
+    );
+  });
+
+  it('switches mount command tabs and shows the active platform command', async () => {
+    renderWithQueryClient(<FilesPage workspaceId="ws_default" projectId="proj_001" />);
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId('files__library-mount-access--lib_1'));
+    await user.click(await screen.findByTestId('files__library-mount__tab-windows'));
+    await waitFor(() =>
+      expect(screen.getByTestId('files__library-mount__tab-windows')).toHaveAttribute('data-state', 'active'),
+    );
+    expect(screen.getByTestId('files__library-mount__copy-command')).toBeInTheDocument();
+    expect(screen.getByTestId('files__library-mount__command-windows')).toHaveValue(
+      'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 X:',
+    );
   });
 
   it('configures auto refresh for the active file library listing', async () => {

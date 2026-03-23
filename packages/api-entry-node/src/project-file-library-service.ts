@@ -106,8 +106,8 @@ export async function createAndProvisionProjectFileLibrary(input: {
         'For live observation and verification, prefer zero metadata cache settings so local mounts reflect recent agent writes promptly.',
       ],
       recommended_mount_commands: {
-        linux: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --bucket '${storageBucketUrl}' --cache-dir '${recommendedCacheDir}' --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
-        macos: `juicefs mount '${normalizedMetadataUrl}' '$HOME/Agentsmith/${created.name.replace(/'/g, '')}' --bucket '${storageBucketUrl}' --cache-dir '${recommendedCacheDir}' --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
+        linux: `juicefs mount '${normalizedMetadataUrl}' \"$HOME/Agentsmith/${created.name.replace(/"/g, '').replace(/'/g, '')}\" --bucket '${storageBucketUrl}' --cache-dir \"${recommendedCacheDir}\" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
+        macos: `juicefs mount '${normalizedMetadataUrl}' \"$HOME/Agentsmith/${created.name.replace(/"/g, '').replace(/'/g, '')}\" --bucket '${storageBucketUrl}' --cache-dir \"${recommendedCacheDir}\" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
         windows: `juicefs mount "${normalizedMetadataUrl}" X: --bucket "${storageBucketUrl}" --cache-dir "%USERPROFILE%\\\\.juicefs\\\\cache\\\\agentsmith\\\\${created.filesystem_name}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0`,
       },
       created_at: new Date().toISOString(),

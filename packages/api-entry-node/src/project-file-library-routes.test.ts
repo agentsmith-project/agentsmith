@@ -96,6 +96,11 @@ describe('project-file-library-routes', () => {
         filesystem_name: expect.any(String),
         metadata_url: expect.stringContaining('postgres://'),
         storage_bucket_url: expect.stringContaining('http://localhost:19000/'),
+        recommended_mount_commands: expect.objectContaining({
+          linux: expect.stringContaining('"$HOME/Agentsmith/'),
+          macos: expect.stringContaining('"$HOME/Agentsmith/'),
+          windows: expect.stringContaining('%USERPROFILE%\\\\.juicefs\\\\cache\\\\agentsmith\\\\'),
+        }),
       }),
     );
   });

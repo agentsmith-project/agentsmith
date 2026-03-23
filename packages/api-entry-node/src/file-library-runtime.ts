@@ -207,7 +207,10 @@ function deriveSecret(seed: string, namespace: string, libraryId: string, size =
   const digest = createHash('sha256')
     .update(`${seed}:${namespace}:${libraryId}`)
     .digest('base64url');
-  return digest.slice(0, size);
+  const normalized = /^[A-Za-z0-9]/.test(digest)
+    ? digest
+    : `a${digest.slice(1)}`;
+  return normalized.slice(0, size);
 }
 
 export function getFileLibraryGatewayInternalCredentials(

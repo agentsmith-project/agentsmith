@@ -69,7 +69,7 @@ export function FilesLibrariesPane({
                     onSelectLibrary(library.id);
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-[12px] px-2.5 py-2 text-left transition-colors',
+                    'flex w-full flex-col gap-2 rounded-[12px] px-2.5 py-2 text-left transition-colors',
                     active
                       ? 'bg-accent/10 text-strong ring-1 ring-accent/18'
                       : 'text-primary hover:bg-hover/55',
@@ -78,59 +78,61 @@ export function FilesLibrariesPane({
                   tabIndex={0}
                   data-testid={`files__library-item--${library.id}`}
                 >
-                  <div className="min-w-0">
-                    <div className="truncate text-sm">{library.name}</div>
-                    {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
-                  </div>
-                  {canManage || canExchangeCredentials ? (
-                    <div className="flex items-center gap-1 shrink-0">
-                      {canExchangeCredentials ? (
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm">{library.name}</div>
+                      {library.bucket ? <div className="truncate text-[11px] text-tertiary">{library.bucket}</div> : null}
+                    </div>
+                    {canManage ? (
+                      <div className="flex items-center gap-1 shrink-0">
                         <Button
                           type="button"
-                          size="sm"
+                          size="icon"
                           variant="ghost"
-                          className="h-7 px-2 text-[11px]"
+                          className="h-7 w-7"
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
-                            onOpenMountAccess(library);
+                            onRenameLibrary(library);
                           }}
-                          data-testid={`files__library-mount-access--${library.id}`}
+                          aria-label={t('file_manager.library_rename')}
+                          data-testid={`files__library-rename-btn--${library.id}`}
                         >
-                          {t('file_manager.mount_access')}
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
-                      ) : null}
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onRenameLibrary(library);
-                        }}
-                        aria-label={t('file_manager.library_rename')}
-                        data-testid={`files__library-rename-btn--${library.id}`}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        type="button"
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7"
-                        onClick={(event) => {
-                          event.preventDefault();
-                          event.stopPropagation();
-                          onDeleteLibrary(library);
-                        }}
-                        aria-label={t('file_manager.library_delete')}
-                        data-testid={`files__library-delete-btn--${library.id}`}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
+                        <Button
+                          type="button"
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7"
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            onDeleteLibrary(library);
+                          }}
+                          aria-label={t('file_manager.library_delete')}
+                          data-testid={`files__library-delete-btn--${library.id}`}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    ) : null}
+                  </div>
+                  {canExchangeCredentials ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      className="h-8 w-full justify-center rounded-full border-accent/20 bg-accent/6 px-3 text-[11px] font-medium text-accent hover:bg-accent/12 hover:text-accent"
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onOpenMountAccess(library);
+                      }}
+                      data-testid={`files__library-mount-access--${library.id}`}
+                    >
+                      {t('file_manager.mount_access')}
+                    </Button>
                   ) : null}
                 </div>
               );

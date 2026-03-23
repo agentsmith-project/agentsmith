@@ -60,6 +60,10 @@ test.describe('Files Page (file library browser)', () => {
     await expect(authedPage.getByTestId('files__library-mount__metadata-url')).not.toHaveValue(
       '••••••••••••••••••••',
     );
+    await expect(dialog.getByTestId('files__library-mount__copy-command')).toBeVisible();
+    await expect(dialog.getByTestId('files__library-mount__tab-linux')).toBeVisible();
+    await expect(dialog.getByTestId('files__library-mount__tab-macos')).toBeVisible();
+    await expect(dialog.getByTestId('files__library-mount__tab-windows')).toBeVisible();
   });
 
   test('creates and deletes an empty file library', async ({ authedPage }) => {

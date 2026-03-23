@@ -44,6 +44,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           name: 'endpoint-1',
           type: 'openai',
           base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),
@@ -162,7 +165,22 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         })),
       },
       endpointResourceService: {
-        getEndpoint: vi.fn(),
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_internal',
+          workspace_id: 'ws_internal',
+          project_id: 'proj_internal',
+          status: 'active',
+          model: 'glm-5-turbo',
+          credential_ref: 'cred_internal',
+          name: 'endpoint-internal',
+          type: 'openai',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 256000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
       },
       agentExecutionService: {
         dispatchStreamingRequest,
@@ -251,6 +269,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect.objectContaining({
         executionContext: expect.objectContaining({
           api_base: 'http://172.19.0.1:20072',
+          model_context_window: 256000,
+          model_auto_compact_token_limit: 243200,
           workspace_binding_mode: 'pre_mounted',
           workspace_path: '/workspace',
           workspace_file_library_id: 'flib_internal',
@@ -298,6 +318,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           name: 'endpoint-external',
           type: 'openai',
           base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),
@@ -416,6 +439,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           type: 'anthropic',
           protocol: 'anthropic_compatible',
           base_url: 'https://anthropic.example.com/v1',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),
@@ -522,6 +548,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           name: 'endpoint-empty-error',
           type: 'openai',
           base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 128000,
+          },
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         })),
@@ -592,5 +621,208 @@ describe('notebook-execution-orchestrator governance preflight', () => {
 
     expect(assistantMessage.content).toContain('Execution failed before any visible output was produced.');
     expect(assistantMessage.content).toContain('AGENT_EMPTY_OUTPUT');
+  });
+
+  it('derives model context window and compact token limit from endpoint profile for external notebook runs', async () => {
+    const dispatchStreamingRequest = vi.fn(async () => ({
+      requestId: 'req_external',
+      cancel: () => undefined,
+      stream: (async function* stream() {})(),
+    }));
+    const deps = {
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_external',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_external',
+              model: 'glm-5-turbo',
+              wire_api: 'responses',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_external',
+          workspace_id: 'ws_external',
+          project_id: 'proj_external',
+          status: 'active',
+          model: 'glm-5-turbo',
+          credential_ref: 'cred_external',
+          name: 'endpoint-external',
+          type: 'openai',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 200000,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_external',
+      workspace_id: 'ws_external',
+      project_id: 'proj_external',
+      owner_user_id: 'user_external',
+      title: 'external task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_external',
+    };
+    const assistantMessage = {
+      id: 'msg_external',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_external',
+      user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
+      rawBearerToken: 'token',
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_external',
+      buildProxyUsername: () => 'external_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: () => undefined,
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_external',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(dispatchStreamingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        executionContext: expect.objectContaining({
+          model_context_window: 200000,
+          model_auto_compact_token_limit: 190000,
+        }),
+      }),
+    );
+  });
+
+  it('fails fast when endpoint model profile is missing a valid max context window', async () => {
+    const dispatchStreamingRequest = vi.fn();
+    const emitted: Array<{ type: string; data: unknown }> = [];
+    const deps = {
+      docStore: new InMemoryJsonDocStore(),
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_invalid_window',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_invalid',
+              model: 'glm-5-turbo',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_invalid',
+          workspace_id: 'ws_invalid',
+          project_id: 'proj_invalid',
+          status: 'active',
+          model: 'glm-5-turbo',
+          credential_ref: 'cred_invalid',
+          name: 'endpoint-invalid',
+          type: 'openai',
+          base_url: 'https://example.com',
+          model_profile: {
+            max_context_tokens: 0,
+          },
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest,
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_invalid',
+      workspace_id: 'ws_invalid',
+      project_id: 'proj_invalid',
+      owner_user_id: 'user_invalid',
+      title: 'invalid task',
+      agent_name: 'invalid agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_invalid_window',
+    };
+    const assistantMessage = {
+      id: 'msg_invalid',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_invalid_window',
+      user: { id: 'user_invalid', name: 'Invalid User', email: 'invalid@example.com' },
+      rawBearerToken: 'token',
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_invalid',
+      buildProxyUsername: () => 'invalid_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: (_taskId, payload) => {
+        emitted.push(payload as { type: string; data: unknown });
+      },
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_invalid',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(dispatchStreamingRequest).not.toHaveBeenCalled();
+    const errorEvent = emitted.find((item) => item.type === 'error') as
+      | { type: 'error'; data: { code?: string } }
+      | undefined;
+    expect(errorEvent?.data?.code).toBe('ENDPOINT_MODEL_CONTEXT_WINDOW_INVALID');
   });
 });

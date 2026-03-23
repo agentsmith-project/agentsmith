@@ -39,6 +39,8 @@ type ServerStartPayload = {
     workspace_path?: string;
     wire_api?: 'chat' | 'responses';
     model?: string;
+    model_context_window?: number;
+    model_auto_compact_token_limit?: number;
     workspace_binding_mode?: 'file_library' | 'pre_mounted';
     workspace_file_library_id?: string | null;
     workspace_file_library_name?: string | null;
@@ -638,12 +640,23 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   if (!endpointProxyBase) {
     throw new Error('resource_proxy_base_missing');
   }
+  const modelContextWindow =
+    typeof executionContext.model_context_window === 'number' && Number.isFinite(executionContext.model_context_window)
+      ? Math.floor(executionContext.model_context_window)
+      : undefined;
+  const modelAutoCompactTokenLimit =
+    typeof executionContext.model_auto_compact_token_limit === 'number'
+      && Number.isFinite(executionContext.model_auto_compact_token_limit)
+      ? Math.floor(executionContext.model_auto_compact_token_limit)
+      : undefined;
   const sessionStateResult = await ensureCodexSessionStateCompatible({
     codexDir: taskPaths.codexDir,
     model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
     wireApi: executionContext.wire_api ?? 'responses',
     resourceProxyBase: endpointProxyBase,
     notebookMode: isNotebookMode,
+    modelContextWindow,
+    modelAutoCompactTokenLimit,
   });
   debugLog('validated codex session state', {
     request_id: requestId,
@@ -667,6 +680,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       model,
       endpointProxyBase,
       wireApi,
+      modelContextWindow,
+      modelAutoCompactTokenLimit,
       userBearerToken: executionContext.user_bearer_token,
     }),
     'utf-8',
@@ -679,6 +694,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     wire_api: wireApi,
     resource_proxy_base: endpointProxyBase,
     proxy_source: 'server_hello',
+    model_context_window: modelContextWindow ?? null,
+    model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
     has_user_bearer_token: Boolean(executionContext.user_bearer_token && executionContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
     task_inputs_count: taskInputs.length,
@@ -696,6 +713,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     cwd,
     endpointProxyBase,
     wireApi,
+    modelContextWindow,
+    modelAutoCompactTokenLimit,
     userBearerToken: executionContext.user_bearer_token,
     notebookMode: isNotebookMode,
     yolo: codexYolo,
@@ -749,6 +768,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     details: {
       model,
       wire_api: wireApi,
+      model_context_window: modelContextWindow ?? null,
+      model_auto_compact_token_limit: modelAutoCompactTokenLimit ?? null,
       yolo: codexYolo,
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,

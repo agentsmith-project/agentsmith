@@ -9,6 +9,14 @@ export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 export const GLM_BASE_URL = process.env.INTEGRATION_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
 export const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'GLM-5';
+export const OPENAI_COMPAT_BASE_URL =
+  process.env.INTEGRATION_OPENAI_COMPAT_BASE_URL ??
+  process.env.OPENAI_URL_CODING_PLAN ??
+  'https://open.bigmodel.cn/api/coding/paas/v4';
+export const OPENAI_COMPAT_MODEL =
+  process.env.INTEGRATION_OPENAI_COMPAT_MODEL ??
+  process.env.OPENAI_MODEL_CODING_PLAN ??
+  'glm-5-turbo';
 export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 'http://192.168.0.210:8889';
 export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
@@ -279,6 +287,17 @@ export async function createEndpointViaApi(
     credentialName: string;
     capability?: 'chat_completion' | 'multimodal_completion';
     protocol?: 'openai_compatible' | 'anthropic_compatible';
+    modelProfile?: {
+      max_context_tokens: number;
+      max_output_tokens?: number;
+      supports_file?: boolean;
+      supports_tool_call?: boolean;
+      supports_reasoning?: boolean;
+      price_input_per_1m?: number;
+      price_output_per_1m?: number;
+      cache_read_discount_ratio?: number;
+      cache_write_discount_ratio?: number;
+    };
   },
 ): Promise<string> {
   const token = await readStoredAuthToken(page);
@@ -322,6 +341,21 @@ export async function createEndpointViaApi(
         models: [{ capability, model_id: args.endpointModel, display_name: args.endpointModel }],
         defaults,
         meta: { compatibility_interface: useAnthropicCompat ? 'anthropic_compatible' : 'openai_compatible' },
+        ...(args.modelProfile
+          ? {
+            model_profile: {
+              max_context_tokens: args.modelProfile.max_context_tokens,
+              max_output_tokens: args.modelProfile.max_output_tokens ?? 8192,
+              supports_file: args.modelProfile.supports_file ?? true,
+              supports_tool_call: args.modelProfile.supports_tool_call ?? true,
+              supports_reasoning: args.modelProfile.supports_reasoning ?? true,
+              price_input_per_1m: args.modelProfile.price_input_per_1m ?? 0,
+              price_output_per_1m: args.modelProfile.price_output_per_1m ?? 0,
+              cache_read_discount_ratio: args.modelProfile.cache_read_discount_ratio ?? 0,
+              cache_write_discount_ratio: args.modelProfile.cache_write_discount_ratio ?? 0,
+            },
+          }
+          : {}),
       },
     },
   );

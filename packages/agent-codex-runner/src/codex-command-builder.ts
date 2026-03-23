@@ -2,10 +2,19 @@ function tomlString(value: string): string {
   return JSON.stringify(value);
 }
 
+function tomlNumber(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) {
+    throw new Error(`invalid_codex_numeric_config:${value}`);
+  }
+  return String(Math.floor(value));
+}
+
 export function buildTaskCodexConfig(args: {
   model: string;
   endpointProxyBase: string;
   wireApi: 'responses' | 'chat';
+  modelContextWindow?: number;
+  modelAutoCompactTokenLimit?: number;
   userBearerToken?: string;
 }): string {
   const lines: string[] = [
@@ -24,6 +33,12 @@ export function buildTaskCodexConfig(args: {
     `base_url = ${tomlString(args.endpointProxyBase)}`,
     `wire_api = ${tomlString(args.wireApi)}`,
   ];
+  if (typeof args.modelContextWindow === 'number') {
+    lines.push(`model_context_window = ${tomlNumber(args.modelContextWindow)}`);
+  }
+  if (typeof args.modelAutoCompactTokenLimit === 'number') {
+    lines.push(`model_auto_compact_token_limit = ${tomlNumber(args.modelAutoCompactTokenLimit)}`);
+  }
   if (args.userBearerToken && args.userBearerToken.trim().length > 0) {
     lines.push(`experimental_bearer_token = ${tomlString(args.userBearerToken)}`);
   }
@@ -36,6 +51,8 @@ export function buildCodexExecArgs(args: {
   cwd: string;
   endpointProxyBase: string;
   wireApi: 'responses' | 'chat';
+  modelContextWindow?: number;
+  modelAutoCompactTokenLimit?: number;
   userBearerToken?: string;
   notebookMode?: boolean;
   yolo?: boolean;
@@ -63,6 +80,18 @@ export function buildCodexExecArgs(args: {
     '-c',
     'hide_agent_reasoning=true',
   ];
+  if (typeof args.modelContextWindow === 'number') {
+    cliArgs.push(
+      '-c',
+      `model_context_window=${tomlNumber(args.modelContextWindow)}`,
+    );
+  }
+  if (typeof args.modelAutoCompactTokenLimit === 'number') {
+    cliArgs.push(
+      '-c',
+      `model_auto_compact_token_limit=${tomlNumber(args.modelAutoCompactTokenLimit)}`,
+    );
+  }
   if (args.yolo) {
     cliArgs.splice(1, 0, '--dangerously-bypass-approvals-and-sandbox');
   } else {

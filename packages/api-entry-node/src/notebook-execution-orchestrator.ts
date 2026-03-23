@@ -136,6 +136,26 @@ function resolveExecutionApiBase(
   return sanitizeBaseUrl(publicBaseUrl) ?? publicBaseUrl;
 }
 
+function deriveNotebookModelWindow(profile: { max_context_tokens?: number } | null | undefined): {
+  modelContextWindow: number;
+  modelAutoCompactTokenLimit: number;
+} {
+  const rawWindow = profile?.max_context_tokens;
+  const modelContextWindow =
+    typeof rawWindow === 'number' && Number.isFinite(rawWindow) && rawWindow > 0
+      ? Math.floor(rawWindow)
+      : null;
+  if (!modelContextWindow) {
+    throw Object.assign(new Error('endpoint_model_context_window_invalid'), {
+      code: 'ENDPOINT_MODEL_CONTEXT_WINDOW_INVALID',
+    });
+  }
+  return {
+    modelContextWindow,
+    modelAutoCompactTokenLimit: Math.max(1, Math.floor(modelContextWindow * 0.95)),
+  };
+}
+
 export async function runNotebookTaskWithExecutionAgent(input: {
   deps: NodeApiDeps;
   task: NotebookTaskRecord;
@@ -228,16 +248,21 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const explicitModel = typeof notebookPreferences.model === 'string'
       ? notebookPreferences.model.trim()
       : '';
-    let endpointModel = '';
+    const endpoint = await deps.endpointResourceService.getEndpoint(
+      task.workspace_id,
+      task.project_id,
+      endpointId,
+    );
+    if (!endpoint || endpoint.status !== 'active') {
+      throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
+    }
+    let endpointModel = endpoint.model?.trim() ?? '';
+    let modelContextWindow: number | undefined;
+    let modelAutoCompactTokenLimit: number | undefined;
+    const modelWindow = deriveNotebookModelWindow(endpoint.model_profile);
+    modelContextWindow = modelWindow.modelContextWindow;
+    modelAutoCompactTokenLimit = modelWindow.modelAutoCompactTokenLimit;
     if (agent.mode !== 'internal') {
-      const endpoint = await deps.endpointResourceService.getEndpoint(
-        task.workspace_id,
-        task.project_id,
-        endpointId,
-      );
-      if (!endpoint || endpoint.status !== 'active') {
-        throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
-      }
       const preflight = await enforceEndpointGovernancePreflight({
         deps,
         workspaceId: task.workspace_id,
@@ -255,7 +280,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           code: preflight.responseBody.error_code,
         });
       }
-      endpointModel = endpoint.model?.trim() ?? '';
     }
     const model = explicitModel || endpointModel || 'gpt-5-codex';
     if (agent.mode === 'internal') {
@@ -339,6 +363,8 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         user_bearer_token: rawBearerToken,
         wire_api: wireApi,
         model,
+        model_context_window: modelContextWindow,
+        model_auto_compact_token_limit: modelAutoCompactTokenLimit,
         workspace_binding_mode: agent.mode === 'internal' ? 'pre_mounted' : 'file_library',
         workspace_path: agent.mode === 'internal' ? '/workspace' : undefined,
         workspace_file_library_id: task.workspace_file_library_id ?? null,

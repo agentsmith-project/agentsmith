@@ -6,7 +6,6 @@ import {
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
 } from './integration-real-helpers';
-import { ensureWorkspaceProjectCreatorAccess } from './integration-workspace-access';
 
 type UpstreamServer = {
   baseUrl: string;
@@ -184,12 +183,6 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
 
     try {
       const token = await issueDevToken(page);
-      await ensureWorkspaceProjectCreatorAccess({
-        page,
-        apiBase: API_BASE,
-        token,
-        username: KEYCLOAK_DEV_ADMIN_USERNAME,
-      });
       const projectId = await createProjectViaApi(page, token, `it-upx-responses-${Date.now()}`);
       const credentialId = await createCredentialViaApi(page, token, projectId);
       const endpointId = await createEndpointViaApi(page, token, projectId, {
@@ -228,12 +221,6 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
 
     try {
       const token = await issueDevToken(page);
-      await ensureWorkspaceProjectCreatorAccess({
-        page,
-        apiBase: API_BASE,
-        token,
-        username: KEYCLOAK_DEV_ADMIN_USERNAME,
-      });
       const projectId = await createProjectViaApi(page, token, `it-upx-messages-${Date.now()}`);
       const credentialId = await createCredentialViaApi(page, token, projectId);
       const endpointId = await createEndpointViaApi(page, token, projectId, {

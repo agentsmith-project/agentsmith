@@ -2,7 +2,7 @@ import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
 const SESSION_FINGERPRINT_FILE = '.mbos-session-fingerprint.json';
-const SESSION_STATE_VERSION = 'runner_session_v1';
+const SESSION_STATE_VERSION = 'runner_session_v2';
 const PROMPT_POLICY_VERSION = 'latest_user_only_v1';
 
 type SessionFingerprint = {
@@ -12,6 +12,8 @@ type SessionFingerprint = {
   wire_api: 'chat' | 'responses';
   resource_proxy_base: string;
   notebook_mode: boolean;
+  model_context_window: number | null;
+  model_auto_compact_token_limit: number | null;
 };
 
 function buildSessionFingerprint(input: {
@@ -19,6 +21,8 @@ function buildSessionFingerprint(input: {
   wireApi: 'chat' | 'responses';
   resourceProxyBase: string;
   notebookMode: boolean;
+  modelContextWindow?: number;
+  modelAutoCompactTokenLimit?: number;
 }): SessionFingerprint {
   return {
     session_state_version: SESSION_STATE_VERSION,
@@ -27,6 +31,10 @@ function buildSessionFingerprint(input: {
     wire_api: input.wireApi,
     resource_proxy_base: input.resourceProxyBase,
     notebook_mode: input.notebookMode,
+    model_context_window: Number.isFinite(input.modelContextWindow) ? Math.floor(input.modelContextWindow!) : null,
+    model_auto_compact_token_limit: Number.isFinite(input.modelAutoCompactTokenLimit)
+      ? Math.floor(input.modelAutoCompactTokenLimit!)
+      : null,
   };
 }
 
@@ -45,6 +53,8 @@ export async function ensureCodexSessionStateCompatible(input: {
   wireApi: 'chat' | 'responses';
   resourceProxyBase: string;
   notebookMode: boolean;
+  modelContextWindow?: number;
+  modelAutoCompactTokenLimit?: number;
 }): Promise<{ resetPerformed: boolean; reason: 'missing' | 'unchanged' | 'changed' }> {
   await mkdir(input.codexDir, { recursive: true });
   const fingerprintPath = join(input.codexDir, SESSION_FINGERPRINT_FILE);
@@ -53,6 +63,8 @@ export async function ensureCodexSessionStateCompatible(input: {
     wireApi: input.wireApi,
     resourceProxyBase: input.resourceProxyBase,
     notebookMode: input.notebookMode,
+    modelContextWindow: input.modelContextWindow,
+    modelAutoCompactTokenLimit: input.modelAutoCompactTokenLimit,
   });
 
   let previousFingerprint: SessionFingerprint | null = null;

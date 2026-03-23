@@ -27,6 +27,8 @@ describe('ensureCodexSessionStateCompatible', () => {
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
     });
     expect(result).toEqual({ resetPerformed: false, reason: 'missing' });
   });
@@ -39,6 +41,8 @@ describe('ensureCodexSessionStateCompatible', () => {
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
     });
     await writeFile(join(codexDir, 'state_5.sqlite'), 'keep');
     const result = await ensureCodexSessionStateCompatible({
@@ -47,6 +51,8 @@ describe('ensureCodexSessionStateCompatible', () => {
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
     });
     expect(result).toEqual({ resetPerformed: false, reason: 'unchanged' });
     await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDir, 'state_5.sqlite'), 'utf8'))).resolves.toBe('keep');
@@ -60,6 +66,8 @@ describe('ensureCodexSessionStateCompatible', () => {
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
     });
     await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
     await writeFile(join(codexDir, 'state_5.sqlite-wal'), 'stale');
@@ -74,11 +82,40 @@ describe('ensureCodexSessionStateCompatible', () => {
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-b',
       notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
     });
 
     expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'sessions')))).rejects.toBeTruthy();
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'tmp')))).rejects.toBeTruthy();
+  });
+
+  it('resets persisted session files when model window changes', async () => {
+    const codexDir = await createCodexDir();
+    await ensureCodexSessionStateCompatible({
+      codexDir,
+      model: 'glm-5-turbo',
+      wireApi: 'responses',
+      resourceProxyBase: 'http://proxy-a',
+      notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
+    });
+    await writeFile(join(codexDir, 'state_5.sqlite'), 'stale');
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir,
+      model: 'glm-5-turbo',
+      wireApi: 'responses',
+      resourceProxyBase: 'http://proxy-a',
+      notebookMode: true,
+      modelContextWindow: 256000,
+      modelAutoCompactTokenLimit: 243200,
+    });
+
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
   });
 });

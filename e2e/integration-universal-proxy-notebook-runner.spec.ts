@@ -1,18 +1,89 @@
 import http, { type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { readFile, readdir } from 'node:fs/promises';
+import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
+  GLM_BASE_URL,
+  GLM_MODEL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  OPENAI_COMPAT_BASE_URL,
+  OPENAI_COMPAT_MODEL,
   startCodexRunnerProcess,
 } from './integration-real-helpers';
-import { ensureWorkspaceProjectCreatorAccess } from './integration-workspace-access';
 
 type UpstreamServer = {
   baseUrl: string;
   stop: () => Promise<void>;
 };
+
+function requireGlmApiKey(): string {
+  const value = process.env.GLM_API_KEY?.trim();
+  if (!value) {
+    throw new Error('missing_GLM_API_KEY');
+  }
+  return value;
+}
+
+async function listTaskMessages(args: {
+  page: Page;
+  token: string;
+  projectId: string;
+  taskId: string;
+}): Promise<Array<{ role?: string; content?: string }>> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/ws_default/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+    {
+      headers: { Authorization: `Bearer ${args.token}` },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+  return (await response.json()) as Array<{ role?: string; content?: string }>;
+}
+
+async function waitForTaskArtifacts(args: {
+  page: Page;
+  token: string;
+  projectId: string;
+  taskId: string;
+  expectedPath: string;
+}): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await args.page.request.get(
+          `${API_BASE}/api/v1/workspaces/ws_default/projects/${args.projectId}/tasks/${args.taskId}/artifacts`,
+          {
+            headers: { Authorization: `Bearer ${args.token}` },
+          },
+        );
+        if (!response.ok()) return false;
+        const payload = (await response.json()) as Array<{ task_relative_path?: string }>;
+        return payload.some((item) => item.task_relative_path === args.expectedPath);
+      },
+      { timeout: 180_000, intervals: [2_000, 5_000, 10_000] },
+    )
+    .toBe(true);
+}
+
+async function findFileRecursively(root: string, relativeParts: string[]): Promise<string | null> {
+  const directPath = path.join(root, ...relativeParts);
+  try {
+    await readFile(directPath, 'utf8');
+    return directPath;
+  } catch {
+    // Keep searching.
+  }
+  const entries = await readdir(root, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const nested = await findFileRecursively(path.join(root, entry.name), relativeParts);
+    if (nested) return nested;
+  }
+  return null;
+}
 
 async function issueDevToken(page: Page): Promise<string> {
   const response = await page.request.post('http://localhost:18080/realms/mbos/protocol/openid-connect/token', {
@@ -47,7 +118,12 @@ async function createProjectViaApi(page: Page, token: string, name: string): Pro
   return body.id;
 }
 
-async function createCredentialViaApi(page: Page, token: string, projectId: string): Promise<{ id: string; name: string }> {
+async function createCredentialViaApi(
+  page: Page,
+  token: string,
+  projectId: string,
+  value = 'sk-it-upx-notebook',
+): Promise<{ id: string; name: string }> {
   const name = `it-upx-notebook-key-${Date.now()}`;
   const response = await page.request.post(
     `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/credentials`,
@@ -59,7 +135,7 @@ async function createCredentialViaApi(page: Page, token: string, projectId: stri
       data: {
         name,
         type: 'api_key',
-        value: 'sk-it-upx-notebook',
+        value,
       },
     },
   );
@@ -78,6 +154,9 @@ async function createEndpointViaApi(args: {
   baseUrl: string;
   credentialRef: string;
   protocol: 'openai_compatible' | 'anthropic_compatible';
+  modelProfile?: {
+    max_context_tokens: number;
+  };
 }): Promise<string> {
   const providerFamily = args.protocol === 'anthropic_compatible' ? 'anthropic' : 'openai';
   const response = await args.page.request.post(
@@ -98,6 +177,21 @@ async function createEndpointViaApi(args: {
         capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: args.model }],
         models: [{ capability: 'chat_completion', model_id: args.model, display_name: args.model }],
         defaults: { chat_model_id: args.model },
+        ...(args.modelProfile
+          ? {
+            model_profile: {
+              max_context_tokens: args.modelProfile.max_context_tokens,
+              max_output_tokens: 8192,
+              supports_file: true,
+              supports_tool_call: true,
+              supports_reasoning: true,
+              price_input_per_1m: 0,
+              price_output_per_1m: 0,
+              cache_read_discount_ratio: 0,
+              cache_write_discount_ratio: 0,
+            },
+          }
+          : {}),
       },
     },
   );
@@ -113,6 +207,7 @@ async function createExternalNotebookAgentBundle(args: {
   projectId: string;
   endpointId: string;
   title: string;
+  model?: string;
 }): Promise<{ agentId: string; agentName: string; wsUrl: string; agentKey: string }> {
   const agentName = `${args.title}-${Date.now()}`;
   const createAgentRes = await args.page.request.post(
@@ -130,7 +225,7 @@ async function createExternalNotebookAgentBundle(args: {
           notebook: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: 'glm-5-turbo',
+            model: args.model?.trim() || 'glm-5-turbo',
           },
         },
         capabilities: {
@@ -227,8 +322,11 @@ async function sendNotebookMessage(args: {
       },
     },
   );
-  expect(response.ok()).toBeTruthy();
+  if (!response.ok()) {
+    throw new Error(`send_notebook_message_failed:${response.status()}:${await response.text()}`);
+  }
 }
+
 
 async function waitForAgentPresenceOnline(args: {
   page: Page;
@@ -275,6 +373,33 @@ async function waitForAgentReply(args: {
       { timeout: 180_000, intervals: [2_000, 5_000, 10_000] },
     )
     .toContain(args.expectedText);
+}
+
+async function waitForTaskIdle(args: {
+  page: Page;
+  token: string;
+  projectId: string;
+  taskId: string;
+}): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const response = await args.page.request.get(
+          `${API_BASE}/api/v1/workspaces/ws_default/projects/${args.projectId}/tasks?page=1&page_size=20`,
+          {
+            headers: { Authorization: `Bearer ${args.token}` },
+          },
+        );
+        if (!response.ok()) return null;
+        const payload = (await response.json()) as {
+          items?: Array<{ id?: string; run_state?: string }>;
+        };
+        const task = payload.items?.find((item) => item.id === args.taskId);
+        return task?.run_state ?? null;
+      },
+      { timeout: 180_000, intervals: [2_000, 5_000, 10_000] },
+    )
+    .toBe('idle');
 }
 
 async function createWorkspaceFileLibraryViaApi(args: {
@@ -526,12 +651,6 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
     test.setTimeout(600_000);
 
     const token = await issueDevToken(page);
-    await ensureWorkspaceProjectCreatorAccess({
-      page,
-      apiBase: API_BASE,
-      token,
-      username: KEYCLOAK_DEV_ADMIN_USERNAME,
-    });
     const projectId = await createProjectViaApi(page, token, `it-upx-notebook-${Date.now()}`);
     const credential = await createCredentialViaApi(page, token, projectId);
 
@@ -568,6 +687,9 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
           baseUrl: upstream.baseUrl,
           credentialRef: credential.id,
           protocol: scenario.protocol,
+          modelProfile: {
+            max_context_tokens: 128000,
+          },
         });
         const agentBundle = await createExternalNotebookAgentBundle({
           page,
@@ -616,6 +738,185 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
         }
       } finally {
         await upstream.stop();
+      }
+    }
+  });
+});
+
+test.describe('@lane-real notebook runner real upstream stability via universal proxy', () => {
+  test('completes long multi-turn notebook tasks for openai-compatible and anthropic-compatible upstreams', async ({ page }) => {
+    test.setTimeout(1_200_000);
+    const glmApiKey = requireGlmApiKey();
+    const token = await issueDevToken(page);
+    const projectId = await createProjectViaApi(page, token, `it-upx-notebook-real-${Date.now()}`);
+    const credential = await createCredentialViaApi(page, token, projectId, glmApiKey);
+
+    const scenarios = [
+      {
+        kind: 'openai' as const,
+        protocol: 'openai_compatible' as const,
+        baseUrl: OPENAI_COMPAT_BASE_URL,
+        model: OPENAI_COMPAT_MODEL,
+        expectedCompactLimit: 121600,
+      },
+      {
+        kind: 'anthropic' as const,
+        protocol: 'anthropic_compatible' as const,
+        baseUrl: GLM_BASE_URL,
+        model: GLM_MODEL,
+        expectedCompactLimit: 121600,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const workspaceLibraryId = await createWorkspaceFileLibraryViaApi({
+        page,
+        token,
+        projectId,
+        name: `Universal Proxy Real Notebook Workspace ${scenario.kind} ${Date.now()}`,
+      });
+      const endpointId = await createEndpointViaApi({
+        page,
+        token,
+        projectId,
+        name: `UPX Real Notebook ${scenario.kind} ${Date.now()}`,
+        model: scenario.model,
+        baseUrl: scenario.baseUrl,
+        credentialRef: credential.id,
+        protocol: scenario.protocol,
+        modelProfile: {
+          max_context_tokens: 128000,
+        },
+      });
+      const agentBundle = await createExternalNotebookAgentBundle({
+        page,
+        token,
+        projectId,
+        endpointId,
+        title: `upx-real-notebook-${scenario.kind}`,
+        model: scenario.model,
+      });
+      const runner = await startCodexRunnerProcess({
+        wsUrl: agentBundle.wsUrl,
+        agentKey: agentBundle.agentKey,
+      });
+      test.info().annotations.push({ type: `runner_log_real_${scenario.kind}`, description: runner.logPath });
+
+      try {
+        await waitForAgentPresenceOnline({
+          page,
+          token,
+          projectId,
+          agentId: agentBundle.agentId,
+        });
+
+        const taskId = await createNotebookTaskViaApi({
+          page,
+          token,
+          projectId,
+          agentId: agentBundle.agentId,
+          workspaceLibraryId,
+          title: `UPX Real Notebook Task ${scenario.kind} ${Date.now()}`,
+        });
+        const starryPrompt = [
+          'Use Python to draw a simple starry sky image.',
+          'Save the final image to exactly .artifacts/starry_sky.png.',
+          'After the image is written, reply with exactly STAR_SKY_DONE: starry_sky.png.',
+          'Do not skip the file creation step.',
+        ].join(' ');
+        await sendNotebookMessage({
+          page,
+          token,
+          projectId,
+          taskId,
+          content: starryPrompt,
+        });
+        await waitForAgentReply({
+          page,
+          token,
+          projectId,
+          taskId,
+          expectedText: 'STAR_SKY_DONE: starry_sky.png',
+        });
+        await waitForTaskIdle({
+          page,
+          token,
+          projectId,
+          taskId,
+        });
+        await waitForTaskArtifacts({
+          page,
+          token,
+          projectId,
+          taskId,
+          expectedPath: '.artifacts/starry_sky.png',
+        });
+
+        const configPath = await findFileRecursively(runner.workspaceRoot, ['.codex', 'config.toml']);
+        expect(configPath).toBeTruthy();
+        const configText = await readFile(configPath!, 'utf8');
+        expect(configText).toContain('model_context_window = 128000');
+        expect(configText).toContain(`model_auto_compact_token_limit = ${scenario.expectedCompactLimit}`);
+
+        await sendNotebookMessage({
+          page,
+          token,
+          projectId,
+          taskId,
+          content: '你刚才画的图中最多的颜色是什么颜色？请读取你刚才生成的图片，并以 DOMINANT_COLOR: 开头回答。',
+        });
+        await waitForAgentReply({
+          page,
+          token,
+          projectId,
+          taskId,
+          expectedText: 'DOMINANT_COLOR:',
+        });
+        await waitForTaskIdle({
+          page,
+          token,
+          projectId,
+          taskId,
+        });
+        const messages = await listTaskMessages({
+          page,
+          token,
+          projectId,
+          taskId,
+        });
+        const lastAgentMessage = [...messages].reverse().find((item) => item.role === 'agent' && item.content?.includes('DOMINANT_COLOR:'));
+        expect(lastAgentMessage?.content).toMatch(/DOMINANT_COLOR:\s*\S+/);
+
+        await waitForAgentPresenceOnline({
+          page,
+          token,
+          projectId,
+          agentId: agentBundle.agentId,
+        });
+
+        const repeatToken = `REPEAT_OK_${scenario.kind.toUpperCase()}_${Date.now()}`;
+        await sendNotebookMessage({
+          page,
+          token,
+          projectId,
+          taskId,
+          content: `Reply with exactly ${repeatToken} and nothing else.`,
+        });
+        await waitForAgentReply({
+          page,
+          token,
+          projectId,
+          taskId,
+          expectedText: repeatToken,
+        });
+        await waitForTaskIdle({
+          page,
+          token,
+          projectId,
+          taskId,
+        });
+      } finally {
+        await runner.stop();
       }
     }
   });

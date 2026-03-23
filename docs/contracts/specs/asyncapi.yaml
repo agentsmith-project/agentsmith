@@ -253,6 +253,12 @@ components:
                     - responses
                   model:
                     type: string
+                  model_context_window:
+                    type: integer
+                    minimum: 1
+                  model_auto_compact_token_limit:
+                    type: integer
+                    minimum: 1
                   notebook_mode:
                     type: boolean
                   task_inputs:

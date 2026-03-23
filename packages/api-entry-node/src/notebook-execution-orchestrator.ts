@@ -48,6 +48,17 @@ function sanitizeFileLibraryWorkspaceDirName(fileLibraryName: string | undefined
   return (fileLibraryId ?? '').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 48) || 'file-library-workspace';
 }
 
+function buildTerminalAssistantFallbackContent(args: {
+  terminalResult: 'ok' | 'error';
+  terminalErrorCode?: string;
+  existingContent: string;
+}): string {
+  if (args.existingContent.trim().length > 0) return args.existingContent;
+  if (args.terminalResult === 'ok') return args.existingContent;
+  const code = (args.terminalErrorCode ?? 'AGENT_UPSTREAM_ERROR').trim() || 'AGENT_UPSTREAM_ERROR';
+  return `Execution failed before any visible output was produced.\nError code: ${code}`;
+}
+
 type NotebookTaskMessageRecord = {
   id: string;
   task_id: string;
@@ -624,6 +635,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       metadata: { run_id: runId, task_id: task.id, endpoint_id: endpointIdForLog },
     });
     updateTaskActivity(task);
+    assistantMessage.content = buildTerminalAssistantFallbackContent({
+      terminalResult,
+      terminalErrorCode,
+      existingContent: assistantMessage.content,
+    });
     debugLog('task_run_finalized', {
       task_id: task.id,
       run_id: runId,

@@ -375,4 +375,103 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       }),
     );
   });
+
+  it('persists a fallback assistant message when execution fails before any visible output', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const deps = {
+      docStore,
+      agentResourceService: {
+        getAgent: vi.fn(async () => ({
+          id: 'agent_empty_error',
+          status: 'enabled',
+          mode: 'external',
+          execution_preferences_json: {
+            notebook: {
+              endpoint_id: 'ep_empty_error',
+            },
+          },
+        })),
+      },
+      endpointResourceService: {
+        getEndpoint: vi.fn(async () => ({
+          id: 'ep_empty_error',
+          workspace_id: 'ws_empty_error',
+          project_id: 'proj_empty_error',
+          status: 'active',
+          model: 'glm-5',
+          credential_ref: 'cred_1',
+          name: 'endpoint-empty-error',
+          type: 'openai',
+          base_url: 'https://example.com',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })),
+      },
+      agentExecutionService: {
+        dispatchStreamingRequest: vi.fn(async () => ({
+          requestId: 'req_empty_error',
+          cancel: () => undefined,
+          stream: (async function* stream() {
+            yield {
+              type: 'error',
+              error_code: 'AGENT_EMPTY_OUTPUT',
+              error_message: 'agent_completed_without_visible_output',
+            };
+          })(),
+        })),
+      },
+    } as unknown as NodeApiDeps;
+
+    const task = {
+      id: 'task_empty_error',
+      workspace_id: 'ws_empty_error',
+      project_id: 'proj_empty_error',
+      owner_user_id: 'user_empty_error',
+      title: 'empty error task',
+      agent_name: 'external agent',
+      status: 'active' as const,
+      attached_inputs: [],
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      last_activity_at: new Date().toISOString(),
+      agent_id: 'agent_empty_error',
+    };
+    const assistantMessage = {
+      id: 'msg_empty_error',
+      task_id: task.id,
+      role: 'agent' as const,
+      content: '',
+      created_at: new Date().toISOString(),
+    };
+
+    await runNotebookTaskWithExecutionAgent({
+      deps,
+      task,
+      assistantMessage,
+      agentId: 'agent_empty_error',
+      user: { id: 'user_empty_error', name: 'Empty Error User', email: 'empty@example.com' },
+      rawBearerToken: 'token',
+      publicBaseUrl: 'http://localhost:20000',
+      buildRunId: () => 'run_empty_error',
+      buildProxyUsername: () => 'empty_error_user',
+      mapTaskMessagesForExecution: () => [],
+      updateTaskActivity: () => undefined,
+      emitTaskEvent: () => undefined,
+      onFinalize: () => undefined,
+      debugLog: () => undefined,
+      taskCollections: {
+        tasks: 'project_tasks',
+        messages: 'project_task_messages',
+      },
+      createTaskArtifact: async () => ({
+        id: 'artifact_empty_error',
+        task_id: task.id,
+        type: 'file',
+        created_at: new Date().toISOString(),
+      }),
+    });
+
+    expect(assistantMessage.content).toContain('Execution failed before any visible output was produced.');
+    expect(assistantMessage.content).toContain('AGENT_EMPTY_OUTPUT');
+  });
 });

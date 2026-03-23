@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { filterNewArtifactsForRun, type ScannedArtifact } from './artifact-scan.js';
+import {
+  filterNewArtifactsForRun,
+  rememberArtifactsForRun,
+  type ScannedArtifact,
+} from './artifact-scan.js';
 
 function makeArtifact(
   path: string,
@@ -30,5 +34,15 @@ describe('filterNewArtifactsForRun', () => {
 
     expect(filterNewArtifactsForRun(seen, 'run-a', [artifact])).toEqual([artifact]);
     expect(filterNewArtifactsForRun(seen, 'run-b', [artifact])).toEqual([artifact]);
+  });
+
+  it('can seed an existing run with artifacts that predated the run', () => {
+    const seen = new Map<string, Set<string>>();
+    const existing = makeArtifact('.artifacts/old.png', 100, 1);
+    const created = makeArtifact('.artifacts/new.png', 101, 2);
+
+    rememberArtifactsForRun(seen, 'run-a', [existing]);
+
+    expect(filterNewArtifactsForRun(seen, 'run-a', [existing, created])).toEqual([created]);
   });
 });

@@ -12,12 +12,15 @@ import {
 import {
   diffWorkspaceFileSnapshots,
   filterNewArtifactsForRun,
+  rememberArtifactsForRun,
   scanArtifactsDirectory,
   scanWorkspaceFilesSnapshot,
 } from './artifact-scan.js';
 import { prepareTaskWorkspace } from './task-workspace.js';
 import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
 import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
+import { selectLatestInstruction } from './prompt-selection.js';
+import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
 import { resolveCodexTerminalOutcome } from './terminal-outcome.js';
 
 type ServerStartPayload = {
@@ -98,6 +101,8 @@ const cancelRequestedByRequestId = new Set<string>();
 const traceSeqByRequestId = new Map<string, number>();
 const runStartedAtByRequestId = new Map<string, number>();
 const reportedArtifactsByRequestId = new Map<string, Set<string>>();
+const visibleAgentCharsByRequestId = new Map<string, number>();
+const commandCountByRequestId = new Map<string, number>();
 let connectedResourceProxyBase = '';
 type FilterStats = RunnerFilterStats;
 const filterStatsByRequestId = new Map<string, FilterStats>();
@@ -209,38 +214,11 @@ function debugLog(message: string, extra?: Record<string, unknown>): void {
   process.stdout.write(`[agent-codex-runner][debug] ${message}${payload}\n`);
 }
 
-function stringifyMessageContent(content: unknown): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content.map((part) => {
-      if (typeof part === 'string') return part;
-      if (typeof part !== 'object' || part === null) return JSON.stringify(part);
-      const record = part as Record<string, unknown>;
-      if (record.type === 'text' && typeof record.text === 'string') return record.text;
-      if (record.type === 'image_url') return '[image]';
-      return JSON.stringify(record);
-    }).join('\n').trim();
-  }
-  if (content == null) return '';
-  return JSON.stringify(content);
-}
-
-function buildConversationPrompt(messages: Array<{ role?: string; content?: unknown }> | undefined): string {
-  if (!messages || messages.length === 0) return '';
-  return messages
-    .map((message) => {
-      const role = typeof message.role === 'string' && message.role.trim() ? message.role.trim() : 'message';
-      const content = stringifyMessageContent(message.content);
-      return `${role.toUpperCase()}:\n${content}`;
-    })
-    .filter((section) => section.trim().length > 0)
-    .join('\n\n');
-}
-
-function maybeEmitDeltaChunk(requestId: string, chunk: string): void {
+function maybeEmitDeltaChunk(requestId: string, chunk: string): number {
   const trimmed = sanitizeAgentDeltaChunk(chunk, () => getFilterStats(requestId)).replace(/\r/g, '');
-  if (!trimmed.trim()) return;
+  if (!trimmed.trim()) return 0;
   sendFrame('agent.response.delta', requestId, { delta: trimmed });
+  return trimmed.length;
 }
 
 function extractAgentDeltaFromStdoutLine(line: string): string | null {
@@ -298,6 +276,14 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
   const type = typeof evt.type === 'string' ? evt.type : 'unknown';
   const itemObj = typeof evt.item === 'object' && evt.item !== null ? (evt.item as Record<string, unknown>) : null;
   const itemType = itemObj && typeof itemObj.type === 'string' ? itemObj.type : null;
+  const readItemErrorText = (item: Record<string, unknown> | null): string => {
+    if (!item) return '';
+    if (typeof item.message === 'string' && item.message.trim()) return item.message.trim();
+    if (typeof item.text === 'string' && item.text.trim()) return item.text.trim();
+    const errorObj = typeof item.error === 'object' && item.error !== null ? (item.error as Record<string, unknown>) : null;
+    if (errorObj && typeof errorObj.message === 'string' && errorObj.message.trim()) return errorObj.message.trim();
+    return '';
+  };
   const readCommandText = (item: Record<string, unknown> | null): string => {
     if (!item) return '';
     if (typeof item.command === 'string' && item.command.trim()) return item.command.trim();
@@ -450,6 +436,9 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
     return;
   }
   if (item.type === 'command_execution') {
+    if (type === 'item.started') {
+      commandCountByRequestId.set(requestId, (commandCountByRequestId.get(requestId) ?? 0) + 1);
+    }
     const exitCode = typeof item.exit_code === 'number' && Number.isFinite(item.exit_code)
       ? Math.trunc(item.exit_code)
       : null;
@@ -471,13 +460,21 @@ function maybeEmitTraceFromStdoutLine(requestId: string, line: string): void {
     return;
   }
   if (type === 'item.completed') {
+    const errorText = itemType === 'error' ? readItemErrorText(item) : '';
     sendTraceEvent(requestId, {
-      category: 'progress',
+      category: itemType === 'error' ? 'error' : 'progress',
       phase: 'end',
-      status: 'success',
+      status: itemType === 'error' ? 'error' : 'success',
       name: 'codex.item',
-      summary: itemType ? `Item completed: ${itemType}` : 'Item completed',
-      details: itemType ? { item_type: itemType } : undefined,
+      summary: itemType === 'error' && errorText
+        ? `Item completed: error (${errorText})`
+        : itemType ? `Item completed: ${itemType}` : 'Item completed',
+      details: itemType
+        ? {
+          item_type: itemType,
+          ...(errorText ? { error_message: errorText } : {}),
+        }
+        : undefined,
     });
   }
 }
@@ -550,7 +547,10 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
     maybeEmitTraceFromStdoutLine(requestId, line);
     const agentDelta = extractAgentDeltaFromStdoutLine(line);
     if (agentDelta) {
-      maybeEmitDeltaChunk(requestId, agentDelta);
+      const emitted = maybeEmitDeltaChunk(requestId, agentDelta);
+      if (emitted > 0) {
+        visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
+      }
     }
   }
   remaining = tail;
@@ -562,7 +562,10 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
     maybeEmitTraceFromStdoutLine(requestId, line);
     const agentDelta = extractAgentDeltaFromStdoutLine(line);
     if (agentDelta) {
-      maybeEmitDeltaChunk(requestId, agentDelta);
+      const emitted = maybeEmitDeltaChunk(requestId, agentDelta);
+      if (emitted > 0) {
+        visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
+      }
     }
   }
   return parsed.rest;
@@ -599,7 +602,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     strategy: 'symlink',
   });
   const isNotebookMode = executionContext.notebook_mode === true;
-  const userPrompt = buildConversationPrompt(payload.messages);
+  const userPrompt = selectLatestInstruction(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
   const credentialFiles = Array.isArray(executionContext.credential_files)
     ? executionContext.credential_files
@@ -756,6 +759,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
 
   let stdoutBuffer = '';
   const workspaceBeforeSnapshot = isNotebookMode ? await scanWorkspaceFilesSnapshot(cwd) : null;
+  const artifactsBeforeRun = isNotebookMode ? await scanArtifactsDirectory(cwd, taskId) : [];
+  if (artifactsBeforeRun.length > 0) {
+    rememberArtifactsForRun(reportedArtifactsByRequestId, requestId, artifactsBeforeRun);
+  }
   child.stdout.on('data', (buffer: Buffer) => {
     stdoutBuffer += buffer.toString('utf-8');
     stdoutBuffer = flushCodexStdoutBuffer(requestId, stdoutBuffer);
@@ -796,6 +803,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     }
     runStartedAtByRequestId.delete(requestId);
     filterStatsByRequestId.delete(requestId);
+    reportedArtifactsByRequestId.delete(requestId);
+    visibleAgentCharsByRequestId.delete(requestId);
+    commandCountByRequestId.delete(requestId);
   });
 
   child.on('close', (code, signal) => {
@@ -804,7 +814,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     if (trailingLine.length > 0) {
       // Final fallback for residual non-JSON text without trailing newline.
       maybeEmitTraceFromStdoutLine(requestId, trailingLine);
-      maybeEmitDeltaChunk(requestId, trailingLine);
+      const emitted = maybeEmitDeltaChunk(requestId, trailingLine);
+      if (emitted > 0) {
+        visibleAgentCharsByRequestId.set(requestId, (visibleAgentCharsByRequestId.get(requestId) ?? 0) + emitted);
+      }
       stdoutBuffer = '';
     }
     debugLog('codex process closed', {
@@ -915,9 +928,62 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         return;
       }
       if (terminalOutcome.finalStatus === 'success') {
+        const successPolicy = resolveRunnerSuccessPolicy({
+          visibleAgentChars: visibleAgentCharsByRequestId.get(requestId) ?? 0,
+          artifactCount: artifacts.length,
+          commandCount: commandCountByRequestId.get(requestId) ?? 0,
+        });
+        if (!successPolicy.ok) {
+          sendTraceEvent(requestId, {
+            category: 'error',
+            phase: 'end',
+            status: 'error',
+            name: 'runner.result_policy',
+            summary: successPolicy.errorMessage ?? 'runner_success_policy_rejected',
+            details: {
+              error_code: successPolicy.errorCode ?? 'AGENT_UPSTREAM_ERROR',
+              visible_agent_chars: visibleAgentCharsByRequestId.get(requestId) ?? 0,
+              command_count: commandCountByRequestId.get(requestId) ?? 0,
+              artifacts_count: artifacts.length,
+            },
+          });
+          sendRunLifecycleEvent(
+            requestId,
+            'failed',
+            'error',
+            successPolicy.errorMessage ?? 'runner_success_policy_rejected',
+            {
+              error_code: successPolicy.errorCode ?? 'AGENT_UPSTREAM_ERROR',
+              visible_agent_chars: visibleAgentCharsByRequestId.get(requestId) ?? 0,
+              command_count: commandCountByRequestId.get(requestId) ?? 0,
+              artifacts_count: artifacts.length,
+            },
+          );
+          sendRunSummaryEvent(requestId, 'error', {
+            reason: successPolicy.errorMessage ?? 'runner_success_policy_rejected',
+            error_code: successPolicy.errorCode ?? 'AGENT_UPSTREAM_ERROR',
+            visible_agent_chars: visibleAgentCharsByRequestId.get(requestId) ?? 0,
+            command_count: commandCountByRequestId.get(requestId) ?? 0,
+            artifacts_count: artifacts.length,
+            exit_code: 0,
+          });
+          sendFrame('agent.response.error', requestId, {
+            error_code: successPolicy.errorCode ?? 'AGENT_UPSTREAM_ERROR',
+            error_message: successPolicy.errorMessage ?? 'runner_success_policy_rejected',
+          });
+          traceSeqByRequestId.delete(requestId);
+          runStartedAtByRequestId.delete(requestId);
+          filterStatsByRequestId.delete(requestId);
+          reportedArtifactsByRequestId.delete(requestId);
+          visibleAgentCharsByRequestId.delete(requestId);
+          commandCountByRequestId.delete(requestId);
+          return;
+        }
         sendRunLifecycleEvent(requestId, 'completed', 'success', 'Run completed');
         sendRunSummaryEvent(requestId, 'success', {
           artifacts_count: artifacts.length,
+          visible_agent_chars: visibleAgentCharsByRequestId.get(requestId) ?? 0,
+          command_count: commandCountByRequestId.get(requestId) ?? 0,
           exit_code: 0,
         });
         sendTraceEvent(requestId, {
@@ -935,6 +1001,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
         runStartedAtByRequestId.delete(requestId);
         filterStatsByRequestId.delete(requestId);
         reportedArtifactsByRequestId.delete(requestId);
+        visibleAgentCharsByRequestId.delete(requestId);
+        commandCountByRequestId.delete(requestId);
         return;
       }
       sendTraceEvent(requestId, {
@@ -967,6 +1035,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
       reportedArtifactsByRequestId.delete(requestId);
+      visibleAgentCharsByRequestId.delete(requestId);
+      commandCountByRequestId.delete(requestId);
     })().catch((error) => {
       sendTraceEvent(requestId, {
         category: 'warning',
@@ -985,6 +1055,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       runStartedAtByRequestId.delete(requestId);
       filterStatsByRequestId.delete(requestId);
       reportedArtifactsByRequestId.delete(requestId);
+      visibleAgentCharsByRequestId.delete(requestId);
+      commandCountByRequestId.delete(requestId);
     });
   });
 }

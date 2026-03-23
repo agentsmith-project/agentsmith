@@ -137,6 +137,21 @@ function artifactFingerprint(artifact: ScannedArtifact): string {
   ].join('|');
 }
 
+export function rememberArtifactsForRun(
+  seenByRun: Map<string, Set<string>>,
+  runKey: string,
+  artifacts: ScannedArtifact[],
+): void {
+  let seen = seenByRun.get(runKey);
+  if (!seen) {
+    seen = new Set<string>();
+    seenByRun.set(runKey, seen);
+  }
+  for (const artifact of artifacts) {
+    seen.add(artifactFingerprint(artifact));
+  }
+}
+
 export function filterNewArtifactsForRun(
   seenByRun: Map<string, Set<string>>,
   runKey: string,

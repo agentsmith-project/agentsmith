@@ -17,12 +17,13 @@ fi
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 
 image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
 }
 
-write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}"
+write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 
 mkdir -p "${REMOTE_DEPLOY_ROOT}/releases"
 ln -sfn "${RELEASE_ROOT}" "${CURRENT_LINK}"
@@ -57,7 +58,7 @@ bash "${RELEASE_SCRIPT_DIR}/resolve-runtime-addresses.sh"
 bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
-docker_compose up -d postgres mongo redis minio minio-init keycloak api web
+docker_compose up -d postgres mongo redis minio minio-init keycloak universal-proxy api web
 wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT}" 240
 wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240

@@ -44,6 +44,7 @@ kubectl get csidriver csi.juicefs.com >/dev/null
 kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
 docker_compose ps --status running external-runner | grep -q external-runner || die "preset verify failed: external-runner not running"
 docker_compose logs external-runner 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
+docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "preset verify failed: universal-proxy not running"
 
 token_json="$(
   curl -fsS "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \

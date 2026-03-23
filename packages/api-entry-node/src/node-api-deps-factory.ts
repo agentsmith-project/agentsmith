@@ -49,6 +49,7 @@ import {
   RealFileLibraryOrchestrator,
   UnavailableFileLibraryOrchestrator,
 } from './file-library-runtime.js';
+import { UniversalProxyService } from './universal-proxy-service.js';
 
 export function createDefaultNodeApiDeps(): NodeApiDeps {
   const projectRepo = createProjectRepoFactoryResult({}).projectRepo;
@@ -99,6 +100,7 @@ export function createDefaultNodeApiDeps(): NodeApiDeps {
     updateProjectUseCase: new UpdateProjectUseCase(projectRepo, clock),
     fileLibraryOrchestrator: new InMemoryFileLibraryOrchestrator(),
     fileLibraryGatewayManager: new InMemoryFileLibraryGatewayManager(),
+    universalProxyService: UniversalProxyService.fromEnv(process.env),
   };
 }
 
@@ -107,6 +109,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   lifecycle: Pick<ProjectRepoFactoryResult, 'shutdown'>;
   repoMode: 'postgres' | 'memory';
 } {
+  const universalProxyService = UniversalProxyService.fromEnv(env);
   const canEnableRealFileLibraries = Boolean(
     env.DATABASE_URL
       && env.MINIO_ENDPOINT
@@ -244,6 +247,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
       fileLibraryGatewayManager: canEnableRealFileLibraries
         ? new RealFileLibraryGatewayManager()
         : new InMemoryFileLibraryGatewayManager(),
+      ...(universalProxyService ? { universalProxyService } : {}),
     },
     lifecycle: factory,
     repoMode: env.DATABASE_URL ? 'postgres' : 'memory',

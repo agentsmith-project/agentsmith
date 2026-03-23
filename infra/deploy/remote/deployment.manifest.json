@@ -14,6 +14,7 @@
     "redis",
     "minio",
     "keycloak",
+    "universal-proxy",
     "api",
     "web",
     "external-runner"
@@ -77,7 +78,8 @@
     ],
     "internal_runtime": [
       "COMPOSE_INTERNAL_API_BASE_URL",
-      "COMPOSE_INTERNAL_KEYCLOAK_BASE_URL"
+      "COMPOSE_INTERNAL_KEYCLOAK_BASE_URL",
+      "COMPOSE_INTERNAL_UNIVERSAL_PROXY_BASE_URL"
     ],
     "host_local_runtime": [
       "HOST_LOCAL_POSTGRES_HOST",
@@ -128,6 +130,7 @@
     "compose/docker-compose.yml",
     "env/site.env.example",
     "kind/config.yaml",
+    "universal-proxy/config.yaml",
     "k8s/juicefs-csi.yaml",
     "scripts/prepare.sh",
     "scripts/reset.sh",

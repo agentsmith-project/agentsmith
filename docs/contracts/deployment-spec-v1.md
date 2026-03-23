@@ -361,3 +361,5 @@ The following documents are derived from this spec and must not redefine deploym
 - offline bundle README
 
 If there is disagreement, this spec wins.
+Related protocol data-plane contract:
+- `docs/contracts/universal-proxy-integration-v1.md`

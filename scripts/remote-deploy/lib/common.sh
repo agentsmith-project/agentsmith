@@ -182,10 +182,12 @@ docker_compose() {
 write_compose_env() {
   local app_image="${1:-}"
   local runner_image="${2:-}"
+  local universal_proxy_image="${3:-}"
   mkdir -p "${RELEASE_ROOT}/compose"
   cat > "${RELEASE_ROOT}/compose/.env" <<EOF
 AGENTSMITH_APP_IMAGE=${app_image}
 AGENTSMITH_RUNNER_IMAGE=${runner_image}
+LLM_UNIVERSAL_PROXY_IMAGE=${universal_proxy_image}
 EOF
 }
 

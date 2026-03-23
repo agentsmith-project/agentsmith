@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
+UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
 OUT_DIR="${OUT_DIR:-${ROOT_DIR}/artifacts/remote-deploy}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
@@ -117,6 +118,7 @@ APP_IMAGE="${APP_IMAGE:-agentsmith-app:${RELEASE_ID}}"
 RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-codex-runner:${RELEASE_ID}}"
 VERIFY_RUNNER_IMAGE="${VERIFY_RUNNER_IMAGE:-agentsmith-verify-runner:${RELEASE_ID}}"
 SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE:-sandbox-manager:${RELEASE_ID}}"
+UNIVERSAL_PROXY_IMAGE="${UNIVERSAL_PROXY_IMAGE:-llm-universal-proxy:${RELEASE_ID}}"
 
 echo "[bundle] building app base image ${APP_BASE_IMAGE}"
 docker build "${BUILD_ARGS[@]}" -t "${APP_BASE_IMAGE}" -f "${ROOT_DIR}/infra/deploy/Dockerfile.agentsmith-app-base" "${ROOT_DIR}"
@@ -138,6 +140,9 @@ docker build "${BUILD_ARGS[@]}" --build-arg VERIFY_RUNNER_BASE_IMAGE="${VERIFY_R
 
 echo "[bundle] building sandbox manager image ${SANDBOX_MANAGER_IMAGE}"
 docker build "${BUILD_ARGS[@]}" -t "${SANDBOX_MANAGER_IMAGE}" -f "${SANDBOX_ROOT}/manager-service/Dockerfile" "${SANDBOX_ROOT}/manager-service"
+
+echo "[bundle] building universal proxy image ${UNIVERSAL_PROXY_IMAGE}"
+docker build "${BUILD_ARGS[@]}" -t "${UNIVERSAL_PROXY_IMAGE}" -f "${UNIVERSAL_PROXY_ROOT}/Dockerfile" "${UNIVERSAL_PROXY_ROOT}"
 
 DEPENDENCY_IMAGES=(
   "pgvector/pgvector:pg16"
@@ -169,6 +174,7 @@ BUILT_IMAGES=(
   "${VERIFY_RUNNER_BASE_IMAGE}"
   "${VERIFY_RUNNER_IMAGE}"
   "${SANDBOX_MANAGER_IMAGE}"
+  "${UNIVERSAL_PROXY_IMAGE}"
 )
 
 ALL_IMAGES=(
@@ -187,10 +193,12 @@ for image in "${ALL_IMAGES[@]}"; do
 done
 
 mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/kind" "${BUNDLE_DIR}/scripts" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/k8s"
+mkdir -p "${BUNDLE_DIR}/universal-proxy"
 cp "${ROOT_DIR}/infra/deploy/remote/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/remote/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
 cp "${ROOT_DIR}/infra/deploy/remote/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/remote/kind/config.yaml" "${BUNDLE_DIR}/kind/config.yaml"
+cp "${ROOT_DIR}/infra/deploy/remote/universal-proxy/config.yaml" "${BUNDLE_DIR}/universal-proxy/config.yaml"
 cp "${ROOT_DIR}/infra/deploy/remote/k8s/juicefs-csi.yaml" "${BUNDLE_DIR}/k8s/juicefs-csi.yaml"
 cp "${ROOT_DIR}/infra/integration/postgres-init/001-create-databases.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/packages/adapters-private/sql/projects.sql" "${BUNDLE_DIR}/postgres-init/"
@@ -218,6 +226,7 @@ agentsmith_runner_image=${RUNNER_IMAGE}
 agentsmith_verify_runner_base_image=${VERIFY_RUNNER_BASE_IMAGE}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
+llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
 EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)

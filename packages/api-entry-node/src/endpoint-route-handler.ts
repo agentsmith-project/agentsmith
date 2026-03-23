@@ -235,16 +235,43 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         action === 'chat' && normalizeGatewayProxyPath(proxyPath) === 'messages/count_tokens'
           ? normalizeGatewayProxyPath(proxyPath)
           : (resolved.proxyPath || proxyPath);
-      const proxyResult = await proxyJsonRequest(req, res, {
-        upstreamUrl: buildUpstreamUrl(endpoint.base_url, effectiveProxyPath),
-        apiKey,
-        endpointProtocol: endpoint.protocol,
-        proxyPath,
-        model: resolvedModel,
-        timeoutSeconds: endpoint.limits?.timeout_seconds,
-        requestBody,
-        passthroughHeaders: collectPassthroughHeaders(req),
-      });
+      const universalProxyService = deps.universalProxyService;
+      const canUseUniversalProxy =
+        universalProxyService
+        && universalProxyService.supportsEndpoint(endpoint)
+        && universalProxyService.supportsProxyPath(effectiveProxyPath);
+      const resolvedRequestBody =
+        typeof requestBody !== 'undefined'
+          ? requestBody
+          : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
+      const proxyResult = canUseUniversalProxy
+        ? await (async () => {
+          const namespace = await universalProxyService.ensureEndpointNamespace(
+            route.workspaceId,
+            route.projectId,
+            endpoint,
+            apiKey,
+          );
+          return universalProxyService.proxyJsonRequest({
+            req,
+            res,
+            namespace,
+            proxyPath: effectiveProxyPath,
+            model: resolvedModel,
+            requestBody: resolvedRequestBody,
+            passthroughHeaders: collectPassthroughHeaders(req),
+          });
+        })()
+        : await proxyJsonRequest(req, res, {
+          upstreamUrl: buildUpstreamUrl(endpoint.base_url, effectiveProxyPath),
+          apiKey,
+          endpointProtocol: endpoint.protocol,
+          proxyPath,
+          model: resolvedModel,
+          timeoutSeconds: endpoint.limits?.timeout_seconds,
+          requestBody: resolvedRequestBody,
+          passthroughHeaders: collectPassthroughHeaders(req),
+        });
       await writeProjectUsageFact(deps, {
         workspaceId: route.workspaceId,
         projectId: route.projectId,

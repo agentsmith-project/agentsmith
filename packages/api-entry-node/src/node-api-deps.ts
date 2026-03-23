@@ -27,6 +27,7 @@ import type { InternalAgentWorkspaceBindingManager, InternalAgentWorkspaceProvis
 import type { GovernanceRunnerController } from './governance-runner.js';
 import type { FileLibraryOrchestrator } from './file-library-orchestrator.js';
 import type { FileLibraryGatewayManager } from './file-library-gateway-manager.js';
+import type { UniversalProxyService } from './universal-proxy-service.js';
 
 export interface NodeApiDeps {
   governanceReportsDir?: string;
@@ -63,4 +64,5 @@ export interface NodeApiDeps {
   governanceRunner?: GovernanceRunnerController;
   fileLibraryOrchestrator?: FileLibraryOrchestrator;
   fileLibraryGatewayManager?: FileLibraryGatewayManager;
+  universalProxyService?: UniversalProxyService;
 }

@@ -16,6 +16,15 @@ function debugEndpointProxy(message: string, extra?: Record<string, unknown>): v
   process.stdout.write(`[endpoint-proxy] ${message}${suffix}\n`);
 }
 
+function readDefaultEndpointProxyTimeoutSeconds(): number {
+  const raw = process.env.MBOS_ENDPOINT_PROXY_DEFAULT_TIMEOUT_SECONDS;
+  const parsed = Number.parseInt(raw ?? '', 10);
+  if (Number.isFinite(parsed) && parsed > 0) {
+    return parsed;
+  }
+  return 120;
+}
+
 function summarizeChatLikeBody(body: Record<string, unknown>): Record<string, unknown> {
   const messages = Array.isArray(body.messages) ? body.messages : [];
   const tools = Array.isArray(body.tools) ? body.tools : [];
@@ -152,7 +161,7 @@ export async function proxyJsonRequest(
   const upstreamBody = bridgePlan.upstreamBody;
 
   const abortController = new AbortController();
-  const timeoutMs = Math.max(1, options.timeoutSeconds ?? 120) * 1000;
+  const timeoutMs = Math.max(1, options.timeoutSeconds ?? readDefaultEndpointProxyTimeoutSeconds()) * 1000;
   const timeout = setTimeout(() => abortController.abort(), timeoutMs);
   debugEndpointProxy('proxy_json_request', {
     method,

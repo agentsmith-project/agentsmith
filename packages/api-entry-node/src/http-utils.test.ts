@@ -59,6 +59,43 @@ describe('http-utils', () => {
     vi.unstubAllGlobals();
   });
 
+  it('uses configured default proxy timeout when endpoint timeout is omitted', async () => {
+    vi.useFakeTimers();
+    process.env.MBOS_ENDPOINT_PROXY_DEFAULT_TIMEOUT_SECONDS = '7';
+    const upstream = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      const signal = init?.signal;
+      signal?.addEventListener('abort', () => {
+        reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+      });
+    }));
+    vi.stubGlobal('fetch', upstream);
+
+    const req = {
+      method: 'POST',
+      async *[Symbol.asyncIterator]() {
+        yield Buffer.from(JSON.stringify({ prompt: 'hello' }));
+      },
+    } as unknown as import('node:http').IncomingMessage;
+
+    const res = {
+      statusCode: 0,
+      setHeader() {},
+      end() {},
+    } as unknown as import('node:http').ServerResponse;
+
+    const pending = proxyJsonRequest(req, res, {
+      upstreamUrl: 'http://example.com/v1/chat/completions',
+      apiKey: 'test-key',
+    });
+    const settled = pending.catch((error) => error);
+    await vi.advanceTimersByTimeAsync(7_000);
+    await expect(settled).resolves.toMatchObject({ name: 'AbortError' });
+
+    delete process.env.MBOS_ENDPOINT_PROXY_DEFAULT_TIMEOUT_SECONDS;
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
   it('falls back responses API requests to chat completions for openai-compatible providers', async () => {
     const upstream = vi.fn(async (url: string, init?: RequestInit) => {
       expect(url).toBe('http://example.com/v1/chat/completions');

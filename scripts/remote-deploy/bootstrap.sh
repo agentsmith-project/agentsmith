@@ -19,6 +19,7 @@ GLM_APIKEY="${GLM_APIKEY:-}"
 CLAUDE_URL="${CLAUDE_URL:-https://open.bigmodel.cn/api/anthropic}"
 OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://open.bigmodel.cn/api/coding/paas/v4}"
 GLM_MODEL="${GLM_MODEL:-glm-5-turbo}"
+DEMO_ENDPOINT_TIMEOUT_SECONDS="${MBOS_DEMO_ENDPOINT_TIMEOUT_SECONDS:-900}"
 INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
 PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
 DEMO_PROJECT_NAME="${MBOS_DEMO_PROJECT_NAME:-Demo Project}"
@@ -108,10 +109,15 @@ if [[ -z "${ANTHROPIC_ENDPOINT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/endpoints" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], protocol:"anthropic_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3]}))' "${CLAUDE_URL}" "${GLM_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[5], protocol:"anthropic_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}}))' "${CLAUDE_URL}" "${GLM_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
   )"
   ANTHROPIC_ENDPOINT_ID="$(printf '%s' "${anthropic_endpoint_resp}" | json_extract id)"
 fi
+
+curl -sS -X PUT "${PROJECT_BASE}/endpoints/${ANTHROPIC_ENDPOINT_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({limits:{timeout_seconds:Number(process.argv[1])}}))' "${DEMO_ENDPOINT_TIMEOUT_SECONDS}")" >/dev/null
 
 agent_list_resp="$(
   curl -sS "${PROJECT_BASE}/agents?page=1&page_size=100" \
@@ -156,10 +162,15 @@ if [[ -z "${OPENAI_ENDPOINT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/endpoints" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], protocol:"openai_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3]}))' "${OPENAI_URL_CODING_PLAN}" "${GLM_MODEL}" "${CREDENTIAL_ID}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[5], protocol:"openai_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}}))' "${OPENAI_URL_CODING_PLAN}" "${GLM_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
   )"
   OPENAI_ENDPOINT_ID="$(printf '%s' "${openai_endpoint_resp}" | json_extract id)"
 fi
+
+curl -sS -X PUT "${PROJECT_BASE}/endpoints/${OPENAI_ENDPOINT_ID}" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({limits:{timeout_seconds:Number(process.argv[1])}}))' "${DEMO_ENDPOINT_TIMEOUT_SECONDS}")" >/dev/null
 
 INTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${DEMO_INTERNAL_AGENT_NAME}")"
 if [[ -z "${INTERNAL_AGENT_ID}" ]]; then

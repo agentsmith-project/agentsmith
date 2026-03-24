@@ -95,7 +95,7 @@
 - `npx tsc --noEmit`
 - 相关定向 `vitest`
 - 相关定向 `eslint`
-- `npm run test:mainline:strict`
+- `npm run test:default-e2e`
 - full visual lane
 - 至少一轮真实手工或脚本化验证：
   - workspace admin 配置并启用 Feishu

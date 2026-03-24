@@ -38,7 +38,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - allow-list matching supports user and group subjects
   - endpoint `requests_per_minute` rate limiting is enforced
   - endpoint `daily_token_limit` limit enforcement is enforced
-  - file upload and browsing in the current Files mainline use project `file-libraries`
+  - file upload and browsing in the current Files default path use project `file-libraries`
 
 ## 1. Scope
 - Target: notebook task execution with persistent file-library workspaces.

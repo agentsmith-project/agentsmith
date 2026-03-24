@@ -994,7 +994,7 @@ Current known boundary:
 ## Unified InputRefs / Default Library Migration Notes (Chat + Notebook)
 
 - Notebook task inputs use `/tasks/:taskId/inputs` with `InputRef`-style records (`library_object`, `url`, `artifact`).
-- Files mainline now uses project `file-libraries`; raw uploads land in a deterministic project library (`Project Uploads`) instead of personal upload storage.
+- Files default path now uses project `file-libraries`; raw uploads land in a deterministic project library (`Project Uploads`) instead of personal upload storage.
 - Notebook `source` UI is intentionally paused: the dialog shell remains visible, but it no longer performs file attachment/import logic.
 - Notebook artifacts can still be attached back into task inputs as first-class `artifact` refs (output-to-input loop).
 - Chat message `inputs` and attachment provenance support first-class `url` refs and project file-library-backed object refs.

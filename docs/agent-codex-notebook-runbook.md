@@ -70,7 +70,7 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - Internal lazy start / reclaim / resume on the same JuiceFS CSI-backed workspace binding.
 - Verified:
   - `packages/api-entry-node/src/http-utils.test.ts` (responses/chat translation) passing.
-  - End-to-end Notebook external agent pipeline with real GLM (`glm-5`) returns `turn.completed`.
+  - End-to-end Notebook external agent pipeline with a real provider-compatible endpoint returns `turn.completed`.
   - Internal notebook workspace real gate writes artifacts into `.artifacts/` inside the selected file library root and resumes after workload reclaim.
 
 ## 3. End-to-End Flow
@@ -626,7 +626,7 @@ groups:
 make notebook-agent-load-test
 ```
 
-- Recommended starting profile (real GLM/Codex path):
+- Recommended starting profile (real provider-backed Codex path):
 ```bash
 REQUESTS=10 CONCURRENCY=3 POLL_MAX=90 POLL_INTERVAL_SEC=2 make notebook-agent-load-test
 ```

@@ -46,7 +46,7 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   -t 'denies suspended memberships in route authz and authorize endpoint'"
 
 run_cmd "bash scripts/run-mock-lane-playwright.sh \
-  e2e/governance-mainline.spec.ts \
+  e2e/governance-default.spec.ts \
   --project=chromium \
   --workers=1"
 
@@ -56,4 +56,4 @@ run_cmd "bash scripts/run-mock-lane-playwright.sh \
   --workers=1 \
   --grep 'members$|members - effective access drawer|resource policy|audit detail drawer|alerts - notifications tab'"
 
-info "governance mainline gate passed"
+info "governance default gate passed"

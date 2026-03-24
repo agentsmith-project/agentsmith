@@ -16,11 +16,11 @@ fi
 
 info() { echo "[release-real-run] $*"; }
 
-info "running external mainline real lane"
-(cd "${ROOT_DIR}" && REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" npm run test:mainline:strict:real)
+info "running external default real lane"
+(cd "${ROOT_DIR}" && REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" npm run test:real-core)
 
 info "running notebook real smoke"
-(cd "${ROOT_DIR}" && REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" npm run test:smoke:real:notebook-mainline)
+(cd "${ROOT_DIR}" && REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" npm run test:notebook:real-smoke)
 
 info "running external codex real lane"
 (cd "${ROOT_DIR}" && REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" npm run test:agents:real:codex)

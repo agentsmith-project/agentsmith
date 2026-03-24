@@ -12,7 +12,7 @@
 只有下面 4 类检查都通过，当前版本才可视为 `ready for release`：
 
 1. 合约与类型检查通过
-2. 主业务链与治理链严格门禁通过
+2. 默认业务链与治理门禁通过
 3. 真实 notebook 主线通过
 4. 全量 visual 通过
 
@@ -30,7 +30,7 @@
 
 ```bash
 make gate-fast
-make gate-main
+make gate-default
 make lane-visual
 make release-real-reset
 make release-real-bootstrap
@@ -44,7 +44,7 @@ make release-real-report
 make gate-release
 ```
 
-`make gate-release` 会基于新的 release 状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。
+`make gate-release` 会基于当前发布状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。
 
 真实截图默认输出到：
 

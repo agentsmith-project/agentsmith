@@ -5,6 +5,10 @@
 
 本文件是当前唯一白名单。新人入项、评审、实施、验收都以本清单为准。
 
+工程治理模型与 current 命令语义统一见：
+
+- [Current Engineering Governance Model](./current-engineering-governance-model.md)
+
 ## 1. 治理主线（唯一）
 
 1. 项目级治理（project scope）
@@ -113,6 +117,7 @@
 7. [Contracts Index](./contracts/README.md)
 8. [User Guides Index](./user-guides/README.md)
 9. [Troubleshooting Guide](./troubleshooting-guide-v1.md)
+10. [Current Engineering Governance Model](./current-engineering-governance-model.md)
 
 ## 5. 设计与交互规范（必须遵循）
 

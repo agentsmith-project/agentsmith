@@ -94,7 +94,7 @@ run_real_cmd() {
   )
 }
 
-run_cmd "npm run gate:main"
+run_cmd "npm run gate:default"
 run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run release:real:bootstrap"
 run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run release:real:ready"
 run_real_cmd 20050 3051 "REAL_LANE_API_KEY='${REAL_LANE_API_KEY_VALUE}' npm run lane:real:core"

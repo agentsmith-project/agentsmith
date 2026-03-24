@@ -14,13 +14,13 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      echo "[mainline-gate] unknown argument: $1" >&2
+      echo "[default-gate] unknown argument: $1" >&2
       exit 1
       ;;
   esac
 done
 
-info() { echo "[mainline-gate] $*"; }
+info() { echo "[default-gate] $*"; }
 
 run_cmd() {
   info "$*"
@@ -66,7 +66,7 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
 
 run_cmd "MOCK_LANE_WARM_URLS=\$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
 bash scripts/run-mock-lane-playwright.sh \
-  e2e/system-workspace-mainline.spec.ts \
+  e2e/system-workspace-default.spec.ts \
   e2e/workspace-settings.spec.ts \
   --project=chromium \
   --workers=1"
@@ -89,4 +89,4 @@ KEYCLOAK_CLIENT_ID=\${KEYCLOAK_CLIENT_ID:-agentsmith} \
 bash scripts/run-integration-e2e-full.sh e2e/integration-minimal.spec.ts"
 fi
 
-info "workspace / project mainline gate passed"
+info "workspace / project default gate passed"

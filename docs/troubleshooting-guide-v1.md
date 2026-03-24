@@ -7,6 +7,9 @@
 
 术语边界：文中的 `governance-smoke`、`governance:report` 等命令名沿用历史脚本命名，仅用于本项目工程验收与排障（engineering gate）；`permission gate` 仅表示产品权限门禁语义，不代表平台对外发布管理能力。
 
+当前工程术语与命令模型统一见：
+- [Current Engineering Governance Model](./current-engineering-governance-model.md)
+
 ## 1. 先判断是哪一类问题
 
 1. 本地环境没有起来  

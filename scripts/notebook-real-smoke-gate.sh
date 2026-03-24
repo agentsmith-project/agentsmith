@@ -8,16 +8,16 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
 API_PORT="${INTEGRATION_API_PORT:-20060}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3061}"
-API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-real-mainline.log}"
-WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-real-mainline.log}"
+API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-real-default.log}"
+WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-real-default.log}"
 
 if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[real-mainline-gate] Missing REAL_LANE_API_KEY." >&2
-  echo "[real-mainline-gate] Export REAL_LANE_API_KEY before running this gate." >&2
+  echo "[real-default-gate] Missing REAL_LANE_API_KEY." >&2
+  echo "[real-default-gate] Export REAL_LANE_API_KEY before running this gate." >&2
   exit 1
 fi
 
-info() { echo "[real-mainline-gate] $*"; }
+info() { echo "[real-default-gate] $*"; }
 
 run_cmd() {
   info "$*"
@@ -49,6 +49,6 @@ INTEGRATION_API_PORT='${API_PORT}' \
 INTEGRATION_WEB_PORT='${WEB_PORT}' \
 INTEGRATION_API_LOG='${API_LOG}' \
 INTEGRATION_WEB_LOG='${WEB_LOG}' \
-bash scripts/run-integration-e2e-full.sh e2e/integration-system-notebook-mainline.spec.ts"
+bash scripts/run-integration-e2e-full.sh e2e/integration-system-notebook-default.spec.ts"
 
 info "system 管理侧 -> notebook 真实主链 gate passed"

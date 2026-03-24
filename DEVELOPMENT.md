@@ -1,31 +1,52 @@
 # AgentSmith - Development Guide
 
-## Current Paths
+## Current Engineering Workflow
 
-当前仓库只保留这几条主路径：
+当前仓库只保留这几类 current 主路径：
+
+- `环境`
+- `门禁`
+- `验证通道`
+- `发布`
+
+权威定义：
+- [docs/current-engineering-governance-model.md](./docs/current-engineering-governance-model.md)
+
+### 环境
 
 ```bash
-# Local mock/dev shell
-make bootstrap
-make api-dev
-make web
-make urls
-
-# Real backend manual testing
 cp .env.dev.real.example .env.dev.real
 make dev-real-up
 make dev-real-seed-notebook
 make dev-real-status
 make dev-real-down
+make dev-real-reset
+```
 
-# Local / release-grade real verification
+### 门禁
+
+```bash
+make gate-fast
+make gate-default
+make gate-release
+```
+
+### 验证通道
+
+```bash
+make lane-mock
+make lane-visual
+
 cp .env.real.local.example .env.real.local
 npm run lane:real:core
 npm run lane:real:release
 npm run test:release:precheck
 npm run test:visual:real:review
+```
 
-# Remote deploy / verify
+### 发布
+
+```bash
 npm run release:real:reset
 npm run release:real:bootstrap
 npm run release:real:ready
@@ -33,7 +54,7 @@ npm run release:real:run
 npm run release:real:report
 ```
 
-当前有效环境变量命名：
+当前有效配置命名：
 
 - dev-real: `DEMO_ENDPOINT_*`
 - real lane: `REAL_LANE_*`
@@ -105,7 +126,7 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 说明：`*-auto` 目标会自动清理代理环境变量（`http_proxy/https_proxy/all_proxy` 等）后再启动服务和执行 Playwright。
 
-## Real Dev Manual Testing
+## 本地真实手测环境
 
 当前推荐的真实后端手测入口是 `dev-real`，它会把：
 
@@ -312,9 +333,9 @@ CI runs the same command and fails the pipeline on missing coverage.
 
 Before merge/engineering acceptance: ensure `npm run contracts:check`, `npm run contracts:check-openapi`, and `npm run openapi:check-generated` all pass on main.
 
-## Workspace / Project Mainline Strict Gate
+## 默认工程门禁（工作区 / 项目）
 
-When the current work touches the mainline business chain
+When the current work touches the default workspace/project business chain
 
 1. `system 管理侧`
 2. `工作区发布状态`
@@ -324,7 +345,7 @@ When the current work touches the mainline business chain
 run:
 
 ```bash
-npm run test:mainline:strict
+npm run test:default-e2e
 ```
 
 This gate bundles:
@@ -333,12 +354,12 @@ This gate bundles:
 2. lint + typecheck
 3. targeted frontend/backend tests for workspace publish, project creators, and project creation
 4. mock lane E2E for `system -> workspace -> project`
-5. targeted visual checks for the mainline entry pages
+5. targeted visual checks for the default entry pages
 
 If release-oriented verification also needs the real backend lane:
 
 ```bash
-npm run test:mainline:strict:real
+npm run test:real-core
 ```
 
 This real-lane variant auto starts integration dependencies, API, and frontend on dedicated ports.
@@ -352,18 +373,18 @@ npm run contracts:check
 npm run contracts:check-openapi
 npm run openapi:check-generated
 npx tsc --noEmit
-npm run test:mainline:strict
-npm run test:governance:strict
-npm run test:visual:strict
-npm run test:mainline:strict:real
-npm run test:smoke:real:notebook-mainline
+npm run test:default-e2e
+npm run test:governance
+npm run test:visual
+npm run test:real-core
+npm run test:notebook:real-smoke
 npm run test:visual:real:review
 npm run test:release:real:full
 ```
 
 Notes:
 
-1. `npm run test:visual:strict` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
+1. `npm run test:visual` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
 2. Real-lane notebook verification requires `REAL_LANE_API_KEY`.
 3. `npm run test:visual:real:review` writes real-environment screenshots to `artifacts/release-real-visual/<run-id>/` for manual inspection.
 
@@ -400,7 +421,7 @@ Notes:
 4. 不再新增泛化的 `tests/` 目录承载主测试代码
 5. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
 
-## Governance Mainline Strict Gate
+## 默认治理门禁
 
 When the current work touches
 
@@ -413,7 +434,7 @@ When the current work touches
 run:
 
 ```bash
-npm run test:governance:strict
+npm run test:governance
 ```
 
 This gate bundles:
@@ -657,7 +678,7 @@ Added tooling and Make targets for:
 #### Real Chain (Repeatedly)
 - API (`:20000`) + Web (`:3001`) + external `agent-codex-runner`
 - real local Keycloak auth
-- real GLM endpoint via endpoint proxy
+- real provider-compatible endpoint via endpoint proxy
 - notebook smoke tasks complete successfully and return final responses (`chain ok`)
 
 #### UI / Frontend
@@ -673,7 +694,7 @@ Added tooling and Make targets for:
   - persisted trace retention truncation consistency
 
 #### Performance / Capacity (Initial Baselines)
-- end-to-end load/matrix benchmarks (real Codex + GLM path)
+- end-to-end load/matrix benchmarks (real Codex + provider-backed path)
 - message-scoped `/traces?message_id=...` benchmarks (memory vs Mongo/docStore)
 - page-size sweeps (`20/50/200/500`) and compare tooling
 - observed result so far:

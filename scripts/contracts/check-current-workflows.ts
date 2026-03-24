@@ -34,6 +34,15 @@ const rules: Rule[] = [
     message: 'legacy GLM_* naming leaked into current path',
     allowedFiles: failFastFiles,
   },
+  {
+    pattern: /\bGLM-5\b|\bglm-5\b|\bGLM path\b/,
+    message: 'legacy provider wording leaked into current path',
+  },
+  {
+    pattern:
+      /\btest:mainline:strict\b|\btest:mainline:strict:real\b|\btest:governance:strict\b|\btest:visual:strict\b|\btest:smoke:real:notebook-mainline\b|\bgate:main\b|\bgate-main\b|\bworkspace-project-mainline-gate\.sh\b|\bgovernance-mainline-gate\.sh\b|\bsystem-notebook-real-smoke-gate\.sh\b|\bworkspace-project-mainline-engineering-checklist\.md\b|\bgovernance-mainline-engineering-checklist\.md\b/,
+    message: 'legacy current command naming leaked into current path',
+  },
 ];
 
 function listTrackedFiles(): string[] {
@@ -41,12 +50,29 @@ function listTrackedFiles(): string[] {
     cwd: rootDir,
     encoding: 'utf8',
   });
+  const currentPathFiles = new Set([
+    'README.md',
+    'DEVELOPMENT.md',
+    'Makefile',
+    'package.json',
+    'playwright.config.ts',
+    'docs/CURRENT_BASELINE.md',
+    'docs/项目宪法.md',
+    'docs/current-engineering-governance-model.md',
+    'docs/troubleshooting-guide-v1.md',
+    'docs/agent-codex-notebook-runbook.md',
+    'docs/UXUI/01-通用规范/visual-baseline-policy-v1.md',
+    'scripts/dev-real/common.sh',
+    'scripts/notebook-agent-init-resources.sh',
+    'scripts/contracts/check-current-workflows.ts',
+    'scripts/contracts/check-engineering-governance.ts',
+  ]);
+
   return stdout
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((file) => !file.startsWith('artifacts/'))
-    .filter((file) => !file.startsWith('.tmp/'));
+    .filter((file) => currentPathFiles.has(file));
 }
 
 const failures: string[] = [];

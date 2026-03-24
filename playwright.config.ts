@@ -20,9 +20,10 @@ const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true N
   ' ',
 );
 
-// MVP engineering lane: keep chromium gate focused on current product mainline.
-// Legacy/archived specs are intentionally excluded from default engineering gate.
-const chromiumMvpSpecMatch = [
+// Default E2E range: keep the default chromium project focused on the current
+// engineering regression range. Archived/manual specs are intentionally excluded
+// from this default range and must be run explicitly when needed.
+const defaultE2ESpecMatch = [
   /account\.spec\.ts$/,
   /agents\.spec\.ts$/,
   /audit\.spec\.ts$/,
@@ -30,9 +31,10 @@ const chromiumMvpSpecMatch = [
   /credentials\.spec\.ts$/,
   /endpoints\.spec\.ts$/,
   /files\.spec\.ts$/,
-  /governance-mainline\.spec\.ts$/,
+  /governance-default\.spec\.ts$/,
   /login\.spec\.ts$/,
   /notebook\.spec\.ts$/,
+  /projects-join-governance\.spec\.ts$/,
   /workspace-overview\.spec\.ts$/,
   /workspace-settings\.spec\.ts$/,
   /usage\.spec\.ts$/,
@@ -89,7 +91,7 @@ export default defineConfig({
     },
     {
       name: 'chromium',
-      testMatch: chromiumMvpSpecMatch,
+      testMatch: defaultE2ESpecMatch,
       use: {
         ...devices['Desktop Chrome'],
         viewport: desktopViewport,
@@ -100,7 +102,7 @@ export default defineConfig({
     },
     {
       name: 'chromium-serial',
-      testMatch: [/system-admin\.spec\.ts$/, /system-workspace-mainline\.spec\.ts$/],
+      testMatch: [/system-admin\.spec\.ts$/, /system-workspace-default\.spec\.ts$/],
       use: {
         ...devices['Desktop Chrome'],
         viewport: desktopViewport,

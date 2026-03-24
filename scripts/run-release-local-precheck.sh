@@ -332,7 +332,7 @@ run_clean npx playwright test \
   e2e/integration-workspace-entry.spec.ts \
   e2e/integration-workspace-publish-usable.spec.ts \
   e2e/integration-workspace-settings-directory.spec.ts \
-  e2e/integration-system-notebook-mainline.spec.ts \
+  e2e/integration-system-notebook-default.spec.ts \
   --project=chromium \
   --workers=1 &
 PLAYWRIGHT_PID=$!

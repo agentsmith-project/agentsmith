@@ -1,11 +1,11 @@
-# Governance Mainline Engineering Checklist
+# Governance Default Engineering Gate Checklist
 
 Last updated: 2026-03-14  
 Owner: Frontend
 
 ## 1. Scope
 
-This checklist is the strict gate for the current project governance judgment chain:
+This checklist documents the default engineering gate for the current project governance judgment chain:
 
 1. `Members` can show effective access for a selected member.
 2. Admins can run an authorization check for an endpoint action.
@@ -37,12 +37,12 @@ Expected:
 2. OpenAPI coverage stays green.
 3. Generated frontend API types are in sync.
 
-## 3. Quality Gate
+## 3. Default Engineering Gate
 
 Run:
 
 ```bash
-npm run test:governance:strict
+npm run test:governance
 ```
 
 Expected:
@@ -52,11 +52,11 @@ Expected:
 3. Backend authorization explainability tests remain green.
 4. Mock lane governance E2E passes.
 5. Targeted visual baselines pass for governance pages and overlays.
-6. Governance mainline data does not silently disappear after API restart.
+6. Governance data does not silently disappear after API restart.
 
 ## 4. Covered Mock Lane Workflow
 
-The strict gate validates this business flow:
+The default governance gate validates this business flow:
 
 1. Open a member from `Members`.
 2. Run an endpoint authorization check.
@@ -64,9 +64,9 @@ The strict gate validates this business flow:
 4. Validate the decision again after policy changes.
 5. Return to `Members` with the same subject/resource context preserved.
 
-## 5. Visual Gate
+## 5. Visual Coverage
 
-The strict script also runs targeted visual coverage for:
+The governance gate also runs targeted visual coverage for:
 
 1. members
 2. members - effective access drawer

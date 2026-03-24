@@ -50,30 +50,50 @@ npm start
 
 Use this minimal command set for daily work.
 
-### Current Paths
+Current workflow model:
+- `环境`
+- `门禁`
+- `验证通道`
+- `发布`
+
+Authoritative definition:
+- [Current Engineering Governance Model](./docs/current-engineering-governance-model.md)
+
+### 环境
 
 ```bash
-# Local mock/dev shell
-make bootstrap
-make api-dev
-make web
-make urls
-
-# Real backend manual testing
 cp .env.dev.real.example .env.dev.real
 make dev-real-up
 make dev-real-seed-notebook
 make dev-real-status
 make dev-real-down
+make dev-real-reset
+```
 
-# Local / release-grade real verification
+### 门禁
+
+```bash
+make gate-fast
+make gate-default
+make gate-release
+```
+
+### 验证通道
+
+```bash
+make lane-mock
+make lane-visual
+
 cp .env.real.local.example .env.real.local
 npm run lane:real:core
 npm run lane:real:release
 npm run test:release:precheck
 npm run test:visual:real:review
+```
 
-# Remote deploy / verify
+### 发布
+
+```bash
 npm run release:real:reset
 npm run release:real:bootstrap
 npm run release:real:ready
@@ -81,7 +101,7 @@ npm run release:real:run
 npm run release:real:report
 ```
 
-Current env names:
+Current configuration names:
 
 - dev-real: `DEMO_ENDPOINT_*`
 - real lane: `REAL_LANE_*`
@@ -102,18 +122,15 @@ make notebook-agent-no-sandbox-smoke
 ```
 
 This validates the required behavior for MVP deployment without sandbox:
-- mainline API/Web/Runner path is healthy (`make dev-real-status`)
+- current API/Web/Runner path is healthy (`make dev-real-status`)
 - internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
-### Quality Gates
+### Default Gates And Verification Channels
 
 ```bash
 make gate-fast
-make gate-main
+make gate-default
 make gate-release
-make lane-mock
-make lane-visual
-make lane-real-release
 ```
 
 Recommended release flow:
@@ -130,7 +147,7 @@ make release-real-run
 make release-real-report
 ```
 
-### Dependency Recovery (only when environment is broken)
+### Dependency Recovery (only when the environment is broken)
 
 ```bash
 make bootstrap
@@ -193,6 +210,7 @@ src/
 
 ## Documentation
 
+- [Current Engineering Governance Model](./docs/current-engineering-governance-model.md) — 当前唯一工程治理模型与术语表
 - [Current Baseline (Whitelist)](./docs/CURRENT_BASELINE.md) — 当前唯一白名单入口
 - [项目宪法 (Project Constitution)](./docs/项目宪法.md) — 产品目标、设计风格与功能范围之最高指导，防漂移
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）

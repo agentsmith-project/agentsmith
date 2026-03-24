@@ -17,8 +17,8 @@
 - [System / Workspace Provisioning MVP Analysis](./UXUI/01-通用规范/system-workspace-provisioning-mvp-analysis-v1.md)
 - [System Visual State Coverage TODO](./UXUI/01-通用规范/system-visual-state-coverage-todo-v1.md)
 - [Usage / Audit MVP Engineering Checklist](./user-guides/usage-audit-engineering-checklist.md)
-- [Workspace / Project Mainline Engineering Checklist](./user-guides/workspace-project-mainline-engineering-checklist.md)
-- [Governance Mainline Engineering Checklist](./user-guides/governance-mainline-engineering-checklist.md)
+- [Workspace / Project Default Engineering Gate Checklist](./user-guides/workspace-project-default-engineering-gate-checklist.md)
+- [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)

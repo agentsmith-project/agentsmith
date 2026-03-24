@@ -32,4 +32,14 @@ if [[ "${running_count}" -ge 2 ]]; then
 EOF
 fi
 
+if [[ -n "${NEXT_DEV_PID_FILE:-}" ]]; then
+  mkdir -p "$(dirname "${NEXT_DEV_PID_FILE}")"
+  printf '%s\n' "$$" > "${NEXT_DEV_PID_FILE}"
+fi
+
+if [[ -n "${NEXT_DEV_PORT_FILE:-}" && -n "${NEXT_DEV_PORT:-}" ]]; then
+  mkdir -p "$(dirname "${NEXT_DEV_PORT_FILE}")"
+  printf '%s\n' "${NEXT_DEV_PORT}" > "${NEXT_DEV_PORT_FILE}"
+fi
+
 exec next dev "$@"

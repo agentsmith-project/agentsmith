@@ -52,7 +52,7 @@ cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_R
 cp "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
 
-bash "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" >/dev/null
+bash "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh" >/dev/null
 
 set -a
 # shellcheck disable=SC1090

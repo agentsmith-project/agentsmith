@@ -29,6 +29,10 @@ DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:1543
 REDIS_URL="${REDIS_URL:-redis://localhost:16379}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
+PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL:-${PUBLIC_KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}}"
+MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-http://127.0.0.1:38080}"
 
 DEMO_REFRESH_TOKEN="${DEMO_REFRESH_TOKEN:-1}"
 DEMO_INIT_RESOURCES="${DEMO_INIT_RESOURCES:-1}"
@@ -45,9 +49,12 @@ API_PID_FILE="${API_PID_FILE:-$(real_lane_demo_pid_file api)}"
 WEB_PID_FILE="${WEB_PID_FILE:-$(real_lane_demo_pid_file web)}"
 RUNNER_PID_FILE="${RUNNER_PID_FILE:-$(real_lane_demo_pid_file runner)}"
 
-GLM_API_KEY="${GLM_API_KEY:-}"
-GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/anthropic}"
-GLM_MODEL="${GLM_MODEL:-GLM-5}"
+DEMO_ENDPOINT_API_KEY="${DEMO_ENDPOINT_API_KEY:-}"
+DEMO_ENDPOINT_BASE_URL="${DEMO_ENDPOINT_BASE_URL:-}"
+DEMO_ENDPOINT_MODEL="${DEMO_ENDPOINT_MODEL:-}"
+DEMO_ENDPOINT_PROTOCOL="${DEMO_ENDPOINT_PROTOCOL:-}"
+DEMO_ENDPOINT_MAX_CONTEXT_TOKENS="${DEMO_ENDPOINT_MAX_CONTEXT_TOKENS:-204800}"
+DEMO_ENDPOINT_MAX_OUTPUT_TOKENS="${DEMO_ENDPOINT_MAX_OUTPUT_TOKENS:-8192}"
 TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
 DEMO_REFRESH_TIMEOUT_SEC="${DEMO_REFRESH_TIMEOUT_SEC:-180}"
 DEMO_REFRESH_TOKEN_FORCE="${DEMO_REFRESH_TOKEN_FORCE:-0}"
@@ -64,17 +71,20 @@ if [[ -f "${ENV_FILE}" ]]; then
 fi
 
 init_demo_resources() {
-  if [[ -z "${GLM_API_KEY}" ]]; then
-    err "resource re-init requires GLM_API_KEY"
-    err "Example: GLM_API_KEY='***' make notebook-agent-demo-up"
+  if [[ -z "${DEMO_ENDPOINT_API_KEY}" || -z "${DEMO_ENDPOINT_BASE_URL}" || -z "${DEMO_ENDPOINT_MODEL}" || -z "${DEMO_ENDPOINT_PROTOCOL}" ]]; then
+    err "resource re-init requires DEMO_ENDPOINT_* env"
+    err "Example: DEMO_ENDPOINT_API_KEY='***' DEMO_ENDPOINT_BASE_URL='https://api.minimaxi.com/v1' DEMO_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' DEMO_ENDPOINT_PROTOCOL='openai_compatible' make notebook-agent-demo-up"
     return 1
   fi
   info "initializing notebook demo resources (project/endpoint/agent/key)"
   (
     cd "${ROOT_DIR}" && \
-    GLM_API_KEY="${GLM_API_KEY}" \
-    GLM_BASE_URL="${GLM_BASE_URL}" \
-    GLM_MODEL="${GLM_MODEL}" \
+    DEMO_ENDPOINT_API_KEY="${DEMO_ENDPOINT_API_KEY}" \
+    DEMO_ENDPOINT_BASE_URL="${DEMO_ENDPOINT_BASE_URL}" \
+    DEMO_ENDPOINT_MODEL="${DEMO_ENDPOINT_MODEL}" \
+    DEMO_ENDPOINT_PROTOCOL="${DEMO_ENDPOINT_PROTOCOL}" \
+    DEMO_ENDPOINT_MAX_CONTEXT_TOKENS="${DEMO_ENDPOINT_MAX_CONTEXT_TOKENS}" \
+    DEMO_ENDPOINT_MAX_OUTPUT_TOKENS="${DEMO_ENDPOINT_MAX_OUTPUT_TOKENS}" \
     API_BASE="http://localhost:${PORT_API}" \
     WORKSPACE_ID="${WORKSPACE_ID}" \
     make notebook-agent-init-resources
@@ -334,6 +344,10 @@ start_api_if_needed() {
       PORT='${PORT_API}' \
       KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
       KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
+      KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' \
+      PUBLIC_KEYCLOAK_BASE_URL='${PUBLIC_KEYCLOAK_BASE_URL}' \
+      INTERNAL_KEYCLOAK_BASE_URL='${INTERNAL_KEYCLOAK_BASE_URL}' \
+      KEYCLOAK_ISSUER_URL='${KEYCLOAK_ISSUER_URL}' \
       DATABASE_URL='${DATABASE_URL}' \
       REDIS_URL='${REDIS_URL}' \
       MONGO_URL='${MONGO_URL}' \
@@ -344,6 +358,7 @@ start_api_if_needed() {
       MINIO_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
       MINIO_SECRET_KEY='${MINIO_SECRET_KEY}' \
       MINIO_BUCKET='${MINIO_BUCKET}' \
+      MBOS_UNIVERSAL_PROXY_BASE_URL='${MBOS_UNIVERSAL_PROXY_BASE_URL}' \
       DEBUG_AGENT_EXECUTION='${DEBUG_AGENT_EXECUTION:-1}' \
       DEBUG_ENDPOINT_PROXY='${DEBUG_ENDPOINT_PROXY:-0}' \
       DEBUG_NOTEBOOK_EXECUTION='${DEBUG_NOTEBOOK_EXECUTION:-0}' \
@@ -383,6 +398,11 @@ start_web_if_needed() {
       NEXT_PUBLIC_KEYCLOAK_URL='${KEYCLOAK_URL}' \
       NEXT_PUBLIC_KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' \
+      KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
+      PUBLIC_KEYCLOAK_BASE_URL='${PUBLIC_KEYCLOAK_BASE_URL}' \
+      INTERNAL_KEYCLOAK_BASE_URL='${INTERNAL_KEYCLOAK_BASE_URL}' \
+      MONGO_URL='${MONGO_URL}' \
+      MONGO_DB_NAME='${MONGO_DB_NAME}' \
       npm run dev:test -- --port '${target_port}'
   "
   if post_start_validate_or_reuse_external "${WEB_PID_FILE}" "${target_port}" "Web" "${WEB_LOG}"; then
@@ -409,6 +429,11 @@ start_web_if_needed() {
       NEXT_PUBLIC_KEYCLOAK_URL='${KEYCLOAK_URL}' \
       NEXT_PUBLIC_KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
       NEXT_PUBLIC_KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' \
+      KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
+      PUBLIC_KEYCLOAK_BASE_URL='${PUBLIC_KEYCLOAK_BASE_URL}' \
+      INTERNAL_KEYCLOAK_BASE_URL='${INTERNAL_KEYCLOAK_BASE_URL}' \
+      MONGO_URL='${MONGO_URL}' \
+      MONGO_DB_NAME='${MONGO_DB_NAME}' \
       npm run dev:test -- --port '${target_port}'
   "
   post_start_validate_or_reuse_external "${WEB_PID_FILE}" "${target_port}" "Web" "${WEB_LOG}"
@@ -565,3 +590,10 @@ main() {
 }
 
 main "$@"
+for legacy_key in GLM_API_KEY GLM_BASE_URL GLM_MODEL ENDPOINT_PROTOCOL; do
+  if [[ -n "${!legacy_key:-}" ]]; then
+    err "legacy env var is not supported: ${legacy_key}"
+    err "use DEMO_ENDPOINT_API_KEY / DEMO_ENDPOINT_BASE_URL / DEMO_ENDPOINT_MODEL / DEMO_ENDPOINT_PROTOCOL"
+    exit 1
+  fi
+done

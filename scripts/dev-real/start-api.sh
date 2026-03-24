@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+init_dev_real_env
+
+wait_port_free "${PORT_API}" "api" 30
+launch_detached "${API_PID_FILE}" "${API_LOG}" "
+  cd '${ROOT_DIR}' && \
+  export PORT='${PORT_API}' \
+    KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' \
+    KEYCLOAK_REALM='${KEYCLOAK_REALM}' \
+    KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' \
+    PUBLIC_KEYCLOAK_BASE_URL='${PUBLIC_KEYCLOAK_BASE_URL}' \
+    INTERNAL_KEYCLOAK_BASE_URL='${INTERNAL_KEYCLOAK_BASE_URL}' \
+    KEYCLOAK_ISSUER_URL='${KEYCLOAK_ISSUER_URL}' \
+    DATABASE_URL='${DATABASE_URL}' \
+    REDIS_URL='${REDIS_URL}' \
+    MONGO_URL='${MONGO_URL}' \
+    MONGO_DB_NAME='${MONGO_DB_NAME}' \
+    MINIO_ENDPOINT='${MINIO_ENDPOINT}' \
+    MINIO_PORT='${MINIO_PORT}' \
+    MINIO_USE_SSL='${MINIO_USE_SSL}' \
+    MINIO_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
+    MINIO_SECRET_KEY='${MINIO_SECRET_KEY}' \
+    MINIO_BUCKET='${MINIO_BUCKET}' \
+    MBOS_UNIVERSAL_PROXY_BASE_URL='${MBOS_UNIVERSAL_PROXY_BASE_URL}' \
+    DEBUG_AGENT_EXECUTION='${DEBUG_AGENT_EXECUTION:-1}' \
+    DEBUG_ENDPOINT_PROXY='${DEBUG_ENDPOINT_PROXY:-0}' \
+    DEBUG_NOTEBOOK_EXECUTION='${DEBUG_NOTEBOOK_EXECUTION:-0}' && \
+  exec npm run api:node:dev
+"
+wait_http "http://localhost:${PORT_API}/api/v1/openapi.json" "api" 120
+capture_listener_pid "${PORT_API}" "${API_PID_FILE}" "api"
+printf '%s\n' "${PORT_API}" > "${API_PORT_FILE}"
+write_ready_file "${API_READY_FILE}"

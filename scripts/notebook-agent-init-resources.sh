@@ -18,26 +18,36 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 PROJECT_NAME="${PROJECT_NAME:-Codex Agent Regression}"
 AGENT_NAME="${AGENT_NAME:-codex-ext-$(date +%s)}"
-ENDPOINT_NAME="${ENDPOINT_NAME:-glm5-anthropic-$(date +%s)}"
-CREDENTIAL_NAME="${CREDENTIAL_NAME:-glm-key-$(date +%s)}"
+ENDPOINT_NAME="${ENDPOINT_NAME:-demo-endpoint-$(date +%s)}"
+CREDENTIAL_NAME="${CREDENTIAL_NAME:-demo-key-$(date +%s)}"
 
-GLM_BASE_URL="${GLM_BASE_URL:-https://open.bigmodel.cn/api/anthropic}"
-GLM_MODEL="${GLM_MODEL:-GLM-5}"
-ENDPOINT_PROTOCOL="${ENDPOINT_PROTOCOL:-anthropic_compatible}"
-GLM_API_KEY="${GLM_API_KEY:-}"
+DEMO_ENDPOINT_BASE_URL="${DEMO_ENDPOINT_BASE_URL:-}"
+DEMO_ENDPOINT_MODEL="${DEMO_ENDPOINT_MODEL:-}"
+DEMO_ENDPOINT_PROTOCOL="${DEMO_ENDPOINT_PROTOCOL:-}"
+DEMO_ENDPOINT_API_KEY="${DEMO_ENDPOINT_API_KEY:-}"
 
 WIRE_API="${WIRE_API:-responses}"
 PROJECT_VISIBILITY="${PROJECT_VISIBILITY:-private}"
 PROJECT_JOIN_POLICY="${PROJECT_JOIN_POLICY:-approval_required}"
+MODEL_MAX_CONTEXT_TOKENS="${MODEL_MAX_CONTEXT_TOKENS:-204800}"
+MODEL_MAX_OUTPUT_TOKENS="${MODEL_MAX_OUTPUT_TOKENS:-8192}"
+
+for legacy_key in GLM_API_KEY GLM_BASE_URL GLM_MODEL ENDPOINT_PROTOCOL; do
+  if [[ -n "${!legacy_key:-}" ]]; then
+    echo "[init] legacy env var is not supported: ${legacy_key}" >&2
+    echo "[init] use DEMO_ENDPOINT_API_KEY / DEMO_ENDPOINT_BASE_URL / DEMO_ENDPOINT_MODEL / DEMO_ENDPOINT_PROTOCOL" >&2
+    exit 1
+  fi
+done
 
 if [[ ! -f "${TOKEN_FILE}" ]]; then
   echo "[init] token file not found: ${TOKEN_FILE}" >&2
   echo "[init] run: make notebook-agent-refresh-token" >&2
   exit 1
 fi
-if [[ -z "${GLM_API_KEY}" ]]; then
-  echo "[init] missing GLM_API_KEY env var" >&2
-  echo "[init] example: GLM_API_KEY='***' make notebook-agent-init-resources" >&2
+if [[ -z "${DEMO_ENDPOINT_API_KEY}" || -z "${DEMO_ENDPOINT_BASE_URL}" || -z "${DEMO_ENDPOINT_MODEL}" || -z "${DEMO_ENDPOINT_PROTOCOL}" ]]; then
+  echo "[init] missing required DEMO_ENDPOINT_* env vars" >&2
+  echo "[init] required: DEMO_ENDPOINT_API_KEY DEMO_ENDPOINT_BASE_URL DEMO_ENDPOINT_MODEL DEMO_ENDPOINT_PROTOCOL" >&2
   exit 1
 fi
 
@@ -93,8 +103,8 @@ echo "[init] creating credential..."
 cred_resp="$(api_curl -X POST "${PROJECT_BASE}/credentials" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], type:"api_key", value:process.argv[2]}))' \
-      "${CREDENTIAL_NAME}" "${GLM_API_KEY}")")"
+      -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], type:"api_key", value:process.argv[2]}))' \
+      "${CREDENTIAL_NAME}" "${DEMO_ENDPOINT_API_KEY}")")"
 CRED_ID="$(printf '%s' "${cred_resp}" | json_get id)"
 state_set_string credential.id "${CRED_ID}"
 state_set_string credential.name "${CREDENTIAL_NAME}"
@@ -104,14 +114,14 @@ echo "[init] creating endpoint..."
 endpoint_resp="$(api_curl -X POST "${PROJECT_BASE}/endpoints" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
-  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5]}))' \
-      "${ENDPOINT_NAME}" "${ENDPOINT_PROTOCOL}" "${GLM_BASE_URL}" "${GLM_MODEL}" "${CRED_ID}")")"
+  -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5], model_profile:{max_context_tokens:Number(process.argv[6]), max_output_tokens:Number(process.argv[7]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' \
+      "${ENDPOINT_NAME}" "${DEMO_ENDPOINT_PROTOCOL}" "${DEMO_ENDPOINT_BASE_URL}" "${DEMO_ENDPOINT_MODEL}" "${CRED_ID}" "${MODEL_MAX_CONTEXT_TOKENS}" "${MODEL_MAX_OUTPUT_TOKENS}")")"
 ENDPOINT_ID="$(printf '%s' "${endpoint_resp}" | json_get id)"
 state_set_string endpoint.id "${ENDPOINT_ID}"
 state_set_string endpoint.name "${ENDPOINT_NAME}"
-state_set_string endpoint.protocol "${ENDPOINT_PROTOCOL}"
-state_set_string endpoint.base_url "${GLM_BASE_URL}"
-state_set_string endpoint.model "${GLM_MODEL}"
+state_set_string endpoint.protocol "${DEMO_ENDPOINT_PROTOCOL}"
+state_set_string endpoint.base_url "${DEMO_ENDPOINT_BASE_URL}"
+state_set_string endpoint.model "${DEMO_ENDPOINT_MODEL}"
 echo "[init] endpoint_id=${ENDPOINT_ID}"
 
 echo "[init] creating external notebook agent..."
@@ -119,7 +129,7 @@ agent_resp="$(api_curl -X POST "${PROJECT_BASE}/agents" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H 'Content-Type: application/json' \
   -d "$(node -e 'console.log(JSON.stringify({name:process.argv[1], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[2], wire_api:process.argv[3], model:process.argv[4]}}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' \
-      "${AGENT_NAME}" "${ENDPOINT_ID}" "${WIRE_API}" "${GLM_MODEL}")")"
+      "${AGENT_NAME}" "${ENDPOINT_ID}" "${WIRE_API}" "${DEMO_ENDPOINT_MODEL}")")"
 AGENT_ID="$(printf '%s' "${agent_resp}" | json_get id)"
 state_set_string agent.id "${AGENT_ID}"
 state_set_string agent.name "${AGENT_NAME}"
@@ -149,10 +159,12 @@ CREDENTIAL_ID=${CRED_ID}
 ENDPOINT_ID=${ENDPOINT_ID}
 AGENT_ID=${AGENT_ID}
 WS_URL=${WS_URL}
-GLM_BASE_URL=${GLM_BASE_URL}
-GLM_MODEL=${GLM_MODEL}
-ENDPOINT_PROTOCOL=${ENDPOINT_PROTOCOL}
+DEMO_ENDPOINT_BASE_URL=${DEMO_ENDPOINT_BASE_URL}
+DEMO_ENDPOINT_MODEL=${DEMO_ENDPOINT_MODEL}
+DEMO_ENDPOINT_PROTOCOL=${DEMO_ENDPOINT_PROTOCOL}
 WIRE_API=${WIRE_API}
+MODEL_MAX_CONTEXT_TOKENS=${MODEL_MAX_CONTEXT_TOKENS}
+MODEL_MAX_OUTPUT_TOKENS=${MODEL_MAX_OUTPUT_TOKENS}
 EOF
 
 state_write_summary

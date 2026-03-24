@@ -12,6 +12,7 @@
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
+	dev-real-up dev-real-down dev-real-status dev-real-reset dev-real-seed-notebook \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
@@ -29,7 +30,7 @@
 
 NPM ?= npm
 
-# Load local non-committed developer overrides/secrets (e.g., GLM_API_KEY).
+# Load local non-committed developer overrides/secrets.
 # .env.local is already gitignored in standard setups.
 -include .env.local
 
@@ -58,6 +59,7 @@ REDIS_URL ?= redis://localhost:16379
 MONGO_URL ?= mongodb://mbos:mbos_dev_password@localhost:17017/admin
 MONGO_DB_NAME ?= mbos
 BUILTIN_SKILLS_DIR_DEFAULT ?= $(CURDIR)/packages/agent-codex-runner/builtin-skills
+MBOS_UNIVERSAL_PROXY_BASE_URL ?= http://127.0.0.1:38080
 
 LOCALE ?= en-US
 BASE_URL ?= http://localhost:$(PORT_WEB)
@@ -152,6 +154,10 @@ help-extended:
 	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT into artifacts/real-lane/current/token.txt"
 	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write artifacts/real-lane/current/state.json"
 	@echo "  make notebook-agent-runner         # start codex runner using artifacts/real-lane/current/state.json"
+	@echo "  make dev-real-up                  # start real dev platform (deps + proxy + api + web)"
+	@echo "  make dev-real-seed-notebook       # create notebook demo resources and start host external runner"
+	@echo "  make dev-real-status              # show real dev stack status"
+	@echo "  make dev-real-down                # stop real dev stack and local deps"
 	@echo "  make notebook-agent-demo-up        # one-command demo bootstrap: start api/web, refresh token, init resources, start runner"
 	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
 	@echo "  make notebook-agent-demo-status    # show demo managed process/health/token/agent status"
@@ -486,6 +492,10 @@ api-dev: check-api-port
 		PORT=$(PORT_API) \
 		KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
 		KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
+		KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+		PUBLIC_KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+		INTERNAL_KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+		KEYCLOAK_ISSUER_URL=$(KEYCLOAK_BASE_URL)/realms/$(KEYCLOAK_REALM) \
 		DATABASE_URL=$(DATABASE_URL) \
 		REDIS_URL=$(REDIS_URL) \
 		MONGO_URL=$(MONGO_URL) \
@@ -496,6 +506,7 @@ api-dev: check-api-port
 		MINIO_ACCESS_KEY=$(MINIO_ACCESS_KEY) \
 		MINIO_SECRET_KEY=$(MINIO_SECRET_KEY) \
 		MINIO_BUCKET=$(MINIO_BUCKET) \
+		MBOS_UNIVERSAL_PROXY_BASE_URL=$(MBOS_UNIVERSAL_PROXY_BASE_URL) \
 		$(NPM) run api:node:dev
 
 api-dev-min: check-api-port
@@ -517,6 +528,11 @@ web:
 	NEXT_PUBLIC_KEYCLOAK_URL=$(KEYCLOAK_URL) \
 	NEXT_PUBLIC_KEYCLOAK_REALM=$(KEYCLOAK_REALM) \
 	NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=$(KEYCLOAK_CLIENT_ID) \
+	KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	PUBLIC_KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	INTERNAL_KEYCLOAK_BASE_URL=$(KEYCLOAK_BASE_URL) \
+	MONGO_URL=$(MONGO_URL) \
+	MONGO_DB_NAME=$(MONGO_DB_NAME) \
 	$(NPM) run dev:test -- --port $(PORT_WEB)
 
 web-msw:
@@ -687,14 +703,24 @@ notebook-agent-refresh-token:
 	node ./scripts/notebook-agent-refresh-token.js
 
 notebook-agent-init-resources:
-	@if [ -z "$(GLM_API_KEY)" ]; then \
-		echo "[make] Missing GLM_API_KEY."; \
+	@if [ -n "$(GLM_API_KEY)" ] || [ -n "$(GLM_BASE_URL)" ] || [ -n "$(GLM_MODEL)" ]; then \
+		echo "[make] Legacy GLM_* vars are no longer supported for notebook-agent-init-resources."; \
+		echo "[make] Use DEMO_ENDPOINT_API_KEY / DEMO_ENDPOINT_BASE_URL / DEMO_ENDPOINT_MODEL / DEMO_ENDPOINT_PROTOCOL."; \
+		exit 1; \
+	fi
+	@if [ -z "$(DEMO_ENDPOINT_API_KEY)" ]; then \
+		echo "[make] Missing DEMO_ENDPOINT_API_KEY."; \
 		echo "[make] Example:"; \
-		echo "  GLM_API_KEY='***' make notebook-agent-init-resources"; \
+		echo "  DEMO_ENDPOINT_API_KEY='***' DEMO_ENDPOINT_BASE_URL='https://api.minimaxi.com/v1' DEMO_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' DEMO_ENDPOINT_PROTOCOL='openai_compatible' make notebook-agent-init-resources"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	GLM_API_KEY="$(GLM_API_KEY)" \
+	DEMO_ENDPOINT_API_KEY="$(DEMO_ENDPOINT_API_KEY)" \
+	DEMO_ENDPOINT_BASE_URL="$(DEMO_ENDPOINT_BASE_URL)" \
+	DEMO_ENDPOINT_MODEL="$(DEMO_ENDPOINT_MODEL)" \
+	DEMO_ENDPOINT_PROTOCOL="$(DEMO_ENDPOINT_PROTOCOL)" \
+	DEMO_ENDPOINT_MAX_CONTEXT_TOKENS="$(DEMO_ENDPOINT_MAX_CONTEXT_TOKENS)" \
+	DEMO_ENDPOINT_MAX_OUTPUT_TOKENS="$(DEMO_ENDPOINT_MAX_OUTPUT_TOKENS)" \
 	./scripts/notebook-agent-init-resources.sh
 
 notebook-agent-runner:
@@ -720,6 +746,26 @@ notebook-agent-runner:
 notebook-agent-demo-up:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/notebook-agent-demo-up.sh
+
+dev-real-up:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/dev-real-up.sh
+
+dev-real-seed-notebook:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/dev-real/seed-notebook-demo.sh
+
+dev-real-down:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/dev-real-down.sh
+
+dev-real-status:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/dev-real-status.sh
+
+dev-real-reset:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/dev-real-down.sh && $(MAKE) deps-reset && $(MAKE) dev-real-up && $(MAKE) dev-real-seed-notebook
 
 notebook-agent-demo-down:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

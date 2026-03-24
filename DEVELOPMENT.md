@@ -1,5 +1,45 @@
 # AgentSmith - Development Guide
 
+## Current Paths
+
+当前仓库只保留这几条主路径：
+
+```bash
+# Local mock/dev shell
+make bootstrap
+make api-dev
+make web
+make urls
+
+# Real backend manual testing
+cp .env.dev.real.example .env.dev.real
+make dev-real-up
+make dev-real-seed-notebook
+make dev-real-status
+make dev-real-down
+
+# Local / release-grade real verification
+npm run lane:real:core
+npm run lane:real:release
+npm run test:release:precheck
+npm run test:visual:real:review
+
+# Remote deploy / verify
+npm run release:real:reset
+npm run release:real:bootstrap
+npm run release:real:ready
+npm run release:real:run
+npm run release:real:report
+```
+
+当前有效环境变量命名：
+
+- dev-real: `DEMO_ENDPOINT_*`
+- real lane: `REAL_LANE_*`
+- remote deploy: `DEPLOY_*`
+
+旧 demo 命令与 `GLM_*` 命名已经移除；传入旧名字会直接 fail fast。
+
 ## Quick Start
 
 ```bash

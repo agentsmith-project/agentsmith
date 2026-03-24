@@ -16,7 +16,7 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set +a
 fi
 
-GLM_API_KEY_VALUE="${GLM_API_KEY:-}"
+REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
 API_PORT="${INTEGRATION_API_PORT:-20072}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3072}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
@@ -45,8 +45,8 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
 
-if [[ -z "${GLM_API_KEY_VALUE}" ]]; then
-  echo "[internal-real-gate] Missing GLM_API_KEY." >&2
+if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
+  echo "[internal-real-gate] Missing REAL_LANE_API_KEY." >&2
   exit 1
 fi
 
@@ -329,7 +329,7 @@ info "internal screenshots and review artifacts will be written to:"
 info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
 (
   cd "${ROOT_DIR}" && \
-    GLM_API_KEY="${GLM_API_KEY_VALUE}" \
+    REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" \
     SANDBOX_MANAGER_URL="http://127.0.0.1:${SANDBOX_PORT}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \

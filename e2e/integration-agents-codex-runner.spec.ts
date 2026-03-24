@@ -1,11 +1,11 @@
 import { expect, test } from '@playwright/test';
 import {
-  GLM_BASE_URL,
-  GLM_MODEL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   LOCALE,
   API_BASE,
+  REAL_LANE_ANTHROPIC_BASE_URL,
+  REAL_LANE_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
   createExternalCodexAgentBundle,
@@ -17,10 +17,10 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
-function requireGlmApiKey(): string {
-  const value = process.env.GLM_API_KEY?.trim();
+function requireRealLaneApiKey(): string {
+  const value = process.env.REAL_LANE_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_GLM_API_KEY');
+    throw new Error('missing_REAL_LANE_API_KEY');
   }
   return value;
 }
@@ -105,7 +105,7 @@ async function waitForLatestAssistantContent(args: {
 test.describe('@lane-real external agent codex-runner integration', () => {
   test('streams multi-turn chat through the real local codex runner and persists replies', async ({ page }) => {
     test.setTimeout(720_000);
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Chat');
@@ -113,8 +113,8 @@ test.describe('@lane-real external agent codex-runner integration', () => {
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Endpoint ${Date.now()}`,
-      endpointModel: GLM_MODEL,
-      upstreamBaseUrl: GLM_BASE_URL,
+      endpointModel: REAL_LANE_MODEL,
+      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
       credentialName,
     });
     const chatTitle = `codex-runner-chat-${Date.now()}`;
@@ -165,7 +165,7 @@ test.describe('@lane-real external agent codex-runner integration', () => {
 
   test('preserves session continuity across refresh with the real local codex runner', async ({ page }) => {
     test.setTimeout(720_000);
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Memory');
@@ -173,8 +173,8 @@ test.describe('@lane-real external agent codex-runner integration', () => {
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Endpoint ${Date.now()}`,
-      endpointModel: GLM_MODEL,
-      upstreamBaseUrl: GLM_BASE_URL,
+      endpointModel: REAL_LANE_MODEL,
+      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
       credentialName,
     });
     const chatTitle = `codex-runner-memory-${Date.now()}`;

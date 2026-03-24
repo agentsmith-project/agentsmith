@@ -21,10 +21,10 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const ANTHROPIC_BASE_URL = process.env.CLAUDE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
-const OPENAI_BASE_URL = process.env.OPENAI_URL_CODING_PLAN ?? 'https://open.bigmodel.cn/api/coding/paas/v4';
-const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'glm-5-turbo';
-const GLM_API_KEY = process.env.GLM_APIKEY ?? process.env.GLM_API_KEY;
+const ANTHROPIC_BASE_URL = process.env.REAL_LANE_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
+const OPENAI_BASE_URL = process.env.REAL_LANE_OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1';
+const REAL_LANE_MODEL = process.env.REAL_LANE_MODEL ?? 'MiniMax-M2.7-highspeed';
+const REAL_LANE_API_KEY = process.env.REAL_LANE_API_KEY;
 const SYSTEM_ADMIN_USERNAME = 'mbos-admin';
 const SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
 const MEMBER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
@@ -35,10 +35,10 @@ const INTERNAL_AGENT_IMAGE =
   process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
   'agentsmith-codex-runner:local';
 
-function requireGlmApiKey(): string {
-  const value = GLM_API_KEY?.trim();
+function requireRealLaneApiKey(): string {
+  const value = REAL_LANE_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_GLM_API_KEY');
+    throw new Error('missing_REAL_LANE_API_KEY');
   }
   return value;
 }
@@ -621,7 +621,7 @@ async function expectUsageTabToShowRequests(args: {
 test.describe('@lane-real release user story end-to-end', () => {
   test('rebuilds the system and runs the full user story with dual glm-5-turbo endpoints', async ({ page }) => {
     test.setTimeout(1_200_000);
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -647,7 +647,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       name: anthropicEndpointName,
       protocol: 'anthropic_compatible',
       baseUrl: ANTHROPIC_BASE_URL,
-      model: GLM_MODEL,
+      model: REAL_LANE_MODEL,
     });
     await createEndpointViaUi({
       page,
@@ -656,7 +656,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       name: openaiEndpointName,
       protocol: 'openai_compatible',
       baseUrl: OPENAI_BASE_URL,
-      model: GLM_MODEL,
+      model: REAL_LANE_MODEL,
     });
 
     const anthropicEndpointId = await resolveEndpointId(page, workspaceId, projectId, anthropicEndpointName);

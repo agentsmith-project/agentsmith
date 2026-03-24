@@ -69,7 +69,7 @@ PROJECTS_JSON="$(
 DEMO_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "Demo Project")"
 [[ -n "${DEMO_PROJECT_ID}" ]] || die "preset verify failed: Demo Project missing in ws_default"
 
-EXPECTED_MODEL="${GLM_MODEL:-MiniMax-M2.7-highspeed}"
+EXPECTED_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
 ENDPOINT_COUNT="$(
   curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/endpoints?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
@@ -111,10 +111,10 @@ docker run --rm \
   -e KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
   -e INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
-  -e GLM_APIKEY="${GLM_APIKEY:-}" \
-  -e CLAUDE_URL="${CLAUDE_URL:-https://api.minimaxi.com/anthropic/v1}" \
-  -e OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://api.minimaxi.com/v1}" \
-  -e INTEGRATION_GLM_MODEL="${GLM_MODEL:-MiniMax-M2.7-highspeed}" \
+  -e REAL_LANE_API_KEY="${DEPLOY_ENDPOINT_API_KEY:-}" \
+  -e REAL_LANE_ANTHROPIC_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}" \
+  -e REAL_LANE_OPENAI_BASE_URL="${DEPLOY_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}" \
+  -e REAL_LANE_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}" \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \

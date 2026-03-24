@@ -21,7 +21,7 @@
 发布级验证前，先确认：
 
 1. Keycloak 集成依赖可用
-2. 用于真实 notebook 主线的 `GLM_API_KEY` 已配置
+2. 用于真实 notebook 主线的 `REAL_LANE_API_KEY` 已配置
 3. 本地没有残留的多余 `next dev` 进程
 
 ## 验证顺序

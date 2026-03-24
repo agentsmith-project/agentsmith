@@ -317,7 +317,7 @@ npm run test:release:real:full
 Notes:
 
 1. `npm run test:visual:strict` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
-2. Real-lane notebook verification requires `GLM_API_KEY`.
+2. Real-lane notebook verification requires `REAL_LANE_API_KEY`.
 3. `npm run test:visual:real:review` writes real-environment screenshots to `artifacts/release-real-visual/<run-id>/` for manual inspection.
 
 ## Test & Evidence Directory Contract

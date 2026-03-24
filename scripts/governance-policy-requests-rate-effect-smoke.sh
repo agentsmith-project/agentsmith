@@ -15,7 +15,7 @@ ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
-GLM_MODEL="${GLM_MODEL:-GLM-5}"
+REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
 
 info() { echo "[gov-policy-requests-rate-smoke] $*"; }
 err() { echo "[gov-policy-requests-rate-smoke] ERROR: $*" >&2; }
@@ -182,7 +182,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke first"}]}))' "${GLM_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke first"}]}))' "${REAL_LANE_MODEL}")" || true
   )"
   if [[ ! "${req1_code}" =~ ^2[0-9][0-9]$ ]]; then
     err "first request failed (HTTP ${req1_code})"
@@ -196,7 +196,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke second"}]}))' "${GLM_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke second"}]}))' "${REAL_LANE_MODEL}")" || true
   )"
   if [[ "${req2_code}" != "429" ]]; then
     err "second request did not hit requests/day rate limit (HTTP ${req2_code})"

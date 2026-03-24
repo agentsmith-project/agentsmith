@@ -301,13 +301,13 @@ make dev-real-down
 ```bash
 make dev-real-status
 ```
-- Run a non-destructive demo readiness check (status + metadata files + endpoint proxy reachability):
+- Check current platform and runner state:
 ```bash
-make notebook-agent-demo-check
+make dev-real-status
 ```
-- Restart only the managed runner (keeps API/Web running):
+- Re-seed notebook resources and restart the host runner:
 ```bash
-make notebook-agent-demo-restart-runner
+make dev-real-seed-notebook
 ```
 - Important Keycloak redirect constraint:
   - token refresh currently uses browser PKCE (`scripts/notebook-agent-refresh-token.js`)
@@ -727,7 +727,7 @@ npm run dev -w @mbos/api-entry-node
 
 # in another terminal, rebuild test resources (memory-mode ids are not reusable after API restart)
 make notebook-agent-refresh-token
-GLM_API_KEY='***' make notebook-agent-init-resources
+DEMO_ENDPOINT_API_KEY='***' make notebook-agent-init-resources
 make notebook-agent-runner
 
 OUT_DIR=artifacts/real-lane/current/benchmarks/baseline-mongo make notebook-agent-benchmark-baseline

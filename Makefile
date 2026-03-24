@@ -1,6 +1,5 @@
 .PHONY: help help-extended quick-help help-glossary bootstrap deps-up deps-ready deps-down deps-reset deps-smoke deps-logs deps-ps deps-init deps-init-postgres deps-init-keycloak \
 	check-api-port api-dev api-dev-min web web-msw \
-	demo-full-up demo-full-down \
 	e2e e2e-local \
 	e2e-int-minimal e2e-int-chat e2e-int-agent e2e-int-chat-real e2e-int-local \
 	e2e-int-minimal-local-api e2e-int-chat-local-api e2e-int-agent-local-api e2e-int-chat-real-local-api \
@@ -11,7 +10,6 @@
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
-	notebook-agent-demo-up notebook-agent-demo-down notebook-agent-demo-status notebook-agent-demo-check notebook-agent-demo-restart-runner \
 	dev-real-up dev-real-down dev-real-status dev-real-reset dev-real-seed-notebook \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
@@ -19,7 +17,7 @@
 	notebook-agent-traces-query-sweep notebook-agent-traces-query-sweep-compare notebook-agent-benchmark-archive \
 	model-request-stream-bench model-request-stream-bench-gate usage-report-runner-status usage-report-run-due \
 	openapi-generate openapi-check-generated openapi-changelog contracts-check-openapi urls \
-	dev-up dev-down verify-contracts verify-governance \
+	verify-contracts verify-governance \
 	mvp-freeze-check preprod-acceptance-check \
 	preprod-ensure-pgvector preprod-capture-baseline \
 	sandbox-preflight sandbox-api-dev sandbox-joint-smoke \
@@ -158,12 +156,7 @@ help-extended:
 	@echo "  make dev-real-seed-notebook       # create notebook demo resources and start host external runner"
 	@echo "  make dev-real-status              # show real dev stack status"
 	@echo "  make dev-real-down                # stop real dev stack and local deps"
-	@echo "  make notebook-agent-demo-up        # one-command demo bootstrap: start api/web, refresh token, init resources, start runner"
-	@echo "  make notebook-agent-demo-down      # stop demo-up managed api/web/runner background processes"
-	@echo "  make notebook-agent-demo-status    # show demo managed process/health/token/agent status"
-	@echo "  make notebook-agent-demo-check     # non-destructive demo readiness checks (status + metadata + proxy reachability)"
 	@echo "  make notebook-agent-no-sandbox-smoke # verify AgentSmith works without sandbox deployment (mainline + fail-fast internal paths)"
-	@echo "  make notebook-agent-demo-restart-runner # restart only the managed demo runner"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-credential-sync-smoke # verify execution_context credential files are written under .codex/credential/"
 	@echo "  make notebook-agent-engineering-smoke # run engineering smoke set (basic notebook mainline; optional matplotlib)"
@@ -280,29 +273,11 @@ help-glossary:
 	@echo "    strict: fail on product error states (engineering gate)."
 	@echo "    tolerant: allow temporary error states for troubleshooting only."
 	@echo ""
-	@echo "  demo-check"
-	@echo "    Non-destructive readiness check: process status, token validity, endpoint reachability."
-	@echo ""
 	@echo "  mainline"
 	@echo "    Core notebook/agent/files/inputrefs business path."
 	@echo ""
 	@echo "  engineering gate"
 	@echo "    The must-pass checks before saying a build is releasable."
-
-dev-up:
-	$(MAKE) notebook-agent-demo-up
-
-dev-down:
-	$(MAKE) notebook-agent-demo-down
-
-demo-full-up:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/demo-full-up.sh
-
-demo-full-down:
-	@set -e; \
-	$(MAKE) notebook-agent-demo-down; \
-	$(MAKE) deps-down
 
 build-reliability-smoke:
 	./scripts/build-reliability-smoke.sh
@@ -327,7 +302,7 @@ mvp-freeze-check:
 	@set -e; \
 	$(MAKE) verify-contracts; \
 	$(MAKE) governance-core-smoke; \
-	$(MAKE) notebook-agent-demo-check
+	$(MAKE) dev-real-status
 
 preprod-acceptance-check:
 	./scripts/preprod-acceptance-check.sh
@@ -743,10 +718,6 @@ notebook-agent-runner:
 	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
 	$(NPM) run agent:codex-runner
 
-notebook-agent-demo-up:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-demo-up.sh
-
 dev-real-up:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/dev-real-up.sh
@@ -767,32 +738,15 @@ dev-real-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/dev-real-down.sh && $(MAKE) deps-reset && $(MAKE) dev-real-up && $(MAKE) dev-real-seed-notebook
 
-notebook-agent-demo-down:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-demo-down.sh
-
-notebook-agent-demo-status:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-demo-status.sh
-
-notebook-agent-demo-check:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/notebook-agent-demo-check.sh
-
 notebook-agent-no-sandbox-smoke:
 	@set -e; \
-	echo "[make] no-sandbox smoke: demo readiness check"; \
-	$(MAKE) notebook-agent-demo-check; \
+	echo "[make] no-sandbox smoke: real dev stack readiness check"; \
+	$(MAKE) dev-real-status; \
 	echo "[make] no-sandbox smoke: internal path must fail fast when sandbox is absent"; \
 	$(MAKE) notebook-agent-no-sandbox-assert
 
 notebook-agent-no-sandbox-assert:
 	$(NPM) -s run test -- packages/api-entry-node/src/index.test.ts -t "AGENT_SANDBOX_NOT_CONFIGURED for internal agent"
-
-notebook-agent-demo-restart-runner:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	DEMO_START_API=0 DEMO_START_WEB=0 DEMO_REFRESH_TOKEN=0 DEMO_INIT_RESOURCES=0 DEMO_START_RUNNER=1 \
-	./scripts/notebook-agent-demo-up.sh
 
 notebook-agent-smoke-task:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -808,36 +762,8 @@ notebook-agent-engineering-smoke:
 
 notebook-agent-engineering-smoke-full:
 	@set -e; \
-	echo "[make] running demo readiness check..."; \
-	set +e; \
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-		./scripts/notebook-agent-demo-check.sh; \
-	CHECK_RC=$$?; \
-	set -e; \
-	if [ "$$CHECK_RC" -eq 75 ]; then \
-		echo "[make] demo-check reported recoverable missing demo resources without GLM_API_KEY; skipping notebook engineering smoke."; \
-		exit 0; \
-	fi; \
-	if [ "$$CHECK_RC" -ne 0 ]; then \
-		echo "[make] demo-check failed; attempting full demo self-heal (start/recover api+web+runner+token/resources)..."; \
-		if [ -n "$(GLM_API_KEY)" ]; then \
-			$(MAKE) notebook-agent-demo-up; \
-		else \
-			DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
-		fi; \
-		set +e; \
-		env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-			./scripts/notebook-agent-demo-check.sh; \
-		CHECK_RC=$$?; \
-		set -e; \
-		if [ "$$CHECK_RC" -eq 75 ]; then \
-			echo "[make] demo-check still reports recoverable missing demo resources without GLM_API_KEY; skipping notebook engineering smoke."; \
-			exit 0; \
-		fi; \
-		if [ "$$CHECK_RC" -ne 0 ]; then \
-			exit "$$CHECK_RC"; \
-		fi; \
-	fi; \
+	echo "[make] checking real dev stack status..."; \
+	$(MAKE) dev-real-status; \
 	echo "[make] running engineering smoke bundle..."; \
 	$(MAKE) notebook-agent-engineering-smoke
 
@@ -919,36 +845,15 @@ governance-sse-ticket-effect-smoke:
 
 governance-smoke:
 	@set -e; \
-	echo "[make] governance smoke preflight: restart managed API/Web in real-backend mode (MSW off)..."; \
-	$(MAKE) notebook-agent-demo-down >/dev/null 2>&1 || true; \
-	for port in 20000 3001; do \
-		if command -v lsof >/dev/null 2>&1; then \
-			pids="$$(lsof -tiTCP:$$port -sTCP:LISTEN -Pn 2>/dev/null || true)"; \
-			if [ -n "$$pids" ]; then \
-				echo "[make] governance preflight: killing stale listener(s) on :$$port ($$pids)"; \
-				kill $$pids >/dev/null 2>&1 || true; \
-				sleep 1; \
-				kill -9 $$pids >/dev/null 2>&1 || true; \
-			fi; \
-			fi; \
-		done; \
-	DEMO_CHECK_RC=0; \
-	DEMO_ALLOW_MISSING_EXECUTION_METADATA=1 DEMO_INIT_RESOURCES=0 DEMO_START_RUNNER=0 $(MAKE) notebook-agent-demo-up; \
-	if ! DEMO_REQUIRE_RUNNER=0 ./scripts/notebook-agent-demo-check.sh; then \
-		DEMO_CHECK_RC=$$?; \
-		if [ "$$DEMO_CHECK_RC" -eq 75 ]; then \
-			echo "[make] governance smoke preflight: demo metadata is recoverably unavailable; governance demo checks will be skipped if needed"; \
-		else \
-			exit "$$DEMO_CHECK_RC"; \
-		fi; \
-	fi; \
+	echo "[make] governance smoke preflight: require real dev platform to be up"; \
+	$(MAKE) dev-real-status; \
 	run_with_token_retry() { \
 		STEP_NAME="$$1"; \
 		if ! $(MAKE) "$$STEP_NAME"; then \
 			echo "[make] $$STEP_NAME failed; attempting token refresh and retry once"; \
 			if ! BASE_URL="$${BASE_URL:-http://localhost:3001}" REFRESH_TOKEN_READ_APP_SESSION=0 $(MAKE) notebook-agent-refresh-token; then \
-				echo "[make] token refresh failed; attempting full demo self-heal before retry ($$STEP_NAME)"; \
-				DEMO_INIT_RESOURCES=0 $(MAKE) notebook-agent-demo-up; \
+				echo "[make] token refresh failed while retrying $$STEP_NAME"; \
+				exit 1; \
 			fi; \
 			$(MAKE) "$$STEP_NAME"; \
 		fi; \
@@ -964,11 +869,7 @@ governance-smoke:
 	run_with_token_retry governance-policy-spending-effect-smoke; \
 	run_with_token_retry governance-policy-requests-rate-effect-smoke; \
 	run_with_token_retry governance-member-lifecycle-effect-smoke; \
-	if [ "$$DEMO_CHECK_RC" -eq 75 ]; then \
-		echo "[make] skipping governance-sse-ticket-effect-smoke because demo execution metadata is unavailable and GLM_API_KEY is not set"; \
-	else \
-		run_with_token_retry governance-sse-ticket-effect-smoke; \
-	fi; \
+	run_with_token_retry governance-sse-ticket-effect-smoke; \
 	if [ -n "$${GOVERNANCE_EVIDENCE_PATH:-}" ]; then \
 		node ./scripts/write-governance-evidence.js "$${GOVERNANCE_EVIDENCE_PATH}"; \
 	fi

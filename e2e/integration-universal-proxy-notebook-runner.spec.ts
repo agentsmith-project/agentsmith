@@ -5,12 +5,12 @@ import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
-  GLM_BASE_URL,
-  GLM_MODEL,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
-  OPENAI_COMPAT_BASE_URL,
-  OPENAI_COMPAT_MODEL,
+  REAL_LANE_ANTHROPIC_BASE_URL,
+  REAL_LANE_MODEL,
+  REAL_LANE_OPENAI_BASE_URL,
+  REAL_LANE_OPENAI_MODEL,
   startCodexRunnerProcess,
 } from './integration-real-helpers';
 
@@ -20,10 +20,10 @@ type UpstreamServer = {
   requests?: Array<Record<string, unknown>>;
 };
 
-function requireGlmApiKey(): string {
-  const value = process.env.GLM_API_KEY?.trim();
+function requireRealLaneApiKey(): string {
+  const value = process.env.REAL_LANE_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_GLM_API_KEY');
+    throw new Error('missing_REAL_LANE_API_KEY');
   }
   return value;
 }
@@ -666,7 +666,7 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
 test.describe('@lane-real notebook runner real upstream stability via universal proxy', () => {
   test('completes long multi-turn notebook tasks for openai-compatible and anthropic-compatible upstreams', async ({ page }) => {
     test.setTimeout(1_200_000);
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
     const token = await issueDevToken(page);
     const projectId = await createProjectViaApi(page, token, `it-upx-notebook-real-${Date.now()}`);
     const credential = await createCredentialViaApi(page, token, projectId, glmApiKey);
@@ -675,15 +675,15 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
       {
         kind: 'openai' as const,
         protocol: 'openai_compatible' as const,
-        baseUrl: OPENAI_COMPAT_BASE_URL,
-        model: OPENAI_COMPAT_MODEL,
+        baseUrl: REAL_LANE_OPENAI_BASE_URL,
+        model: REAL_LANE_OPENAI_MODEL,
         expectedCompactLimit: 121600,
       },
       {
         kind: 'anthropic' as const,
         protocol: 'anthropic_compatible' as const,
-        baseUrl: GLM_BASE_URL,
-        model: GLM_MODEL,
+        baseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
+        model: REAL_LANE_MODEL,
         expectedCompactLimit: 121600,
       },
     ];

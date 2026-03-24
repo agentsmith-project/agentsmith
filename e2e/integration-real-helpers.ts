@@ -7,26 +7,18 @@ import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './inte
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
-export const GLM_BASE_URL =
-  process.env.INTEGRATION_MINIMAX_CLAUDE_URL
-  ?? process.env.INTEGRATION_GLM_BASE_URL
-  ?? process.env.MINIMAX_CLAUDE_URL
-  ?? 'https://open.bigmodel.cn/api/anthropic';
-export const GLM_MODEL =
-  process.env.INTEGRATION_MODEL_NAME
-  ?? process.env.INTEGRATION_GLM_MODEL
-  ?? process.env.MODEL_NAME
-  ?? 'GLM-5';
-export const OPENAI_COMPAT_BASE_URL =
-  process.env.INTEGRATION_MINIMAX_OPENAI_URL ??
-  process.env.INTEGRATION_OPENAI_COMPAT_BASE_URL ??
-  process.env.OPENAI_URL_CODING_PLAN ??
-  'https://open.bigmodel.cn/api/coding/paas/v4';
-export const OPENAI_COMPAT_MODEL =
-  process.env.INTEGRATION_MODEL_NAME ??
-  process.env.INTEGRATION_OPENAI_COMPAT_MODEL ??
-  process.env.OPENAI_MODEL_CODING_PLAN ??
-  'glm-5-turbo';
+export const REAL_LANE_ANTHROPIC_BASE_URL =
+  process.env.REAL_LANE_ANTHROPIC_BASE_URL ??
+  'https://api.minimaxi.com/anthropic/v1';
+export const REAL_LANE_MODEL =
+  process.env.REAL_LANE_MODEL ??
+  'MiniMax-M2.7-highspeed';
+export const REAL_LANE_OPENAI_BASE_URL =
+  process.env.REAL_LANE_OPENAI_BASE_URL ??
+  'https://api.minimaxi.com/v1';
+export const REAL_LANE_OPENAI_MODEL =
+  process.env.REAL_LANE_OPENAI_MODEL ??
+  REAL_LANE_MODEL;
 export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 'http://192.168.0.210:8889';
 export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
@@ -404,12 +396,12 @@ export async function createExternalCodexAgentBundle(
           chat: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: GLM_MODEL,
+            model: REAL_LANE_MODEL,
           },
           notebook: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: GLM_MODEL,
+            model: REAL_LANE_MODEL,
           },
         },
         capabilities: {
@@ -456,7 +448,7 @@ export async function createExternalCodexAgentBundle(
       },
       data: {
         title: args.title,
-        model: args.sessionModel ?? GLM_MODEL,
+        model: args.sessionModel ?? REAL_LANE_MODEL,
         external_agent_id: createdAgent.id,
       },
     },
@@ -500,7 +492,7 @@ export async function createInternalCodexAgent(
           notebook: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: GLM_MODEL,
+            model: REAL_LANE_MODEL,
           },
         },
         config: {

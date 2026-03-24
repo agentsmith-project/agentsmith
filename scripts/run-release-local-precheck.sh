@@ -15,9 +15,9 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set +a
 fi
 
-GLM_API_KEY_VALUE="${GLM_API_KEY:-}"
-if [[ -z "${GLM_API_KEY_VALUE}" ]]; then
-  echo "[release-local-precheck] Missing GLM_API_KEY." >&2
+REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
+if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
+  echo "[release-local-precheck] Missing REAL_LANE_API_KEY." >&2
   exit 1
 fi
 
@@ -318,10 +318,10 @@ info "running system admin entry, workspace public/login truth, workspace entry,
 
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
-GLM_APIKEY="${GLM_API_KEY_VALUE}" \
-CLAUDE_URL="${CLAUDE_URL:-https://api.minimaxi.com/anthropic/v1}" \
-OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://api.minimaxi.com/v1}" \
-INTEGRATION_GLM_MODEL="${INTEGRATION_GLM_MODEL:-MiniMax-M2.7-highspeed}" \
+REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" \
+REAL_LANE_ANTHROPIC_BASE_URL="${REAL_LANE_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}" \
+REAL_LANE_OPENAI_BASE_URL="${REAL_LANE_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}" \
+REAL_LANE_MODEL="${REAL_LANE_MODEL:-MiniMax-M2.7-highspeed}" \
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
 KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \

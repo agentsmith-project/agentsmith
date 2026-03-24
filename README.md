@@ -75,7 +75,7 @@ make notebook-agent-no-sandbox-smoke
 ```
 
 This validates the required behavior for MVP deployment without sandbox:
-- mainline API/Web/Runner path is healthy (`notebook-agent-demo-check`)
+- mainline API/Web/Runner path is healthy (`make dev-real-status`)
 - internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
 ### Quality Gates

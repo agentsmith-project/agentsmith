@@ -16,7 +16,7 @@ KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-40}"
 GROUP_PERMISSION_TEMPLATE_ID="${GROUP_PERMISSION_TEMPLATE_ID:-perm_tpl_default}"
-GLM_MODEL="${GLM_MODEL:-GLM-5}"
+REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
 
 info() { echo "[gov-policy-group-smoke] $*"; }
 err() { echo "[gov-policy-group-smoke] ERROR: $*" >&2; }
@@ -158,7 +158,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group deny smoke"}]}))' "${GLM_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group deny smoke"}]}))' "${REAL_LANE_MODEL}")" || true
   )"
   if [[ "${deny_code}" != "403" ]]; then
     err "expected 403 on deny policy, got HTTP ${deny_code}"
@@ -258,7 +258,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group allow smoke"}]}))' "${GLM_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group allow smoke"}]}))' "${REAL_LANE_MODEL}")" || true
   )"
   if [[ "${allow_code}" == "403" ]]; then
     err "group allow-list did not clear deny (still 403)"

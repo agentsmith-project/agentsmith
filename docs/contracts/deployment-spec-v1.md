@@ -190,10 +190,10 @@ Preset workspace admin and project creator identities are selected by stable use
 - `MBOS_DEMO_OPENAI_ENDPOINT_NAME`
 - `MBOS_DEMO_EXTERNAL_AGENT_NAME`
 - `MBOS_DEMO_INTERNAL_AGENT_NAME`
-- `GLM_APIKEY`
-- `CLAUDE_URL`
-- `OPENAI_URL_CODING_PLAN`
-- `GLM_MODEL`
+- `DEPLOY_ENDPOINT_API_KEY`
+- `DEPLOY_ANTHROPIC_BASE_URL`
+- `DEPLOY_OPENAI_BASE_URL`
+- `DEPLOY_ENDPOINT_MODEL`
 
 All deployment configuration keys must be declared in `env/site.env`. Generated service env files derive container-specific and runtime-specific values such as `DATABASE_URL`, `MONGO_URL`, `KEYCLOAK_ISSUER_URL`, `MBOS_API_BASE`, `NEXT_PUBLIC_API_BASE`, execution host URLs, and JuiceFS internal overrides. Deployment-specific defaults belong in `site.env`; runtime-derived host identities belong in the formal runtime address resolution step, not hidden in deploy-time sed rewrites.
 

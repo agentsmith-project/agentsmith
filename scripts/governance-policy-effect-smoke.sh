@@ -14,7 +14,7 @@ ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
-GLM_MODEL="${GLM_MODEL:-GLM-5}"
+REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
 
 info() { echo "[gov-policy-smoke] $*"; }
 err() { echo "[gov-policy-smoke] ERROR: $*" >&2; }
@@ -114,7 +114,7 @@ main() {
   curl -sS -o "${endpoints_list_file}" \
     "${base}/endpoints" \
     -H "Authorization: Bearer ${token}" || true
-  for candidate_model in "${endpoint_model}" "${GLM_MODEL}" "GLM-5" "glm-5" "glm-4.6v-flash" "glm-4.6" "glm-4-plus" "glm-4.5-air"; do
+  for candidate_model in "${endpoint_model}" "${REAL_LANE_MODEL}"; do
     local model_in_use
     model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
     if [[ "${model_in_use}" == "1" ]]; then

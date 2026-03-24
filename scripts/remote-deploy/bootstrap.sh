@@ -15,10 +15,10 @@ load_release_env
 API_BASE="${PUBLIC_API_BASE_URL:-${API_BASE:-http://localhost:20000}}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}"
 INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-http://keycloak:8080}"
-GLM_APIKEY="${GLM_APIKEY:-}"
-CLAUDE_URL="${CLAUDE_URL:-https://api.minimaxi.com/anthropic/v1}"
-OPENAI_URL_CODING_PLAN="${OPENAI_URL_CODING_PLAN:-https://api.minimaxi.com/v1}"
-GLM_MODEL="${GLM_MODEL:-MiniMax-M2.7-highspeed}"
+DEPLOY_ENDPOINT_API_KEY="${DEPLOY_ENDPOINT_API_KEY:-}"
+DEPLOY_ANTHROPIC_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
+DEPLOY_OPENAI_BASE_URL="${DEPLOY_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}"
+DEPLOY_ENDPOINT_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
 DEMO_ENDPOINT_TIMEOUT_SECONDS="${MBOS_DEMO_ENDPOINT_TIMEOUT_SECONDS:-900}"
 DEMO_MODEL_CONTEXT_TOKENS="${MBOS_DEMO_MODEL_CONTEXT_TOKENS:-204800}"
 DEMO_MODEL_MAX_OUTPUT_TOKENS="${MBOS_DEMO_MODEL_MAX_OUTPUT_TOKENS:-8192}"
@@ -31,7 +31,7 @@ DEMO_OPENAI_ENDPOINT_NAME="${MBOS_DEMO_OPENAI_ENDPOINT_NAME:-minimax-openai-demo
 DEMO_EXTERNAL_AGENT_NAME="${MBOS_DEMO_EXTERNAL_AGENT_NAME:-demo-external-agent}"
 DEMO_INTERNAL_AGENT_NAME="${MBOS_DEMO_INTERNAL_AGENT_NAME:-demo-internal-agent}"
 
-[[ -n "${GLM_APIKEY}" ]] || die "missing GLM_APIKEY"
+[[ -n "${DEPLOY_ENDPOINT_API_KEY}" ]] || die "missing DEPLOY_ENDPOINT_API_KEY"
 
 docker_compose exec -T postgres bash -lc '
   set -euo pipefail
@@ -96,7 +96,7 @@ if [[ -z "${CREDENTIAL_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/credentials" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:"api_key", value:process.argv[1]}))' "${GLM_APIKEY}" "${DEMO_CREDENTIAL_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:"api_key", value:process.argv[1]}))' "${DEPLOY_ENDPOINT_API_KEY}" "${DEMO_CREDENTIAL_NAME}")"
   )"
   CREDENTIAL_ID="$(printf '%s' "${credential_resp}" | json_extract id)"
 fi
@@ -111,7 +111,7 @@ if [[ -z "${ANTHROPIC_ENDPOINT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/endpoints" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:"anthropic_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${CLAUDE_URL}" "${GLM_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:"anthropic_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${DEPLOY_ANTHROPIC_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
   )"
   ANTHROPIC_ENDPOINT_ID="$(printf '%s' "${anthropic_endpoint_resp}" | json_extract id)"
 fi
@@ -131,7 +131,7 @@ if [[ -z "${EXTERNAL_AGENT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/agents" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${GLM_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
   )"
   EXTERNAL_AGENT_ID="$(printf '%s' "${external_agent_resp}" | json_extract id)"
 fi
@@ -164,7 +164,7 @@ if [[ -z "${OPENAI_ENDPOINT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/endpoints" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:"openai_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${OPENAI_URL_CODING_PLAN}" "${GLM_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:"openai_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${DEPLOY_OPENAI_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
   )"
   OPENAI_ENDPOINT_ID="$(printf '%s' "${openai_endpoint_resp}" | json_extract id)"
 fi
@@ -180,7 +180,7 @@ if [[ -z "${INTERNAL_AGENT_ID}" ]]; then
     curl -sS -X POST "${PROJECT_BASE}/agents" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], mode:"internal", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}, capabilities:{streaming_completion:true}}))' "${OPENAI_ENDPOINT_ID}" "${GLM_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${DEMO_INTERNAL_AGENT_NAME}")"
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], mode:"internal", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}, capabilities:{streaming_completion:true}}))' "${OPENAI_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${DEMO_INTERNAL_AGENT_NAME}")"
   )"
   INTERNAL_AGENT_ID="$(printf '%s' "${internal_agent_resp}" | json_extract id)"
 fi

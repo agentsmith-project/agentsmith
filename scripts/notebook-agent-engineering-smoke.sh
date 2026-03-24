@@ -11,7 +11,7 @@ PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
-GLM_MODEL="${GLM_MODEL:-GLM-5}"
+REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
 RUN_CREDENTIAL_SYNC_SMOKE="${RUN_CREDENTIAL_SYNC_SMOKE:-1}"
@@ -43,7 +43,7 @@ proxy_precheck_status() {
     -X POST "${url}" \
     -H "Authorization: Bearer ${token}" \
     -H 'Content-Type: application/json' \
-    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"engineering smoke precheck"}]}))' "${GLM_MODEL}")" || true
+    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"engineering smoke precheck"}]}))' "${REAL_LANE_MODEL}")" || true
 }
 
 wait_proxy_ready() {

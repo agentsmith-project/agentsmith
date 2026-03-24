@@ -98,7 +98,7 @@ const FAILURE_PATTERNS: FailurePattern[] = [
     priority: 100,
     steps: [
       '1. Check API logs: `tail -100 artifacts/real-lane/current/demo/api.log`',
-      '2. Check backend status: `make notebook-agent-demo-status`',
+      '2. Check backend status: `make dev-real-status`',
       '3. Verify database is running: `docker ps | grep postgres`',
       '4. Verify Redis is running: `docker ps | grep redis`',
       '5. Check database connectivity: `npm run integration:deps:smoke`',
@@ -173,7 +173,7 @@ const FAILURE_PATTERNS: FailurePattern[] = [
     steps: [
       '1. Check if token has expired (tokens typically expire after 1 hour)',
       '2. Run: `make notebook-agent-refresh-token`',
-      '3. If refresh fails, check Keycloak is running: `make notebook-agent-demo-status`',
+      '3. If refresh fails, check Keycloak is running: `make dev-real-status`',
       '4. Verify environment variables: KEYCLOAK_URL, KEYCLOAK_REALM, KEYCLOAK_CLIENT_ID',
       '5. Check token file: `cat artifacts/real-lane/current/token.txt`',
     ],
@@ -199,11 +199,11 @@ const FAILURE_PATTERNS: FailurePattern[] = [
       /socket\s+error/i,
       /fetch\s+failed/i,
     ],
-    recommendation: 'Network issue: Check services are running (`make notebook-agent-demo-status`).',
+    recommendation: 'Network issue: Check services are running (`make dev-real-status`).',
     documentationLink: '/docs/troubleshooting-guide-v1.md#network-issues',
     priority: 90,  // Higher than timeout
     steps: [
-      '1. Check service status: `make notebook-agent-demo-status`',
+      '1. Check service status: `make dev-real-status`',
       '2. Verify API_BASE is correct: http://localhost:20000',
       '3. Verify BASE_URL is correct: http://localhost:3001',
       '4. Check if ports are in use: `lsof -i :20000 -i :3001`',

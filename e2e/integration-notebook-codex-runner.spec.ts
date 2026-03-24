@@ -2,11 +2,11 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
-  GLM_BASE_URL,
-  GLM_MODEL,
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  REAL_LANE_ANTHROPIC_BASE_URL,
+  REAL_LANE_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
   createExternalCodexAgentBundle,
@@ -20,10 +20,10 @@ import {
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
-function requireGlmApiKey(): string {
-  const value = process.env.GLM_API_KEY?.trim();
+function requireRealLaneApiKey(): string {
+  const value = process.env.REAL_LANE_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_GLM_API_KEY');
+    throw new Error('missing_REAL_LANE_API_KEY');
   }
   return value;
 }
@@ -102,7 +102,7 @@ async function openFolderByName(page: Page, name: string): Promise<void> {
 test.describe('@lane-real notebook external agent via real codex runner', () => {
   test('runs a notebook task and keeps the mounted workspace consistent across runner, Files UI, and local mount', async ({ page }) => {
     test.setTimeout(720_000);
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook');
@@ -112,8 +112,8 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Endpoint ${Date.now()}`,
-      endpointModel: GLM_MODEL,
-      upstreamBaseUrl: GLM_BASE_URL,
+      endpointModel: REAL_LANE_MODEL,
+      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalCodexAgentBundle(page, {
@@ -256,7 +256,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
 
   test('runs a notebook task through docker runner with the same mounted workspace semantics', async ({ page }) => {
     test.setTimeout(900_000);
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Docker Notebook');
@@ -266,8 +266,8 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Docker Endpoint ${Date.now()}`,
-      endpointModel: GLM_MODEL,
-      upstreamBaseUrl: GLM_BASE_URL,
+      endpointModel: REAL_LANE_MODEL,
+      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalCodexAgentBundle(page, {

@@ -5,15 +5,15 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-GLM_API_KEY_VALUE="${GLM_API_KEY:-}"
+REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
 API_PORT="${INTEGRATION_API_PORT:-20060}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3061}"
 API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-real-mainline.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-real-mainline.log}"
 
-if [[ -z "${GLM_API_KEY_VALUE}" ]]; then
-  echo "[real-mainline-gate] Missing GLM_API_KEY." >&2
-  echo "[real-mainline-gate] Export GLM_API_KEY before running this gate." >&2
+if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
+  echo "[real-mainline-gate] Missing REAL_LANE_API_KEY." >&2
+  echo "[real-mainline-gate] Export REAL_LANE_API_KEY before running this gate." >&2
   exit 1
 fi
 
@@ -44,7 +44,7 @@ info "real lane logs will be written to:"
 info "  API: ${API_LOG}"
 info "  Web: ${WEB_LOG}"
 
-run_cmd "GLM_API_KEY='${GLM_API_KEY_VALUE}' \
+run_cmd "REAL_LANE_API_KEY='${REAL_LANE_API_KEY_VALUE}' \
 INTEGRATION_API_PORT='${API_PORT}' \
 INTEGRATION_WEB_PORT='${WEB_PORT}' \
 INTEGRATION_API_LOG='${API_LOG}' \

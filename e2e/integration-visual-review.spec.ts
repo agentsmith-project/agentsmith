@@ -14,9 +14,9 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const GLM_BASE_URL = process.env.INTEGRATION_GLM_BASE_URL ?? 'https://open.bigmodel.cn/api/anthropic';
-const GLM_MODEL = process.env.INTEGRATION_GLM_MODEL ?? 'GLM-5';
-const GLM_API_KEY = process.env.GLM_API_KEY;
+const REAL_LANE_ANTHROPIC_BASE_URL = process.env.REAL_LANE_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
+const REAL_LANE_MODEL = process.env.REAL_LANE_MODEL ?? 'MiniMax-M2.7-highspeed';
+const REAL_LANE_API_KEY = process.env.REAL_LANE_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
 const PROJECT_CREATOR_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
@@ -63,11 +63,11 @@ type ProjectContext = {
   projectName: string;
 };
 
-function requireGlmApiKey(): string {
-  if (!GLM_API_KEY?.trim()) {
-    throw new Error('missing_GLM_API_KEY');
+function requireRealLaneApiKey(): string {
+  if (!REAL_LANE_API_KEY?.trim()) {
+    throw new Error('missing_REAL_LANE_API_KEY');
   }
-  return GLM_API_KEY.trim();
+  return REAL_LANE_API_KEY.trim();
 }
 
 async function ensureArtifactDir() {
@@ -471,10 +471,10 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await expect(wizard).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-name-input').fill(endpointName);
   await wizard.getByTestId('protocol-anthropic_compatible').click();
-  await wizard.getByTestId('wizard-base-url-input').fill(GLM_BASE_URL);
+  await wizard.getByTestId('wizard-base-url-input').fill(REAL_LANE_ANTHROPIC_BASE_URL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible({ timeout: 30_000 });
-  await wizard.getByTestId('wizard-model-id-input').fill(GLM_MODEL);
+  await wizard.getByTestId('wizard-model-id-input').fill(REAL_LANE_MODEL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-check-button')).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-check-button').click();
@@ -869,7 +869,7 @@ test.describe('@lane-real integration visual review', () => {
     test.setTimeout(900_000);
     const captures: CaptureEntry[] = [];
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
 
     await gotoWithRetry(page, `/${LOCALE}/system/login`);
     await settlePage(page);

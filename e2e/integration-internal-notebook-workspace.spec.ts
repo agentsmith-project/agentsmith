@@ -3,11 +3,11 @@ import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
   API_BASE,
-  GLM_BASE_URL,
-  GLM_MODEL,
   INTERNAL_AGENT_IMAGE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
+  REAL_LANE_ANTHROPIC_BASE_URL,
+  REAL_LANE_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
   createFileLibraryViaUi,
@@ -42,10 +42,10 @@ function requireInternalSandboxEnv(): void {
   }
 }
 
-function requireGlmApiKey(): string {
-  const value = process.env.GLM_API_KEY?.trim();
+function requireRealLaneApiKey(): string {
+  const value = process.env.REAL_LANE_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_GLM_API_KEY');
+    throw new Error('missing_REAL_LANE_API_KEY');
   }
   return value;
 }
@@ -252,7 +252,7 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
   test('lazy-starts an internal agent, writes into /workspace, and resumes after workload reclaim', async ({ page }) => {
     test.setTimeout(900_000);
     requireInternalSandboxEnv();
-    const glmApiKey = requireGlmApiKey();
+    const glmApiKey = requireRealLaneApiKey();
     const captures: CaptureEntry[] = [];
 
     console.log('[internal-real] login');
@@ -268,8 +268,8 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     console.log('[internal-real] create endpoint');
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Endpoint ${Date.now()}`,
-      endpointModel: GLM_MODEL,
-      upstreamBaseUrl: GLM_BASE_URL,
+      endpointModel: REAL_LANE_MODEL,
+      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
       credentialName,
     });
     console.log('[internal-real] create internal agent');

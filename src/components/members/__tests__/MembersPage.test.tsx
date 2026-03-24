@@ -137,4 +137,13 @@ describe('MembersPage', () => {
 
     expect(screen.getByTestId('members__invite-btn')).toBeDisabled();
   });
+
+  it('hides join requests tab when the actor cannot manage member governance', () => {
+    mockUseCanManageMemberGovernance.mockReturnValue(false);
+
+    render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
+
+    expect(screen.queryByText('tabs.requests')).not.toBeInTheDocument();
+    expect(mockUseJoinRequests).toHaveBeenCalledWith('ws_1', 'proj_1', { enabled: false });
+  });
 });

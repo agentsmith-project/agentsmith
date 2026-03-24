@@ -1491,7 +1491,7 @@
     "governance_save_confirm_body": "更改可能影响活跃会话 (403/429/队列)。确定继续？",
     "governance_save_confirm_action": "确认并保存",
     "token_reference_title": "支持的 token",
-    "general_help": "项目基础元数据。可见性与加入策略控制谁可查看和加入项目。",
+    "general_help": "项目基础元数据。公开项目会出现在工作区项目目录中，加入策略则决定工作区成员可以直接加入还是需要审批。",
     "general_read_only_help": "修改项目元数据、可见性和加入策略需要项目生命周期权限。",
     "execution_preferences_help": "智能体执行偏好。智能体可在智能体级别覆盖这些值。更改会在智能体下次获取配置时生效。",
     "admin_group_title": "项目管理员分组",
@@ -2364,8 +2364,17 @@
     },
     "join_request": {
       "action": "申请加入",
+      "join_now": "加入项目",
+      "joining": "加入中...",
       "pending": "申请已提交",
-      "success": "加入申请已提交，等待项目 owner 或项目管理员审核。"
+      "success": "加入申请已提交，等待项目 owner 或项目管理员审核。",
+      "joined_success": "已成功加入项目。",
+      "confirm_title": "要申请加入这个项目吗？",
+      "confirm_description": "你还不是 {project} 的成员，现在发送加入申请吗？",
+      "join_now_title": "要加入这个项目吗？",
+      "join_now_description": "{project} 对工作区成员开放，可直接加入后继续。",
+      "pending_description": "你对 {project} 的加入申请正在等待审核。",
+      "cancel": "取消"
     },
     "delete_confirm_title": "删除项目",
     "delete_confirm_message": "确定要删除此项目吗？此操作不可撤销。"

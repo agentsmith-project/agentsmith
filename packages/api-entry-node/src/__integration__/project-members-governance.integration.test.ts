@@ -74,7 +74,7 @@ describe('api-entry-node project members governance routes', () => {
     expect(membership.permissions).toContain('project:membership:update');
   });
 
-  it('forbids non-owner project access when actor is not a project member', async () => {
+  it('returns not found for private projects when actor is not an active member', async () => {
     const deps = createDefaultNodeApiDeps();
     const created = await deps.createProjectUseCase.execute({
       workspaceId: 'ws_default',
@@ -88,23 +88,21 @@ describe('api-entry-node project members governance routes', () => {
     const { baseUrl } = startServerWithDeps(deps);
 
     const getRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`);
-    expect(getRes.status).toBe(403);
+    expect(getRes.status).toBe(404);
     const got = (await getRes.json()) as {
       error_code: string;
-      missing_permissions?: string[];
     };
-    expect(got.error_code).toBe('FORBIDDEN');
-    expect(got.missing_permissions).toContain('project:endpoint:use');
+    expect(got.error_code).toBe('RESOURCE_NOT_FOUND');
   });
 
-  it('allows plain workspace users to create join requests without member governance permission', async () => {
+  it('allows plain workspace users to create join requests for public approval-required projects without member governance permission', async () => {
     const deps = createDefaultNodeApiDeps();
     const project = await deps.createProjectUseCase.execute({
       workspaceId: 'ws_default',
       actorId: 'user_owner',
       input: {
         name: 'Joinable Project',
-        visibility: 'private',
+        visibility: 'public',
         join_policy: 'approval_required',
       },
     });
@@ -140,6 +138,218 @@ describe('api-entry-node project members governance routes', () => {
         }),
       ]),
     );
+  });
+
+  it('rejects self-service join requests for private projects', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Private Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests`,
+      'member-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'need access' }),
+      },
+    );
+    expect(createRes.status).toBe(403);
+    await expect(createRes.json()).resolves.toEqual({
+      error_code: 'PERMISSION_DENIED',
+      message: 'project_join_requires_public_visibility',
+    });
+  });
+
+  it('does not expose private projects in the regular project directory for non-members', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const privateProject = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Private Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const publicProject = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Public Project',
+        visibility: 'public',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const listRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'member-token');
+    expect(listRes.status).toBe(200);
+    const listBody = (await listRes.json()) as { items: Array<{ id: string }> };
+    expect(listBody.items.map((item) => item.id)).toContain(publicProject.id);
+    expect(listBody.items.map((item) => item.id)).not.toContain(privateProject.id);
+  });
+
+  it('allows non-members to read public project metadata while returning empty permissions', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Discoverable Project',
+        visibility: 'public',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const getRes = await apiFetchWithToken(baseUrl, `/api/v1/workspaces/ws_default/projects/${project.id}`, 'member-token');
+    expect(getRes.status).toBe(200);
+    const payload = (await getRes.json()) as { id: string; visibility: string; permissions: string[] };
+    expect(payload.id).toBe(project.id);
+    expect(payload.visibility).toBe('public');
+    expect(payload.permissions).toEqual([]);
+  });
+
+  it('writes user notifications when join requests are approved or rejected', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Notified Project',
+        visibility: 'public',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests`,
+      'member-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'need access' }),
+      },
+    );
+    expect(createRes.status).toBe(201);
+    const createdBody = (await createRes.json()) as { outcome: string; join_request_id?: string };
+    expect(createdBody.outcome).toBe('pending');
+    expect(createdBody.join_request_id).toBeTruthy();
+
+    const approveRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests/${createdBody.join_request_id}/approve`,
+      'owner-token',
+      { method: 'POST' },
+    );
+    expect(approveRes.status).toBe(204);
+
+    const notificationsAfterApprove = await apiFetchWithToken(baseUrl, '/api/v1/me/notifications', 'member-token');
+    expect(notificationsAfterApprove.status).toBe(200);
+    const approvedPayload = (await notificationsAfterApprove.json()) as {
+      items: Array<{ type: string; title: string; link_url?: string | null }>;
+    };
+    expect(approvedPayload.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'join_request_approved',
+          link_url: `/workspaces/ws_default/projects/${project.id}/overview`,
+        }),
+      ]),
+    );
+
+    const secondProject = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Rejected Project',
+        visibility: 'public',
+        join_policy: 'approval_required',
+      },
+    });
+    const secondCreateRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${secondProject.id}/join-requests`,
+      'alt-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'let me in' }),
+      },
+    );
+    expect(secondCreateRes.status).toBe(201);
+    const secondBody = (await secondCreateRes.json()) as { join_request_id?: string };
+
+    const rejectRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${secondProject.id}/join-requests/${secondBody.join_request_id}/reject`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ reason: 'not in scope' }),
+      },
+    );
+    expect(rejectRes.status).toBe(204);
+
+    const notificationsAfterReject = await apiFetchWithToken(baseUrl, '/api/v1/me/notifications', 'alt-token');
+    expect(notificationsAfterReject.status).toBe(200);
+    const rejectedPayload = (await notificationsAfterReject.json()) as {
+      items: Array<{ type: string; title: string; body?: string | null; link_url?: string | null }>;
+    };
+    expect(rejectedPayload.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: 'join_request_rejected',
+          link_url: '/workspaces/ws_default/projects',
+        }),
+      ]),
+    );
+    expect(rejectedPayload.items.some((item) => item.body?.includes('not in scope'))).toBe(true);
+  });
+
+  it('lets workspace members directly join public open projects', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Open Project',
+        visibility: 'public',
+        join_policy: 'open',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const joinRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests`,
+      'member-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(joinRes.status).toBe(201);
+    await expect(joinRes.json()).resolves.toEqual({ outcome: 'joined', membership_status: 'active' });
+
+    const projectRes = await apiFetchWithToken(baseUrl, `/api/v1/workspaces/ws_default/projects/${project.id}`, 'member-token');
+    expect(projectRes.status).toBe(200);
+    const projectBody = (await projectRes.json()) as { permissions: string[] };
+    expect(projectBody.permissions).toContain('project:endpoint:use');
   });
 
   it('supports minimal project members governance write endpoints', async () => {

@@ -4,6 +4,7 @@ import {
 } from '@mbos/contracts';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import {
+  canActorDiscoverProject,
   resolveVisibleProjectPermissionsForActor,
 } from './project-authz-engine.js';
 import type { ProjectRouteContext } from './project-route-types.js';
@@ -45,20 +46,34 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
   if (route.kind === 'collection' && method === 'GET' && route.workspaceId) {
     const workspaceId = route.workspaceId;
     const listed = await deps.listProjectsUseCase.execute(route.workspaceId);
-    const items = await Promise.all(listed.items.map(async (item) => ({
-      ...item,
-      admin_member_ids: await readProjectAdminMemberIds(deps, workspaceId, item.id, item.owner_id),
-      permissions: [
-        ...await resolveVisibleProjectPermissionsForActor({
-          docStore: deps.docStore,
-          workspaceId,
-          projectId: item.id,
-          projectOwnerId: item.owner_id,
-          projectGovernance: item.governance_json,
-          actorUserId: user.id,
-        }),
-      ],
-    })));
+    const visibleItems = await Promise.all(listed.items.map(async (item) => {
+      const discoverable = await canActorDiscoverProject({
+        docStore: deps.docStore,
+        workspaceId,
+        projectId: item.id,
+        projectOwnerId: item.owner_id,
+        projectVisibility: item.visibility,
+        actorUserId: user.id,
+      });
+      if (!discoverable) {
+        return null;
+      }
+      return {
+        ...item,
+        admin_member_ids: await readProjectAdminMemberIds(deps, workspaceId, item.id, item.owner_id),
+        permissions: [
+          ...await resolveVisibleProjectPermissionsForActor({
+            docStore: deps.docStore,
+            workspaceId,
+            projectId: item.id,
+            projectOwnerId: item.owner_id,
+            projectGovernance: item.governance_json,
+            actorUserId: user.id,
+          }),
+        ],
+      };
+    }));
+    const items = visibleItems.filter((item) => item !== null);
     json(res, 200, {
       items,
     });
@@ -119,6 +134,18 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
       workspaceId: route.workspaceId,
       projectId: route.projectId,
     });
+    const discoverable = await canActorDiscoverProject({
+      docStore: deps.docStore,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      projectOwnerId: found.owner_id,
+      projectVisibility: found.visibility,
+      actorUserId: user.id,
+    });
+    if (!discoverable) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'project_not_found' });
+      return true;
+    }
     json(res, 200, {
       ...found,
       admin_member_ids: await readProjectAdminMemberIds(deps, route.workspaceId, route.projectId, found.owner_id),

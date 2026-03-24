@@ -10,18 +10,18 @@ import { getApiClient, MemberAPI } from '@/lib/api';
 import { toast } from '@/components/ui/toast';
 import { handleErrorForToast } from '@/lib/api/errors';
 import { queryKeys } from '@/lib/query-keys';
-import type { JoinRequest } from '@/lib/api/endpoints/members';
+import type { CreateJoinRequestResponse, JoinRequest } from '@/lib/api/endpoints/members';
 
 const getMemberAPI = () => new MemberAPI(getApiClient());
 
 /**
  * Hook to query join requests list
  */
-export function useJoinRequests(workspaceId: string, projectId: string) {
+export function useJoinRequests(workspaceId: string, projectId: string, options?: { enabled?: boolean }) {
   return useQuery<JoinRequest[]>({
     queryKey: queryKeys.joinRequests.list(workspaceId, projectId),
     queryFn: () => getMemberAPI().listJoinRequests(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId,
+    enabled: !!workspaceId && !!projectId && (options?.enabled ?? true),
     staleTime: 30 * 1000,
   });
 }
@@ -41,10 +41,11 @@ export function useCreateJoinRequest(
         reason: payload.reason,
       });
     },
-    onSuccess: (_, variables) => {
+    onSuccess: (result: CreateJoinRequestResponse, variables) => {
       queryClient.invalidateQueries({ queryKey: queryKeys.joinRequests.list(workspaceId, variables.projectId) });
       queryClient.invalidateQueries({ queryKey: queryKeys.projects.list(workspaceId) });
-      toast.success(t('success'));
+      queryClient.invalidateQueries({ queryKey: queryKeys.projects.detail(workspaceId, variables.projectId) });
+      toast.success(result.outcome === 'joined' ? t('joined_success') : t('success'));
     },
     onError: (error) => handleErrorForToast(error, 'useCreateJoinRequest'),
   });

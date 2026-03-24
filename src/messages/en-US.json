@@ -1489,7 +1489,7 @@
     "governance_save_confirm_body": "Changes may affect active sessions (403/429/queued). Are you sure?",
     "governance_save_confirm_action": "Confirm & Save",
     "token_reference_title": "Supported tokens",
-    "general_help": "Basic project metadata. Visibility and join policy control who can see and join the project.",
+    "general_help": "Basic project metadata. Public projects appear in the workspace project directory, while join policy controls whether workspace members can join directly or need approval.",
     "general_read_only_help": "Changing project metadata, visibility, and join policy requires project lifecycle permissions.",
     "execution_preferences_help": "Agent execution preferences. Agents may override these values at agent level. Changes take effect when agents next fetch their config.",
     "admin_group_title": "Project administrators group",
@@ -2361,8 +2361,17 @@
     },
     "join_request": {
       "action": "Request Access",
+      "join_now": "Join Project",
+      "joining": "Joining...",
       "pending": "Request Pending",
-      "success": "Access request submitted. A project owner or project admin needs to review it."
+      "success": "Access request submitted. A project owner or project admin needs to review it.",
+      "joined_success": "You joined the project successfully.",
+      "confirm_title": "Request access to this project?",
+      "confirm_description": "You are not a member of {project} yet. Send an access request now?",
+      "join_now_title": "Join this project?",
+      "join_now_description": "{project} is open to workspace members. Join now to continue.",
+      "pending_description": "Your access request for {project} is already pending review.",
+      "cancel": "Cancel"
     },
     "delete_confirm_title": "Delete Project",
     "delete_confirm_message": "Are you sure you want to delete this project? This action cannot be undone."

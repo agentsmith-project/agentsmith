@@ -4,7 +4,8 @@ import type { JsonDocStorePort } from '@mbos/ports';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
-import { upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
+import { appendUserNotification } from './me-notifications-store.js';
+import { getProjectMembership, upsertProjectMembershipRecord } from './project-member-governance-persistence.js';
 import { readProjectPermissionContext } from './project-route-handler-utils.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
@@ -22,6 +23,16 @@ export interface ProjectJoinRequestRecord {
   reviewed_by?: string;
   reject_reason?: string;
 }
+
+type JoinRequestCreateResponse =
+  | {
+    outcome: 'pending';
+    join_request_id: string;
+  }
+  | {
+    outcome: 'joined';
+    membership_status: 'active';
+  };
 
 const PROJECT_JOIN_REQUEST_COLLECTION = 'project_join_requests';
 
@@ -132,18 +143,25 @@ export async function handleProjectJoinRequestsRoute(args: {
   }
 
   if (routeKind === 'projectJoinRequests' && method === 'POST') {
-    let projectOwnerId: string | null = null;
-    try {
-      const project = await deps.getProjectUseCase.execute({
-        workspaceId,
-        projectId,
-      });
-      projectOwnerId = project.owner_id;
-    } catch {
-      // Keep local governance route usable in partially wired dev setups.
-    }
-    if (projectOwnerId === user.id) {
+    const project = await deps.getProjectUseCase.execute({
+      workspaceId,
+      projectId,
+    });
+    if (project.owner_id === user.id) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'Project owner cannot create a join request' });
+      return true;
+    }
+    if (project.visibility !== 'public') {
+      json(res, 403, { error_code: 'PERMISSION_DENIED', message: 'project_join_requires_public_visibility' });
+      return true;
+    }
+    if (project.status !== 'active') {
+      json(res, 409, { error_code: 'PROJECT_NOT_JOINABLE', message: 'project_not_active' });
+      return true;
+    }
+    const existingMembership = await getProjectMembership(deps.docStore, workspaceId, projectId, user.id);
+    if (existingMembership?.status === 'active') {
+      json(res, 409, { error_code: 'ALREADY_PROJECT_MEMBER', message: 'already_project_member' });
       return true;
     }
     const body = await readBody(req) as { reason?: unknown } | null;
@@ -152,6 +170,31 @@ export async function handleProjectJoinRequestsRoute(args: {
     const existingPending = items.find((item) => item.user_id === user.id && item.status === 'pending');
     if (existingPending) {
       json(res, 409, { error_code: 'JOIN_REQUEST_ALREADY_PENDING', message: 'A pending join request already exists' });
+      return true;
+    }
+    if (project.join_policy === 'open') {
+      const joinedAt = new Date().toISOString();
+      await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
+        project_id: projectId,
+        user_id: user.id,
+        status: 'active',
+        joined_at: joinedAt,
+      });
+      await writeProjectAuditEvent(deps, {
+        workspaceId,
+        projectId,
+        actor: { type: 'user', id: user.id },
+        action: 'member.joined',
+        resourceType: 'member',
+        resourceId: user.id,
+        metadata: {
+          joined_via: 'public_open_join',
+        },
+      });
+      json(res, 201, {
+        outcome: 'joined',
+        membership_status: 'active',
+      } satisfies JoinRequestCreateResponse);
       return true;
     }
     const created: ProjectJoinRequestRecord = {
@@ -177,7 +220,10 @@ export async function handleProjectJoinRequestsRoute(args: {
         reason_present: created.reason.length > 0,
       },
     });
-    json(res, 201, created);
+    json(res, 201, {
+      outcome: 'pending',
+      join_request_id: created.id,
+    } satisfies JoinRequestCreateResponse);
     return true;
   }
 
@@ -223,6 +269,22 @@ export async function handleProjectJoinRequestsRoute(args: {
         requested_user_id: approved.user_id,
       },
     });
+    let projectName = projectId;
+    try {
+      const project = await deps.getProjectUseCase.execute({
+        workspaceId,
+        projectId,
+      });
+      projectName = project.name;
+    } catch {
+      projectName = projectId;
+    }
+    await appendUserNotification(deps.docStore, approved.user_id, {
+      type: 'join_request_approved',
+      title: 'Project access approved',
+      body: `Your request to join ${projectName} was approved. You can now open the project.`,
+      link_url: `/workspaces/${workspaceId}/projects/${projectId}/overview`,
+    });
     res.statusCode = 204;
     res.end();
     return true;
@@ -267,6 +329,24 @@ export async function handleProjectJoinRequestsRoute(args: {
         requested_user_id: rejected.user_id,
         reject_reason_present: typeof reason === 'string' && reason.trim().length > 0,
       },
+    });
+    let projectName = projectId;
+    try {
+      const project = await deps.getProjectUseCase.execute({
+        workspaceId,
+        projectId,
+      });
+      projectName = project.name;
+    } catch {
+      projectName = projectId;
+    }
+    await appendUserNotification(deps.docStore, rejected.user_id, {
+      type: 'join_request_rejected',
+      title: 'Project access request declined',
+      body: typeof reason === 'string' && reason.trim().length > 0
+        ? `Your request to join ${projectName} was declined. Reason: ${reason.trim()}`
+        : `Your request to join ${projectName} was declined.`,
+      link_url: `/workspaces/${workspaceId}/projects`,
     });
     res.statusCode = 204;
     res.end();

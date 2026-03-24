@@ -1,5 +1,6 @@
 import { afterEach } from 'vitest';
 import type { AddressInfo } from 'node:net';
+import { createSign, generateKeyPairSync } from 'node:crypto';
 import http, { type Server } from 'node:http';
 import { createDefaultNodeApiDeps, createNodeApiServer } from '../index.js';
 import {
@@ -14,6 +15,85 @@ const originalFeishuAppSecret = process.env.FEISHU_APP_SECRET;
 const originalFeishuRedirectUri = process.env.FEISHU_OAUTH_REDIRECT_URI;
 const originalFeishuAuthorizeUrl = process.env.FEISHU_OAUTH_AUTHORIZE_URL;
 const originalFeishuTokenUrl = process.env.FEISHU_OAUTH_TOKEN_URL;
+
+const signingKeys = generateKeyPairSync('rsa', { modulusLength: 2048 });
+const signingJwk = {
+  ...(signingKeys.publicKey.export({ format: 'jwk' }) as Record<string, unknown>),
+  kid: 'test-key-1',
+  alg: 'RS256',
+  use: 'sig',
+};
+
+let currentMockIssuer: string | null = null;
+
+const testUsers = {
+  'test-token': {
+    sub: 'user_test',
+    email: 'test@example.com',
+    preferred_username: 'test-user',
+    name: 'Test User',
+  },
+  'owner-token': {
+    sub: 'user_owner',
+    email: 'owner@example.com',
+    preferred_username: 'owner-user',
+    name: 'Owner User',
+  },
+  'alt-token': {
+    sub: 'user_alt',
+    email: 'alt@example.com',
+    preferred_username: 'alt-user',
+    name: 'Alt User',
+  },
+  'member-token': {
+    sub: 'user_test',
+    email: 'test@example.com',
+    preferred_username: 'test-user',
+    name: 'Test User',
+  },
+  'secret-token': {
+    sub: 'user_secret',
+    email: 'secret@example.com',
+    preferred_username: 'secret-user',
+    name: 'Secret User',
+  },
+} as const;
+
+async function issueTestAccessToken(token: string): Promise<string> {
+  if (token.split('.').length === 3) {
+    return token;
+  }
+
+  const claims = testUsers[token as keyof typeof testUsers];
+  if (!claims) {
+    return token;
+  }
+
+  if (!currentMockIssuer) {
+    throw new Error(`mock_keycloak_not_started_for_token:${token}`);
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  const header = Buffer.from(JSON.stringify({
+    alg: 'RS256',
+    kid: 'test-key-1',
+    typ: 'JWT',
+  })).toString('base64url');
+  const payload = Buffer.from(JSON.stringify({
+    iss: currentMockIssuer,
+    sub: claims.sub,
+    aud: 'agentsmith-web',
+    iat: now,
+    exp: now + 3600,
+    jti: `${claims.sub}-${Date.now()}`,
+    email: claims.email,
+    preferred_username: claims.preferred_username,
+    name: claims.name,
+  })).toString('base64url');
+  const signingInput = `${header}.${payload}`;
+  const signature = createSign('RSA-SHA256').update(signingInput).end().sign(signingKeys.privateKey).toString('base64url');
+  return `${signingInput}.${signature}`;
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -43,6 +123,7 @@ afterEach(async () => {
   else process.env.FEISHU_OAUTH_AUTHORIZE_URL = originalFeishuAuthorizeUrl;
   if (originalFeishuTokenUrl === undefined) delete process.env.FEISHU_OAUTH_TOKEN_URL;
   else process.env.FEISHU_OAUTH_TOKEN_URL = originalFeishuTokenUrl;
+  currentMockIssuer = null;
 });
 
 export function startMockKeycloakServer(): { server: Server; issuerUrl: string } {
@@ -74,6 +155,12 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string }
         name: 'Creator User',
       },
     ];
+    if (req.method === 'GET' && requestUrl.pathname === '/realms/mbos/protocol/openid-connect/certs') {
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ keys: [signingJwk] }));
+      return;
+    }
     if (req.method === 'POST' && requestUrl.pathname === '/realms/master/protocol/openid-connect/token') {
       res.statusCode = 200;
       res.setHeader('content-type', 'application/json');
@@ -103,37 +190,15 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string }
       res.end(JSON.stringify(found));
       return;
     }
-    const auth = req.headers.authorization ?? '';
-    let sub = 'user_test';
-    let email = 'test@example.com';
-    let username = 'test-user';
-    let name = 'Test User';
-    if (auth === 'Bearer owner-token') {
-      sub = 'user_owner';
-      email = 'owner@example.com';
-      username = 'owner-user';
-      name = 'Owner User';
-    } else if (auth === 'Bearer alt-token') {
-      sub = 'user_alt';
-      email = 'alt@example.com';
-      username = 'alt-user';
-      name = 'Alt User';
-    }
-    res.statusCode = 200;
-    res.setHeader('content-type', 'application/json');
-    res.end(
-      JSON.stringify({
-        sub,
-        email,
-        preferred_username: username,
-        name,
-      }),
-    );
+    res.statusCode = 404;
+    res.end(JSON.stringify({ error: 'not_found' }));
   });
   server.listen(0);
   servers.push(server);
   const address = server.address() as AddressInfo;
-  return { server, issuerUrl: `http://127.0.0.1:${address.port}` };
+  const issuerUrl = `http://127.0.0.1:${address.port}/realms/mbos`;
+  currentMockIssuer = issuerUrl;
+  return { server, issuerUrl };
 }
 
 export function startServer(): { server: Server; baseUrl: string; deps: ReturnType<typeof createDefaultNodeApiDeps> } {
@@ -217,9 +282,9 @@ export function apiFetch(baseUrl: string, path: string, init?: RequestInit): Pro
   return apiFetchWithToken(baseUrl, path, 'test-token', init);
 }
 
-export function apiFetchWithToken(baseUrl: string, path: string, token: string, init?: RequestInit): Promise<Response> {
+export async function apiFetchWithToken(baseUrl: string, path: string, token: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
-  headers.set('Authorization', `Bearer ${token}`);
+  headers.set('Authorization', `Bearer ${await issueTestAccessToken(token)}`);
   return fetch(`${baseUrl}${path}`, {
     ...init,
     headers,

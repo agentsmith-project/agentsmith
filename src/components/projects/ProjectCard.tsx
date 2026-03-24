@@ -6,7 +6,7 @@ import { FolderOpen, Globe, Lock, Pin, Settings } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { StatusBadge } from '@/components/ui/status-badge';
 import type { Project } from '@/lib/projects/project-view';
-import { hasAnyProjectPermission } from '@/lib/projects/project-view';
+import { canRequestProjectJoin, canSelfJoinProject, hasAnyProjectPermission } from '@/lib/projects/project-view';
 
 export function ProjectCard({
   project,
@@ -32,11 +32,8 @@ export function ProjectCard({
     'project:admins:update',
     'project:lifecycle:update',
   ]);
-  const canRequestJoin =
-    !(Array.isArray(project.permissions) && project.permissions.length > 0)
-    && project.join_policy === 'approval_required'
-    && project.status === 'active'
-    && !!onJoinRequest;
+  const canRequestJoin = canRequestProjectJoin(project) && !!onJoinRequest;
+  const canSelfJoin = canSelfJoinProject(project) && !!onJoinRequest;
   return (
     <div
       onClick={onClick}
@@ -112,6 +109,20 @@ export function ProjectCard({
               data-testid={`projects__join-request-btn--${project.id}`}
             >
               {isJoinRequestPending ? t('join_request.pending') : t('join_request.action')}
+            </Button>
+          ) : canSelfJoin ? (
+            <Button
+              type="button"
+              variant="primary"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                onJoinRequest?.();
+              }}
+              disabled={isJoinRequestPending}
+              data-testid={`projects__join-project-btn--${project.id}`}
+            >
+              {isJoinRequestPending ? t('join_request.joining') : t('join_request.join_now')}
             </Button>
           ) : null}
           <StatusBadge status={project.status === 'active' ? 'active' : 'paused'}>{project.status}</StatusBadge>

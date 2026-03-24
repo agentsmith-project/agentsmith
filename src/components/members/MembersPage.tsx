@@ -53,7 +53,9 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
 
   const contextValue = useMembersList({ workspaceId, projectId });
   const [activeTab, setActiveTab] = React.useState<'people' | 'requests' | 'groups'>('people');
-  const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId);
+  const { data: joinRequests = [], isLoading: isLoadingRequests } = useJoinRequests(workspaceId, projectId, {
+    enabled: canManageMembers,
+  });
   const peopleCount = contextValue.members.length;
   const joinRequestCount = Array.isArray(joinRequests) ? joinRequests.length : 0;
   const tabFocusTitle = t(`tab_focus.${activeTab}.title`);
@@ -61,10 +63,20 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
 
   React.useEffect(() => {
     const requestedTab = searchParams.get('member_tab');
-    if (requestedTab === 'people' || requestedTab === 'requests' || requestedTab === 'groups') {
+    if (
+      requestedTab === 'people'
+      || requestedTab === 'groups'
+      || (requestedTab === 'requests' && canManageMembers)
+    ) {
       setActiveTab(requestedTab);
     }
-  }, [searchParams]);
+  }, [canManageMembers, searchParams]);
+
+  React.useEffect(() => {
+    if (activeTab === 'requests' && !canManageMembers) {
+      setActiveTab('people');
+    }
+  }, [activeTab, canManageMembers]);
 
   return (
     <MembersProvider value={contextValue}>
@@ -135,19 +147,21 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
                   </span>
                 </span>
               </TabsTrigger>
-              <TabsTrigger value="requests">
-                <span className="inline-flex items-center gap-2">
-                  <span>{t('tabs.requests')}</span>
-                  {joinRequestCount > 0 ? (
-                    <span
-                      className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] text-accent"
-                      data-testid="members__requests-badge"
-                    >
-                      {joinRequestCount}
-                    </span>
-                  ) : null}
-                </span>
-              </TabsTrigger>
+              {canManageMembers ? (
+                <TabsTrigger value="requests">
+                  <span className="inline-flex items-center gap-2">
+                    <span>{t('tabs.requests')}</span>
+                    {joinRequestCount > 0 ? (
+                      <span
+                        className="rounded-full border border-accent/20 bg-accent/10 px-2 py-0.5 text-[11px] text-accent"
+                        data-testid="members__requests-badge"
+                      >
+                        {joinRequestCount}
+                      </span>
+                    ) : null}
+                  </span>
+                </TabsTrigger>
+              ) : null}
               <TabsTrigger value="groups">{t('tabs.groups')}</TabsTrigger>
             </TabsList>
           </div>
@@ -156,16 +170,18 @@ function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: Member
             <PeopleTab workspaceId={workspaceId} projectId={projectId} locale={locale} />
           </TabsContent>
 
-          <TabsContent value="requests" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
-            <div className="flex-1 min-h-0 overflow-auto overflow-x-auto">
-              <JoinRequestsTab
-                workspaceId={workspaceId}
-                projectId={projectId}
-                requests={Array.isArray(joinRequests) ? joinRequests : []}
-                loading={isLoadingRequests}
-              />
-            </div>
-          </TabsContent>
+          {canManageMembers ? (
+            <TabsContent value="requests" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
+              <div className="flex-1 min-h-0 overflow-auto overflow-x-auto">
+                <JoinRequestsTab
+                  workspaceId={workspaceId}
+                  projectId={projectId}
+                  requests={Array.isArray(joinRequests) ? joinRequests : []}
+                  loading={isLoadingRequests}
+                />
+              </div>
+            </TabsContent>
+          ) : null}
 
           <TabsContent value="groups" className="flex-1 min-h-0 mt-4 flex flex-col min-w-0 data-[state=inactive]:hidden">
             <GroupsTab workspaceId={workspaceId} projectId={projectId} />

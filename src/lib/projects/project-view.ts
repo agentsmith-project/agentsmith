@@ -10,6 +10,28 @@ export function hasAnyProjectPermission(project: Project, permissions: readonly 
   return permissions.some((permission) => hasProjectPermission(project, permission));
 }
 
+function isNonMemberProject(project: Pick<ProjectWithMembership, 'permissions'>): boolean {
+  return !(Array.isArray(project.permissions) && project.permissions.length > 0);
+}
+
+export function canRequestProjectJoin(project: Pick<ProjectWithMembership, 'permissions' | 'visibility' | 'join_policy' | 'status'>): boolean {
+  return isNonMemberProject(project)
+    && project.visibility === 'public'
+    && project.join_policy === 'approval_required'
+    && project.status === 'active';
+}
+
+export function canSelfJoinProject(project: Pick<ProjectWithMembership, 'permissions' | 'visibility' | 'join_policy' | 'status'>): boolean {
+  return isNonMemberProject(project)
+    && project.visibility === 'public'
+    && project.join_policy === 'open'
+    && project.status === 'active';
+}
+
+export function requiresProjectJoinFlow(project: Pick<ProjectWithMembership, 'permissions' | 'visibility' | 'join_policy' | 'status'>): boolean {
+  return canRequestProjectJoin(project) || canSelfJoinProject(project);
+}
+
 export function buildProjectAdminSummary(
   project: Pick<ProjectWithMembership, 'admin_member_ids' | 'owner_id'>,
   memberNameById: Map<string, string>,

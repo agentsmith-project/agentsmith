@@ -307,6 +307,54 @@ export const memberHandlers = [
     const items = joinRequests.filter((item) => item.project_id === projectId);
     return HttpResponse.json({ items, total: items.length });
   }),
+  http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests', async ({ params, request }) => {
+    const projectId = String(params.prj ?? '');
+    const project = projects.find((item) => item.id === projectId);
+    if (!project) {
+      return HttpResponse.json({ error_code: 'not_found' }, { status: 404 });
+    }
+    if (project.visibility !== 'public') {
+      return HttpResponse.json({ error_code: 'PERMISSION_DENIED', message: 'project_join_requires_public_visibility' }, { status: 403 });
+    }
+    if (project.join_policy === 'open') {
+      const userId = 'user_test';
+      if (!memberProjectMembershipFixtures.some((item) => item.project_id === projectId && item.user_id === userId)) {
+        memberProjectMembershipFixtures.push({
+          project_id: projectId,
+          user_id: userId,
+          groups: [{
+            id: PROJECT_BUILT_IN_GROUP_IDS.members,
+            name: 'Project Members',
+            permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.member,
+            built_in: true,
+            system_key: 'members',
+          }],
+          permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
+          status: 'active',
+          joined_at: new Date().toISOString(),
+        });
+      }
+      const builtInState = getBuiltInProjectGroupState(projectId);
+      if (!builtInState.members.includes(userId)) {
+        builtInState.members.push(userId);
+      }
+      return HttpResponse.json({ outcome: 'joined', membership_status: 'active' }, { status: 201 });
+    }
+
+    const body = (await request.json().catch(() => ({}))) as { reason?: string };
+    const created = {
+      id: `jr_${Date.now()}`,
+      project_id: projectId,
+      user_id: 'user_test',
+      user_email: 'test@example.com',
+      user_name: 'Test User',
+      reason: typeof body.reason === 'string' ? body.reason : '',
+      status: 'pending' as const,
+      requested_at: new Date().toISOString(),
+    };
+    joinRequests.unshift(created);
+    return HttpResponse.json({ outcome: 'pending', join_request_id: created.id }, { status: 201 });
+  }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/approve', ({ params }) => {
     const projectId = String(params.prj ?? '');
     const request = joinRequests.find((item) => item.id === params.id);

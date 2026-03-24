@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { canRequestProjectJoin, canSelfJoinProject } from '@/lib/projects/project-view';
 
 const columnHelper = createColumnHelper<Project>();
 
@@ -154,10 +155,8 @@ export function ProjectsTable({
             'project:admins:update',
             'project:lifecycle:update',
           ]);
-          const canRequestJoin =
-            !(Array.isArray(row.original.permissions) && row.original.permissions.length > 0) &&
-            row.original.join_policy === 'approval_required' &&
-            row.original.status === 'active';
+          const canRequestJoin = canRequestProjectJoin(row.original);
+          const canSelfJoin = canSelfJoinProject(row.original);
           const joinRequestPending = pendingJoinRequestIds.has(row.original.id);
           return (
             <div className="flex items-center gap-1">
@@ -174,6 +173,20 @@ export function ProjectsTable({
                   data-testid={`projects__join-request-btn--${row.original.id}`}
                 >
                   {joinRequestPending ? t('join_request.pending') : t('join_request.action')}
+                </Button>
+              ) : canSelfJoin ? (
+                <Button
+                  type="button"
+                  variant="primary"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onJoinRequest(row.original);
+                  }}
+                  disabled={joinRequestPending}
+                  data-testid={`projects__join-project-btn--${row.original.id}`}
+                >
+                  {joinRequestPending ? t('join_request.joining') : t('join_request.join_now')}
                 </Button>
               ) : (
                 <Button

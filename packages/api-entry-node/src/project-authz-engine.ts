@@ -246,6 +246,34 @@ export async function resolveVisibleProjectPermissionsForActor(args: {
   return snapshot.effective_permissions;
 }
 
+export async function canActorDiscoverProject(args: {
+  docStore: JsonDocStorePort;
+  workspaceId: string;
+  projectId: string;
+  projectOwnerId: string;
+  projectVisibility: 'public' | 'private';
+  actorUserId: string;
+}): Promise<boolean> {
+  if (args.projectVisibility === 'public') {
+    return true;
+  }
+  if (args.projectOwnerId === args.actorUserId) {
+    return true;
+  }
+  const groupIds = await getAllProjectGroupIdsForUserPersisted({
+    docStore: args.docStore,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    userId: args.actorUserId,
+    projectOwnerId: args.projectOwnerId,
+  });
+  if (groupIds.length > 0) {
+    return true;
+  }
+  const membershipStatus = await getMembershipStatus(args.docStore, args.workspaceId, args.projectId, args.actorUserId);
+  return membershipStatus === 'active';
+}
+
 export async function resolveVisibleProjectRoleForActor(args: {
   docStore: JsonDocStorePort;
   workspaceId: string;

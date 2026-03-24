@@ -249,11 +249,11 @@ describe('api-entry-node project lifecycle and governance routes', () => {
       owner_id: 'user_alt',
     });
 
-    const previousOwnerViewRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/${created.id}`, {
-      headers: {
-        authorization: 'Bearer test-token',
-      },
-    });
+    const previousOwnerViewRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${created.id}`,
+      'test-token',
+    );
     expect(previousOwnerViewRes.status).toBe(200);
     await expect(previousOwnerViewRes.json()).resolves.toMatchObject({
       owner_id: 'user_alt',

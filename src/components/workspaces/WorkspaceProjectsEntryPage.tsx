@@ -13,6 +13,16 @@ import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import {
   ArrowLeft,
   ArrowUpRight,
   FolderKanban,
@@ -45,7 +55,12 @@ import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { buildProjectAdminSummary, type Project } from '@/lib/projects/project-view';
+import {
+  buildProjectAdminSummary,
+  canSelfJoinProject,
+  requiresProjectJoinFlow,
+  type Project,
+} from '@/lib/projects/project-view';
 import { useCreateJoinRequest } from '@/lib/hooks/use-join-requests';
 
 interface WorkspaceProjectsEntryPageProps {
@@ -75,6 +90,8 @@ export function WorkspaceProjectsEntryPage({
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogProject, setDeleteDialogProject] = useState<Project | null>(null);
   const [pendingJoinRequestIds, setPendingJoinRequestIds] = useState<Set<string>>(new Set());
+  const [joiningProjectIds, setJoiningProjectIds] = useState<Set<string>>(new Set());
+  const [joinDialogProject, setJoinDialogProject] = useState<Project | null>(null);
 
   useSyncAuthFromUrl();
 
@@ -124,6 +141,10 @@ export function WorkspaceProjectsEntryPage({
   }, [hydrated, allProjects, pinnedStorageKey]);
 
   const handleProjectClick = (project: Project) => {
+    if (requiresProjectJoinFlow(project) || pendingJoinRequestIds.has(project.id)) {
+      setJoinDialogProject(project);
+      return;
+    }
     router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
   };
 
@@ -161,11 +182,28 @@ export function WorkspaceProjectsEntryPage({
 
   const handleCreateJoinRequest = async (project: Project) => {
     if (!workspaceId) return;
-    setPendingJoinRequestIds((current) => new Set(current).add(project.id));
+    setJoiningProjectIds((current) => new Set(current).add(project.id));
     try {
-      await createJoinRequest.mutateAsync({ projectId: project.id });
+      const result = await createJoinRequest.mutateAsync({ projectId: project.id });
+      if (result.outcome === 'pending') {
+        setPendingJoinRequestIds((current) => new Set(current).add(project.id));
+      } else {
+        setPendingJoinRequestIds((current) => {
+          const next = new Set(current);
+          next.delete(project.id);
+          return next;
+        });
+        router.push(`/${locale}/workspaces/${workspaceId}/projects/${project.id}/overview`);
+      }
+      setJoinDialogProject(null);
     } catch {
       setPendingJoinRequestIds((current) => {
+        const next = new Set(current);
+        next.delete(project.id);
+        return next;
+      });
+    } finally {
+      setJoiningProjectIds((current) => {
         const next = new Set(current);
         next.delete(project.id);
         return next;
@@ -218,6 +256,11 @@ export function WorkspaceProjectsEntryPage({
 
   const pinnedProjects = filteredProjects.filter((p) => p.pinned);
   const unpinnedProjects = filteredProjects.filter((p) => !p.pinned);
+  const isJoinDialogPending = joinDialogProject ? pendingJoinRequestIds.has(joinDialogProject.id) : false;
+  const isJoinDialogBusy = joinDialogProject ? joiningProjectIds.has(joinDialogProject.id) : false;
+  const joinDialogMode = joinDialogProject
+    ? (canSelfJoinProject(joinDialogProject) ? 'open' : 'approval_required')
+    : null;
 
   if (!hydrated) {
     return (
@@ -486,7 +529,7 @@ export function WorkspaceProjectsEntryPage({
                           onSettingsClick={() => handleSettingsClick(project)}
                           onTogglePin={(e) => togglePin(project.id, e)}
                           onJoinRequest={() => void handleCreateJoinRequest(project)}
-                          isJoinRequestPending={pendingJoinRequestIds.has(project.id)}
+                          isJoinRequestPending={pendingJoinRequestIds.has(project.id) || joiningProjectIds.has(project.id)}
                           adminSummary={buildProjectAdminSummary(project, memberNameById)}
                           t={t}
                         />
@@ -519,7 +562,7 @@ export function WorkspaceProjectsEntryPage({
                     onDeleteClick={(project) => setDeleteDialogProject(project)}
                     onTogglePin={togglePin}
                     onJoinRequest={(project) => void handleCreateJoinRequest(project)}
-                    pendingJoinRequestIds={pendingJoinRequestIds}
+                    pendingJoinRequestIds={new Set([...pendingJoinRequestIds, ...joiningProjectIds])}
                     canDeleteProjectByWorkspacePermission={canDeleteProjectByWorkspacePermission}
                     memberNameById={memberNameById}
                     t={t}
@@ -544,6 +587,40 @@ export function WorkspaceProjectsEntryPage({
             onDeleted={handleDeleteProjectSuccess}
             deleteProject={handleDeleteProject}
           />
+
+          <AlertDialog open={!!joinDialogProject} onOpenChange={(open) => !open && setJoinDialogProject(null)}>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>
+                  {joinDialogMode === 'open' ? t('join_request.join_now_title') : t('join_request.confirm_title')}
+                </AlertDialogTitle>
+                <AlertDialogDescription>
+                  {isJoinDialogPending
+                    ? t('join_request.pending_description', { project: joinDialogProject?.name ?? '' })
+                    : joinDialogMode === 'open'
+                      ? t('join_request.join_now_description', { project: joinDialogProject?.name ?? '' })
+                      : t('join_request.confirm_description', { project: joinDialogProject?.name ?? '' })}
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>{t('join_request.cancel')}</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={(event) => {
+                    event.preventDefault();
+                    if (!joinDialogProject || isJoinDialogPending || isJoinDialogBusy) return;
+                    void handleCreateJoinRequest(joinDialogProject);
+                  }}
+                  disabled={!joinDialogProject || isJoinDialogPending || isJoinDialogBusy}
+                >
+                  {isJoinDialogPending
+                    ? t('join_request.pending')
+                    : joinDialogMode === 'open'
+                      ? t('join_request.join_now')
+                      : t('join_request.action')}
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         </div>
       </PageLayout>
     </PageState>

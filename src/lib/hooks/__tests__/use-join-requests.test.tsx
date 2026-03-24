@@ -3,7 +3,7 @@ import { renderHook, act } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 const mockReject = vi.fn().mockResolvedValue(undefined);
-const mockCreate = vi.fn().mockResolvedValue(undefined);
+const mockCreate = vi.fn().mockResolvedValue({ outcome: 'pending' });
 
 vi.mock('@/lib/api', () => ({
   getApiClient: vi.fn(() => ({})),
@@ -24,6 +24,7 @@ vi.mock('@/lib/query-keys', () => ({
     },
     projects: {
       list: vi.fn((ws: string) => ['projects', ws]),
+      detail: vi.fn((ws: string, prj: string) => ['project', ws, prj]),
     },
     members: {
       list: vi.fn((ws: string, prj: string) => ['members', ws, prj]),
@@ -71,6 +72,21 @@ describe('useRejectJoinRequest', () => {
     });
 
     expect(mockCreate).toHaveBeenCalledWith('ws_1', 'prj_2', { reason: 'Need access' });
+  });
+
+  it('supports direct join outcomes for open projects', async () => {
+    mockCreate.mockResolvedValueOnce({ outcome: 'joined', membership_status: 'active' });
+
+    const { result } = renderHook(() => useCreateJoinRequest('ws_1'), {
+      wrapper: createWrapper(),
+    });
+
+    await act(async () => {
+      const response = await result.current.mutateAsync({ projectId: 'prj_open' });
+      expect(response).toEqual({ outcome: 'joined', membership_status: 'active' });
+    });
+
+    expect(mockCreate).toHaveBeenCalledWith('ws_1', 'prj_open', { reason: undefined });
   });
 
   it('passes reject reason to API', async () => {

@@ -78,7 +78,7 @@ const mockUseProjects = vi.fn<
   error: null,
   refetch: vi.fn(),
   }));
-const mockCreateJoinRequestMutateAsync = vi.fn().mockResolvedValue(undefined);
+const mockCreateJoinRequestMutateAsync = vi.fn().mockResolvedValue({ outcome: 'pending' });
 
 const mockPush = vi.fn();
 const mockUseParams = vi.fn(() => ({
@@ -165,7 +165,7 @@ describe('ProjectsPage route', () => {
     mockPush.mockClear();
     mockUseParams.mockReturnValue({ workspace: 'ws_1', locale: 'en' });
     mockCreateJoinRequestMutateAsync.mockReset();
-    mockCreateJoinRequestMutateAsync.mockResolvedValue(undefined);
+    mockCreateJoinRequestMutateAsync.mockResolvedValue({ outcome: 'pending' });
     mockUseHasWorkspacePermission.mockReturnValue(true);
     mockUseWorkspace.mockImplementation(() => ({ data: mockWorkspaceData, isFetched: true }));
     mockUseAuthStore.mockImplementation(() => ({ isAuthenticated: true, token: 'token-1' }));
@@ -316,13 +316,13 @@ describe('ProjectsPage route', () => {
     expect(screen.queryByRole('button', { name: 'empty.create_first' })).not.toBeInTheDocument();
   });
 
-  it('shows request access action for approval-required projects without membership', async () => {
+  it('shows request access action for public approval-required projects without membership', async () => {
     mockProjectsData = [
       {
         id: 'proj_request',
         workspace_id: 'ws_1',
         name: 'Needs Approval',
-        visibility: 'private',
+        visibility: 'public',
         join_policy: 'approval_required',
         owner_id: 'owner_1',
         permissions: [],
@@ -344,6 +344,69 @@ describe('ProjectsPage route', () => {
     });
     await waitFor(() => {
       expect(screen.getByTestId('projects__join-request-btn--proj_request')).toHaveTextContent('join_request.pending');
+    });
+  });
+
+  it('asks before sending a join request when opening a public approval-required project', async () => {
+    mockProjectsData = [
+      {
+        id: 'proj_request',
+        workspace_id: 'ws_1',
+        name: 'Needs Approval',
+        visibility: 'public',
+        join_policy: 'approval_required',
+        owner_id: 'owner_1',
+        permissions: [],
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+
+    render(<ProjectsPage />);
+
+    const row = await screen.findByTestId('projects__table__row');
+    fireEvent.click(row);
+
+    expect(await screen.findByText('join_request.confirm_title')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'join_request.action' }));
+
+    await waitFor(() => {
+      expect(mockCreateJoinRequestMutateAsync).toHaveBeenCalledWith({ projectId: 'proj_request' });
+    });
+    expect(mockPush).not.toHaveBeenCalled();
+  });
+
+  it('lets users directly join public open projects and then navigates in', async () => {
+    mockCreateJoinRequestMutateAsync.mockResolvedValue({ outcome: 'joined' });
+    mockProjectsData = [
+      {
+        id: 'proj_open',
+        workspace_id: 'ws_1',
+        name: 'Open Project',
+        visibility: 'public',
+        join_policy: 'open',
+        owner_id: 'owner_1',
+        permissions: [],
+        status: 'active' as const,
+        created_at: '2026-02-01T00:00:00Z',
+        updated_at: '2026-02-01T00:00:00Z',
+      },
+    ];
+
+    render(<ProjectsPage />);
+
+    const row = await screen.findByTestId('projects__table__row');
+    fireEvent.click(row);
+
+    expect(await screen.findByText('join_request.join_now_title')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'join_request.join_now' }));
+
+    await waitFor(() => {
+      expect(mockCreateJoinRequestMutateAsync).toHaveBeenCalledWith({ projectId: 'proj_open' });
+    });
+    await waitFor(() => {
+      expect(mockPush).toHaveBeenCalledWith('/en/workspaces/ws_1/projects/proj_open/overview');
     });
   });
 

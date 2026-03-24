@@ -44,6 +44,12 @@ export interface CreateJoinRequestInput {
   reason?: string;
 }
 
+export interface CreateJoinRequestResponse {
+  outcome: 'pending' | 'joined';
+  join_request_id?: string;
+  membership_status?: 'active';
+}
+
 export interface CreateInviteRequest {
   email: string;
   group_template?: string;
@@ -125,8 +131,8 @@ export class MemberAPI {
     workspaceId: string,
     projectId: string,
     data?: CreateJoinRequestInput
-  ): Promise<void> {
-    return this.client.post<void>(
+  ): Promise<CreateJoinRequestResponse> {
+    return this.client.post<CreateJoinRequestResponse>(
       `/workspaces/${workspaceId}/projects/${projectId}/join-requests`,
       data ?? {}
     );

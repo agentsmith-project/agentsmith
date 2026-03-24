@@ -6,6 +6,10 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
     return [];
   }
 
+  if (route.kind === 'item' && method === 'GET') {
+    return [];
+  }
+
   if (isTaskRoute(route)) {
     if (route.kind === 'taskMessages' && method === 'POST') {
       return ['project:endpoint:use', 'project:agent:manage'];

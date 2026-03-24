@@ -829,7 +829,9 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' });
       return true;
     }
-    json(res, 200, access);
+    json(res, 200, {
+      client_mount_access: access,
+    });
     return true;
   }
 

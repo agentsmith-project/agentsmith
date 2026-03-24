@@ -325,20 +325,23 @@ export const fileHandlers = [
       return HttpResponse.json({ error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_mount_access_not_found' }, { status: 404 });
     }
     return HttpResponse.json({
-      filesystem_name: library.filesystem_name,
-      metadata_url: `postgres://jfsu_${library.id}:secret@localhost:15432/jfs_lib_${library.id}`,
-      recommended_mount_path: `~/Agentsmith/${library.name}`,
-      platform_notes: [
-        'Linux requires FUSE support.',
-        'macOS requires macFUSE.',
-        'Windows requires JuiceFS-supported filesystem dependencies.',
-      ],
-      recommended_mount_commands: {
-        linux: `juicefs mount 'postgres://jfsu_${library.id}:secret@localhost:15432/jfs_lib_${library.id}' '$HOME/Agentsmith/${library.name}'`,
-        macos: `juicefs mount 'postgres://jfsu_${library.id}:secret@localhost:15432/jfs_lib_${library.id}' '$HOME/Agentsmith/${library.name}'`,
-        windows: `juicefs mount "postgres://jfsu_${library.id}:secret@localhost:15432/jfs_lib_${library.id}" X:`,
+      client_mount_access: {
+        filesystem_name: library.filesystem_name,
+        metadata_url: `postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}`,
+        storage_bucket_url: `https://files.example.com:19000/${library.filesystem_name}`,
+        recommended_mount_path: `~/Agentsmith/${library.name}`,
+        platform_notes: [
+          'Linux requires FUSE support.',
+          'macOS requires macFUSE.',
+          'Windows requires JuiceFS-supported filesystem dependencies.',
+        ],
+        recommended_mount_commands: {
+          linux: `juicefs mount 'postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}' '$HOME/Agentsmith/${library.name}' --bucket 'https://files.example.com:19000/${library.filesystem_name}'`,
+          macos: `juicefs mount 'postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}' '$HOME/Agentsmith/${library.name}' --bucket 'https://files.example.com:19000/${library.filesystem_name}'`,
+          windows: `juicefs mount "postgres://jfsu_${library.id}:secret@files.example.com:15432/jfs_lib_${library.id}" X: --bucket "https://files.example.com:19000/${library.filesystem_name}"`,
+        },
+        created_at: nowIso(),
       },
-      created_at: nowIso(),
     });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj/file-libraries/:id/entries', ({ params, request }) => {

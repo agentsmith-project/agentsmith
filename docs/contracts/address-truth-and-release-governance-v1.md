@@ -163,14 +163,15 @@ Agent 的业务语义仍然只有两种：
 
 必须明确区分三种 contract：
 
-### 1. `local_mount_access`
+### 1. `client_mount_access`
 用途：
-- 宿主机人工 mount
+- 人在自己的电脑上执行 `juicefs mount`
 - UI 展示给用户的挂载信息
 
 特点：
-- 可以使用 `HOST_LOCAL_*`
-- 允许 `localhost`
+- 必须是客户端可达地址
+- 禁止 loopback
+- 不能复用容器内或 kind 内地址
 
 ### 2. `external_runner_mount_access`
 用途：
@@ -179,7 +180,7 @@ Agent 的业务语义仍然只有两种：
 特点：
 - 必须是 runner 可见地址
 - 禁止 loopback
-- 不能复用 local/human 地址
+- 不能复用 client 地址
 - 其中：
   - `dev_direct` 使用 host-local truth
   - `docker_manual` / `compose_managed` 使用 runner-visible truth
@@ -190,12 +191,12 @@ Agent 的业务语义仍然只有两种：
 
 特点：
 - 必须是 internal/k8s-safe truth
-- 不能复用宿主机 local 地址
+- 不能复用 client 地址
 
 ### 规则
-- UI 只展示 human/local mount access
+- UI 只展示 client mount access
 - API 根据执行模式返回 external/internal 对应 access
-- runner 和 internal agent 不再接收 local mount access
+- runner 和 internal agent 不再接收 client mount access
 
 ---
 

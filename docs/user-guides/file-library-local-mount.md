@@ -1,6 +1,6 @@
-# File Library Local Mount
+# File Library Client Mount
 
-This guide explains how to mount a project file library locally and how to verify that local changes stay in sync with the Files page.
+This guide explains how to mount a project file library from your own machine and how to verify that local changes stay in sync with the Files page.
 
 ## Prerequisites
 
@@ -21,9 +21,10 @@ In the Files page:
 3. Reveal the `metadata_url`.
 4. Copy the command for your platform.
 
-The default exchange surface exposes:
-- `filesystem_name`
-- `metadata_url`
+The exchange surface exposes:
+- `client_mount_access.filesystem_name`
+- `client_mount_access.metadata_url`
+- `client_mount_access.storage_bucket_url`
 - recommended mount path
 - platform-specific `juicefs mount` commands
 

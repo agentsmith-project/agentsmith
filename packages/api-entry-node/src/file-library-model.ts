@@ -50,7 +50,7 @@ export interface FileLibraryBackendRecord {
   last_error?: string;
 }
 
-export interface FileLibraryMountAccess {
+export interface FileLibraryClientMountAccess {
   filesystem_name: string;
   metadata_url: string;
   storage_bucket_url?: string;
@@ -63,3 +63,5 @@ export interface FileLibraryMountAccess {
   };
   created_at: string;
 }
+
+export type FileLibraryMountAccess = FileLibraryClientMountAccess;

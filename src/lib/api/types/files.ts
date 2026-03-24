@@ -116,7 +116,7 @@ export interface MoveFileLibraryEntryRequest {
   overwrite?: boolean;
 }
 
-export interface StorageCredentialExchangeResponse {
+export interface FileLibraryClientMountAccess {
   filesystem_name: string;
   metadata_url: string;
   storage_bucket_url?: string;
@@ -128,6 +128,10 @@ export interface StorageCredentialExchangeResponse {
     windows: string;
   };
   created_at: string;
+}
+
+export interface StorageCredentialExchangeResponse {
+  client_mount_access: FileLibraryClientMountAccess;
 }
 
 export interface FileItem {

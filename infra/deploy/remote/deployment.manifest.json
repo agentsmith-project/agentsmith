@@ -86,6 +86,11 @@
       "HOST_LOCAL_POSTGRES_PORT",
       "HOST_LOCAL_MINIO_ENDPOINT"
     ],
+    "client_mount_runtime": [
+      "CLIENT_PUBLIC_POSTGRES_HOST",
+      "CLIENT_PUBLIC_POSTGRES_PORT",
+      "CLIENT_PUBLIC_MINIO_ENDPOINT"
+    ],
     "execution": [
       "SYSTEM_WORKSPACE_REGISTRY_MODE",
       "SANDBOX_SERVICE_KEY",

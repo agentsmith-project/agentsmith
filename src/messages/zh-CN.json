@@ -1286,28 +1286,35 @@
   },
   "use_guide": {
     "title": "API 接入手册",
-    "subtitle": "使用统一的项目网关 base URL 接入 Claude Code、Codex 与其他客户端。",
+    "subtitle": "统一的是项目网关身份；具体接入方式请按客户端期待的协议来选。",
     "steps": {
       "title": "快速开始",
       "step_1": "在用户中心创建个人 API Key（用户 > API 密钥）。",
       "step_2": "飞书请在当前工作区的连接页面完成绑定；Jira、GitHub、Gitee 与自定义凭据仍在用户 > 第三方账户中管理。",
       "step_3": "请项目管理员在资源策略里授予你对应 endpoint 访问权限。",
       "step_4": "确保目标 endpoint 在项目内配置了唯一模型名（model）。",
-      "step_5": "使用统一的 /llm-gateway base URL，并设置客户端环境变量。",
+      "step_5": "使用项目 /llm-gateway base URL，然后按下方的 OpenAI-compatible 或 Anthropic-compatible 指引配置客户端。",
       "step_6": "若请求失败，请到用量与审计页面查看权限/限流/花费限制原因。"
     },
     "gateway": {
       "title": "统一网关 Base URL",
-      "description": "所有协议共用同一个 Base URL；系统按 model 自动路由并执行 endpoint 级治理。"
-    },
-    "codex": {
-      "title": "Codex CLI 示例"
-    },
-    "claude": {
-      "title": "Claude Code CLI 示例"
+      "description": "这个项目网关是统一的项目身份、鉴权与治理入口。",
+      "protocol_note": "但客户端期待的协议接口并不相同。OpenAI-compatible 客户端使用 /chat/completions 或 /responses；Anthropic-compatible 客户端使用 /messages。"
     },
     "api_examples": {
-      "title": "协议请求示例"
+      "title": "客户端协议示例"
+    },
+    "protocols": {
+      "openai": {
+        "title": "OpenAI-compatible 客户端",
+        "description": "适用于 Codex、OpenAI SDK，以及任何期待 OpenAI-compatible chat 或 responses 接口的工具。",
+        "base_url_label": "将此值用作 OPENAI_BASE_URL"
+      },
+      "anthropic": {
+        "title": "Anthropic-compatible 客户端",
+        "description": "适用于 Claude Code、Anthropic SDK，以及任何期待 Anthropic Messages API 的工具。",
+        "base_url_label": "将此值用作 ANTHROPIC_BASE_URL"
+      }
     },
     "quick_links": {
       "title": "快捷入口",
@@ -2630,9 +2637,9 @@
       "library_description_placeholder": "可选",
       "library_deleted": "文件库已删除",
       "mount_access": "挂载",
-      "mount_access_title": "本地挂载信息",
-      "mount_access_title_with_name": "本地挂载信息 · {name}",
-      "mount_access_description": "在本地机器上使用这些项目级 JuiceFS 挂载信息。",
+      "mount_access_title": "客户端挂载信息",
+      "mount_access_title_with_name": "客户端挂载信息 · {name}",
+      "mount_access_description": "在你自己的电脑上使用这些项目级 JuiceFS 挂载信息。",
       "mount_access_loading": "正在生成挂载信息...",
       "mount_access_failed": "加载挂载信息失败",
       "mount_access_empty": "该文件库暂时没有可用的挂载信息。",

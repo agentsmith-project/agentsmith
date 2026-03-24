@@ -2982,17 +2982,20 @@ export interface components {
             ticket: string;
         };
         StorageCredentialExchangeResponse: {
-            /** Format: date-time */
-            created_at: string;
-            filesystem_name: string;
-            metadata_url: string;
-            platform_notes: string[];
-            recommended_mount_commands: {
-                linux: string;
-                macos: string;
-                windows: string;
+            client_mount_access: {
+                /** Format: date-time */
+                created_at: string;
+                filesystem_name: string;
+                metadata_url: string;
+                platform_notes: string[];
+                recommended_mount_commands: {
+                    linux: string;
+                    macos: string;
+                    windows: string;
+                };
+                recommended_mount_path: string;
+                storage_bucket_url?: string;
             };
-            recommended_mount_path: string;
         };
         TaskTraceEvent: {
             /** Format: date-time */

@@ -65,9 +65,16 @@ These values are used by containers talking to each other inside Compose.
 - `HOST_LOCAL_POSTGRES_PORT`
 - `HOST_LOCAL_MINIO_ENDPOINT`
 
-These values are used when generating host-local file library mount access details for operators and end users.
+These values are only for host-machine verification and local maintenance on the deployed server.
 
-They are intentionally separate from container-internal object storage/database addresses and from runner/k8s execution addresses.
+They are intentionally separate from client-visible file library mount addresses, container-internal object storage/database addresses, and runner/k8s execution addresses.
+
+### Client Mount Addresses
+- `CLIENT_PUBLIC_POSTGRES_HOST`
+- `CLIENT_PUBLIC_POSTGRES_PORT`
+- `CLIENT_PUBLIC_MINIO_ENDPOINT`
+
+These values are used when generating JuiceFS mount instructions for people using their own machines.
 
 The API container must use the container-internal MinIO admin address:
 - `MINIO_ENDPOINT=minio`
@@ -158,6 +165,9 @@ Preset workspace admin and project creator identities are selected by stable use
 - `HOST_LOCAL_POSTGRES_HOST`
 - `HOST_LOCAL_POSTGRES_PORT`
 - `HOST_LOCAL_MINIO_ENDPOINT`
+- `CLIENT_PUBLIC_POSTGRES_HOST`
+- `CLIENT_PUBLIC_POSTGRES_PORT`
+- `CLIENT_PUBLIC_MINIO_ENDPOINT`
 - `SANDBOX_SERVICE_KEY`
 - `SANDBOX_HOST_PORT`
 - `MBOS_AGENT_BUILTIN_SKILLS_DIR`

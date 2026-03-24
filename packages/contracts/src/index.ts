@@ -330,7 +330,7 @@ export const CreateFileLibraryShareLinkRequestSchema = z.object({
   expires_in_seconds: z.number().int().positive().max(60 * 60 * 24 * 7).optional(),
 });
 
-export const StorageCredentialExchangeResponseSchema = z.object({
+export const FileLibraryClientMountAccessSchema = z.object({
   filesystem_name: z.string().min(1),
   metadata_url: z.string().min(1),
   storage_bucket_url: z.string().min(1).optional(),
@@ -342,6 +342,10 @@ export const StorageCredentialExchangeResponseSchema = z.object({
     windows: z.string().min(1),
   }),
   created_at: z.string().datetime(),
+});
+
+export const StorageCredentialExchangeResponseSchema = z.object({
+  client_mount_access: FileLibraryClientMountAccessSchema,
 });
 
 export const WorkspaceFoundationInitializationRequestSchema = z.object({
@@ -438,6 +442,7 @@ export type DeleteFileLibraryEntriesResponse = z.infer<typeof DeleteFileLibraryE
 export type MoveFileLibraryEntryRequest = z.infer<typeof MoveFileLibraryEntryRequestSchema>;
 export type FileLibraryDownloadQuery = z.infer<typeof FileLibraryDownloadQuerySchema>;
 export type CreateFileLibraryShareLinkRequest = z.infer<typeof CreateFileLibraryShareLinkRequestSchema>;
+export type FileLibraryClientMountAccess = z.infer<typeof FileLibraryClientMountAccessSchema>;
 export type StorageCredentialExchangeResponse = z.infer<typeof StorageCredentialExchangeResponseSchema>;
 export type WorkspaceFoundationInitializationRequest = z.infer<typeof WorkspaceFoundationInitializationRequestSchema>;
 export type WorkspaceFoundationInitializationResult = z.infer<typeof WorkspaceFoundationInitializationResultSchema>;

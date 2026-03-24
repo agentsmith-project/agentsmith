@@ -21,7 +21,7 @@ import { LibraryDialogs } from '@/components/files/files-page/LibraryDialogs';
 import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
 import { ObjectOperationDialogs } from '@/components/files/files-page/ObjectOperationDialogs';
 
-import type { FileLibrary, FileObjectsListItem, StorageCredentialExchangeResponse } from '@/lib/api/types';
+import type { FileLibrary, FileLibraryClientMountAccess, FileObjectsListItem } from '@/lib/api/types';
 import { useHasPermission } from '@/lib/hooks/use-permissions';
 import {
   useCreateFileLibrary,
@@ -123,7 +123,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const fileInputRef = React.useRef<HTMLInputElement | null>(null);
   const [libraryAccessOpen, setLibraryAccessOpen] = React.useState(false);
   const [libraryAccessTarget, setLibraryAccessTarget] = React.useState<FileLibrary | null>(null);
-  const [libraryMountAccess, setLibraryMountAccess] = React.useState<StorageCredentialExchangeResponse | null>(null);
+  const [libraryMountAccess, setLibraryMountAccess] = React.useState<FileLibraryClientMountAccess | null>(null);
   const [revealMetadataUrl, setRevealMetadataUrl] = React.useState(false);
 
   const crumbs = React.useMemo(() => buildCrumbs(prefix), [prefix]);
@@ -350,7 +350,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
         projectId,
         libraryId: library.id,
       });
-      setLibraryMountAccess(result);
+      setLibraryMountAccess(result.client_mount_access);
     } catch (error) {
       const message = error instanceof Error ? error.message : t('file_manager.mount_access_failed');
       toast.error(`${t('file_manager.mount_access_failed')}: ${message}`);

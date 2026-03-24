@@ -52,16 +52,19 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
 vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({
   useFileLibraryStorageCredentialExchange: () => ({
     mutateAsync: vi.fn().mockResolvedValue({
-      filesystem_name: 'flib-ws-default-proj-001-shared-docs',
-      metadata_url: 'postgres://user:password@localhost:5432/jfs_lib_1',
-      recommended_mount_path: '~/JuiceFS/shared-docs',
-      platform_notes: ['Install JuiceFS before mounting.'],
-      recommended_mount_commands: {
-        linux: 'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 ~/JuiceFS/shared-docs',
-        macos: 'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 ~/JuiceFS/shared-docs',
-        windows: 'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 X:',
+      client_mount_access: {
+        filesystem_name: 'flib-ws-default-proj-001-shared-docs',
+        metadata_url: 'postgres://user:password@files.example.com:5432/jfs_lib_1',
+        storage_bucket_url: 'https://files.example.com:19000/jfs-lib-1',
+        recommended_mount_path: '~/JuiceFS/shared-docs',
+        platform_notes: ['Install JuiceFS before mounting.'],
+        recommended_mount_commands: {
+          linux: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
+          macos: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
+          windows: 'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 X: --bucket https://files.example.com:19000/jfs-lib-1',
+        },
+        created_at: '2026-03-16T08:00:00.000Z',
       },
-      created_at: '2026-03-16T08:00:00.000Z',
     }),
     isPending: false,
   }),
@@ -218,7 +221,7 @@ describe('FilesPage (object browser)', () => {
     expect(screen.getByTestId('files__library-mount__filesystem-name')).toHaveValue('flib-ws-default-proj-001-shared-docs');
     expect(screen.getByTestId('files__library-mount__tab-macos')).toHaveAttribute('data-state', 'active');
     expect(screen.getByTestId('files__library-mount__command-macos')).toHaveValue(
-      'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 ~/JuiceFS/shared-docs',
+      'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 ~/JuiceFS/shared-docs --bucket https://files.example.com:19000/jfs-lib-1',
     );
   });
 
@@ -233,7 +236,7 @@ describe('FilesPage (object browser)', () => {
     );
     expect(screen.getByTestId('files__library-mount__copy-command')).toBeInTheDocument();
     expect(screen.getByTestId('files__library-mount__command-windows')).toHaveValue(
-      'juicefs mount postgres://user:password@localhost:5432/jfs_lib_1 X:',
+      'juicefs mount postgres://user:password@files.example.com:5432/jfs_lib_1 X: --bucket https://files.example.com:19000/jfs-lib-1',
     );
   });
 

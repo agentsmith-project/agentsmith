@@ -32,10 +32,18 @@ describe('UseGuidePage route', () => {
       expect(screen.getByTestId('use-guide__page')).toBeInTheDocument();
     });
 
+    expect(screen.getByTestId('use-guide__protocol-openai')).toBeInTheDocument();
+    expect(screen.getByTestId('use-guide__protocol-anthropic')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__codex-sample')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__claude-sample')).toBeInTheDocument();
     expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent(
       'https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/llm-gateway',
+    );
+    expect(screen.getByTestId('use-guide__openai-chat-curl')).toHaveTextContent(
+      'https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/llm-gateway/chat/completions',
+    );
+    expect(screen.getByTestId('use-guide__anthropic-curl')).toHaveTextContent(
+      'https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/llm-gateway/messages',
     );
     expect(screen.getByTestId('use-guide__link-api-keys')).toHaveAttribute('href', '/en/user/api-keys');
     expect(screen.getByTestId('use-guide__link-third-party-accounts')).toHaveAttribute('href', '/en/workspaces/ws_1/connections');

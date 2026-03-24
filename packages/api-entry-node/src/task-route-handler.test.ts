@@ -16,6 +16,30 @@ describe('task-route-handler workspace access', () => {
     });
   });
 
+  it('rewrites client-visible mount access for internal agents when internal overrides are configured', () => {
+    const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+    const previousStorageEndpoint = process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'kind-gateway';
+    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://kind-gateway:19000';
+    try {
+      const resolved = resolveTaskWorkspaceMountAccess({
+        agentMode: 'internal',
+        metadataUrl: 'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'https://files.example.com:19000/jfs-lib-demo',
+      });
+
+      expect(resolved).toEqual({
+        metadataUrl: 'postgres://jfsu_user:secret@kind-gateway:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://kind-gateway:19000/jfs-lib-demo',
+      });
+    } finally {
+      if (previousMetaHost === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+      else process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousMetaHost;
+      if (previousStorageEndpoint === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+      else process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousStorageEndpoint;
+    }
+  });
+
   it('rewrites loopback mount access for external runner execution', () => {
     const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
     process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://172.18.0.1:20000';

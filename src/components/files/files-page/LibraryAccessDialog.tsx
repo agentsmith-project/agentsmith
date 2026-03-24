@@ -17,13 +17,13 @@ import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { toast } from '@/components/ui/toast';
-import type { FileLibrary, StorageCredentialExchangeResponse } from '@/lib/api/types';
+import type { FileLibrary, FileLibraryClientMountAccess } from '@/lib/api/types';
 
 type PlatformTab = 'linux' | 'macos' | 'windows';
 
 interface LibraryAccessDialogProps {
   exchangePending: boolean;
-  mountAccess: StorageCredentialExchangeResponse | null;
+  mountAccess: FileLibraryClientMountAccess | null;
   open: boolean;
   revealMetadataUrl: boolean;
   targetLibrary: FileLibrary | null;

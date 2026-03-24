@@ -79,6 +79,9 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
   }
 
   const gatewayBaseUrl = buildPublicApiUrl(`workspaces/${workspaceId}/projects/${projectId}/llm-gateway`);
+  const openAiChatCompletionsUrl = `${gatewayBaseUrl}/chat/completions`;
+  const openAiResponsesUrl = `${gatewayBaseUrl}/responses`;
+  const anthropicMessagesUrl = `${gatewayBaseUrl}/messages`;
 
   const claudeEnvSample = `export ANTHROPIC_BASE_URL=${gatewayBaseUrl}\nexport ANTHROPIC_AUTH_TOKEN=<YOUR_PERSONAL_API_KEY>\nexport ANTHROPIC_DEFAULT_HAIKU_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_SONNET_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_OPUS_MODEL=<project-model-name>\nexport CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nexport CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`;
 
@@ -96,7 +99,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
 
   const codexSample = `export OPENAI_BASE_URL=${gatewayBaseUrl}\nexport OPENAI_API_KEY=<YOUR_PERSONAL_API_KEY>\n\ncodex --model <project-model-name>`;
 
-  const openAiCompletionCurl = `curl ${gatewayBaseUrl}/chat/completions \\
+  const openAiCompletionCurl = `curl ${openAiChatCompletionsUrl} \\
   -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -105,7 +108,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     "stream": false
   }'`;
 
-  const openAiResponsesCurl = `curl ${gatewayBaseUrl}/responses \\
+  const openAiResponsesCurl = `curl ${openAiResponsesUrl} \\
   -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -113,7 +116,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     "input": "hello"
   }'`;
 
-  const anthropicCurl = `curl ${gatewayBaseUrl}/messages \\
+  const anthropicCurl = `curl ${anthropicMessagesUrl} \\
   -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
   -H "anthropic-version: 2023-06-01" \\
   -H "Content-Type: application/json" \\
@@ -146,6 +149,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
             </CardHeader>
             <CardContent className="space-y-2 text-sm text-tertiary">
               <p>{t('gateway.description')}</p>
+              <p>{t('gateway.protocol_note')}</p>
               <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__gateway-base-url">
                 {gatewayBaseUrl}
               </pre>
@@ -154,43 +158,56 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
 
           <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
             <CardHeader>
-              <CardTitle className="text-base">{t('claude.title')}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-sample">
-                {claudeEnvSample}
-              </pre>
-              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-json-sample">
-                {claudeJsonSample}
-              </pre>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-            <CardHeader>
-              <CardTitle className="text-base">{t('codex.title')}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__codex-sample">
-                {codexSample}
-              </pre>
-            </CardContent>
-          </Card>
-
-          <Card className="rounded-[24px] border-subtle bg-surface/95 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-            <CardHeader>
               <CardTitle className="text-base">{t('api_examples.title')}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__openai-chat-curl">
-                {openAiCompletionCurl}
-              </pre>
-              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__openai-responses-curl">
-                {openAiResponsesCurl}
-              </pre>
-              <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__anthropic-curl">
-                {anthropicCurl}
-              </pre>
+            <CardContent className="grid gap-4 lg:grid-cols-2">
+              <section className="space-y-3" data-testid="use-guide__protocol-openai">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground">{t('protocols.openai.title')}</h3>
+                  <p className="text-sm text-tertiary">{t('protocols.openai.description')}</p>
+                </div>
+                <div className="rounded-[18px] border border-subtle bg-bg-base/40 p-4">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary">
+                    {t('protocols.openai.base_url_label')}
+                  </div>
+                  <pre className="overflow-x-auto text-xs text-foreground" data-testid="use-guide__openai-base-url">
+                    {gatewayBaseUrl}
+                  </pre>
+                </div>
+                <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__codex-sample">
+                  {codexSample}
+                </pre>
+                <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__openai-chat-curl">
+                  {openAiCompletionCurl}
+                </pre>
+                <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__openai-responses-curl">
+                  {openAiResponsesCurl}
+                </pre>
+              </section>
+
+              <section className="space-y-3" data-testid="use-guide__protocol-anthropic">
+                <div className="space-y-1">
+                  <h3 className="text-sm font-semibold text-foreground">{t('protocols.anthropic.title')}</h3>
+                  <p className="text-sm text-tertiary">{t('protocols.anthropic.description')}</p>
+                </div>
+                <div className="rounded-[18px] border border-subtle bg-bg-base/40 p-4">
+                  <div className="mb-2 text-xs font-medium uppercase tracking-wide text-secondary">
+                    {t('protocols.anthropic.base_url_label')}
+                  </div>
+                  <pre className="overflow-x-auto text-xs text-foreground" data-testid="use-guide__anthropic-base-url">
+                    {gatewayBaseUrl}
+                  </pre>
+                </div>
+                <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-sample">
+                  {claudeEnvSample}
+                </pre>
+                <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-json-sample">
+                  {claudeJsonSample}
+                </pre>
+                <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__anthropic-curl">
+                  {anthropicCurl}
+                </pre>
+              </section>
             </CardContent>
           </Card>
 

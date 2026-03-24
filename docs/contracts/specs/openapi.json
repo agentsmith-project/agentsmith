@@ -2958,6 +2958,8 @@
           "Endpoints"
         ],
         "operationId": "post_llmGatewayProxy",
+        "summary": "Project-scoped LLM gateway proxy",
+        "description": "Uses one project gateway identity and auth surface, but clients still call the protocol path they expect. Use `/chat/completions` or `/responses` for OpenAI-compatible clients, and `/messages` for Anthropic-compatible clients.",
         "responses": {
           "200": {
             "description": "OK",
@@ -8616,51 +8618,62 @@
       "StorageCredentialExchangeResponse": {
         "type": "object",
         "required": [
-          "filesystem_name",
-          "metadata_url",
-          "recommended_mount_path",
-          "platform_notes",
-          "recommended_mount_commands",
-          "created_at"
+          "client_mount_access"
         ],
         "properties": {
-          "filesystem_name": {
-            "type": "string"
-          },
-          "metadata_url": {
-            "type": "string"
-          },
-          "recommended_mount_path": {
-            "type": "string"
-          },
-          "platform_notes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "recommended_mount_commands": {
+          "client_mount_access": {
             "type": "object",
             "required": [
-              "linux",
-              "macos",
-              "windows"
+              "filesystem_name",
+              "metadata_url",
+              "recommended_mount_path",
+              "platform_notes",
+              "recommended_mount_commands",
+              "created_at"
             ],
             "properties": {
-              "linux": {
+              "filesystem_name": {
                 "type": "string"
               },
-              "macos": {
+              "metadata_url": {
                 "type": "string"
               },
-              "windows": {
+              "storage_bucket_url": {
                 "type": "string"
+              },
+              "recommended_mount_path": {
+                "type": "string"
+              },
+              "platform_notes": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "recommended_mount_commands": {
+                "type": "object",
+                "required": [
+                  "linux",
+                  "macos",
+                  "windows"
+                ],
+                "properties": {
+                  "linux": {
+                    "type": "string"
+                  },
+                  "macos": {
+                    "type": "string"
+                  },
+                  "windows": {
+                    "type": "string"
+                  }
+                }
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
               }
             }
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time"
           }
         }
       },

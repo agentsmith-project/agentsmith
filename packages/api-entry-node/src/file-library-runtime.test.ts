@@ -38,17 +38,17 @@ describe('file-library-runtime readiness', () => {
       MINIO_PORT: '9000',
       MINIO_ACCESS_KEY: 'mbos',
       MINIO_SECRET_KEY: 'secret',
-      FILE_LIBRARY_POSTGRES_PUBLIC_HOST: 'localhost',
-      FILE_LIBRARY_POSTGRES_PUBLIC_PORT: '15432',
-      FILE_LIBRARY_MINIO_PUBLIC_ENDPOINT: 'http://localhost:19000',
+      FILE_LIBRARY_CLIENT_POSTGRES_HOST: 'files.example.com',
+      FILE_LIBRARY_CLIENT_POSTGRES_PORT: '15432',
+      FILE_LIBRARY_CLIENT_MINIO_ENDPOINT: 'https://files.example.com:19000',
     });
 
     expect(config.pgConnectHost).toBe('postgres');
     expect(config.pgConnectPort).toBe(5432);
-    expect(config.pgPublicHost).toBe('localhost');
-    expect(config.pgPublicPort).toBe(15432);
+    expect(config.pgClientHost).toBe('files.example.com');
+    expect(config.pgClientPort).toBe(15432);
     expect(config.minioStorageEndpoint).toBe('http://minio:9000');
-    expect(config.minioPublicEndpoint).toBe('http://localhost:19000');
+    expect(config.minioClientEndpoint).toBe('https://files.example.com:19000');
   });
 
   it('rewrites loopback file library access for external runner execution', () => {
@@ -133,5 +133,26 @@ describe('file-library-runtime readiness', () => {
         env,
       ),
     ).toBe('http://10.88.0.1:19000/jfs-lib-demo');
+  });
+
+  it('rewrites client-visible file library access for internal agent execution', () => {
+    const env = {
+      INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'kind-gateway',
+      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://kind-gateway:19000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForInternalExecution(
+        'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@kind-gateway:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForInternalExecution(
+        'https://files.example.com:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://kind-gateway:19000/jfs-lib-demo');
   });
 });

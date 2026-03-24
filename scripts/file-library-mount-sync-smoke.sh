@@ -198,11 +198,16 @@ if [[ "${status}" != "200" ]]; then
   cat "${BODY_FILE}" >&2
   exit 1
 fi
-METADATA_URL="$(cat "${BODY_FILE}" | json_field "j.metadata_url")"
+METADATA_URL="$(cat "${BODY_FILE}" | json_field "j.client_mount_access.metadata_url")"
+STORAGE_BUCKET_URL="$(cat "${BODY_FILE}" | json_field "j.client_mount_access.storage_bucket_url")"
+MOUNT_ARGS=(mount "${METADATA_URL}" "${MOUNT_POINT}" -d --log "${MOUNT_LOG}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0)
+if [[ -n "${STORAGE_BUCKET_URL}" ]]; then
+  MOUNT_ARGS+=(--bucket "${STORAGE_BUCKET_URL}")
+fi
 
 info "mounting ${LIBRARY_ID} at ${MOUNT_POINT}"
 env -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u http_proxy -u https_proxy -u all_proxy -u NO_PROXY -u no_proxy \
-  juicefs mount "${METADATA_URL}" "${MOUNT_POINT}" -d --log "${MOUNT_LOG}" --check-storage --attr-cache 0 --entry-cache 0 --dir-entry-cache 0 >/dev/null 2>&1
+  juicefs "${MOUNT_ARGS[@]}" >/dev/null 2>&1
 MOUNTED="1"
 
 mkdir -p "${MOUNT_POINT}/local-sync"

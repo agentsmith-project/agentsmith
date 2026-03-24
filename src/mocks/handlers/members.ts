@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
 import { memberFixtures, memberProjectMembershipFixtures, joinRequestFixtures } from '../fixtures/members';
+import { appendMockNotification } from '../state/me-notifications';
 import { ensureWorkspaceMember } from './workspace';
 import { PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS } from '@/lib/constants/permissions';
 import {
@@ -79,6 +80,28 @@ type BuiltInProjectGroupState = {
   admins: string[];
   members: string[];
 };
+
+function getRequestUserId(request: Request): string {
+  const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
+  if (!authHeader) return 'user_001';
+  const token = authHeader.replace(/^Bearer\s+/i, '');
+  if (!token.startsWith('mock_token_')) return 'user_001';
+  const rest = token.slice('mock_token_'.length);
+  const separator = rest.lastIndexOf('_');
+  if (separator <= 0) return 'user_001';
+  return rest.slice(0, separator);
+}
+
+function getUserProfile(userId: string): { email: string; name: string } {
+  const member = members.find((item) => item.id === userId);
+  if (member) {
+    return { email: member.email, name: member.name };
+  }
+  return {
+    email: `${userId}@example.com`,
+    name: userId,
+  };
+}
 
 function memberProjectKey(projectId: string, memberId: string): string {
   return `${projectId}:${memberId}`;
@@ -208,6 +231,19 @@ function getResolvedProjectGroupIdsForUser(projectId: string, userId: string): s
   return [...new Set([...builtIns, ...custom])];
 }
 
+function canManageProjectMembership(projectId: string, userId: string): boolean {
+  const project = projects.find((item) => item.id === projectId);
+  if (!project) return false;
+  if (project.owner_id === userId) return true;
+  return memberProjectMembershipFixtures.some(
+    (item) =>
+      item.project_id === projectId
+      && item.user_id === userId
+      && item.status === 'active'
+      && item.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins),
+  );
+}
+
 function appendMemberChangeHistory(projectId: string, memberId: string, entry: Omit<ChangeHistoryEntry, 'id' | 'timestamp'>): void {
   const key = memberProjectKey(projectId, memberId);
   const history = memberChangeHistoryStore[key] ?? [];
@@ -302,13 +338,19 @@ export const memberHandlers = [
     if (idx >= 0) members.splice(idx, 1);
     return HttpResponse.json({ ok: true });
   }),
-  http.get('/api/v1/workspaces/:ws/projects/:prj/join-requests', ({ params }) => {
+  http.get('/api/v1/workspaces/:ws/projects/:prj/join-requests', ({ params, request }) => {
     const projectId = String(params.prj ?? '');
+    const userId = getRequestUserId(request);
+    if (!canManageProjectMembership(projectId, userId)) {
+      return HttpResponse.json({ error_code: 'PERMISSION_DENIED' }, { status: 403 });
+    }
     const items = joinRequests.filter((item) => item.project_id === projectId);
     return HttpResponse.json({ items, total: items.length });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests', async ({ params, request }) => {
     const projectId = String(params.prj ?? '');
+    const userId = getRequestUserId(request);
+    const userProfile = getUserProfile(userId);
     const project = projects.find((item) => item.id === projectId);
     if (!project) {
       return HttpResponse.json({ error_code: 'not_found' }, { status: 404 });
@@ -317,7 +359,6 @@ export const memberHandlers = [
       return HttpResponse.json({ error_code: 'PERMISSION_DENIED', message: 'project_join_requires_public_visibility' }, { status: 403 });
     }
     if (project.join_policy === 'open') {
-      const userId = 'user_test';
       if (!memberProjectMembershipFixtures.some((item) => item.project_id === projectId && item.user_id === userId)) {
         memberProjectMembershipFixtures.push({
           project_id: projectId,
@@ -342,12 +383,16 @@ export const memberHandlers = [
     }
 
     const body = (await request.json().catch(() => ({}))) as { reason?: string };
+    const existingPending = joinRequests.find((item) => item.project_id === projectId && item.user_id === userId && item.status === 'pending');
+    if (existingPending) {
+      return HttpResponse.json({ error_code: 'JOIN_REQUEST_ALREADY_PENDING' }, { status: 409 });
+    }
     const created = {
       id: `jr_${Date.now()}`,
       project_id: projectId,
-      user_id: 'user_test',
-      user_email: 'test@example.com',
-      user_name: 'Test User',
+      user_id: userId,
+      user_email: userProfile.email,
+      user_name: userProfile.name,
       reason: typeof body.reason === 'string' ? body.reason : '',
       status: 'pending' as const,
       requested_at: new Date().toISOString(),
@@ -355,31 +400,36 @@ export const memberHandlers = [
     joinRequests.unshift(created);
     return HttpResponse.json({ outcome: 'pending', join_request_id: created.id }, { status: 201 });
   }),
-  http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/approve', ({ params }) => {
+  http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/approve', ({ params, request }) => {
     const projectId = String(params.prj ?? '');
-    const request = joinRequests.find((item) => item.id === params.id);
-    if (!request) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
-    request.status = 'approved';
-    request.reviewed_at = new Date().toISOString();
-    request.reviewed_by = 'user_001';
-    if (!members.some((member) => member.id === request.user_id)) {
+    const actorUserId = getRequestUserId(request);
+    if (!canManageProjectMembership(projectId, actorUserId)) {
+      return HttpResponse.json({ error_code: 'PERMISSION_DENIED' }, { status: 403 });
+    }
+    const joinRequest = joinRequests.find((item) => item.id === params.id);
+    if (!joinRequest) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+    const project = projects.find((item) => item.id === projectId);
+    joinRequest.status = 'approved';
+    joinRequest.reviewed_at = new Date().toISOString();
+    joinRequest.reviewed_by = actorUserId;
+    if (!members.some((member) => member.id === joinRequest.user_id)) {
       members.push({
-        id: request.user_id,
-        email: request.user_email,
-        name: request.user_name,
+        id: joinRequest.user_id,
+        email: joinRequest.user_email,
+        name: joinRequest.user_name,
         status: 'active',
         created_at: new Date().toISOString(),
       });
     }
     ensureWorkspaceMember({
-      user_id: request.user_id,
-      email: request.user_email,
-      name: request.user_name,
+      user_id: joinRequest.user_id,
+      email: joinRequest.user_email,
+      name: joinRequest.user_name,
     });
-    if (!memberProjectMembershipFixtures.some((item) => item.project_id === projectId && item.user_id === request.user_id)) {
+    if (!memberProjectMembershipFixtures.some((item) => item.project_id === projectId && item.user_id === joinRequest.user_id)) {
       memberProjectMembershipFixtures.push({
         project_id: projectId,
-        user_id: request.user_id,
+        user_id: joinRequest.user_id,
         groups: [{
           id: PROJECT_BUILT_IN_GROUP_IDS.members,
           name: 'Project Members',
@@ -389,25 +439,53 @@ export const memberHandlers = [
         }],
         permissions: [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.member],
         status: 'active',
-        joined_at: request.reviewed_at,
+        joined_at: joinRequest.reviewed_at,
       });
     }
     const builtInState = getBuiltInProjectGroupState(projectId);
-    if (!builtInState.members.includes(request.user_id)) {
-      builtInState.members.push(request.user_id);
+    if (!builtInState.members.includes(joinRequest.user_id)) {
+      builtInState.members.push(joinRequest.user_id);
     }
+    appendMockNotification(joinRequest.user_id, {
+      id: `notif_join_approved_${joinRequest.id}`,
+      type: 'join_request_approved',
+      title: 'Project access approved',
+      body: project ? `Your request to join ${project.name} was approved.` : 'Your project access request was approved.',
+      link_url: `/workspaces/ws_default/projects/${projectId}/overview`,
+      read_at: null,
+      created_at: new Date().toISOString(),
+    });
     return HttpResponse.json({ ok: true });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/join-requests/:id/reject', async ({ params, request }) => {
     const body = (await request.json().catch(() => ({}))) as { reason?: string };
     const joinRequest = joinRequests.find((item) => item.id === params.id);
     if (!joinRequest) return HttpResponse.json({ error: 'not_found' }, { status: 404 });
+    const projectId = String(params.prj ?? '');
+    const actorUserId = getRequestUserId(request);
+    if (!canManageProjectMembership(projectId, actorUserId)) {
+      return HttpResponse.json({ error_code: 'PERMISSION_DENIED' }, { status: 403 });
+    }
+    const project = projects.find((item) => item.id === projectId);
     joinRequest.status = 'rejected';
     joinRequest.reviewed_at = new Date().toISOString();
-    joinRequest.reviewed_by = 'user_001';
+    joinRequest.reviewed_by = actorUserId;
+    let rejectReason = '';
     if (typeof body.reason === 'string' && body.reason.length > 0) {
+      rejectReason = body.reason;
       joinRequest.reason = body.reason;
     }
+    appendMockNotification(joinRequest.user_id, {
+      id: `notif_join_rejected_${joinRequest.id}`,
+      type: 'join_request_rejected',
+      title: 'Project access request declined',
+      body: rejectReason
+        ? `Your request to join ${project?.name ?? 'this project'} was declined: ${rejectReason}`
+        : `Your request to join ${project?.name ?? 'this project'} was declined.`,
+      link_url: '/workspaces/ws_default/projects',
+      read_at: null,
+      created_at: new Date().toISOString(),
+    });
     return HttpResponse.json({ ok: true });
   }),
   http.post('/api/v1/workspaces/:ws/projects/:prj/invites', async ({ request }) => {

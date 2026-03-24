@@ -589,7 +589,13 @@ export function WorkspaceProjectsEntryPage({
           />
 
           <AlertDialog open={!!joinDialogProject} onOpenChange={(open) => !open && setJoinDialogProject(null)}>
-            <AlertDialogContent>
+            <AlertDialogContent
+              data-testid={
+                joinDialogMode === 'open'
+                  ? 'projects__join-now-dialog'
+                  : 'projects__join-request-dialog'
+              }
+            >
               <AlertDialogHeader>
                 <AlertDialogTitle>
                   {joinDialogMode === 'open' ? t('join_request.join_now_title') : t('join_request.confirm_title')}
@@ -603,8 +609,13 @@ export function WorkspaceProjectsEntryPage({
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
-                <AlertDialogCancel>{t('join_request.cancel')}</AlertDialogCancel>
+                <AlertDialogCancel data-testid="projects__join-dialog-cancel">{t('join_request.cancel')}</AlertDialogCancel>
                 <AlertDialogAction
+                  data-testid={
+                    joinDialogMode === 'open'
+                      ? 'projects__join-now-confirm'
+                      : 'projects__join-request-confirm'
+                  }
                   onClick={(event) => {
                     event.preventDefault();
                     if (!joinDialogProject || isJoinDialogPending || isJoinDialogBusy) return;

@@ -65,7 +65,7 @@ export function NotificationCenter() {
           )}
         </button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[380px] p-0">
+      <DropdownMenuContent align="end" className="w-[380px] p-0" data-testid="topbar__notifications-dropdown">
         <div className="flex items-center justify-between px-4 py-3 border-b border-subtle">
           <h3 className="text-sm font-semibold text-foreground">{t('title')}</h3>
           {unreadCount > 0 && (
@@ -122,6 +122,7 @@ function NotificationItem({
 
   const content = (
     <div
+      data-testid={`topbar__notification-item--${notif.id}`}
       className={`px-4 py-3 hover:bg-hover transition-colors cursor-pointer ${
         isUnread ? 'bg-accent/5' : ''
       }`}

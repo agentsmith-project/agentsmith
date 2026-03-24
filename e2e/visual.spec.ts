@@ -15,9 +15,13 @@ import { gotoAndWait, waitForPageReady } from './utils/navigation';
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
 
-const test = base.extend<{ authedPage: Page }>({
+const test = base.extend<{ authedPage: Page; guestPage: Page }>({
   authedPage: async ({ page }, use) => {
     await withAuth(page, WS_ID, 'test@example.com');
+    await use(page);
+  },
+  guestPage: async ({ page }, use) => {
+    await withAuth(page, WS_ID, 'guest@example.com', 'user_009');
     await use(page);
   },
 });
@@ -216,6 +220,64 @@ test.describe('Visual - Workspace Pages', () => {
   test('projects list', async ({ authedPage }) => {
     await stableNavigate(authedPage, `/en-US/workspaces/${WS_ID}/projects`);
     await expect(authedPage).toHaveScreenshot('projects-list.png', { fullPage: true });
+  });
+
+  test('projects list public discovery', async ({ guestPage }) => {
+    await stableNavigate(guestPage, `/en-US/workspaces/${WS_ID}/projects`);
+    await expect(guestPage.getByText('Research Project')).not.toBeVisible();
+    await expect(guestPage.getByTestId('projects__join-request-btn--proj_001')).toBeVisible();
+    await expect(guestPage.getByTestId('projects__join-project-btn--proj_003')).toBeVisible();
+    await expect(guestPage).toHaveScreenshot('projects-list-public-discovery.png', { fullPage: true });
+  });
+
+  test('project join request dialog', async ({ guestPage }) => {
+    await stableNavigate(guestPage, `/en-US/workspaces/${WS_ID}/projects`);
+    await guestPage.getByRole('button', { name: 'AI Assistant Project' }).click();
+    await expect(guestPage.getByTestId('projects__join-request-dialog')).toBeVisible();
+    await expect(guestPage).toHaveScreenshot('dialog-project-join-request.png', { fullPage: true });
+  });
+
+  test('project join now dialog', async ({ guestPage }) => {
+    await stableNavigate(guestPage, `/en-US/workspaces/${WS_ID}/projects`);
+    await guestPage.getByRole('button', { name: 'Customer Support Bot' }).click();
+    await expect(guestPage.getByTestId('projects__join-now-dialog')).toBeVisible();
+    await expect(guestPage).toHaveScreenshot('dialog-project-join-now.png', { fullPage: true });
+  });
+
+  test('notification center join request outcome', async ({ page }) => {
+    await withAuth(page, WS_ID, 'guest@example.com', 'user_009');
+    await stableNavigate(page, `/en-US/workspaces/${WS_ID}/projects`);
+    await page.evaluate(async () => {
+      await fetch('/api/test/me/notifications/seed', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: 'user_009',
+          notifications: [
+            {
+              id: 'notif_visual_join_approved',
+              type: 'join_request_approved',
+              title: 'Project access approved',
+              body: 'Your request to join AI Assistant Project was approved.',
+              link_url: '/workspaces/ws_default/projects/proj_001/overview',
+            },
+            {
+              id: 'notif_visual_join_rejected',
+              type: 'join_request_rejected',
+              title: 'Project access request declined',
+              body: 'Your request to join AI Assistant Project was declined: Not in scope for this project',
+              link_url: '/workspaces/ws_default/projects',
+            },
+          ],
+        }),
+      });
+    });
+    await stableNavigate(page, `/en-US/workspaces/${WS_ID}/projects`);
+    await page.getByTestId('topbar__notifications').click();
+    await expect(page.getByTestId('topbar__notifications-dropdown')).toBeVisible();
+    await expect(page).toHaveScreenshot('notification-center-join-request.png', { fullPage: true });
   });
 
   test('projects empty state', async ({ page }) => {

@@ -198,7 +198,7 @@ export function JoinRequestsTab({
       )}
 
       <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
-        <DialogContent className="sm:max-w-[420px]">
+        <DialogContent className="sm:max-w-[420px]" data-testid="members__join-request-reject-dialog">
           <DialogHeader>
             <DialogTitle>{t('reject_title')}</DialogTitle>
             <DialogDescription>{t('reject_description')}</DialogDescription>
@@ -281,7 +281,7 @@ function JoinRequestCard({
   };
 
   return (
-    <div className="border border-border rounded-md p-4 space-y-3">
+    <div className="border border-border rounded-md p-4 space-y-3" data-testid={`members__join-request-card--${request.id}`}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-hover flex items-center justify-center text-foreground text-xs font-medium">
@@ -339,6 +339,7 @@ function JoinRequestCard({
             onClick={onApprove}
             disabled={isProcessing}
             className="flex-1 gap-2"
+            data-testid={`members__join-request-approve--${request.id}`}
           >
             <CheckCircle className="h-4 w-4" />
             {t('approve')}
@@ -349,6 +350,7 @@ function JoinRequestCard({
             onClick={onApproveAndGrantProjectAdmin}
             disabled={isProcessing}
             className="flex-1 gap-2"
+            data-testid={`members__join-request-approve-admin--${request.id}`}
           >
             <ShieldCheck className="h-4 w-4" />
             {isApprovingAndGranting ? t('approve_and_grant_pending') : t('approve_and_grant')}
@@ -359,6 +361,7 @@ function JoinRequestCard({
             onClick={onReject}
             disabled={isProcessing}
             className="flex-1 gap-2"
+            data-testid={`members__join-request-reject--${request.id}`}
           >
             <XCircle className="h-4 w-4" />
             {t('reject')}

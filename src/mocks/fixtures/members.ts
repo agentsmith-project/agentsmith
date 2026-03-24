@@ -70,6 +70,14 @@ export const memberFixtures: Member[] = [
     status: 'removed',
     created_at: '2026-01-08T00:00:00Z',
   },
+  {
+    id: 'user_009',
+    email: 'guest@example.com',
+    name: 'Guest User',
+    avatar: 'GU',
+    status: 'active',
+    created_at: '2026-01-22T00:00:00Z',
+  },
 ];
 
 export const memberProjectMembershipFixtures: ProjectMembership[] = [

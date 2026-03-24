@@ -1,6 +1,7 @@
 import { http, HttpResponse } from 'msw';
 import p0 from '../fixtures/p0.json';
-import { projectFixtures, projectMembershipFixtures, CURRENT_USER_ID } from '../fixtures/projects';
+import { projectFixtures, CURRENT_USER_ID } from '../fixtures/projects';
+import { memberProjectMembershipFixtures } from '../fixtures/members';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docProjectFixtures, docProjectMembershipFixtures } from '../doc-fixtures/workspace-projects';
 import type { Project } from '@/lib/api/types';
@@ -11,7 +12,7 @@ export const projects = DOC_FIXTURES_ENABLED
   ? [...docProjectFixtures]
   : [...(p0.projects.length ? p0.projects : projectFixtures)];
 
-const membershipsSource = DOC_FIXTURES_ENABLED ? docProjectMembershipFixtures : projectMembershipFixtures;
+const membershipsSource = DOC_FIXTURES_ENABLED ? docProjectMembershipFixtures : memberProjectMembershipFixtures;
 
 function getRequestUserId(request: Request): string {
   const authHeader = request.headers.get('authorization') ?? request.headers.get('Authorization');
@@ -24,36 +25,48 @@ function getRequestUserId(request: Request): string {
   return rest.slice(0, separator);
 }
 
+function getProjectMembershipForUser(projectId: string, userId: string) {
+  return membershipsSource.find((m) => m.project_id === projectId && m.user_id === userId && m.status === 'active');
+}
+
+function isProjectVisibleToUser(project: Project, userId: string): boolean {
+  if (project.visibility === 'public') return true;
+  if (project.owner_id === userId) return true;
+  return Boolean(getProjectMembershipForUser(project.id, userId));
+}
+
+function buildProjectResponse(project: Project, userId: string) {
+  const membership = getProjectMembershipForUser(project.id, userId);
+  const isOwner = project.owner_id === userId;
+  return {
+    ...project,
+    permissions: isOwner
+      ? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner]
+      : membership?.permissions ?? [],
+    groups: isOwner
+      ? [{
+          id: PROJECT_BUILT_IN_GROUP_IDS.owner,
+          name: 'Project owner',
+          permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
+          built_in: true,
+          system_key: 'owner',
+        }]
+      : membership?.groups ?? [],
+    admin_member_ids: membershipsSource
+      .filter((m) => m.project_id === project.id && m.status === 'active')
+      .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
+      .map((m) => m.user_id),
+  };
+}
+
 export const projectHandlers = [
   http.get('/api/v1/workspaces/:ws/projects', ({ params, request }) => {
     const userId = getRequestUserId(request);
     const workspaceId = params.ws as string;
     const items = projects
       .filter((project) => project.workspace_id === workspaceId)
-      .map((project) => {
-      const membership =
-        membershipsSource.find(
-          (m) => m.project_id === project.id && m.user_id === userId,
-        ) ??
-        membershipsSource.find(
-          (m) => m.project_id === project.id && m.user_id === project.owner_id,
-        );
-        return {
-          ...project,
-          permissions: membership?.permissions ?? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
-          groups: membership?.groups ?? [{
-            id: PROJECT_BUILT_IN_GROUP_IDS.owner,
-            name: 'Project owner',
-            permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
-            built_in: true,
-            system_key: 'owner',
-          }],
-          admin_member_ids: membershipsSource
-            .filter((m) => m.project_id === project.id)
-            .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
-            .map((m) => m.user_id),
-        };
-      });
+      .filter((project) => isProjectVisibleToUser(project, userId))
+      .map((project) => buildProjectResponse(project, userId));
     return HttpResponse.json({ items });
   }),
   http.get('/api/v1/workspaces/:ws/projects/:prj', ({ params, request }) => {
@@ -61,31 +74,13 @@ export const projectHandlers = [
     const workspaceId = params.ws as string;
     const projectId = params.prj as string;
     const project = projects.find((p) => p.workspace_id === workspaceId && p.id === projectId);
-    const membership =
-      membershipsSource.find(
-        (m) => m.project_id === projectId && m.user_id === userId,
-      ) ??
-      membershipsSource.find(
-        (m) => m.project_id === projectId && m.user_id === project?.owner_id,
-      );
     if (!project) {
       return HttpResponse.json({ error: 'project_not_found' }, { status: 404 });
     }
-    return HttpResponse.json({
-      ...project,
-      permissions: membership?.permissions ?? [...PROJECT_BUILT_IN_TEMPLATE_PERMISSIONS.owner],
-      groups: membership?.groups ?? [{
-        id: PROJECT_BUILT_IN_GROUP_IDS.owner,
-        name: 'Project owner',
-        permission_template_id: PROJECT_BUILT_IN_TEMPLATE_IDS.owner,
-        built_in: true,
-        system_key: 'owner',
-      }],
-      admin_member_ids: membershipsSource
-        .filter((m) => m.project_id === projectId)
-        .filter((m) => m.groups?.some((group) => group.id === PROJECT_BUILT_IN_GROUP_IDS.admins))
-        .map((m) => m.user_id),
-    });
+    if (!isProjectVisibleToUser(project, userId)) {
+      return HttpResponse.json({ error: 'project_not_found' }, { status: 404 });
+    }
+    return HttpResponse.json(buildProjectResponse(project, userId));
   }),
   http.post('/api/v1/workspaces/:ws/projects', async ({ params, request }) => {
     const userId = getRequestUserId(request);

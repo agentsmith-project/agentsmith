@@ -7,6 +7,8 @@ export const WS_ID = 'ws_default';
 export const PROJECT_ID = 'proj_001';
 export const TEST_EMAIL = 'test@example.com';
 export const LIMITED_TEST_EMAIL = 'viewer@example.com';
+export const ADMIN_TEST_EMAIL = 'bob.smith@example.com';
+export const GUEST_TEST_EMAIL = 'guest@example.com';
 export const LOCALE = 'en-US';
 const LOGIN_PATH_REGEX = /^\/(en-US|zh-CN)\/login(?:\/workspace)?\/?$/;
 const PROTECTED_ROUTE_REGEX = /^\/(en-US|zh-CN)\/(?:user|workspaces)\//;
@@ -25,6 +27,8 @@ export function projectUrl(
 export const test = base.extend<{
   authedPage: Page;
   limitedPage: Page;
+  adminPage: Page;
+  guestPage: Page;
 }>({
   authedPage: async ({ page }, use) => {
     await withAuth(page, WS_ID, TEST_EMAIL);
@@ -33,6 +37,16 @@ export const test = base.extend<{
   },
   limitedPage: async ({ page }, use) => {
     await withAuth(page, WS_ID, LIMITED_TEST_EMAIL, 'user_004');
+    await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
+    await use(page);
+  },
+  adminPage: async ({ page }, use) => {
+    await withAuth(page, WS_ID, ADMIN_TEST_EMAIL, 'user_002');
+    await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
+    await use(page);
+  },
+  guestPage: async ({ page }, use) => {
+    await withAuth(page, WS_ID, GUEST_TEST_EMAIL, 'user_009');
     await ensureAuthenticatedSession(page, `/${LOCALE}/workspaces/${WS_ID}/projects`);
     await use(page);
   },

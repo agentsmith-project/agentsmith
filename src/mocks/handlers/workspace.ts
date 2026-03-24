@@ -76,6 +76,31 @@ const workspaceMembers = (() => {
     });
   }
 
+  const ensureSeededMember = (userId: string, email: string, name: string) => {
+    if (fromP0.some((member) => member.user_id === userId || member.email === email)) {
+      return;
+    }
+    fromP0.push({
+      id: `wm_${userId}`,
+      user_id: userId,
+      name,
+      email,
+      groups: [{
+        id: WORKSPACE_BUILT_IN_GROUP_IDS.members,
+        name: 'Workspace members',
+        permission_template_id: WORKSPACE_BUILT_IN_TEMPLATE_IDS.member,
+        built_in: true,
+        system_key: 'members',
+      }],
+      permissions: ['workspace:read'],
+      status: 'active' as const,
+      joined_at: '2026-01-01T00:00:00Z',
+    });
+  };
+
+  ensureSeededMember('user_002', 'bob.smith@example.com', 'Bob Smith');
+  ensureSeededMember('user_009', 'guest@example.com', 'Guest User');
+
   return fromP0;
 })();
 

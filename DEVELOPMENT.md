@@ -19,6 +19,7 @@ make dev-real-status
 make dev-real-down
 
 # Local / release-grade real verification
+cp .env.real.local.example .env.real.local
 npm run lane:real:core
 npm run lane:real:release
 npm run test:release:precheck
@@ -37,6 +38,12 @@ npm run release:real:report
 - dev-real: `DEMO_ENDPOINT_*`
 - real lane: `REAL_LANE_*`
 - remote deploy: `DEPLOY_*`
+
+模板入口：
+
+- dev-real: `.env.dev.real.example`
+- real lane: `.env.real.local.example`
+- remote deploy: `infra/deploy/remote/env/site.env.example`
 
 旧 demo 命令与 `GLM_*` 命名已经移除；传入旧名字会直接 fail fast。
 

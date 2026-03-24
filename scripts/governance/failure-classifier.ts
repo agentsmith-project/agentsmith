@@ -207,7 +207,7 @@ const FAILURE_PATTERNS: FailurePattern[] = [
       '2. Verify API_BASE is correct: http://localhost:20000',
       '3. Verify BASE_URL is correct: http://localhost:3001',
       '4. Check if ports are in use: `lsof -i :20000 -i :3001`',
-      '5. Restart services if needed: `make dev-down && make dev-up`',
+      '5. Restart services if needed: `make dev-real-down && make dev-real-up && make dev-real-seed-notebook`',
       '6. Check for proxy interference (clear http_proxy, https_proxy)',
     ],
   },

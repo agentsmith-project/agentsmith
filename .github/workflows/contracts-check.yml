@@ -26,13 +26,12 @@ jobs:
             exit 1
           fi
 
-      - name: Verify default release model baseline (glm-5)
+      - name: Verify current workflow contracts
         run: |
           set -euo pipefail
-          grep -q 'GLM_MODEL="${GLM_MODEL:-glm-5}"' scripts/notebook-agent-demo-up.sh
-          grep -q 'GLM_MODEL="${GLM_MODEL:-glm-5}"' scripts/notebook-agent-init-resources.sh
-          grep -q '"model":"glm-5"' scripts/notebook-agent-demo-check.sh
-          grep -q '"model":"glm-5"' scripts/notebook-agent-engineering-smoke.sh
+          test -f .env.dev.real.example
+          test -f .env.real.local.example
+          test -f infra/deploy/remote/env/site.env.example
 
       - name: Setup Node
         uses: actions/setup-node@v4

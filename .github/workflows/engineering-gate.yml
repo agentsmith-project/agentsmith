@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      GLM_API_KEY: ${{ secrets.GLM_API_KEY }}
+      REAL_LANE_API_KEY: ${{ secrets.REAL_LANE_API_KEY }}
       REPORT_NAME: ${{ inputs.report_name }}
     steps:
       - name: Checkout
@@ -44,8 +44,8 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          if [[ -z "${GLM_API_KEY:-}" ]]; then
-            echo "GLM_API_KEY secret is required for the engineering gate real lane." >&2
+          if [[ -z "${REAL_LANE_API_KEY:-}" ]]; then
+            echo "REAL_LANE_API_KEY secret is required for the engineering gate real lane." >&2
             exit 1
           fi
 

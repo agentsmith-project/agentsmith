@@ -67,6 +67,7 @@ make dev-real-status
 make dev-real-down
 
 # Local / release-grade real verification
+cp .env.real.local.example .env.real.local
 npm run lane:real:core
 npm run lane:real:release
 npm run test:release:precheck
@@ -85,6 +86,12 @@ Current env names:
 - dev-real: `DEMO_ENDPOINT_*`
 - real lane: `REAL_LANE_*`
 - remote deploy: `DEPLOY_*`
+
+Templates:
+
+- dev-real: `.env.dev.real.example`
+- real lane: `.env.real.local.example`
+- remote deploy: `infra/deploy/remote/env/site.env.example`
 
 Old names and old demo commands are removed. Passing `GLM_*` to current entrypoints fails fast.
 

@@ -50,23 +50,43 @@ npm start
 
 Use this minimal command set for daily work.
 
-### Daily
+### Current Paths
 
 ```bash
-make dev-up
-make dev-down
+# Local mock/dev shell
+make bootstrap
+make api-dev
+make web
 make urls
-```
 
-### Real Backend Manual Testing
-
-```bash
+# Real backend manual testing
 cp .env.dev.real.example .env.dev.real
-# fill DEMO_ENDPOINT_API_KEY and adjust DEMO_ENDPOINT_* if needed
 make dev-real-up
 make dev-real-seed-notebook
 make dev-real-status
+make dev-real-down
+
+# Local / release-grade real verification
+npm run lane:real:core
+npm run lane:real:release
+npm run test:release:precheck
+npm run test:visual:real:review
+
+# Remote deploy / verify
+npm run release:real:reset
+npm run release:real:bootstrap
+npm run release:real:ready
+npm run release:real:run
+npm run release:real:report
 ```
+
+Current env names:
+
+- dev-real: `DEMO_ENDPOINT_*`
+- real lane: `REAL_LANE_*`
+- remote deploy: `DEPLOY_*`
+
+Old names and old demo commands are removed. Passing `GLM_*` to current entrypoints fails fast.
 
 ### No-Sandbox Deployment Baseline
 

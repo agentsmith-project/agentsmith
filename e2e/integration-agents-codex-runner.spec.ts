@@ -203,6 +203,7 @@ test.describe('@lane-real external agent codex-runner integration', () => {
 
       await page.reload();
       await openChatSession(page, 'ws_default', projectId, chatTitle);
+      await expect(page.getByTestId('chat__message').filter({ hasText: rememberToken }).first()).toBeVisible({ timeout: 60_000 });
 
       await page.waitForTimeout(20_000);
       await waitForComposerReady(page);

@@ -22,8 +22,11 @@ const workspaceItems = (() => {
 
 const workspaceMembers = (() => {
   const getWorkspacePermissionsForGroup = (groupId: string) => {
-    if (groupId === WORKSPACE_BUILT_IN_GROUP_IDS.owner || groupId === WORKSPACE_BUILT_IN_GROUP_IDS.projectCreators) {
+    if (groupId === WORKSPACE_BUILT_IN_GROUP_IDS.owner) {
       return [...PLATFORM_PERMISSIONS.WORKSPACE];
+    }
+    if (groupId === WORKSPACE_BUILT_IN_GROUP_IDS.projectCreators) {
+      return ['workspace:read', 'workspace:project:create'];
     }
     return ['workspace:read'];
   };

@@ -6,6 +6,7 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
+KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/remote/kind/config.yaml"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
 
@@ -24,7 +25,9 @@ SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 CSI_DRIVER="${INTERNAL_AGENT_JUICEFS_CSI_DRIVER:-csi.juicefs.com}"
 RUNNER_IMAGE="${INTEGRATION_INTERNAL_AGENT_IMAGE:-agentsmith-codex-runner:local}"
+RUNNER_BASE_IMAGE="${INTEGRATION_INTERNAL_AGENT_BASE_IMAGE:-agentsmith-codex-runner-base:local}"
 BUILD_RUNNER_IMAGE="${INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE:-1}"
+DOCKER_BUILD_PROXY_VALUE="${INTEGRATION_DOCKER_BUILD_PROXY:-${DOCKER_BUILD_PROXY:-}}"
 WORKSPACE_CAPACITY="${INTERNAL_AGENT_WORKSPACE_CAPACITY:-1Pi}"
 STORAGE_CLASS_NAME="${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}"
 MOUNT_OPTIONS="${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
@@ -39,6 +42,10 @@ SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manage
 CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
+KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
+KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
+KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
@@ -70,12 +77,40 @@ if ! command -v docker >/dev/null 2>&1; then
   exit 1
 fi
 
+if ! command -v kind >/dev/null 2>&1; then
+  echo "[internal-real-gate] kind is required." >&2
+  exit 1
+fi
+
+ensure_kind_cluster() {
+  if kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
+    info "using existing kind cluster ${KIND_CLUSTER_NAME}"
+  else
+    info "creating kind cluster ${KIND_CLUSTER_NAME}"
+    kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}" >/dev/null
+  fi
+
+  kubectl config use-context "${KIND_CONTEXT_NAME}" >/dev/null
+  CONTEXT_NAME="${KIND_CONTEXT_NAME}"
+}
+
+ensure_kind_cluster
+
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
+  if ! docker image inspect "${RUNNER_BASE_IMAGE}" >/dev/null 2>&1; then
+    info "building internal runner base image ${RUNNER_BASE_IMAGE}"
+    BUILD_ARGS=(build -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" "${ROOT_DIR}")
+    if [[ -n "${DOCKER_BUILD_PROXY_VALUE}" ]]; then
+      BUILD_ARGS=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" -t "${RUNNER_BASE_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" "${ROOT_DIR}")
+    fi
+    docker "${BUILD_ARGS[@]}" >/dev/null
+  fi
   info "building internal runner image ${RUNNER_IMAGE} from current workspace"
-  docker build \
-    -t "${RUNNER_IMAGE}" \
-    -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" \
-    "${ROOT_DIR}" >/dev/null
+  BUILD_ARGS=(build --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${ROOT_DIR}")
+  if [[ -n "${DOCKER_BUILD_PROXY_VALUE}" ]]; then
+    BUILD_ARGS=(build --build-arg "HTTP_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "HTTPS_PROXY=${DOCKER_BUILD_PROXY_VALUE}" --build-arg "NO_PROXY=127.0.0.1,localhost,host.docker.internal" --build-arg "RUNNER_BASE_IMAGE=${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${ROOT_DIR}")
+  fi
+  docker "${BUILD_ARGS[@]}" >/dev/null
 elif ! docker image inspect "${RUNNER_IMAGE}" >/dev/null 2>&1; then
   echo "[internal-real-gate] runner image not found: ${RUNNER_IMAGE}" >&2
   echo "[internal-real-gate] build it first or leave INTEGRATION_BUILD_INTERNAL_AGENT_IMAGE=1." >&2
@@ -103,14 +138,14 @@ ensure_local_image() {
 ensure_juicefs_csi() {
   if ! kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1; then
     info "installing JuiceFS CSI driver ${CSI_DRIVER}"
-    kubectl apply -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
+    kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
   fi
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     info "loading CSI images into kind node ${KIND_NODE_NAME}"
     ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
-    ensure_kind_image "juicedata/juicefs-csi-driver:v0.31.2"
-    ensure_kind_image "juicedata/csi-dashboard:v0.31.2"
+    ensure_kind_image "juicedata/juicefs-csi-driver:v0.31.3"
+    ensure_kind_image "juicedata/csi-dashboard:v0.31.3"
     ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
@@ -130,9 +165,9 @@ ensure_juicefs_csi() {
   kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=180s >/dev/null
 }
 
-kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
 
-KIND_NODE_NAME="kind-control-plane"
+KIND_NODE_NAME="${KIND_CLUSTER_NAME}-control-plane"
 if [[ "${CONTEXT_NAME}" == kind-* ]]; then
   CLUSTER_NAME="${CONTEXT_NAME#kind-}"
   info "loading ${RUNNER_IMAGE} into kind cluster ${CLUSTER_NAME}"

@@ -653,6 +653,8 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         executionContext: {
           workspace_id: route.workspaceId,
           project_id: route.projectId,
+          session_id: route.sessionId,
+          task_id: route.sessionId,
           username: buildProxyUsername(user),
           user_bearer_token: rawBearerToken,
           credential_files: thirdPartyCredentialFiles,

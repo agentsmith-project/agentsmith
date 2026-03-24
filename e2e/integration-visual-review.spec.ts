@@ -553,6 +553,16 @@ async function createAgentKeyAndConnectionInfo(page: Page, apiBase: string, work
 
 function extractAssistantContent(payload: unknown): string {
   if (!payload || typeof payload !== 'object') return '';
+  const maybeAnthropicContent = (payload as { content?: unknown }).content;
+  if (Array.isArray(maybeAnthropicContent)) {
+    return maybeAnthropicContent
+      .map((part) => {
+        if (!part || typeof part !== 'object') return '';
+        const typedPart = part as { type?: unknown; text?: unknown };
+        return typedPart.type === 'text' ? String(typedPart.text ?? '') : '';
+      })
+      .join('');
+  }
   const maybeChoices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
   const content = maybeChoices?.[0]?.message?.content;
   if (typeof content === 'string') return content;

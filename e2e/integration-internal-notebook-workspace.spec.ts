@@ -185,6 +185,7 @@ async function openFileLibraryRoot(args: {
   await page.goto(`/en-US/workspaces/${workspaceId}/projects/${projectId}/files`);
   const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
+  await dismissFilesDialogs(page);
   await libraryItem.click();
   await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
   const mountAccessDialog = page.getByTestId('files__dialog__library-mount-access');
@@ -194,7 +195,19 @@ async function openFileLibraryRoot(args: {
   }
 }
 
+async function dismissFilesDialogs(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const dialog = page.getByRole('dialog').last();
+    if (!(await dialog.isVisible().catch(() => false))) {
+      return;
+    }
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await expect(dialog).toBeHidden({ timeout: 10_000 });
+  }
+}
+
 async function openFolderByName(page: Page, name: string): Promise<void> {
+  await dismissFilesDialogs(page);
   const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
   await expect(folderRow).toBeVisible({ timeout: 30_000 });
   const button = folderRow.getByRole('button').first();

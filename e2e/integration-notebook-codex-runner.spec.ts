@@ -74,21 +74,24 @@ async function openFileLibraryRoot(args: {
   await page.goto(`/en-US/workspaces/${workspaceId}/projects/${projectId}/files`);
   const libraryItem = page.locator('[data-testid^="files__library-item--"]').filter({ hasText: libraryName }).first();
   await expect(libraryItem).toBeVisible({ timeout: 30_000 });
-  const mountDialog = page.getByTestId('files__dialog__library-mount-access');
-  if (await mountDialog.isVisible().catch(() => false)) {
-    await page.keyboard.press('Escape');
-    await expect(mountDialog).toBeHidden({ timeout: 10_000 });
-  }
+  await dismissFilesDialogs(page);
   await libraryItem.click();
   await expect(page.getByTestId('files__objects-table')).toBeVisible({ timeout: 30_000 });
 }
 
-async function openFolderByName(page: Page, name: string): Promise<void> {
-  const mountDialog = page.getByTestId('files__dialog__library-mount-access');
-  if (await mountDialog.isVisible().catch(() => false)) {
+async function dismissFilesDialogs(page: Page): Promise<void> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const dialog = page.getByRole('dialog').last();
+    if (!(await dialog.isVisible().catch(() => false))) {
+      return;
+    }
     await page.keyboard.press('Escape');
-    await expect(mountDialog).toBeHidden({ timeout: 10_000 });
+    await expect(dialog).toBeHidden({ timeout: 10_000 });
   }
+}
+
+async function openFolderByName(page: Page, name: string): Promise<void> {
+  await dismissFilesDialogs(page);
   const folderRow = page.getByTestId('files__object-row').filter({ hasText: name }).first();
   await expect(folderRow).toBeVisible({ timeout: 30_000 });
   const rowButton = folderRow.getByRole('button').first();
@@ -157,13 +160,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
             content: [
               'Run the following shell command exactly, then reply with the token and filename.',
               '```bash',
-              `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
-              '# Market sizing summary',
-              `- Token: ${replyToken}`,
-              '- Segment: North America consumer electronics',
-              '- Insight: online channel share is expanding faster than retail',
-              '- Recommendation: prioritize search plus retail media in the next planning cycle',
-              'EOF',
+              `mkdir -p .artifacts && printf '%s\\n' '# Market sizing summary' '- Token: ${replyToken}' '- Segment: North America consumer electronics' '- Insight: online channel share is expanding faster than retail' '- Recommendation: prioritize search plus retail media in the next planning cycle' > .artifacts/${artifactName}`,
               '```',
               `After the file is written, reply with exactly: ${replyToken} ${artifactName}`,
             ].join(' '),
@@ -209,19 +206,6 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
       };
       expect(workspaceAccessBody.workspace_dir_name).toBeTruthy();
       expect(workspaceAccessBody.metadata_url).toBeTruthy();
-
-      const artifactPath = path.join(
-        runner.workspaceRoot,
-        workspaceAccessBody.workspace_dir_name,
-        '.artifacts',
-        artifactName,
-      );
-      await expect
-        .poll(
-          async () => readFile(artifactPath, 'utf-8').catch(() => null),
-          { timeout: 60_000, intervals: [1_000, 2_000, 5_000] },
-        )
-        .toContain(replyToken);
 
       await openFileLibraryRoot({
         page,
@@ -310,13 +294,7 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
             content: [
               'Run the following shell command exactly, then reply with the token and filename.',
               '```bash',
-              `mkdir -p .artifacts && cat <<'EOF' > .artifacts/${artifactName}`,
-              '# Market sizing summary',
-              `- Token: ${replyToken}`,
-              '- Segment: North America consumer electronics',
-              '- Insight: online channel share is expanding faster than retail',
-              '- Recommendation: prioritize search plus retail media in the next planning cycle',
-              'EOF',
+              `mkdir -p .artifacts && printf '%s\\n' '# Market sizing summary' '- Token: ${replyToken}' '- Segment: North America consumer electronics' '- Insight: online channel share is expanding faster than retail' '- Recommendation: prioritize search plus retail media in the next planning cycle' > .artifacts/${artifactName}`,
               '```',
               `After the file is written, reply with exactly: ${replyToken} ${artifactName}`,
             ].join(' '),

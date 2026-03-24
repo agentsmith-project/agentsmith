@@ -100,7 +100,7 @@ ensure_local_image() {
 ensure_juicefs_csi() {
   if ! kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1; then
     info "installing JuiceFS CSI driver ${CSI_DRIVER}"
-    kubectl apply -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
+    kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
   fi
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
@@ -108,8 +108,8 @@ ensure_juicefs_csi() {
     info "loading images into kind cluster ${cluster_name}"
     ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
     ensure_kind_image "${RUNNER_IMAGE}"
-    ensure_kind_image "juicedata/juicefs-csi-driver:v0.31.2"
-    ensure_kind_image "juicedata/csi-dashboard:v0.31.2"
+    ensure_kind_image "juicedata/juicefs-csi-driver:v0.31.3"
+    ensure_kind_image "juicedata/csi-dashboard:v0.31.3"
     ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
@@ -127,7 +127,7 @@ ensure_juicefs_csi() {
   kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=180s >/dev/null
 }
 
-kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
 
 ensure_juicefs_csi
 

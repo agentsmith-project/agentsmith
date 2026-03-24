@@ -585,7 +585,11 @@ function flushCodexStdoutBuffer(requestId: string, buffer: string): string {
 
 async function runCodexRequest(requestId: string, payload: ServerStartPayload): Promise<void> {
   const executionContext = payload.execution_context ?? {};
-  const taskId = sanitizePathPart(executionContext.task_id, `task_${requestId.slice(0, 8)}`);
+  const sessionId = sanitizePathPart(executionContext.session_id, '');
+  const taskId = sanitizePathPart(
+    executionContext.task_id,
+    sessionId || `task_${requestId.slice(0, 8)}`,
+  );
   const username = sanitizePathPart(executionContext.username, 'unknown_user');
   debugLog('preparing task workspace', { request_id: requestId, task_id: taskId });
   const cwdResult = await prepareTaskWorkspace({
@@ -614,6 +618,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     strategy: 'symlink',
   });
   const isNotebookMode = executionContext.notebook_mode === true;
+  const resumeSession = isNotebookMode || sessionId.length > 0;
   const userPrompt = selectLatestInstruction(payload.messages);
   const taskInputs = Array.isArray(executionContext.task_inputs) ? executionContext.task_inputs : [];
   const credentialFiles = Array.isArray(executionContext.credential_files)
@@ -735,6 +740,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
     has_user_bearer_token: Boolean(executionContext.user_bearer_token && executionContext.user_bearer_token.trim()),
     notebook_mode: isNotebookMode,
+    resume_session: resumeSession,
+    session_id: sessionId || null,
     task_inputs_count: taskInputs.length,
     credential_files_count: executionFilesResult.written,
     credential_files_bytes: executionFilesResult.totalBytes,
@@ -754,7 +761,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     modelAutoCompactTokenLimit,
     modelCatalogPath,
     userBearerToken: executionContext.user_bearer_token,
-    notebookMode: isNotebookMode,
+    resumeSession,
     yolo: codexYolo,
   });
 

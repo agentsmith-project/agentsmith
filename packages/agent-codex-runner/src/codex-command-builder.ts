@@ -65,7 +65,7 @@ export function buildCodexExecArgs(args: {
   modelAutoCompactTokenLimit?: number;
   modelCatalogPath?: string;
   userBearerToken?: string;
-  notebookMode?: boolean;
+  resumeSession?: boolean;
   yolo?: boolean;
 }): string[] {
   const cliArgs = [
@@ -120,7 +120,7 @@ export function buildCodexExecArgs(args: {
       `model_providers.proxy.experimental_bearer_token=${JSON.stringify(args.userBearerToken)}`,
     );
   }
-  if (args.notebookMode) {
+  if (args.resumeSession) {
     cliArgs.splice(1, 0, 'resume', '--last');
   }
   cliArgs.push(args.prompt);

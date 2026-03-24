@@ -353,8 +353,15 @@ async function createProject(page: Page, workspaceId: string): Promise<{ project
   await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('projects__create-btn').click();
 
-  await page.locator('#project-name').fill(projectName);
-  await page.getByRole('button', { name: /create|创建/i }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  await dialog.locator('#project-name').fill(projectName);
+
+  const selects = dialog.locator('[role="combobox"]');
+  await selects.nth(0).click();
+  await page.getByRole('option', { name: /public/i }).click();
+
+  await dialog.getByRole('button', { name: /create|创建/i }).click();
   await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/overview`), { timeout: 30_000 });
 
   const match = page.url().match(/\/projects\/([^/]+)\//);
@@ -517,6 +524,18 @@ async function createAgentKeyAndConnectionInfo(
 function extractAssistantContent(payload: unknown): string {
   if (!payload || typeof payload !== 'object') {
     return '';
+  }
+  const maybeAnthropicContent = (payload as { content?: unknown }).content;
+  if (Array.isArray(maybeAnthropicContent)) {
+    return maybeAnthropicContent
+      .map((part) => {
+        if (!part || typeof part !== 'object') {
+          return '';
+        }
+        const typedPart = part as { type?: unknown; text?: unknown };
+        return typedPart.type === 'text' ? String(typedPart.text ?? '') : '';
+      })
+      .join('');
   }
   const maybeChoices = (payload as { choices?: Array<{ message?: { content?: unknown } }> }).choices;
   const content = maybeChoices?.[0]?.message?.content;

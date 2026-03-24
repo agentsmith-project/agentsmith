@@ -31,10 +31,11 @@ describe('codex-command-builder', () => {
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
       modelCatalogPath: '/tmp/catalog.json',
-      notebookMode: true,
+      resumeSession: true,
       yolo: true,
     });
 
+    expect(args.slice(0, 3)).toEqual(['exec', 'resume', '--last']);
     expect(args).toContain('model_context_window=128000');
     expect(args).toContain('model_auto_compact_token_limit=121600');
     expect(args).toContain('model_catalog_json="/tmp/catalog.json"');

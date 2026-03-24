@@ -72,6 +72,21 @@ grep -Fxq 'MBOS_UNIVERSAL_PROXY_BASE_URL=http://universal-proxy:8080' "${RELEASE
   exit 1
 }
 
+grep -Fxq 'FILE_LIBRARY_CLIENT_POSTGRES_HOST=localhost' "${RELEASE_ROOT}/env/api.env" || {
+  echo 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_HOST' >&2
+  exit 1
+}
+
+grep -Fxq 'FILE_LIBRARY_CLIENT_POSTGRES_PORT=15432' "${RELEASE_ROOT}/env/api.env" || {
+  echo 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_PORT' >&2
+  exit 1
+}
+
+grep -Fxq 'FILE_LIBRARY_CLIENT_MINIO_ENDPOINT=http://localhost:19000' "${RELEASE_ROOT}/env/api.env" || {
+  echo 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_MINIO_ENDPOINT' >&2
+  exit 1
+}
+
 grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=10.88.0.1' "${RELEASE_ROOT}/env/internal.env" || {
   echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE' >&2
   exit 1

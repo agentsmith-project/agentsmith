@@ -30,6 +30,8 @@ run_cmd() {
 run_cmd "npm run contracts:check"
 run_cmd "npm run contracts:check-openapi"
 run_cmd "npm run openapi:check-generated"
+run_cmd "npm run test:client-public-runtime"
+run_cmd "npm run test:rendered-env"
 run_cmd "npx eslint \
   'src/app/[locale]/join/page.tsx' \
   'src/app/[locale]/workspaces/[workspace]/page.tsx' \
@@ -55,7 +57,9 @@ run_cmd "npm run test:run -- \
   'src/app/[locale]/workspaces/[workspace]/login/__tests__/page.test.tsx' \
   'src/app/[locale]/workspaces/[workspace]/settings/__tests__/page.test.tsx' \
   'src/app/[locale]/workspaces/[workspace]/projects/__tests__/page.test.tsx' \
+  'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/use-guide/__tests__/page.test.tsx' \
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/overview/__tests__/page.test.tsx' \
+  'src/components/files/__tests__/FilesPage.test.tsx' \
   'src/components/projects/__tests__/CreateProjectDialog.test.tsx'"
 
 run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
@@ -64,9 +68,14 @@ run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
   'packages/api-entry-node/src/index.test.ts' \
   -t 'lets workspace admins manage project creators and exposes creator permissions in workspace members|forbids plain workspace members from creating projects while allowing project creators|does not expose disabled registered workspaces in runtime workspace list'"
 
+run_cmd "node --max-old-space-size=6144 ./node_modules/vitest/vitest.mjs run \
+  'packages/api-entry-node/src/file-library-runtime.test.ts' \
+  'packages/api-entry-node/src/task-route-handler.test.ts'"
+
 run_cmd "MOCK_LANE_WARM_URLS=\$'/zh-CN/login\n/en-US/login/workspace\n/en-US/workspaces/overview\n/en-US/workspaces/ws_default\n/en-US/workspaces/ws_default/settings\n/en-US/workspaces/ws_default/projects/proj_001/overview' \
 bash scripts/run-mock-lane-playwright.sh \
   e2e/system-workspace-default.spec.ts \
+  e2e/projects-join-governance.spec.ts \
   e2e/workspace-settings.spec.ts \
   --project=chromium \
   --workers=1"
@@ -76,7 +85,7 @@ bash scripts/run-mock-lane-playwright.sh \
   e2e/visual.spec.ts \
   --project=visual \
   --workers=1 \
-  --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects empty state|workspace settings|workspace settings create project dialog|overview'"
+  --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects list public discovery|project join request dialog|project join now dialog|notification center join request outcome|projects empty state|workspace settings|workspace settings create project dialog|overview'"
 
 if [[ "${WITH_REAL_LANE}" == "1" ]]; then
   info "real lane enabled"

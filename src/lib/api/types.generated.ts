@@ -1565,6 +1565,12 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /**
+         * Project-scoped LLM gateway proxy
+         * @description Uses one project gateway identity and auth surface, but clients still call the protocol path
+         *     they expect. Use `/chat/completions` or `/responses` for OpenAI-compatible clients, and
+         *     `/messages` for Anthropic-compatible clients.
+         */
         post: operations["post_llmGatewayProxy"];
         delete?: never;
         options?: never;

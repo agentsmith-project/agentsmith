@@ -190,12 +190,10 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - `NEXT_PUBLIC_USE_MSW`
   - `NEXT_PUBLIC_KEYCLOAK_URL`, `NEXT_PUBLIC_KEYCLOAK_REALM`, `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID`
   - `NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL=1` (development-only; shows `SSE Debug (latest 5)` panel)
-- Demo bootstrap (`make notebook-agent-demo-up`)
-  - `DEMO_START_API`, `DEMO_START_WEB`, `DEMO_START_RUNNER`
-  - `DEMO_REFRESH_TOKEN`, `DEMO_REFRESH_TOKEN_FORCE`, `DEMO_REFRESH_TIMEOUT_SEC`
-  - `DEMO_INIT_RESOURCES`, `DEMO_WEB_PORT_AUTO_FALLBACK`
+- Real dev bootstrap (`make dev-real-up`, `make dev-real-seed-notebook`)
   - `PORT_API`, `PORT_WEB`, `WORKSPACE_ID`, `LOCALE`
-  - `GLM_API_KEY`, `GLM_BASE_URL`, `GLM_MODEL`
+  - `DEMO_ENDPOINT_API_KEY`, `DEMO_ENDPOINT_BASE_URL`, `DEMO_ENDPOINT_MODEL`, `DEMO_ENDPOINT_PROTOCOL`
+  - `DEMO_ENDPOINT_MAX_CONTEXT_TOKENS`, `DEMO_ENDPOINT_MAX_OUTPUT_TOKENS`
 - Note:
   - This runbook is the current **single place** for notebook/external-agent execution switches.
   - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
@@ -246,65 +244,28 @@ make agent-codex-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-executio
 make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
 ```
 
-### 5.4.1 Manual Real-Backend Notebook + Agent Test (4 terminals, recommended)
+### 5.4.1 Manual Real-Backend Notebook + Agent Test (recommended)
 - Use this flow when manually testing notebook + external codex runner against the real local backend (not MSW).
 - Preconditions:
-  - Keycloak is running at `http://localhost:18080`
-  - GLM API key is available
+  - `.env.dev.real` exists
+  - `DEMO_ENDPOINT_API_KEY` is filled
 
-Terminal 1 (`API :20000`)
 ```bash
 cd /home/percy/works/mbos-v1/agentsmith
 
-env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-PORT=20000 \
-KEYCLOAK_BASE_URL=http://localhost:18080 \
-KEYCLOAK_REALM=mbos \
-DEBUG_AGENT_EXECUTION=1 \
-DEBUG_ENDPOINT_PROXY=1 \
-DEBUG_NOTEBOOK_EXECUTION=1 \
-npm run dev -w @mbos/api-entry-node
-```
+cp .env.dev.real.example .env.dev.real
+# fill DEMO_ENDPOINT_API_KEY and adjust DEMO_ENDPOINT_* if needed
 
-Terminal 2 (`Web :3001`, real backend)
-```bash
-cd /home/percy/works/mbos-v1/agentsmith
-
-env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-NEXT_PUBLIC_API_BASE=http://localhost:20000 \
-NEXT_PUBLIC_USE_MSW=false \
-NEXT_PUBLIC_KEYCLOAK_URL=http://localhost:18080/realms \
-NEXT_PUBLIC_KEYCLOAK_REALM=mbos \
-NEXT_PUBLIC_KEYCLOAK_CLIENT_ID=agentsmith \
-npm run dev -- --port 3001
-```
-
-Terminal 3 (bootstrap resources; run once per fresh environment)
-```bash
-cd /home/percy/works/mbos-v1/agentsmith
-
-make notebook-agent-refresh-token
-
-GLM_API_KEY='***' make notebook-agent-init-resources
-```
-
-Optional quick smoke before manual UI testing:
-```bash
-make notebook-agent-smoke-full
-```
-
-Terminal 4 (keep external runner online for manual notebook chat)
-```bash
-cd /home/percy/works/mbos-v1/agentsmith
-
-make notebook-agent-runner
+make dev-real-up
+make dev-real-seed-notebook
+make dev-real-status
 ```
 
 Open browser:
 - Login: `http://localhost:3001/zh-CN/login`
 - Notebook project URL:
-  - project id from `artifacts/real-lane/current/state.json` at `project.id`
-  - `http://localhost:3001/zh-CN/workspaces/ws_default/projects/<PROJECT_ID>/notebook`
+  - printed by `make dev-real-seed-notebook`
+  - also available from `make dev-real-status`
 
 Expected behavior:
 - send a message -> page shows `Agent 正在执行...` (or localized equivalent)
@@ -324,24 +285,21 @@ for p in 20000 3001 3010 3015; do
 done
 ```
 
-### 5.4.3 One-Command Demo Bootstrap (manual showcase)
-- For demos/manual walkthroughs, use:
+- For demos/manual walkthroughs, prefer the new split flow:
 ```bash
-GLM_API_KEY='***' make notebook-agent-demo-up
+make dev-real-up
+make dev-real-seed-notebook
 ```
-- This script will:
-  - start/reuse API and Web (real backend mode)
-  - refresh token (or reuse a valid existing token)
-  - initialize notebook resources (project/credential/endpoint/agent/key)
-  - start a managed external `agent-codex-runner`
-  - print the notebook URL, log file paths, and a health summary (`API/Web/Runner/Token/Agent`)
-- Stop the managed demo processes with:
+- This keeps platform startup and notebook demo seeding separate:
+  - `dev-real-up` starts/reuses API, Web, and universal-proxy
+  - `dev-real-seed-notebook` refreshes token, initializes notebook resources, and starts a managed external `agent-codex-runner`
+- Stop the managed dev-real processes with:
 ```bash
-make notebook-agent-demo-down
+make dev-real-down
 ```
-- Check current demo status (managed pids + health + token + agent presence):
+- Check current status:
 ```bash
-make notebook-agent-demo-status
+make dev-real-status
 ```
 - Run a non-destructive demo readiness check (status + metadata files + endpoint proxy reachability):
 ```bash

@@ -61,9 +61,11 @@ make urls
 ### Real Backend Manual Testing
 
 ```bash
-make release-real-bootstrap
-make release-real-ready
-make lane-real-core
+cp .env.dev.real.example .env.dev.real
+# fill DEMO_ENDPOINT_API_KEY and adjust DEMO_ENDPOINT_* if needed
+make dev-real-up
+make dev-real-seed-notebook
+make dev-real-status
 ```
 
 ### No-Sandbox Deployment Baseline

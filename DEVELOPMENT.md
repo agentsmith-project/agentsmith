@@ -58,6 +58,79 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 说明：`*-auto` 目标会自动清理代理环境变量（`http_proxy/https_proxy/all_proxy` 等）后再启动服务和执行 Playwright。
 
+## Real Dev Manual Testing
+
+当前推荐的真实后端手测入口是 `dev-real`，它会把：
+
+1. integration 依赖
+2. universal-proxy
+3. Node API
+4. Next Web
+5. host external runner（通过 seed notebook demo）
+
+收成一条正式链路。
+
+### First-time setup
+
+```bash
+cp .env.dev.real.example .env.dev.real
+```
+
+必须填写：
+
+```bash
+DEMO_ENDPOINT_API_KEY=...
+DEMO_ENDPOINT_BASE_URL=https://api.minimaxi.com/v1
+DEMO_ENDPOINT_MODEL=MiniMax-M2.7-highspeed
+DEMO_ENDPOINT_PROTOCOL=openai_compatible
+DEMO_ENDPOINT_MAX_CONTEXT_TOKENS=204800
+DEMO_ENDPOINT_MAX_OUTPUT_TOKENS=8192
+```
+
+注意：
+
+1. 旧 `GLM_*` 变量名在 `dev-real` 主路径下**不再支持**
+2. 发现 `GLM_*` 会直接 fail fast
+
+### Start platform only
+
+```bash
+make dev-real-up
+```
+
+这一步只启动平台，不自动创建 notebook demo 资源。
+
+### Seed notebook demo and start host runner
+
+```bash
+make dev-real-seed-notebook
+```
+
+这一步会：
+
+1. 刷新 `dev-admin` token
+2. 创建 project / credential / endpoint / external agent / key
+3. 启动 host external runner
+4. 输出 notebook URL
+
+### Check status
+
+```bash
+make dev-real-status
+```
+
+### Full reset
+
+```bash
+make dev-real-reset
+```
+
+### Stop everything
+
+```bash
+make dev-real-down
+```
+
 ## Environment Setup
 
 Copy `.env.local.example` to `.env.local` and configure:

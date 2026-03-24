@@ -19,14 +19,4 @@ check_http "http://127.0.0.1:${PROXY_PORT}/admin/state" "proxy"
 check_http "http://localhost:${PORT_API}/api/v1/openapi.json" "api"
 check_http "http://localhost:${PORT_WEB}/${LOCALE}/login/workspace" "web"
 check_http "http://localhost:${PORT_WEB}/api/public/workspaces" "public workspaces"
-
-if [[ -f "$(real_lane_token_file)" ]]; then
-  TOKEN="$(cat "$(real_lane_token_file)")"
-  CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${PORT_API}/api/v1/me/profile" -H "Authorization: Bearer ${TOKEN}" || true)"
-  if [[ "${CODE}" != "200" ]]; then
-    err "token validation failed (status=${CODE})"
-    exit 1
-  fi
-fi
-
-info "verify passed"
+info "platform verify passed"

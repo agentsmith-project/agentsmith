@@ -194,6 +194,6 @@ const [file, workspaceId] = process.argv.slice(2);
 const next = { workspace: { id: workspaceId } };
 fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
 NODE
-  : > "$(real_lane_token_file)"
+  rm -f "$(real_lane_token_file)"
   state_write_summary
 }

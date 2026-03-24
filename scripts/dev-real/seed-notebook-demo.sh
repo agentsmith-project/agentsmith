@@ -20,13 +20,6 @@ info "refreshing dev-admin token"
   make notebook-agent-refresh-token
 )
 
-TOKEN="$(cat "$(real_lane_token_file)")"
-CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${PORT_API}/api/v1/me/profile" -H "Authorization: Bearer ${TOKEN}" || true)"
-if [[ "${CODE}" != "200" ]]; then
-  err "dev token validation failed against API (status=${CODE})"
-  exit 1
-fi
-
 info "initializing external notebook agent resources"
 (
   cd "${ROOT_DIR}" && \
@@ -42,6 +35,7 @@ info "initializing external notebook agent resources"
 )
 
 bash "${ROOT_DIR}/scripts/dev-real/start-runner.sh"
+bash "${ROOT_DIR}/scripts/dev-real/verify-notebook-demo.sh"
 
 PROJECT_ID="$(state_get project.id)"
 info "notebook demo ready"

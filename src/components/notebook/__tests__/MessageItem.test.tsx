@@ -26,7 +26,7 @@ vi.mock('@/components/chat/Markdown', () => ({
 
 // Mock next-intl
 vi.mock('next-intl', () => ({
-  useTranslations: () => (key: string) => {
+  useTranslations: () => (key: string, values?: Record<string, string | number>) => {
     const translations: Record<string, string> = {
       'copied': 'Copied!',
       'copy_failed': 'Failed to copy',
@@ -35,7 +35,14 @@ vi.mock('next-intl', () => ({
       'trace_error_forbidden_title': 'Trace access denied',
       'trace_error_network_title': 'Trace retrieval failed',
       'trace_error_failed_title': 'Trace details could not be loaded',
+      'trace_view': 'View execution details',
+      'trace_hide': 'Hide execution details',
+      'trace_details_loading': 'Loading execution details...',
+      'trace_no_details': 'No execution details yet',
+      'trace_status_success': 'Completed',
     };
+    if (key === 'trace_step_count') return `${values?.count ?? '?'} step${values?.count === 1 ? '' : 's'}`;
+    if (key === 'trace_stats_duration') return `Duration: ${values?.value ?? '?'}`;
     return translations[key] || key;
   },
 }));
@@ -368,10 +375,12 @@ describe('MessageItem', () => {
       );
 
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_view/);
+      expect(toggle).toHaveTextContent(/2 steps/);
+      expect(toggle).toHaveTextContent(/Duration: 3s/);
+      expect(toggle).toHaveTextContent(/Codex execution completed/);
+      expect(toggle).toHaveTextContent(/View execution details/);
       expect(toggle).not.toHaveTextContent(/trace_status_success/);
-      expect(toggle).not.toHaveTextContent(/trace_step_count/);
-      expect(toggle).not.toHaveTextContent(/3s/);
+      expect(toggle).not.toHaveTextContent(/Completed/);
     });
 
     it('prefers recovered success when a later end event follows an error', () => {
@@ -422,9 +431,12 @@ describe('MessageItem', () => {
       );
 
       const statusBadge = screen.getByTestId('notebook__message-run-status');
-      expect(statusBadge).toHaveTextContent(/trace_status_success/);
+      expect(statusBadge).toHaveTextContent(/Completed/);
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_view/);
+      expect(toggle).toHaveTextContent(/3 steps/);
+      expect(toggle).toHaveTextContent(/Duration: 4s/);
+      expect(toggle).toHaveTextContent(/Artifact discovered: charts.png/);
+      expect(toggle).toHaveTextContent(/View execution details/);
       expect(toggle).not.toHaveTextContent(/trace_status_error/);
     });
 
@@ -527,10 +539,13 @@ describe('MessageItem', () => {
       );
 
       const statusBadge = screen.getByTestId('notebook__message-run-status');
-      expect(statusBadge).toHaveTextContent(/trace_status_success/);
+      expect(statusBadge).toHaveTextContent(/Completed/);
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_view/);
-      expect(toggle).not.toHaveTextContent(/4s/);
+      expect(toggle).toHaveTextContent(/3 steps/);
+      expect(toggle).toHaveTextContent(/Duration: 4s/);
+      expect(toggle).toHaveTextContent(/Run completed/);
+      expect(toggle).toHaveTextContent(/View execution details/);
+      expect(toggle).not.toHaveTextContent(/Completed/);
     });
 
     it('shows interrupted-stopped when cancelled has no later success event', () => {
@@ -783,7 +798,7 @@ describe('MessageItem', () => {
       );
 
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_details_loading/);
+      expect(toggle).toHaveTextContent(/Loading execution details/);
       await user.click(toggle);
       expect(screen.getByTestId('notebook__message-trace-loading')).toBeInTheDocument();
     });
@@ -793,7 +808,7 @@ describe('MessageItem', () => {
       render(<MessageItem message={mockAgentMessage} />);
 
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_no_details/);
+      expect(toggle).toHaveTextContent(/No execution details yet/);
       await user.click(toggle);
       expect(screen.getByTestId('notebook__message-trace-empty')).toBeInTheDocument();
     });

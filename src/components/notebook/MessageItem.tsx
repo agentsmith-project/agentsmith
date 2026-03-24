@@ -15,6 +15,7 @@ import {
   aggregateTraceSteps,
   decodeCodexEventText,
   formatCancelledReasonKey,
+  formatDuration,
   formatTraceStatusKey,
   getTransportTraceMeta,
   isExecutionTraceEvent,
@@ -84,6 +85,17 @@ export function MessageItem({
         ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
         : 'text-blue-300 border-blue-500/30 bg-blue-500/10';
   const visibleRunCancelledReasonKey = visibleRunStatus === 'cancelled' ? formatCancelledReasonKey(traceSummary) : null;
+  const traceToggleLabel = React.useMemo(() => {
+    if (traceDetailsLoading && !hasTrace) return tNotebookConversation('trace_details_loading');
+    if (!hasTrace) return tNotebookConversation('trace_no_details');
+    const parts = [
+      tNotebookConversation('trace_step_count', { count: traceSummary.stepCount }),
+      traceSummary.durationMs != null ? tNotebookConversation('trace_stats_duration', { value: formatDuration(traceSummary.durationMs) }) : null,
+      traceSummary.currentStep ?? null,
+      traceExpanded ? tNotebookConversation('trace_hide') : tNotebookConversation('trace_view'),
+    ].filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
+    return parts.join(' · ');
+  }, [hasTrace, tNotebookConversation, traceDetailsLoading, traceExpanded, traceSummary.currentStep, traceSummary.durationMs, traceSummary.stepCount]);
 
   React.useEffect(() => {
     setExpandedStepKeys((prev) => {
@@ -178,14 +190,18 @@ export function MessageItem({
             </span>
           ) : null}
           {canShowTraceToggle ? (
-            <button type="button" className="mr-auto text-[11px] text-tertiary hover:text-primary" onClick={() => setTraceExpanded((prev) => !prev)} disabled={disabled} data-testid="notebook__message-trace-toggle" data-trace-message-id={message.id}>
-              {traceDetailsLoading && !hasTrace ? (
-                <span className="text-blue-300">{tNotebookConversation('trace_details_loading')}</span>
-              ) : !hasTrace ? (
-                <span className="text-tertiary">{tNotebookConversation('trace_no_details')}</span>
-              ) : (
-                <span>{traceExpanded ? tNotebookConversation('trace_hide') : tNotebookConversation('trace_view')}</span>
-              )}
+            <button
+              type="button"
+              className="mr-auto min-w-0 text-[11px] text-tertiary hover:text-primary"
+              onClick={() => setTraceExpanded((prev) => !prev)}
+              disabled={disabled}
+              data-testid="notebook__message-trace-toggle"
+              data-trace-message-id={message.id}
+              title={traceToggleLabel}
+            >
+              <span className={cn('block truncate', traceDetailsLoading && !hasTrace ? 'text-blue-300' : !hasTrace ? 'text-tertiary' : undefined)}>
+                {traceToggleLabel}
+              </span>
             </button>
           ) : null}
           <span className="text-[11px] text-tertiary">{formatTime(message.created_at)}</span>

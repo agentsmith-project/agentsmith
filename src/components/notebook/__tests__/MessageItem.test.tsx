@@ -332,7 +332,7 @@ describe('MessageItem', () => {
       expect(screen.getAllByText('Codex execution completed').length).toBeGreaterThan(0);
     });
 
-    it('shows trace summary with status and duration in toggle text', () => {
+    it('keeps the trace toggle but removes duplicated status metadata from its text', () => {
       render(
         <MessageItem
           message={mockAgentMessage}
@@ -368,9 +368,10 @@ describe('MessageItem', () => {
       );
 
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_status_success/);
-      expect(toggle).toHaveTextContent(/trace_step_count/);
-      expect(toggle).toHaveTextContent(/3s/);
+      expect(toggle).toHaveTextContent(/trace_view/);
+      expect(toggle).not.toHaveTextContent(/trace_status_success/);
+      expect(toggle).not.toHaveTextContent(/trace_step_count/);
+      expect(toggle).not.toHaveTextContent(/3s/);
     });
 
     it('prefers recovered success when a later end event follows an error', () => {
@@ -420,8 +421,10 @@ describe('MessageItem', () => {
         />
       );
 
+      const statusBadge = screen.getByTestId('notebook__message-run-status');
+      expect(statusBadge).toHaveTextContent(/trace_status_success/);
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/trace_status_success/);
+      expect(toggle).toHaveTextContent(/trace_view/);
       expect(toggle).not.toHaveTextContent(/trace_status_error/);
     });
 
@@ -526,7 +529,8 @@ describe('MessageItem', () => {
       const statusBadge = screen.getByTestId('notebook__message-run-status');
       expect(statusBadge).toHaveTextContent(/trace_status_success/);
       const toggle = screen.getByTestId('notebook__message-trace-toggle');
-      expect(toggle).toHaveTextContent(/4s/);
+      expect(toggle).toHaveTextContent(/trace_view/);
+      expect(toggle).not.toHaveTextContent(/4s/);
     });
 
     it('shows interrupted-stopped when cancelled has no later success event', () => {
@@ -689,11 +693,10 @@ describe('MessageItem', () => {
       expect(statusBadge).not.toHaveTextContent(/trace_status_cancelled/);
     });
 
-    it('hides trace toggle when execution details visibility is disabled', () => {
+    it('shows trace toggle for agent messages even without a global execution visibility mode', () => {
       render(
         <MessageItem
           message={mockAgentMessage}
-          showExecutionDetails={false}
           traceEvents={[
             {
               id: 'trace_1',
@@ -713,7 +716,7 @@ describe('MessageItem', () => {
       );
 
       expect(screen.getByTestId('notebook__message-run-status')).toBeInTheDocument();
-      expect(screen.queryByTestId('notebook__message-trace-toggle')).not.toBeInTheDocument();
+      expect(screen.getByTestId('notebook__message-trace-toggle')).toBeInTheDocument();
     });
 
     it('surfaces transport recovery phases in timeline view', async () => {

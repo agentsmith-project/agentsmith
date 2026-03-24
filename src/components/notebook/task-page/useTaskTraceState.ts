@@ -22,7 +22,6 @@ export function useTaskTraceState(args: {
 }) {
   const { workspaceId, projectId, taskId, messages, taskAPI, handleError } = args;
 
-  const [showExecutionDetails, setShowExecutionDetails] = React.useState(false);
   const [traceFocusMessageId, setTraceFocusMessageId] = React.useState<string | null>(null);
   const [traceFocusName, setTraceFocusName] = React.useState<string | null>(null);
   const [traceFocusToken, setTraceFocusToken] = React.useState(0);
@@ -104,21 +103,6 @@ export function useTaskTraceState(args: {
       mergeTraceEvents([buildTransportTraceEvent('reconcile', 'error')]);
     }
   }, [mergeTraceEvents, taskId]);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const storage = window.localStorage as Storage | undefined;
-    if (!storage || typeof storage.getItem !== 'function') return;
-    const saved = storage.getItem('notebook.showExecutionDetails');
-    if (saved === '1') setShowExecutionDetails(true);
-  }, []);
-
-  React.useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const storage = window.localStorage as Storage | undefined;
-    if (!storage || typeof storage.setItem !== 'function') return;
-    storage.setItem('notebook.showExecutionDetails', showExecutionDetails ? '1' : '0');
-  }, [showExecutionDetails]);
 
   const fetchTracesForMessage = React.useCallback(async (messageId: string) => {
     if (!messageId) return;
@@ -251,8 +235,6 @@ export function useTaskTraceState(args: {
   }, [messages, traceBackfillRefreshNonce]);
 
   return {
-    showExecutionDetails,
-    setShowExecutionDetails,
     traceFocusMessageId,
     setTraceFocusMessageId,
     traceFocusName,

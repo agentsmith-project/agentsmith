@@ -123,8 +123,6 @@ export function TaskPage({
   }, [messages, streamingMessageId]);
 
   const {
-    showExecutionDetails,
-    setShowExecutionDetails,
     traceFocusMessageId,
     setTraceFocusMessageId,
     traceFocusName,
@@ -573,12 +571,10 @@ export function TaskPage({
         messages={messages || []}
         onRunActionClick={(action) => {
           if (!action.traceName || !activeTraceMessageId) return;
-          setShowExecutionDetails(true);
           setTraceFocusMessageId(activeTraceMessageId);
           setTraceFocusName(action.traceName);
           setTraceFocusToken((prev) => prev + 1);
         }}
-        onToggleExecutionDetails={() => setShowExecutionDetails((prev) => !prev)}
         pendingMessages={pendingMessages}
         projectId={projectId}
         runActivity={{
@@ -591,7 +587,6 @@ export function TaskPage({
         }}
         sandboxStarting={showSandboxStarting}
         sending={sendMessage.isPending}
-        showExecutionDetails={showExecutionDetails}
         showSseDebugPanel={showSseDebugPanel}
         sseDebugEvents={sseDebugEvents}
         streamingContent={streamingContent}

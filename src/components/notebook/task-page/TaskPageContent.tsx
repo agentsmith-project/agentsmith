@@ -32,7 +32,6 @@ interface TaskPageContentProps {
   runActivity: NonNullable<React.ComponentProps<typeof ConversationPanel>['runActivity']>;
   sandboxStarting: boolean;
   sending: boolean;
-  showExecutionDetails: boolean;
   showSseDebugPanel: boolean;
   sseDebugEvents: React.ComponentProps<typeof NotebookSseDebugPanel>['events'];
   streamingContent: string;
@@ -43,7 +42,6 @@ interface TaskPageContentProps {
   traceLoadMoreLoadingByMessageId: React.ComponentProps<typeof ConversationPanel>['traceLoadMoreLoadingByMessageId'];
   traceLoadingByMessageId: React.ComponentProps<typeof ConversationPanel>['traceLoadingByMessageId'];
   onRunActionClick: NonNullable<React.ComponentProps<typeof ConversationPanel>['onRunActionClick']>;
-  onToggleExecutionDetails: () => void;
   workspaceId: string;
   projectId: string;
   taskId: string;
@@ -72,13 +70,11 @@ export function TaskPageContent({
   loadMoreTracesForMessage,
   messages,
   onRunActionClick,
-  onToggleExecutionDetails,
   pendingMessages,
   projectId,
   runActivity,
   sandboxStarting,
   sending,
-  showExecutionDetails,
   showSseDebugPanel,
   sseDebugEvents,
   streamingContent,
@@ -121,8 +117,6 @@ export function TaskPageContent({
           focusTraceMessageId={focusTraceMessageId}
           focusTraceName={focusTraceName}
           focusTraceToken={focusTraceToken}
-          showExecutionDetails={showExecutionDetails}
-          onToggleExecutionDetails={onToggleExecutionDetails}
           sandboxStarting={sandboxStarting}
           disabled={disabled}
           sending={sending}

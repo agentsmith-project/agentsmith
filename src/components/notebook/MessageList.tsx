@@ -9,7 +9,6 @@ export interface MessageListProps {
   messages: TaskMessage[];
   streamingMessageId?: string | null;
   streamingContent?: string | null;
-  showExecutionDetails?: boolean;
   focusTraceMessageId?: string | null;
   focusTraceName?: string | null;
   focusTraceToken?: number;
@@ -27,7 +26,6 @@ export function MessageList({
   messages,
   streamingMessageId,
   streamingContent,
-  showExecutionDetails = false,
   focusTraceMessageId = null,
   focusTraceName = null,
   focusTraceToken = 0,
@@ -83,7 +81,6 @@ export function MessageList({
         <MessageItem
           key={message.id}
           message={message}
-          showExecutionDetails={showExecutionDetails}
           focusTraceName={focusTraceMessageId === message.id ? focusTraceName : null}
           focusTraceToken={focusTraceMessageId === message.id ? focusTraceToken : 0}
           streamingContent={
@@ -108,7 +105,6 @@ export function MessageList({
             content: '',
             created_at: new Date().toISOString(),
           }}
-          showExecutionDetails={showExecutionDetails}
           focusTraceName={focusTraceMessageId === streamingMessageId ? focusTraceName : null}
           focusTraceToken={focusTraceMessageId === streamingMessageId ? focusTraceToken : 0}
           streamingContent={streamingContent}

@@ -9,6 +9,14 @@ import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainabilit
 import { formatElapsed, getConnectionBannerCopy } from '@/components/notebook/conversation-panel/utils';
 import { Button } from '@/components/ui/button';
 
+const RUN_ACTIVITY_SUMMARY_MAX_CHARS = 96;
+
+function truncateRunActivitySummary(summary: string, maxChars: number): string {
+  const normalized = summary.replace(/\s+/g, ' ').trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxChars - 1)).trimEnd()}…`;
+}
+
 export interface ConversationPanelProps {
   messages: TaskMessage[];
   streamingMessageId?: string | null;
@@ -47,8 +55,6 @@ export interface ConversationPanelProps {
   focusTraceMessageId?: string | null;
   focusTraceName?: string | null;
   focusTraceToken?: number;
-  showExecutionDetails?: boolean;
-  onToggleExecutionDetails?: () => void;
   disabled?: boolean;
   sending?: boolean;
   diagnosticsLinks?: {
@@ -84,8 +90,6 @@ export function ConversationPanel({
   focusTraceMessageId,
   focusTraceName,
   focusTraceToken,
-  showExecutionDetails = false,
-  onToggleExecutionDetails,
   disabled = false,
   sending = false,
   diagnosticsLinks,
@@ -106,6 +110,17 @@ export function ConversationPanel({
     onSendMessage(inputValue.trim());
     setInputValue('');
   };
+
+  const latestRunAction = runActivity?.recentActions?.[0];
+  const runSummaryText = runActivity?.active
+    ? truncateRunActivitySummary(
+        latestRunAction?.summary ?? runActivity.lastSummary ?? t('run_active_default_action'),
+        RUN_ACTIVITY_SUMMARY_MAX_CHARS,
+      )
+    : null;
+  const runSummaryTitle = runActivity?.active
+    ? latestRunAction?.summary ?? runActivity.lastSummary ?? t('run_active_default_action')
+    : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-[16px] bg-background/55">
@@ -130,7 +145,7 @@ export function ConversationPanel({
                   </span>
                 ) : null}
               </div>
-              <div className="mt-1 space-y-0.5 text-[11px] text-secondary" data-testid="notebook__sse-status">
+              <div className="mt-1 text-[11px] text-secondary" data-testid="notebook__sse-status">
                 {connectionStatus && connectionStatus !== 'connected' ? (
                   <>
                     <div>{connectionTitle}</div>
@@ -139,22 +154,21 @@ export function ConversationPanel({
                 ) : sandboxStarting ? (
                   <div className="text-tertiary">{t('sandbox_starting_description')}</div>
                 ) : runActivity?.active ? (
-                  <>
-                    <div>{runActivity.lastSummary ?? t('run_active_default_action')}</div>
-                    {runActivity.recentActions?.[0] ? (
-                      <button
-                        type="button"
-                        className="text-left text-tertiary hover:text-secondary"
-                        onClick={() => {
-                          const action = runActivity.recentActions?.[0];
-                          if (!action) return;
-                          onRunActionClick?.(action);
-                        }}
-                      >
-                        {runActivity.recentActions[0].summary}
-                      </button>
-                    ) : null}
-                  </>
+                  latestRunAction ? (
+                    <button
+                      type="button"
+                      className="block w-full truncate text-left text-tertiary hover:text-secondary"
+                      onClick={() => onRunActionClick?.(latestRunAction)}
+                      title={runSummaryTitle ?? undefined}
+                      data-testid="notebook__run-activity-summary"
+                    >
+                      {runSummaryText}
+                    </button>
+                  ) : (
+                    <div className="truncate text-tertiary" title={runSummaryTitle ?? undefined} data-testid="notebook__run-activity-summary">
+                      {runSummaryText}
+                    </div>
+                  )
                 ) : null}
               </div>
               {connectionStatus && connectionStatus !== 'connected' && diagnosticsLinks ? (
@@ -186,15 +200,6 @@ export function ConversationPanel({
                   {runActivity.cancelling ? t('run_cancel_requested') : tCommon('cancel')}
                 </Button>
               ) : null}
-              <button
-                type="button"
-                className="text-[11px] text-primary hover:underline disabled:text-tertiary disabled:no-underline"
-                onClick={onToggleExecutionDetails}
-                disabled={disabled}
-                data-testid="notebook__execution-visibility-toggle"
-              >
-                {showExecutionDetails ? t('execution_visibility_hide') : t('execution_visibility_show')}
-              </button>
             </div>
           </div>
         </div>
@@ -204,7 +209,6 @@ export function ConversationPanel({
           messages={messages}
           streamingMessageId={streamingMessageId}
           streamingContent={streamingContent}
-          showExecutionDetails={showExecutionDetails}
           focusTraceMessageId={focusTraceMessageId}
           focusTraceName={focusTraceName}
           focusTraceToken={focusTraceToken}

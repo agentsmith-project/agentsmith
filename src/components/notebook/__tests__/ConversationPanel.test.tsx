@@ -430,6 +430,60 @@ describe('ConversationPanel', () => {
     });
   });
 
+  describe('Run Activity Banner', () => {
+    it('renders a compact latest-action summary and cancel action while running', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          onCancelActiveRun={vi.fn()}
+          runActivity={{
+            active: true,
+            elapsedSeconds: 125,
+            recentActions: [
+              {
+                id: 'action-1',
+                kind: 'output',
+                summary: 'Writing a very long execution update that should be truncated before it can ever stretch the notebook task status banner into multiple rows of noisy text for the user.',
+                ageSeconds: 0,
+                traceName: 'codex.exec',
+              },
+            ],
+          }}
+        />
+      );
+
+      const summary = screen.getByTestId('notebook__run-activity-summary');
+      expect(summary).toBeInTheDocument();
+      expect(summary.textContent?.length ?? 0).toBeLessThanOrEqual(96);
+      expect(summary).toHaveAttribute(
+        'title',
+        'Writing a very long execution update that should be truncated before it can ever stretch the notebook task status banner into multiple rows of noisy text for the user.',
+      );
+      expect(screen.getByText('common.cancel')).toBeInTheDocument();
+      expect(screen.queryByTestId('notebook__execution-visibility-toggle')).not.toBeInTheDocument();
+    });
+
+    it('falls back to lastSummary when no recent action exists', () => {
+      render(
+        <ConversationPanel
+          messages={mockMessages}
+          onSendMessage={mockOnSendMessage}
+          runActivity={{
+            active: true,
+            elapsedSeconds: 10,
+            lastSummary: 'Preparing notebook artifacts for the next execution turn',
+            recentActions: [],
+          }}
+        />
+      );
+
+      expect(screen.getByTestId('notebook__run-activity-summary')).toHaveTextContent(
+        'Preparing notebook artifacts for the next execution turn',
+      );
+    });
+  });
+
   describe('Empty Messages', () => {
     it('renders with empty messages array', () => {
       render(

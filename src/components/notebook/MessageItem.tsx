@@ -15,7 +15,6 @@ import {
   aggregateTraceSteps,
   decodeCodexEventText,
   formatCancelledReasonKey,
-  formatDuration,
   formatTraceStatusKey,
   getTransportTraceMeta,
   isExecutionTraceEvent,
@@ -26,7 +25,6 @@ import {
 export interface MessageItemProps {
   message: TaskMessage;
   streamingContent?: string | null;
-  showExecutionDetails?: boolean;
   focusTraceName?: string | null;
   focusTraceToken?: number;
   traceEvents?: TaskTraceEvent[];
@@ -42,7 +40,6 @@ export interface MessageItemProps {
 export function MessageItem({
   message,
   streamingContent,
-  showExecutionDetails = true,
   focusTraceName = null,
   focusTraceToken = 0,
   traceEvents = [],
@@ -70,7 +67,7 @@ export function MessageItem({
   const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
   const traceSummary = !isUser ? summarizeTraceEvents(traceEvents) : { status: 'idle' as const, stepCount: 0 };
   const hasTrace = !isUser && traceEvents.length > 0;
-  const canShowTraceToggle = !isUser && showExecutionDetails;
+  const canShowTraceToggle = !isUser;
   const visibleRunStatus: TraceSummary['status'] = !isUser && streamingContent != null && traceSummary.status === 'idle' ? 'running' : traceSummary.status;
   const sortedTraceEvents = React.useMemo(() => [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at))), [traceEvents]);
   const filteredTraceEvents = React.useMemo(() => sortedTraceEvents.filter((evt) => matchesTraceFilter(evt, traceFilterMode)), [sortedTraceEvents, traceFilterMode]);
@@ -79,7 +76,6 @@ export function MessageItem({
   const traceSteps = React.useMemo(() => aggregateTraceSteps(filteredExecutionTraceEvents), [filteredExecutionTraceEvents]);
   const traceErrorCount = React.useMemo(() => filteredExecutionTraceEvents.filter((evt) => evt.category === 'error').length, [filteredExecutionTraceEvents]);
   const traceWarningCount = React.useMemo(() => filteredExecutionTraceEvents.filter((evt) => evt.category === 'warning').length, [filteredExecutionTraceEvents]);
-  const traceStatusClass = traceSummary.status === 'success' ? 'text-green-300' : traceSummary.status === 'error' ? 'text-red-300' : traceSummary.status === 'cancelled' ? 'text-amber-300' : 'text-blue-300';
   const visibleRunStatusClass = visibleRunStatus === 'success'
     ? 'text-green-300 border-green-500/30 bg-green-500/10'
     : visibleRunStatus === 'error'
@@ -188,16 +184,8 @@ export function MessageItem({
               ) : !hasTrace ? (
                 <span className="text-tertiary">{tNotebookConversation('trace_no_details')}</span>
               ) : (
-                <>
-                  <span className={traceStatusClass}>{tNotebookConversation(formatTraceStatusKey(traceSummary))}</span>
-                  {' · '}
-                  {tNotebookConversation('trace_step_count', { count: traceSummary.stepCount })}
-                  {traceSummary.durationMs != null ? ` · ${formatDuration(traceSummary.durationMs)}` : ''}
-                  {traceSummary.currentStep ? ` · ${traceSummary.currentStep}` : ''}
-                </>
+                <span>{traceExpanded ? tNotebookConversation('trace_hide') : tNotebookConversation('trace_view')}</span>
               )}
-              {' · '}
-              {traceExpanded ? tNotebookConversation('trace_hide') : tNotebookConversation('trace_view')}
             </button>
           ) : null}
           <span className="text-[11px] text-tertiary">{formatTime(message.created_at)}</span>

@@ -351,6 +351,14 @@ describe('TaskPage', () => {
 
       expect(screen.getByTestId('artifacts-panel')).toBeInTheDocument();
     });
+
+    it('does not pass a global execution details mode into ConversationPanel', () => {
+      renderComponent();
+
+      expect(latestConversationPanelPropsRef.current).toBeTruthy();
+      expect(latestConversationPanelPropsRef.current.showExecutionDetails).toBeUndefined();
+      expect(latestConversationPanelPropsRef.current.onToggleExecutionDetails).toBeUndefined();
+    });
   });
 
   describe('SSE Connection', () => {

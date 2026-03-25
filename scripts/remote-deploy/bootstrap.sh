@@ -12,7 +12,9 @@ fi
 
 load_release_env
 
-API_BASE="${PUBLIC_API_BASE_URL:-${API_BASE:-http://localhost:20000}}"
+HOST_LOCAL_API_BASE_URL="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}"
+HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
+API_BASE="${HOST_LOCAL_API_BASE_URL}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}"
 INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-http://keycloak:8080}"
 DEPLOY_ENDPOINT_API_KEY="${DEPLOY_ENDPOINT_API_KEY:-}"
@@ -58,7 +60,7 @@ docker_compose exec -T api bash -lc '
 '
 
 token_resp="$(
-  curl -sS "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+  curl -sS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
     -H 'content-type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
     --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \

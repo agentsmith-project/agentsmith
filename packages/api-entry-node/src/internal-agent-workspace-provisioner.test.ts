@@ -91,8 +91,9 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
         subdir: '/workspaces/ws_demo/flib_demo',
         mountServiceAccount: 'juicefs-mount',
         mountImage: 'juicedata/mount:ce-v1.3.1',
-        metadataHostOverride: 'kind-gateway',
-        storageEndpointOverride: 'http://minio.internal:19000',
+        metadataHostOverride: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
+        metadataPortOverride: '5432',
+        storageEndpointOverride: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
       },
     );
 
@@ -109,8 +110,8 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
       expect.objectContaining({
         file_library_id: 'flib_demo',
         filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
-        metadata_url: 'postgres://juicefs:secret@kind-gateway:5432/juicefs_demo?sslmode=disable',
-        storage_endpoint: 'http://minio.internal:19000',
+        metadata_url: 'postgres://juicefs:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/juicefs_demo?sslmode=disable',
+        storage_endpoint: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
         storage_class_name: 'juicefs-static',
         mount_options: ['writeback_cache', 'cache-size=204800'],
         subdir: '/workspaces/ws_demo/flib_demo',
@@ -124,5 +125,79 @@ describe('InternalAgentWorkspaceProvisionerImpl', () => {
     });
     expect(result.binding.pvc_name).toBe('juicefs-pvc-demo');
     expect(result.binding.storage_class_name).toBe('juicefs-static');
+  });
+
+  it('always rewrites metadata host for internal mounts when an override is configured', async () => {
+    const docStore = new InMemoryJsonDocStore();
+    const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(docStore);
+    const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(docStore);
+
+    await catalogRepo.save({
+      id: 'flib_public',
+      workspace_id: 'ws_demo',
+      project_id: 'proj_demo',
+      name: 'Workspace Library',
+      description: 'Demo library',
+      status: 'ready',
+      filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
+      created_by_user_id: 'user_demo',
+      created_at: '2026-03-19T00:00:00.000Z',
+      updated_at: '2026-03-19T00:00:00.000Z',
+    } as never);
+    await mountAccessRepo.save('ws_demo', 'proj_demo', 'flib_public', {
+      filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
+      metadata_url: 'postgres://juicefs:secret@192.168.0.220:15432/juicefs_demo',
+      recommended_mount_path: '~/Agentsmith/Workspace Library',
+      platform_notes: [],
+      recommended_mount_commands: {
+        linux: 'juicefs mount ...',
+        macos: 'juicefs mount ...',
+        windows: 'juicefs mount ...',
+      },
+      created_at: '2026-03-19T00:00:00.000Z',
+    });
+
+    const ensureWorkspaceBinding = vi.fn().mockResolvedValue({
+      binding_id: 'flib_public',
+      workspace_id: 'ws_demo',
+      project_id: 'proj_demo',
+      file_library_id: 'flib_public',
+      status: 'ready',
+      namespace: 'agentsmith-sandbox',
+      secret_name: 'juicefs-secret-demo',
+      pv_name: 'juicefs-pv-demo',
+      pvc_name: 'juicefs-pvc-demo',
+      volume_handle: 'juicefs-demo',
+      filesystem_name: 'jfs_ws_demo_proj_demo_workspace_library',
+      mount_path: '/workspace',
+    });
+
+    const provisioner = new InternalAgentWorkspaceProvisionerImpl(
+      docStore,
+      {
+        ensureWorkspaceBinding,
+        deleteWorkspaceBinding: vi.fn().mockResolvedValue(undefined),
+      },
+      {
+        namespace: '',
+        metadataHostOverride: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
+        metadataPortOverride: '5432',
+      },
+    );
+
+    await provisioner.ensureWorkspaceBinding({
+      workspaceId: 'ws_demo',
+      projectId: 'proj_demo',
+      fileLibraryId: 'flib_public',
+    });
+
+    expect(ensureWorkspaceBinding).toHaveBeenCalledWith(
+      'ws_demo',
+      'proj_demo',
+      'flib_public',
+      expect.objectContaining({
+        metadata_url: 'postgres://juicefs:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/juicefs_demo',
+      }),
+    );
   });
 });

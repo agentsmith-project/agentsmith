@@ -244,21 +244,36 @@ export async function createProjectInWorkspace(
   page: Page,
   workspaceId: string,
   prefix = 'Real Integration Project',
+  options?: {
+    visibility?: 'public' | 'private';
+    joinPolicy?: 'approval_required' | 'open';
+  },
 ): Promise<{ projectId: string; projectName: string }> {
   const projectName = `${prefix} ${Date.now()}`;
-  await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects`);
-  await expect(page.getByTestId('projects__create-btn')).toBeVisible({ timeout: 30_000 });
-  await page.getByTestId('projects__create-btn').click();
-  await page.locator('#project-name').fill(projectName);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/.+/overview`), { timeout: 30_000 }),
-    page.getByRole('button', { name: /Create|创建/i }).click(),
-  ]);
-  const match = page.url().match(/\/projects\/([^/]+)\//);
-  if (!match?.[1]) {
+  const token = await readStoredAuthToken(page);
+  const response = await page.request.post(`${API_BASE}/api/v1/workspaces/${workspaceId}/projects`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    data: {
+      workspace_id: workspaceId,
+      name: projectName,
+      visibility: options?.visibility ?? 'private',
+      join_policy: options?.joinPolicy ?? 'approval_required',
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const created = (await response.json()) as { id?: string };
+  const projectId = created.id?.trim();
+  if (!projectId) {
     throw new Error('project_id_not_found_after_create');
   }
-  return { projectId: match[1], projectName };
+  await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview`);
+  await expect(page).toHaveURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/overview(?:$|\\?)`), {
+    timeout: 30_000,
+  });
+  return { projectId, projectName };
 }
 
 export async function createCredentialViaUi(
@@ -830,10 +845,12 @@ export async function mountFileLibraryLocally(metadataUrl: string, storageBucket
   mountPath: string;
   stop: () => Promise<void>;
 }> {
+  const resolvedMetadataUrl = rewriteLocalClientMetadataUrl(metadataUrl);
+  const resolvedStorageBucketUrl = rewriteLocalClientStorageBucketUrl(storageBucketUrl);
   const mountPath = await mkdtemp(path.join(tmpdir(), 'agentsmith-real-file-library-'));
   const mountArgs = [
     'mount',
-    metadataUrl,
+    resolvedMetadataUrl,
     mountPath,
     '-d',
     '--check-storage',
@@ -844,8 +861,8 @@ export async function mountFileLibraryLocally(metadataUrl: string, storageBucket
     '--dir-entry-cache',
     '0',
   ];
-  if ((storageBucketUrl ?? '').trim()) {
-    mountArgs.push('--bucket', storageBucketUrl!.trim());
+  if ((resolvedStorageBucketUrl ?? '').trim()) {
+    mountArgs.push('--bucket', resolvedStorageBucketUrl!.trim());
   }
   const mountResult = await spawnAndCapture('juicefs', mountArgs, { env: withoutProxyEnv() });
   if (mountResult.code !== 0) {
@@ -859,6 +876,41 @@ export async function mountFileLibraryLocally(metadataUrl: string, storageBucket
       await rm(mountPath, { recursive: true, force: true }).catch(() => undefined);
     },
   };
+}
+
+function rewriteLocalClientMetadataUrl(metadataUrl: string): string {
+  const hostOverride = process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  const portOverride = process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim();
+  if (!hostOverride && !portOverride) {
+    return metadataUrl;
+  }
+  const rewritten = new URL(metadataUrl);
+  if (hostOverride) {
+    rewritten.hostname = hostOverride;
+  }
+  if (portOverride) {
+    rewritten.port = portOverride;
+  }
+  return rewritten.toString();
+}
+
+function rewriteLocalClientStorageBucketUrl(storageBucketUrl?: string): string | undefined {
+  const rawUrl = storageBucketUrl?.trim();
+  if (!rawUrl) {
+    return storageBucketUrl;
+  }
+  const endpointOverride = process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  if (!endpointOverride) {
+    return rawUrl;
+  }
+  const original = new URL(rawUrl);
+  const override = new URL(endpointOverride);
+  original.protocol = override.protocol;
+  original.username = override.username;
+  original.password = override.password;
+  original.hostname = override.hostname;
+  original.port = override.port;
+  return original.toString();
 }
 
 export async function waitForMountedWorkspacePath(

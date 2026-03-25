@@ -17,6 +17,7 @@ cp "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/re
 cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/remote-deploy/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
+cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${RELEASE_ROOT}/scripts/lib/k8s-external-services.sh"
 
 RESOLVED_RUNNER_HOST=host.docker.internal \
 RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
@@ -87,8 +88,33 @@ grep -Fxq 'FILE_LIBRARY_CLIENT_MINIO_ENDPOINT=http://localhost:19000' "${RELEASE
   exit 1
 }
 
-grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=10.88.0.1' "${RELEASE_ROOT}/env/internal.env" || {
+grep -Fxq 'EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=localhost' "${RELEASE_ROOT}/env/api.env" || {
+  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE' >&2
+  exit 1
+}
+
+grep -Fxq 'EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' "${RELEASE_ROOT}/env/api.env" || {
+  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE' >&2
+  exit 1
+}
+
+grep -Fxq 'EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://localhost:19000' "${RELEASE_ROOT}/env/api.env" || {
+  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE' >&2
+  exit 1
+}
+
+grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' "${RELEASE_ROOT}/env/internal.env" || {
   echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE' >&2
+  exit 1
+}
+
+grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=5432' "${RELEASE_ROOT}/env/internal.env" || {
+  echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE' >&2
+  exit 1
+}
+
+grep -Fxq 'INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' "${RELEASE_ROOT}/env/internal.env" || {
+  echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE' >&2
   exit 1
 }
 

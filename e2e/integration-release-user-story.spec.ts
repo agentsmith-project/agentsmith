@@ -34,6 +34,7 @@ const INTERNAL_AGENT_IMAGE =
   process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() ||
   process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
   'agentsmith-codex-runner:local';
+const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
 
 function requireRealLaneApiKey(): string {
   const value = REAL_LANE_API_KEY?.trim();
@@ -447,7 +448,7 @@ async function createTaskViaUi(args: {
     (response) =>
       response.url().includes(`/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks`)
       && response.request().method() === 'POST',
-    { timeout: 15_000 },
+    { timeout: workspaceMode === 'create_new' ? CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS : 15_000 },
   );
   await createButton.click();
   const createResponse = await createResponsePromise;
@@ -546,6 +547,17 @@ async function waitForTaskArtifacts(args: {
 }
 
 function externalExecutionHost(): string {
+  const dockerManualHost = process.env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  if (dockerManualHost) {
+    return dockerManualHost;
+  }
+  if (process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.includes('host.docker.internal')) {
+    return '127.0.0.1';
+  }
+  const explicitMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  if (explicitMetaHost) {
+    return explicitMetaHost;
+  }
   const source = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim() || API_BASE;
   return new URL(source).hostname;
 }
@@ -629,7 +641,10 @@ test.describe('@lane-real release user story end-to-end', () => {
     const workspaceId = await createAndPublishWorkspace(page);
 
     await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
-    const { projectId, projectName } = await createProjectInWorkspace(page, workspaceId, 'Release Story Project');
+    const { projectId, projectName } = await createProjectInWorkspace(page, workspaceId, 'Release Story Project', {
+      visibility: 'public',
+      joinPolicy: 'approval_required',
+    });
 
     await loginToWorkspace(page, workspaceId, MEMBER_USERNAME, MEMBER_PASSWORD);
     await requestProjectAccess(page, workspaceId, projectId);

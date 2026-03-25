@@ -29,14 +29,16 @@ import {
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
 import {
+  resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
   resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
   resolveFileLibraryMetadataUrlForExternalExecution,
   resolveFileLibraryMetadataUrlForInternalExecution,
+  resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution,
   resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
   resolveFileLibraryStorageBucketUrlForExternalExecution,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
 } from './file-library-runtime.js';
-import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
+import { isComposeManagedExternalAgent, isExternalRunnerRuntime } from './agent-runner-profile.js';
 import {
   asObject,
   buildId,
@@ -122,6 +124,12 @@ export function resolveTaskWorkspaceMountAccess(input: {
       return {
         metadataUrl: resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(input.metadataUrl),
         storageBucketUrl: resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution(input.storageBucketUrl),
+      };
+    }
+    if (isExternalRunnerRuntime({ mode: 'external', config: input.agentConfig }, 'docker_manual')) {
+      return {
+        metadataUrl: resolveFileLibraryMetadataUrlForDockerManualExternalExecution(input.metadataUrl),
+        storageBucketUrl: resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(input.storageBucketUrl),
       };
     }
     return {

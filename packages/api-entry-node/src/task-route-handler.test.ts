@@ -18,9 +18,11 @@ describe('task-route-handler workspace access', () => {
 
   it('rewrites client-visible mount access for internal agents when internal overrides are configured', () => {
     const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+    const previousMetaPort = process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
     const previousStorageEndpoint = process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'kind-gateway';
-    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://kind-gateway:19000';
+    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'postgres-external.agentsmith-sandbox.svc.cluster.local';
+    process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '5432';
+    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
         agentMode: 'internal',
@@ -29,12 +31,14 @@ describe('task-route-handler workspace access', () => {
       });
 
       expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@kind-gateway:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://kind-gateway:19000/jfs-lib-demo',
+        metadataUrl: 'postgres://jfsu_user:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo',
       });
     } finally {
       if (previousMetaHost === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
       else process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousMetaHost;
+      if (previousMetaPort === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
+      else process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousMetaPort;
       if (previousStorageEndpoint === undefined) delete process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
       else process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousStorageEndpoint;
     }
@@ -46,6 +50,9 @@ describe('task-route-handler workspace access', () => {
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
         agentMode: 'external',
+        agentConfig: {
+          runner_runtime: 'dev_direct',
+        },
         metadataUrl: 'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://localhost:19000/jfs-lib-demo',
       });
@@ -69,6 +76,9 @@ describe('task-route-handler workspace access', () => {
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
         agentMode: 'external',
+        agentConfig: {
+          runner_runtime: 'dev_direct',
+        },
         metadataUrl: 'postgres://jfsu_user:secret@mbos.imotion.ai:15432/jfs_lib_demo?sslmode=disable',
         storageBucketUrl: 'http://mbos.imotion.ai:19000/jfs-lib-demo',
       });
@@ -83,6 +93,41 @@ describe('task-route-handler workspace access', () => {
       } else {
         process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
       }
+    }
+  });
+
+  it('prefers explicit external runner JuiceFS overrides when configured', () => {
+    const previousExternalExecutionBase = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+    const previousExternalMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+    const previousExternalMetaPort = process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
+    const previousExternalStorageEndpoint = process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+    process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = 'http://host.docker.internal:20000';
+    process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = '192.168.0.220';
+    process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '15432';
+    process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://192.168.0.220:19000';
+    try {
+      const resolved = resolveTaskWorkspaceMountAccess({
+        agentMode: 'external',
+        agentConfig: {
+          runner_runtime: 'dev_direct',
+        },
+        metadataUrl: 'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://files.example.com:19000/jfs-lib-demo',
+      });
+
+      expect(resolved).toEqual({
+        metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
+      });
+    } finally {
+      if (previousExternalExecutionBase === undefined) delete process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL;
+      else process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL = previousExternalExecutionBase;
+      if (previousExternalMetaHost === undefined) delete process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+      else process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousExternalMetaHost;
+      if (previousExternalMetaPort === undefined) delete process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
+      else process.env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousExternalMetaPort;
+      if (previousExternalStorageEndpoint === undefined) delete process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
+      else process.env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = previousExternalStorageEndpoint;
     }
   });
 
@@ -121,11 +166,40 @@ describe('task-route-handler workspace access', () => {
     }
   });
 
+  it('rewrites client-visible mount access for docker-manual external runner execution', () => {
+    const previousClientPgPort = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
+    const previousMinioApiPort = process.env.MINIO_API_PORT;
+    process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = '15432';
+    process.env.MINIO_API_PORT = '19000';
+    try {
+      const resolved = resolveTaskWorkspaceMountAccess({
+        agentMode: 'external',
+        agentConfig: {
+          runner_runtime: 'docker_manual',
+        },
+        metadataUrl: 'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://192.168.0.220:19000/jfs-lib-demo',
+      });
+
+      expect(resolved).toEqual({
+        metadataUrl: 'postgres://jfsu_user:secret@127.0.0.1:15432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://127.0.0.1:19000/jfs-lib-demo',
+      });
+    } finally {
+      if (previousClientPgPort === undefined) delete process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
+      else process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = previousClientPgPort;
+      if (previousMinioApiPort === undefined) delete process.env.MINIO_API_PORT;
+      else process.env.MINIO_API_PORT = previousMinioApiPort;
+    }
+  });
+
   it('rewrites loopback mount access for internal agent execution', () => {
     const previousMetaHost = process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
+    const previousMetaPort = process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
     const previousStorageEndpoint = process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;
-    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = '10.88.0.1';
-    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://10.88.0.1:19000';
+    process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = 'postgres-external.agentsmith-sandbox.svc.cluster.local';
+    process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = '5432';
+    process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE = 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000';
     try {
       const resolved = resolveTaskWorkspaceMountAccess({
         agentMode: 'internal',
@@ -134,14 +208,19 @@ describe('task-route-handler workspace access', () => {
       });
 
       expect(resolved).toEqual({
-        metadataUrl: 'postgres://jfsu_user:secret@10.88.0.1:15432/jfs_lib_demo?sslmode=disable',
-        storageBucketUrl: 'http://10.88.0.1:19000/jfs-lib-demo',
+        metadataUrl: 'postgres://jfsu_user:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/jfs_lib_demo?sslmode=disable',
+        storageBucketUrl: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo',
       });
     } finally {
       if (previousMetaHost === undefined) {
         delete process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE;
       } else {
         process.env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE = previousMetaHost;
+      }
+      if (previousMetaPort === undefined) {
+        delete process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE;
+      } else {
+        process.env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE = previousMetaPort;
       }
       if (previousStorageEndpoint === undefined) {
         delete process.env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE;

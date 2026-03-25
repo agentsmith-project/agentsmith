@@ -30,7 +30,11 @@ for group_name, group in manifest.get("required_env", {}).items():
 
 for relative in manifest.get("bundle_files", []):
     source = root_dir / relative if not relative.startswith("tools/") else pathlib.Path("/nonexistent")
-    if relative.startswith("scripts/"):
+    if relative == "scripts/lib/common.sh":
+      source = root_dir / "scripts" / "remote-deploy" / "lib" / "common.sh"
+    elif relative.startswith("scripts/lib/"):
+      source = root_dir / "scripts" / "lib" / pathlib.Path(relative).name
+    elif relative.startswith("scripts/"):
       source = root_dir / "scripts" / "remote-deploy" / pathlib.Path(relative).name
     elif relative.startswith("compose/"):
       source = root_dir / "infra" / "deploy" / "remote" / pathlib.Path(relative).name
@@ -43,6 +47,8 @@ for relative in manifest.get("bundle_files", []):
     elif relative.startswith("universal-proxy/"):
       source = root_dir / "infra" / "deploy" / "remote" / "universal-proxy" / pathlib.Path(relative).name
     elif relative.startswith("docs/contracts/"):
+      source = root_dir / relative
+    elif relative.startswith("e2e/"):
       source = root_dir / relative
     elif relative in {"checksums.txt", "VERSION"}:
       continue

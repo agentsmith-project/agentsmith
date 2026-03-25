@@ -86,7 +86,8 @@ The deployment flow must not reuse public MinIO ports such as `19000` for contai
 ### Agent Execution Addresses
 - These addresses are runtime-derived, not operator-provided.
 - External runner execution uses a runner-visible host alias derived by the deployment environment.
-- Internal agent execution uses the current kind gateway derived by the deployment environment.
+- Internal agent execution uses stable Kubernetes service names for external dependencies.
+- The deployment/bootstrap layer is responsible for binding those service names to the actual external PostgreSQL and MinIO targets.
 - The HTTP and WS variants must stay aligned to the same resolved host identity for the current deployment.
 - The deployment flow must fail fast if runtime execution hosts cannot be resolved.
 

@@ -366,6 +366,10 @@ export function resolveFileLibraryRuntimeConfig(env: NodeJS.ProcessEnv = process
 }
 
 function resolveExternalExecutionHost(env: NodeJS.ProcessEnv = process.env): string | null {
+  const explicit = env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  if (explicit) {
+    return explicit;
+  }
   const candidates = [
     env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim(),
     env.AGENT_EXECUTION_HTTP_BASE_URL?.trim(),
@@ -381,11 +385,6 @@ function resolveExternalExecutionHost(env: NodeJS.ProcessEnv = process.env): str
     }
   }
   return null;
-}
-
-function resolveInternalExecutionHost(env: NodeJS.ProcessEnv = process.env): string | null {
-  const host = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
-  return host || null;
 }
 
 function replaceUrlOrigin(urlValue: string, replacementBase: string): string {
@@ -408,6 +407,10 @@ export function resolveFileLibraryMetadataUrlForExternalExecution(
   try {
     const parsed = new URL(metadataUrl);
     parsed.hostname = executionHost;
+    const explicitPort = env.EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim();
+    if (explicitPort) {
+      parsed.port = explicitPort;
+    }
     return parsed.toString();
   } catch {
     return metadataUrl;
@@ -431,11 +434,35 @@ export function resolveFileLibraryMetadataUrlForComposeManagedExternalExecution(
   }
 }
 
+export function resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
+  metadataUrl: string,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  try {
+    const parsed = new URL(metadataUrl);
+    parsed.hostname = env.DOCKER_MANUAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '127.0.0.1';
+    parsed.port = env.DOCKER_MANUAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim()
+      || env.FILE_LIBRARY_CLIENT_POSTGRES_PORT?.trim()
+      || '15432';
+    return parsed.toString();
+  } catch {
+    return metadataUrl;
+  }
+}
+
 export function resolveFileLibraryStorageBucketUrlForExternalExecution(
   storageBucketUrl: string | undefined,
   env: NodeJS.ProcessEnv = process.env,
 ): string | undefined {
   if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const explicitEndpoint = env.EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  if (explicitEndpoint) {
+    try {
+      return replaceUrlOrigin(storageBucketUrl, explicitEndpoint);
+    } catch {
+      return storageBucketUrl;
+    }
+  }
   const executionHost = resolveExternalExecutionHost(env);
   if (!executionHost) return storageBucketUrl;
   try {
@@ -467,15 +494,35 @@ export function resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecu
   }
 }
 
+export function resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
+  storageBucketUrl: string | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+): string | undefined {
+  if (!storageBucketUrl?.trim()) return storageBucketUrl;
+  const explicitEndpoint = env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  const loopbackPort = env.DOCKER_MANUAL_AGENT_JUICEFS_STORAGE_PORT_OVERRIDE?.trim()
+    || env.MINIO_API_PORT?.trim()
+    || env.FILE_LIBRARY_CLIENT_MINIO_PORT?.trim()
+    || '19000';
+  const endpoint = explicitEndpoint || `http://127.0.0.1:${loopbackPort}`;
+  try {
+    return replaceUrlOrigin(storageBucketUrl, endpoint);
+  } catch {
+    return storageBucketUrl;
+  }
+}
+
 export function resolveFileLibraryMetadataUrlForInternalExecution(
   metadataUrl: string,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const executionHost = resolveInternalExecutionHost(env);
-  if (!executionHost) return metadataUrl;
+  const executionHost = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  const executionPort = env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim();
+  if (!executionHost && !executionPort) return metadataUrl;
   try {
     const parsed = new URL(metadataUrl);
-    parsed.hostname = executionHost;
+    if (executionHost) parsed.hostname = executionHost;
+    if (executionPort) parsed.port = executionPort;
     return parsed.toString();
   } catch {
     return metadataUrl;

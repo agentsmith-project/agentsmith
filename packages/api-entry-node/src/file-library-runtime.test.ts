@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
   getFileLibraryRuntimeReadiness,
   resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
   resolveFileLibraryMetadataUrlForExternalExecution,
   resolveFileLibraryMetadataUrlForInternalExecution,
   resolveFileLibraryRuntimeConfig,
+  resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution,
   resolveFileLibraryStorageBucketUrlForComposeManagedExternalExecution,
   resolveFileLibraryStorageBucketUrlForExternalExecution,
   resolveFileLibraryStorageBucketUrlForInternalExecution,
@@ -71,6 +73,29 @@ describe('file-library-runtime readiness', () => {
     ).toBe('http://172.18.0.1:19000/jfs-lib-demo');
   });
 
+  it('prefers explicit external runner JuiceFS overrides over execution API host inference', () => {
+    const env = {
+      EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL: 'http://host.docker.internal:20000',
+      EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: '192.168.0.220',
+      EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: '15432',
+      EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://192.168.0.220:19000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForExternalExecution(
+        'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForExternalExecution(
+        'https://files.example.com:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://192.168.0.220:19000/jfs-lib-demo');
+  });
+
   it('rewrites loopback file library access for compose-managed external runner execution', () => {
     const env = {
       DATABASE_URL: 'postgresql://mbos:secret@postgres:5432/mbos',
@@ -92,6 +117,27 @@ describe('file-library-runtime readiness', () => {
         env,
       ),
     ).toBe('http://minio:9000/jfs-lib-demo');
+  });
+
+  it('rewrites client-visible file library access for docker-manual external runner execution', () => {
+    const env = {
+      FILE_LIBRARY_CLIENT_POSTGRES_PORT: '15432',
+      MINIO_API_PORT: '19000',
+    } as NodeJS.ProcessEnv;
+
+    expect(
+      resolveFileLibraryMetadataUrlForDockerManualExternalExecution(
+        'postgres://jfsu_user:secret@192.168.0.220:15432/jfs_lib_demo?sslmode=disable',
+        env,
+      ),
+    ).toBe('postgres://jfsu_user:secret@127.0.0.1:15432/jfs_lib_demo?sslmode=disable');
+
+    expect(
+      resolveFileLibraryStorageBucketUrlForDockerManualExternalExecution(
+        'http://192.168.0.220:19000/jfs-lib-demo',
+        env,
+      ),
+    ).toBe('http://127.0.0.1:19000/jfs-lib-demo');
   });
 
   it('preserves non-loopback file library access for external runner execution', () => {
@@ -116,8 +162,9 @@ describe('file-library-runtime readiness', () => {
 
   it('rewrites loopback file library access for internal agent execution', () => {
     const env = {
-      INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: '10.88.0.1',
-      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://10.88.0.1:19000',
+      INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
+      INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: '5432',
+      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
     } as NodeJS.ProcessEnv;
 
     expect(
@@ -125,20 +172,21 @@ describe('file-library-runtime readiness', () => {
         'postgres://jfsu_user:secret@localhost:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
-    ).toBe('postgres://jfsu_user:secret@10.88.0.1:15432/jfs_lib_demo?sslmode=disable');
+    ).toBe('postgres://jfsu_user:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/jfs_lib_demo?sslmode=disable');
 
     expect(
       resolveFileLibraryStorageBucketUrlForInternalExecution(
         'http://localhost:19000/jfs-lib-demo',
         env,
       ),
-    ).toBe('http://10.88.0.1:19000/jfs-lib-demo');
+    ).toBe('http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo');
   });
 
   it('rewrites client-visible file library access for internal agent execution', () => {
     const env = {
-      INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'kind-gateway',
-      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://kind-gateway:19000',
+      INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE: 'postgres-external.agentsmith-sandbox.svc.cluster.local',
+      INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE: '5432',
+      INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE: 'http://minio-external.agentsmith-sandbox.svc.cluster.local:9000',
     } as NodeJS.ProcessEnv;
 
     expect(
@@ -146,13 +194,13 @@ describe('file-library-runtime readiness', () => {
         'postgres://jfsu_user:secret@files.example.com:15432/jfs_lib_demo?sslmode=disable',
         env,
       ),
-    ).toBe('postgres://jfsu_user:secret@kind-gateway:15432/jfs_lib_demo?sslmode=disable');
+    ).toBe('postgres://jfsu_user:secret@postgres-external.agentsmith-sandbox.svc.cluster.local:5432/jfs_lib_demo?sslmode=disable');
 
     expect(
       resolveFileLibraryStorageBucketUrlForInternalExecution(
         'https://files.example.com:19000/jfs-lib-demo',
         env,
       ),
-    ).toBe('http://kind-gateway:19000/jfs-lib-demo');
+    ).toBe('http://minio-external.agentsmith-sandbox.svc.cluster.local:9000/jfs-lib-demo');
   });
 });

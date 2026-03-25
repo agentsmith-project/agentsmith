@@ -120,6 +120,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
   const sandboxServiceKey = env.SANDBOX_SERVICE_KEY?.trim() || '';
   const internalAgentWsBaseUrl = env.AGENT_EXECUTION_WS_BASE_URL?.trim() || '';
   const internalAgentMetadataHostOverride = env.INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim() || '';
+  const internalAgentMetadataPortOverride = env.INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE?.trim() || '';
   const internalAgentStorageEndpointOverride = env.INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || '';
   if ((sandboxUrl && !sandboxServiceKey) || (!sandboxUrl && sandboxServiceKey)) {
     throw Object.assign(new Error('sandbox_manager_config_incomplete: both SANDBOX_MANAGER_URL and SANDBOX_SERVICE_KEY must be set'), {
@@ -169,6 +170,7 @@ export function createNodeApiDepsFromEnv(env: NodeJS.ProcessEnv): {
           mountServiceAccount: env.INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT?.trim() || '',
           mountImage: env.INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE?.trim() || '',
           metadataHostOverride: internalAgentMetadataHostOverride || undefined,
+          metadataPortOverride: internalAgentMetadataPortOverride || undefined,
           storageEndpointOverride: internalAgentStorageEndpointOverride || undefined,
           storageCredentialSeed:
             env.FILE_LIBRARY_GATEWAY_ROOT_PASSWORD_SEED?.trim()

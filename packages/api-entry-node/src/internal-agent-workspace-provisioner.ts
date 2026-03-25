@@ -113,6 +113,7 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
       mountServiceAccount?: string;
       mountImage?: string;
       metadataHostOverride?: string;
+      metadataPortOverride?: string;
       storageEndpointOverride?: string;
       storageCredentialSeed?: string;
     },
@@ -219,17 +220,16 @@ export class InternalAgentWorkspaceProvisionerImpl implements InternalAgentWorks
 
   private resolveMetadataUrlForInternalMount(metadataUrl: string): string {
     const hostOverride = this.options.metadataHostOverride?.trim();
-    if (!hostOverride) return metadataUrl;
+    const portOverride = this.options.metadataPortOverride?.trim();
+    if (!hostOverride && !portOverride) return metadataUrl;
     let parsed: URL;
     try {
       parsed = new URL(metadataUrl);
     } catch {
       return metadataUrl;
     }
-    if (parsed.hostname !== 'localhost' && parsed.hostname !== '127.0.0.1') {
-      return metadataUrl;
-    }
-    parsed.hostname = hostOverride;
+    if (hostOverride) parsed.hostname = hostOverride;
+    if (portOverride) parsed.port = portOverride;
     return parsed.toString();
   }
 

@@ -6,6 +6,7 @@ const WORKSPACE_ID = 'ws_default';
 const DEMO_PROJECT_NAME = 'Demo Project';
 const DEMO_EXTERNAL_AGENT_NAME = 'demo-external-agent';
 const EXPECTED_TOKEN = `PRESET_EXTERNAL_FILE_LIBRARY_OK_${Date.now()}`;
+const CREATE_NEW_TASK_REQUEST_TIMEOUT_MS = 60_000;
 
 async function resolveDemoProjectAndAgent(page: Page): Promise<{ projectId: string; agentId: string }> {
   const token = await readStoredAuthToken(page);
@@ -49,6 +50,7 @@ async function createTask(page: Page, projectId: string, agentId: string): Promi
       const response = await page.request.post(
         `${API_BASE}/api/v1/workspaces/${WORKSPACE_ID}/projects/${projectId}/tasks`,
         {
+          timeout: CREATE_NEW_TASK_REQUEST_TIMEOUT_MS,
           headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
           data: {
             title,

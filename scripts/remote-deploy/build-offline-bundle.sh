@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 UNIVERSAL_PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
-OUT_DIR="${OUT_DIR:-${ROOT_DIR}/artifacts/remote-deploy}"
+OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/deploy/uploads}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
 IMAGES_DIR="${BUNDLE_DIR}/images"
@@ -192,7 +192,7 @@ for image in "${ALL_IMAGES[@]}"; do
   fi
 done
 
-mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/kind" "${BUNDLE_DIR}/scripts" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/k8s"
+mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/kind" "${BUNDLE_DIR}/scripts" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/k8s" "${BUNDLE_DIR}/e2e"
 mkdir -p "${BUNDLE_DIR}/universal-proxy"
 cp "${ROOT_DIR}/infra/deploy/remote/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/remote/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
@@ -207,7 +207,10 @@ cp "${ROOT_DIR}/infra/integration/keycloak/realm-mbos-dev.json" "${BUNDLE_DIR}/k
 cp "${ROOT_DIR}/scripts/remote-deploy/"*.sh "${BUNDLE_DIR}/scripts/"
 mkdir -p "${BUNDLE_DIR}/scripts/lib"
 cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${BUNDLE_DIR}/scripts/lib/common.sh"
-chmod +x "${BUNDLE_DIR}"/scripts/*.sh "${BUNDLE_DIR}/scripts/lib/common.sh"
+cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
+chmod +x "${BUNDLE_DIR}"/scripts/*.sh "${BUNDLE_DIR}/scripts/lib/common.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
+cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
+cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 mkdir -p "${BUNDLE_DIR}/docs/contracts"
 cp "${ROOT_DIR}/docs/contracts/deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/deployment-spec-v1.md"
 

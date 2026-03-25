@@ -2,7 +2,7 @@
 set -euo pipefail
 
 COMMON_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REMOTE_DEPLOY_ROOT_DEFAULT="${HOME}/agentsmith-deploy"
+REMOTE_DEPLOY_ROOT_DEFAULT="${HOME}/agentsmith/deploy"
 
 infer_release_root_from_common_dir() {
   local candidate

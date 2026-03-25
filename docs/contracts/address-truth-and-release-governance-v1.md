@@ -191,6 +191,7 @@ Agent 的业务语义仍然只有两种：
 
 特点：
 - 必须是 internal/k8s-safe truth
+- 必须通过稳定的 Kubernetes service name 访问外部依赖
 - 不能复用 client 地址
 
 ### 规则

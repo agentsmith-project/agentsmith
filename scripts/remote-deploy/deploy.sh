@@ -8,11 +8,15 @@ else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
   source "${ROOT_DIR}/scripts/lib/common.sh"
 fi
+source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 
 ensure_dirs
 if [[ ! -f "${RELEASE_ROOT}/env/site.env" ]]; then
   cp "${RELEASE_ROOT}/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
 fi
+
+HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
+HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
@@ -59,11 +63,33 @@ bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
 docker_compose up -d postgres mongo redis minio minio-init keycloak universal-proxy api web
-wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
+wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT}" 240
-wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240
+wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 
-KIND_GATEWAY="$(kind_gateway_ip)"
+set -a
+source "${RELEASE_ROOT}/env/runtime-addresses.env"
+set +a
+
+kubectl create namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+
+ensure_container_on_network kind agentsmith-remote-postgres-1
+ensure_container_on_network kind agentsmith-remote-minio-1
+
+KIND_POSTGRES_TARGET_IP="$(resolve_container_network_ip kind agentsmith-remote-postgres-1)"
+[[ -n "${KIND_POSTGRES_TARGET_IP}" ]] || die "unable to resolve kind-network IP for agentsmith-remote-postgres-1"
+KIND_MINIO_TARGET_IP="$(resolve_container_network_ip kind agentsmith-remote-minio-1)"
+[[ -n "${KIND_MINIO_TARGET_IP}" ]] || die "unable to resolve kind-network IP for agentsmith-remote-minio-1"
+
+EXTERNAL_DEPS_MANIFEST="${REMOTE_DEPLOY_ROOT}/state/internal-external-services.yaml"
+render_k8s_external_dependency_services \
+  "${EXTERNAL_DEPS_MANIFEST}" \
+  "${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "${KIND_POSTGRES_TARGET_IP}" \
+  5432 \
+  "${KIND_MINIO_TARGET_IP}" \
+  9000
+kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 
 cat > "${REMOTE_DEPLOY_ROOT}/state/sandbox-manager.yaml" <<EOF
 apiVersion: v1
@@ -196,7 +222,7 @@ spec:
             - name: JUICEFS_MOUNT_IMAGE
               value: juicedata/mount:ce-v1.3.1
             - name: JUICEFS_STORAGE_ENDPOINT
-              value: http://${KIND_GATEWAY}:19000
+              value: ${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE}
             - name: JUICEFS_STORAGE_ACCESS_KEY
               value: mbos
             - name: JUICEFS_STORAGE_SECRET_KEY
@@ -253,7 +279,7 @@ wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 120
 
 docker_compose up -d api web
 wait_tcp "127.0.0.1" "${API_PORT}" 240
-wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240
+wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 
 state_set release.phase deploy_completed
 state_set release.id "${RELEASE_ID}"

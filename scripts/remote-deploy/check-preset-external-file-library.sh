@@ -12,8 +12,8 @@ fi
 
 load_release_env
 
-PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-http://localhost:20000}"
-PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}"
+HOST_LOCAL_API_BASE_URL="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}"
+HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
@@ -31,7 +31,7 @@ trap cleanup EXIT
 fetch_token() {
   local token_json
   token_json="$(
-    curl -fsS "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+    curl -fsS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
       -H 'content-type: application/x-www-form-urlencoded' \
       --data-urlencode 'grant_type=password' \
       --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
@@ -52,12 +52,12 @@ api_json() {
       -H "Authorization: Bearer ${ACCESS_TOKEN}" \
       -H 'Content-Type: application/json' \
       --data "${body}" \
-      "${PUBLIC_API_BASE_URL}${path}"
+      "${HOST_LOCAL_API_BASE_URL}${path}"
   else
     curl -sS -o "${BODY_FILE}" -w '%{http_code}' \
       -X "${method}" \
       -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-      "${PUBLIC_API_BASE_URL}${path}"
+      "${HOST_LOCAL_API_BASE_URL}${path}"
   fi
 }
 
@@ -65,14 +65,14 @@ ACCESS_TOKEN="$(fetch_token)"
 [[ -n "${ACCESS_TOKEN}" ]] || die "preset external file-library readiness failed: missing token"
 
 PROJECTS_JSON="$(
-  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/${WORKSPACE_ID}/projects?page=1&page_size=100" \
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/${WORKSPACE_ID}/projects?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
 PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${DEMO_PROJECT_NAME}")"
 [[ -n "${PROJECT_ID}" ]] || die "preset external file-library readiness failed: Demo Project missing"
 
 AGENTS_JSON="$(
-  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents?page=1&page_size=100" \
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
 AGENT_ID="$(printf '%s' "${AGENTS_JSON}" | json_find_named_id "${DEMO_EXTERNAL_AGENT_NAME}")"

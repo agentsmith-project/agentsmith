@@ -17,7 +17,7 @@ Everything else in the release is generated or fixed by the deployment scripts.
 ## Standard Flow
 1. Build a local offline bundle.
 2. Upload the bundle to the target host.
-3. Extract it into `/home/mbos/agentsmith-deploy/releases/<release-id>`.
+3. Extract it into `/home/mbos/agentsmith/deploy/releases/<release-id>`.
 4. Edit exactly one deployment config file:
    - `env/site.env`
 5. Run:

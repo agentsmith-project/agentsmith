@@ -14,6 +14,12 @@ load_release_env
 PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
 PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-http://localhost:20000}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}"
+HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
+HOST_LOCAL_API_BASE_URL="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}"
+HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
+EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-${CLIENT_PUBLIC_POSTGRES_HOST:-}}"
+EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-${CLIENT_PUBLIC_POSTGRES_PORT:-}}"
+EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-${CLIENT_PUBLIC_MINIO_ENDPOINT:-}}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
@@ -35,9 +41,9 @@ trap cleanup_verify_artifacts EXIT
 
 [[ -n "${VERIFY_RUNNER_IMAGE}" ]] || die "verify runner image missing from VERSION"
 
-wait_http "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
+wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
-wait_http "${PUBLIC_WEB_BASE_URL}/api/public/workspaces" 240
+wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
 
 kubectl get csidriver csi.juicefs.com >/dev/null
@@ -47,7 +53,7 @@ docker_compose logs external-runner 2>&1 | grep -q '\[agent-codex-runner\] conne
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "preset verify failed: universal-proxy not running"
 
 token_json="$(
-  curl -fsS "${PUBLIC_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+  curl -fsS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
     -H 'content-type: application/x-www-form-urlencoded' \
     --data-urlencode 'grant_type=password' \
     --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
@@ -58,12 +64,12 @@ token_json="$(
 ACCESS_TOKEN="$(printf '%s' "${token_json}" | json_extract access_token)"
 [[ -n "${ACCESS_TOKEN}" ]] || die "failed to obtain dev-admin token during verify"
 
-curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/me/profile" \
+curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/me/profile" \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" >/dev/null \
   || die "public auth chain failed: authenticated /api/v1/me/profile unavailable"
 
 PROJECTS_JSON="$(
-  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
 DEMO_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "Demo Project")"
@@ -71,14 +77,14 @@ DEMO_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "Demo Pro
 
 EXPECTED_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
 ENDPOINT_COUNT="$(
-  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/endpoints?page=1&page_size=100" \
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/endpoints?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     | json_count_items_by_field model "${EXPECTED_MODEL}"
 )"
 [[ "${ENDPOINT_COUNT}" -ge 2 ]] || die "preset verify failed: expected two ${EXPECTED_MODEL} endpoints"
 
 AGENTS_JSON="$(
-  curl -fsS "${PUBLIC_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/agents?page=1&page_size=100" \
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${DEMO_PROJECT_ID}/agents?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
 EXTERNAL_AGENT_COUNT="$(printf '%s' "${AGENTS_JSON}" | json_count_items_by_field mode external)"
@@ -104,9 +110,17 @@ docker run --rm \
   --security-opt apparmor:unconfined \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v "${REPORT_DIR}/verify-artifacts:/app/test-results" \
-  -e BASE_URL="${PUBLIC_WEB_BASE_URL}" \
-  -e INTEGRATION_API_BASE="${PUBLIC_API_BASE_URL}" \
+  -v "${RELEASE_ROOT}/e2e/integration-real-helpers.ts:/app/e2e/integration-real-helpers.ts:ro" \
+  -v "${RELEASE_ROOT}/e2e/integration-release-user-story.spec.ts:/app/e2e/integration-release-user-story.spec.ts:ro" \
+  -e BASE_URL="${HOST_LOCAL_WEB_BASE_URL}" \
+  -e INTEGRATION_API_BASE="${HOST_LOCAL_API_BASE_URL}" \
   -e EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL="${EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL}" \
+  -e EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE}" \
+  -e EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE}" \
+  -e EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
+  -e INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE="127.0.0.1" \
+  -e INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE="${CLIENT_PUBLIC_POSTGRES_PORT:-15432}" \
+  -e INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE="http://127.0.0.1:${MINIO_API_PORT:-19000}" \
   -e KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
   -e KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \

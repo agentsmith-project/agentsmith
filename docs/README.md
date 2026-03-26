@@ -21,10 +21,12 @@
 - [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - [Remote Deploy Operations](./user-guides/remote-deploy-operations.md)
+- [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
 - Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)
+- [Cluster Deployment Spec](./contracts/cluster-deployment-spec-v1.md)
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
 - `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)

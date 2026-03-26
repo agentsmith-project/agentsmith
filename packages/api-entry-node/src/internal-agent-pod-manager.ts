@@ -113,14 +113,19 @@ function readInternalConfig(agent: AgentRecord): {
     return Math.floor(value);
   };
 
+  const envString = (key: string): string | undefined => {
+    const value = process.env[key]?.trim();
+    return value ? value : undefined;
+  };
+
   return {
     image,
     rawKey,
     ...(env && Object.keys(env).length > 0 ? { env } : {}),
-    ...(typeof cfg.cpu_request === 'string' ? { cpuRequest: cfg.cpu_request } : {}),
-    ...(typeof cfg.cpu_limit === 'string' ? { cpuLimit: cfg.cpu_limit } : {}),
-    ...(typeof cfg.memory_request === 'string' ? { memoryRequest: cfg.memory_request } : {}),
-    ...(typeof cfg.memory_limit === 'string' ? { memoryLimit: cfg.memory_limit } : {}),
+    ...(typeof cfg.cpu_request === 'string' ? { cpuRequest: cfg.cpu_request } : (envString('INTERNAL_AGENT_DEFAULT_CPU_REQUEST') ? { cpuRequest: envString('INTERNAL_AGENT_DEFAULT_CPU_REQUEST') } : {})),
+    ...(typeof cfg.cpu_limit === 'string' ? { cpuLimit: cfg.cpu_limit } : (envString('INTERNAL_AGENT_DEFAULT_CPU_LIMIT') ? { cpuLimit: envString('INTERNAL_AGENT_DEFAULT_CPU_LIMIT') } : {})),
+    ...(typeof cfg.memory_request === 'string' ? { memoryRequest: cfg.memory_request } : (envString('INTERNAL_AGENT_DEFAULT_MEMORY_REQUEST') ? { memoryRequest: envString('INTERNAL_AGENT_DEFAULT_MEMORY_REQUEST') } : {})),
+    ...(typeof cfg.memory_limit === 'string' ? { memoryLimit: cfg.memory_limit } : (envString('INTERNAL_AGENT_DEFAULT_MEMORY_LIMIT') ? { memoryLimit: envString('INTERNAL_AGENT_DEFAULT_MEMORY_LIMIT') } : {})),
     ...(readNum(cfg.idle_timeout_sec) ? { idleTimeoutSec: readNum(cfg.idle_timeout_sec) } : {}),
     ...(readNum(cfg.max_lifetime_sec) ? { maxLifetimeSec: readNum(cfg.max_lifetime_sec) } : {}),
   };

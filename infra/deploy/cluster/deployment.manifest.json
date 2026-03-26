@@ -1,0 +1,180 @@
+{
+  "schema_version": 1,
+  "release_flow": [
+    "prepare",
+    "reset",
+    "deploy",
+    "bootstrap",
+    "verify",
+    "report"
+  ],
+  "compose_services": [
+    "postgres",
+    "mongo",
+    "redis",
+    "minio",
+    "keycloak",
+    "universal-proxy",
+    "api",
+    "web",
+    "external-runner"
+  ],
+  "k8s_components": [
+    "juicefs-csi-controller",
+    "juicefs-csi-node",
+    "sandbox-manager",
+    "sandbox-manager-ingress",
+    "internal-workloads",
+    "external-dependency-services"
+  ],
+  "required_tools": [
+    "kubectl",
+    "kind"
+  ],
+  "required_env": {
+    "storage": [
+      "POSTGRES_USER",
+      "POSTGRES_PASSWORD",
+      "POSTGRES_DB",
+      "POSTGRES_PORT",
+      "MONGO_ROOT_USERNAME",
+      "MONGO_ROOT_PASSWORD",
+      "MONGO_DB",
+      "MONGO_PORT",
+      "REDIS_PORT",
+      "MINIO_ROOT_USER",
+      "MINIO_ROOT_PASSWORD",
+      "MINIO_BUCKET",
+      "MINIO_API_PORT",
+      "MINIO_CONSOLE_PORT"
+    ],
+    "identity": [
+      "KEYCLOAK_ADMIN",
+      "KEYCLOAK_ADMIN_PASSWORD",
+      "KEYCLOAK_DB",
+      "KEYCLOAK_PORT",
+      "KEYCLOAK_REALM",
+      "KEYCLOAK_CLIENT_ID",
+      "SYSTEM_ADMIN_USERNAME",
+      "SYSTEM_ADMIN_PASSWORD",
+      "SYSTEM_ADMIN_SESSION_COOKIE_SECURE"
+    ],
+    "public_runtime": [
+      "PUBLIC_WEB_BASE_URL",
+      "PUBLIC_API_BASE_URL",
+      "PUBLIC_KEYCLOAK_BASE_URL"
+    ],
+    "internal_runtime": [
+      "COMPOSE_INTERNAL_API_BASE_URL",
+      "COMPOSE_INTERNAL_KEYCLOAK_BASE_URL",
+      "COMPOSE_INTERNAL_UNIVERSAL_PROXY_BASE_URL"
+    ],
+    "host_local_runtime": [
+      "HOST_LOCAL_POSTGRES_HOST",
+      "HOST_LOCAL_POSTGRES_PORT",
+      "HOST_LOCAL_MINIO_ENDPOINT"
+    ],
+    "client_mount_runtime": [
+      "CLIENT_PUBLIC_POSTGRES_HOST",
+      "CLIENT_PUBLIC_POSTGRES_PORT",
+      "CLIENT_PUBLIC_MINIO_ENDPOINT"
+    ],
+    "cluster_connectivity": [
+      "K8S_EXTERNAL_POSTGRES_HOST",
+      "K8S_EXTERNAL_POSTGRES_PORT",
+      "K8S_EXTERNAL_MINIO_HOST",
+      "K8S_EXTERNAL_MINIO_PORT",
+      "SANDBOX_MANAGER_INGRESS_CLASS_NAME",
+      "SANDBOX_MANAGER_INGRESS_HOST",
+      "SANDBOX_MANAGER_PUBLIC_BASE_URL"
+    ],
+    "execution": [
+      "SYSTEM_WORKSPACE_REGISTRY_MODE",
+      "SANDBOX_SERVICE_KEY",
+      "MBOS_AGENT_BUILTIN_SKILLS_DIR",
+      "MBOS_AGENT_JUICEFS_MOUNT_OPTIONS"
+    ],
+    "juicefs_csi": [
+      "INTERNAL_AGENT_K8S_NAMESPACE",
+      "INTERNAL_AGENT_JUICEFS_CSI_DRIVER",
+      "INTERNAL_AGENT_WORKSPACE_CAPACITY",
+      "INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME",
+      "INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS",
+      "INTERNAL_AGENT_JUICEFS_SUBDIR",
+      "INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT",
+      "INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE"
+    ],
+    "resources": [
+      "INTERNAL_AGENT_DEFAULT_CPU_REQUEST",
+      "INTERNAL_AGENT_DEFAULT_CPU_LIMIT",
+      "INTERNAL_AGENT_DEFAULT_MEMORY_REQUEST",
+      "INTERNAL_AGENT_DEFAULT_MEMORY_LIMIT",
+      "INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON",
+      "INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON",
+      "SANDBOX_MANAGER_CPU_REQUEST",
+      "SANDBOX_MANAGER_CPU_LIMIT",
+      "SANDBOX_MANAGER_MEMORY_REQUEST",
+      "SANDBOX_MANAGER_MEMORY_LIMIT",
+      "SANDBOX_MANAGER_NODE_SELECTOR_JSON",
+      "SANDBOX_MANAGER_TOLERATIONS_JSON"
+    ],
+    "bootstrap": [
+      "INTEGRATION_PUBLIC_WEB_BASES",
+      "INTEGRATION_DEV_ADMIN_USERNAME",
+      "INTEGRATION_DEV_ADMIN_PASSWORD",
+      "INTEGRATION_USER_USERNAME",
+      "INTEGRATION_USER_PASSWORD",
+      "INTEGRATION_MEMBER_USERNAME",
+      "INTEGRATION_MEMBER_PASSWORD",
+      "MBOS_DEFAULT_WORKSPACE_ID",
+      "MBOS_DEFAULT_WORKSPACE_NAME",
+      "MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL",
+      "MBOS_DEMO_PROJECT_NAME",
+      "MBOS_DEMO_CREDENTIAL_NAME",
+      "MBOS_DEMO_ANTHROPIC_ENDPOINT_NAME",
+      "MBOS_DEMO_OPENAI_ENDPOINT_NAME",
+      "MBOS_DEMO_EXTERNAL_AGENT_NAME",
+      "MBOS_DEMO_INTERNAL_AGENT_NAME",
+      "DEPLOY_ENDPOINT_API_KEY",
+      "DEPLOY_ANTHROPIC_BASE_URL",
+      "DEPLOY_OPENAI_BASE_URL",
+      "DEPLOY_ENDPOINT_MODEL"
+    ]
+  },
+  "bundle_files": [
+    "compose/docker-compose.yml",
+    "env/site.env.example",
+    "env/registry.env.example",
+    "env/kubeconfig.example.yaml",
+    "k8s/juicefs-csi.yaml",
+    "postgres-init/001-create-databases.sql",
+    "postgres-init/projects.sql",
+    "minio/init-minio.sh",
+    "keycloak/realm-mbos-dev.json",
+    "universal-proxy/config.yaml",
+    "scripts/cluster-deploy/build-bundle.sh",
+    "scripts/cluster-deploy/check-bundle-inputs.sh",
+    "scripts/cluster-deploy/check-rendered-env.sh",
+    "scripts/cluster-deploy/lib.sh",
+    "scripts/cluster-deploy/prepare.sh",
+    "scripts/cluster-deploy/deploy.sh",
+    "scripts/cluster-deploy/bootstrap.sh",
+    "scripts/cluster-deploy/verify.sh",
+    "scripts/cluster-deploy/report.sh",
+    "scripts/cluster-deploy/reset.sh",
+    "scripts/cluster-deploy/render-env.sh",
+    "scripts/cluster-deploy/prune-history.sh",
+    "scripts/remote-deploy/lib/common.sh",
+    "scripts/remote-deploy/bootstrap.sh",
+    "scripts/lib/k8s-external-services.sh",
+    "e2e/integration-real-helpers.ts",
+    "e2e/integration-workspace-entry.spec.ts",
+    "e2e/integration-workspace-publish-usable.spec.ts",
+    "e2e/integration-preset-external-file-library.spec.ts",
+    "e2e/integration-release-user-story.spec.ts",
+    "docs/contracts/cluster-deployment-spec-v1.md",
+    "docs/user-guides/cluster-deploy-operations.md",
+    "checksums.txt",
+    "VERSION"
+  ]
+}

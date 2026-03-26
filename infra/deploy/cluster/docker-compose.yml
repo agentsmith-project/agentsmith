@@ -1,0 +1,216 @@
+name: agentsmith-cluster
+
+services:
+  postgres:
+    image: ${POSTGRES_IMAGE:-pgvector/pgvector:pg16}
+    restart: unless-stopped
+    env_file:
+      - ../env/base.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mbos}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mbos_dev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-mbos}
+    ports:
+      - "${POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../postgres-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mbos} -d ${POSTGRES_DB:-mbos}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mongo:
+    image: ${MONGO_IMAGE:-mongo:7}
+    restart: unless-stopped
+    env_file:
+      - ../env/base.env
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME:-mbos}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:-mbos_dev_password}
+      MONGO_INITDB_DATABASE: ${MONGO_DB:-mbos}
+    ports:
+      - "${MONGO_PORT:-17017}:27017"
+    volumes:
+      - mongo_data:/data/db
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "echo 'db.runCommand({ping:1}).ok' | mongosh --quiet mongodb://${MONGO_ROOT_USERNAME:-mbos}:${MONGO_ROOT_PASSWORD:-mbos_dev_password}@localhost:27017/admin | grep 1",
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: ${REDIS_IMAGE:-redis:7-alpine}
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    ports:
+      - "${REDIS_PORT:-16379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+  minio:
+    image: ${MINIO_IMAGE:-minio/minio:latest}
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    env_file:
+      - ../env/base.env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mbos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mbos_dev_password}
+    ports:
+      - "${MINIO_API_PORT:-19000}:9000"
+      - "${MINIO_CONSOLE_PORT:-19001}:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  minio-init:
+    image: ${MINIO_MC_IMAGE:-minio/mc:latest}
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "/scripts/init-minio.sh"]
+    volumes:
+      - ../minio/init-minio.sh:/scripts/init-minio.sh:ro
+    env_file:
+      - ../env/base.env
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-mbos}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-mbos_dev_password}
+      MINIO_BUCKET: ${MINIO_BUCKET:-mbos-dev}
+
+  keycloak:
+    image: ${KEYCLOAK_IMAGE:-quay.io/keycloak/keycloak:26.0}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["start-dev", "--import-realm"]
+    env_file:
+      - ../env/base.env
+      - ../env/keycloak.env
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/${KEYCLOAK_DB:-keycloak}
+      KC_DB_USERNAME: ${POSTGRES_USER:-mbos}
+      KC_DB_PASSWORD: ${POSTGRES_PASSWORD:-mbos_dev_password}
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: ${PUBLIC_KEYCLOAK_BASE_URL:-https://mbos.imotion.ai/keycloak}
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+    ports:
+      - "${KEYCLOAK_PORT:-18080}:8080"
+    volumes:
+      - ../keycloak/realm-mbos-dev.json:/opt/keycloak/data/import/realm-mbos-dev.json:ro
+    healthcheck:
+      test: ["CMD", "bash", "-lc", "exec 3<>/dev/tcp/127.0.0.1/8080"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 40s
+
+  universal-proxy:
+    image: ${LLM_UNIVERSAL_PROXY_IMAGE}
+    restart: unless-stopped
+    command: ["--config", "/app/config/config.yaml"]
+    volumes:
+      - ../universal-proxy/config.yaml:/app/config/config.yaml:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8080/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+
+  api:
+    image: ${AGENTSMITH_APP_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+      universal-proxy:
+        condition: service_healthy
+    command: ["npm", "run", "api:node:dev"]
+    env_file:
+      - ../env/base.env
+      - ../env/api.env
+      - ../env/internal.env
+    ports:
+      - "${API_PORT:-20000}:20000"
+    healthcheck:
+      test: ["CMD-SHELL", "bash -lc 'exec 3<>/dev/tcp/127.0.0.1/20000'"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  web:
+    image: ${AGENTSMITH_APP_IMAGE}
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    command: ["npm", "run", "start", "--", "--hostname", "0.0.0.0", "--port", "3001"]
+    env_file:
+      - ../env/base.env
+      - ../env/keycloak.env
+      - ../env/web.env
+    ports:
+      - "${WEB_PORT:-3001}:3001"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:3001/api/public/workspaces >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  external-runner:
+    image: ${AGENTSMITH_RUNNER_IMAGE}
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/fuse:/dev/fuse
+    security_opt:
+      - apparmor:unconfined
+    depends_on:
+      api:
+        condition: service_healthy
+    env_file:
+      - ../env/base.env
+      - ../env/runner.env
+      - ../env/runner-runtime.env
+
+volumes:
+  postgres_data:
+  mongo_data:
+  redis_data:
+  minio_data:
+

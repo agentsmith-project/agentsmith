@@ -31,6 +31,7 @@
 - `backend-persistent-state-boundary.md`（后端主数据、共享运行态与进程内瞬态的边界）
 - `backend-storage-architecture-matrix.md`（全系统后端数据真相、接口模块与存储模式总表）
 - `backend-storage-maturity-checklist.md`（后端数据持久化成熟度改进清单）
+- `cluster-deployment-spec-v1.md`（真实集群发布线：registry + install bundle + compose/k8s 边界）
 
 ## 模块合同
 

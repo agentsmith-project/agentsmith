@@ -28,8 +28,7 @@
     "external-dependency-services"
   ],
   "required_tools": [
-    "kubectl",
-    "kind"
+    "kubectl"
   ],
   "required_env": {
     "storage": [
@@ -155,6 +154,7 @@
     "scripts/cluster-deploy/build-bundle.sh",
     "scripts/cluster-deploy/check-bundle-inputs.sh",
     "scripts/cluster-deploy/check-rendered-env.sh",
+    "scripts/cluster-deploy/build-images.sh",
     "scripts/cluster-deploy/lib.sh",
     "scripts/cluster-deploy/prepare.sh",
     "scripts/cluster-deploy/deploy.sh",
@@ -172,6 +172,9 @@
     "e2e/integration-workspace-publish-usable.spec.ts",
     "e2e/integration-preset-external-file-library.spec.ts",
     "e2e/integration-release-user-story.spec.ts",
+    "sources/agentsmith",
+    "sources/mbos-sandbox-v1/manager-service",
+    "sources/llm-universal-proxy",
     "docs/contracts/cluster-deployment-spec-v1.md",
     "docs/user-guides/cluster-deploy-operations.md",
     "checksums.txt",

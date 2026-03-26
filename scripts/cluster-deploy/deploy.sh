@@ -9,9 +9,10 @@ ensure_dirs
 ensure_operator_site_env
 ensure_operator_registry_env
 ensure_operator_kubeconfig
-load_registry_env
 load_kubeconfig
 load_release_env
+
+bash "${ROOT_DIR}/scripts/cluster-deploy/build-images.sh"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
@@ -23,7 +24,6 @@ write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 mkdir -p "${CLUSTER_DEPLOY_ROOT}/releases"
 ln -sfn "${RELEASE_ROOT}" "${CURRENT_LINK}"
 
-docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}" >/dev/null
 docker_compose pull
 docker_compose up -d postgres mongo redis minio minio-init keycloak universal-proxy api web external-runner
 

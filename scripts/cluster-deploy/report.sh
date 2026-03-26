@@ -14,6 +14,7 @@ cat > "${REPORT_MD}" <<EOF
 - release: ${RELEASE_ID}
 - current: ${CURRENT_LINK}
 - compose: ${RELEASE_ROOT}/compose/docker-compose.yml
+- sources: ${RELEASE_ROOT}/sources
 - state: $(state_file)
 - generated_at: $(date -u +%Y-%m-%dT%H:%M:%SZ)
 
@@ -22,4 +23,3 @@ $(cat "$(state_file)")
 \`\`\`
 EOF
 log "report ok: ${REPORT_MD}"
-

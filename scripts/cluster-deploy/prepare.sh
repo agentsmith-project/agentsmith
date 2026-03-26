@@ -6,9 +6,7 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 
 ensure_dirs
 ensure_operator_site_env
-ensure_operator_registry_env
 ensure_operator_kubeconfig
-load_registry_env
 load_kubeconfig
 
 for cmd in docker curl tar sha256sum python3; do
@@ -33,11 +31,15 @@ PY
 
 load_release_env
 kubectl version --request-timeout=10s >/dev/null
+ensure_operator_registry_env
+load_registry_env
 [[ -n "${REGISTRY_HOST:-}" && -n "${REGISTRY_PROJECT:-}" && -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
   || die "registry.env must define REGISTRY_HOST, REGISTRY_PROJECT, REGISTRY_USERNAME, REGISTRY_PASSWORD"
 
-docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}" >/dev/null 2>&1 \
-  || die "registry login failed for ${REGISTRY_HOST}"
+K8S_API_SERVER="$(awk '/^[[:space:]]*server:[[:space:]]*/ {print $2; exit}' "${KUBECONFIG}")"
+[[ -n "${K8S_API_SERVER}" ]] || die "unable to resolve cluster api server from kubeconfig"
+curl -ksS --connect-timeout 5 --max-time 10 "${K8S_API_SERVER}/version" >/dev/null \
+  || die "target server cannot reach cluster api ${K8S_API_SERVER}; provide a kubeconfig reachable from the deploy host"
 
 ingress_count="$(kubectl get ingressclass -o name 2>/dev/null | wc -l | tr -d ' ')"
 [[ "${ingress_count}" -ge 1 ]] || die "no ingressclass found in target cluster"

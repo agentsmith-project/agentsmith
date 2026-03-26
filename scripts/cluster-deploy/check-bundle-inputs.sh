@@ -67,6 +67,12 @@ for relative in manifest.get("bundle_files", []):
         source = root_dir / relative
     elif relative.startswith("e2e/"):
         source = root_dir / relative
+    elif relative == "sources/agentsmith":
+        source = root_dir
+    elif relative == "sources/mbos-sandbox-v1/manager-service":
+        source = root_dir.parent / "mbos-sandbox-v1" / "manager-service"
+    elif relative == "sources/llm-universal-proxy":
+        source = root_dir.parent / "llm-universal-proxy"
     elif relative in {"checksums.txt", "VERSION"}:
         continue
     if not source.exists():

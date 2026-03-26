@@ -21,6 +21,10 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+    networks:
+      default:
+      deps:
+        ipv4_address: ${EXTERNAL_DEPS_POSTGRES_IP:-172.29.0.10}
 
   mongo:
     image: ${MONGO_IMAGE:-mongo:7}
@@ -81,6 +85,10 @@ services:
       timeout: 5s
       retries: 20
       start_period: 10s
+    networks:
+      default:
+      deps:
+        ipv4_address: ${EXTERNAL_DEPS_MINIO_IP:-172.29.0.11}
 
   minio-init:
     image: ${MINIO_MC_IMAGE:-minio/mc:latest}
@@ -220,3 +228,10 @@ volumes:
   mongo_data:
   redis_data:
   minio_data:
+
+networks:
+  deps:
+    name: ${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-remote-deps}
+    ipam:
+      config:
+        - subnet: ${EXTERNAL_DEPS_NETWORK_SUBNET:-172.29.0.0/24}

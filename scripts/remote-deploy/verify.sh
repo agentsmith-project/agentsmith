@@ -26,6 +26,8 @@ INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+REMOTE_COMPOSE_PROJECT_NAME="${REMOTE_COMPOSE_PROJECT_NAME:-agentsmith-remote}"
+EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${REMOTE_COMPOSE_PROJECT_NAME}-external-runner-1}"
 
 cleanup_verify_artifacts() {
   mkdir -p "${REPORT_DIR}/verify-artifacts"
@@ -48,8 +50,8 @@ wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
 
 kubectl get csidriver csi.juicefs.com >/dev/null
 kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
-docker_compose ps --status running external-runner | grep -q external-runner || die "preset verify failed: external-runner not running"
-docker_compose logs external-runner 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
+docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true || die "preset verify failed: external-runner not running"
+docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "preset verify failed: universal-proxy not running"
 
 token_json="$(

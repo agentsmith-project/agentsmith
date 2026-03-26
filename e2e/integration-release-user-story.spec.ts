@@ -35,6 +35,11 @@ const INTERNAL_AGENT_IMAGE =
   process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() ||
   'agentsmith-codex-runner:local';
 const CREATE_NEW_TASK_RESPONSE_TIMEOUT_MS = 60_000;
+const VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES = {
+  metadataHostOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim() || undefined,
+  metadataPortOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim() || undefined,
+  storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
+} as const;
 
 function requireRealLaneApiKey(): string {
   const value = REAL_LANE_API_KEY?.trim();
@@ -787,6 +792,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       const mountedExternalWorkspace = await mountFileLibraryLocally(
         externalMountDetails.metadataUrl,
         externalMountDetails.storageBucketUrl ?? undefined,
+        VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES,
       );
       try {
         const externalStoryPath = await waitForMountedWorkspacePath(
@@ -907,6 +913,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       const mountedInternalWorkspace = await mountFileLibraryLocally(
         internalMountDetails.metadataUrl,
         internalMountDetails.storageBucketUrl ?? undefined,
+        VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES,
       );
       try {
         const internalStoryPath = await waitForAnyMountedWorkspacePath(

@@ -20,8 +20,21 @@ const PROJECT_CREATOR_EMAIL = 'integration-user@example.com';
 const NOTEBOOK_EXPECTED_TOKEN = `MAINLINE_REAL_NOTEBOOK_OK_${Date.now()}`;
 
 function executionHostForExternalWorkspaceAccess(apiBase: string): string {
+  const explicitMetaHost = process.env.EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE?.trim();
+  if (explicitMetaHost) {
+    if (explicitMetaHost === 'host.docker.internal') {
+      return '127.0.0.1';
+    }
+    return explicitMetaHost;
+  }
   const explicit = process.env.EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL?.trim();
   const source = explicit || apiBase;
+  if (new URL(source).hostname === 'localhost') {
+    return '127.0.0.1';
+  }
+  if (source.includes('host.docker.internal')) {
+    return '127.0.0.1';
+  }
   return new URL(source).hostname;
 }
 

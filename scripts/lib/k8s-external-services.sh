@@ -30,6 +30,23 @@ ensure_container_on_network() {
   docker network connect "${network_name}" "${container_name}" >/dev/null 2>&1 || true
 }
 
+kind_cluster_node_names() {
+  local cluster_name="${1:-agentsmith}"
+  docker ps \
+    --filter "label=io.x-k8s.kind.cluster=${cluster_name}" \
+    --format '{{.Names}}'
+}
+
+ensure_kind_nodes_on_network() {
+  local network_name="$1"
+  local cluster_name="${2:-agentsmith}"
+  local node_name
+  while read -r node_name; do
+    [[ -n "${node_name}" ]] || continue
+    ensure_container_on_network "${network_name}" "${node_name}"
+  done < <(kind_cluster_node_names "${cluster_name}")
+}
+
 resolve_container_network_ip() {
   local network_name="$1"
   local container_name="$2"

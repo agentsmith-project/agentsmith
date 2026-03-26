@@ -841,12 +841,20 @@ export async function startCodexRunnerDockerProcess(args: {
   throw new Error(`docker_runner_connect_timeout:${`${logs.stdout}\n${logs.stderr}`.slice(-1200)}:log=${runnerLogPath}`);
 }
 
-export async function mountFileLibraryLocally(metadataUrl: string, storageBucketUrl?: string): Promise<{
+export async function mountFileLibraryLocally(
+  metadataUrl: string,
+  storageBucketUrl?: string,
+  options?: {
+    metadataHostOverride?: string;
+    metadataPortOverride?: string;
+    storageEndpointOverride?: string;
+  },
+): Promise<{
   mountPath: string;
   stop: () => Promise<void>;
 }> {
-  const resolvedMetadataUrl = rewriteLocalClientMetadataUrl(metadataUrl);
-  const resolvedStorageBucketUrl = rewriteLocalClientStorageBucketUrl(storageBucketUrl);
+  const resolvedMetadataUrl = rewriteLocalClientMetadataUrl(metadataUrl, options);
+  const resolvedStorageBucketUrl = rewriteLocalClientStorageBucketUrl(storageBucketUrl, options);
   const mountPath = await mkdtemp(path.join(tmpdir(), 'agentsmith-real-file-library-'));
   const mountArgs = [
     'mount',
@@ -878,9 +886,15 @@ export async function mountFileLibraryLocally(metadataUrl: string, storageBucket
   };
 }
 
-function rewriteLocalClientMetadataUrl(metadataUrl: string): string {
-  const hostOverride = process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim();
-  const portOverride = process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim();
+function rewriteLocalClientMetadataUrl(
+  metadataUrl: string,
+  options?: {
+    metadataHostOverride?: string;
+    metadataPortOverride?: string;
+  },
+): string {
+  const hostOverride = options?.metadataHostOverride?.trim();
+  const portOverride = options?.metadataPortOverride?.trim();
   if (!hostOverride && !portOverride) {
     return metadataUrl;
   }
@@ -894,12 +908,17 @@ function rewriteLocalClientMetadataUrl(metadataUrl: string): string {
   return rewritten.toString();
 }
 
-function rewriteLocalClientStorageBucketUrl(storageBucketUrl?: string): string | undefined {
+function rewriteLocalClientStorageBucketUrl(
+  storageBucketUrl?: string,
+  options?: {
+    storageEndpointOverride?: string;
+  },
+): string | undefined {
   const rawUrl = storageBucketUrl?.trim();
   if (!rawUrl) {
     return storageBucketUrl;
   }
-  const endpointOverride = process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim();
+  const endpointOverride = options?.storageEndpointOverride?.trim();
   if (!endpointOverride) {
     return rawUrl;
   }

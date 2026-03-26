@@ -55,8 +55,10 @@ fi
 STATE_DIR="${REMOTE_DEPLOY_ROOT}/state"
 LOG_DIR="${REMOTE_DEPLOY_ROOT}/logs"
 REPORT_DIR="${REMOTE_DEPLOY_ROOT}/reports"
+CONFIG_DIR="${REMOTE_DEPLOY_ROOT}/config"
+SHARED_SITE_ENV="${CONFIG_DIR}/site.env"
 TOOLS_DIR="${RELEASE_ROOT}/tools"
-export REMOTE_DEPLOY_ROOT CURRENT_LINK RELEASE_ID RELEASE_ROOT RELEASE_SCRIPT_DIR STATE_DIR LOG_DIR REPORT_DIR TOOLS_DIR
+export REMOTE_DEPLOY_ROOT CURRENT_LINK RELEASE_ID RELEASE_ROOT RELEASE_SCRIPT_DIR STATE_DIR LOG_DIR REPORT_DIR CONFIG_DIR SHARED_SITE_ENV TOOLS_DIR
 ORIGINAL_PATH="${PATH}"
 resolve_tool() {
   local bundled="$1"
@@ -80,12 +82,33 @@ die() { printf '[remote-deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 require_cmd() { command -v "$1" >/dev/null 2>&1 || die "missing command: $1"; }
 
 ensure_dirs() {
-  mkdir -p "${REMOTE_DEPLOY_ROOT}" "${STATE_DIR}" "${LOG_DIR}" "${REPORT_DIR}"
+  mkdir -p "${REMOTE_DEPLOY_ROOT}" "${STATE_DIR}" "${LOG_DIR}" "${REPORT_DIR}" "${CONFIG_DIR}"
+}
+
+ensure_operator_site_env() {
+  ensure_dirs
+  mkdir -p "${RELEASE_ROOT}/env"
+
+  if [[ ! -f "${SHARED_SITE_ENV}" ]]; then
+    if [[ -f "${CURRENT_LINK}/env/site.env" ]]; then
+      cp "${CURRENT_LINK}/env/site.env" "${SHARED_SITE_ENV}"
+    elif [[ -f "${RELEASE_ROOT}/env/site.env" ]]; then
+      cp "${RELEASE_ROOT}/env/site.env" "${SHARED_SITE_ENV}"
+    elif [[ -f "${RELEASE_ROOT}/env/site.env.example" ]]; then
+      cp "${RELEASE_ROOT}/env/site.env.example" "${SHARED_SITE_ENV}"
+    else
+      die "missing site.env and site.env.example"
+    fi
+  fi
+
+  cp "${SHARED_SITE_ENV}" "${RELEASE_ROOT}/env/site.env"
 }
 
 load_release_env() {
   local env_file
+  ensure_operator_site_env
   for env_file in \
+    "${RELEASE_ROOT}/env/site.env" \
     "${RELEASE_ROOT}/env/base.env" \
     "${RELEASE_ROOT}/env/keycloak.env" \
     "${RELEASE_ROOT}/env/api.env" \
@@ -188,6 +211,10 @@ write_compose_env() {
 AGENTSMITH_APP_IMAGE=${app_image}
 AGENTSMITH_RUNNER_IMAGE=${runner_image}
 LLM_UNIVERSAL_PROXY_IMAGE=${universal_proxy_image}
+EXTERNAL_DEPS_NETWORK_NAME=${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-remote-deps}
+EXTERNAL_DEPS_NETWORK_SUBNET=${EXTERNAL_DEPS_NETWORK_SUBNET:-172.29.0.0/24}
+EXTERNAL_DEPS_POSTGRES_IP=${EXTERNAL_DEPS_POSTGRES_IP:-172.29.0.10}
+EXTERNAL_DEPS_MINIO_IP=${EXTERNAL_DEPS_MINIO_IP:-172.29.0.11}
 EOF
 }
 

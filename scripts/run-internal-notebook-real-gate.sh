@@ -36,6 +36,7 @@ SUBDIR="${INTERNAL_AGENT_JUICEFS_SUBDIR:-}"
 MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
+JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 ensure_real_lane_state
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(real_lane_tmp_file internal)}"
 mkdir -p "${INTERNAL_REAL_DIR}"
@@ -145,8 +146,8 @@ ensure_juicefs_csi() {
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
     info "loading CSI images into kind node ${KIND_NODE_NAME}"
     ensure_local_image "${JUICEFS_MOUNT_IMAGE}"
-    ensure_kind_image "juicedata/juicefs-csi-driver:v0.31.3"
-    ensure_kind_image "juicedata/csi-dashboard:v0.31.3"
+    ensure_kind_image "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
+    ensure_kind_image "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
     ensure_kind_image "${JUICEFS_MOUNT_IMAGE}"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
     ensure_kind_image "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"

@@ -11,9 +11,11 @@ fi
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 
 ensure_dirs
-if [[ ! -f "${RELEASE_ROOT}/env/site.env" ]]; then
-  cp "${RELEASE_ROOT}/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
-fi
+ensure_operator_site_env
+set -a
+# shellcheck disable=SC1090
+source "${RELEASE_ROOT}/env/site.env"
+set +a
 
 HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
 HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
@@ -22,6 +24,8 @@ APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${RELEASE_ROOT}/VER
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
+KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"
+KIND_CONTEXT="kind-${KIND_CLUSTER_NAME}"
 
 image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
@@ -42,20 +46,38 @@ for tar_file in "${image_archives[@]}"; do
   docker load -i "${tar_file}" >/dev/null
 done
 
-if ! kind get clusters 2>/dev/null | grep -qx 'agentsmith'; then
-  log "creating kind cluster"
-  kind create cluster --config "${RELEASE_ROOT}/kind/config.yaml"
+kind_cluster_healthy() {
+  kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" || return 1
+  docker ps --format '{{.Names}}' | grep -qx "${KIND_CLUSTER_NAME}-control-plane" || return 1
+  docker exec "${KIND_CLUSTER_NAME}-control-plane" systemctl is-active containerd >/dev/null 2>&1 || return 1
+  kubectl --context "${KIND_CONTEXT}" version --request-timeout=5s >/dev/null 2>&1 || return 1
+}
+
+if kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}" && ! kind_cluster_healthy; then
+  log "recreating unhealthy kind cluster"
+  kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null || true
 fi
 
-for image in "${RUNNER_IMAGE}" "${SANDBOX_MANAGER_IMAGE}" "juicedata/juicefs-csi-driver:v0.31.2" "juicedata/csi-dashboard:v0.31.2" "juicedata/mount:ce-v1.3.1" "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0" "registry.k8s.io/sig-storage/csi-resizer:v1.9.0" "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0" "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"; do
+if ! kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
+  log "creating kind cluster"
+  kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${RELEASE_ROOT}/kind/config.yaml"
+fi
+
+JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
+for image in "${RUNNER_IMAGE}" "${SANDBOX_MANAGER_IMAGE}" "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}" "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}" "juicedata/mount:ce-v1.3.1" "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0" "registry.k8s.io/sig-storage/csi-resizer:v1.9.0" "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0" "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"; do
   archive_path="${RELEASE_ROOT}/images/$(image_tar_name "${image}").tar"
   [[ -f "${archive_path}" ]] || die "missing kind image archive: ${archive_path}"
-  kind load image-archive "${archive_path}" --name agentsmith >/dev/null
+  kind load image-archive "${archive_path}" --name "${KIND_CLUSTER_NAME}" >/dev/null
 done
 
 kubectl apply -f "${RELEASE_ROOT}/k8s/juicefs-csi.yaml" >/dev/null
+kubectl rollout restart statefulset/juicefs-csi-controller -n kube-system >/dev/null
+kubectl rollout restart daemonset/juicefs-csi-node -n kube-system >/dev/null
+kubectl rollout restart deployment/juicefs-csi-dashboard -n kube-system >/dev/null
+kubectl delete pod -n kube-system juicefs-csi-controller-0 --ignore-not-found --wait=false >/dev/null
 kubectl rollout status statefulset/juicefs-csi-controller -n kube-system --timeout=240s >/dev/null
 kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=240s >/dev/null
+kubectl rollout status deployment/juicefs-csi-dashboard -n kube-system --timeout=240s >/dev/null
 
 rm -f "${RELEASE_ROOT}/env/runtime-addresses.env"
 bash "${RELEASE_SCRIPT_DIR}/resolve-runtime-addresses.sh"
@@ -73,13 +95,10 @@ set +a
 
 kubectl create namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-ensure_container_on_network kind agentsmith-remote-postgres-1
-ensure_container_on_network kind agentsmith-remote-minio-1
+ensure_kind_nodes_on_network "${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-remote-deps}" "${KIND_CLUSTER_NAME}"
 
-KIND_POSTGRES_TARGET_IP="$(resolve_container_network_ip kind agentsmith-remote-postgres-1)"
-[[ -n "${KIND_POSTGRES_TARGET_IP}" ]] || die "unable to resolve kind-network IP for agentsmith-remote-postgres-1"
-KIND_MINIO_TARGET_IP="$(resolve_container_network_ip kind agentsmith-remote-minio-1)"
-[[ -n "${KIND_MINIO_TARGET_IP}" ]] || die "unable to resolve kind-network IP for agentsmith-remote-minio-1"
+KIND_POSTGRES_TARGET_IP="${EXTERNAL_DEPS_POSTGRES_IP:-172.29.0.10}"
+KIND_MINIO_TARGET_IP="${EXTERNAL_DEPS_MINIO_IP:-172.29.0.11}"
 
 EXTERNAL_DEPS_MANIFEST="${REMOTE_DEPLOY_ROOT}/state/internal-external-services.yaml"
 render_k8s_external_dependency_services \
@@ -275,7 +294,8 @@ EOF
 
 kubectl apply -f "${REMOTE_DEPLOY_ROOT}/state/sandbox-manager.yaml" >/dev/null
 kubectl rollout status deployment/sandbox-manager -n agentsmith-sandbox --timeout=240s >/dev/null
-wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 120
+wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29080}" 240
+wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
 
 docker_compose up -d api web
 wait_tcp "127.0.0.1" "${API_PORT}" 240

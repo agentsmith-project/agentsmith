@@ -24,6 +24,7 @@ DEPLOY_ENDPOINT_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
 DEMO_ENDPOINT_TIMEOUT_SECONDS="${MBOS_DEMO_ENDPOINT_TIMEOUT_SECONDS:-900}"
 DEMO_MODEL_CONTEXT_TOKENS="${MBOS_DEMO_MODEL_CONTEXT_TOKENS:-204800}"
 DEMO_MODEL_MAX_OUTPUT_TOKENS="${MBOS_DEMO_MODEL_MAX_OUTPUT_TOKENS:-8192}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
 INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
 PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
 DEMO_PROJECT_NAME="${MBOS_DEMO_PROJECT_NAME:-Demo Project}"
@@ -32,8 +33,128 @@ DEMO_ANTHROPIC_ENDPOINT_NAME="${MBOS_DEMO_ANTHROPIC_ENDPOINT_NAME:-minimax-anthr
 DEMO_OPENAI_ENDPOINT_NAME="${MBOS_DEMO_OPENAI_ENDPOINT_NAME:-minimax-openai-demo}"
 DEMO_EXTERNAL_AGENT_NAME="${MBOS_DEMO_EXTERNAL_AGENT_NAME:-demo-external-agent}"
 DEMO_INTERNAL_AGENT_NAME="${MBOS_DEMO_INTERNAL_AGENT_NAME:-demo-internal-agent}"
+REMOTE_COMPOSE_PROJECT_NAME="${REMOTE_COMPOSE_PROJECT_NAME:-agentsmith-remote}"
+EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${REMOTE_COMPOSE_PROJECT_NAME}-external-runner-1}"
+EXTERNAL_RUNNER_DEFAULT_NETWORK="${EXTERNAL_RUNNER_DEFAULT_NETWORK:-${REMOTE_COMPOSE_PROJECT_NAME}_default}"
 
 [[ -n "${DEPLOY_ENDPOINT_API_KEY}" ]] || die "missing DEPLOY_ENDPOINT_API_KEY"
+
+external_runner_running() {
+  docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true
+}
+
+external_runner_current_image() {
+  docker inspect -f '{{.Config.Image}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null
+}
+
+external_runner_matches_release_image() {
+  local current_image
+  current_image="$(external_runner_current_image 2>/dev/null || true)"
+  [[ -n "${current_image}" && "${current_image}" == "${RUNNER_IMAGE}" ]]
+}
+
+external_runner_connected() {
+  docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected'
+}
+
+wait_docker_daemon() {
+  local started
+  started="$(date +%s)"
+  until docker info >/dev/null 2>&1; do
+    if (( "$(date +%s)" - started > 120 )); then
+      die "docker daemon did not recover after restart"
+    fi
+    sleep 2
+  done
+}
+
+recreate_compose_services_after_docker_restart() {
+  docker_compose up -d postgres mongo redis minio minio-init keycloak universal-proxy api web >/dev/null
+  wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
+  wait_tcp "127.0.0.1" "${API_PORT:-20000}" 240
+}
+
+cleanup_replacement_external_runner_containers() {
+  local ids
+  ids="$(
+    docker ps -a \
+      --filter "name=_${EXTERNAL_RUNNER_CONTAINER_NAME}$" \
+      --format '{{.ID}}' | tr '\n' ' '
+  )"
+  if [[ -n "${ids// }" ]]; then
+    timeout 10 docker rm -f ${ids} >/dev/null 2>&1 || true
+  fi
+}
+
+quarantine_stale_external_runner() {
+  local current_image stale_name suffix
+  current_image="$(docker inspect -f '{{.Config.Image}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null || true)"
+  if [[ -z "${current_image}" || "${current_image}" == "${RUNNER_IMAGE}" ]]; then
+    return 0
+  fi
+
+  suffix="$(date +%s)"
+  stale_name="${EXTERNAL_RUNNER_CONTAINER_NAME}-stale-${suffix}"
+  log "quarantining stale external-runner container ${EXTERNAL_RUNNER_CONTAINER_NAME}"
+  docker update --restart=no "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+  docker rename "${EXTERNAL_RUNNER_CONTAINER_NAME}" "${stale_name}" >/dev/null
+  docker network disconnect -f "${EXTERNAL_RUNNER_DEFAULT_NETWORK}" "${stale_name}" >/dev/null 2>&1 || true
+  cleanup_replacement_external_runner_containers
+}
+
+ensure_external_runner_slot_available() {
+  cleanup_replacement_external_runner_containers
+  if docker ps -a --format '{{.Names}}' | grep -qx "${EXTERNAL_RUNNER_CONTAINER_NAME}"; then
+    quarantine_stale_external_runner
+  fi
+}
+
+run_external_runner_up() {
+  local output status
+  set +e
+  output="$(
+    docker run -d \
+      --name "${EXTERNAL_RUNNER_CONTAINER_NAME}" \
+      --restart unless-stopped \
+      --network "${EXTERNAL_RUNNER_DEFAULT_NETWORK}" \
+      --privileged \
+      --device /dev/fuse:/dev/fuse \
+      --security-opt apparmor:unconfined \
+      --env-file "${RELEASE_ROOT}/env/base.env" \
+      --env-file "${RELEASE_ROOT}/env/runner.env" \
+      --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
+      --add-host host.docker.internal:host-gateway \
+      "${RUNNER_IMAGE}" 2>&1
+  )"
+  status=$?
+  set -e
+  if (( status == 0 )); then
+    return 0
+  fi
+
+  if grep -q 'did not receive an exit event' <<<"${output}"; then
+    log "docker reported a stuck external-runner stop; restarting docker daemon once"
+    sudo systemctl restart docker
+    wait_docker_daemon
+    recreate_compose_services_after_docker_restart
+    docker run -d \
+      --name "${EXTERNAL_RUNNER_CONTAINER_NAME}" \
+      --restart unless-stopped \
+      --network "${EXTERNAL_RUNNER_DEFAULT_NETWORK}" \
+      --privileged \
+      --device /dev/fuse:/dev/fuse \
+      --security-opt apparmor:unconfined \
+      --env-file "${RELEASE_ROOT}/env/base.env" \
+      --env-file "${RELEASE_ROOT}/env/runner.env" \
+      --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
+      --add-host host.docker.internal:host-gateway \
+      "${RUNNER_IMAGE}" >/dev/null
+    return 0
+  fi
+
+  printf '%s\n' "${output}" >&2
+  return "${status}"
+}
 
 docker_compose exec -T postgres bash -lc '
   set -euo pipefail
@@ -194,14 +315,48 @@ MBOS_AGENT_WS_URL=${EXTERNAL_AGENT_WS_URL}
 MBOS_AGENT_KEY=${EXTERNAL_AGENT_KEY}
 EOF
 
-docker_compose up -d external-runner >/dev/null
-started="$(date +%s)"
-until docker_compose logs external-runner 2>&1 | grep -q '\[agent-codex-runner\] connected'; do
-  if (( "$(date +%s)" - started > 120 )); then
-    die "external-runner failed to connect during bootstrap"
+if external_runner_running && external_runner_connected && external_runner_matches_release_image; then
+  log "checking existing external-runner readiness"
+  existing_runner_ready=0
+  for _ in $(seq 1 20); do
+    if bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh" >/dev/null 2>&1; then
+      existing_runner_ready=1
+      break
+    fi
+    sleep 3
+  done
+  if [[ "${existing_runner_ready}" == "1" ]]; then
+    log "reusing connected external-runner"
+  else
+    log "existing external-runner did not recover; recreating"
+    timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    run_external_runner_up
+    started="$(date +%s)"
+    until docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected'; do
+      if (( "$(date +%s)" - started > 120 )); then
+        die "external-runner failed to connect during bootstrap"
+      fi
+      sleep 2
+    done
   fi
-  sleep 2
-done
+else
+  if external_runner_running && ! external_runner_matches_release_image; then
+    log "existing external-runner image does not match current release; recreating"
+    quarantine_stale_external_runner
+    run_external_runner_up
+  else
+    timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    ensure_external_runner_slot_available
+    run_external_runner_up
+  fi
+  started="$(date +%s)"
+  until docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected'; do
+    if (( "$(date +%s)" - started > 120 )); then
+      die "external-runner failed to connect during bootstrap"
+    fi
+    sleep 2
+  done
+fi
 
 bash "${RELEASE_SCRIPT_DIR}/check-preset-external-file-library.sh"
 

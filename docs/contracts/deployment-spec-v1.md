@@ -371,6 +371,9 @@ The following documents are derived from this spec and must not redefine deploym
 - generated service env files
 - offline bundle README
 
+Current operator runbook:
+- `docs/user-guides/remote-deploy-operations.md`
+
 If there is disagreement, this spec wins.
 Related protocol data-plane contract:
 - `docs/contracts/universal-proxy-integration-v1.md`

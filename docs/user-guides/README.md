@@ -17,6 +17,7 @@
 | [Backend Storage Architecture Matrix](../contracts/backend-storage-architecture-matrix.md) | Current backend module, interface, storage mode, and maturity matrix for product-grade persistence review. |
 | [Backend Storage Maturity Checklist](../contracts/backend-storage-maturity-checklist.md) | Next-step improvement checklist after main data truth has been productized. |
 | [Release Readiness Checklist](./release-readiness-checklist.md) | Final release verification order for contracts, default gates, real notebook flow, and full visual coverage. |
+| [Remote Deploy Operations](./remote-deploy-operations.md) | Current remote host deployment root, lifecycle commands, address model, and verification flow. |
 | Real Visual Review Artifacts | Generated locally under `artifacts/release-real-visual/<run-id>/` by `npm run test:visual:real:review`. |
 | [Identity & Permission Model](./identity-and-permission-model.md) | Current identity model baseline: email for selection, `user_id` for persisted permissions. |
 | [Workspace Isolation Model](./workspace-isolation-model.md) | Current MVP workspace isolation baseline: shared infrastructure with namespace and scope boundaries. |

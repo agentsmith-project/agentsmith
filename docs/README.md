@@ -20,6 +20,7 @@
 - [Workspace / Project Default Engineering Gate Checklist](./user-guides/workspace-project-default-engineering-gate-checklist.md)
 - [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
+- [Remote Deploy Operations](./user-guides/remote-deploy-operations.md)
 - Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)

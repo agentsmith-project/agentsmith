@@ -9,12 +9,18 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 OUT_DIR="${OUT_DIR:-${HOME}/agentsmith/cluster-deploy/uploads}"
 RELEASE_ID="${RELEASE_ID:-$(git -C "${ROOT_DIR}" rev-parse --short HEAD)-$(date -u +%Y%m%dT%H%M%SZ)}"
 BUNDLE_DIR="${OUT_DIR}/agentsmith-${RELEASE_ID}"
+IMAGES_DIR="${BUNDLE_DIR}/images"
 TOOLS_DIR="${BUNDLE_DIR}/tools"
 
 require_cmd tar
 require_cmd sha256sum
 require_cmd kubectl
 require_cmd python3
+require_cmd curl
+require_cmd docker
+
+ensure_operator_registry_env
+load_registry_env
 
 if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
   (cd "${ROOT_DIR}" && npm run test:cluster-bundle:inputs)
@@ -23,10 +29,12 @@ if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
 fi
 
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
+JUICEFS_VERSION="${JUICEFS_VERSION:-1.3.0}"
+JUICEFS_DOWNLOAD_BASE_URL="${JUICEFS_DOWNLOAD_BASE_URL:-https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}}"
 
 mkdir -p "${OUT_DIR}"
 rm -rf "${BUNDLE_DIR}"
-mkdir -p "${BUNDLE_DIR}" "${TOOLS_DIR}"
+mkdir -p "${BUNDLE_DIR}" "${IMAGES_DIR}" "${TOOLS_DIR}"
 
 copy_source_tree() {
   local src="$1"
@@ -76,9 +84,108 @@ copy_source_tree "${ROOT_DIR}" "${BUNDLE_DIR}/sources/agentsmith"
 copy_source_tree "${SANDBOX_ROOT}/manager-service" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service"
 copy_source_tree "${UNIVERSAL_PROXY_ROOT}" "${BUNDLE_DIR}/sources/llm-universal-proxy"
 
-cat > "${BUNDLE_DIR}/VERSION" <<EOF
-release_id=${RELEASE_ID}
+JUICEFS_VENDOR_DIR="${BUNDLE_DIR}/sources/agentsmith/infra/vendor/juicefs"
+mkdir -p "${JUICEFS_VENDOR_DIR}"
+for arch in amd64 arm64; do
+  archive="juicefs-${JUICEFS_VERSION}-linux-${arch}.tar.gz"
+  curl --fail --show-error --location --retry 5 --retry-delay 2 --retry-all-errors \
+    "${JUICEFS_DOWNLOAD_BASE_URL}/${archive}" \
+    -o "${JUICEFS_VENDOR_DIR}/${archive}"
+done
+
+REMOTE_DEPLOY_ROOT="${OUT_DIR}/.cluster-build-${RELEASE_ID}" \
+RELEASE_ROOT="${BUNDLE_DIR}" \
+bash "${ROOT_DIR}/scripts/cluster-deploy/build-images.sh"
+
+dep_registry_ref() {
+  local source_image="$1"
+  local source_repo="${source_image%:*}"
+  local source_tag="${source_image##*:}"
+  local normalized_repo
+  normalized_repo="$(printf '%s' "${source_repo}" | tr '/.' '-' | tr '@' '-')"
+  printf '%s/%s/%s:%s\n' "${REGISTRY_HOST}" "${REGISTRY_PROJECT}" "thirdparty-${normalized_repo}" "${source_tag}"
+}
+
+JUICEFS_CSI_DRIVER_IMAGE="$(dep_registry_ref "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}")"
+JUICEFS_CSI_DASHBOARD_IMAGE="$(dep_registry_ref "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}")"
+JUICEFS_MOUNT_IMAGE="$(dep_registry_ref "juicedata/mount:ce-v1.3.1")"
+CSI_PROVISIONER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0")"
+CSI_RESIZER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-resizer:v1.9.0")"
+CSI_NODE_REGISTRAR_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0")"
+CSI_LIVENESSPROBE_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/livenessprobe:v2.11.0")"
+
+APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
+
+FIRST_PARTY_IMAGES=(
+  "${APP_IMAGE}"
+  "${RUNNER_IMAGE}"
+  "${VERIFY_RUNNER_IMAGE}"
+  "${SANDBOX_MANAGER_IMAGE}"
+  "${UNIVERSAL_PROXY_IMAGE}"
+)
+
+COMPOSE_DEPENDENCY_IMAGES=(
+  "pgvector/pgvector:pg16"
+  "mongo:7"
+  "redis:7-alpine"
+  "minio/minio:latest"
+  "minio/mc:latest"
+  "quay.io/keycloak/keycloak:26.0"
+)
+
+CLUSTER_DEPENDENCY_SOURCE_IMAGES=(
+  "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
+  "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
+  "juicedata/mount:ce-v1.3.1"
+  "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
+  "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
+  "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
+  "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
+)
+
+CLUSTER_DEPENDENCY_TARGET_IMAGES=(
+  "${JUICEFS_CSI_DRIVER_IMAGE}"
+  "${JUICEFS_CSI_DASHBOARD_IMAGE}"
+  "${JUICEFS_MOUNT_IMAGE}"
+  "${CSI_PROVISIONER_IMAGE}"
+  "${CSI_RESIZER_IMAGE}"
+  "${CSI_NODE_REGISTRAR_IMAGE}"
+  "${CSI_LIVENESSPROBE_IMAGE}"
+)
+
+for image in "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do
+  docker pull --platform linux/amd64 "${image}" >/dev/null
+done
+
+for idx in "${!CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do
+  docker tag "${CLUSTER_DEPENDENCY_SOURCE_IMAGES[$idx]}" "${CLUSTER_DEPENDENCY_TARGET_IMAGES[$idx]}"
+done
+
+save_image_archive() {
+  local image="$1"
+  local archive_name
+  archive_name="$(printf '%s' "${image}" | tr '/:@' '---').tar"
+  docker save "${image}" -o "${IMAGES_DIR}/${archive_name}"
+}
+
+for image in "${FIRST_PARTY_IMAGES[@]}" "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_TARGET_IMAGES[@]}"; do
+  save_image_archive "${image}"
+done
+
+cat >> "${BUNDLE_DIR}/VERSION" <<EOF
 juicefs_csi_version=${JUICEFS_CSI_VERSION}
+juicefs_version=${JUICEFS_VERSION}
+juicefs_csi_driver_image=${JUICEFS_CSI_DRIVER_IMAGE}
+juicefs_csi_dashboard_image=${JUICEFS_CSI_DASHBOARD_IMAGE}
+juicefs_mount_image=${JUICEFS_MOUNT_IMAGE}
+csi_provisioner_image=${CSI_PROVISIONER_IMAGE}
+csi_resizer_image=${CSI_RESIZER_IMAGE}
+csi_node_registrar_image=${CSI_NODE_REGISTRAR_IMAGE}
+csi_livenessprobe_image=${CSI_LIVENESSPROBE_IMAGE}
 EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)

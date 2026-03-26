@@ -1,4 +1,5 @@
-FROM node:22-bookworm AS deps
+ARG NODE_BASE_IMAGE=node:22-bookworm
+FROM ${NODE_BASE_IMAGE} AS deps
 
 ARG HTTP_PROXY
 ARG HTTPS_PROXY

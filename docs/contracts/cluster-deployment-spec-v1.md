@@ -25,18 +25,20 @@ It exists alongside, not instead of, the current `remote-deploy` demo line:
 
 Responsibilities:
 
-- read gitignored operator config from `.infra/cluster-deploy/`
-- build required images
-- push images to the configured image registry
+- read gitignored local operator config only as bundle inputs
+- build required first-party images on the build machine
+- push those images to the configured registry
 - generate an install bundle
 
 The bundle contains:
 
+- prebuilt image archives for application, compose dependencies, and cluster dependencies
 - compose assets
 - Kubernetes manifests and templates
 - env examples
 - deployment scripts
 - docs and checks
+- source trees needed for traceability and future rebuilds
 - release metadata and checksums
 
 The bundle does not contain:
@@ -50,8 +52,10 @@ The bundle does not contain:
 
 Responsibilities:
 
-- extract bundle into `/home/percy/agentsmith/cluster-deploy`
-- read shared operator config from `/home/percy/agentsmith/cluster-deploy/config`
+- extract bundle into `$HOME/agentsmith/cluster-deploy`
+- read shared operator config from `$HOME/agentsmith/cluster-deploy/config`
+- load bundled images into the target-host Docker daemon
+- push bundled registry-tagged images to the configured registry
 - execute:
   - `prepare`
   - `deploy`
@@ -60,6 +64,27 @@ Responsibilities:
   - `report`
 
 This keeps the build machine independent from the production server and the real Kubernetes cluster.
+The current transfer policy is:
+
+1. build machine uploads the bundle to `pullot`
+2. target host logs in and pulls the bundle from `pullot`
+
+The build machine does not upload directly to the target host.
+
+## Cluster Prerequisites
+
+`cluster-deploy` is not a full cluster bootstrap product.
+
+The target Kubernetes environment must satisfy all of the following:
+
+- the target host can reach the Kubernetes API
+- the target kubeconfig can create namespaced resources in the chosen namespace
+- the current internal workspace binding model can create cluster-scoped `PersistentVolume` resources
+- and one of these JuiceFS conditions is true:
+  - the deploy kubeconfig has enough cluster-scope permission to install JuiceFS CSI
+  - or the cluster already provides a preinstalled storage class and `INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME` points to it
+
+If these prerequisites are not satisfied, `prepare.sh` must fail fast before deployment starts.
 
 ## System Boundary
 
@@ -123,7 +148,7 @@ They are rendered into:
 - `postgres-external`
 - `minio-external`
 
-via `Service` plus `EndpointSlice`.
+via `Service` plus `Endpoints`.
 
 ### Application-Server-to-Manager Access
 
@@ -175,6 +200,21 @@ Required operator config:
 - `REGISTRY_USERNAME`
 - `REGISTRY_PASSWORD`
 
+Optional operator config:
+
+- `APP_NODE_BASE_IMAGE`
+- `RUNNER_NODE_BASE_IMAGE`
+- `VERIFY_PLAYWRIGHT_BASE_IMAGE`
+- `VERIFY_DOCKER_CLI_IMAGE`
+- `SANDBOX_GO_BASE_IMAGE`
+- `SANDBOX_RUNTIME_BASE_IMAGE`
+- `UNIVERSAL_PROXY_RUST_BASE_IMAGE`
+- `UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE`
+
+These base-image refs let the build machine use a reachable mirror instead of assuming Docker Hub or MCR is directly available.
+
+The target host does not build images. It only consumes the offline bundle, loads its images, and pushes the registry-tagged images that Kubernetes must pull.
+
 Compose and Kubernetes must use the same image tag set for a given release.
 
 ## Operator Config
@@ -193,9 +233,9 @@ Gitignored operator files:
 
 Target-host shared config:
 
-- `/home/percy/agentsmith/cluster-deploy/config/site.env`
-- `/home/percy/agentsmith/cluster-deploy/config/registry.env`
-- `/home/percy/agentsmith/cluster-deploy/config/kubeconfig`
+- `$HOME/agentsmith/cluster-deploy/config/site.env`
+- `$HOME/agentsmith/cluster-deploy/config/registry.env`
+- `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
 
 ## Lifecycle Commands
 

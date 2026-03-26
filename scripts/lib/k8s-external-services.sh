@@ -87,22 +87,20 @@ spec:
       port: 5432
       protocol: TCP
 ---
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
+apiVersion: v1
+kind: Endpoints
 metadata:
   name: ${postgres_service_name}-external
   namespace: ${namespace}
   labels:
-    kubernetes.io/service-name: ${postgres_service_name}
     app.kubernetes.io/managed-by: agentsmith
-addressType: IPv4
-ports:
-  - name: postgres
-    protocol: TCP
-    port: ${postgres_target_port}
-endpoints:
+subsets:
   - addresses:
-      - ${postgres_target_ip}
+      - ip: ${postgres_target_ip}
+    ports:
+      - name: postgres
+        port: ${postgres_target_port}
+        protocol: TCP
 ---
 apiVersion: v1
 kind: Service
@@ -117,21 +115,19 @@ spec:
       port: 9000
       protocol: TCP
 ---
-apiVersion: discovery.k8s.io/v1
-kind: EndpointSlice
+apiVersion: v1
+kind: Endpoints
 metadata:
   name: ${minio_service_name}-external
   namespace: ${namespace}
   labels:
-    kubernetes.io/service-name: ${minio_service_name}
     app.kubernetes.io/managed-by: agentsmith
-addressType: IPv4
-ports:
-  - name: http
-    protocol: TCP
-    port: ${minio_target_port}
-endpoints:
+subsets:
   - addresses:
-      - ${minio_target_ip}
+      - ip: ${minio_target_ip}
+    ports:
+      - name: http
+        port: ${minio_target_port}
+        protocol: TCP
 EOF
 }

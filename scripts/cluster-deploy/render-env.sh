@@ -18,6 +18,11 @@ set -a
 source "${SITE_ENV}"
 set +a
 
+BUNDLED_JUICEFS_MOUNT_IMAGE="$(awk -F= '$1=="juicefs_mount_image"{print $2}' "${RELEASE_ROOT}/VERSION" 2>/dev/null || true)"
+if [[ -n "${BUNDLED_JUICEFS_MOUNT_IMAGE}" ]]; then
+  INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${BUNDLED_JUICEFS_MOUNT_IMAGE}"
+fi
+
 for required_nonempty_key in \
   PUBLIC_WEB_BASE_URL \
   PUBLIC_API_BASE_URL \
@@ -221,4 +226,3 @@ EOF
 fi
 
 log "render-env ok"
-

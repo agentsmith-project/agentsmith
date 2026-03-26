@@ -68,7 +68,7 @@ resolve_tool() {
     printf '%s\n' "${bundled}"
     return 0
   fi
-  PATH="${ORIGINAL_PATH}" command -v "${system_name}"
+  PATH="${ORIGINAL_PATH}" type -P "${system_name}"
 }
 
 KIND_BIN="$(resolve_tool "${TOOLS_DIR}/kind" kind --version)"

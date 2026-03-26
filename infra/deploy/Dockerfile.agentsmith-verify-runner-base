@@ -27,7 +27,15 @@ RUN set -eux; \
   export http_proxy="${HTTP_PROXY:-}" https_proxy="${HTTPS_PROXY:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" NO_PROXY="${NO_PROXY:-}" no_proxy="${NO_PROXY:-}"; \
   apt-get update; \
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends fuse3 procps; \
-  curl -fsSL "https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}/juicefs-${JUICEFS_VERSION}-linux-amd64.tar.gz" -o /tmp/juicefs.tgz; \
+  arch="$(dpkg --print-architecture)"; \
+  case "${arch}" in \
+    amd64) juicefs_arch="amd64" ;; \
+    arm64) juicefs_arch="arm64" ;; \
+    *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
+  esac; \
+  curl --fail --show-error --location --retry 5 --retry-delay 2 --retry-all-errors \
+    "https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}/juicefs-${JUICEFS_VERSION}-linux-${juicefs_arch}.tar.gz" \
+    -o /tmp/juicefs.tgz; \
   tar -xzf /tmp/juicefs.tgz -C /tmp; \
   install -m 0755 /tmp/juicefs /usr/local/bin/juicefs; \
   npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000; \

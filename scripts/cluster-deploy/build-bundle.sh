@@ -17,6 +17,7 @@ load_registry_env
 require_cmd docker
 require_cmd tar
 require_cmd sha256sum
+require_cmd kubectl
 
 if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
   (cd "${ROOT_DIR}" && npm run test:cluster-bundle:inputs)
@@ -84,9 +85,8 @@ cp "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_
 cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/cluster-deployment-spec-v1.md"
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
-cp "$(command -v kind)" "${TOOLS_DIR}/kind"
-cp "$(command -v kubectl)" "${TOOLS_DIR}/kubectl"
-chmod +x "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/remote-deploy/bootstrap.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh" "${TOOLS_DIR}/kind" "${TOOLS_DIR}/kubectl"
+cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
+chmod +x "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/remote-deploy/bootstrap.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh" "${TOOLS_DIR}/kubectl"
 
 cat > "${BUNDLE_DIR}/VERSION" <<EOF
 release_id=${RELEASE_ID}

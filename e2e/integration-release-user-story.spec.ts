@@ -868,7 +868,17 @@ test.describe('@lane-real release user story end-to-end', () => {
         workspaceMode: 'create_new',
         workspaceName: `Internal Workspace ${Date.now()}`,
       });
-      await sendNotebookMessage(page, 'Create notes/internal_story.txt with exactly one line: internal turn 1. Then reply with exactly INT_T1_OK.');
+      await sendNotebookMessage(
+        page,
+        [
+          'Run the following shell command exactly, then reply with exactly INT_T1_OK.',
+          '```bash',
+          "mkdir -p notes && cat <<'EOF' > notes/internal_story.txt",
+          'internal turn 1',
+          'EOF',
+          '```',
+        ].join(' '),
+      );
       await waitForAgentReply({
         page,
         workspaceId,
@@ -877,7 +887,22 @@ test.describe('@lane-real release user story end-to-end', () => {
         expectedToken: 'INT_T1_OK',
         minAgentMessages: 1,
       });
-      await sendNotebookMessage(page, 'Read notes/internal_story.txt, append a second line internal turn 2, create .artifacts/internal_summary.md summarizing the file, then reply with exactly INT_T2_OK.');
+      await sendNotebookMessage(
+        page,
+        [
+          'Run the following shell commands exactly, then reply with exactly INT_T2_OK.',
+          '```bash',
+          "if [ ! -f notes/internal_story.txt ]; then echo 'missing-internal-story' >&2; exit 1; fi",
+          "printf '\\ninternal turn 2\\n' >> notes/internal_story.txt",
+          'mkdir -p .artifacts',
+          "cat <<'EOF' > .artifacts/internal_summary.md",
+          '# Internal Story Summary',
+          'internal turn 1',
+          'internal turn 2',
+          'EOF',
+          '```',
+        ].join(' '),
+      );
       await waitForAgentReply({
         page,
         workspaceId,

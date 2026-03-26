@@ -84,6 +84,20 @@ cd /home/percy/agentsmith/deploy/current
 bash scripts/reset.sh
 ```
 
+Prune history after a successful deploy when you want to reclaim disk:
+
+```bash
+cd /home/percy/agentsmith/deploy/current
+bash scripts/prune-history.sh
+```
+
+Defaults:
+
+- keep latest 2 extracted releases
+- keep latest 2 uploaded bundles
+- keep latest 10 reports
+- always protect the active `current` release target
+
 ## Current Good State
 
 - `current` points to the active release under `/home/percy/agentsmith/deploy/releases/...`
@@ -92,6 +106,66 @@ bash scripts/reset.sh
 - JuiceFS CSI runs on `v0.31.3`
 - `bootstrap` reuses or recreates the canonical external runner container as needed
 - `verify` runs from the bundled release assets, not ad hoc host source trees
+
+## Operator Config Notes
+
+Only edit:
+
+- `/home/percy/agentsmith/deploy/config/site.env`
+
+Most operators only need to care about these groups:
+
+### Public access
+
+- `PUBLIC_WEB_BASE_URL`
+- `PUBLIC_API_BASE_URL`
+- `PUBLIC_KEYCLOAK_BASE_URL`
+
+These must match the browser-visible host, IP, or domain.
+
+### Client JuiceFS mount access
+
+- `CLIENT_PUBLIC_POSTGRES_HOST`
+- `CLIENT_PUBLIC_POSTGRES_PORT`
+- `CLIENT_PUBLIC_MINIO_ENDPOINT`
+
+These values are shown in the file library mount dialog and must be reachable from a user's own machine.
+
+### Core service ports
+
+- `POSTGRES_PORT`
+- `MONGO_PORT`
+- `REDIS_PORT`
+- `MINIO_API_PORT`
+- `MINIO_CONSOLE_PORT`
+- `KEYCLOAK_PORT`
+- `API_PORT`
+- `WEB_PORT`
+- `SANDBOX_HOST_PORT`
+
+### AI endpoint
+
+- `DEPLOY_ENDPOINT_API_KEY`
+- `DEPLOY_ANTHROPIC_BASE_URL`
+- `DEPLOY_OPENAI_BASE_URL`
+- `DEPLOY_ENDPOINT_MODEL`
+
+### Internal sandbox and JuiceFS
+
+- `INTERNAL_AGENT_K8S_NAMESPACE`
+- `INTERNAL_AGENT_JUICEFS_CSI_DRIVER`
+- `INTERNAL_AGENT_WORKSPACE_CAPACITY`
+- `INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS`
+- `INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE`
+
+### External dependency network
+
+- `EXTERNAL_DEPS_NETWORK_NAME`
+- `EXTERNAL_DEPS_NETWORK_SUBNET`
+- `EXTERNAL_DEPS_POSTGRES_IP`
+- `EXTERNAL_DEPS_MINIO_IP`
+
+These values define the stable Docker network used by the Compose dependencies and the internal Kubernetes external dependency services.
 
 ## What Not To Do
 

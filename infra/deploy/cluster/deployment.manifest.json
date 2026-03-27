@@ -2,7 +2,6 @@
   "schema_version": 1,
   "release_flow": [
     "prepare",
-    "reset",
     "deploy",
     "bootstrap",
     "verify",
@@ -20,8 +19,6 @@
     "external-runner"
   ],
   "k8s_components": [
-    "juicefs-csi-controller",
-    "juicefs-csi-node",
     "sandbox-manager",
     "sandbox-manager-ingress",
     "internal-workloads",
@@ -145,7 +142,7 @@
     "env/site.env.example",
     "env/registry.env.example",
     "env/kubeconfig.example.yaml",
-    "k8s/juicefs-csi.yaml",
+    "env/manager-kubeconfig.example.yaml",
     "postgres-init/001-create-databases.sql",
     "postgres-init/projects.sql",
     "minio/init-minio.sh",
@@ -175,6 +172,7 @@
     "sources/agentsmith",
     "sources/mbos-sandbox-v1/manager-service",
     "sources/llm-universal-proxy",
+    "docs/user-guides/cluster-admin-runbook.md",
     "docs/contracts/cluster-deployment-spec-v1.md",
     "docs/user-guides/cluster-deploy-operations.md",
     "checksums.txt",

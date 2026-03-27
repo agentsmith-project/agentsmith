@@ -22,6 +22,7 @@
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - [Remote Deploy Operations](./user-guides/remote-deploy-operations.md)
 - [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
+- [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
 - Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)

@@ -7,10 +7,26 @@
 Use it when:
 
 - the target host runs application services with Docker Compose
-- internal agent execution must run on a real Kubernetes cluster
-- images are pulled from an online image registry
+- internal agent execution runs on a real Kubernetes cluster
+- the cluster administrator has already completed the prerequisites in:
+  - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
 
-Do not use it to replace the current demo deployment line. `remote-deploy` remains the demo/server-local release path.
+Do not use it to replace the current demo deployment line.
+
+## Authority Boundary
+
+`cluster-deploy` automation is limited to:
+
+- application-server local runtime
+- namespaced Kubernetes resources in `mbos`
+
+It must not:
+
+- create or delete namespaces
+- install JuiceFS CSI
+- modify `kube-system`
+- create cluster-wide RBAC
+- create or delete cluster-scope storage objects
 
 ## Local Operator Files
 
@@ -19,6 +35,7 @@ The build machine stores real operator config in gitignored files:
 - `.infra/cluster-deploy/site.env`
 - `.infra/cluster-deploy/registry.env`
 - `.infra/cluster-deploy/kubeconfig`
+- `.infra/cluster-deploy/manager-kubeconfig`
 
 Tracked examples live under:
 
@@ -35,8 +52,7 @@ Shared operator config:
 - `$HOME/agentsmith/cluster-deploy/config/site.env`
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
-
-`registry.env` may also override the base image sources used during build-machine image builds when Docker Hub or MCR is not directly reachable.
+- `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
 
 Release lifecycle paths:
 
@@ -62,9 +78,9 @@ npm run cluster:bundle
 This step:
 
 - validates bundle inputs
-- builds first-party images and packages them into the offline bundle
-- packages compose assets, scripts, manifests, docs, source trees, and offline image archives
-- generates an install bundle that already contains the resolved image refs
+- builds first-party images
+- packages offline image archives
+- packages compose assets, scripts, manifests, docs, source trees, and release metadata
 
 ### 2. Copy bundle through the transfer host
 
@@ -82,8 +98,6 @@ ssh <target-host>
 mkdir -p "$HOME/agentsmith/cluster-deploy/uploads"
 scp -P 12220 percy@pullot.com:/home/percy/xfer/agentsmith/agentsmith-<release-id>.tar.gz "$HOME/agentsmith/cluster-deploy/uploads/"
 ```
-
-Do not upload directly from the build machine to the target host unless the transfer policy changes.
 
 ### 3. Extract on the target host
 
@@ -113,52 +127,43 @@ bash scripts/cluster-deploy/verify.sh
 bash scripts/cluster-deploy/report.sh
 ```
 
-## Address Model
+## Kubeconfig Roles
 
-The cluster line uses explicit address roles.
+### Deploy kubeconfig
 
-### Public user access
+`config/kubeconfig` is used by:
 
-- `PUBLIC_WEB_BASE_URL`
-- `PUBLIC_API_BASE_URL`
-- `PUBLIC_KEYCLOAK_BASE_URL`
+- `prepare.sh`
+- `deploy.sh`
 
-### Client JuiceFS mount access
+It should be namespace-scoped to `mbos`.
 
-- `CLIENT_PUBLIC_POSTGRES_HOST`
-- `CLIENT_PUBLIC_POSTGRES_PORT`
-- `CLIENT_PUBLIC_MINIO_ENDPOINT`
+### Manager kubeconfig
 
-### Cluster-to-compose dependency access
+`config/manager-kubeconfig` is mounted into sandbox-manager.
 
-- `K8S_EXTERNAL_POSTGRES_HOST`
-- `K8S_EXTERNAL_POSTGRES_PORT`
-- `K8S_EXTERNAL_MINIO_HOST`
-- `K8S_EXTERNAL_MINIO_PORT`
+It should allow:
 
-### Manager ingress access
+- namespaced workspace runtime operations in `mbos`
+- the smallest cluster-scope `PersistentVolume` permissions required by the current manager storage model
 
-- `SANDBOX_MANAGER_INGRESS_HOST`
-- `SANDBOX_MANAGER_PUBLIC_BASE_URL`
+Do not reuse the deploy kubeconfig for manager runtime.
 
 ## Kubernetes Expectations
 
-The target cluster must provide:
+Before automation runs, the cluster must already provide:
 
-- reachable Kubernetes API
-- an Ingress controller
-- at least one node that matches the configured `SANDBOX_MANAGER_NODE_SELECTOR_JSON`
-- at least one node that matches the configured `INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON`
-- `NoExecute` taints on those matched nodes must be tolerated by the configured tolerations
-- cluster-scope `PersistentVolume` creation permission for the deploy kubeconfig
-- and either:
-  - enough cluster-scope permission to install JuiceFS CSI
-  - or a preinstalled storage class configured in `INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME`
+- the `mbos` namespace
+- a reachable Kubernetes API
+- an ingress controller
+- a preinstalled JuiceFS-compatible storage class
+- node label / taint values matching:
+  - `SANDBOX_MANAGER_NODE_SELECTOR_JSON`
+  - `SANDBOX_MANAGER_TOLERATIONS_JSON`
+  - `INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON`
+  - `INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON`
 
-The deployment line assumes:
-
-- sandbox-manager and sandbox runner requests: `1 CPU / 2Gi`
-- sandbox-manager and sandbox runner limits: `2 CPU / 4Gi`
+If these are missing, `prepare.sh` must fail fast.
 
 ## External Dependency Model
 
@@ -169,16 +174,20 @@ Instead, the deployment renders:
 - `postgres-external`
 - `minio-external`
 
-as `Service + Endpoints`, and internal agent workloads access those service names.
+as namespaced `Service + Endpoints`, and internal agent workloads access those service names.
 
 ## Cleanup
 
-To clear the current release state on the target host:
+`reset.sh` is not part of the formal production release flow.
 
-```bash
-cd "$HOME/agentsmith/cluster-deploy/current"
-bash scripts/cluster-deploy/reset.sh
-```
+If used manually, it only clears:
+
+- Compose runtime
+- local state
+- local logs
+- local reports
+
+It does not delete namespaces or other Kubernetes resources.
 
 To prune old uploads, releases, and reports:
 
@@ -190,7 +199,6 @@ bash scripts/cluster-deploy/prune-history.sh
 ## Offline Rule
 
 The target host does not build images.
-It loads the offline image archives from the bundle, pushes the bundled registry-tagged images, and then deploys the application and cluster components.
 
 It only:
 
@@ -198,4 +206,4 @@ It only:
 - loads bundled image archives
 - pushes bundled registry-tagged images to the configured registry
 - starts Compose services
-- applies Kubernetes manifests
+- applies namespaced Kubernetes manifests

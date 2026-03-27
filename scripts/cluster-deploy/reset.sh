@@ -20,11 +20,6 @@ if [[ -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]]; then
   docker_compose down -v --remove-orphans || true
 fi
 
-if [[ -n "${INTERNAL_AGENT_K8S_NAMESPACE:-}" ]]; then
-  kubectl delete namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" --ignore-not-found --timeout=120s >/dev/null 2>&1 || true
-fi
-
 rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/* "${REPORT_DIR}"/*
 state_set release.phase reset_completed
-log "reset ok"
-
+log "reset ok (compose and local state only; kubernetes resources were left untouched)"

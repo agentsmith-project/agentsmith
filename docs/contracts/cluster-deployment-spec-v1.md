@@ -14,7 +14,6 @@ It exists alongside, not instead of, the current `remote-deploy` demo line:
   - real-environment installation
   - application services and data services still run on Docker Compose
   - internal agent execution runs on a real Kubernetes cluster
-  - images are published to an online image registry
   - installation is still performed from an offline bundle on the target host
 
 ## Delivery Model
@@ -27,26 +26,9 @@ Responsibilities:
 
 - read gitignored local operator config only as bundle inputs
 - build required first-party images on the build machine
-- push those images to the configured registry
-- generate an install bundle
+- generate an install bundle that contains offline image archives
 
-The bundle contains:
-
-- prebuilt image archives for application, compose dependencies, and cluster dependencies
-- compose assets
-- Kubernetes manifests and templates
-- env examples
-- deployment scripts
-- docs and checks
-- source trees needed for traceability and future rebuilds
-- release metadata and checksums
-
-The bundle does not contain:
-
-- real kubeconfig
-- real registry credentials
-- site-specific secrets
-- image tar archives
+The build machine does not need direct access to the target server or the real cluster.
 
 ### Stage 2. Target Host
 
@@ -56,14 +38,13 @@ Responsibilities:
 - read shared operator config from `$HOME/agentsmith/cluster-deploy/config`
 - load bundled images into the target-host Docker daemon
 - push bundled registry-tagged images to the configured registry
-- execute:
+- run namespace-only release automation:
   - `prepare`
   - `deploy`
   - `bootstrap`
   - `verify`
   - `report`
 
-This keeps the build machine independent from the production server and the real Kubernetes cluster.
 The current transfer policy is:
 
 1. build machine uploads the bundle to `pullot`
@@ -71,20 +52,26 @@ The current transfer policy is:
 
 The build machine does not upload directly to the target host.
 
-## Cluster Prerequisites
+## Authority Boundary
 
-`cluster-deploy` is not a full cluster bootstrap product.
+`cluster-deploy` is a **namespace-only** application release line.
 
-The target Kubernetes environment must satisfy all of the following:
+It may manage only:
 
-- the target host can reach the Kubernetes API
-- the target kubeconfig can create namespaced resources in the chosen namespace
-- the current internal workspace binding model can create cluster-scoped `PersistentVolume` resources
-- and one of these JuiceFS conditions is true:
-  - the deploy kubeconfig has enough cluster-scope permission to install JuiceFS CSI
-  - or the cluster already provides a preinstalled storage class and `INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME` points to it
+- application-server local runtime
+- namespaced Kubernetes resources in `mbos`
 
-If these prerequisites are not satisfied, `prepare.sh` must fail fast before deployment starts.
+It must not:
+
+- create or delete namespaces
+- install JuiceFS CSI
+- modify `kube-system`
+- create cluster-wide RBAC
+- create or delete cluster-scope storage objects
+
+All cluster-scope preparation belongs to the separate administrator runbook:
+
+- [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
 
 ## System Boundary
 
@@ -107,10 +94,47 @@ The target host keeps the application services and data services on Compose:
 The cluster runs only the internal execution surface:
 
 - `sandbox-manager`
-- `juicefs-csi`
 - internal sandbox runner / workload pods
+- namespaced external dependency service abstractions
 
-This boundary is intentional. Data services are not moved into Kubernetes.
+JuiceFS CSI and storage-class preparation are **preinstalled cluster capabilities**, not part of deploy automation.
+
+## Kubernetes Permission Model
+
+### Deploy kubeconfig
+
+The deploy kubeconfig is namespace-scoped to `mbos` and is used by:
+
+- `prepare.sh`
+- `deploy.sh`
+
+It must be able to create namespaced resources such as:
+
+- deployments
+- services
+- endpoints
+- configmaps
+- secrets
+- ingresses
+
+It must not require cluster-admin permissions.
+
+### Manager kubeconfig
+
+The manager runtime uses a separate kubeconfig mounted into sandbox-manager.
+
+This kubeconfig may have a **minimal cluster-scope exception** for the current workspace-binding model:
+
+- namespaced access in `mbos`
+- minimal `PersistentVolume` permissions
+
+This exception exists because the current manager implementation still binds workspaces through:
+
+- `Secret`
+- `PersistentVolume`
+- `PersistentVolumeClaim`
+
+That storage model is intentionally kept unchanged in this phase to minimize implementation risk.
 
 ## Address Model
 
@@ -124,15 +148,11 @@ Instead, addresses are declared explicitly per consumer role.
 - `PUBLIC_API_BASE_URL`
 - `PUBLIC_KEYCLOAK_BASE_URL`
 
-Used for browser entry, auth redirects, and public-facing guides.
-
 ### Client JuiceFS Mount Access
 
 - `CLIENT_PUBLIC_POSTGRES_HOST`
 - `CLIENT_PUBLIC_POSTGRES_PORT`
 - `CLIENT_PUBLIC_MINIO_ENDPOINT`
-
-Used for UI-visible file-library mount guidance.
 
 ### Cluster-to-Compose Dependency Access
 
@@ -141,42 +161,29 @@ Used for UI-visible file-library mount guidance.
 - `K8S_EXTERNAL_MINIO_HOST`
 - `K8S_EXTERNAL_MINIO_PORT`
 
-These values must be reachable from Kubernetes pods.
-
-They are rendered into:
+These values are rendered into:
 
 - `postgres-external`
 - `minio-external`
 
-via `Service` plus `Endpoints`.
+using namespaced `Service + Endpoints`.
 
 ### Application-Server-to-Manager Access
 
+- `SANDBOX_MANAGER_INGRESS_CLASS_NAME`
 - `SANDBOX_MANAGER_INGRESS_HOST`
 - `SANDBOX_MANAGER_PUBLIC_BASE_URL`
 
-The application server reaches `sandbox-manager` through the manager Ingress.
-
-## Manager Exposure
-
-`cluster-deploy` uses Ingress as the default way to expose `sandbox-manager`.
-
-Required objects:
-
-- `Deployment`
-- `Service`
-- `Ingress`
-
-`NodePort` is not the default release path for the real cluster line.
+The application server reaches `sandbox-manager` through the namespaced manager Ingress.
 
 ## Scheduling and Resources
 
-Cluster defaults are fixed for the current deployment target:
+Cluster defaults are fixed by rendered env:
 
-- node selector:
-  - `node=mbos`
-- toleration:
-  - `mbos:NoExecute`
+- node selector JSON for sandbox-manager
+- tolerations JSON for sandbox-manager
+- node selector JSON for internal workloads
+- tolerations JSON for internal workloads
 
 Default resources for `sandbox-manager` and sandbox runner workloads:
 
@@ -190,8 +197,6 @@ Default resources for `sandbox-manager` and sandbox runner workloads:
 These values must be part of tracked templates and rendered env, not manual post-deploy edits.
 
 ## Registry Model
-
-All first-party images for `cluster-deploy` are published to an online registry.
 
 Required operator config:
 
@@ -211,11 +216,8 @@ Optional operator config:
 - `UNIVERSAL_PROXY_RUST_BASE_IMAGE`
 - `UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE`
 
-These base-image refs let the build machine use a reachable mirror instead of assuming Docker Hub or MCR is directly available.
-
-The target host does not build images. It only consumes the offline bundle, loads its images, and pushes the registry-tagged images that Kubernetes must pull.
-
-Compose and Kubernetes must use the same image tag set for a given release.
+The target host does not build images.
+It only loads the offline bundle, pushes bundled registry-tagged images, and deploys the application and manager.
 
 ## Operator Config
 
@@ -224,18 +226,21 @@ Tracked templates:
 - `infra/deploy/cluster/env/site.env.example`
 - `infra/deploy/cluster/env/registry.env.example`
 - `infra/deploy/cluster/env/kubeconfig.example.yaml`
+- `infra/deploy/cluster/env/manager-kubeconfig.example.yaml`
 
 Gitignored operator files:
 
 - `.infra/cluster-deploy/site.env`
 - `.infra/cluster-deploy/registry.env`
 - `.infra/cluster-deploy/kubeconfig`
+- `.infra/cluster-deploy/manager-kubeconfig`
 
 Target-host shared config:
 
 - `$HOME/agentsmith/cluster-deploy/config/site.env`
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
+- `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
 
 ## Lifecycle Commands
 
@@ -248,7 +253,7 @@ The cluster line uses its own lifecycle:
 - `npm run cluster:verify`
 - `npm run cluster:report`
 
-These commands do not replace the current `remote-deploy` line.
+`reset` is not part of the formal production release flow.
 
 ## Validation Requirements
 
@@ -256,8 +261,6 @@ The minimum release proof for `cluster-deploy` is:
 
 1. bundle input checks pass
 2. rendered env checks pass
-3. `prepare -> deploy -> bootstrap -> verify -> report` passes on the target host
-4. external notebook task succeeds
-5. internal notebook task succeeds
-6. file-library client mount truth is correct
-7. internal agent reaches external PostgreSQL and MinIO through Kubernetes external services
+3. cluster admin prerequisites are already complete
+4. `prepare -> deploy -> bootstrap -> verify -> report` passes on the target host
+5. external and internal notebook flows succeed

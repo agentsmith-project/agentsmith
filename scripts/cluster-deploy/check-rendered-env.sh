@@ -20,10 +20,9 @@ grep -Fxq 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' "${RELEASE_ROOT}/env/internal.e
   echo "[cluster-rendered-env] missing internal cpu request default" >&2
   exit 1
 }
-grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' "${RELEASE_ROOT}/env/internal.env" || {
+grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' "${RELEASE_ROOT}/env/internal.env" || {
   echo "[cluster-rendered-env] missing internal postgres external fqdn" >&2
   exit 1
 }
 
 echo "[cluster-rendered-env] ok"
-

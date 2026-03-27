@@ -28,7 +28,6 @@ if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
   (cd "${ROOT_DIR}" && npm run test:client-public-runtime)
 fi
 
-JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 JUICEFS_VERSION="${JUICEFS_VERSION:-1.3.0}"
 JUICEFS_DOWNLOAD_BASE_URL="${JUICEFS_DOWNLOAD_BASE_URL:-https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}}"
 
@@ -53,13 +52,13 @@ copy_source_tree() {
     -cf - . | tar -C "${dst}" -xf -
 }
 
-mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/k8s" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/remote-deploy/lib" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
+mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/remote-deploy/lib" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
 cp "${ROOT_DIR}/infra/deploy/cluster/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example" "${BUNDLE_DIR}/env/registry.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/kubeconfig.example.yaml" "${BUNDLE_DIR}/env/kubeconfig.example.yaml"
-cp "${ROOT_DIR}/infra/deploy/remote/k8s/juicefs-csi.yaml" "${BUNDLE_DIR}/k8s/juicefs-csi.yaml"
+cp "${ROOT_DIR}/infra/deploy/cluster/env/manager-kubeconfig.example.yaml" "${BUNDLE_DIR}/env/manager-kubeconfig.example.yaml"
 cp "${ROOT_DIR}/infra/integration/postgres-init/001-create-databases.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/packages/adapters-private/sql/projects.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/infra/integration/minio/init-minio.sh" "${BUNDLE_DIR}/minio/"
@@ -75,6 +74,7 @@ cp "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/inte
 cp "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
 cp "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
 cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
+cp "${ROOT_DIR}/docs/user-guides/cluster-admin-runbook.md" "${BUNDLE_DIR}/docs/user-guides/cluster-admin-runbook.md"
 cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/cluster-deployment-spec-v1.md"
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
@@ -106,13 +106,7 @@ dep_registry_ref() {
   printf '%s/%s/%s:%s\n' "${REGISTRY_HOST}" "${REGISTRY_PROJECT}" "thirdparty-${normalized_repo}" "${source_tag}"
 }
 
-JUICEFS_CSI_DRIVER_IMAGE="$(dep_registry_ref "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}")"
-JUICEFS_CSI_DASHBOARD_IMAGE="$(dep_registry_ref "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}")"
 JUICEFS_MOUNT_IMAGE="$(dep_registry_ref "juicedata/mount:ce-v1.3.1")"
-CSI_PROVISIONER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0")"
-CSI_RESIZER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-resizer:v1.9.0")"
-CSI_NODE_REGISTRAR_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0")"
-CSI_LIVENESSPROBE_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/livenessprobe:v2.11.0")"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
@@ -138,23 +132,11 @@ COMPOSE_DEPENDENCY_IMAGES=(
 )
 
 CLUSTER_DEPENDENCY_SOURCE_IMAGES=(
-  "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}"
-  "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}"
   "juicedata/mount:ce-v1.3.1"
-  "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
-  "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
-  "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
-  "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 )
 
 CLUSTER_DEPENDENCY_TARGET_IMAGES=(
-  "${JUICEFS_CSI_DRIVER_IMAGE}"
-  "${JUICEFS_CSI_DASHBOARD_IMAGE}"
   "${JUICEFS_MOUNT_IMAGE}"
-  "${CSI_PROVISIONER_IMAGE}"
-  "${CSI_RESIZER_IMAGE}"
-  "${CSI_NODE_REGISTRAR_IMAGE}"
-  "${CSI_LIVENESSPROBE_IMAGE}"
 )
 
 for image in "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do
@@ -177,15 +159,8 @@ for image in "${FIRST_PARTY_IMAGES[@]}" "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLU
 done
 
 cat >> "${BUNDLE_DIR}/VERSION" <<EOF
-juicefs_csi_version=${JUICEFS_CSI_VERSION}
 juicefs_version=${JUICEFS_VERSION}
-juicefs_csi_driver_image=${JUICEFS_CSI_DRIVER_IMAGE}
-juicefs_csi_dashboard_image=${JUICEFS_CSI_DASHBOARD_IMAGE}
 juicefs_mount_image=${JUICEFS_MOUNT_IMAGE}
-csi_provisioner_image=${CSI_PROVISIONER_IMAGE}
-csi_resizer_image=${CSI_RESIZER_IMAGE}
-csi_node_registrar_image=${CSI_NODE_REGISTRAR_IMAGE}
-csi_livenessprobe_image=${CSI_LIVENESSPROBE_IMAGE}
 EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)

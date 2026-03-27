@@ -10,11 +10,13 @@ source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
 CLUSTER_DEPLOY_ROOT="${REMOTE_DEPLOY_ROOT}"
 SHARED_REGISTRY_ENV="${CONFIG_DIR}/registry.env"
 SHARED_KUBECONFIG="${CONFIG_DIR}/kubeconfig"
+SHARED_MANAGER_KUBECONFIG="${CONFIG_DIR}/manager-kubeconfig"
 OPERATOR_CLUSTER_DIR="${ROOT_DIR}/.infra/cluster-deploy"
 OPERATOR_SITE_ENV="${OPERATOR_CLUSTER_DIR}/site.env"
 OPERATOR_REGISTRY_ENV="${OPERATOR_CLUSTER_DIR}/registry.env"
 OPERATOR_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/kubeconfig"
-export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG
+OPERATOR_MANAGER_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/manager-kubeconfig"
+export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_MANAGER_KUBECONFIG OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
 
 log() { printf '[cluster-deploy] %s\n' "$*"; }
 die() { printf '[cluster-deploy] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -76,6 +78,24 @@ ensure_operator_kubeconfig() {
   fi
   cp "${SHARED_KUBECONFIG}" "${RELEASE_ROOT}/env/kubeconfig"
   export KUBECONFIG="${SHARED_KUBECONFIG}"
+}
+
+ensure_operator_manager_kubeconfig() {
+  ensure_dirs
+  mkdir -p "${RELEASE_ROOT}/env"
+  if [[ ! -f "${SHARED_MANAGER_KUBECONFIG}" ]]; then
+    if [[ -f "${OPERATOR_MANAGER_KUBECONFIG}" ]]; then
+      cp "${OPERATOR_MANAGER_KUBECONFIG}" "${SHARED_MANAGER_KUBECONFIG}"
+    elif [[ -f "${RELEASE_ROOT}/env/manager-kubeconfig" ]]; then
+      cp "${RELEASE_ROOT}/env/manager-kubeconfig" "${SHARED_MANAGER_KUBECONFIG}"
+    elif [[ -f "${RELEASE_ROOT}/env/manager-kubeconfig.example.yaml" ]]; then
+      cp "${RELEASE_ROOT}/env/manager-kubeconfig.example.yaml" "${SHARED_MANAGER_KUBECONFIG}"
+      die "missing manager-kubeconfig; template copied to ${SHARED_MANAGER_KUBECONFIG}"
+    else
+      die "missing manager-kubeconfig in operator files, shared config, and release examples"
+    fi
+  fi
+  cp "${SHARED_MANAGER_KUBECONFIG}" "${RELEASE_ROOT}/env/manager-kubeconfig"
 }
 
 load_registry_env() {

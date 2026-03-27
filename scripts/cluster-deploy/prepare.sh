@@ -7,6 +7,7 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 ensure_dirs
 ensure_operator_site_env
 ensure_operator_kubeconfig
+ensure_operator_manager_kubeconfig
 load_kubeconfig
 set -a
 source "${RELEASE_ROOT}/env/site.env"
@@ -17,9 +18,11 @@ for cmd in docker curl tar sha256sum python3; do
 done
 [[ -f "${RELEASE_ROOT}/deployment.manifest.json" ]] || die "missing deployment.manifest.json in ${RELEASE_ROOT}"
 [[ -f "${RELEASE_ROOT}/docs/contracts/cluster-deployment-spec-v1.md" ]] || die "missing cluster deployment spec in ${RELEASE_ROOT}"
+[[ -f "${RELEASE_ROOT}/docs/user-guides/cluster-admin-runbook.md" ]] || die "missing cluster admin runbook in ${RELEASE_ROOT}"
 [[ -x "${TOOLS_DIR}/kubectl" ]] || die "missing bundled kubectl at ${TOOLS_DIR}/kubectl"
 [[ -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]] || die "missing compose asset in ${RELEASE_ROOT}"
 [[ -d "${RELEASE_ROOT}/images" ]] || die "missing bundled image archives directory at ${RELEASE_ROOT}/images"
+[[ -f "${SHARED_MANAGER_KUBECONFIG}" ]] || die "missing shared manager-kubeconfig at ${SHARED_MANAGER_KUBECONFIG}"
 
 python3 - <<'PY' "${RELEASE_ROOT}/deployment.manifest.json" "${RELEASE_ROOT}"
 import json
@@ -38,13 +41,16 @@ load_registry_env
 [[ -n "${REGISTRY_HOST:-}" && -n "${REGISTRY_PROJECT:-}" && -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
   || die "registry.env must define REGISTRY_HOST, REGISTRY_PROJECT, REGISTRY_USERNAME, REGISTRY_PASSWORD"
 
-if ! kubectl get namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null 2>&1; then
-  if [[ "$(kubectl auth can-i create namespaces)" != "yes" ]]; then
-    die "namespace ${INTERNAL_AGENT_K8S_NAMESPACE} does not exist and current kubeconfig cannot create namespaces; set INTERNAL_AGENT_K8S_NAMESPACE to an existing writable namespace"
-  fi
-fi
+kubectl get namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null 2>&1 \
+  || die "namespace ${INTERNAL_AGENT_K8S_NAMESPACE} must exist before cluster-deploy runs; complete the cluster admin runbook first"
 
 for resource in deployments services secrets configmaps ingresses.networking.k8s.io; do
+  if [[ "$(kubectl auth can-i create "${resource}" -n "${INTERNAL_AGENT_K8S_NAMESPACE}")" != "yes" ]]; then
+    die "current kubeconfig cannot create ${resource} in namespace ${INTERNAL_AGENT_K8S_NAMESPACE}"
+  fi
+done
+
+for resource in endpoints; do
   if [[ "$(kubectl auth can-i create "${resource}" -n "${INTERNAL_AGENT_K8S_NAMESPACE}")" != "yes" ]]; then
     die "current kubeconfig cannot create ${resource} in namespace ${INTERNAL_AGENT_K8S_NAMESPACE}"
   fi
@@ -58,34 +64,25 @@ curl -ksS --connect-timeout 5 --max-time 10 "${K8S_API_SERVER}/version" >/dev/nu
 ingress_count="$(kubectl get ingressclass -o name 2>/dev/null | wc -l | tr -d ' ')"
 [[ "${ingress_count}" -ge 1 ]] || die "no ingressclass found in target cluster"
 
-can_create_pv="$(kubectl auth can-i create persistentvolumes 2>/dev/null || true)"
-[[ "${can_create_pv}" == "yes" ]] || die "current kubeconfig cannot create persistentvolumes; current internal workspace binding model requires cluster-scope PV creation"
+[[ -n "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] \
+  || die "INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME must be set; cluster-deploy consumes a preinstalled storage class and does not install JuiceFS CSI"
+[[ "$(kubectl auth can-i get storageclasses.storage.k8s.io 2>/dev/null || true)" == "yes" ]] \
+  || die "current kubeconfig cannot read storageclasses; cluster-deploy needs read-only access to validate the preinstalled storage class"
+kubectl get storageclass "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}" >/dev/null 2>&1 \
+  || die "storageclass ${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME} does not exist; complete the cluster admin runbook first"
 
-can_install_juicefs_csi="yes"
 for check in \
-  "create serviceaccounts -n kube-system" \
-  "create services -n kube-system" \
-  "create deployments.apps -n kube-system" \
-  "create daemonsets.apps -n kube-system" \
-  "create statefulsets.apps -n kube-system" \
-  "create clusterroles.rbac.authorization.k8s.io" \
-  "create clusterrolebindings.rbac.authorization.k8s.io"; do
-  if [[ "$(kubectl auth can-i ${check} 2>/dev/null || true)" != "yes" ]]; then
-    can_install_juicefs_csi="no"
-    break
+  "create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "get persistentvolumes" \
+  "create persistentvolumes" \
+  "update persistentvolumes" \
+  "delete persistentvolumes"; do
+  if [[ "$(KUBECONFIG="${SHARED_MANAGER_KUBECONFIG}" kubectl auth can-i ${check} 2>/dev/null || true)" != "yes" ]]; then
+    die "manager-kubeconfig is missing required permission: ${check}"
   fi
 done
-
-preinstalled_storageclass_ok="no"
-if [[ -n "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] \
-  && [[ "$(kubectl auth can-i get storageclasses.storage.k8s.io 2>/dev/null || true)" == "yes" ]] \
-  && kubectl get storageclass "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}" >/dev/null 2>&1; then
-  preinstalled_storageclass_ok="yes"
-fi
-
-if [[ "${can_install_juicefs_csi}" != "yes" && "${preinstalled_storageclass_ok}" != "yes" ]]; then
-  die "cluster deploy requires either cluster-scope permission to install JuiceFS CSI or a preinstalled storageclass configured via INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME"
-fi
 
 nodes_json_file="$(mktemp)"
 trap 'rm -f "${nodes_json_file}"' EXIT

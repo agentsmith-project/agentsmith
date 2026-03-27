@@ -9,6 +9,7 @@ ensure_dirs
 ensure_operator_site_env
 ensure_operator_registry_env
 ensure_operator_kubeconfig
+ensure_operator_manager_kubeconfig
 load_registry_env
 load_kubeconfig
 set -a
@@ -22,18 +23,12 @@ RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROO
 SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 VERIFY_RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_verify_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-JUICEFS_CSI_DRIVER_IMAGE="$(awk -F= '$1=="juicefs_csi_driver_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-JUICEFS_CSI_DASHBOARD_IMAGE="$(awk -F= '$1=="juicefs_csi_dashboard_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 JUICEFS_MOUNT_IMAGE="$(awk -F= '$1=="juicefs_mount_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-CSI_PROVISIONER_IMAGE="$(awk -F= '$1=="csi_provisioner_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-CSI_RESIZER_IMAGE="$(awk -F= '$1=="csi_resizer_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-CSI_NODE_REGISTRAR_IMAGE="$(awk -F= '$1=="csi_node_registrar_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
-CSI_LIVENESSPROBE_IMAGE="$(awk -F= '$1=="csi_livenessprobe_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 
 [[ -n "${APP_IMAGE}" && -n "${RUNNER_IMAGE}" && -n "${SANDBOX_MANAGER_IMAGE}" && -n "${UNIVERSAL_PROXY_IMAGE}" && -n "${VERIFY_RUNNER_IMAGE}" ]] \
   || die "VERSION is missing prebuilt image refs; rebuild bundle on the development machine with cluster:bundle"
-[[ -n "${JUICEFS_CSI_DRIVER_IMAGE}" && -n "${JUICEFS_CSI_DASHBOARD_IMAGE}" && -n "${JUICEFS_MOUNT_IMAGE}" && -n "${CSI_PROVISIONER_IMAGE}" && -n "${CSI_RESIZER_IMAGE}" && -n "${CSI_NODE_REGISTRAR_IMAGE}" && -n "${CSI_LIVENESSPROBE_IMAGE}" ]] \
-  || die "VERSION is missing bundled cluster dependency image refs; rebuild bundle on the development machine with cluster:bundle"
+[[ -n "${JUICEFS_MOUNT_IMAGE}" ]] \
+  || die "VERSION is missing bundled JuiceFS mount image ref; rebuild bundle on the development machine with cluster:bundle"
 
 shopt -s nullglob
 image_archives=("${RELEASE_ROOT}"/images/*.tar)
@@ -51,13 +46,7 @@ for image in \
   "${VERIFY_RUNNER_IMAGE}" \
   "${SANDBOX_MANAGER_IMAGE}" \
   "${UNIVERSAL_PROXY_IMAGE}" \
-  "${JUICEFS_CSI_DRIVER_IMAGE}" \
-  "${JUICEFS_CSI_DASHBOARD_IMAGE}" \
-  "${JUICEFS_MOUNT_IMAGE}" \
-  "${CSI_PROVISIONER_IMAGE}" \
-  "${CSI_RESIZER_IMAGE}" \
-  "${CSI_NODE_REGISTRAR_IMAGE}" \
-  "${CSI_LIVENESSPROBE_IMAGE}"; do
+  "${JUICEFS_MOUNT_IMAGE}"; do
   docker push "${image}" >/dev/null
 done
 
@@ -73,9 +62,8 @@ wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/
 wait_tcp "127.0.0.1" "${API_PORT}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 
-if ! kubectl get namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null 2>&1; then
-  kubectl create namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
-fi
+kubectl get namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null 2>&1 \
+  || die "namespace ${INTERNAL_AGENT_K8S_NAMESPACE} must exist before deploy runs"
 
 kubectl create secret docker-registry agentsmith-registry \
   --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
@@ -84,9 +72,9 @@ kubectl create secret docker-registry agentsmith-registry \
   --docker-password="${REGISTRY_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-kubectl create secret generic agentsmith-cluster-kubeconfig \
+kubectl create secret generic agentsmith-manager-kubeconfig \
   --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
-  --from-file=config="${SHARED_KUBECONFIG}" \
+  --from-file=config="${SHARED_MANAGER_KUBECONFIG}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 EXTERNAL_DEPS_MANIFEST="${STATE_DIR}/cluster-external-services.yaml"
@@ -98,19 +86,6 @@ render_k8s_external_dependency_services \
   "${K8S_EXTERNAL_MINIO_HOST}" \
   "${K8S_EXTERNAL_MINIO_PORT}"
 kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
-
-CSI_MANIFEST="${STATE_DIR}/juicefs-csi-cluster.yaml"
-cp "${RELEASE_ROOT}/k8s/juicefs-csi.yaml" "${CSI_MANIFEST}"
-sed -i \
-  -e "s|juicedata/csi-dashboard:v0.31.3|${JUICEFS_CSI_DASHBOARD_IMAGE}|g" \
-  -e "s|juicedata/juicefs-csi-driver:v0.31.3|${JUICEFS_CSI_DRIVER_IMAGE}|g" \
-  -e "s|registry.k8s.io/sig-storage/csi-provisioner:v3.6.0|${CSI_PROVISIONER_IMAGE}|g" \
-  -e "s|registry.k8s.io/sig-storage/csi-resizer:v1.9.0|${CSI_RESIZER_IMAGE}|g" \
-  -e "s|registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0|${CSI_NODE_REGISTRAR_IMAGE}|g" \
-  -e "s|registry.k8s.io/sig-storage/livenessprobe:v2.11.0|${CSI_LIVENESSPROBE_IMAGE}|g" \
-  "${CSI_MANIFEST}"
-
-kubectl apply -f "${CSI_MANIFEST}" >/dev/null
 
 MANAGER_MANIFEST="${STATE_DIR}/sandbox-manager-cluster.yaml"
 NODE_SELECTOR_YAML="$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); print("\n".join([f"        {k}: {v}" for k,v in data.items()]))' "${SANDBOX_MANAGER_NODE_SELECTOR_JSON}")"
@@ -249,7 +224,7 @@ ${TOLERATIONS_YAML}
             name: sandbox-manager-config
         - name: kubeconfig
           secret:
-            secretName: agentsmith-cluster-kubeconfig
+            secretName: agentsmith-manager-kubeconfig
 ---
 apiVersion: v1
 kind: Service

@@ -6,8 +6,9 @@ MANIFEST_PATH="${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json"
 SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/site.env.example"
 REGISTRY_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example"
 KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/kubeconfig.example.yaml"
+MANAGER_KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/manager-kubeconfig.example.yaml"
 
-python3 - <<'PY' "${MANIFEST_PATH}" "${SITE_ENV_EXAMPLE}" "${REGISTRY_ENV_EXAMPLE}" "${KUBECONFIG_EXAMPLE}" "${ROOT_DIR}"
+python3 - <<'PY' "${MANIFEST_PATH}" "${SITE_ENV_EXAMPLE}" "${REGISTRY_ENV_EXAMPLE}" "${KUBECONFIG_EXAMPLE}" "${MANAGER_KUBECONFIG_EXAMPLE}" "${ROOT_DIR}"
 import json
 import pathlib
 import sys
@@ -16,7 +17,8 @@ manifest_path = pathlib.Path(sys.argv[1])
 site_env_path = pathlib.Path(sys.argv[2])
 registry_env_path = pathlib.Path(sys.argv[3])
 kubeconfig_path = pathlib.Path(sys.argv[4])
-root_dir = pathlib.Path(sys.argv[5])
+manager_kubeconfig_path = pathlib.Path(sys.argv[5])
+root_dir = pathlib.Path(sys.argv[6])
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
@@ -36,6 +38,8 @@ if "REGISTRY_HOST" not in registry_env_path.read_text(encoding='utf-8'):
     raise SystemExit("missing_registry_host_template")
 if not kubeconfig_path.exists():
     raise SystemExit("missing_kubeconfig_example")
+if not manager_kubeconfig_path.exists():
+    raise SystemExit("missing_manager_kubeconfig_example")
 
 for relative in manifest.get("bundle_files", []):
     source = root_dir / relative
@@ -43,8 +47,6 @@ for relative in manifest.get("bundle_files", []):
         source = root_dir / "infra" / "deploy" / "cluster" / pathlib.Path(relative).name
     elif relative.startswith("env/"):
         source = root_dir / "infra" / "deploy" / "cluster" / "env" / pathlib.Path(relative).name
-    elif relative.startswith("k8s/"):
-        source = root_dir / "infra" / "deploy" / "remote" / "k8s" / pathlib.Path(relative).name
     elif relative.startswith("postgres-init/"):
         source = root_dir / "infra" / "integration" / "postgres-init" / pathlib.Path(relative).name
         if pathlib.Path(relative).name == "projects.sql":

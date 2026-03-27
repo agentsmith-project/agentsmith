@@ -4,12 +4,12 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
 API_BASE="${API_BASE:-http://localhost:20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 TASK_ID="${TASK_ID:-$(state_get task.last_id)}"
 MESSAGE_ID="${MESSAGE_ID:-}"
@@ -21,7 +21,7 @@ WARMUP="${WARMUP:-5}"
 RESULT_JSON_PATH="${RESULT_JSON_PATH:-}"
 
 if [[ -z "${PROJECT_ID}" || -z "${TASK_ID}" ]]; then
-  echo "[traces-bench] missing PROJECT_ID/TASK_ID in $(real_lane_state_file)" >&2
+  echo "[traces-bench] missing PROJECT_ID/TASK_ID in $(backend_real_state_file)" >&2
   exit 1
 fi
 if [[ ! -f "${TOKEN_FILE}" ]]; then

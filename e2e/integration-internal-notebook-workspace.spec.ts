@@ -6,8 +6,8 @@ import {
   INTERNAL_AGENT_IMAGE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
-  REAL_LANE_ANTHROPIC_BASE_URL,
-  REAL_LANE_MODEL,
+  BACKEND_REAL_ANTHROPIC_BASE_URL,
+  BACKEND_REAL_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
   createFileLibraryViaUi,
@@ -21,7 +21,7 @@ import { readStoredAuthToken } from './integration-workspace-access';
 
 const INTERNAL_VISUAL_ARTIFACT_DIR = process.env.INTERNAL_REAL_VISUAL_ARTIFACT_DIR?.trim()
   ? path.resolve(process.env.INTERNAL_REAL_VISUAL_ARTIFACT_DIR)
-  : path.resolve(`artifacts/release-real-visual/internal-${Date.now()}`);
+  : path.resolve(`artifacts/backend-real-visual/internal-${Date.now()}`);
 
 type CaptureEntry = {
   name: string;
@@ -43,9 +43,9 @@ function requireInternalSandboxEnv(): void {
 }
 
 function requireRealLaneApiKey(): string {
-  const value = process.env.REAL_LANE_API_KEY?.trim();
+  const value = process.env.BACKEND_REAL_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_REAL_LANE_API_KEY');
+    throw new Error('missing_BACKEND_REAL_API_KEY');
   }
   return value;
 }
@@ -281,8 +281,8 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     console.log('[internal-real] create endpoint');
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Endpoint ${Date.now()}`,
-      endpointModel: REAL_LANE_MODEL,
-      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
     console.log('[internal-real] create internal agent');

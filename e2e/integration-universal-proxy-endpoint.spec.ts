@@ -59,7 +59,7 @@ async function createProjectViaApi(page: Page, token: string, name: string): Pro
     },
     data: {
       name,
-      description: 'Universal proxy real-lane integration project',
+      description: 'Universal proxy backend-real integration project',
     },
   });
   expect(response.ok()).toBeTruthy();

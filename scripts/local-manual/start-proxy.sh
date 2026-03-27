@@ -2,7 +2,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_dev_real_env
+init_local_manual_env
 
 write_proxy_config() {
   cat > "${PROXY_CONFIG}" <<EOF

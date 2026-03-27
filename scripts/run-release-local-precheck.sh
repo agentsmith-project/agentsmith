@@ -5,19 +5,14 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
-if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env.real.local"
-  set +a
-fi
-
-REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
-if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[release-local-precheck] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
+load_backend_real_env "${ROOT_DIR}/.env.backend-real"
+export_backend_real_endpoint_env
+if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  echo "[release-local-precheck] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
 
@@ -39,7 +34,7 @@ INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(real_lane_tmp_file release-local-precheck)}"
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file release-local-precheck)}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
@@ -319,10 +314,10 @@ info "running system admin entry, workspace public/login truth, workspace entry,
 
 BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
-REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" \
-REAL_LANE_ANTHROPIC_BASE_URL="${REAL_LANE_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}" \
-REAL_LANE_OPENAI_BASE_URL="${REAL_LANE_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}" \
-REAL_LANE_MODEL="${REAL_LANE_MODEL:-MiniMax-M2.7-highspeed}" \
+BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
+BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
+BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL_VALUE}" \
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
 KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \

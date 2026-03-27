@@ -4,18 +4,18 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
-REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
+BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-$(state_get endpoint.model)}"
 
 info() { echo "[gov-policy-requests-rate-smoke] $*"; }
 err() { echo "[gov-policy-requests-rate-smoke] ERROR: $*" >&2; }
@@ -118,7 +118,7 @@ main() {
       "${endpoint_url}" -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${endpoint_code}" != "200" ]]; then
-    err "endpoint lookup failed (HTTP ${endpoint_code}); stale real-lane state? run init-resources"
+    err "endpoint lookup failed (HTTP ${endpoint_code}); stale backend-real state? run init-resources"
     exit 1
   fi
 
@@ -182,7 +182,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke first"}]}))' "${REAL_LANE_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke first"}]}))' "${BACKEND_REAL_MODEL}")" || true
   )"
   if [[ ! "${req1_code}" =~ ^2[0-9][0-9]$ ]]; then
     err "first request failed (HTTP ${req1_code})"
@@ -196,7 +196,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke second"}]}))' "${REAL_LANE_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy req/day smoke second"}]}))' "${BACKEND_REAL_MODEL}")" || true
   )"
   if [[ "${req2_code}" != "429" ]]; then
     err "second request did not hit requests/day rate limit (HTTP ${req2_code})"

@@ -43,8 +43,8 @@ const CHECK_ID_BY_NAME: Record<string, string> = {
   'TypeScript typecheck': 'typecheck',
   'OpenAPI generated check': 'openapi-check',
   'OpenAPI contract checks': 'contracts-check',
-  'Core real lane': 'lane-real-core',
-  'Governance real lane': 'lane-governance',
+  'Core backend-real': 'lane-backend-real-core',
+  'Governance backend-real': 'lane-governance',
 };
 
 function timestampSuffix(now = new Date()): string {

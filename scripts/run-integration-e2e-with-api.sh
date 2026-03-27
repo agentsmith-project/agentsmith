@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 
 SPEC_FILE="${1:-}"
 if [[ -z "${SPEC_FILE}" ]]; then
@@ -16,8 +16,8 @@ API_PORT="${INTEGRATION_API_PORT:-20010}"
 WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-ensure_real_lane_state
-INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(real_lane_tmp_file integration)}"
+ensure_backend_real_state
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file integration)}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 

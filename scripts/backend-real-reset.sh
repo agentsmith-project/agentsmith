@@ -5,13 +5,13 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
-STATE_DIR="$(real_lane_state_root)"
+STATE_DIR="$(backend_real_state_root)"
 SANDBOX_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
 
-info() { echo "[release-real-reset] $*"; }
+info() { echo "[backend-real-reset] $*"; }
 
 wait_for_absent() {
   local kind="$1"
@@ -34,9 +34,9 @@ wait_for_absent() {
   return 1
 }
 
-info "clearing real-lane state under ${STATE_DIR}"
+info "clearing backend-real state under ${STATE_DIR}"
 rm -rf "${STATE_DIR}"
-ensure_real_lane_state
+ensure_backend_real_state
 
 if command -v docker >/dev/null 2>&1; then
   info "resetting integration docker volumes"
@@ -83,4 +83,4 @@ fi
 
 state_set_string release.phase "reset_completed"
 state_set_string release.last_reset_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-echo "[release-real-reset] done"
+echo "[backend-real-reset] done"

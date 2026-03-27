@@ -10,8 +10,8 @@
 1. Open job summary, read `Failure Tag`.
 2. Download artifacts:
    - `/tmp/ci-e2e-int-*.log`
-   - `artifacts/real-lane/current/integration/api.log`
-   - `artifacts/real-lane/current/integration/web.log`
+   - `artifacts/backend-real/current/integration/api.log`
+   - `artifacts/backend-real/current/integration/web.log`
    - `test-results/**`
 3. Reproduce locally with same make target and ports.
 

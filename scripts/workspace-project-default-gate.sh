@@ -9,7 +9,7 @@ WITH_REAL_LANE=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --with-real-lane)
+    --with-backend-real)
       WITH_REAL_LANE=1
       shift
       ;;
@@ -88,7 +88,7 @@ bash scripts/run-mock-lane-playwright.sh \
   --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects list public discovery|project join request dialog|project join now dialog|notification center join request outcome|projects empty state|workspace settings|workspace settings create project dialog|overview'"
 
 if [[ "${WITH_REAL_LANE}" == "1" ]]; then
-  info "real lane enabled"
+  info "backend-real enabled"
   run_cmd "INTEGRATION_API_PORT=\${INTEGRATION_API_PORT:-20040} \
 INTEGRATION_WEB_PORT=\${INTEGRATION_WEB_PORT:-3041} \
 KEYCLOAK_BASE_URL=\${KEYCLOAK_BASE_URL:-http://localhost:18080} \

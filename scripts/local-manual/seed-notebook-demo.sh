@@ -2,11 +2,11 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_dev_real_env
+init_local_manual_env
 require_preset_endpoint_env
 
 if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${PROXY_READY_FILE}" ]]; then
-  err "dev-real platform is not ready; run make dev-real-up first"
+  err "local-manual platform is not ready; run make local-manual-up first"
   exit 1
 fi
 
@@ -26,16 +26,16 @@ info "initializing external notebook agent resources"
   API_BASE="http://localhost:${PORT_API}" \
   WORKSPACE_ID="${WORKSPACE_ID}" \
   PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY}" \
-  PRESET_ENDPOINT_BASE_URL="${PRESET_ENDPOINT_BASE_URL}" \
+  PRESET_ANTHROPIC_ENDPOINT_BASE_URL="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL}" \
   PRESET_ENDPOINT_MODEL="${PRESET_ENDPOINT_MODEL}" \
-  PRESET_ENDPOINT_PROTOCOL="${PRESET_ENDPOINT_PROTOCOL}" \
+  PRESET_ANTHROPIC_ENDPOINT_PROTOCOL="${PRESET_ANTHROPIC_ENDPOINT_PROTOCOL}" \
   PRESET_ENDPOINT_MAX_CONTEXT_TOKENS="${PRESET_ENDPOINT_MAX_CONTEXT_TOKENS}" \
   PRESET_ENDPOINT_MAX_OUTPUT_TOKENS="${PRESET_ENDPOINT_MAX_OUTPUT_TOKENS}" \
   make notebook-agent-init-resources
 )
 
-bash "${ROOT_DIR}/scripts/dev-real/start-runner.sh"
-bash "${ROOT_DIR}/scripts/dev-real/verify-notebook-demo.sh"
+bash "${ROOT_DIR}/scripts/local-manual/start-runner.sh"
+bash "${ROOT_DIR}/scripts/local-manual/verify-notebook-demo.sh"
 
 PROJECT_ID="$(state_get project.id)"
 info "notebook demo ready"

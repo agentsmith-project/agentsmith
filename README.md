@@ -62,12 +62,12 @@ Authoritative definition:
 ### 环境
 
 ```bash
-cp .env.dev.real.example .env.dev.real
-make dev-real-up
-make dev-real-seed-notebook
-make dev-real-status
-make dev-real-down
-make dev-real-reset
+cp .env.local-manual.example .env.local-manual
+make local-manual-up
+make local-manual-seed-notebook
+make local-manual-status
+make local-manual-down
+make local-manual-reset
 ```
 
 ### 门禁
@@ -84,33 +84,33 @@ make gate-release
 make lane-mock
 make lane-visual
 
-cp .env.real.local.example .env.real.local
-npm run lane:real:core
-npm run lane:real:release
+cp .env.backend-real.example .env.backend-real
+npm run lane:backend-real:core
+npm run lane:backend-real:release
 npm run test:release:precheck
-npm run test:visual:real:review
+npm run test:visual:backend-real:review
 ```
 
 ### 发布
 
 ```bash
-npm run release:real:reset
-npm run release:real:bootstrap
-npm run release:real:ready
-npm run release:real:run
-npm run release:real:report
+npm run backend-real:reset
+npm run backend-real:bootstrap
+npm run backend-real:ready
+npm run backend-real:run
+npm run backend-real:report
 ```
 
 Current configuration names:
 
-- dev-real: `PRESET_ENDPOINT_*`
-- real lane env file: `PRESET_ENDPOINT_*` with derived `REAL_LANE_*` aliases
+- local-manual: `PRESET_ENDPOINT_*`
+- backend-real secrets: `PRESET_*` in `.env.backend-real`
 - deploy presets: `PRESET_*`
 
 Templates:
 
-- dev-real: `.env.dev.real.example`
-- real lane: `.env.real.local.example`
+- local-manual: `.env.local-manual.example`
+- backend-real: `.env.backend-real.example`
 - demo deploy: `infra/deploy/demo/env/site.env.example`
 
 Old names and old demo commands are removed. Passing `GLM_*` to current entrypoints fails fast.
@@ -122,7 +122,7 @@ make notebook-agent-no-sandbox-smoke
 ```
 
 This validates the required behavior for MVP deployment without sandbox:
-- current API/Web/Runner path is healthy (`make dev-real-status`)
+- current API/Web/Runner path is healthy (`make local-manual-status`)
 - internal-agent sandbox path is fail-fast with explicit `AGENT_SANDBOX_NOT_CONFIGURED`
 
 ### Default Gates And Verification Channels
@@ -136,15 +136,15 @@ make gate-release
 Recommended release flow:
 
 ```bash
-make release-real-reset
-make release-real-bootstrap
-make release-real-ready
+make backend-real-reset
+make backend-real-bootstrap
+make backend-real-ready
 make manual-feishu-admin
 make manual-feishu-check
 make manual-feishu-user
 make manual-feishu-check
-make release-real-run
-make release-real-report
+make backend-real-run
+make backend-real-report
 ```
 
 ### Dependency Recovery (only when the environment is broken)

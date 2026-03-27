@@ -5,8 +5,8 @@ import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
-  REAL_LANE_ANTHROPIC_BASE_URL,
-  REAL_LANE_MODEL,
+  BACKEND_REAL_ANTHROPIC_BASE_URL,
+  BACKEND_REAL_MODEL,
   createCredentialViaUi,
   createEndpointViaApi,
   createExternalCodexAgentBundle,
@@ -21,9 +21,9 @@ import {
 import { readStoredAuthToken } from './integration-workspace-access';
 
 function requireRealLaneApiKey(): string {
-  const value = process.env.REAL_LANE_API_KEY?.trim();
+  const value = process.env.BACKEND_REAL_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_REAL_LANE_API_KEY');
+    throw new Error('missing_BACKEND_REAL_API_KEY');
   }
   return value;
 }
@@ -115,8 +115,8 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Endpoint ${Date.now()}`,
-      endpointModel: REAL_LANE_MODEL,
-      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalCodexAgentBundle(page, {
@@ -250,8 +250,8 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
     await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
       endpointName: `GLM Docker Endpoint ${Date.now()}`,
-      endpointModel: REAL_LANE_MODEL,
-      upstreamBaseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
+      endpointModel: BACKEND_REAL_MODEL,
+      upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
     });
     const agentBundle = await createExternalCodexAgentBundle(page, {

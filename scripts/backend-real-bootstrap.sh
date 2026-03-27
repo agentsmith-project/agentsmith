@@ -5,8 +5,8 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
@@ -15,7 +15,7 @@ MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 PORT_WEB="${PORT_WEB:-3001}"
 
-info() { echo "[release-real-bootstrap] $*"; }
+info() { echo "[backend-real-bootstrap] $*"; }
 
 info "starting integration dependencies"
 (cd "${ROOT_DIR}" && npm run integration:deps:up >/dev/null)
@@ -34,4 +34,4 @@ state_set_string release.phase "bootstrap_completed"
 state_set_string workspace.id "ws_default"
 state_set_string release.last_bootstrap_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 state_write_summary
-echo "[release-real-bootstrap] done"
+echo "[backend-real-bootstrap] done"

@@ -4,17 +4,17 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 WAIT_NEXT_MINUTE="${WAIT_NEXT_MINUTE:-1}"
-REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
+BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-$(state_get endpoint.model)}"
 
 info() { echo "[gov-policy-smoke] $*"; }
 err() { echo "[gov-policy-smoke] ERROR: $*" >&2; }
@@ -93,7 +93,7 @@ main() {
       "${endpoint_url}" -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${endpoint_code}" != "200" ]]; then
-    err "endpoint lookup failed (HTTP ${endpoint_code}); stale real-lane state? run init-resources"
+    err "endpoint lookup failed (HTTP ${endpoint_code}); stale backend-real state? run init-resources"
     exit 1
   fi
   endpoint_protocol="$(cat "${endpoint_meta_file}" | json_get 'process.stdout.write(String(data.protocol||"openai_compatible"))')"
@@ -114,7 +114,7 @@ main() {
   curl -sS -o "${endpoints_list_file}" \
     "${base}/endpoints" \
     -H "Authorization: Bearer ${token}" || true
-  for candidate_model in "${endpoint_model}" "${REAL_LANE_MODEL}"; do
+  for candidate_model in "${endpoint_model}" "${BACKEND_REAL_MODEL}"; do
     local model_in_use
     model_in_use="$(cat "${endpoints_list_file}" | json_get "const items=Array.isArray(data.items)?data.items:[]; const hit=items.some((item)=>String(item.model||'')==='${candidate_model}'); process.stdout.write(hit?'1':'0');" || true)"
     if [[ "${model_in_use}" == "1" ]]; then

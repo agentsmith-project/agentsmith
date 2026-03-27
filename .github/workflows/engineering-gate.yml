@@ -9,7 +9,7 @@ on:
         default: ""
         type: string
   schedule:
-    # Daily UTC off-peak run for real-lane engineering regression.
+    # Daily UTC off-peak run for backend-real engineering regression.
     - cron: "30 2 * * *"
 
 concurrency:
@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
-      REAL_LANE_API_KEY: ${{ secrets.REAL_LANE_API_KEY }}
+      BACKEND_REAL_API_KEY: ${{ secrets.BACKEND_REAL_API_KEY }}
       REPORT_NAME: ${{ inputs.report_name }}
     steps:
       - name: Checkout
@@ -44,8 +44,8 @@ jobs:
       - name: Validate required secrets
         run: |
           set -euo pipefail
-          if [[ -z "${REAL_LANE_API_KEY:-}" ]]; then
-            echo "REAL_LANE_API_KEY secret is required for the engineering gate real lane." >&2
+          if [[ -z "${BACKEND_REAL_API_KEY:-}" ]]; then
+            echo "BACKEND_REAL_API_KEY secret is required for the engineering gate backend-real run." >&2
             exit 1
           fi
 
@@ -77,6 +77,6 @@ jobs:
           if-no-files-found: ignore
           path: |
             artifacts/governance-reports/**
-            artifacts/real-lane/current/**
+            artifacts/backend-real/current/**
             test-results/**
             playwright-report/**

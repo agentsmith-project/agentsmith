@@ -2,11 +2,11 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_dev_real_env
+init_local_manual_env
 
-bash "${ROOT_DIR}/scripts/dev-real/down.sh"
-remove_dev_real_runtime_files
-reset_dev_real_state
+bash "${ROOT_DIR}/scripts/local-manual/down.sh"
+remove_local_manual_runtime_files
+reset_local_manual_state
 
 info "starting local dependencies"
 (cd "${ROOT_DIR}" && make deps-up && make deps-ready && make deps-init)
@@ -22,14 +22,14 @@ info "ensuring default workspace"
   make ensure-default-workspace
 )
 
-bash "${ROOT_DIR}/scripts/dev-real/start-proxy.sh"
-bash "${ROOT_DIR}/scripts/dev-real/start-api.sh"
-bash "${ROOT_DIR}/scripts/dev-real/start-web.sh"
-bash "${ROOT_DIR}/scripts/dev-real/verify.sh"
+bash "${ROOT_DIR}/scripts/local-manual/start-proxy.sh"
+bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
+bash "${ROOT_DIR}/scripts/local-manual/start-web.sh"
+bash "${ROOT_DIR}/scripts/local-manual/verify.sh"
 
 info "ready"
 info "Web: http://localhost:${PORT_WEB}/${LOCALE}/login/workspace"
 info "API: http://localhost:${PORT_API}"
 info "Keycloak: ${KEYCLOAK_BASE_URL}"
 info "Proxy: ${MBOS_UNIVERSAL_PROXY_BASE_URL}"
-info "Next step for notebook manual testing: make dev-real-seed-notebook"
+info "Next step for notebook manual testing: make local-manual-seed-notebook"

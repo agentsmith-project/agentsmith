@@ -7,10 +7,10 @@ import {
   API_BASE,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
-  REAL_LANE_ANTHROPIC_BASE_URL,
-  REAL_LANE_MODEL,
-  REAL_LANE_OPENAI_BASE_URL,
-  REAL_LANE_OPENAI_MODEL,
+  BACKEND_REAL_ANTHROPIC_BASE_URL,
+  BACKEND_REAL_MODEL,
+  BACKEND_REAL_OPENAI_BASE_URL,
+  BACKEND_REAL_OPENAI_MODEL,
   startCodexRunnerProcess,
 } from './integration-real-helpers';
 
@@ -21,9 +21,9 @@ type UpstreamServer = {
 };
 
 function requireRealLaneApiKey(): string {
-  const value = process.env.REAL_LANE_API_KEY?.trim();
+  const value = process.env.BACKEND_REAL_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_REAL_LANE_API_KEY');
+    throw new Error('missing_BACKEND_REAL_API_KEY');
   }
   return value;
 }
@@ -110,7 +110,7 @@ async function createProjectViaApi(page: Page, token: string, name: string): Pro
     },
     data: {
       name,
-      description: 'Universal proxy notebook runner real-lane project',
+      description: 'Universal proxy notebook runner backend-real project',
     },
   });
   expect(response.ok()).toBeTruthy();
@@ -675,15 +675,15 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
       {
         kind: 'openai' as const,
         protocol: 'openai_compatible' as const,
-        baseUrl: REAL_LANE_OPENAI_BASE_URL,
-        model: REAL_LANE_OPENAI_MODEL,
+        baseUrl: BACKEND_REAL_OPENAI_BASE_URL,
+        model: BACKEND_REAL_OPENAI_MODEL,
         expectedCompactLimit: 121600,
       },
       {
         kind: 'anthropic' as const,
         protocol: 'anthropic_compatible' as const,
-        baseUrl: REAL_LANE_ANTHROPIC_BASE_URL,
-        model: REAL_LANE_MODEL,
+        baseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
+        model: BACKEND_REAL_MODEL,
         expectedCompactLimit: 121600,
       },
     ];

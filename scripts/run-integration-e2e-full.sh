@@ -3,17 +3,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 
 SPEC_FILE="${1:-e2e/integration-chat.spec.ts}"
 shift || true
 
-if [[ -f ".env.real.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source ".env.real.local"
-  set +a
-fi
+load_backend_real_env "${ROOT_DIR}/.env.backend-real"
 
 # Always clear proxy-related env vars for deterministic local integration/e2e testing.
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
@@ -34,8 +30,8 @@ INTEGRATION_LOCALE="${INTEGRATION_LOCALE:-en-US}"
 BOOTSTRAP_DEPS="${INTEGRATION_BOOTSTRAP_DEPS:-true}"
 INIT_DEPS="${INTEGRATION_INIT_DEPS:-true}"
 
-ensure_real_lane_state
-INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(real_lane_tmp_file integration)}"
+ensure_backend_real_state
+INTEGRATION_LOG_DIR="${INTEGRATION_LOG_DIR:-$(backend_real_tmp_file integration)}"
 mkdir -p "${INTEGRATION_LOG_DIR}"
 API_LOG="${INTEGRATION_API_LOG:-${INTEGRATION_LOG_DIR}/api.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"

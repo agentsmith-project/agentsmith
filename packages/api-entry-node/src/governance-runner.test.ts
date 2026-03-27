@@ -42,7 +42,7 @@ describe('createGovernanceRunner', () => {
       total_checks: 6,
       passed_checks: 5,
       failed_checks: 1,
-      failed_step_names: ['Governance real lane'],
+      failed_step_names: ['Governance backend-real'],
       failed_check_ids: ['lane-governance'],
       failure_categories: ['authorization'],
     }), 'utf-8');

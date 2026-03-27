@@ -4,12 +4,12 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
 API_BASE="${API_BASE:-http://localhost:20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
@@ -29,7 +29,7 @@ WAIT_AGENT_ONLINE_INTERVAL_SEC="${WAIT_AGENT_ONLINE_INTERVAL_SEC:-1}"
 WAIT_AGENT_ONLINE="${WAIT_AGENT_ONLINE:-1}"
 
 if [[ -z "${PROJECT_ID}" || -z "${AGENT_ID}" ]]; then
-  echo "[smoke] Missing PROJECT_ID or AGENT_ID in real-lane state." >&2
+  echo "[smoke] Missing PROJECT_ID or AGENT_ID in backend-real state." >&2
   exit 1
 fi
 if [[ ! -f "${TOKEN_FILE}" ]]; then
@@ -40,7 +40,7 @@ TOKEN="$(cat "${TOKEN_FILE}")"
 DEFAULT_WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
 
 userinfo_status="$(
-  curl -sS -o "$(real_lane_tmp_file userinfo-check.json)" -w '%{http_code}' \
+  curl -sS -o "$(backend_real_tmp_file userinfo-check.json)" -w '%{http_code}' \
     "${KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/userinfo" \
     -H "Authorization: Bearer ${TOKEN}" || true
 )"

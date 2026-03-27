@@ -50,19 +50,19 @@ jobs:
       - name: Run external-agent integration suite
         run: |
           set -euo pipefail
-          mkdir -p artifacts/real-lane/current/ci
-          make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011 2>&1 | tee artifacts/real-lane/current/ci/integration-agent.log
+          mkdir -p artifacts/backend-real/current/ci
+          make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011 2>&1 | tee artifacts/backend-real/current/ci/integration-agent.log
 
       - name: Failure Attribution (agent)
         if: failure()
         run: |
           set -euo pipefail
           tag="INT-AGENT-UNKNOWN"
-          if grep -R -n "redirect_uri" test-results artifacts/real-lane/current/ci/integration-agent.log artifacts/real-lane/current/integration/web.log 2>/dev/null; then
+          if grep -R -n "redirect_uri" test-results artifacts/backend-real/current/ci/integration-agent.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
             tag="INT-KEYCLOAK-REDIRECT"
-          elif grep -R -n "AGENT_OFFLINE" test-results artifacts/real-lane/current/ci/integration-agent.log artifacts/real-lane/current/integration/api.log 2>/dev/null; then
+          elif grep -R -n "AGENT_OFFLINE" test-results artifacts/backend-real/current/ci/integration-agent.log artifacts/backend-real/current/integration/api.log 2>/dev/null; then
             tag="INT-AGENT-OFFLINE"
-          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/real-lane/current/ci/integration-agent.log artifacts/real-lane/current/integration/api.log artifacts/real-lane/current/integration/web.log 2>/dev/null; then
+          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/backend-real/current/ci/integration-agent.log artifacts/backend-real/current/integration/api.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
             tag="INT-INFRA-BOOT"
           fi
           echo "### Failure Tag: ${tag}" >> "$GITHUB_STEP_SUMMARY"
@@ -76,9 +76,9 @@ jobs:
           name: integration-agent-artifacts
           if-no-files-found: ignore
           path: |
-            artifacts/real-lane/current/ci/integration-agent.log
-            artifacts/real-lane/current/integration/api.log
-            artifacts/real-lane/current/integration/web.log
+            artifacts/backend-real/current/ci/integration-agent.log
+            artifacts/backend-real/current/integration/api.log
+            artifacts/backend-real/current/integration/web.log
             test-results/**
             playwright-report/**
 
@@ -105,19 +105,19 @@ jobs:
       - name: Run notebook external-agent integration suite
         run: |
           set -euo pipefail
-          mkdir -p artifacts/real-lane/current/ci
-          make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013 2>&1 | tee artifacts/real-lane/current/ci/integration-notebook-agent.log
+          mkdir -p artifacts/backend-real/current/ci
+          make e2e-int-notebook-agent-auto PORT_API=20031 PORT_WEB=3013 2>&1 | tee artifacts/backend-real/current/ci/integration-notebook-agent.log
 
       - name: Failure Attribution (notebook)
         if: failure()
         run: |
           set -euo pipefail
           tag="INT-NOTEBOOK-UNKNOWN"
-          if grep -R -n "redirect_uri" test-results artifacts/real-lane/current/ci/integration-notebook-agent.log artifacts/real-lane/current/integration/web.log 2>/dev/null; then
+          if grep -R -n "redirect_uri" test-results artifacts/backend-real/current/ci/integration-notebook-agent.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
             tag="INT-KEYCLOAK-REDIRECT"
-          elif grep -R -n "TASK_STREAM_CONFLICT\\|AGENT_OFFLINE\\|AGENT_PROTOCOL_ERROR" test-results artifacts/real-lane/current/ci/integration-notebook-agent.log artifacts/real-lane/current/integration/api.log 2>/dev/null; then
+          elif grep -R -n "TASK_STREAM_CONFLICT\\|AGENT_OFFLINE\\|AGENT_PROTOCOL_ERROR" test-results artifacts/backend-real/current/ci/integration-notebook-agent.log artifacts/backend-real/current/integration/api.log 2>/dev/null; then
             tag="INT-NOTEBOOK-EXECUTION"
-          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/real-lane/current/ci/integration-notebook-agent.log artifacts/real-lane/current/integration/api.log artifacts/real-lane/current/integration/web.log 2>/dev/null; then
+          elif grep -R -n "ECONNREFUSED\\|did not become ready in time" artifacts/backend-real/current/ci/integration-notebook-agent.log artifacts/backend-real/current/integration/api.log artifacts/backend-real/current/integration/web.log 2>/dev/null; then
             tag="INT-INFRA-BOOT"
           fi
           echo "### Failure Tag: ${tag}" >> "$GITHUB_STEP_SUMMARY"
@@ -131,8 +131,8 @@ jobs:
           name: integration-notebook-agent-artifacts
           if-no-files-found: ignore
           path: |
-            artifacts/real-lane/current/ci/integration-notebook-agent.log
-            artifacts/real-lane/current/integration/api.log
-            artifacts/real-lane/current/integration/web.log
+            artifacts/backend-real/current/ci/integration-notebook-agent.log
+            artifacts/backend-real/current/integration/api.log
+            artifacts/backend-real/current/integration/web.log
             test-results/**
             playwright-report/**

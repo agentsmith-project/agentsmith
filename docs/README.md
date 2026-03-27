@@ -26,7 +26,7 @@
   - Real-cluster release line. Compose on the target host, sandbox execution on a real Kubernetes cluster.
 - [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
   - Cluster-scope prerequisites for the real-cluster line only.
-- Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`
+- Real visual review artifacts are generated locally under `artifacts/backend-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)

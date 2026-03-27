@@ -190,9 +190,11 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - `NEXT_PUBLIC_USE_MSW`
   - `NEXT_PUBLIC_KEYCLOAK_URL`, `NEXT_PUBLIC_KEYCLOAK_REALM`, `NEXT_PUBLIC_KEYCLOAK_CLIENT_ID`
   - `NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL=1` (development-only; shows `SSE Debug (latest 5)` panel)
-- Real dev bootstrap (`make dev-real-up`, `make dev-real-seed-notebook`)
+- Real dev bootstrap (`make local-manual-up`, `make local-manual-seed-notebook`)
   - `PORT_API`, `PORT_WEB`, `WORKSPACE_ID`, `LOCALE`
-  - `PRESET_ENDPOINT_API_KEY`, `PRESET_ENDPOINT_BASE_URL`, `PRESET_ENDPOINT_MODEL`, `PRESET_ENDPOINT_PROTOCOL`
+  - `PRESET_ENDPOINT_API_KEY`, `PRESET_ENDPOINT_MODEL`
+  - `PRESET_ANTHROPIC_ENDPOINT_BASE_URL`, `PRESET_ANTHROPIC_ENDPOINT_PROTOCOL`
+  - `PRESET_OPENAI_ENDPOINT_BASE_URL`, `PRESET_OPENAI_ENDPOINT_PROTOCOL`
   - `PRESET_ENDPOINT_MAX_CONTEXT_TOKENS`, `PRESET_ENDPOINT_MAX_OUTPUT_TOKENS`
 - Note:
   - This runbook is the current **single place** for notebook/external-agent execution switches.
@@ -247,25 +249,25 @@ make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
 ### 5.4.1 Manual Real-Backend Notebook + Agent Test (recommended)
 - Use this flow when manually testing notebook + external codex runner against the real local backend (not MSW).
 - Preconditions:
-  - `.env.dev.real` exists
+  - `.env.local-manual` exists
   - `PRESET_ENDPOINT_API_KEY` is filled
 
 ```bash
 cd /home/percy/works/mbos-v1/agentsmith
 
-cp .env.dev.real.example .env.dev.real
+cp .env.local-manual.example .env.local-manual
 # fill PRESET_ENDPOINT_API_KEY and adjust PRESET_ENDPOINT_* if needed
 
-make dev-real-up
-make dev-real-seed-notebook
-make dev-real-status
+make local-manual-up
+make local-manual-seed-notebook
+make local-manual-status
 ```
 
 Open browser:
 - Login: `http://localhost:3001/zh-CN/login`
 - Notebook project URL:
-  - printed by `make dev-real-seed-notebook`
-  - also available from `make dev-real-status`
+  - printed by `make local-manual-seed-notebook`
+  - also available from `make local-manual-status`
 
 Expected behavior:
 - send a message -> page shows `Agent 正在执行...` (or localized equivalent)
@@ -273,8 +275,8 @@ Expected behavior:
 - in `next dev`, notebook task page shows `SSE Debug (latest 5)` for frontend stream diagnostics
 
 Helper state written by bootstrap:
-- `artifacts/real-lane/current/state.json`
-- `artifacts/real-lane/current/token.txt`
+- `artifacts/backend-real/current/state.json`
+- `artifacts/backend-real/current/token.txt`
 
 ### 5.4.2 Stop Local Test Services (manual)
 - If you started services in separate terminals, stop with `Ctrl+C` in each terminal.
@@ -287,27 +289,27 @@ done
 
 - For demos/manual walkthroughs, prefer the new split flow:
 ```bash
-make dev-real-up
-make dev-real-seed-notebook
+make local-manual-up
+make local-manual-seed-notebook
 ```
 - This keeps platform startup and notebook demo seeding separate:
-  - `dev-real-up` starts/reuses API, Web, and universal-proxy
-  - `dev-real-seed-notebook` refreshes token, initializes notebook resources, and starts a managed external `agent-codex-runner`
-- Stop the managed dev-real processes with:
+  - `local-manual-up` starts/reuses API, Web, and universal-proxy
+  - `local-manual-seed-notebook` refreshes token, initializes notebook resources, and starts a managed external `agent-codex-runner`
+- Stop the managed local-manual processes with:
 ```bash
-make dev-real-down
+make local-manual-down
 ```
 - Check current status:
 ```bash
-make dev-real-status
+make local-manual-status
 ```
 - Check current platform and runner state:
 ```bash
-make dev-real-status
+make local-manual-status
 ```
 - Re-seed notebook resources and restart the host runner:
 ```bash
-make dev-real-seed-notebook
+make local-manual-seed-notebook
 ```
 - Important Keycloak redirect constraint:
   - token refresh currently uses browser PKCE (`scripts/notebook-agent-refresh-token.js`)
@@ -350,7 +352,7 @@ make governance-smoke
 make governance-policy-effect-smoke
 ```
 - Notes:
-  - Uses Playwright + Keycloak login and current `artifacts/real-lane/current/state.json`
+  - Uses Playwright + Keycloak login and current `artifacts/backend-real/current/state.json`
   - Fails fast with a clear error if the current project URL is stale after local in-memory backend reset
   - Intended for real backend mode page validation (not MSW-only UI smoke)
   - `governance-policy-effect-smoke` temporarily patches the current endpoint policy (RPM=1), validates a 429 rate-limit hit, checks Audit/Usage evidence, then restores the original policy
@@ -368,7 +370,7 @@ export AGENT_EXECUTION_WS_BASE_URL=ws://localhost:20000
 ```
 - Run:
 ```bash
-npm run test:internal:real:notebook-workspace
+npm run test:internal:backend-real:notebook-workspace
 ```
 - Gate proves:
   - internal agent can be selected before pod exists
@@ -544,7 +546,7 @@ make notebook-agent-monitor
 - Common options:
 ```bash
 COUNT=30 INTERVAL_SEC=1 make notebook-agent-monitor
-API_BASE=http://localhost:20000 TOKEN_FILE=artifacts/real-lane/current/token.txt make notebook-agent-monitor
+API_BASE=http://localhost:20000 TOKEN_FILE=artifacts/backend-real/current/token.txt make notebook-agent-monitor
 ```
 - Output is a compact line summary suitable for terminal monitoring during smoke/load runs.
 - It also includes `/traces` query indicators:
@@ -678,7 +680,7 @@ POLL_MAX=120 POLL_INTERVAL_SEC=2 PROMPT='reply exactly: chain ok' make notebook-
 ```
 
 - Output:
-  - directory under `artifacts/real-lane/current/benchmarks/load-matrix-<timestamp>/`
+  - directory under `artifacts/backend-real/current/benchmarks/load-matrix-<timestamp>/`
   - per-case:
     - `case-*/stdout.log`
     - `case-*/result.json` (summary + metrics snapshot)
@@ -704,8 +706,8 @@ make notebook-agent-benchmark-baseline
 MATRIX=10x2,10x4,20x4 make notebook-agent-benchmark-baseline
 ```
 - Output:
-  - `artifacts/real-lane/current/benchmarks/baseline-<timestamp>/summary.csv`
-  - `artifacts/real-lane/current/benchmarks/baseline-<timestamp>/summary.jsonl`
+  - `artifacts/backend-real/current/benchmarks/baseline-<timestamp>/summary.csv`
+  - `artifacts/backend-real/current/benchmarks/baseline-<timestamp>/summary.jsonl`
 - Team usage suggestion:
   - store selected baseline outputs (CSV/JSONL) as CI artifacts or benchmark snapshots for trend comparison
 
@@ -716,7 +718,7 @@ MATRIX=10x2,10x4,20x4 make notebook-agent-benchmark-baseline
     - Mongo `docStore`
 - Step 1: run baseline in memory mode (default API startup)
 ```bash
-OUT_DIR=artifacts/real-lane/current/benchmarks/baseline-memory make notebook-agent-benchmark-baseline
+OUT_DIR=artifacts/backend-real/current/benchmarks/baseline-memory make notebook-agent-benchmark-baseline
 ```
 - Step 2: restart API with Mongo/docStore enabled, then re-init resources and runner, run baseline again
 ```bash
@@ -730,12 +732,12 @@ make notebook-agent-refresh-token
 PRESET_ENDPOINT_API_KEY='***' make notebook-agent-init-resources
 make notebook-agent-runner
 
-OUT_DIR=artifacts/real-lane/current/benchmarks/baseline-mongo make notebook-agent-benchmark-baseline
+OUT_DIR=artifacts/backend-real/current/benchmarks/baseline-mongo make notebook-agent-benchmark-baseline
 ```
 - Step 3: compare outputs
 ```bash
-BASELINE_A_LABEL=memory BASELINE_A_DIR=artifacts/real-lane/current/benchmarks/baseline-memory \
-BASELINE_B_LABEL=mongo  BASELINE_B_DIR=artifacts/real-lane/current/benchmarks/baseline-mongo \
+BASELINE_A_LABEL=memory BASELINE_A_DIR=artifacts/backend-real/current/benchmarks/baseline-memory \
+BASELINE_B_LABEL=mongo  BASELINE_B_DIR=artifacts/backend-real/current/benchmarks/baseline-mongo \
 make notebook-agent-benchmark-compare
 ```
 - What to compare first:
@@ -759,7 +761,7 @@ make notebook-agent-benchmark-compare
 make notebook-agent-traces-query-bench
 ```
 - Defaults:
-  - uses `artifacts/real-lane/current/state.json` (`project.id`, `task.last_id`)
+  - uses `artifacts/backend-real/current/state.json` (`project.id`, `task.last_id`)
   - resolves the latest agent `message_id` automatically
   - `REQUESTS=50`, `CONCURRENCY=5`, `WARMUP=5`
 - Useful overrides:
@@ -792,8 +794,8 @@ make notebook-agent-traces-query-sweep
   - `CONCURRENCY=10`
   - `WARMUP=10`
 - Output:
-  - `artifacts/real-lane/current/traces-query-sweep-<timestamp>/summary.csv`
-  - `artifacts/real-lane/current/traces-query-sweep-<timestamp>/summary.jsonl`
+  - `artifacts/backend-real/current/traces-query-sweep-<timestamp>/summary.csv`
+  - `artifacts/backend-real/current/traces-query-sweep-<timestamp>/summary.jsonl`
   - per-page directories with `result.json` and `stdout.log`
 - Usage patterns:
   - reuse an existing task/message:
@@ -809,8 +811,8 @@ PREPARE_TASK=1 TURNS=8 make notebook-agent-traces-query-sweep
   - compare `summary.csv` p95/p99 and Prometheus histogram `scope="message"`
   - or use the helper to compare two sweep output dirs by `page_size`:
 ```bash
-SWEEP_A_DIR=artifacts/real-lane/current/traces-query-sweep-long-memory \
-SWEEP_B_DIR=artifacts/real-lane/current/traces-query-sweep-long-mongo \
+SWEEP_A_DIR=artifacts/backend-real/current/traces-query-sweep-long-memory \
+SWEEP_B_DIR=artifacts/backend-real/current/traces-query-sweep-long-mongo \
 SWEEP_A_LABEL=memory \
 SWEEP_B_LABEL=mongo \
 make notebook-agent-traces-query-sweep-compare
@@ -823,7 +825,7 @@ make notebook-agent-traces-query-sweep-compare
   - attach metadata (commit SHA, environment parameters, source dir)
 - Command:
 ```bash
-SOURCE_DIR=artifacts/real-lane/current/traces-query-sweep-final-long-mongo \
+SOURCE_DIR=artifacts/backend-real/current/traces-query-sweep-final-long-mongo \
 LABEL=mongo-traces-sweep-final \
 MODE_LABEL=mongo \
 COMMIT_SHA=$(git rev-parse HEAD) \

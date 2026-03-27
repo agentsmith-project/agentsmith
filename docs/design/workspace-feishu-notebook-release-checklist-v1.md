@@ -71,7 +71,7 @@
 
 验收标准：
 
-- real lane 真实通过
+- backend-real 真实通过
 - 不再依赖主依赖工厂中的隐式 fallback
 
 ## 5. 依赖项目边界

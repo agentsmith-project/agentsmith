@@ -12,7 +12,7 @@ type Rule = {
 
 const failFastFiles = new Set([
   'Makefile',
-  'scripts/dev-real/common.sh',
+  'scripts/local-manual/common.sh',
   'scripts/notebook-agent-init-resources.sh',
 ]);
 
@@ -62,7 +62,7 @@ function listTrackedFiles(): string[] {
     'docs/troubleshooting-guide-v1.md',
     'docs/agent-codex-notebook-runbook.md',
     'docs/UXUI/01-通用规范/visual-baseline-policy-v1.md',
-    'scripts/dev-real/common.sh',
+    'scripts/local-manual/common.sh',
     'scripts/notebook-agent-init-resources.sh',
     'scripts/contracts/check-current-workflows.ts',
     'scripts/contracts/check-engineering-governance.ts',

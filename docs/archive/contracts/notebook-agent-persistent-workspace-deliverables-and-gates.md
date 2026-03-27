@@ -269,9 +269,9 @@ npm run openapi:check-generated
 ```bash
 npm run test:mainline:strict:real
 npm run test:files:release:strict
-npm run test:agents:real:codex
+npm run test:agents:backend-real:codex
 npm run test:smoke:real:notebook-mainline
-npm run test:release:real:full
+npm run test:backend-real:full
 ```
 
 说明：

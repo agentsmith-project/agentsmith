@@ -26,8 +26,8 @@ async function main() {
   // Use dedicated env names for integration credentials.
   const username = process.env.MBOS_DEV_USERNAME || process.env.INTEGRATION_DEV_ADMIN_USERNAME || 'dev-admin';
   const password = process.env.MBOS_DEV_PASSWORD || process.env.INTEGRATION_DEV_ADMIN_PASSWORD || 'dev-admin-123';
-  const stateDir = process.env.REAL_LANE_STATE_DIR || `${process.cwd()}/artifacts/real-lane/current`;
-  const stateFile = process.env.REAL_LANE_STATE_FILE || `${stateDir}/state.json`;
+  const stateDir = process.env.BACKEND_REAL_STATE_DIR || `${process.cwd()}/artifacts/backend-real/current`;
+  const stateFile = process.env.BACKEND_REAL_STATE_FILE || `${stateDir}/state.json`;
   const outFile = process.env.TOKEN_OUT_FILE || `${stateDir}/token.txt`;
   const shouldReadAppSession = process.env.REFRESH_TOKEN_READ_APP_SESSION === '1';
   fs.mkdirSync(stateDir, { recursive: true });

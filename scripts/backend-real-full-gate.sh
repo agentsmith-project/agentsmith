@@ -5,13 +5,9 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env.real.local"
-  set +a
-fi
-REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
+source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+load_backend_real_env "${ROOT_DIR}/.env.backend-real"
+export_backend_real_endpoint_env
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
@@ -23,20 +19,20 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 API_PORT="${PORT_API:-20000}"
 WEB_PORT="${PORT_WEB:-3001}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
-ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/${RUN_ID}}"
-LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${ROOT_DIR}/artifacts/real-lane/current/release-ready}"
+ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
+LOCAL_READY_LOG_DIR="${RELEASE_REAL_READY_LOG_DIR:-${ROOT_DIR}/artifacts/backend-real/current/release-ready}"
 API_LOG="${LOCAL_READY_LOG_DIR}/api.log"
 WEB_LOG="${LOCAL_READY_LOG_DIR}/web.log"
 LOCAL_API_PID=""
 LOCAL_WEB_PID=""
 
-if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[release-real-full-gate] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
-  echo "[release-real-full-gate] Export PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias) before running this gate." >&2
+if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  echo "[backend-real-full-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
+  echo "[backend-real-full-gate] Export PRESET_ENDPOINT_API_KEY before running this gate." >&2
   exit 1
 fi
 
-info() { echo "[release-real-full-gate] $*"; }
+info() { echo "[backend-real-full-gate] $*"; }
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
@@ -195,12 +191,12 @@ run_real_cmd() {
 }
 
 run_cmd "npm run gate:default"
-run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run release:real:bootstrap"
+run_cmd "MONGO_URL='${MONGO_URL}' MONGO_DB_NAME='${MONGO_DB_NAME}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' KEYCLOAK_REALM='${KEYCLOAK_REALM}' KEYCLOAK_CLIENT_ID='${KEYCLOAK_CLIENT_ID}' npm run backend-real:bootstrap"
 ensure_local_release_stack
-run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run release:real:ready"
-run_real_cmd 20050 3051 "REAL_LANE_API_KEY='${REAL_LANE_API_KEY_VALUE}' npm run lane:real:core"
-run_real_cmd 20080 3081 "REAL_LANE_API_KEY='${REAL_LANE_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:real:review"
-run_cmd "npm run release:real:report"
+run_cmd "API_BASE='http://localhost:${API_PORT}' BASE_URL='http://localhost:${WEB_PORT}' KEYCLOAK_BASE_URL='${KEYCLOAK_BASE_URL}' npm run backend-real:ready"
+run_real_cmd 20050 3051 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' npm run lane:backend-real:core"
+run_real_cmd 20080 3081 "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' npm run test:visual:backend-real:review"
+run_cmd "npm run backend-real:report"
 
 info "release-grade real verification passed"
 info "artifacts written to ${ARTIFACT_DIR}"

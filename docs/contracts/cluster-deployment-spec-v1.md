@@ -271,9 +271,11 @@ They currently define:
 
 - the default upstream LLM endpoint preset
   - `PRESET_ENDPOINT_API_KEY`
-  - `PRESET_ENDPOINT_BASE_URL`
   - `PRESET_ENDPOINT_MODEL`
-  - `PRESET_ENDPOINT_PROTOCOL`
+  - `PRESET_ANTHROPIC_ENDPOINT_BASE_URL`
+  - `PRESET_ANTHROPIC_ENDPOINT_PROTOCOL`
+  - `PRESET_OPENAI_ENDPOINT_BASE_URL`
+  - `PRESET_OPENAI_ENDPOINT_PROTOCOL`
   - context and output token defaults
 - system admin credentials
 - test user credentials

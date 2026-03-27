@@ -5,11 +5,11 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 API_BASE="${API_BASE:-http://localhost:20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 FLOW="${FLOW:-user_connect}" # admin_verify | user_connect
 
 if [[ ! -f "${TOKEN_FILE}" ]]; then

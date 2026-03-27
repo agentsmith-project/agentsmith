@@ -21,7 +21,7 @@
 发布级验证前，先确认：
 
 1. Keycloak 集成依赖可用
-2. 用于真实 notebook 主线的 `REAL_LANE_API_KEY` 已配置
+2. 用于真实 notebook 主线的 `BACKEND_REAL_API_KEY` 已配置
 3. 本地没有残留的多余 `next dev` 进程
 
 ## 验证顺序
@@ -32,15 +32,15 @@
 make gate-fast
 make gate-default
 make lane-visual
-make release-real-reset
-make release-real-bootstrap
-make release-real-ready
+make backend-real-reset
+make backend-real-bootstrap
+make backend-real-ready
 make manual-feishu-admin
 make manual-feishu-check
 make manual-feishu-user
 make manual-feishu-check
-make release-real-run
-make release-real-report
+make backend-real-run
+make backend-real-report
 make gate-release
 ```
 
@@ -49,7 +49,7 @@ make gate-release
 真实截图默认输出到：
 
 ```bash
-artifacts/release-real-visual/<run-id>/
+artifacts/backend-real-visual/<run-id>/
 ```
 
 目录内会生成：

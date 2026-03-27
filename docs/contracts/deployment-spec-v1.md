@@ -207,17 +207,19 @@ Preset workspace admin and project creator identities are selected by stable use
 - `MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL`
 - `PRESET_PROJECT_NAME`
 - `PRESET_CREDENTIAL_NAME`
-- `PRESET_PRIMARY_ENDPOINT_NAME`
-- `PRESET_SECONDARY_ENDPOINT_NAME`
+- `PRESET_ANTHROPIC_ENDPOINT_NAME`
+- `PRESET_OPENAI_ENDPOINT_NAME`
 - `PRESET_EXTERNAL_AGENT_NAME`
 - `PRESET_INTERNAL_AGENT_NAME`
 - `PRESET_ENDPOINT_API_KEY`
-- `PRESET_ENDPOINT_BASE_URL`
-- `PRESET_ENDPOINT_PROTOCOL`
 - `PRESET_ENDPOINT_MODEL`
 - `PRESET_ENDPOINT_MAX_CONTEXT_TOKENS`
 - `PRESET_ENDPOINT_MAX_OUTPUT_TOKENS`
 - `PRESET_ENDPOINT_TIMEOUT_SECONDS`
+- `PRESET_ANTHROPIC_ENDPOINT_BASE_URL`
+- `PRESET_ANTHROPIC_ENDPOINT_PROTOCOL`
+- `PRESET_OPENAI_ENDPOINT_BASE_URL`
+- `PRESET_OPENAI_ENDPOINT_PROTOCOL`
 
 All deployment configuration keys must be declared in `env/site.env`. Generated service env files derive container-specific and runtime-specific values such as `DATABASE_URL`, `MONGO_URL`, `KEYCLOAK_ISSUER_URL`, `MBOS_API_BASE`, `NEXT_PUBLIC_API_BASE`, execution host URLs, and JuiceFS internal overrides. Deployment-specific defaults belong in `site.env`; runtime-derived host identities belong in the formal runtime address resolution step, not hidden in deploy-time sed rewrites.
 
@@ -288,7 +290,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
   - `Default Workspace -> Projects` shows a denied state before membership data has finished loading
   - a newly published workspace cannot be opened by its admin and queried through `/api/v1/workspaces/{id}/projects`
   - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
-  - the system-to-notebook default story fails in the local real lane
+  - the system-to-notebook default story fails in the local backend-real run
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
 - `scripts/demo-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, the client-public-runtime check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
 

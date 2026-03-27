@@ -118,8 +118,8 @@ Before release, the file library line must pass:
 npx tsc --noEmit
 npm run contracts:check-openapi
 npm run openapi:check-generated
-npm run test:files:real:smoke
-npm run test:files:real:sync
+npm run test:files:backend-real:smoke
+npm run test:files:backend-real:sync
 ```
 
 Mock lane coverage must also include:

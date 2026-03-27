@@ -5,36 +5,37 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
+ensure_backend_real_state
 
-ENV_FILE="${ENV_FILE:-${ROOT_DIR}/.env.dev.real}"
-DEV_REAL_ROOT="$(real_lane_state_root)/dev-real"
-mkdir -p "${DEV_REAL_ROOT}"
+ENV_FILE="${ENV_FILE:-${ROOT_DIR}/.env.local-manual}"
+LOCAL_MANUAL_ROOT="$(backend_real_state_root)/local-manual"
+mkdir -p "${LOCAL_MANUAL_ROOT}"
 
-PROXY_PID_FILE="${DEV_REAL_ROOT}/proxy.pid"
-API_PID_FILE="${DEV_REAL_ROOT}/api.pid"
-WEB_PID_FILE="${DEV_REAL_ROOT}/web.pid"
-RUNNER_PID_FILE="${DEV_REAL_ROOT}/runner.pid"
+PROXY_PID_FILE="${LOCAL_MANUAL_ROOT}/proxy.pid"
+API_PID_FILE="${LOCAL_MANUAL_ROOT}/api.pid"
+WEB_PID_FILE="${LOCAL_MANUAL_ROOT}/web.pid"
+RUNNER_PID_FILE="${LOCAL_MANUAL_ROOT}/runner.pid"
 
-PROXY_READY_FILE="${DEV_REAL_ROOT}/proxy.ready"
-API_READY_FILE="${DEV_REAL_ROOT}/api.ready"
-WEB_READY_FILE="${DEV_REAL_ROOT}/web.ready"
-RUNNER_READY_FILE="${DEV_REAL_ROOT}/runner.ready"
+PROXY_READY_FILE="${LOCAL_MANUAL_ROOT}/proxy.ready"
+API_READY_FILE="${LOCAL_MANUAL_ROOT}/api.ready"
+WEB_READY_FILE="${LOCAL_MANUAL_ROOT}/web.ready"
+RUNNER_READY_FILE="${LOCAL_MANUAL_ROOT}/runner.ready"
 
-PROXY_PORT_FILE="${DEV_REAL_ROOT}/proxy.port"
-API_PORT_FILE="${DEV_REAL_ROOT}/api.port"
-WEB_PORT_FILE="${DEV_REAL_ROOT}/web.port"
+PROXY_PORT_FILE="${LOCAL_MANUAL_ROOT}/proxy.port"
+API_PORT_FILE="${LOCAL_MANUAL_ROOT}/api.port"
+WEB_PORT_FILE="${LOCAL_MANUAL_ROOT}/web.port"
 
-PROXY_LOG="${DEV_REAL_ROOT}/proxy.log"
-API_LOG="${DEV_REAL_ROOT}/api.log"
-WEB_LOG="${DEV_REAL_ROOT}/web.log"
-RUNNER_LOG="${DEV_REAL_ROOT}/runner.log"
-PROXY_CONFIG="${DEV_REAL_ROOT}/universal-proxy.yaml"
+PROXY_LOG="${LOCAL_MANUAL_ROOT}/proxy.log"
+API_LOG="${LOCAL_MANUAL_ROOT}/api.log"
+WEB_LOG="${LOCAL_MANUAL_ROOT}/web.log"
+RUNNER_LOG="${LOCAL_MANUAL_ROOT}/runner.log"
+PROXY_CONFIG="${LOCAL_MANUAL_ROOT}/universal-proxy.yaml"
 
-info() { echo "[dev-real] $*"; }
-err() { echo "[dev-real] ERROR: $*" >&2; }
-warn() { echo "[dev-real] WARN: $*" >&2; }
+info() { echo "[local-manual] $*"; }
+err() { echo "[local-manual] ERROR: $*" >&2; }
+warn() { echo "[local-manual] WARN: $*" >&2; }
 
 require_var() {
   local key="$1"
@@ -44,31 +45,19 @@ require_var() {
   fi
 }
 
-load_env_file() {
-  [[ -f "${ENV_FILE}" ]] || {
-    err "missing env file: ${ENV_FILE}"
-    err "copy .env.dev.real.example to .env.dev.real and fill secrets first"
-    exit 1
-  }
-  set -a
-  # shellcheck disable=SC1090
-  . "${ENV_FILE}"
-  set +a
-}
-
 fail_if_legacy_env() {
   local key
   for key in GLM_API_KEY GLM_BASE_URL GLM_MODEL ENDPOINT_PROTOCOL; do
     if [[ -n "${!key:-}" ]]; then
       err "legacy env var is not supported: ${key}"
-      err "use PRESET_ENDPOINT_API_KEY / PRESET_ENDPOINT_BASE_URL / PRESET_ENDPOINT_MODEL / PRESET_ENDPOINT_PROTOCOL"
+      err "use PRESET_ENDPOINT_API_KEY plus PRESET_ANTHROPIC_ENDPOINT_* / PRESET_OPENAI_ENDPOINT_*"
       exit 1
     fi
   done
 }
 
-init_dev_real_env() {
-  load_env_file
+init_local_manual_env() {
+  load_runtime_env_stack "local-manual" "${ENV_FILE}"
   fail_if_legacy_env
 
   PORT_API="${PORT_API:-20000}"
@@ -100,11 +89,13 @@ init_dev_real_env() {
 
 require_preset_endpoint_env() {
   require_var PRESET_ENDPOINT_API_KEY
-  require_var PRESET_ENDPOINT_BASE_URL
   require_var PRESET_ENDPOINT_MODEL
-  require_var PRESET_ENDPOINT_PROTOCOL
   require_var PRESET_ENDPOINT_MAX_CONTEXT_TOKENS
   require_var PRESET_ENDPOINT_MAX_OUTPUT_TOKENS
+  require_var PRESET_ANTHROPIC_ENDPOINT_BASE_URL
+  require_var PRESET_ANTHROPIC_ENDPOINT_PROTOCOL
+  require_var PRESET_OPENAI_ENDPOINT_BASE_URL
+  require_var PRESET_OPENAI_ENDPOINT_PROTOCOL
 }
 
 launch_detached() {
@@ -179,21 +170,21 @@ write_ready_file() {
   printf 'ready\n' > "${file}"
 }
 
-remove_dev_real_runtime_files() {
+remove_local_manual_runtime_files() {
   rm -f \
     "${PROXY_READY_FILE}" "${API_READY_FILE}" "${WEB_READY_FILE}" "${RUNNER_READY_FILE}" \
     "${PROXY_PORT_FILE}" "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
     "${PROXY_PID_FILE}" "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}"
 }
 
-reset_dev_real_state() {
-  ensure_real_lane_state
-  node - <<'NODE' "$(real_lane_state_file)" "${WORKSPACE_ID:-ws_default}"
+reset_local_manual_state() {
+  ensure_backend_real_state
+  node - <<'NODE' "$(backend_real_state_file)" "${WORKSPACE_ID:-ws_default}"
 const fs = require('node:fs');
 const [file, workspaceId] = process.argv.slice(2);
 const next = { workspace: { id: workspaceId } };
 fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
 NODE
-  rm -f "$(real_lane_token_file)"
+  rm -f "$(backend_real_token_file)"
   state_write_summary
 }

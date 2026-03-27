@@ -6,9 +6,9 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const REAL_LANE_ANTHROPIC_BASE_URL = process.env.REAL_LANE_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
-const REAL_LANE_MODEL = process.env.REAL_LANE_MODEL ?? 'MiniMax-M2.7-highspeed';
-const REAL_LANE_API_KEY = process.env.REAL_LANE_API_KEY;
+const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
+const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'MiniMax-M2.7-highspeed';
+const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
 const PROJECT_CREATOR_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
@@ -55,10 +55,10 @@ type ExecutionWsMessage = {
 };
 
 function requireRealLaneApiKey(): string {
-  if (!REAL_LANE_API_KEY?.trim()) {
-    throw new Error('missing_REAL_LANE_API_KEY');
+  if (!BACKEND_REAL_API_KEY?.trim()) {
+    throw new Error('missing_BACKEND_REAL_API_KEY');
   }
-  return REAL_LANE_API_KEY.trim();
+  return BACKEND_REAL_API_KEY.trim();
 }
 
 async function clearAppState(page: Page, _workspaceId = 'ws_default'): Promise<void> {
@@ -459,10 +459,10 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await expect(wizard).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-name-input').fill('BigModel Anthropic Endpoint');
   await wizard.getByTestId('protocol-anthropic_compatible').click();
-  await wizard.getByTestId('wizard-base-url-input').fill(REAL_LANE_ANTHROPIC_BASE_URL);
+  await wizard.getByTestId('wizard-base-url-input').fill(BACKEND_REAL_ANTHROPIC_BASE_URL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible({ timeout: 30_000 });
-  await wizard.getByTestId('wizard-model-id-input').fill(REAL_LANE_MODEL);
+  await wizard.getByTestId('wizard-model-id-input').fill(BACKEND_REAL_MODEL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-check-button')).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-check-button').click();
@@ -834,7 +834,7 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
       wsUrl,
       agentKey,
       expectedToken: NOTEBOOK_EXPECTED_TOKEN,
-      model: REAL_LANE_MODEL,
+      model: BACKEND_REAL_MODEL,
     });
 
     try {

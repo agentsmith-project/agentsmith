@@ -21,14 +21,10 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const ANTHROPIC_BASE_URL = process.env.REAL_LANE_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
-const OPENAI_BASE_URL = process.env.REAL_LANE_OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1';
-const REAL_LANE_PROTOCOL = process.env.REAL_LANE_PROTOCOL ?? 'openai_compatible';
-const REAL_LANE_BASE_URL =
-  process.env.REAL_LANE_BASE_URL ??
-  (REAL_LANE_PROTOCOL === 'anthropic_compatible' ? ANTHROPIC_BASE_URL : OPENAI_BASE_URL);
-const REAL_LANE_MODEL = process.env.REAL_LANE_MODEL ?? 'MiniMax-M2.7-highspeed';
-const REAL_LANE_API_KEY = process.env.REAL_LANE_API_KEY;
+const ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
+const OPENAI_BASE_URL = process.env.BACKEND_REAL_OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1';
+const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'MiniMax-M2.7-highspeed';
+const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const SYSTEM_ADMIN_USERNAME = 'mbos-admin';
 const SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
 const MEMBER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
@@ -46,9 +42,9 @@ const VERIFY_CONTAINER_CLIENT_MOUNT_OVERRIDES = {
 } as const;
 
 function requireRealLaneApiKey(): string {
-  const value = REAL_LANE_API_KEY?.trim();
+  const value = BACKEND_REAL_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_REAL_LANE_API_KEY');
+    throw new Error('missing_BACKEND_REAL_API_KEY');
   }
   return value;
 }
@@ -662,29 +658,29 @@ test.describe('@lane-real release user story end-to-end', () => {
     await approveJoinRequest(page, workspaceId, projectId);
 
     await createCredentialViaUi(page, workspaceId, projectId, 'BigModel Unified Key', glmApiKey);
-    const primaryEndpointName = `Preset Endpoint A ${Date.now()}`;
-    const secondaryEndpointName = `Preset Endpoint B ${Date.now()}`;
+    const anthropicEndpointName = `Preset Anthropic Endpoint ${Date.now()}`;
+    const openaiEndpointName = `Preset OpenAI Endpoint ${Date.now()}`;
     await createEndpointViaUi({
       page,
       workspaceId,
       projectId,
-      name: primaryEndpointName,
-      protocol: REAL_LANE_PROTOCOL,
-      baseUrl: REAL_LANE_BASE_URL,
-      model: REAL_LANE_MODEL,
+      name: anthropicEndpointName,
+      protocol: 'anthropic_compatible',
+      baseUrl: ANTHROPIC_BASE_URL,
+      model: BACKEND_REAL_MODEL,
     });
     await createEndpointViaUi({
       page,
       workspaceId,
       projectId,
-      name: secondaryEndpointName,
-      protocol: REAL_LANE_PROTOCOL,
-      baseUrl: REAL_LANE_BASE_URL,
-      model: REAL_LANE_MODEL,
+      name: openaiEndpointName,
+      protocol: 'openai_compatible',
+      baseUrl: OPENAI_BASE_URL,
+      model: BACKEND_REAL_MODEL,
     });
 
-    const primaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, primaryEndpointName);
-    const secondaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, secondaryEndpointName);
+    const primaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, anthropicEndpointName);
+    const secondaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, openaiEndpointName);
 
     await updateResourcePolicyViaUi({
       page,

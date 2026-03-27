@@ -20,7 +20,7 @@
 | [Demo Deploy Operations](./demo-deploy-operations.md) | Demo / single-host deployment line: host deployment root, lifecycle commands, address model, and local `kind` sandbox verification flow. |
 | [Cluster Deploy Operations](./cluster-deploy-operations.md) | Real-cluster deployment line: registry-backed bundle release, target-host install flow, manager ingress, and namespace-only automation model. |
 | [Cluster Admin Runbook](./cluster-admin-runbook.md) | Cluster-scope prerequisites for the real-cluster line only: namespace, JuiceFS CSI, storage class, manager runtime kubeconfig, and ingress preparation. |
-| Real Visual Review Artifacts | Generated locally under `artifacts/release-real-visual/<run-id>/` by `npm run test:visual:real:review`. |
+| Real Visual Review Artifacts | Generated locally under `artifacts/backend-real-visual/<run-id>/` by `npm run test:visual:backend-real:review`. |
 | [Identity & Permission Model](./identity-and-permission-model.md) | Current identity model baseline: email for selection, `user_id` for persisted permissions. |
 | [Workspace Isolation Model](./workspace-isolation-model.md) | Current MVP workspace isolation baseline: shared infrastructure with namespace and scope boundaries. |
 | [Test & Evidence Directory Model](./test-and-evidence-directory-model.md) | Directory contract for test code, temporary test output, mock visual baselines, and long-term release evidence. |

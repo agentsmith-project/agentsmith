@@ -29,8 +29,8 @@ jobs:
       - name: Verify current workflow contracts
         run: |
           set -euo pipefail
-          test -f .env.dev.real.example
-          test -f .env.real.local.example
+          test -f .env.local-manual.example
+          test -f .env.backend-real.example
           test -f infra/deploy/demo/env/site.env.example
 
       - name: Setup Node

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_dev_real_env
+init_local_manual_env
 
 stop_pid_file_if_running() {
   local pid_file="$1"
@@ -70,8 +70,8 @@ stop_listeners_on_port 3001
 stop_listeners_on_port 20000
 stop_listeners_on_port 38080
 
-remove_dev_real_runtime_files
-reset_dev_real_state
+remove_local_manual_runtime_files
+reset_local_manual_state
 
 docker ps --format '{{.Names}}' | rg 'agentsmith-demo|agentsmith-control-plane' | xargs -r docker rm -f >/dev/null 2>&1 || true
 (cd "${ROOT_DIR}" && make deps-down >/dev/null 2>&1 || true)

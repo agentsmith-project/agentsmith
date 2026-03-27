@@ -4,14 +4,14 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 API_BASE="${API_BASE:-http://localhost:20000/api/v1}"
-REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
+BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-$(state_get endpoint.model)}"
 
 RUN_BASIC_SMOKE="${RUN_BASIC_SMOKE:-1}"
 RUN_CREDENTIAL_SYNC_SMOKE="${RUN_CREDENTIAL_SYNC_SMOKE:-1}"
@@ -43,7 +43,7 @@ proxy_precheck_status() {
     -X POST "${url}" \
     -H "Authorization: Bearer ${token}" \
     -H 'Content-Type: application/json' \
-    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"engineering smoke precheck"}]}))' "${REAL_LANE_MODEL}")" || true
+    --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"engineering smoke precheck"}]}))' "${BACKEND_REAL_MODEL}")" || true
 }
 
 wait_proxy_ready() {
@@ -165,7 +165,7 @@ run_matplotlib_smoke() {
   project_id="${PROJECT_ID}"
   agent_id="$(state_get agent.id)"
   if [[ -z "${token}" || -z "${project_id}" || -z "${agent_id}" ]]; then
-    err "missing token/project/agent metadata in $(real_lane_state_file); run bootstrap/init-resources first"
+    err "missing token/project/agent metadata in $(backend_real_state_file); run bootstrap/init-resources first"
     return 1
   fi
   local task_id
@@ -204,7 +204,7 @@ run_matplotlib_smoke() {
 
 main() {
   [[ -n "${PROJECT_ID}" && -n "${ENDPOINT_ID}" ]] || {
-    err "missing project/endpoint metadata in $(real_lane_state_file)"
+    err "missing project/endpoint metadata in $(backend_real_state_file)"
     exit 1
   }
   local failures=0

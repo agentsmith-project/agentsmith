@@ -69,7 +69,7 @@
 - 面向人工审查、发布复核、治理复盘、系统导出的长期产物
 
 当前建议结构：
-- `artifacts/release-real-visual/`
+- `artifacts/backend-real-visual/`
   - 真实后端截图巡检与 `review.md`
 - `artifacts/release-evidence/`
   - 发布级汇总结论与门禁证据
@@ -96,13 +96,13 @@
 
 ### 真实后端人工界面审查
 看：
-- `artifacts/release-real-visual/<run-id>/review.md`
-- `artifacts/release-real-visual/<run-id>/manifest.json`
+- `artifacts/backend-real-visual/<run-id>/review.md`
+- `artifacts/backend-real-visual/<run-id>/manifest.json`
 
 ### 发布前结论
 看：
 - 严格门禁命令输出
-- `artifacts/release-real-visual/<run-id>/review.md`
+- `artifacts/backend-real-visual/<run-id>/review.md`
 - 未来统一收口到 `artifacts/release-evidence/`
 
 ## 当前目录治理结论

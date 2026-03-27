@@ -10,8 +10,8 @@ source "${ROOT_DIR}/scripts/lib/common.sh"
 
 load_release_env
 
-REAL_LANE_PROTOCOL="${PRESET_ENDPOINT_PROTOCOL:-openai_compatible}"
-REAL_LANE_BASE_URL="${PRESET_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}"
+BACKEND_REAL_ANTHROPIC_BASE_URL="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
+BACKEND_REAL_OPENAI_BASE_URL="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}"
 
 PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
 PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-http://localhost:20000}"
@@ -81,12 +81,20 @@ PRESET_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${PRES
 [[ -n "${PRESET_PROJECT_ID}" ]] || die "preset verify failed: preset project missing in ws_default"
 
 EXPECTED_MODEL="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
+EXPECTED_ANTHROPIC_ENDPOINT_NAME="${PRESET_ANTHROPIC_ENDPOINT_NAME:-minimax-anthropic}"
+EXPECTED_OPENAI_ENDPOINT_NAME="${PRESET_OPENAI_ENDPOINT_NAME:-minimax-openai}"
 ENDPOINT_COUNT="$(
   curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${PRESET_PROJECT_ID}/endpoints?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
     | json_count_items_by_field model "${EXPECTED_MODEL}"
 )"
 [[ "${ENDPOINT_COUNT}" -ge 2 ]] || die "preset verify failed: expected two ${EXPECTED_MODEL} endpoints"
+ENDPOINT_JSON="$(
+  curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${PRESET_PROJECT_ID}/endpoints?page=1&page_size=100" \
+    -H "Authorization: Bearer ${ACCESS_TOKEN}"
+)"
+printf '%s' "${ENDPOINT_JSON}" | grep -q "\"name\":\"${EXPECTED_ANTHROPIC_ENDPOINT_NAME}\"" || die "preset verify failed: anthropic endpoint missing"
+printf '%s' "${ENDPOINT_JSON}" | grep -q "\"name\":\"${EXPECTED_OPENAI_ENDPOINT_NAME}\"" || die "preset verify failed: openai endpoint missing"
 
 AGENTS_JSON="$(
   curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${PRESET_PROJECT_ID}/agents?page=1&page_size=100" \
@@ -130,12 +138,10 @@ docker run --rm \
   -e KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
   -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
   -e INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
-  -e REAL_LANE_API_KEY="${PRESET_ENDPOINT_API_KEY:-}" \
-  -e REAL_LANE_PROTOCOL="${REAL_LANE_PROTOCOL}" \
-  -e REAL_LANE_BASE_URL="${REAL_LANE_BASE_URL}" \
-  -e REAL_LANE_ANTHROPIC_BASE_URL="${REAL_LANE_BASE_URL}" \
-  -e REAL_LANE_OPENAI_BASE_URL="${REAL_LANE_BASE_URL}" \
-  -e REAL_LANE_MODEL="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}" \
+  -e BACKEND_REAL_API_KEY="${PRESET_ENDPOINT_API_KEY:-}" \
+  -e BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL}" \
+  -e BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL}" \
+  -e BACKEND_REAL_MODEL="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}" \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \

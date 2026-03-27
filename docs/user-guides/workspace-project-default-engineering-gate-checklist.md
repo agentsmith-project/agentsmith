@@ -92,7 +92,7 @@ Then rerun the same command without `--update-snapshots`.
 Before release-oriented verification, also run:
 
 ```bash
-npm run test:real-core
+npm run test:backend-real:core
 ```
 
 This adds:
@@ -111,4 +111,4 @@ Include:
 1. Whether the default workspace/project flow changed at all.
 2. Whether `workspace admin / project creator / member` behavior changed.
 3. Whether any visual baselines were updated.
-4. Whether real lane was run, and if not, why not.
+4. Whether backend-real was run, and if not, why not.

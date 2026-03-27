@@ -8,17 +8,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+load_backend_real_env
+export_backend_real_endpoint_env
 
-if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env.real.local"
-  set +a
-fi
-
-REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
 API_PORT="${INTEGRATION_API_PORT:-20072}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3072}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
@@ -37,12 +32,12 @@ MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
-ensure_real_lane_state
-INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(real_lane_tmp_file internal)}"
+ensure_backend_real_state
+INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 mkdir -p "${INTERNAL_REAL_DIR}"
 SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
 CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
-INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
+INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
 KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
@@ -54,8 +49,8 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
 
-if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[internal-real-gate] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
+if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  echo "[internal-backend-real-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
 
@@ -381,7 +376,7 @@ info "internal screenshots and review artifacts will be written to:"
 info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
 (
   cd "${ROOT_DIR}" && \
-    REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" \
+    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
     SANDBOX_MANAGER_URL="http://127.0.0.1:${SANDBOX_PORT}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \

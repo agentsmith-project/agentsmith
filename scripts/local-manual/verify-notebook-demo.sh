@@ -2,19 +2,19 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_dev_real_env
+init_local_manual_env
 
 if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${PROXY_READY_FILE}" ]]; then
-  err "dev-real platform is not ready; run make dev-real-up first"
+  err "local-manual platform is not ready; run make local-manual-up first"
   exit 1
 fi
 
-if [[ ! -s "$(real_lane_token_file)" ]]; then
-  err "missing dev token; run make dev-real-seed-notebook again"
+if [[ ! -s "$(backend_real_token_file)" ]]; then
+  err "missing dev token; run make local-manual-seed-notebook again"
   exit 1
 fi
 
-TOKEN="$(cat "$(real_lane_token_file)")"
+TOKEN="$(cat "$(backend_real_token_file)")"
 CODE="$(curl -sS -o /dev/null -w '%{http_code}' "http://localhost:${PORT_API}/api/v1/me/profile" -H "Authorization: Bearer ${TOKEN}" || true)"
 if [[ "${CODE}" != "200" ]]; then
   err "dev token validation failed against API (status=${CODE})"
@@ -27,12 +27,12 @@ AGENT_ID="$(state_get agent.id)"
 WS_URL="$(state_get agent.ws_url)"
 
 if [[ -z "${PROJECT_ID}" || -z "${ENDPOINT_ID}" || -z "${AGENT_ID}" || -z "${WS_URL}" ]]; then
-  err "notebook demo state is incomplete; run make dev-real-seed-notebook again"
+  err "notebook demo state is incomplete; run make local-manual-seed-notebook again"
   exit 1
 fi
 
 if [[ ! -f "${RUNNER_READY_FILE}" ]]; then
-  err "runner is not connected; run make dev-real-seed-notebook again"
+  err "runner is not connected; run make local-manual-seed-notebook again"
   exit 1
 fi
 

@@ -64,8 +64,8 @@ make e2e-int-core-auto PORT_API=20000 PORT_WEB=3001
 - Smoke artifacts (command name kept for compatibility):
   - `artifacts/governance-reports/` latest markdown/json outputs
 - Integration logs:
-  - `artifacts/real-lane/current/integration/api.log`
-  - `artifacts/real-lane/current/integration/web.log`
+  - `artifacts/backend-real/current/integration/api.log`
+  - `artifacts/backend-real/current/integration/web.log`
 
 ## Failure Triage
 

@@ -5,23 +5,19 @@ unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY
 unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env.real.local"
-  set +a
-fi
-REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
+source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
+load_backend_real_env "${ROOT_DIR}/.env.backend-real"
+export_backend_real_endpoint_env
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
-ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/${RUN_ID}}"
+ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/${RUN_ID}}"
 API_PORT="${INTEGRATION_API_PORT:-20070}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3071}"
 API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-real-visual.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-real-visual.log}"
 
-if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[real-visual-review] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
-  echo "[real-visual-review] Export PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias) before running this review." >&2
+if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  echo "[real-visual-review] Missing PRESET_ENDPOINT_API_KEY." >&2
+  echo "[real-visual-review] Export PRESET_ENDPOINT_API_KEY before running this review." >&2
   exit 1
 fi
 
@@ -36,11 +32,11 @@ run_cmd() {
 
 info "screenshots and review artifacts will be written to:"
 info "  ${ARTIFACT_DIR}"
-info "real lane logs:"
+info "backend-real logs:"
 info "  API: ${API_LOG}"
 info "  Web: ${WEB_LOG}"
 
-run_cmd "REAL_LANE_API_KEY='${REAL_LANE_API_KEY_VALUE}' \
+run_cmd "BACKEND_REAL_API_KEY='${BACKEND_REAL_API_KEY_VALUE}' \
 RELEASE_REAL_VISUAL_ARTIFACT_DIR='${ARTIFACT_DIR}' \
 INTEGRATION_API_PORT='${API_PORT}' \
 INTEGRATION_WEB_PORT='${WEB_PORT}' \

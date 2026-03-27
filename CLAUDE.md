@@ -32,7 +32,7 @@ AgentSmith = MBOS 企业级控制面前端。**当前职责**: AI 智能体使�
 
 **工程原则**: Contract First, 分层收敛复杂度, 拒绝补丁式修复, 证据作为一等产物.
 
-**测试原则**: 分层验证 (type/contract → unit → integration → e2e → visual → real-lane smoke), mock/real lane 分离, 验收必须有工程检查门禁（engineering gate）.
+**测试原则**: 分层验证 (type/contract → unit → integration → e2e → visual → backend-real smoke), mock/backend-real 分离, 验收必须有工程检查门禁（engineering gate）.
 
 **治理原则**: 治理是控制面, 统一策略引擎, 例外必须被治理, Incident 是治理主键, Ownership/SLA 是闭环.
 

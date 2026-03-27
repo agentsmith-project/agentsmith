@@ -2,7 +2,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
-init_dev_real_env
+init_local_manual_env
 
 wait_port_free "${PORT_API}" "api" 30
 launch_detached "${API_PID_FILE}" "${API_LOG}" "

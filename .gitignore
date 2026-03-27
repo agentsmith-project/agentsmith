@@ -58,8 +58,8 @@ secrets/*
 artifacts/governance-reports/failed/
 
 # Generated local release verification snapshots / debug captures
-artifacts/release-real-visual/
-artifacts/real-lane/
+artifacts/backend-real-visual/
+artifacts/backend-real/
 artifacts/release-evidence/
 artifacts/system-state/
 artifacts/notebook-runner/

@@ -7,16 +7,13 @@ unset no_proxy NO_PROXY
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
-ensure_real_lane_state
+ensure_backend_real_state
 
-if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
-  set -a
-  # shellcheck disable=SC1091
-  source "${ROOT_DIR}/.env.real.local"
-  set +a
-fi
+load_backend_real_env "${ROOT_DIR}/.env.backend-real"
+export_backend_real_endpoint_env
 
 API_PORT="${INTEGRATION_API_PORT:-20074}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3074}"
@@ -34,10 +31,6 @@ MOUNT_SERVICE_ACCOUNT="${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT:-}"
 MOUNT_IMAGE_OVERRIDE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-}"
 JUICEFS_MOUNT_IMAGE="${INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE:-juicedata/mount:ce-v1.3.1}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
-REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
-REAL_LANE_ANTHROPIC_BASE_URL_VALUE="${PRESET_ENDPOINT_BASE_URL:-${REAL_LANE_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/v1}}"
-REAL_LANE_OPENAI_BASE_URL_VALUE="${PRESET_ENDPOINT_BASE_URL:-${REAL_LANE_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}}"
-REAL_LANE_MODEL_VALUE="${PRESET_ENDPOINT_MODEL:-${REAL_LANE_MODEL:-MiniMax-M2.7-highspeed}}"
 EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}"
 EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-15432}"
 EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}"
@@ -45,8 +38,8 @@ RESET_FIRST="${RESET_FIRST:-1}"
 
 info() { echo "[integration-release-user-story] $*"; }
 
-if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[integration-release-user-story] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
+if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
+  echo "[integration-release-user-story] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
 
@@ -62,11 +55,11 @@ fi
 
 if [[ "${RESET_FIRST}" == "1" ]]; then
   info "running clean reset"
-  bash "${ROOT_DIR}/scripts/release-real-reset.sh"
+  bash "${ROOT_DIR}/scripts/backend-real-reset.sh"
 fi
 
-ensure_real_lane_state
-INTEGRATION_DIR="$(real_lane_tmp_file integration-release-user-story)"
+ensure_backend_real_state
+INTEGRATION_DIR="$(backend_real_tmp_file integration-release-user-story)"
 mkdir -p "${INTEGRATION_DIR}"
 SANDBOX_LOG="${INTEGRATION_SANDBOX_LOG:-${INTEGRATION_DIR}/sandbox-manager.log}"
 CONFIG_PATH="${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.yaml}"
@@ -288,10 +281,10 @@ fi
 info "running full integration release user story"
 (
   cd "${ROOT_DIR}" && \
-    REAL_LANE_API_KEY="${REAL_LANE_API_KEY_VALUE}" \
-    REAL_LANE_ANTHROPIC_BASE_URL="${REAL_LANE_ANTHROPIC_BASE_URL_VALUE}" \
-    REAL_LANE_OPENAI_BASE_URL="${REAL_LANE_OPENAI_BASE_URL_VALUE}" \
-    REAL_LANE_MODEL="${REAL_LANE_MODEL_VALUE}" \
+    BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
+    BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE}" \
+    BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL_VALUE}" \
+    BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL_VALUE}" \
     SANDBOX_MANAGER_URL="http://127.0.0.1:${SANDBOX_PORT}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \

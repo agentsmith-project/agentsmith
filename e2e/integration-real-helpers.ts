@@ -7,18 +7,18 @@ import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './inte
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
-export const REAL_LANE_ANTHROPIC_BASE_URL =
-  process.env.REAL_LANE_ANTHROPIC_BASE_URL ??
+export const BACKEND_REAL_ANTHROPIC_BASE_URL =
+  process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ??
   'https://api.minimaxi.com/anthropic/v1';
-export const REAL_LANE_MODEL =
-  process.env.REAL_LANE_MODEL ??
+export const BACKEND_REAL_MODEL =
+  process.env.BACKEND_REAL_MODEL ??
   'MiniMax-M2.7-highspeed';
-export const REAL_LANE_OPENAI_BASE_URL =
-  process.env.REAL_LANE_OPENAI_BASE_URL ??
+export const BACKEND_REAL_OPENAI_BASE_URL =
+  process.env.BACKEND_REAL_OPENAI_BASE_URL ??
   'https://api.minimaxi.com/v1';
-export const REAL_LANE_OPENAI_MODEL =
-  process.env.REAL_LANE_OPENAI_MODEL ??
-  REAL_LANE_MODEL;
+export const BACKEND_REAL_OPENAI_MODEL =
+  process.env.BACKEND_REAL_OPENAI_MODEL ??
+  BACKEND_REAL_MODEL;
 const DEFAULT_REAL_MODEL_PROFILE = {
   max_context_tokens: 204800,
   max_output_tokens: 8192,
@@ -422,12 +422,12 @@ export async function createExternalCodexAgentBundle(
           chat: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: REAL_LANE_MODEL,
+            model: BACKEND_REAL_MODEL,
           },
           notebook: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: REAL_LANE_MODEL,
+            model: BACKEND_REAL_MODEL,
           },
         },
         capabilities: {
@@ -474,7 +474,7 @@ export async function createExternalCodexAgentBundle(
       },
       data: {
         title: args.title,
-        model: args.sessionModel ?? REAL_LANE_MODEL,
+        model: args.sessionModel ?? BACKEND_REAL_MODEL,
         external_agent_id: createdAgent.id,
       },
     },
@@ -518,7 +518,7 @@ export async function createInternalCodexAgent(
           notebook: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: REAL_LANE_MODEL,
+            model: BACKEND_REAL_MODEL,
           },
         },
         config: {

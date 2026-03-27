@@ -15,12 +15,12 @@
 ### 环境
 
 ```bash
-cp .env.dev.real.example .env.dev.real
-make dev-real-up
-make dev-real-seed-notebook
-make dev-real-status
-make dev-real-down
-make dev-real-reset
+cp .env.local-manual.example .env.local-manual
+make local-manual-up
+make local-manual-seed-notebook
+make local-manual-status
+make local-manual-down
+make local-manual-reset
 ```
 
 ### 门禁
@@ -37,33 +37,33 @@ make gate-release
 make lane-mock
 make lane-visual
 
-cp .env.real.local.example .env.real.local
-npm run lane:real:core
-npm run lane:real:release
+cp .env.backend-real.example .env.backend-real
+npm run lane:backend-real:core
+npm run lane:backend-real:release
 npm run test:release:precheck
-npm run test:visual:real:review
+npm run test:visual:backend-real:review
 ```
 
 ### 发布
 
 ```bash
-npm run release:real:reset
-npm run release:real:bootstrap
-npm run release:real:ready
-npm run release:real:run
-npm run release:real:report
+npm run backend-real:reset
+npm run backend-real:bootstrap
+npm run backend-real:ready
+npm run backend-real:run
+npm run backend-real:report
 ```
 
 当前有效配置命名：
 
-- dev-real: `PRESET_ENDPOINT_*`
-- real lane: `REAL_LANE_*`
+- local-manual: `PRESET_ENDPOINT_*`
+- backend-real runtime: `BACKEND_REAL_*`
 - demo deploy: `DEPLOY_*`
 
 模板入口：
 
-- dev-real: `.env.dev.real.example`
-- real lane: `.env.real.local.example`
+- local-manual: `.env.local-manual.example`
+- backend-real: `.env.backend-real.example`
 - demo deploy: `infra/deploy/demo/env/site.env.example`
 
 旧 demo 命令与 `GLM_*` 命名已经移除；传入旧名字会直接 fail fast。
@@ -128,7 +128,7 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 ## 本地真实手测环境
 
-当前推荐的真实后端手测入口是 `dev-real`，它会把：
+当前推荐的真实后端手测入口是 `local-manual`，它会把：
 
 1. integration 依赖
 2. universal-proxy
@@ -141,29 +141,31 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 ### First-time setup
 
 ```bash
-cp .env.dev.real.example .env.dev.real
+cp .env.local-manual.example .env.local-manual
 ```
 
 必须填写：
 
 ```bash
 PRESET_ENDPOINT_API_KEY=...
-PRESET_ENDPOINT_BASE_URL=https://api.minimaxi.com/v1
 PRESET_ENDPOINT_MODEL=MiniMax-M2.7-highspeed
-PRESET_ENDPOINT_PROTOCOL=openai_compatible
 PRESET_ENDPOINT_MAX_CONTEXT_TOKENS=204800
 PRESET_ENDPOINT_MAX_OUTPUT_TOKENS=128000
+PRESET_ANTHROPIC_ENDPOINT_BASE_URL=https://api.minimaxi.com/anthropic/v1
+PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=anthropic_compatible
+PRESET_OPENAI_ENDPOINT_BASE_URL=https://api.minimaxi.com/v1
+PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible
 ```
 
 注意：
 
-1. 旧 `GLM_*` 变量名在 `dev-real` 主路径下**不再支持**
+1. 旧 `GLM_*` 变量名在 `local-manual` 主路径下**不再支持**
 2. 发现 `GLM_*` 会直接 fail fast
 
 ### Start platform only
 
 ```bash
-make dev-real-up
+make local-manual-up
 ```
 
 这一步只启动平台，不自动创建 notebook demo 资源。
@@ -171,7 +173,7 @@ make dev-real-up
 ### Seed notebook demo and start host runner
 
 ```bash
-make dev-real-seed-notebook
+make local-manual-seed-notebook
 ```
 
 这一步会：
@@ -184,19 +186,19 @@ make dev-real-seed-notebook
 ### Check status
 
 ```bash
-make dev-real-status
+make local-manual-status
 ```
 
 ### Full reset
 
 ```bash
-make dev-real-reset
+make local-manual-reset
 ```
 
 ### Stop everything
 
 ```bash
-make dev-real-down
+make local-manual-down
 ```
 
 ## Environment Setup
@@ -359,10 +361,10 @@ This gate bundles:
 If release-oriented verification also needs the real backend lane:
 
 ```bash
-npm run test:real-core
+npm run test:backend-real:core
 ```
 
-This real-lane variant auto starts integration dependencies, API, and frontend on dedicated ports.
+This backend-real variant auto starts integration dependencies, API, and frontend on dedicated ports.
 
 ## Release Readiness Checklist
 
@@ -376,17 +378,17 @@ npx tsc --noEmit
 npm run test:default-e2e
 npm run test:governance
 npm run test:visual
-npm run test:real-core
-npm run test:notebook:real-smoke
-npm run test:visual:real:review
-npm run test:release:real:full
+npm run test:backend-real:core
+npm run test:notebook:backend-real:smoke
+npm run test:visual:backend-real:review
+npm run test:backend-real:full
 ```
 
 Notes:
 
 1. `npm run test:visual` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
-2. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `REAL_LANE_API_KEY` alias).
-3. `npm run test:visual:real:review` writes real-environment screenshots to `artifacts/release-real-visual/<run-id>/` for manual inspection.
+2. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `BACKEND_REAL_API_KEY` alias).
+3. `npm run test:visual:backend-real:review` writes real-environment screenshots to `artifacts/backend-real-visual/<run-id>/` for manual inspection.
 
 ## Test & Evidence Directory Contract
 
@@ -408,7 +410,7 @@ Notes:
 ### 长期证据与发布审查资产
 - `artifacts/`
 - 其中长期结构约定为：
-  - `artifacts/release-real-visual/`
+  - `artifacts/backend-real-visual/`
   - `artifacts/release-evidence/`
   - `artifacts/governance-reports/`
   - `artifacts/system-state/`
@@ -417,7 +419,7 @@ Notes:
 使用规则：
 1. 日常失败排查看 `test-results/`
 2. mock visual 基线看 `e2e/__screenshots__/`
-3. 真实后端人工界面审查看 `artifacts/release-real-visual/<run-id>/`
+3. 真实后端人工界面审查看 `artifacts/backend-real-visual/<run-id>/`
 4. 不再新增泛化的 `tests/` 目录承载主测试代码
 5. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
 

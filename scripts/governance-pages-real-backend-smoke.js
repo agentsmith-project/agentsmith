@@ -356,7 +356,7 @@ async function resolveAccessibleProjectId({ page, baseUrl, apiBase, locale, work
 }
 
 async function main() {
-  const stateFile = process.env.STATE_FILE || path.join(process.cwd(), 'artifacts/real-lane/current/state.json');
+  const stateFile = process.env.STATE_FILE || path.join(process.cwd(), 'artifacts/backend-real/current/state.json');
   const state = fs.existsSync(stateFile) ? JSON.parse(fs.readFileSync(stateFile, 'utf8')) : {};
   const smokeMode = process.env.GOVERNANCE_SMOKE_MODE === 'strict' ? 'strict' : 'tolerant';
   const strictMode = smokeMode === 'strict';
@@ -371,7 +371,7 @@ async function main() {
   const password = process.env.PASSWORD || 'dev-admin-123';
   const fallbackProjectId = process.env.PROJECT_ID || state?.project?.id || '';
   if (!fallbackProjectId) throw new Error(`empty_project_id_from_state:${stateFile}`);
-  const tokenFile = process.env.TOKEN_FILE || path.join(process.cwd(), 'artifacts/real-lane/current/token.txt');
+  const tokenFile = process.env.TOKEN_FILE || path.join(process.cwd(), 'artifacts/backend-real/current/token.txt');
 
   const browser = await chromium.launch({ headless: true });
 

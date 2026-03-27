@@ -4,14 +4,14 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
 API_BASE="${API_BASE:-http://localhost:20000}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 INTERVAL_SEC="${INTERVAL_SEC:-2}"
 COUNT="${COUNT:-0}" # 0 means run forever
-METRICS_FILE="${METRICS_FILE:-$(real_lane_tmp_file notebook-metrics.json)}"
+METRICS_FILE="${METRICS_FILE:-$(backend_real_tmp_file notebook-metrics.json)}"
 
 if [[ ! -f "${TOKEN_FILE}" ]]; then
   echo "[monitor] token file not found: ${TOKEN_FILE}" >&2

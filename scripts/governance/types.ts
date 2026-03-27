@@ -115,8 +115,8 @@ export interface CheckResult {
  * Check categories */
 export type CheckCategory =
   | 'contract'       // Contract verification (OpenAPI, types)
-  | 'lane-real-core' // Core real-lane checks
-  | 'lane-governance' // Governance real-lane checks
+  | 'lane-real-core' // Core backend-real checks
+  | 'lane-governance' // Governance backend-real checks
   | 'typecheck'      // TypeScript type checking
   | 'unit'           // Unit tests
   | 'e2e';           // End-to-end tests
@@ -137,9 +137,9 @@ export interface ReportSummary {
   failure_categories?: FailureCategory[];
   /** Expected upstream transient instability summary (present if detected) */
   upstream_transient?: UpstreamTransientSummary;
-  /** Execution review evidence collected from the real-lane execution workflow */
+  /** Execution review evidence collected from the backend-real execution workflow */
   execution_review_evidence?: ExecutionReviewEvidence;
-  /** Governance execution evidence collected from the governance real lane */
+  /** Governance execution evidence collected from the governance backend-real run */
   governance_evidence?: GovernanceReviewEvidence;
   /** Build reliability evidence collected from build execution lanes */
   build_reliability_evidence?: BuildReliabilityReviewEvidence;

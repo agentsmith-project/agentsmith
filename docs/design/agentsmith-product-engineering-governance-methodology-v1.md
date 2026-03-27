@@ -105,7 +105,7 @@ AgentSmith 当前只采用一条治理主线：
 2. unit
 3. integration
 4. e2e
-5. real-lane
+5. backend-real
 
 补充发布验证原则：
 - 对真实发布最脆弱的检查点，必须更早在开发 gate 和本地预检中做一遍

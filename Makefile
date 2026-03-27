@@ -10,7 +10,7 @@
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
-	dev-real-up dev-real-down dev-real-status dev-real-reset dev-real-seed-notebook \
+	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-notebook \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
@@ -24,7 +24,7 @@
 	ensure-default-workspace real-stack-ready \
 	gate-fast gate-default gate-release lane-mock lane-visual lane-real-core lane-real-release \
 	manual-feishu-admin manual-feishu-user manual-feishu-check \
-	release-real-reset release-real-bootstrap release-real-ready release-real-run release-real-report
+	backend-real-reset backend-real-bootstrap backend-real-ready backend-real-run backend-real-report
 
 NPM ?= npm
 
@@ -79,11 +79,11 @@ help-extended:
 	@echo "  make help-glossary  # explain common testing/engineering terms in plain language"
 	@echo ""
 	@echo "Environment:"
-	@echo "  make dev-real-up            # start the real local manual-test environment"
-	@echo "  make dev-real-seed-notebook # create notebook demo resources and start the host runner"
-	@echo "  make dev-real-status        # show current real local environment state"
-	@echo "  make dev-real-down          # stop the real local manual-test environment"
-	@echo "  make dev-real-reset         # rebuild the real local manual-test environment"
+	@echo "  make local-manual-up            # start the real local manual-test environment"
+	@echo "  make local-manual-seed-notebook # create notebook demo resources and start the host runner"
+	@echo "  make local-manual-status        # show current real local environment state"
+	@echo "  make local-manual-down          # stop the real local manual-test environment"
+	@echo "  make local-manual-reset         # rebuild the real local manual-test environment"
 	@echo ""
 	@echo "Gates:"
 	@echo "  make gate-fast      # fast engineering gate"
@@ -97,11 +97,11 @@ help-extended:
 	@echo "  make lane-real-release # full real-backend verification channel"
 	@echo ""
 	@echo "Release:"
-	@echo "  make release-real-reset      # clean release verification state"
-	@echo "  make release-real-bootstrap  # bootstrap release verification dependencies and tokens"
-	@echo "  make release-real-ready      # wait for release verification readiness"
-	@echo "  make release-real-run        # run the release verification matrix"
-	@echo "  make release-real-report     # write the release verification report"
+	@echo "  make backend-real-reset      # clean release verification state"
+	@echo "  make backend-real-bootstrap  # bootstrap release verification dependencies and tokens"
+	@echo "  make backend-real-ready      # wait for release verification readiness"
+	@echo "  make backend-real-run        # run the release verification matrix"
+	@echo "  make backend-real-report     # write the release verification report"
 	@echo ""
 	@echo "Bootstrap:"
 	@echo "  make bootstrap    # deps-up → wait for ready → deps-init → deps-smoke (ordered)"
@@ -152,20 +152,20 @@ help-extended:
 	@echo "  make manual-feishu-admin # print admin Feishu confirmation URL"
 	@echo "  make manual-feishu-user  # print user Feishu confirmation URL"
 	@echo "  make manual-feishu-check # verify the latest Feishu manual step"
-	@echo "  make release-real-reset      # clean real-lane reset"
-	@echo "  make release-real-bootstrap  # bootstrap deps, workspace, and token"
-	@echo "  make release-real-ready      # wait for stack readiness"
-	@echo "  make release-real-run        # run full real verification matrix"
-	@echo "  make release-real-report     # write real-lane report"
+	@echo "  make backend-real-reset      # clean backend-real reset"
+	@echo "  make backend-real-bootstrap  # bootstrap deps, workspace, and token"
+	@echo "  make backend-real-ready      # wait for stack readiness"
+	@echo "  make backend-real-run        # run full real verification matrix"
+	@echo "  make backend-real-report     # write backend-real report"
 	@echo "  make agent-test-runner  # start standalone external agent test runner (requires AGENT_WS_URL + AGENT_KEY)"
 	@echo "  make agent-codex-runner # start Codex-based external agent runner (requires AGENT_WS_URL + AGENT_KEY; auto mounts builtin skills)"
-	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT into artifacts/real-lane/current/token.txt"
-	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write artifacts/real-lane/current/state.json"
-	@echo "  make notebook-agent-runner         # start codex runner using artifacts/real-lane/current/state.json"
-	@echo "  make dev-real-up                  # start real dev platform (deps + proxy + api + web)"
-	@echo "  make dev-real-seed-notebook       # create notebook demo resources and start host external runner"
-	@echo "  make dev-real-status              # show real dev stack status"
-	@echo "  make dev-real-down                # stop real dev stack and local deps"
+	@echo "  make notebook-agent-refresh-token # refresh Keycloak JWT into artifacts/backend-real/current/token.txt"
+	@echo "  make notebook-agent-init-resources # create project/endpoint/agent/key and write artifacts/backend-real/current/state.json"
+	@echo "  make notebook-agent-runner         # start codex runner using artifacts/backend-real/current/state.json"
+	@echo "  make local-manual-up                  # start real dev platform (deps + proxy + api + web)"
+	@echo "  make local-manual-seed-notebook       # create notebook demo resources and start host external runner"
+	@echo "  make local-manual-status              # show real dev stack status"
+	@echo "  make local-manual-down                # stop real dev stack and local deps"
 	@echo "  make notebook-agent-no-sandbox-smoke # verify AgentSmith works without sandbox deployment (current API/Web/Runner path + fail-fast internal paths)"
 	@echo "  make notebook-agent-smoke-task    # create notebook task, post prompt, poll final output"
 	@echo "  make notebook-agent-credential-sync-smoke # verify execution_context credential files are written under .codex/credential/"
@@ -216,13 +216,13 @@ help-extended:
 quick-help:
 	@echo "MBOS Recommended Commands"
 	@echo ""
-	@echo "  make dev-real-up"
+	@echo "  make local-manual-up"
 	@echo "    Start the real local manual-test environment."
 	@echo ""
-	@echo "  make dev-real-seed-notebook"
+	@echo "  make local-manual-seed-notebook"
 	@echo "    Seed notebook resources and start the host runner."
 	@echo ""
-	@echo "  make dev-real-status"
+	@echo "  make local-manual-status"
 	@echo "    Show the current real local environment state."
 	@echo ""
 	@echo "  make gate-fast"
@@ -240,10 +240,10 @@ quick-help:
 	@echo "  make lane-real-release"
 	@echo "    Full real-backend verification channel."
 	@echo ""
-	@echo "  make release-real-run"
+	@echo "  make backend-real-run"
 	@echo "    Run the release verification matrix."
 	@echo ""
-	@echo "  make release-real-report"
+	@echo "  make backend-real-report"
 	@echo "    Write the release verification report."
 
 help-glossary:
@@ -293,7 +293,7 @@ mvp-freeze-check:
 	@set -e; \
 	$(MAKE) verify-contracts; \
 	$(MAKE) governance-core-smoke; \
-	$(MAKE) dev-real-status
+	$(MAKE) local-manual-status
 
 preprod-acceptance-check:
 	./scripts/preprod-acceptance-check.sh
@@ -406,10 +406,10 @@ lane-visual:
 	npm run lane:visual
 
 lane-real-core:
-	npm run lane:real:core
+	npm run lane:backend-real:core
 
 lane-real-release:
-	npm run lane:real:release
+	npm run lane:backend-real:release
 
 manual-feishu-admin:
 	npm run manual:feishu:admin
@@ -420,20 +420,20 @@ manual-feishu-user:
 manual-feishu-check:
 	npm run manual:feishu:check
 
-release-real-reset:
-	npm run release:real:reset
+backend-real-reset:
+	npm run backend-real:reset
 
-release-real-bootstrap:
-	npm run release:real:bootstrap
+backend-real-bootstrap:
+	npm run backend-real:bootstrap
 
-release-real-ready:
-	npm run release:real:ready
+backend-real-ready:
+	npm run backend-real:ready
 
-release-real-run:
-	npm run release:real:run
+backend-real-run:
+	npm run backend-real:run
 
-release-real-report:
-	npm run release:real:report
+backend-real-report:
+	npm run backend-real:report
 
 check-api-port:
 	@PORT="$(PORT_API)"; \
@@ -671,31 +671,31 @@ notebook-agent-refresh-token:
 notebook-agent-init-resources:
 	@if [ -n "$(GLM_API_KEY)" ] || [ -n "$(GLM_BASE_URL)" ] || [ -n "$(GLM_MODEL)" ]; then \
 		echo "[make] Legacy GLM_* vars are no longer supported for notebook-agent-init-resources."; \
-		echo "[make] Use PRESET_ENDPOINT_API_KEY / PRESET_ENDPOINT_BASE_URL / PRESET_ENDPOINT_MODEL / PRESET_ENDPOINT_PROTOCOL."; \
+		echo "[make] Use PRESET_ENDPOINT_API_KEY / PRESET_ANTHROPIC_ENDPOINT_BASE_URL / PRESET_ENDPOINT_MODEL / PRESET_ANTHROPIC_ENDPOINT_PROTOCOL."; \
 		exit 1; \
 	fi
 	@if [ -z "$(PRESET_ENDPOINT_API_KEY)" ]; then \
 		echo "[make] Missing PRESET_ENDPOINT_API_KEY."; \
 		echo "[make] Example:"; \
-		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ENDPOINT_BASE_URL='https://api.minimaxi.com/v1' PRESET_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' PRESET_ENDPOINT_PROTOCOL='openai_compatible' make notebook-agent-init-resources"; \
+		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='https://api.minimaxi.com/anthropic/v1' PRESET_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_compatible' make notebook-agent-init-resources"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	PRESET_ENDPOINT_API_KEY="$(PRESET_ENDPOINT_API_KEY)" \
-	PRESET_ENDPOINT_BASE_URL="$(PRESET_ENDPOINT_BASE_URL)" \
 	PRESET_ENDPOINT_MODEL="$(PRESET_ENDPOINT_MODEL)" \
-	PRESET_ENDPOINT_PROTOCOL="$(PRESET_ENDPOINT_PROTOCOL)" \
+	PRESET_ANTHROPIC_ENDPOINT_BASE_URL="$(PRESET_ANTHROPIC_ENDPOINT_BASE_URL)" \
+	PRESET_ANTHROPIC_ENDPOINT_PROTOCOL="$(PRESET_ANTHROPIC_ENDPOINT_PROTOCOL)" \
 	PRESET_ENDPOINT_MAX_CONTEXT_TOKENS="$(PRESET_ENDPOINT_MAX_CONTEXT_TOKENS)" \
 	PRESET_ENDPOINT_MAX_OUTPUT_TOKENS="$(PRESET_ENDPOINT_MAX_OUTPUT_TOKENS)" \
 	./scripts/notebook-agent-init-resources.sh
 
 notebook-agent-runner:
 	@set -e; \
-	STATE_FILE="$${REAL_LANE_STATE_FILE:-$(CURDIR)/artifacts/real-lane/current/state.json}"; \
+	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
 	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no real-lane state agent metadata found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent metadata found."; \
 		exit 1; \
 	fi; \
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
@@ -709,30 +709,30 @@ notebook-agent-runner:
 	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
 	$(NPM) run agent:codex-runner
 
-dev-real-up:
+local-manual-up:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/dev-real-up.sh
+	./scripts/local-manual-up.sh
 
-dev-real-seed-notebook:
+local-manual-seed-notebook:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/dev-real/seed-notebook-demo.sh
+	./scripts/local-manual/seed-notebook-demo.sh
 
-dev-real-down:
+local-manual-down:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/dev-real-down.sh
+	./scripts/local-manual-down.sh
 
-dev-real-status:
+local-manual-status:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/dev-real-status.sh
+	./scripts/local-manual-status.sh
 
-dev-real-reset:
+local-manual-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/dev-real-down.sh && $(MAKE) deps-reset && $(MAKE) dev-real-up && $(MAKE) dev-real-seed-notebook
+	./scripts/local-manual-down.sh && $(MAKE) deps-reset && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
 
 notebook-agent-no-sandbox-smoke:
 	@set -e; \
 	echo "[make] no-sandbox smoke: real dev stack readiness check"; \
-	$(MAKE) dev-real-status; \
+	$(MAKE) local-manual-status; \
 	echo "[make] no-sandbox smoke: internal path must fail fast when sandbox is absent"; \
 	$(MAKE) notebook-agent-no-sandbox-assert
 
@@ -754,7 +754,7 @@ notebook-agent-engineering-smoke:
 notebook-agent-engineering-smoke-full:
 	@set -e; \
 	echo "[make] checking real dev stack status..."; \
-	$(MAKE) dev-real-status; \
+	$(MAKE) local-manual-status; \
 	echo "[make] running engineering smoke bundle..."; \
 	$(MAKE) notebook-agent-engineering-smoke
 
@@ -837,7 +837,7 @@ governance-sse-ticket-effect-smoke:
 governance-smoke:
 	@set -e; \
 	echo "[make] governance smoke preflight: require real dev platform to be up"; \
-	$(MAKE) dev-real-status; \
+	$(MAKE) local-manual-status; \
 	run_with_token_retry() { \
 		STEP_NAME="$$1"; \
 		if ! $(MAKE) "$$STEP_NAME"; then \
@@ -867,12 +867,12 @@ governance-smoke:
 
 notebook-agent-smoke-full:
 	@set -e; \
-	STATE_FILE="$${REAL_LANE_STATE_FILE:-$(CURDIR)/artifacts/real-lane/current/state.json}"; \
-	RUNNER_LOG="$${RUNNER_LOG:-$(CURDIR)/artifacts/real-lane/current/runner-smoke.log}"; \
+	STATE_FILE="$${BACKEND_REAL_STATE_FILE:-$(CURDIR)/artifacts/backend-real/current/state.json}"; \
+	RUNNER_LOG="$${RUNNER_LOG:-$(CURDIR)/artifacts/backend-real/current/runner-smoke.log}"; \
 	WS_URL="$${AGENT_WS_URL:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.ws_url||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	AGENT_KEY_VALUE="$${AGENT_KEY:-$$(node -e 'const fs=require("node:fs"); const f=process.argv[1]; if(fs.existsSync(f)){const j=JSON.parse(fs.readFileSync(f,"utf8")); process.stdout.write(j?.agent?.key||"")}' "$$STATE_FILE" 2>/dev/null || true)}"; \
 	if [ -z "$$WS_URL" ] || [ -z "$$AGENT_KEY_VALUE" ]; then \
-		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no real-lane state agent metadata found."; \
+		echo "[make] Missing AGENT_WS_URL/AGENT_KEY and no backend-real state agent metadata found."; \
 		exit 1; \
 	fi; \
 	echo "[make] refreshing token..."; \

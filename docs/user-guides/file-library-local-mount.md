@@ -78,6 +78,6 @@ This is expected. A file library must be empty before it can be deleted.
 The release-grade validation commands are:
 
 ```bash
-npm run test:files:real:smoke
-npm run test:files:real:sync
+npm run test:files:backend-real:smoke
+npm run test:files:backend-real:sync
 ```

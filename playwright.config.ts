@@ -127,7 +127,7 @@ export default defineConfig({
       workers: 1,
     },
     {
-      name: 'real-lane',
+      name: 'backend-real',
       grep: /@lane-real/,
       testMatch: /integration-.*\.spec\.ts$/,
       use: {

@@ -41,11 +41,11 @@ The following may still appear in file names or legacy script names, but they mu
 ### 环境
 
 ```bash
-make dev-real-up
-make dev-real-seed-notebook
-make dev-real-status
-make dev-real-down
-make dev-real-reset
+make local-manual-up
+make local-manual-seed-notebook
+make local-manual-status
+make local-manual-down
+make local-manual-reset
 ```
 
 ### 测试
@@ -54,8 +54,8 @@ make dev-real-reset
 npm run test:default-e2e
 npm run test:visual
 npm run test:governance
-npm run test:real-core
-npm run test:notebook:real-smoke
+npm run test:backend-real:core
+npm run test:notebook:backend-real:smoke
 ```
 
 ### 门禁
@@ -71,18 +71,18 @@ npm run gate:release
 ```bash
 npm run lane:mock
 npm run lane:visual
-npm run lane:real:core
-npm run lane:real:release
+npm run lane:backend-real:core
+npm run lane:backend-real:release
 ```
 
 ### 发布
 
 ```bash
-npm run release:real:reset
-npm run release:real:bootstrap
-npm run release:real:ready
-npm run release:real:run
-npm run release:real:report
+npm run backend-real:reset
+npm run backend-real:bootstrap
+npm run backend-real:ready
+npm run backend-real:run
+npm run backend-real:report
 ```
 
 ## 3. Playwright model
@@ -101,7 +101,7 @@ Current Playwright projects map to the workflow model as follows:
 - Playwright project: `visual`
 
 4. `真实后端验证`
-- Playwright integration config / real-lane tests
+- Playwright integration config / backend-real tests
 
 Important:
 - `默认 e2e` is not “all e2e”.
@@ -130,7 +130,7 @@ Important:
 Current provider-neutral names:
 
 - `PRESET_ENDPOINT_*`
-- `REAL_LANE_*`
+- `BACKEND_REAL_*`
 - `DEPLOY_*`
 - `OpenAI-compatible`
 - `Anthropic-compatible`

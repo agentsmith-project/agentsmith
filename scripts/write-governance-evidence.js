@@ -27,7 +27,7 @@ const evidence = {
     member_lifecycle_effect: true,
     sse_ticket_hardening: true,
   },
-  note: 'Generated after the governance real lane completed successfully.',
+  note: 'Generated after the governance backend-real run completed successfully.',
 };
 
 writeFileSync(resolvedPath, JSON.stringify(evidence, null, 2), 'utf8');

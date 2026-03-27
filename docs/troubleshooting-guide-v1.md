@@ -33,7 +33,7 @@ make notebook-agent-refresh-token
 
 3. 看 demo / runner 状态  
 ```bash
-make dev-real-status
+make local-manual-status
 ```
 
 4. 再看对应 lane 的正式入口  
@@ -51,19 +51,19 @@ make notebook-agent-refresh-token
 
 ### 重启 demo 环境
 ```bash
-make dev-real-down
-make dev-real-up
-make dev-real-seed-notebook
+make local-manual-down
+make local-manual-up
+make local-manual-seed-notebook
 ```
 
 ### 仅重启 managed runner
 ```bash
-make dev-real-seed-notebook
+make local-manual-seed-notebook
 ```
 
 ### 重新初始化 demo 资源
 ```bash
-make dev-real-seed-notebook
+make local-manual-seed-notebook
 ```
 
 ## 4. 治理链路排障

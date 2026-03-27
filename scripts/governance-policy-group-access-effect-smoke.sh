@@ -4,19 +4,19 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
-ensure_real_lane_state
+source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
+ensure_backend_real_state
 
 PORT_API="${PORT_API:-20000}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-TOKEN_FILE="${TOKEN_FILE:-$(real_lane_token_file)}"
+TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 ENDPOINT_ID="${ENDPOINT_ID:-$(state_get endpoint.id)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 CURL_MAX_TIME="${CURL_MAX_TIME:-40}"
 GROUP_PERMISSION_TEMPLATE_ID="${GROUP_PERMISSION_TEMPLATE_ID:-perm_tpl_default}"
-REAL_LANE_MODEL="${REAL_LANE_MODEL:-$(state_get endpoint.model)}"
+BACKEND_REAL_MODEL="${BACKEND_REAL_MODEL:-$(state_get endpoint.model)}"
 
 info() { echo "[gov-policy-group-smoke] $*"; }
 err() { echo "[gov-policy-group-smoke] ERROR: $*" >&2; }
@@ -103,7 +103,7 @@ main() {
       "${endpoint_url}" -H "Authorization: Bearer ${token}" || true
   )"
   if [[ "${endpoint_code}" != "200" ]]; then
-    err "endpoint lookup failed (HTTP ${endpoint_code}); stale real-lane state? run init-resources"
+    err "endpoint lookup failed (HTTP ${endpoint_code}); stale backend-real state? run init-resources"
     exit 1
   fi
 
@@ -158,7 +158,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group deny smoke"}]}))' "${REAL_LANE_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group deny smoke"}]}))' "${BACKEND_REAL_MODEL}")" || true
   )"
   if [[ "${deny_code}" != "403" ]]; then
     err "expected 403 on deny policy, got HTTP ${deny_code}"
@@ -258,7 +258,7 @@ main() {
       "${proxy_url}" \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
-      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group allow smoke"}]}))' "${REAL_LANE_MODEL}")" || true
+      --data "$(node -e 'console.log(JSON.stringify({model:process.argv[1],messages:[{role:"user",content:"policy group allow smoke"}]}))' "${BACKEND_REAL_MODEL}")" || true
   )"
   if [[ "${allow_code}" == "403" ]]; then
     err "group allow-list did not clear deny (still 403)"

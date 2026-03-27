@@ -92,7 +92,7 @@ const CHECK_DEFINITIONS: Array<{
   },
   {
     id: 'lane-real-core',
-    name: 'Core real lane',
+    name: 'Core backend-real',
     category: 'lane-real-core',
     command: 'make notebook-agent-engineering-smoke-full',
     timeout: 600000, // 10 minutes

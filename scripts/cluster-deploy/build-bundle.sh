@@ -52,13 +52,14 @@ copy_source_tree() {
     -cf - . | tar -C "${dst}" -xf -
 }
 
-mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
+mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
 cp "${ROOT_DIR}/infra/deploy/cluster/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example" "${BUNDLE_DIR}/env/registry.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/kubeconfig.example.yaml" "${BUNDLE_DIR}/env/kubeconfig.example.yaml"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/manager-kubeconfig.example.yaml" "${BUNDLE_DIR}/env/manager-kubeconfig.example.yaml"
+cp "${ROOT_DIR}/infra/deploy/cluster/admin-examples/"*.yaml "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples/"
 cp "${ROOT_DIR}/infra/integration/postgres-init/001-create-databases.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/packages/adapters-private/sql/projects.sql" "${BUNDLE_DIR}/postgres-init/"
 cp "${ROOT_DIR}/infra/integration/minio/init-minio.sh" "${BUNDLE_DIR}/minio/"

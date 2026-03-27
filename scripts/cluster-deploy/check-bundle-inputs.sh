@@ -47,6 +47,8 @@ for relative in manifest.get("bundle_files", []):
         source = root_dir / "infra" / "deploy" / "cluster" / pathlib.Path(relative).name
     elif relative.startswith("env/"):
         source = root_dir / "infra" / "deploy" / "cluster" / "env" / pathlib.Path(relative).name
+    elif relative.startswith("infra/deploy/cluster/admin-examples/"):
+        source = root_dir / relative
     elif relative.startswith("postgres-init/"):
         source = root_dir / "infra" / "integration" / "postgres-init" / pathlib.Path(relative).name
         if pathlib.Path(relative).name == "projects.sql":

@@ -10,6 +10,12 @@ This document describes the intended privilege split for the real-cluster deploy
 
 This is a reference for cluster administrators. It is not an automation target.
 
+Ready-to-edit example YAMLs live under:
+
+- `infra/deploy/cluster/admin-examples/deploy-role.example.yaml`
+- `infra/deploy/cluster/admin-examples/manager-role.example.yaml`
+- `infra/deploy/cluster/admin-examples/manager-pv-clusterrole.example.yaml`
+
 ## Deploy Kubeconfig
 
 Purpose:

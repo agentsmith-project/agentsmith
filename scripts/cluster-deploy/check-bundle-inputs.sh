@@ -79,4 +79,28 @@ for relative in manifest.get("bundle_files", []):
         raise SystemExit(f"missing_bundle_source:{relative}:{source}")
 PY
 
+cluster_automation_files=(
+  "${ROOT_DIR}/scripts/cluster-deploy/prepare.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/bootstrap.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/verify.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/report.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/reset.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
+)
+
+for forbidden in \
+  "kubectl create namespace" \
+  "kubectl delete namespace" \
+  "kube-system" \
+  "juicefs-csi.yaml" \
+  "ClusterRole" \
+  "ClusterRoleBinding"; do
+  if rg -n "${forbidden}" "${cluster_automation_files[@]}" >/dev/null; then
+    echo "cluster-deploy automation must stay namespace-only; found forbidden token: ${forbidden}" >&2
+    exit 1
+  fi
+done
+
 echo "[cluster-bundle-inputs] ok"

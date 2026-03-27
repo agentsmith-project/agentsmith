@@ -10,6 +10,7 @@ Use it when:
 - internal agent execution runs on a real Kubernetes cluster
 - the cluster administrator has already completed the prerequisites in:
   - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
+  - [cluster-admin-rbac-reference-v1.md](/home/percy/works/mbos-v1/agentsmith/docs/contracts/cluster-admin-rbac-reference-v1.md)
 
 Do not use it to replace the current demo deployment line.
 
@@ -164,6 +165,8 @@ Before automation runs, the cluster must already provide:
   - `INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON`
 
 If these are missing, `prepare.sh` must fail fast.
+
+`prepare.sh` does not perform cluster-scope discovery for those prerequisites. It assumes the administrator has already completed and validated them.
 
 ## External Dependency Model
 

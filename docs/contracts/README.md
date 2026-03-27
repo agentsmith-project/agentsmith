@@ -32,6 +32,7 @@
 - `backend-storage-architecture-matrix.md`（全系统后端数据真相、接口模块与存储模式总表）
 - `backend-storage-maturity-checklist.md`（后端数据持久化成熟度改进清单）
 - `cluster-deployment-spec-v1.md`（真实集群发布线：registry + install bundle + compose/k8s 边界）
+- `cluster-admin-rbac-reference-v1.md`（真实集群发布线：deploy kubeconfig 与 manager kubeconfig 的权限边界参考）
 
 ## 模块合同
 

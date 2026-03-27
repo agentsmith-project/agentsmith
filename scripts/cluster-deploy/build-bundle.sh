@@ -76,6 +76,7 @@ cp "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}
 cp "${ROOT_DIR}/e2e/integration-preset-external-file-library.spec.ts" "${BUNDLE_DIR}/e2e/integration-preset-external-file-library.spec.ts"
 cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/integration-release-user-story.spec.ts"
 cp "${ROOT_DIR}/docs/user-guides/cluster-admin-runbook.md" "${BUNDLE_DIR}/docs/user-guides/cluster-admin-runbook.md"
+cp "${ROOT_DIR}/docs/contracts/cluster-admin-rbac-reference-v1.md" "${BUNDLE_DIR}/docs/contracts/cluster-admin-rbac-reference-v1.md"
 cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/cluster-deployment-spec-v1.md"
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"

@@ -25,6 +25,8 @@ The cluster administrator must hand over these inputs to the application deploym
 - a reachable manager ingress host and base URL
 - node selector and toleration values that match the target cluster
 
+The application deployment operator must not continue until all of these handoff items exist.
+
 ## 1. Prepare Namespace
 
 Create and govern the target namespace outside AgentSmith automation:
@@ -50,6 +52,14 @@ Record the storage class name and provide it to AgentSmith as:
 - `INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME`
 
 `cluster-deploy` consumes this storage class. It does not install CSI.
+
+Also confirm, outside AgentSmith automation:
+
+- the chosen ingress class exists and is healthy
+- the chosen storage class exists and is healthy
+- the recorded node selector / toleration values actually match runnable nodes
+
+These are administrator-side checks. `cluster-deploy` no longer performs cluster-scope discovery for them.
 
 ## 3. Prepare Manager Runtime Permissions
 
@@ -83,6 +93,10 @@ This kubeconfig is mounted into sandbox-manager as:
 
 Do not reuse the deploy kubeconfig for manager runtime.
 
+See the detailed privilege reference:
+
+- [cluster-admin-rbac-reference-v1.md](/home/percy/works/mbos-v1/agentsmith/docs/contracts/cluster-admin-rbac-reference-v1.md)
+
 ## 4. Prepare Deploy Kubeconfig
 
 Create a separate deploy kubeconfig that is limited to namespace-only release actions in `mbos`.
@@ -97,11 +111,7 @@ Minimum namespaced create/update/apply access:
 - ingresses
 
 Recommended read-only access:
-
 - namespace
-- ingressclasses
-- storageclasses
-- nodes
 
 This kubeconfig is used by `prepare.sh` and `deploy.sh`.
 
@@ -155,9 +165,7 @@ Before allowing `cluster-deploy` automation to run, verify:
 - `mbos` namespace exists
 - deploy kubeconfig can write namespaced release objects in `mbos`
 - manager kubeconfig can manage namespaced workspace objects and cluster-scope PVs
-- JuiceFS storage class exists
-- ingress controller exists
-- node selector / toleration values match actual nodes
+- ingress class / JuiceFS storage class / node selector and toleration checks are already completed by the administrator
 
 After these are true, the application deployment operator can run:
 

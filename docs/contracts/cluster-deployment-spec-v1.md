@@ -68,6 +68,7 @@ It must not:
 - modify `kube-system`
 - create cluster-wide RBAC
 - create or delete cluster-scope storage objects
+- perform cluster-scope discovery checks as part of deploy automation
 
 All cluster-scope preparation belongs to the separate administrator runbook:
 
@@ -119,6 +120,8 @@ It must be able to create namespaced resources such as:
 
 It must not require cluster-admin permissions.
 
+It also must not depend on cluster-scope discovery as part of normal automation. Checks for ingress class, storage class, and node placement belong to the administrator runbook.
+
 ### Manager kubeconfig
 
 The manager runtime uses a separate kubeconfig mounted into sandbox-manager.
@@ -135,6 +138,10 @@ This exception exists because the current manager implementation still binds wor
 - `PersistentVolumeClaim`
 
 That storage model is intentionally kept unchanged in this phase to minimize implementation risk.
+
+Detailed privilege guidance lives in:
+
+- `docs/contracts/cluster-admin-rbac-reference-v1.md`
 
 ## Address Model
 
@@ -241,6 +248,23 @@ Target-host shared config:
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
+
+## Administrator Prerequisites
+
+Before `cluster-deploy` runs, a cluster administrator must already have completed:
+
+- namespace preparation
+- ingress preparation
+- JuiceFS CSI installation
+- storage class preparation
+- node selector and toleration validation
+- deploy kubeconfig handoff
+- manager-kubeconfig handoff
+
+These are not part of deploy automation. They are documented in:
+
+- `docs/user-guides/cluster-admin-runbook.md`
+- `docs/contracts/cluster-admin-rbac-reference-v1.md`
 
 ## Lifecycle Commands
 

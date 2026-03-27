@@ -246,18 +246,47 @@ set +a
   exit 1
 }
 
+require_can_i() {
+  local kubeconfig_path="$1"
+  shift
+  local args=("$@")
+  local result
+  result="$(KUBECONFIG="\${kubeconfig_path}" kubectl auth can-i "\${args[@]}" 2>/dev/null || true)"
+  [[ "\${result}" == "yes" ]] || {
+    echo "missing permission for kubeconfig=\${kubeconfig_path}: kubectl auth can-i \${args[*]}" >&2
+    exit 1
+  }
+}
+
 kubectl get namespace ${INTERNAL_AGENT_K8S_NAMESPACE}
 kubectl get csidriver csi.juicefs.com
 kubectl get secret -n ${INTERNAL_AGENT_K8S_NAMESPACE} juicefs-csi-secret
 kubectl get storageclass "\${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}"
-KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create services -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create persistentvolumes
+
+for deploy_check in \
+  "create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create services -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create endpoints -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create configmaps -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE}"; do
+  # shellcheck disable=SC2206
+  parts=(\${deploy_check})
+  require_can_i "\${CONFIG_DIR}/kubeconfig" "\${parts[@]}"
+done
+
+for manager_check in \
+  "create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "get persistentvolumes" \
+  "create persistentvolumes" \
+  "update persistentvolumes" \
+  "delete persistentvolumes"; do
+  # shellcheck disable=SC2206
+  parts=(\${manager_check})
+  require_can_i "\${CONFIG_DIR}/manager-kubeconfig" "\${parts[@]}"
+done
 EOF
 
   chmod +x "${ADMIN_HANDOFF_DIR}/scripts/"*.sh

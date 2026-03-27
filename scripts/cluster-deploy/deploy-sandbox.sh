@@ -20,6 +20,22 @@ bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 load_release_env
 require_version_images
 
+[[ -n "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] \
+  || die "INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME must be set before deploy-sandbox; complete the cluster admin handoff first"
+
+for check in \
+  "create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
+  "get persistentvolumes" \
+  "create persistentvolumes" \
+  "update persistentvolumes" \
+  "delete persistentvolumes"; do
+  if [[ "$(KUBECONFIG="${SHARED_MANAGER_KUBECONFIG}" kubectl auth can-i ${check} 2>/dev/null || true)" != "yes" ]]; then
+    die "manager-kubeconfig is missing required permission: ${check}"
+  fi
+done
+
 kubectl get namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null 2>&1 \
   || die "namespace ${INTERNAL_AGENT_K8S_NAMESPACE} must exist before deploy-sandbox runs"
 

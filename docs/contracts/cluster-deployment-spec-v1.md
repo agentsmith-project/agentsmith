@@ -256,10 +256,11 @@ Target-host shared config:
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
+- `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
 
 ## Administrator Prerequisites
 
-Before `cluster-deploy` runs, a cluster administrator must already have completed:
+Before `deploy-sandbox` runs, a cluster administrator must already have completed:
 
 - namespace preparation
 - ingress preparation

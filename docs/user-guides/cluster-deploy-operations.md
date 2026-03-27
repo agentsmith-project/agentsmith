@@ -53,6 +53,7 @@ Shared operator config:
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
+- `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
 
 Release lifecycle paths:
 
@@ -241,7 +242,7 @@ It should be namespace-scoped to `mbos`.
 
 ### Manager kubeconfig
 
-`config/manager-kubeconfig` is mounted into sandbox-manager.
+`config/manager-kubeconfig` is mounted into sandbox-manager and validated by `deploy-sandbox.sh`.
 
 It should allow:
 
@@ -264,7 +265,18 @@ Before sandbox deployment runs, the cluster must already provide:
   - `INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON`
   - `INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON`
 
-`prepare.sh` verifies only namespace-scoped deploy prerequisites.
+`prepare.sh` verifies only the prerequisites needed for:
+
+- `publish-images`
+- `deploy-substrate`
+- `deploy-app`
+- `prepare-admin-handoff`
+
+`deploy-sandbox.sh` is the first stage that requires:
+
+- `manager-kubeconfig`
+- storage class confirmation
+- administrator completion via `config/admin-ready.env`
 
 Cluster-scope validation and confirmation belong to the administrator handoff stage.
 

@@ -201,6 +201,7 @@ render_admin_handoff() {
   mkdir -p "${ADMIN_HANDOFF_DIR}/examples"
   cp "${SHARED_SITE_ENV}" "${ADMIN_HANDOFF_DIR}/site.env.todo"
   cp "${ROOT_DIR}/infra/deploy/cluster/admin-examples/"*.yaml "${ADMIN_HANDOFF_DIR}/examples/"
+  cp "${ROOT_DIR}/docs/user-guides/cluster-admin-runbook.md" "${ADMIN_HANDOFF_DIR}/RUNBOOK.md"
   write_admin_ready_template
 
   cat > "${ADMIN_HANDOFF_DIR}/CHECKLIST.md" <<EOF
@@ -225,6 +226,9 @@ render_admin_handoff() {
 8. Edit \`${SHARED_ADMIN_READY_ENV}\` and set:
    - \`ADMIN_READY=1\`
    - optional \`ADMIN_CHECKED_AT=<timestamp>\`
+
+Primary handbook:
+- \`RUNBOOK.md\`
 EOF
 
   cat > "${ADMIN_HANDOFF_DIR}/SUMMARY.md" <<EOF

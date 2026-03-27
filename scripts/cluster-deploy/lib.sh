@@ -237,10 +237,19 @@ CONFIG_DIR="${CONFIG_DIR}"
 [[ -f "\${CONFIG_DIR}/kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/kubeconfig" >&2; exit 1; }
 [[ -f "\${CONFIG_DIR}/manager-kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/manager-kubeconfig" >&2; exit 1; }
 
+set -a
+source "\${CONFIG_DIR}/site.env"
+set +a
+
+[[ -n "\${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] || {
+  echo "missing INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME in \${CONFIG_DIR}/site.env" >&2
+  exit 1
+}
+
 kubectl get namespace ${INTERNAL_AGENT_K8S_NAMESPACE}
 kubectl get csidriver csi.juicefs.com
 kubectl get secret -n ${INTERNAL_AGENT_K8S_NAMESPACE} juicefs-csi-secret
-kubectl get storageclass ${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}
+kubectl get storageclass "\${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}"
 KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}
 KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create services -n ${INTERNAL_AGENT_K8S_NAMESPACE}
 KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE}

@@ -17,6 +17,8 @@ service_status() {
     else
       printf 'up  http=%s\n' "${code}"
     fi
+  elif [[ "${code}" == "200" || "${code}" == "307" || "${code}" == "308" ]]; then
+    printf 'reachable (untracked)  http=%s\n' "${code}"
   else
     printf 'down  http=%s\n' "${code}"
   fi

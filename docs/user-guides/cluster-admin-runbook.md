@@ -76,6 +76,13 @@ Minimum administrator workflow:
 5. create the storage class:
    - `infra/deploy/cluster/admin-examples/juicefs-storageclass.example.yaml`
 
+Recommended apply commands:
+
+```bash
+kubectl apply -f infra/deploy/cluster/admin-examples/juicefs-csi-secret.example.yaml
+kubectl apply -f infra/deploy/cluster/admin-examples/juicefs-storageclass.example.yaml
+```
+
 Validate:
 
 - controller and node components are healthy
@@ -150,6 +157,13 @@ Administrator workflow:
 4. hand that kubeconfig to the deployment operator as:
    - `config/manager-kubeconfig`
 
+Recommended apply commands:
+
+```bash
+kubectl apply -f infra/deploy/cluster/admin-examples/manager-role.example.yaml
+kubectl apply -f infra/deploy/cluster/admin-examples/manager-pv-clusterrole.example.yaml
+```
+
 Minimum RBAC shape:
 
 - namespaced role in `mbos`
@@ -196,6 +210,12 @@ Administrator workflow:
 3. mint a kubeconfig for the `agentsmith-deploy` identity
 4. hand that kubeconfig to the deployment operator as:
    - `config/kubeconfig`
+
+Recommended apply command:
+
+```bash
+kubectl apply -f infra/deploy/cluster/admin-examples/deploy-role.example.yaml
+```
 
 Minimum RBAC shape:
 
@@ -384,6 +404,32 @@ kubectl get secret -n mbos juicefs-csi-secret
 test -f config/kubeconfig
 test -f config/manager-kubeconfig
 ```
+
+## Final Verification Commands
+
+The cluster administrator can use this final check block before handing the environment to the application deployment operator:
+
+```bash
+kubectl get namespace mbos
+kubectl get csidriver csi.juicefs.com
+kubectl get storageclass juicefs-sc
+kubectl get secret -n mbos juicefs-csi-secret
+kubectl get ingressclass
+kubectl auth can-i create deployments -n mbos --as=system:serviceaccount:mbos:agentsmith-deploy
+kubectl auth can-i create secrets -n mbos --as=system:serviceaccount:mbos:agentsmith-manager
+kubectl auth can-i create persistentvolumes --as=system:serviceaccount:mbos:agentsmith-manager
+```
+
+The environment is ready to hand over only when:
+
+- the namespace exists
+- JuiceFS CSI is present
+- the storage class exists
+- the JuiceFS secret exists in `mbos`
+- ingress class exists
+- the deploy identity can write namespaced release objects in `mbos`
+- the manager identity can write namespaced runtime objects in `mbos`
+- the manager identity has the minimal cluster-scope `PersistentVolume` exception
 
 After these are true, the application deployment operator can run:
 

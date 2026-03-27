@@ -1,5 +1,8 @@
 ARG APP_BASE_IMAGE=agentsmith-app-base:local
 ARG NODE_RUNTIME_IMAGE=node:22-bookworm
+ARG MC_IMAGE=minio/mc:latest
+
+FROM ${MC_IMAGE} AS mc-bin
 
 FROM ${APP_BASE_IMAGE} AS build
 
@@ -34,10 +37,37 @@ RUN npx next build --no-lint
 
 FROM ${NODE_RUNTIME_IMAGE} AS runtime
 
+ARG JUICEFS_VERSION=1.3.0
+
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
 WORKDIR /app
+
+COPY infra/vendor/juicefs /tmp/juicefs-dist
+COPY --from=mc-bin /usr/bin/mc /usr/local/bin/mc
+
+RUN set -eux; \
+  apt-get update; \
+  DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    bash \
+    ca-certificates \
+    curl \
+    fuse3 \
+    procps \
+  ; \
+  rm -rf /var/lib/apt/lists/*; \
+  arch="$(dpkg --print-architecture)"; \
+  case "${arch}" in \
+    amd64) juicefs_arch="amd64" ;; \
+    arm64) juicefs_arch="arm64" ;; \
+    *) echo "unsupported architecture: ${arch}" >&2; exit 1 ;; \
+  esac; \
+  archive="/tmp/juicefs-dist/juicefs-${JUICEFS_VERSION}-linux-${juicefs_arch}.tar.gz"; \
+  test -f "${archive}"; \
+  tar -xzf "${archive}" -C /tmp; \
+  install -m 0755 /tmp/juicefs /usr/local/bin/juicefs; \
+  rm -rf /tmp/juicefs /tmp/juicefs-dist
 
 COPY --from=build /app /app
 

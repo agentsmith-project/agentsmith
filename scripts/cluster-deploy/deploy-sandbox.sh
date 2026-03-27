@@ -23,6 +23,16 @@ require_version_images
 [[ -n "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] \
   || die "INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME must be set before deploy-sandbox; complete the cluster admin handoff first"
 
+manager_can_i() {
+  local check="$1"
+  if [[ "$(cluster_deploy_mode)" == "full-auto" ]]; then
+    KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl auth can-i ${check} \
+      --as="system:serviceaccount:${INTERNAL_AGENT_K8S_NAMESPACE}:agentsmith-manager" 2>/dev/null || true
+  else
+    KUBECONFIG="${SHARED_MANAGER_KUBECONFIG}" kubectl auth can-i ${check} 2>/dev/null || true
+  fi
+}
+
 for check in \
   "create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
   "create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}" \
@@ -31,13 +41,10 @@ for check in \
   "create persistentvolumes" \
   "update persistentvolumes" \
   "delete persistentvolumes"; do
-  if [[ "$(KUBECONFIG="${SHARED_MANAGER_KUBECONFIG}" kubectl auth can-i ${check} 2>/dev/null || true)" != "yes" ]]; then
-    die "manager-kubeconfig is missing required permission: ${check}"
+  if [[ "$(manager_can_i "${check}")" != "yes" ]]; then
+    die "manager runtime identity is missing required permission: ${check}"
   fi
 done
-
-kubectl get namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null 2>&1 \
-  || die "namespace ${INTERNAL_AGENT_K8S_NAMESPACE} must exist before deploy-sandbox runs"
 
 kubectl create secret docker-registry agentsmith-registry \
   --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
@@ -75,6 +82,12 @@ for item in data:
  sec=item.get("tolerationSeconds")
  if sec is not None: lines.append("          tolerationSeconds: " + str(sec))
 print("\n".join(lines))' "${SANDBOX_MANAGER_TOLERATIONS_JSON}")"
+if [[ -z "${NODE_SELECTOR_YAML}" ]]; then
+  NODE_SELECTOR_YAML="        {}"
+fi
+if [[ -z "${TOLERATIONS_YAML}" ]]; then
+  TOLERATIONS_YAML="        []"
+fi
 cat > "${MANAGER_MANIFEST}" <<EOF
 apiVersion: v1
 kind: ConfigMap
@@ -134,7 +147,7 @@ ${TOLERATIONS_YAML}
       containers:
         - name: manager
           image: ${SANDBOX_MANAGER_IMAGE}
-          imagePullPolicy: Always
+          imagePullPolicy: ${SANDBOX_MANAGER_IMAGE_PULL_POLICY:-IfNotPresent}
           ports:
             - containerPort: 8080
           env:
@@ -155,7 +168,7 @@ ${TOLERATIONS_YAML}
             - name: JUICEFS_MOUNT_OPTIONS
               value: ${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS}
             - name: JUICEFS_SUBDIR
-              value: ${INTERNAL_AGENT_JUICEFS_SUBDIR}
+              value: '${INTERNAL_AGENT_JUICEFS_SUBDIR}'
             - name: JUICEFS_MOUNT_SERVICE_ACCOUNT
               value: ${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT}
             - name: JUICEFS_MOUNT_IMAGE

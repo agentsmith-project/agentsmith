@@ -220,12 +220,16 @@ build_cluster_kubeconfig_from_admin() {
   local service_account="$1"
   local namespace="$2"
   local output_path="$3"
+  local server_override="${4:-}"
   local cluster_name server ca_data token
 
   cluster_name="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.contexts[0].context.cluster}')"
   server="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')"
   ca_data="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
   token="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl -n "${namespace}" create token "${service_account}")"
+  if [[ -n "${server_override}" ]]; then
+    server="${server_override}"
+  fi
 
   [[ -n "${cluster_name}" && -n "${server}" && -n "${ca_data}" && -n "${token}" ]] \
     || die "failed to generate kubeconfig for service account ${service_account} in namespace ${namespace}"

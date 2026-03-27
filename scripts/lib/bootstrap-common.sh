@@ -9,6 +9,12 @@ run_deploy_bootstrap() {
   API_BASE="${HOST_LOCAL_API_BASE_URL}"
   PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-http://localhost:18080}"
   INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-http://keycloak:8080}"
+  BOOTSTRAP_USERNAME="${BOOTSTRAP_USERNAME:-${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}}"
+  BOOTSTRAP_PASSWORD="${BOOTSTRAP_PASSWORD:-${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}}"
+  BOOTSTRAP_KEYCLOAK_REALM="${BOOTSTRAP_KEYCLOAK_REALM:-mbos}"
+  BOOTSTRAP_KEYCLOAK_CLIENT_ID="${BOOTSTRAP_KEYCLOAK_CLIENT_ID:-agentsmith}"
+  BOOTSTRAP_MONGO_URL="${BOOTSTRAP_MONGO_URL:-${MONGO_URL:-}}"
+  BOOTSTRAP_MONGO_DB_NAME="${BOOTSTRAP_MONGO_DB_NAME:-${MONGO_DB_NAME:-}}"
   DEPLOY_ENDPOINT_API_KEY="${DEPLOY_ENDPOINT_API_KEY:-}"
   DEPLOY_ANTHROPIC_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
   DEPLOY_OPENAI_BASE_URL="${DEPLOY_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}"
@@ -28,8 +34,11 @@ run_deploy_bootstrap() {
   COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-demo}"
   EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
   EXTERNAL_RUNNER_DEFAULT_NETWORK="${EXTERNAL_RUNNER_DEFAULT_NETWORK:-${COMPOSE_PROJECT_NAME}_default}"
+  PREVIOUS_EXTERNAL_AGENT_ID="$(state_get agent.external_id 2>/dev/null || true)"
 
   [[ -n "${DEPLOY_ENDPOINT_API_KEY}" ]] || die "missing DEPLOY_ENDPOINT_API_KEY"
+  [[ -n "${BOOTSTRAP_MONGO_URL}" ]] || die "missing BOOTSTRAP_MONGO_URL"
+  [[ -n "${BOOTSTRAP_MONGO_DB_NAME}" ]] || die "missing BOOTSTRAP_MONGO_DB_NAME"
 
   external_runner_running() {
     docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true
@@ -46,7 +55,9 @@ run_deploy_bootstrap() {
   }
 
   external_runner_connected() {
-    docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected'
+    local runner_logs
+    runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
+    grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"
   }
 
   wait_docker_daemon() {
@@ -156,29 +167,30 @@ run_deploy_bootstrap() {
   docker_compose exec -T api bash -lc '
     INTEGRATION_PUBLIC_WEB_BASES="'"${PUBLIC_WEB_BASE_URL}"'" \
     INTERNAL_KEYCLOAK_BASE_URL="'"${INTERNAL_KEYCLOAK_BASE_URL}"'" \
-    KEYCLOAK_REALM="mbos" \
-    KEYCLOAK_CLIENT_ID="agentsmith" \
-    MONGO_URL="mongodb://mbos:mbos_dev_password@mongo:27017/admin" \
-    MONGO_DB_NAME="mbos" \
+    KEYCLOAK_REALM="'"${BOOTSTRAP_KEYCLOAK_REALM}"'" \
+    KEYCLOAK_CLIENT_ID="'"${BOOTSTRAP_KEYCLOAK_CLIENT_ID}"'" \
+    MONGO_URL="'"${BOOTSTRAP_MONGO_URL}"'" \
+    MONGO_DB_NAME="'"${BOOTSTRAP_MONGO_DB_NAME}"'" \
     npx tsx scripts/integration-keycloak-init.ts >/dev/null
   '
 
   docker_compose exec -T api bash -lc '
     PUBLIC_KEYCLOAK_BASE_URL="'"${PUBLIC_KEYCLOAK_BASE_URL}"'" \
-    KEYCLOAK_REALM="mbos" \
-    KEYCLOAK_CLIENT_ID="agentsmith" \
-    MONGO_URL="mongodb://mbos:mbos_dev_password@mongo:27017/admin" \
-    MONGO_DB_NAME="mbos" \
+    INTERNAL_KEYCLOAK_BASE_URL="'"${INTERNAL_KEYCLOAK_BASE_URL}"'" \
+    KEYCLOAK_REALM="'"${BOOTSTRAP_KEYCLOAK_REALM}"'" \
+    KEYCLOAK_CLIENT_ID="'"${BOOTSTRAP_KEYCLOAK_CLIENT_ID}"'" \
+    MONGO_URL="'"${BOOTSTRAP_MONGO_URL}"'" \
+    MONGO_DB_NAME="'"${BOOTSTRAP_MONGO_DB_NAME}"'" \
     npx tsx scripts/ensure-default-workspace.ts >/dev/null
   '
 
   token_resp="$(
-    curl -sS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/token" \
+    curl -sS "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${BOOTSTRAP_KEYCLOAK_REALM}/protocol/openid-connect/token" \
       -H 'content-type: application/x-www-form-urlencoded' \
       --data-urlencode 'grant_type=password' \
-      --data-urlencode "client_id=${KEYCLOAK_CLIENT_ID}" \
-      --data-urlencode 'username=dev-admin' \
-      --data-urlencode 'password=dev-admin-123' \
+      --data-urlencode "client_id=${BOOTSTRAP_KEYCLOAK_CLIENT_ID}" \
+      --data-urlencode "username=${BOOTSTRAP_USERNAME}" \
+      --data-urlencode "password=${BOOTSTRAP_PASSWORD}" \
       --data-urlencode 'scope=openid profile email'
   )"
   TOKEN="$(printf '%s' "${token_resp}" | json_extract access_token)"
@@ -195,7 +207,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${WORKSPACE_BASE}/projects" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], visibility:\"private\", join_policy:\"approval_required\"}))' "${DEMO_PROJECT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], visibility:"private", join_policy:"approval_required"}))' "${DEMO_PROJECT_NAME}")"
     )"
     PROJECT_ID="$(printf '%s' "${project_resp}" | json_extract id)"
   fi
@@ -211,7 +223,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/credentials" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:\"api_key\", value:process.argv[1]}))' "${DEPLOY_ENDPOINT_API_KEY}" "${DEMO_CREDENTIAL_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:"api_key", value:process.argv[1]}))' "${DEPLOY_ENDPOINT_API_KEY}" "${DEMO_CREDENTIAL_NAME}")"
     )"
     CREDENTIAL_ID="$(printf '%s' "${credential_resp}" | json_extract id)"
   fi
@@ -226,7 +238,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/endpoints" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:\"anthropic_compatible\", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${DEPLOY_ANTHROPIC_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:"anthropic_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${DEPLOY_ANTHROPIC_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_ANTHROPIC_ENDPOINT_NAME}")"
     )"
     ANTHROPIC_ENDPOINT_ID="$(printf '%s' "${anthropic_endpoint_resp}" | json_extract id)"
   fi
@@ -246,7 +258,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/agents" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:\"external\", interaction_mode:\"notebook\", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:\"responses\", model:process.argv[2]}}, config:{runner_runtime:\"compose_managed\"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${ANTHROPIC_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
     )"
     EXTERNAL_AGENT_ID="$(printf '%s' "${external_agent_resp}" | json_extract id)"
   fi
@@ -254,7 +266,7 @@ run_deploy_bootstrap() {
   curl -sS -X PATCH "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({config:{runner_runtime:\"compose_managed\"}}))')" >/dev/null
+    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({config:{runner_runtime:"compose_managed"}}))')" >/dev/null
 
   EXTERNAL_AGENT_KEY="${MBOS_AGENT_KEY:-}"
   if [[ -z "${EXTERNAL_AGENT_KEY}" ]]; then
@@ -279,7 +291,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/endpoints" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:\"openai_compatible\", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${DEPLOY_OPENAI_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[7], protocol:"openai_compatible", base_url:process.argv[1], model:process.argv[2], credential_ref:process.argv[3], limits:{timeout_seconds:Number(process.argv[4])}, model_profile:{max_context_tokens:Number(process.argv[5]), max_output_tokens:Number(process.argv[6]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${DEPLOY_OPENAI_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${DEMO_OPENAI_ENDPOINT_NAME}")"
     )"
     OPENAI_ENDPOINT_ID="$(printf '%s' "${openai_endpoint_resp}" | json_extract id)"
   fi
@@ -295,7 +307,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/agents" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], mode:\"internal\", interaction_mode:\"notebook\", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:\"responses\", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:\"500m\", cpu_limit:\"2\", memory_request:\"512Mi\", memory_limit:\"4Gi\", idle_timeout_sec:180, max_lifetime_sec:3600}, capabilities:{streaming_completion:true}}))' "${OPENAI_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${DEMO_INTERNAL_AGENT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], mode:"internal", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}, capabilities:{streaming_completion:true}}))' "${OPENAI_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${DEMO_INTERNAL_AGENT_NAME}")"
     )"
     INTERNAL_AGENT_ID="$(printf '%s' "${internal_agent_resp}" | json_extract id)"
   fi
@@ -307,7 +319,7 @@ MBOS_AGENT_WS_URL=${EXTERNAL_AGENT_WS_URL}
 MBOS_AGENT_KEY=${EXTERNAL_AGENT_KEY}
 EOF
 
-  if external_runner_running && external_runner_connected && external_runner_matches_release_image; then
+  if external_runner_running && external_runner_connected && external_runner_matches_release_image && [[ -n "${PREVIOUS_EXTERNAL_AGENT_ID}" && "${PREVIOUS_EXTERNAL_AGENT_ID}" == "${EXTERNAL_AGENT_ID}" ]]; then
     log "checking existing external-runner readiness"
     existing_runner_ready=0
     for _ in $(seq 1 20); do
@@ -324,13 +336,25 @@ EOF
       timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
       run_external_runner_up
       started="$(date +%s)"
-      until docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected'; do
+      until external_runner_connected; do
         if (( "$(date +%s)" - started > 120 )); then
           die "external-runner failed to connect during bootstrap"
         fi
         sleep 2
       done
     fi
+  elif external_runner_running && external_runner_connected && external_runner_matches_release_image; then
+    log "external-runner is connected for a stale external agent; recreating"
+    timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+    ensure_external_runner_slot_available
+    run_external_runner_up
+    started="$(date +%s)"
+    until external_runner_connected; do
+      if (( "$(date +%s)" - started > 120 )); then
+        die "external-runner failed to reconnect during bootstrap"
+      fi
+      sleep 2
+    done
   else
     if external_runner_running && ! external_runner_matches_release_image; then
       log "existing external-runner image does not match current release; recreating"
@@ -342,7 +366,7 @@ EOF
       run_external_runner_up
     fi
     started="$(date +%s)"
-    until docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected'; do
+    until external_runner_connected; do
       if (( "$(date +%s)" - started > 120 )); then
         die "external-runner failed to connect during bootstrap"
       fi

@@ -7,6 +7,7 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 ensure_dirs
 ensure_operator_site_env
 ensure_operator_admin_kubeconfig
+ensure_operator_registry_env
 set -a
 source "${RELEASE_ROOT}/env/site.env"
 set +a
@@ -17,6 +18,7 @@ if [[ ! -x "${ADMIN_HANDOFF_DIR}/scripts/final-verification.sh" ]]; then
 fi
 
 load_admin_kubeconfig
+load_registry_env
 require_version_images
 
 FULL_AUTO_INGRESS_NAMESPACE="${FULL_AUTO_INGRESS_NAMESPACE:-ingress-nginx}"
@@ -26,6 +28,7 @@ FULL_AUTO_JUICEFS_NAMESPACE="${FULL_AUTO_JUICEFS_NAMESPACE:-juicefs-system}"
 PREREQ_DIR="${STATE_DIR}/full-auto-prereqs"
 rm -rf "${PREREQ_DIR}"
 mkdir -p "${PREREQ_DIR}"
+REGISTRY_SECRET_NAME="agentsmith-registry"
 
 cat > "${PREREQ_DIR}/namespace.yaml" <<EOF
 apiVersion: v1
@@ -215,11 +218,51 @@ dst.write_text("\n".join(out) + "\n", encoding="utf-8")
 PY
 
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/namespace.yaml" >/dev/null
+
+ensure_registry_secret() {
+  local namespace="$1"
+  KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl create secret docker-registry "${REGISTRY_SECRET_NAME}" \
+    --namespace "${namespace}" \
+    --docker-server "${REGISTRY_HOST}" \
+    --docker-username "${REGISTRY_USERNAME}" \
+    --docker-password "${REGISTRY_PASSWORD}" \
+    --dry-run=client -o yaml \
+    | KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f - >/dev/null
+}
+
+patch_serviceaccount_pull_secret() {
+  local namespace="$1"
+  local service_account="$2"
+  KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl patch serviceaccount "${service_account}" \
+    -n "${namespace}" \
+    --type merge \
+    -p "{\"imagePullSecrets\":[{\"name\":\"${REGISTRY_SECRET_NAME}\"}]}" >/dev/null
+}
+
+ensure_registry_secret "${FULL_AUTO_INGRESS_NAMESPACE}"
+ensure_registry_secret "${FULL_AUTO_JUICEFS_NAMESPACE}"
+ensure_registry_secret "${INTERNAL_AGENT_K8S_NAMESPACE}"
+
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-patch -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/ingress-nginx.yaml" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/juicefs-csi.yaml" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/agentsmith-prereqs.yaml" >/dev/null
+
+patch_serviceaccount_pull_secret "${FULL_AUTO_INGRESS_NAMESPACE}" "ingress-nginx"
+patch_serviceaccount_pull_secret "${FULL_AUTO_INGRESS_NAMESPACE}" "ingress-nginx-admission"
+patch_serviceaccount_pull_secret "${FULL_AUTO_JUICEFS_NAMESPACE}" "juicefs-csi-controller-sa"
+patch_serviceaccount_pull_secret "${FULL_AUTO_JUICEFS_NAMESPACE}" "juicefs-csi-dashboard-sa"
+patch_serviceaccount_pull_secret "${FULL_AUTO_JUICEFS_NAMESPACE}" "juicefs-csi-node-sa"
+
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete pod -n "${FULL_AUTO_INGRESS_NAMESPACE}" -l app.kubernetes.io/component=controller --ignore-not-found >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-patch -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/ingress-nginx.yaml" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart deployment/ingress-nginx-controller -n "${FULL_AUTO_INGRESS_NAMESPACE}" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart statefulset/juicefs-csi-controller -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart daemonset/juicefs-csi-node -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart deployment/juicefs-csi-dashboard -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
 
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout status deployment/ingress-nginx-controller -n "${FULL_AUTO_INGRESS_NAMESPACE}" --timeout=240s >/dev/null
 if KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl get job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" >/dev/null 2>&1; then
@@ -233,7 +276,7 @@ KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout status daemonset/juicefs
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout status deployment/juicefs-csi-dashboard -n "${FULL_AUTO_JUICEFS_NAMESPACE}" --timeout=240s >/dev/null
 
 build_cluster_kubeconfig_from_admin "agentsmith-deploy" "${INTERNAL_AGENT_K8S_NAMESPACE}" "${SHARED_KUBECONFIG}"
-build_cluster_kubeconfig_from_admin "agentsmith-manager" "${INTERNAL_AGENT_K8S_NAMESPACE}" "${SHARED_MANAGER_KUBECONFIG}"
+build_cluster_kubeconfig_from_admin "agentsmith-manager" "${INTERNAL_AGENT_K8S_NAMESPACE}" "${SHARED_MANAGER_KUBECONFIG}" "https://kubernetes.default.svc"
 cp "${SHARED_KUBECONFIG}" "${RELEASE_ROOT}/env/kubeconfig"
 cp "${SHARED_MANAGER_KUBECONFIG}" "${RELEASE_ROOT}/env/manager-kubeconfig"
 

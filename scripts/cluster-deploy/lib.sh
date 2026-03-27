@@ -233,7 +233,6 @@ set -euo pipefail
 CONFIG_DIR="${CONFIG_DIR}"
 
 [[ -f "\${CONFIG_DIR}/site.env" ]] || { echo "missing \${CONFIG_DIR}/site.env" >&2; exit 1; }
-[[ -f "\${CONFIG_DIR}/registry.env" ]] || { echo "missing \${CONFIG_DIR}/registry.env" >&2; exit 1; }
 [[ -f "\${CONFIG_DIR}/kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/kubeconfig" >&2; exit 1; }
 [[ -f "\${CONFIG_DIR}/manager-kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/manager-kubeconfig" >&2; exit 1; }
 
@@ -310,7 +309,6 @@ EOF
 5. Review and finalize \`site.env.todo\`.
 6. Deliver these files into \`${CONFIG_DIR}\`:
    - \`site.env\`
-   - \`registry.env\`
    - \`kubeconfig\`
    - \`manager-kubeconfig\`
 7. Run:

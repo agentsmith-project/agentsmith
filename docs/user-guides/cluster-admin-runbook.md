@@ -28,7 +28,6 @@ You should already know or be able to confirm:
 
 You will hand these back to the deployment operator in:
 - `config/site.env`
-- `config/registry.env`
 - `config/kubeconfig`
 - `config/manager-kubeconfig`
 
@@ -153,7 +152,6 @@ kubectl get ingressclass
 
 Place these final files under the deploy config directory:
 - `config/site.env`
-- `config/registry.env`
 - `config/kubeconfig`
 - `config/manager-kubeconfig`
 

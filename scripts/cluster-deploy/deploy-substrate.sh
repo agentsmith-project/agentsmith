@@ -9,6 +9,8 @@ ensure_operator_site_env
 set -a
 source "${RELEASE_ROOT}/env/site.env"
 set +a
+bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
+load_release_env
 require_version_images
 
 write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"

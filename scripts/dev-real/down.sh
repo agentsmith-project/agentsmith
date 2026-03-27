@@ -73,7 +73,7 @@ stop_listeners_on_port 38080
 remove_dev_real_runtime_files
 reset_dev_real_state
 
-docker ps --format '{{.Names}}' | rg 'agentsmith-remote|agentsmith-control-plane' | xargs -r docker rm -f >/dev/null 2>&1 || true
+docker ps --format '{{.Names}}' | rg 'agentsmith-demo|agentsmith-control-plane' | xargs -r docker rm -f >/dev/null 2>&1 || true
 (cd "${ROOT_DIR}" && make deps-down >/dev/null 2>&1 || true)
 
 info "done"

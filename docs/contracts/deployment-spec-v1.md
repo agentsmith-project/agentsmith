@@ -277,7 +277,7 @@ The bundle build must fail if any required file, tool, image, or manifest refere
   - workspace settings cannot resolve project creator directory search results from the published workspace identity provider
   - the system-to-notebook default story fails in the local real lane
 - The local precheck is the earliest required browser-level gate for release work. The bundled `verify` stage is the final confirmation gate, not the first place these failures should appear.
-- `scripts/remote-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, the client-public-runtime check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
+- `scripts/demo-deploy/build-offline-bundle.sh` must run the bundle input check, the rendered-env check, the client-public-runtime check, and the local precheck before the first Docker image build unless an operator explicitly opts out with `SKIP_BUNDLE_INPUTS_CHECK=1` or `SKIP_RELEASE_PRECHECK=1`.
 
 ## Bootstrap Contract
 
@@ -366,16 +366,16 @@ If a failure needs a new command, env value, or step, that change must be added 
 ## Derived Documents
 
 The following documents are derived from this spec and must not redefine deployment behavior:
-- remote deployment runbook
+- demo deployment runbook
 - troubleshooting guide
 - generated service env files
 - offline bundle README
 
 Current operator runbook:
-- `docs/user-guides/remote-deploy-operations.md`
+- `docs/user-guides/demo-deploy-operations.md`
 
 Current history cleanup helper:
-- `scripts/remote-deploy/prune-history.sh`
+- `scripts/demo-deploy/prune-history.sh`
 
 If there is disagreement, this spec wins.
 Related protocol data-plane contract:

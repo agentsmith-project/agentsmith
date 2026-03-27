@@ -82,7 +82,7 @@ Agent 的业务语义仍然只有两种：
 ## 二、统一配置模式
 
 ### operator 唯一输入
-- `infra/deploy/remote/env/site.env.example`
+- `infra/deploy/demo/env/site.env.example`
 - 实际环境使用同 schema 的 `site.env`
 
 ### 配置模式要求
@@ -269,7 +269,7 @@ Agent 的业务语义仍然只有两种：
 - 在真实部署产物、真实部署配置、真实 kind/k8s/sandbox 环境里做最终兜底
 
 固定入口：
-- `scripts/remote-deploy/verify.sh`
+- `scripts/demo-deploy/verify.sh`
 
 必须完整保留，不做轻量化。
 

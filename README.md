@@ -105,13 +105,13 @@ Current configuration names:
 
 - dev-real: `DEMO_ENDPOINT_*`
 - real lane: `REAL_LANE_*`
-- remote deploy: `DEPLOY_*`
+- demo deploy: `DEPLOY_*`
 
 Templates:
 
 - dev-real: `.env.dev.real.example`
 - real lane: `.env.real.local.example`
-- remote deploy: `infra/deploy/remote/env/site.env.example`
+- demo deploy: `infra/deploy/demo/env/site.env.example`
 
 Old names and old demo commands are removed. Passing `GLM_*` to current entrypoints fails fast.
 

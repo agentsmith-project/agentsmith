@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ "$(basename "${SCRIPT_DIR}")" == "remote-deploy" ]]; then
+if [[ "$(basename "${SCRIPT_DIR}")" == "demo-deploy" ]]; then
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-  source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-  source "${ROOT_DIR}/scripts/lib/common.sh"
 fi
+source "${ROOT_DIR}/scripts/lib/common.sh"
 
 ensure_dirs
 for cmd in docker curl tar sha256sum; do
@@ -103,7 +102,7 @@ PY
   then
     owner_lines="$(docker ps --format '{{.Names}}\t{{.Ports}}' | awk -v port="${port}" 'index($0, ":" port "->") { print }')"
     if [[ -n "${owner_lines}" ]] && printf '%s\n' "${owner_lines}" | awk -F'\t' '
-      $1 ~ /^agentsmith-remote-/ { next }
+      $1 ~ /^agentsmith-demo-/ { next }
       $1 == "agentsmith-control-plane" { next }
       { exit 1 }
       END { exit 0 }

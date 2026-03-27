@@ -1,4 +1,4 @@
-name: agentsmith-remote
+name: agentsmith-demo
 
 services:
   postgres:
@@ -231,7 +231,7 @@ volumes:
 
 networks:
   deps:
-    name: ${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-remote-deps}
+    name: ${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-demo-deps}
     ipam:
       config:
         - subnet: ${EXTERNAL_DEPS_NETWORK_SUBNET:-172.29.0.0/24}

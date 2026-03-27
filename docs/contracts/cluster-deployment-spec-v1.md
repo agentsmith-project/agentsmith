@@ -4,9 +4,9 @@
 
 `cluster-deploy` is the real-environment release line for AgentSmith.
 
-It exists alongside, not instead of, the current `remote-deploy` demo line:
+It exists alongside, not instead of, the current `demo-deploy` demo line:
 
-- `remote-deploy`
+- `demo-deploy`
   - demo / single-host installation
   - server-local image management
   - `kind` used to simulate the internal agent execution surface

@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ "$(basename "${SCRIPT_DIR}")" == "remote-deploy" ]]; then
+if [[ "$(basename "${SCRIPT_DIR}")" == "demo-deploy" ]]; then
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-  source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-  source "${ROOT_DIR}/scripts/lib/common.sh"
 fi
+source "${ROOT_DIR}/scripts/lib/common.sh"
 
 KEEP_RELEASES="${KEEP_RELEASES:-2}"
 KEEP_UPLOADS="${KEEP_UPLOADS:-2}"
@@ -44,8 +43,8 @@ prune_directory_keep_latest() {
   done
 }
 
-prune_directory_keep_latest "${REMOTE_DEPLOY_ROOT}/releases" "${KEEP_RELEASES}" "${current_target}"
-prune_directory_keep_latest "${REMOTE_DEPLOY_ROOT}/uploads" "${KEEP_UPLOADS}"
+prune_directory_keep_latest "${DEMO_DEPLOY_ROOT}/releases" "${KEEP_RELEASES}" "${current_target}"
+prune_directory_keep_latest "${DEMO_DEPLOY_ROOT}/uploads" "${KEEP_UPLOADS}"
 prune_directory_keep_latest "${REPORT_DIR}" "${KEEP_REPORTS}"
 
 find "${STATE_DIR}" -mindepth 1 -maxdepth 1 -type f -delete 2>/dev/null || true

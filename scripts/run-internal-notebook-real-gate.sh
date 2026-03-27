@@ -6,7 +6,7 @@ unset no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
-KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/remote/kind/config.yaml"
+KIND_CONFIG_PATH="${ROOT_DIR}/infra/deploy/demo/kind/config.yaml"
 # shellcheck disable=SC1091
 source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"

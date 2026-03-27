@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-SITE_ENV_PATH="${SITE_ENV_PATH:-${ROOT_DIR}/infra/deploy/remote/env/site.env.example}"
+SITE_ENV_PATH="${SITE_ENV_PATH:-${ROOT_DIR}/infra/deploy/demo/env/site.env.example}"
 RUNNER_WS_URL="${MBOS_AGENT_WS_URL:-${RUNNER_WS_URL:-}}"
 RUNNER_KEY="${MBOS_AGENT_KEY:-${RUNNER_KEY:-}}"
 
@@ -42,18 +42,18 @@ cleanup() {
 }
 trap cleanup EXIT
 
-export REMOTE_DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
+export DEMO_DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
 export RELEASE_ROOT="${TMP_ROOT}/release"
-mkdir -p "${RELEASE_ROOT}/env" "${RELEASE_ROOT}/scripts/remote-deploy" "${RELEASE_ROOT}/scripts/lib"
+mkdir -p "${RELEASE_ROOT}/env" "${RELEASE_ROOT}/scripts/demo-deploy" "${RELEASE_ROOT}/scripts/lib"
 
-cp "${ROOT_DIR}/infra/deploy/remote/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
+cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${SITE_ENV_PATH}" "${RELEASE_ROOT}/env/site.env"
-cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/remote-deploy/resolve-runtime-addresses.sh"
-cp "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh"
-cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
+cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/demo-deploy/resolve-runtime-addresses.sh"
+cp "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh"
+cp "${ROOT_DIR}/scripts/demo-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
 
-bash "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh" >/dev/null
+bash "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh" >/dev/null
 
 set -a
 # shellcheck disable=SC1090

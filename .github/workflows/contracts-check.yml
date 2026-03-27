@@ -31,7 +31,7 @@ jobs:
           set -euo pipefail
           test -f .env.dev.real.example
           test -f .env.real.local.example
-          test -f infra/deploy/remote/env/site.env.example
+          test -f infra/deploy/demo/env/site.env.example
 
       - name: Setup Node
         uses: actions/setup-node@v4

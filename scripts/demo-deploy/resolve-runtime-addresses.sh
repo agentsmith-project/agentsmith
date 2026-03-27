@@ -2,13 +2,12 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ "$(basename "${SCRIPT_DIR}")" == "remote-deploy" ]]; then
+if [[ "$(basename "${SCRIPT_DIR}")" == "demo-deploy" ]]; then
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-  source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-  source "${ROOT_DIR}/scripts/lib/common.sh"
 fi
+source "${ROOT_DIR}/scripts/lib/common.sh"
 
 ensure_dirs
 mkdir -p "${RELEASE_ROOT}/env"

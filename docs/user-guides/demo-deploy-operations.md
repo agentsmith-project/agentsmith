@@ -1,11 +1,11 @@
-# Remote Deploy Operations
+# Demo Deploy Operations
 
-`docs/contracts/deployment-spec-v1.md` is the deployment contract. This guide is the short operator runbook for the current remote deployment flow.
+`docs/contracts/deployment-spec-v1.md` is the deployment contract. This guide is the short operator runbook for the current demo deployment flow.
 
 ## Host
 
-- Remote host: `percy@192.168.0.220`
-- Remote deployment root: `/home/percy/agentsmith/deploy`
+- Demo host: `percy@192.168.0.220`
+- Demo deployment root: `/home/percy/agentsmith/deploy`
 - Shared operator config: `/home/percy/agentsmith/deploy/config/site.env`
 
 Everything under `/home/percy/agentsmith/deploy` is managed deployment state. Do not copy release files into `$HOME` or patch random working directories.
@@ -176,7 +176,7 @@ These values define the stable Docker network used by the Compose dependencies a
 
 ## Current Verification Result
 
-The current remote deployment flow has been revalidated on the host above with:
+The current demo deployment flow has been revalidated on the host above with:
 
 ```bash
 cd /home/percy/agentsmith/deploy/current
@@ -190,6 +190,6 @@ bash scripts/report.sh
 Expected successful verify summary:
 
 - `4 passed`
-- `[remote-deploy] verify ok`
+- `[demo-deploy] verify ok`
 
 Reports are written under `/home/percy/agentsmith/deploy/reports/`.

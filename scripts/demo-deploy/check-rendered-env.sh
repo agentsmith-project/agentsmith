@@ -5,25 +5,25 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP_ROOT="$(mktemp -d)"
 trap 'rm -rf "${TMP_ROOT}"' EXIT
 
-REMOTE_DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
+DEMO_DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
 RELEASE_ROOT="${TMP_ROOT}/release"
-export REMOTE_DEPLOY_ROOT RELEASE_ROOT
+export DEMO_DEPLOY_ROOT RELEASE_ROOT
 
 mkdir -p "${RELEASE_ROOT}/env"
-mkdir -p "${RELEASE_ROOT}/scripts/remote-deploy" "${RELEASE_ROOT}/scripts/lib"
-cp "${ROOT_DIR}/infra/deploy/remote/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
-cp "${ROOT_DIR}/infra/deploy/remote/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
-cp "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh"
-cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/remote-deploy/resolve-runtime-addresses.sh"
-cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/resolve-runtime-addresses.sh"
-cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
+mkdir -p "${RELEASE_ROOT}/scripts/demo-deploy" "${RELEASE_ROOT}/scripts/lib"
+cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
+cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
+cp "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/demo-deploy/render-env.sh"
+cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/demo-deploy/resolve-runtime-addresses.sh"
+cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/resolve-runtime-addresses.sh"
+cp "${ROOT_DIR}/scripts/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${RELEASE_ROOT}/scripts/lib/k8s-external-services.sh"
 
 RESOLVED_RUNNER_HOST=host.docker.internal \
 RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
 ALLOW_UNRESOLVED_KIND_GATEWAY=1 \
-bash "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" >/dev/null
+bash "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" >/dev/null
 
 for required_file in \
   "${RELEASE_ROOT}/env/base.env" \

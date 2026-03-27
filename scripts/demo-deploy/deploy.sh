@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ "$(basename "${SCRIPT_DIR}")" == "remote-deploy" ]]; then
+if [[ "$(basename "${SCRIPT_DIR}")" == "demo-deploy" ]]; then
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-  source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-  source "${ROOT_DIR}/scripts/lib/common.sh"
 fi
+source "${ROOT_DIR}/scripts/lib/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 
 ensure_dirs
@@ -33,7 +32,7 @@ image_tar_name() {
 
 write_compose_env "${APP_IMAGE}" "${RUNNER_IMAGE}" "${UNIVERSAL_PROXY_IMAGE}"
 
-mkdir -p "${REMOTE_DEPLOY_ROOT}/releases"
+mkdir -p "${DEMO_DEPLOY_ROOT}/releases"
 ln -sfn "${RELEASE_ROOT}" "${CURRENT_LINK}"
 
 shopt -s nullglob
@@ -95,12 +94,12 @@ set +a
 
 kubectl create namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
-ensure_kind_nodes_on_network "${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-remote-deps}" "${KIND_CLUSTER_NAME}"
+ensure_kind_nodes_on_network "${EXTERNAL_DEPS_NETWORK_NAME:-agentsmith-demo-deps}" "${KIND_CLUSTER_NAME}"
 
 KIND_POSTGRES_TARGET_IP="${EXTERNAL_DEPS_POSTGRES_IP:-172.29.0.10}"
 KIND_MINIO_TARGET_IP="${EXTERNAL_DEPS_MINIO_IP:-172.29.0.11}"
 
-EXTERNAL_DEPS_MANIFEST="${REMOTE_DEPLOY_ROOT}/state/internal-external-services.yaml"
+EXTERNAL_DEPS_MANIFEST="${DEMO_DEPLOY_ROOT}/state/internal-external-services.yaml"
 render_k8s_external_dependency_services \
   "${EXTERNAL_DEPS_MANIFEST}" \
   "${INTERNAL_AGENT_K8S_NAMESPACE}" \
@@ -110,7 +109,7 @@ render_k8s_external_dependency_services \
   9000
 kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 
-cat > "${REMOTE_DEPLOY_ROOT}/state/sandbox-manager.yaml" <<EOF
+cat > "${DEMO_DEPLOY_ROOT}/state/sandbox-manager.yaml" <<EOF
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -292,7 +291,7 @@ spec:
       nodePort: 30080
 EOF
 
-kubectl apply -f "${REMOTE_DEPLOY_ROOT}/state/sandbox-manager.yaml" >/dev/null
+kubectl apply -f "${DEMO_DEPLOY_ROOT}/state/sandbox-manager.yaml" >/dev/null
 kubectl rollout status deployment/sandbox-manager -n agentsmith-sandbox --timeout=240s >/dev/null
 wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29080}" 240
 wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240

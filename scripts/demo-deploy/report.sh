@@ -1,20 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-if [[ "$(basename "${SCRIPT_DIR}")" == "remote-deploy" ]]; then
+if [[ "$(basename "${SCRIPT_DIR}")" == "demo-deploy" ]]; then
   ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-  source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
 else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-  source "${ROOT_DIR}/scripts/lib/common.sh"
 fi
+source "${ROOT_DIR}/scripts/lib/common.sh"
 
 ensure_state
 REPORT_JSON="${REPORT_DIR}/${RELEASE_ID}.json"
 REPORT_MD="${REPORT_DIR}/${RELEASE_ID}.md"
 cp "$(state_file)" "${REPORT_JSON}"
 cat > "${REPORT_MD}" <<EOF
-# AgentSmith Remote Deploy Report
+# AgentSmith Demo Deploy Report
 
 - release: ${RELEASE_ID}
 - current: ${CURRENT_LINK}

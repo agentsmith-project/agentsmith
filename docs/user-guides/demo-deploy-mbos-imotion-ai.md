@@ -1,4 +1,4 @@
-# `mbos.imotion.ai` Remote Deploy Runbook
+# `mbos.imotion.ai` Demo Deploy Runbook
 
 `docs/contracts/deployment-spec-v1.md` is the single source of truth for deployment topology, env contracts, bundle contents, bootstrap stages, and verification requirements. This runbook only explains how to execute that spec.
 
@@ -21,12 +21,12 @@ Everything else in the release is generated or fixed by the deployment scripts.
 4. Edit exactly one deployment config file:
    - `env/site.env`
 5. Run:
-   - `scripts/remote-deploy/prepare.sh`
-   - `scripts/remote-deploy/reset.sh`
-   - `scripts/remote-deploy/deploy.sh`
-   - `scripts/remote-deploy/bootstrap.sh`
-   - `scripts/remote-deploy/verify.sh`
-   - `scripts/remote-deploy/report.sh`
+   - `scripts/demo-deploy/prepare.sh`
+   - `scripts/demo-deploy/reset.sh`
+   - `scripts/demo-deploy/deploy.sh`
+   - `scripts/demo-deploy/bootstrap.sh`
+   - `scripts/demo-deploy/verify.sh`
+   - `scripts/demo-deploy/report.sh`
 
 ## What Success Looks Like
 - `prepare`, `reset`, `deploy`, `bootstrap`, `verify`, and `report` all exit successfully.

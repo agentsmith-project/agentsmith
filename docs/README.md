@@ -20,7 +20,7 @@
 - [Workspace / Project Default Engineering Gate Checklist](./user-guides/workspace-project-default-engineering-gate-checklist.md)
 - [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
-- [Remote Deploy Operations](./user-guides/remote-deploy-operations.md)
+- [Demo Deploy Operations](./user-guides/demo-deploy-operations.md)
 - [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
 - [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
 - Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`

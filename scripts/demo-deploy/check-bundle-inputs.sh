@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-MANIFEST_PATH="${ROOT_DIR}/infra/deploy/remote/deployment.manifest.json"
-SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/remote/env/site.env.example"
+MANIFEST_PATH="${ROOT_DIR}/infra/deploy/demo/deployment.manifest.json"
+SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/demo/env/site.env.example"
 
 python3 - <<'PY' "${MANIFEST_PATH}" "${SITE_ENV_EXAMPLE}" "${ROOT_DIR}"
 import json
@@ -31,21 +31,21 @@ for group_name, group in manifest.get("required_env", {}).items():
 for relative in manifest.get("bundle_files", []):
     source = root_dir / relative if not relative.startswith("tools/") else pathlib.Path("/nonexistent")
     if relative == "scripts/lib/common.sh":
-      source = root_dir / "scripts" / "remote-deploy" / "lib" / "common.sh"
+      source = root_dir / "scripts" / "lib" / "common.sh"
     elif relative == "scripts/check-preset-external-file-library.sh":
       source = root_dir / "scripts" / "check-preset-external-file-library.sh"
     elif relative.startswith("scripts/lib/"):
       source = root_dir / "scripts" / "lib" / pathlib.Path(relative).name
     elif relative.startswith("scripts/"):
-      source = root_dir / "scripts" / "remote-deploy" / pathlib.Path(relative).name
+      source = root_dir / "scripts" / "demo-deploy" / pathlib.Path(relative).name
     elif relative.startswith("compose/"):
-      source = root_dir / "infra" / "deploy" / "remote" / pathlib.Path(relative).name
+      source = root_dir / "infra" / "deploy" / "demo" / pathlib.Path(relative).name
     elif relative.startswith("env/"):
-      source = root_dir / "infra" / "deploy" / "remote" / "env" / pathlib.Path(relative).name
+      source = root_dir / "infra" / "deploy" / "demo" / "env" / pathlib.Path(relative).name
     elif relative.startswith("kind/"):
-      source = root_dir / "infra" / "deploy" / "remote" / "kind" / pathlib.Path(relative).name
+      source = root_dir / "infra" / "deploy" / "demo" / "kind" / pathlib.Path(relative).name
     elif relative.startswith("k8s/"):
-      source = root_dir / "infra" / "deploy" / "remote" / "k8s" / pathlib.Path(relative).name
+      source = root_dir / "infra" / "deploy" / "demo" / "k8s" / pathlib.Path(relative).name
     elif relative.startswith("universal-proxy/"):
       source = root_dir / "infra" / "deploy" / "shared" / "universal-proxy" / pathlib.Path(relative).name
     elif relative.startswith("docs/contracts/"):

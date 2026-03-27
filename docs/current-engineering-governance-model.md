@@ -22,7 +22,7 @@ Current engineering guidance only uses these top-level terms:
 - A full verification path with a distinct source of truth, such as mock, visual, or real backend.
 
 5. `发布`
-- Remote deployment and release-grade verification flow.
+- Demo deployment and release-grade verification flow.
 
 ### Terms that are not current top-level workflow terms
 

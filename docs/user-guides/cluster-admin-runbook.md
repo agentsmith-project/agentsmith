@@ -137,10 +137,6 @@ This kubeconfig is mounted into sandbox-manager as:
 
 Do not reuse the deploy kubeconfig for manager runtime.
 
-See the detailed privilege reference:
-
-- [cluster-admin-rbac-reference-v1.md](/home/percy/works/mbos-v1/agentsmith/docs/contracts/cluster-admin-rbac-reference-v1.md)
-
 Recommended example files:
 
 - `infra/deploy/cluster/admin-examples/manager-role.example.yaml`
@@ -153,6 +149,23 @@ Administrator workflow:
 3. mint a kubeconfig for the `agentsmith-manager` identity
 4. hand that kubeconfig to the deployment operator as:
    - `config/manager-kubeconfig`
+
+Minimum RBAC shape:
+
+- namespaced role in `mbos`
+  - `secrets`
+  - `persistentvolumeclaims`
+  - `pods`
+  - `events`
+- cluster-scope exception only for:
+  - `persistentvolumes`
+    - `get`
+    - `list`
+    - `watch`
+    - `create`
+    - `update`
+    - `patch`
+    - `delete`
 
 ## 4. Prepare Deploy Kubeconfig
 
@@ -183,6 +196,18 @@ Administrator workflow:
 3. mint a kubeconfig for the `agentsmith-deploy` identity
 4. hand that kubeconfig to the deployment operator as:
    - `config/kubeconfig`
+
+Minimum RBAC shape:
+
+- namespaced role in `mbos`
+  - `deployments`
+  - `services`
+  - `endpoints`
+  - `configmaps`
+  - `secrets`
+  - `ingresses`
+
+This identity must not need cluster-scope write permissions.
 
 ## 5. Prepare Manager Ingress
 
@@ -248,6 +273,94 @@ For the current target, `site.env` should at least include:
 - `SANDBOX_MANAGER_TOLERATIONS_JSON`
 - `INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON`
 - `INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON`
+
+### How To Fill `site.env`
+
+Fill only the values that describe real site truth. The rest can stay close to the example template.
+
+#### Public browser addresses
+
+- `PUBLIC_WEB_BASE_URL`
+- `PUBLIC_API_BASE_URL`
+- `PUBLIC_KEYCLOAK_BASE_URL`
+
+Source of truth:
+
+- the real browser entry URLs after your reverse proxy / domain setup
+
+How to confirm:
+
+```bash
+curl -I https://<web-host>
+curl -I https://<api-host-or-path>
+curl -I https://<keycloak-host-or-path>
+```
+
+#### Client JuiceFS mount addresses
+
+- `CLIENT_PUBLIC_POSTGRES_HOST`
+- `CLIENT_PUBLIC_POSTGRES_PORT`
+- `CLIENT_PUBLIC_MINIO_ENDPOINT`
+
+Source of truth:
+
+- the address a human user can reach from their own machine
+
+How to confirm:
+
+```bash
+nc -vz <client-postgres-host> <client-postgres-port>
+curl -I <client-minio-endpoint>
+```
+
+#### Cluster-to-host dependency addresses
+
+- `K8S_EXTERNAL_POSTGRES_HOST`
+- `K8S_EXTERNAL_POSTGRES_PORT`
+- `K8S_EXTERNAL_MINIO_HOST`
+- `K8S_EXTERNAL_MINIO_PORT`
+
+Source of truth:
+
+- the address reachable from pods in the cluster back to the application host
+
+How to confirm:
+
+```bash
+kubectl -n mbos run netcheck --rm -it --image=alpine:3.20 -- sh
+apk add --no-cache curl busybox-extras
+nc -vz <k8s-external-postgres-host> <k8s-external-postgres-port>
+nc -vz <k8s-external-minio-host> <k8s-external-minio-port>
+```
+
+#### Manager ingress
+
+- `SANDBOX_MANAGER_INGRESS_CLASS_NAME`
+- `SANDBOX_MANAGER_INGRESS_HOST`
+- `SANDBOX_MANAGER_PUBLIC_BASE_URL`
+
+Source of truth:
+
+- the real ingress host and class you chose for sandbox-manager
+
+How to confirm:
+
+```bash
+kubectl get ingressclass
+```
+
+#### Storage class and scheduling
+
+- `INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME`
+- `SANDBOX_MANAGER_NODE_SELECTOR_JSON`
+- `SANDBOX_MANAGER_TOLERATIONS_JSON`
+- `INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON`
+- `INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON`
+
+Source of truth:
+
+- the preinstalled JuiceFS storage class
+- the actual cluster node labels and taints you selected
 
 These are copied into:
 

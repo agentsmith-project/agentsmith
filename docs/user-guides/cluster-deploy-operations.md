@@ -10,7 +10,6 @@ Use it when:
 - internal agent execution runs on a real Kubernetes cluster
 - the cluster administrator has already completed the prerequisites in:
   - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
-  - [cluster-admin-rbac-reference-v1.md](/home/percy/works/mbos-v1/agentsmith/docs/contracts/cluster-admin-rbac-reference-v1.md)
 
 Do not use it to replace the current demo deployment line.
 

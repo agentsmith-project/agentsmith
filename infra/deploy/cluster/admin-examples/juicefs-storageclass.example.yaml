@@ -1,3 +1,6 @@
+# Edit before apply:
+# - keep the name aligned with INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME in site.env
+# - make sure the secret name and namespace match juicefs-csi-secret.example.yaml
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:

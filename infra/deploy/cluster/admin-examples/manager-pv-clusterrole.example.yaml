@@ -1,3 +1,6 @@
+# Edit before apply:
+# - this is the only intended cluster-scope exception in the current design
+# - bind it only to the sandbox-manager runtime identity in namespace `mbos`
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

@@ -1,3 +1,7 @@
+# Edit before apply:
+# - keep namespace `mbos` unless your target namespace differs
+# - this service account is only for cluster-deploy automation
+# - use it to mint config/kubeconfig for the deployment operator
 apiVersion: v1
 kind: ServiceAccount
 metadata:

@@ -139,10 +139,6 @@ This exception exists because the current manager implementation still binds wor
 
 That storage model is intentionally kept unchanged in this phase to minimize implementation risk.
 
-Detailed privilege guidance lives in:
-
-- `docs/contracts/cluster-admin-rbac-reference-v1.md`
-
 ## Address Model
 
 `cluster-deploy` must not infer the "correct host IP" from a multi-homed application server.
@@ -264,7 +260,6 @@ Before `cluster-deploy` runs, a cluster administrator must already have complete
 These are not part of deploy automation. They are documented in:
 
 - `docs/user-guides/cluster-admin-runbook.md`
-- `docs/contracts/cluster-admin-rbac-reference-v1.md`
 
 ## Lifecycle Commands
 

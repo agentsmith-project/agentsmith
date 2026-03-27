@@ -39,8 +39,8 @@ for relative in manifest.get("bundle_files", []):
 PY
 ensure_operator_registry_env
 load_registry_env
-[[ -n "${REGISTRY_HOST:-}" && -n "${REGISTRY_PROJECT:-}" && -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
-  || die "registry.env must define REGISTRY_HOST, REGISTRY_PROJECT, REGISTRY_USERNAME, REGISTRY_PASSWORD"
+[[ -n "${REGISTRY_HOST:-}" && -n "${REGISTRY_PROJECT:-}" ]] \
+  || die "registry.env must define REGISTRY_HOST and REGISTRY_PROJECT"
 
 if [[ "$(cluster_deploy_mode)" == "full-auto" ]]; then
   ensure_operator_admin_kubeconfig

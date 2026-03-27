@@ -228,10 +228,42 @@ print(','.join(result))
 PY
 }
 
+no_proxy_hosts_from_inputs() {
+  python3 - "$@" <<'PY'
+import sys
+from urllib.parse import urlparse
+
+seen = set()
+result = []
+
+def add(value: str) -> None:
+    value = value.strip()
+    if not value or value in seen:
+        return
+    seen.add(value)
+    result.append(value)
+
+for raw in sys.argv[1:]:
+    if not raw:
+        continue
+    for part in raw.split(','):
+        item = part.strip()
+        if not item:
+            continue
+        add(item)
+        parsed = urlparse(item)
+        if parsed.scheme and parsed.hostname:
+            add(parsed.hostname)
+
+print(','.join(result))
+PY
+}
+
 compose_runtime_no_proxy() {
   merge_no_proxy_entries \
     "${NO_PROXY:-${no_proxy:-}}" \
-    "postgres,mongo,redis,minio,keycloak,api,web,external-runner,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager"
+    "postgres,mongo,redis,minio,keycloak,api,web,external-runner,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager" \
+    "$(no_proxy_hosts_from_inputs "$@")"
 }
 
 write_compose_env() {
@@ -292,8 +324,19 @@ wait_http() {
   local url="$1"
   local timeout="${2:-180}"
   local started
+  local target_host
+  local request_no_proxy
   started="$(date +%s)"
-  until curl -fsS "${url}" >/dev/null 2>&1; do
+  target_host="$(python3 - "$url" <<'PY'
+from urllib.parse import urlparse
+import sys
+
+parsed = urlparse(sys.argv[1])
+print(parsed.hostname or "")
+PY
+)"
+  request_no_proxy="$(merge_no_proxy_entries "${NO_PROXY:-${no_proxy:-}}" "${target_host}")"
+  until NO_PROXY="${request_no_proxy}" no_proxy="${request_no_proxy}" curl -fsS "${url}" >/dev/null 2>&1; do
     if (( "$(date +%s)" - started > timeout )); then
       die "timeout waiting for ${url}"
     fi

@@ -46,12 +46,22 @@ for check in \
   fi
 done
 
-kubectl create secret docker-registry agentsmith-registry \
-  --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
-  --docker-server="${REGISTRY_HOST}" \
-  --docker-username="${REGISTRY_USERNAME}" \
-  --docker-password="${REGISTRY_PASSWORD}" \
-  --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+IMAGE_PULL_SECRETS_YAML=""
+if [[ -n "${REGISTRY_USERNAME:-}" || -n "${REGISTRY_PASSWORD:-}" ]]; then
+  [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
+    || die "registry auth requires both REGISTRY_USERNAME and REGISTRY_PASSWORD"
+  kubectl create secret docker-registry agentsmith-registry \
+    --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
+    --docker-server="${REGISTRY_HOST}" \
+    --docker-username="${REGISTRY_USERNAME}" \
+    --docker-password="${REGISTRY_PASSWORD}" \
+    --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  IMAGE_PULL_SECRETS_YAML=$(cat <<'EOF'
+      imagePullSecrets:
+        - name: agentsmith-registry
+EOF
+)
+fi
 
 RUNTIME_MANAGER_KUBECONFIG="${STATE_DIR}/manager-kubeconfig.runtime"
 python3 - "${SHARED_MANAGER_KUBECONFIG}" "${RUNTIME_MANAGER_KUBECONFIG}" <<'PY'
@@ -160,8 +170,7 @@ spec:
         app: sandbox-manager
     spec:
       automountServiceAccountToken: false
-      imagePullSecrets:
-        - name: agentsmith-registry
+${IMAGE_PULL_SECRETS_YAML}
       nodeSelector:
 ${NODE_SELECTOR_YAML}
       tolerations:

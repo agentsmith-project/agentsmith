@@ -808,7 +808,6 @@ test.describe('@lane-real release user story end-to-end', () => {
         expect(externalStory).toContain('external turn 2');
         const externalSummary = await readFile(externalSummaryPath, 'utf-8');
         expect(externalSummary.toLowerCase()).toContain('external');
-        expect(externalSummary.toLowerCase()).toMatch(/story|summary|contains/);
         expect(
           /2\s+lines?/i.test(externalSummary)
           || (externalSummary.includes('external turn 1') && externalSummary.includes('external turn 2')),

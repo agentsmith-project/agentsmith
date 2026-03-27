@@ -195,7 +195,11 @@ load_bundled_images() {
 }
 
 push_release_images() {
-  docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}" >/dev/null
+  if [[ -n "${REGISTRY_USERNAME:-}" || -n "${REGISTRY_PASSWORD:-}" ]]; then
+    [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
+      || die "registry auth requires both REGISTRY_USERNAME and REGISTRY_PASSWORD"
+    docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}" >/dev/null
+  fi
   local image
   for image in \
     "${APP_IMAGE}" \

@@ -23,7 +23,18 @@ require_version_images
 
 FULL_AUTO_INGRESS_NAMESPACE="${FULL_AUTO_INGRESS_NAMESPACE:-ingress-nginx}"
 FULL_AUTO_JUICEFS_NAMESPACE="${FULL_AUTO_JUICEFS_NAMESPACE:-juicefs-system}"
+FULL_AUTO_INGRESS_SERVICE_TYPE="${FULL_AUTO_INGRESS_SERVICE_TYPE:-LoadBalancer}"
+FULL_AUTO_INGRESS_HTTP_NODE_PORT="${FULL_AUTO_INGRESS_HTTP_NODE_PORT:-}"
+FULL_AUTO_INGRESS_HTTPS_NODE_PORT="${FULL_AUTO_INGRESS_HTTPS_NODE_PORT:-}"
 [[ -n "${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME:-}" ]] || die "INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME must be set for full-auto mode"
+case "${FULL_AUTO_INGRESS_SERVICE_TYPE}" in
+  LoadBalancer|NodePort) ;;
+  *) die "FULL_AUTO_INGRESS_SERVICE_TYPE must be LoadBalancer or NodePort" ;;
+esac
+if [[ "${FULL_AUTO_INGRESS_SERVICE_TYPE}" != "NodePort" ]]; then
+  FULL_AUTO_INGRESS_HTTP_NODE_PORT=""
+  FULL_AUTO_INGRESS_HTTPS_NODE_PORT=""
+fi
 
 PREREQ_DIR="${STATE_DIR}/full-auto-prereqs"
 rm -rf "${PREREQ_DIR}"
@@ -221,6 +232,11 @@ patches:
       - op: replace
         path: /metadata/name
         value: ${FULL_AUTO_INGRESS_NAMESPACE}
+  - target:
+      version: v1
+      kind: Service
+      name: ingress-nginx-controller
+    path: service-patch.json
 images:
   - name: registry.k8s.io/ingress-nginx/controller
     newName: $(image_name_from_ref "${INGRESS_NGINX_CONTROLLER_IMAGE}")
@@ -230,10 +246,35 @@ images:
     newTag: $(image_tag_from_ref "${INGRESS_NGINX_CERTGEN_IMAGE}")
 EOF
 
+cat > "${PREREQ_DIR}/ingress-nginx/service-patch.json" <<EOF
+- op: replace
+  path: /spec/type
+  value: ${FULL_AUTO_INGRESS_SERVICE_TYPE}
+EOF
+if [[ -n "${FULL_AUTO_INGRESS_HTTP_NODE_PORT}" ]]; then
+cat >> "${PREREQ_DIR}/ingress-nginx/service-patch.json" <<EOF
+- op: add
+  path: /spec/ports/0/nodePort
+  value: ${FULL_AUTO_INGRESS_HTTP_NODE_PORT}
+EOF
+fi
+if [[ -n "${FULL_AUTO_INGRESS_HTTPS_NODE_PORT}" ]]; then
+cat >> "${PREREQ_DIR}/ingress-nginx/service-patch.json" <<EOF
+- op: add
+  path: /spec/ports/1/nodePort
+  value: ${FULL_AUTO_INGRESS_HTTPS_NODE_PORT}
+EOF
+fi
+
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/namespace.yaml" >/dev/null
 
 ensure_registry_secret() {
   local namespace="$1"
+  if [[ -z "${REGISTRY_USERNAME:-}" && -z "${REGISTRY_PASSWORD:-}" ]]; then
+    return 0
+  fi
+  [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
+    || die "registry auth requires both REGISTRY_USERNAME and REGISTRY_PASSWORD"
   KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl create secret docker-registry "${REGISTRY_SECRET_NAME}" \
     --namespace "${namespace}" \
     --docker-server "${REGISTRY_HOST}" \
@@ -246,6 +287,9 @@ ensure_registry_secret() {
 patch_serviceaccount_pull_secret() {
   local namespace="$1"
   local service_account="$2"
+  if [[ -z "${REGISTRY_USERNAME:-}" && -z "${REGISTRY_PASSWORD:-}" ]]; then
+    return 0
+  fi
   KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl patch serviceaccount "${service_account}" \
     -n "${namespace}" \
     --type merge \

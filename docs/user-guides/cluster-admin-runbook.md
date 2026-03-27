@@ -27,9 +27,9 @@ The cluster administrator must hand over these inputs to the application deploym
 
 The application deployment operator must not continue until all of these handoff items exist.
 
-Ready-to-edit example files live under:
+When this runbook is handed to a cluster administrator through the deploy handoff package, the ready-to-edit files live under:
 
-- `infra/deploy/cluster/admin-examples/`
+- `examples/`
 
 These examples are not applied by automation. They exist to lower the administrator's editing cost.
 
@@ -72,15 +72,15 @@ Minimum administrator workflow:
 2. override the CSI controller / node / dashboard / mount images to your mirrored registry images
 3. wait until controller and node components are healthy
 4. create the `mbos` namespace secret:
-   - `infra/deploy/cluster/admin-examples/juicefs-csi-secret.example.yaml`
+   - `examples/juicefs-csi-secret.example.yaml`
 5. create the storage class:
-   - `infra/deploy/cluster/admin-examples/juicefs-storageclass.example.yaml`
+   - `examples/juicefs-storageclass.example.yaml`
 
 Recommended apply commands:
 
 ```bash
-kubectl apply -f infra/deploy/cluster/admin-examples/juicefs-csi-secret.example.yaml
-kubectl apply -f infra/deploy/cluster/admin-examples/juicefs-storageclass.example.yaml
+kubectl apply -f examples/juicefs-csi-secret.example.yaml
+kubectl apply -f examples/juicefs-storageclass.example.yaml
 ```
 
 Validate:
@@ -146,8 +146,8 @@ Do not reuse the deploy kubeconfig for manager runtime.
 
 Recommended example files:
 
-- `infra/deploy/cluster/admin-examples/manager-role.example.yaml`
-- `infra/deploy/cluster/admin-examples/manager-pv-clusterrole.example.yaml`
+- `examples/manager-role.example.yaml`
+- `examples/manager-pv-clusterrole.example.yaml`
 
 Administrator workflow:
 
@@ -160,8 +160,8 @@ Administrator workflow:
 Recommended apply commands:
 
 ```bash
-kubectl apply -f infra/deploy/cluster/admin-examples/manager-role.example.yaml
-kubectl apply -f infra/deploy/cluster/admin-examples/manager-pv-clusterrole.example.yaml
+kubectl apply -f examples/manager-role.example.yaml
+kubectl apply -f examples/manager-pv-clusterrole.example.yaml
 ```
 
 Minimum RBAC shape:
@@ -201,7 +201,7 @@ This kubeconfig is used by `prepare.sh` and `deploy.sh`.
 
 Recommended example file:
 
-- `infra/deploy/cluster/admin-examples/deploy-role.example.yaml`
+- `examples/deploy-role.example.yaml`
 
 Administrator workflow:
 
@@ -214,7 +214,7 @@ Administrator workflow:
 Recommended apply command:
 
 ```bash
-kubectl apply -f infra/deploy/cluster/admin-examples/deploy-role.example.yaml
+kubectl apply -f examples/deploy-role.example.yaml
 ```
 
 Minimum RBAC shape:

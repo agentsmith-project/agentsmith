@@ -198,11 +198,49 @@ ensure_admin_ready() {
 
 render_admin_handoff() {
   ensure_dirs
-  mkdir -p "${ADMIN_HANDOFF_DIR}/examples"
+  mkdir -p "${ADMIN_HANDOFF_DIR}/examples" "${ADMIN_HANDOFF_DIR}/scripts"
   cp "${SHARED_SITE_ENV}" "${ADMIN_HANDOFF_DIR}/site.env.todo"
   cp "${ROOT_DIR}/infra/deploy/cluster/admin-examples/"*.yaml "${ADMIN_HANDOFF_DIR}/examples/"
   cp "${ROOT_DIR}/docs/user-guides/cluster-admin-runbook.md" "${ADMIN_HANDOFF_DIR}/RUNBOOK.md"
   write_admin_ready_template
+
+  cat > "${ADMIN_HANDOFF_DIR}/scripts/apply-juicefs-prereqs.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+kubectl apply -f examples/juicefs-csi-secret.example.yaml
+kubectl apply -f examples/juicefs-storageclass.example.yaml
+EOF
+
+  cat > "${ADMIN_HANDOFF_DIR}/scripts/apply-deploy-rbac.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+kubectl apply -f examples/deploy-role.example.yaml
+EOF
+
+  cat > "${ADMIN_HANDOFF_DIR}/scripts/apply-manager-rbac.sh" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+kubectl apply -f examples/manager-role.example.yaml
+kubectl apply -f examples/manager-pv-clusterrole.example.yaml
+EOF
+
+  cat > "${ADMIN_HANDOFF_DIR}/scripts/final-verification.sh" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+kubectl get namespace ${INTERNAL_AGENT_K8S_NAMESPACE}
+kubectl get csidriver csi.juicefs.com
+kubectl get secret -n ${INTERNAL_AGENT_K8S_NAMESPACE} juicefs-csi-secret
+kubectl get storageclass ${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}
+kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+kubectl auth can-i create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+kubectl auth can-i create persistentvolumes
+EOF
+
+  chmod +x "${ADMIN_HANDOFF_DIR}/scripts/"*.sh
 
   cat > "${ADMIN_HANDOFF_DIR}/CHECKLIST.md" <<EOF
 # Cluster Admin Handoff Checklist
@@ -212,17 +250,23 @@ render_admin_handoff() {
 3. Apply and verify:
    - \`examples/juicefs-csi-secret.example.yaml\`
    - \`examples/juicefs-storageclass.example.yaml\`
+   - or run: \`bash scripts/apply-juicefs-prereqs.sh\`
 4. Apply and verify:
    - \`examples/deploy-role.example.yaml\`
    - \`examples/manager-role.example.yaml\`
    - \`examples/manager-pv-clusterrole.example.yaml\`
+   - or run:
+     - \`bash scripts/apply-deploy-rbac.sh\`
+     - \`bash scripts/apply-manager-rbac.sh\`
 5. Review and finalize \`site.env.todo\`.
 6. Deliver these files into \`${CONFIG_DIR}\`:
    - \`site.env\`
    - \`registry.env\`
    - \`kubeconfig\`
    - \`manager-kubeconfig\`
-7. Run the final verification commands from the cluster admin runbook.
+7. Run:
+   - \`bash scripts/final-verification.sh\`
+   - or the equivalent final verification commands from \`RUNBOOK.md\`
 8. Edit \`${SHARED_ADMIN_READY_ENV}\` and set:
    - \`ADMIN_READY=1\`
    - optional \`ADMIN_CHECKED_AT=<timestamp>\`

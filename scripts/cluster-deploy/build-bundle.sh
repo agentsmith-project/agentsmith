@@ -30,6 +30,8 @@ fi
 
 JUICEFS_VERSION="${JUICEFS_VERSION:-1.3.0}"
 JUICEFS_DOWNLOAD_BASE_URL="${JUICEFS_DOWNLOAD_BASE_URL:-https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}}"
+INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
+INGRESS_NGINX_MANIFEST_URL="${INGRESS_NGINX_MANIFEST_URL:-https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${INGRESS_NGINX_VERSION}/deploy/static/provider/cloud/deploy.yaml}"
 
 mkdir -p "${OUT_DIR}"
 rm -rf "${BUNDLE_DIR}"
@@ -52,12 +54,13 @@ copy_source_tree() {
     -cf - . | tar -C "${dst}" -xf -
 }
 
-mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
+mkdir -p "${BUNDLE_DIR}/compose" "${BUNDLE_DIR}/env" "${BUNDLE_DIR}/scripts/cluster-deploy" "${BUNDLE_DIR}/scripts/lib" "${BUNDLE_DIR}/docs/contracts" "${BUNDLE_DIR}/docs/user-guides" "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples" "${BUNDLE_DIR}/addons/ingress-nginx" "${BUNDLE_DIR}/addons/juicefs-csi" "${BUNDLE_DIR}/postgres-init" "${BUNDLE_DIR}/minio" "${BUNDLE_DIR}/keycloak" "${BUNDLE_DIR}/universal-proxy" "${BUNDLE_DIR}/e2e" "${BUNDLE_DIR}/sources/agentsmith" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service" "${BUNDLE_DIR}/sources/llm-universal-proxy"
 cp "${ROOT_DIR}/infra/deploy/cluster/docker-compose.yml" "${BUNDLE_DIR}/compose/docker-compose.yml"
 cp "${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json" "${BUNDLE_DIR}/deployment.manifest.json"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${BUNDLE_DIR}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example" "${BUNDLE_DIR}/env/registry.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/kubeconfig.example.yaml" "${BUNDLE_DIR}/env/kubeconfig.example.yaml"
+cp "${ROOT_DIR}/infra/deploy/cluster/env/admin-kubeconfig.example.yaml" "${BUNDLE_DIR}/env/admin-kubeconfig.example.yaml"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/manager-kubeconfig.example.yaml" "${BUNDLE_DIR}/env/manager-kubeconfig.example.yaml"
 cp "${ROOT_DIR}/infra/deploy/cluster/admin-examples/"*.yaml "${BUNDLE_DIR}/infra/deploy/cluster/admin-examples/"
 cp "${ROOT_DIR}/infra/integration/postgres-init/001-create-databases.sql" "${BUNDLE_DIR}/postgres-init/"
@@ -81,6 +84,11 @@ cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/doc
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
 chmod +x "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
+
+curl --fail --show-error --location --retry 5 --retry-delay 2 --retry-all-errors \
+  "${INGRESS_NGINX_MANIFEST_URL}" \
+  -o "${BUNDLE_DIR}/addons/ingress-nginx/upstream-deploy.yaml"
+cp "${ROOT_DIR}/infra/deploy/demo/k8s/juicefs-csi.yaml" "${BUNDLE_DIR}/addons/juicefs-csi/upstream-manifest.yaml"
 
 copy_source_tree "${ROOT_DIR}" "${BUNDLE_DIR}/sources/agentsmith"
 copy_source_tree "${SANDBOX_ROOT}/manager-service" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service"
@@ -109,6 +117,14 @@ dep_registry_ref() {
 }
 
 JUICEFS_MOUNT_IMAGE="$(dep_registry_ref "juicedata/mount:ce-v1.3.1")"
+JUICEFS_CSI_DRIVER_IMAGE="$(dep_registry_ref "juicedata/juicefs-csi-driver:v0.31.3")"
+JUICEFS_CSI_DASHBOARD_IMAGE="$(dep_registry_ref "juicedata/csi-dashboard:v0.31.3")"
+JUICEFS_CSI_PROVISIONER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0")"
+JUICEFS_CSI_RESIZER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-resizer:v1.9.0")"
+JUICEFS_CSI_LIVENESSPROBE_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/livenessprobe:v2.11.0")"
+JUICEFS_CSI_NODE_REGISTRAR_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0")"
+INGRESS_NGINX_CONTROLLER_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/controller:v1.15.1")"
+INGRESS_NGINX_CERTGEN_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9")"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
@@ -135,10 +151,26 @@ COMPOSE_DEPENDENCY_IMAGES=(
 
 CLUSTER_DEPENDENCY_SOURCE_IMAGES=(
   "juicedata/mount:ce-v1.3.1"
+  "juicedata/juicefs-csi-driver:v0.31.3"
+  "juicedata/csi-dashboard:v0.31.3"
+  "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0"
+  "registry.k8s.io/sig-storage/csi-resizer:v1.9.0"
+  "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
+  "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0"
+  "registry.k8s.io/ingress-nginx/controller:v1.15.1"
+  "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9"
 )
 
 CLUSTER_DEPENDENCY_TARGET_IMAGES=(
   "${JUICEFS_MOUNT_IMAGE}"
+  "${JUICEFS_CSI_DRIVER_IMAGE}"
+  "${JUICEFS_CSI_DASHBOARD_IMAGE}"
+  "${JUICEFS_CSI_PROVISIONER_IMAGE}"
+  "${JUICEFS_CSI_RESIZER_IMAGE}"
+  "${JUICEFS_CSI_LIVENESSPROBE_IMAGE}"
+  "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}"
+  "${INGRESS_NGINX_CONTROLLER_IMAGE}"
+  "${INGRESS_NGINX_CERTGEN_IMAGE}"
 )
 
 for image in "${COMPOSE_DEPENDENCY_IMAGES[@]}" "${CLUSTER_DEPENDENCY_SOURCE_IMAGES[@]}"; do
@@ -163,6 +195,15 @@ done
 cat >> "${BUNDLE_DIR}/VERSION" <<EOF
 juicefs_version=${JUICEFS_VERSION}
 juicefs_mount_image=${JUICEFS_MOUNT_IMAGE}
+juicefs_csi_driver_image=${JUICEFS_CSI_DRIVER_IMAGE}
+juicefs_csi_dashboard_image=${JUICEFS_CSI_DASHBOARD_IMAGE}
+juicefs_csi_provisioner_image=${JUICEFS_CSI_PROVISIONER_IMAGE}
+juicefs_csi_resizer_image=${JUICEFS_CSI_RESIZER_IMAGE}
+juicefs_csi_livenessprobe_image=${JUICEFS_CSI_LIVENESSPROBE_IMAGE}
+juicefs_csi_node_registrar_image=${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}
+ingress_nginx_version=${INGRESS_NGINX_VERSION}
+ingress_nginx_controller_image=${INGRESS_NGINX_CONTROLLER_IMAGE}
+ingress_nginx_certgen_image=${INGRESS_NGINX_CERTGEN_IMAGE}
 EOF
 
 (cd "${BUNDLE_DIR}" && find . -type f -print0 | sort -z | xargs -0 sha256sum > checksums.txt)

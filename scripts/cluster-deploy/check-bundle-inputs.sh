@@ -6,9 +6,10 @@ MANIFEST_PATH="${ROOT_DIR}/infra/deploy/cluster/deployment.manifest.json"
 SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/site.env.example"
 REGISTRY_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/registry.env.example"
 KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/kubeconfig.example.yaml"
+ADMIN_KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/admin-kubeconfig.example.yaml"
 MANAGER_KUBECONFIG_EXAMPLE="${ROOT_DIR}/infra/deploy/cluster/env/manager-kubeconfig.example.yaml"
 
-python3 - <<'PY' "${MANIFEST_PATH}" "${SITE_ENV_EXAMPLE}" "${REGISTRY_ENV_EXAMPLE}" "${KUBECONFIG_EXAMPLE}" "${MANAGER_KUBECONFIG_EXAMPLE}" "${ROOT_DIR}"
+python3 - <<'PY' "${MANIFEST_PATH}" "${SITE_ENV_EXAMPLE}" "${REGISTRY_ENV_EXAMPLE}" "${KUBECONFIG_EXAMPLE}" "${ADMIN_KUBECONFIG_EXAMPLE}" "${MANAGER_KUBECONFIG_EXAMPLE}" "${ROOT_DIR}"
 import json
 import pathlib
 import sys
@@ -17,8 +18,9 @@ manifest_path = pathlib.Path(sys.argv[1])
 site_env_path = pathlib.Path(sys.argv[2])
 registry_env_path = pathlib.Path(sys.argv[3])
 kubeconfig_path = pathlib.Path(sys.argv[4])
-manager_kubeconfig_path = pathlib.Path(sys.argv[5])
-root_dir = pathlib.Path(sys.argv[6])
+admin_kubeconfig_path = pathlib.Path(sys.argv[5])
+manager_kubeconfig_path = pathlib.Path(sys.argv[6])
+root_dir = pathlib.Path(sys.argv[7])
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 
@@ -38,6 +40,8 @@ if "REGISTRY_HOST" not in registry_env_path.read_text(encoding='utf-8'):
     raise SystemExit("missing_registry_host_template")
 if not kubeconfig_path.exists():
     raise SystemExit("missing_kubeconfig_example")
+if not admin_kubeconfig_path.exists():
+    raise SystemExit("missing_admin_kubeconfig_example")
 if not manager_kubeconfig_path.exists():
     raise SystemExit("missing_manager_kubeconfig_example")
 
@@ -97,6 +101,10 @@ cluster_automation_files=(
   "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 )
 
+full_auto_cluster_scope_files=(
+  "${ROOT_DIR}/scripts/cluster-deploy/apply-cluster-prereqs.sh"
+)
+
 for forbidden in \
   "kubectl create namespace" \
   "kubectl delete namespace" \
@@ -108,6 +116,13 @@ for forbidden in \
     echo "cluster-deploy automation must stay namespace-only; found forbidden token: ${forbidden}" >&2
     exit 1
   fi
+done
+
+for required in "${full_auto_cluster_scope_files[@]}"; do
+  [[ -f "${required}" ]] || {
+    echo "missing full-auto cluster-scope script: ${required}" >&2
+    exit 1
+  }
 done
 
 echo "[cluster-bundle-inputs] ok"

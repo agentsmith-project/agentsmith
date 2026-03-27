@@ -19,6 +19,7 @@ UNIVERSAL_PROXY_SOURCE_DIR="${RELEASE_ROOT}/sources/llm-universal-proxy"
 
 IMAGE_PREFIX="${REGISTRY_HOST}/${REGISTRY_PROJECT}"
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
+INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
 
 APP_BASE_IMAGE="agentsmith-app-base:${RELEASE_ID}"
 RUNNER_BASE_IMAGE="agentsmith-codex-runner-base:${RELEASE_ID}"
@@ -83,6 +84,7 @@ agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
 juicefs_csi_version=${JUICEFS_CSI_VERSION}
+ingress_nginx_version=${INGRESS_NGINX_VERSION}
 registry_host=${REGISTRY_HOST}
 registry_project=${REGISTRY_PROJECT}
 EOF

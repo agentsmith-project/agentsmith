@@ -11,6 +11,7 @@ source "${ROOT_DIR}/scripts/lib/deploy-common.sh"
 CLUSTER_DEPLOY_ROOT="${DEPLOY_ROOT}"
 SHARED_REGISTRY_ENV="${CONFIG_DIR}/registry.env"
 SHARED_KUBECONFIG="${CONFIG_DIR}/kubeconfig"
+SHARED_ADMIN_KUBECONFIG="${CONFIG_DIR}/admin-kubeconfig"
 SHARED_MANAGER_KUBECONFIG="${CONFIG_DIR}/manager-kubeconfig"
 SHARED_ADMIN_READY_ENV="${CONFIG_DIR}/admin-ready.env"
 ADMIN_HANDOFF_DIR="${DEPLOY_ROOT}/admin-handoff"
@@ -18,8 +19,20 @@ OPERATOR_CLUSTER_DIR="${ROOT_DIR}/.infra/cluster-deploy"
 OPERATOR_SITE_ENV="${OPERATOR_CLUSTER_DIR}/site.env"
 OPERATOR_REGISTRY_ENV="${OPERATOR_CLUSTER_DIR}/registry.env"
 OPERATOR_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/kubeconfig"
+OPERATOR_ADMIN_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/admin-kubeconfig"
 OPERATOR_MANAGER_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/manager-kubeconfig"
-export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_MANAGER_KUBECONFIG SHARED_ADMIN_READY_ENV ADMIN_HANDOFF_DIR OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
+export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_ADMIN_KUBECONFIG SHARED_MANAGER_KUBECONFIG SHARED_ADMIN_READY_ENV ADMIN_HANDOFF_DIR OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_ADMIN_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
+
+cluster_deploy_mode() {
+  printf '%s\n' "${CLUSTER_DEPLOY_MODE:-semi-auto}"
+}
+
+require_supported_cluster_deploy_mode() {
+  case "$(cluster_deploy_mode)" in
+    semi-auto|full-auto) ;;
+    *) die "unsupported CLUSTER_DEPLOY_MODE=$(cluster_deploy_mode); expected semi-auto or full-auto" ;;
+  esac
+}
 
 ensure_operator_site_env() {
   ensure_dirs
@@ -80,6 +93,24 @@ ensure_operator_kubeconfig() {
   export KUBECONFIG="${SHARED_KUBECONFIG}"
 }
 
+ensure_operator_admin_kubeconfig() {
+  ensure_dirs
+  mkdir -p "${RELEASE_ROOT}/env"
+  if [[ ! -f "${SHARED_ADMIN_KUBECONFIG}" ]]; then
+    if [[ -f "${OPERATOR_ADMIN_KUBECONFIG}" ]]; then
+      cp "${OPERATOR_ADMIN_KUBECONFIG}" "${SHARED_ADMIN_KUBECONFIG}"
+    elif [[ -f "${RELEASE_ROOT}/env/admin-kubeconfig" ]]; then
+      cp "${RELEASE_ROOT}/env/admin-kubeconfig" "${SHARED_ADMIN_KUBECONFIG}"
+    elif [[ -f "${RELEASE_ROOT}/env/admin-kubeconfig.example.yaml" ]]; then
+      cp "${RELEASE_ROOT}/env/admin-kubeconfig.example.yaml" "${SHARED_ADMIN_KUBECONFIG}"
+      die "missing admin-kubeconfig; template copied to ${SHARED_ADMIN_KUBECONFIG}"
+    else
+      die "missing admin-kubeconfig in operator files, shared config, and release examples"
+    fi
+  fi
+  cp "${SHARED_ADMIN_KUBECONFIG}" "${RELEASE_ROOT}/env/admin-kubeconfig"
+}
+
 ensure_operator_manager_kubeconfig() {
   ensure_dirs
   mkdir -p "${RELEASE_ROOT}/env"
@@ -114,6 +145,11 @@ load_kubeconfig() {
   export KUBECONFIG="${SHARED_KUBECONFIG}"
 }
 
+load_admin_kubeconfig() {
+  ensure_operator_admin_kubeconfig
+  export KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}"
+}
+
 read_version_value() {
   local key="$1"
   awk -F= -v target="${key}" '$1==target{print $2}' "${RELEASE_ROOT}/VERSION"
@@ -126,7 +162,15 @@ require_version_images() {
   UNIVERSAL_PROXY_IMAGE="$(read_version_value llm_universal_proxy_image)"
   VERIFY_RUNNER_IMAGE="$(read_version_value agentsmith_verify_runner_image)"
   JUICEFS_MOUNT_IMAGE="$(read_version_value juicefs_mount_image)"
-  export APP_IMAGE RUNNER_IMAGE SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE
+  JUICEFS_CSI_DRIVER_IMAGE="$(read_version_value juicefs_csi_driver_image)"
+  JUICEFS_CSI_DASHBOARD_IMAGE="$(read_version_value juicefs_csi_dashboard_image)"
+  JUICEFS_CSI_PROVISIONER_IMAGE="$(read_version_value juicefs_csi_provisioner_image)"
+  JUICEFS_CSI_RESIZER_IMAGE="$(read_version_value juicefs_csi_resizer_image)"
+  JUICEFS_CSI_LIVENESSPROBE_IMAGE="$(read_version_value juicefs_csi_livenessprobe_image)"
+  JUICEFS_CSI_NODE_REGISTRAR_IMAGE="$(read_version_value juicefs_csi_node_registrar_image)"
+  INGRESS_NGINX_CONTROLLER_IMAGE="$(read_version_value ingress_nginx_controller_image)"
+  INGRESS_NGINX_CERTGEN_IMAGE="$(read_version_value ingress_nginx_certgen_image)"
+  export APP_IMAGE RUNNER_IMAGE SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE JUICEFS_CSI_DRIVER_IMAGE JUICEFS_CSI_DASHBOARD_IMAGE JUICEFS_CSI_PROVISIONER_IMAGE JUICEFS_CSI_RESIZER_IMAGE JUICEFS_CSI_LIVENESSPROBE_IMAGE JUICEFS_CSI_NODE_REGISTRAR_IMAGE INGRESS_NGINX_CONTROLLER_IMAGE INGRESS_NGINX_CERTGEN_IMAGE
   [[ -n "${APP_IMAGE}" && -n "${RUNNER_IMAGE}" && -n "${SANDBOX_MANAGER_IMAGE}" && -n "${UNIVERSAL_PROXY_IMAGE}" && -n "${VERIFY_RUNNER_IMAGE}" ]] \
     || die "VERSION is missing prebuilt image refs; rebuild bundle on the development machine with cluster:bundle"
   [[ -n "${JUICEFS_MOUNT_IMAGE}" ]] \
@@ -159,9 +203,54 @@ push_release_images() {
     "${VERIFY_RUNNER_IMAGE}" \
     "${SANDBOX_MANAGER_IMAGE}" \
     "${UNIVERSAL_PROXY_IMAGE}" \
-    "${JUICEFS_MOUNT_IMAGE}"; do
+    "${JUICEFS_MOUNT_IMAGE}" \
+    "${JUICEFS_CSI_DRIVER_IMAGE}" \
+    "${JUICEFS_CSI_DASHBOARD_IMAGE}" \
+    "${JUICEFS_CSI_PROVISIONER_IMAGE}" \
+    "${JUICEFS_CSI_RESIZER_IMAGE}" \
+    "${JUICEFS_CSI_LIVENESSPROBE_IMAGE}" \
+    "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}" \
+    "${INGRESS_NGINX_CONTROLLER_IMAGE}" \
+    "${INGRESS_NGINX_CERTGEN_IMAGE}"; do
     docker push "${image}" >/dev/null
   done
+}
+
+build_cluster_kubeconfig_from_admin() {
+  local service_account="$1"
+  local namespace="$2"
+  local output_path="$3"
+  local cluster_name server ca_data token
+
+  cluster_name="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.contexts[0].context.cluster}')"
+  server="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')"
+  ca_data="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
+  token="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl -n "${namespace}" create token "${service_account}")"
+
+  [[ -n "${cluster_name}" && -n "${server}" && -n "${ca_data}" && -n "${token}" ]] \
+    || die "failed to generate kubeconfig for service account ${service_account} in namespace ${namespace}"
+
+  cat > "${output_path}" <<EOF
+apiVersion: v1
+kind: Config
+clusters:
+- cluster:
+    certificate-authority-data: ${ca_data}
+    server: ${server}
+  name: ${cluster_name}
+contexts:
+- context:
+    cluster: ${cluster_name}
+    namespace: ${namespace}
+    user: ${service_account}
+  name: ${service_account}@${cluster_name}
+current-context: ${service_account}@${cluster_name}
+preferences: {}
+users:
+- name: ${service_account}
+  user:
+    token: ${token}
+EOF
 }
 
 wait_cluster_substrate() {

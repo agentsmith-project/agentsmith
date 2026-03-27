@@ -1,6 +1,6 @@
 # Cluster Admin Runbook
 
-Use this runbook only from the handoff directory on the target server.
+Use this runbook only for `semi-auto` cluster deployment, from the handoff directory on the target server.
 
 What you need in the same directory:
 - `CHECKLIST.md`
@@ -14,7 +14,9 @@ Your goal is simple:
 3. hand back the four config files
 4. set `ADMIN_READY=1`
 
-`cluster-deploy` automation does not do cluster-scope setup. It waits for you to finish this handoff first.
+In `semi-auto`, `cluster-deploy` automation does not do cluster-scope setup. It waits for you to finish this handoff first.
+
+In `full-auto`, this runbook is not the main path. The target host performs the AgentSmith-owned cluster prerequisite installation automatically by using `config/admin-kubeconfig`.
 
 ## Before You Start
 

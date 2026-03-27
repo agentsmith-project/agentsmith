@@ -90,6 +90,7 @@
     "cluster:deploy-substrate": "bash scripts/cluster-deploy/deploy-substrate.sh",
     "cluster:deploy-app": "bash scripts/cluster-deploy/deploy-app.sh",
     "cluster:prepare-admin-handoff": "bash scripts/cluster-deploy/prepare-admin-handoff.sh",
+    "cluster:apply-cluster-prereqs": "bash scripts/cluster-deploy/apply-cluster-prereqs.sh",
     "cluster:deploy-sandbox": "bash scripts/cluster-deploy/deploy-sandbox.sh",
     "cluster:deploy": "bash scripts/cluster-deploy/deploy.sh",
     "cluster:bootstrap": "bash scripts/cluster-deploy/bootstrap.sh",

@@ -4,11 +4,20 @@
 
 `cluster-deploy` is the real-cluster release line.
 
+Modes:
+
+- `semi-auto`
+  - default
+  - pauses for administrator handoff
+- `full-auto`
+  - requires `config/admin-kubeconfig`
+  - automatically installs and reconciles the AgentSmith-owned cluster prerequisites
+
 Use it when:
 
 - the target host runs application services with Docker Compose
 - internal agent execution runs on a real Kubernetes cluster
-- the cluster administrator has already completed the prerequisites in:
+- for `semi-auto`, the cluster administrator has already completed the prerequisites in:
   - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
 
 Do not use it to replace the current demo deployment line.
@@ -35,6 +44,7 @@ The build machine stores real operator config in gitignored files:
 - `.infra/cluster-deploy/site.env`
 - `.infra/cluster-deploy/registry.env`
 - `.infra/cluster-deploy/kubeconfig`
+- `.infra/cluster-deploy/admin-kubeconfig`
 - `.infra/cluster-deploy/manager-kubeconfig`
 
 Tracked examples live under:
@@ -52,6 +62,7 @@ Shared operator config:
 - `$HOME/agentsmith/cluster-deploy/config/site.env`
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
+- `$HOME/agentsmith/cluster-deploy/config/admin-kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
 
@@ -162,7 +173,7 @@ This stage starts only:
 
 `external-runner` is not expected to connect in this stage. It is provisioned and connected later by `bootstrap`.
 
-### 9. Generate the administrator handoff package and pause
+### 9. Generate the administrator handoff package
 
 ```bash
 cd "$HOME/agentsmith/cluster-deploy/current"
@@ -176,7 +187,7 @@ This generates:
 - `$HOME/agentsmith/cluster-deploy/admin-handoff/examples/*.yaml`
 - `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
 
-At this point, stop and wait for the cluster administrator to complete:
+In `semi-auto`, stop here and wait for the cluster administrator to complete:
 
 - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
 
@@ -187,6 +198,21 @@ The administrator must set:
 in:
 
 - `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
+
+### 9b. Full-auto only: apply cluster prerequisites
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
+bash scripts/cluster-deploy/apply-cluster-prereqs.sh
+```
+
+This stage:
+
+- reconciles ingress-nginx
+- reconciles JuiceFS CSI
+- applies AgentSmith storage and RBAC prerequisites
+- generates `config/kubeconfig` and `config/manager-kubeconfig`
+- marks `config/admin-ready.env` ready automatically
 
 ### 10. Continue with namespaced sandbox deployment
 
@@ -214,23 +240,35 @@ bash scripts/cluster-deploy/report.sh
 
 ### Optional wrapper
 
-`bash scripts/cluster-deploy/deploy.sh` is now only a convenience wrapper for:
+`bash scripts/cluster-deploy/deploy.sh` is a convenience wrapper.
 
 - `publish-images`
 - `deploy-substrate`
 - `deploy-app`
 - `prepare-admin-handoff`
+- `apply-cluster-prereqs` in `full-auto`
 
-After the administrator completes the handoff, continue manually with:
+In `semi-auto`, after the administrator completes the handoff, continue manually with:
 
 - `deploy-sandbox`
 - `bootstrap`
 - `verify`
 - `report`
 
-It intentionally stops before sandbox deployment so the cluster administrator can complete the handoff.
+It intentionally stops before sandbox deployment in `semi-auto`.
 
 ## Kubeconfig Roles
+
+### Admin kubeconfig
+
+`config/admin-kubeconfig` is used only in `full-auto`.
+
+It performs the AgentSmith-owned cluster prerequisite installation:
+
+- ingress-nginx
+- JuiceFS CSI
+- storage class
+- deploy and manager RBAC
 
 ### Deploy kubeconfig
 

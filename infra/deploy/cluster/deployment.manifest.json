@@ -6,6 +6,7 @@
     "deploy-substrate",
     "deploy-app",
     "prepare-admin-handoff",
+    "apply-cluster-prereqs",
     "deploy-sandbox",
     "bootstrap",
     "verify",
@@ -89,6 +90,7 @@
       "SANDBOX_MANAGER_PUBLIC_BASE_URL"
     ],
     "execution": [
+      "CLUSTER_DEPLOY_MODE",
       "SYSTEM_WORKSPACE_REGISTRY_MODE",
       "SANDBOX_SERVICE_KEY",
       "MBOS_AGENT_BUILTIN_SKILLS_DIR",
@@ -146,6 +148,7 @@
     "env/site.env.example",
     "env/registry.env.example",
     "env/kubeconfig.example.yaml",
+    "env/admin-kubeconfig.example.yaml",
     "env/manager-kubeconfig.example.yaml",
     "infra/deploy/cluster/admin-examples/deploy-role.example.yaml",
     "infra/deploy/cluster/admin-examples/manager-role.example.yaml",
@@ -167,6 +170,7 @@
     "scripts/cluster-deploy/deploy-substrate.sh",
     "scripts/cluster-deploy/deploy-app.sh",
     "scripts/cluster-deploy/prepare-admin-handoff.sh",
+    "scripts/cluster-deploy/apply-cluster-prereqs.sh",
     "scripts/cluster-deploy/deploy-sandbox.sh",
     "scripts/cluster-deploy/deploy.sh",
     "scripts/cluster-deploy/bootstrap.sh",

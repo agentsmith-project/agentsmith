@@ -20,6 +20,15 @@ It exists alongside, not instead of, the current `demo-deploy` demo line:
 
 `cluster-deploy` uses a two-stage release model with a staged target-host lifecycle.
 
+It supports two explicit modes:
+
+- `semi-auto`
+  - default
+  - pauses for cluster administrator handoff before sandbox deployment
+- `full-auto`
+  - requires `config/admin-kubeconfig`
+  - performs the AgentSmith-owned cluster-scope prerequisite installation automatically
+
 ### Stage 1. Build Machine / CI
 
 Responsibilities:
@@ -38,13 +47,14 @@ Responsibilities:
 - read shared operator config from `$HOME/agentsmith/cluster-deploy/config`
 - load bundled images into the target-host Docker daemon
 - push bundled registry-tagged images to the configured registry
-- run staged namespace-only release automation:
+- run staged release automation:
   - `prepare`
   - `publish-images`
   - `deploy-substrate`
   - `deploy-app`
   - `prepare-admin-handoff`
-  - wait for administrator completion
+  - `semi-auto`: wait for administrator completion
+  - `full-auto`: `apply-cluster-prereqs`
   - `deploy-sandbox`
   - `bootstrap`
   - `verify`
@@ -59,9 +69,9 @@ The build machine does not upload directly to the target host.
 
 ## Authority Boundary
 
-`cluster-deploy` is a **namespace-only** application release line.
+`cluster-deploy` is a namespace-first release line.
 
-It may manage only:
+In `semi-auto`, it may manage only:
 
 - application-server local runtime
 - namespaced Kubernetes resources in `mbos`
@@ -77,9 +87,13 @@ It must not:
 
 The deploy automation must also stop at an explicit administrator handoff point before any namespaced sandbox deployment occurs.
 
-All cluster-scope preparation belongs to the separate administrator runbook:
+All cluster-scope preparation in `semi-auto` belongs to the separate administrator runbook:
 
 - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
+
+In `full-auto`, AgentSmith is allowed to manage the AgentSmith-owned cluster prerequisites by using `config/admin-kubeconfig`.
+
+`full-auto` manages the cluster-side ingress controller, but it does not automatically manage external DNS records or certificate infrastructure.
 
 ## System Boundary
 
@@ -111,9 +125,29 @@ The cluster runs only the internal execution surface:
 - internal sandbox runner / workload pods
 - namespaced external dependency service abstractions
 
-JuiceFS CSI and storage-class preparation are **preinstalled cluster capabilities**, not part of deploy automation.
+In `semi-auto`, JuiceFS CSI and storage-class preparation are preinstalled cluster capabilities.
+
+In `full-auto`, AgentSmith installs and reconciles:
+
+- ingress-nginx
+- JuiceFS CSI
+- the AgentSmith storage class
+- deploy and manager RBAC prerequisites
 
 ## Kubernetes Permission Model
+
+### Admin kubeconfig
+
+`config/admin-kubeconfig` is required only in `full-auto`.
+
+It is used only for the AgentSmith-owned cluster prerequisite installation:
+
+- ingress-nginx
+- JuiceFS CSI
+- storage class
+- deploy and manager RBAC
+
+It must not be reused for namespaced deploy automation or sandbox-manager runtime.
 
 ### Deploy kubeconfig
 
@@ -242,6 +276,7 @@ Tracked templates:
 - `infra/deploy/cluster/env/site.env.example`
 - `infra/deploy/cluster/env/registry.env.example`
 - `infra/deploy/cluster/env/kubeconfig.example.yaml`
+- `infra/deploy/cluster/env/admin-kubeconfig.example.yaml`
 - `infra/deploy/cluster/env/manager-kubeconfig.example.yaml`
 
 Gitignored operator files:
@@ -249,6 +284,7 @@ Gitignored operator files:
 - `.infra/cluster-deploy/site.env`
 - `.infra/cluster-deploy/registry.env`
 - `.infra/cluster-deploy/kubeconfig`
+- `.infra/cluster-deploy/admin-kubeconfig`
 - `.infra/cluster-deploy/manager-kubeconfig`
 
 Target-host shared config:
@@ -256,6 +292,7 @@ Target-host shared config:
 - `$HOME/agentsmith/cluster-deploy/config/site.env`
 - `$HOME/agentsmith/cluster-deploy/config/registry.env`
 - `$HOME/agentsmith/cluster-deploy/config/kubeconfig`
+- `$HOME/agentsmith/cluster-deploy/config/admin-kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/manager-kubeconfig`
 - `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
 

@@ -165,6 +165,8 @@ Run:
 bash scripts/final-verification.sh
 ```
 
+This check validates the delivered files under `config/`, not just your current shell identity.
+
 If everything is ready, set:
 
 ```bash

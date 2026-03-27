@@ -230,14 +230,25 @@ EOF
   cat > "${ADMIN_HANDOFF_DIR}/scripts/final-verification.sh" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
+CONFIG_DIR="${CONFIG_DIR}"
+
+[[ -f "\${CONFIG_DIR}/site.env" ]] || { echo "missing \${CONFIG_DIR}/site.env" >&2; exit 1; }
+[[ -f "\${CONFIG_DIR}/registry.env" ]] || { echo "missing \${CONFIG_DIR}/registry.env" >&2; exit 1; }
+[[ -f "\${CONFIG_DIR}/kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/kubeconfig" >&2; exit 1; }
+[[ -f "\${CONFIG_DIR}/manager-kubeconfig" ]] || { echo "missing \${CONFIG_DIR}/manager-kubeconfig" >&2; exit 1; }
+
 kubectl get namespace ${INTERNAL_AGENT_K8S_NAMESPACE}
 kubectl get csidriver csi.juicefs.com
 kubectl get secret -n ${INTERNAL_AGENT_K8S_NAMESPACE} juicefs-csi-secret
 kubectl get storageclass ${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}
-kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-kubectl auth can-i create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}
-kubectl auth can-i create persistentvolumes
+KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create deployments -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create services -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create ingresses.networking.k8s.io -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/kubeconfig" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create secrets -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create persistentvolumeclaims -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create pods -n ${INTERNAL_AGENT_K8S_NAMESPACE}
+KUBECONFIG="\${CONFIG_DIR}/manager-kubeconfig" kubectl auth can-i create persistentvolumes
 EOF
 
   chmod +x "${ADMIN_HANDOFF_DIR}/scripts/"*.sh

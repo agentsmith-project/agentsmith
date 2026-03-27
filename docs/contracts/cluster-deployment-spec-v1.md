@@ -258,6 +258,32 @@ Required operator config:
 Optional operator config:
 
 - `APP_NODE_BASE_IMAGE`
+
+## Preset Defaults
+
+Environment-independent bootstrap defaults are tracked in:
+
+- [defaults.env](/home/percy/works/mbos-v1/agentsmith/infra/deploy/shared/presets/defaults.env)
+
+These presets are part of the release contract for both `demo-deploy` and `cluster-deploy`.
+
+They currently define:
+
+- the default upstream LLM endpoint preset
+  - `DEMO_ENDPOINT_API_KEY`
+  - `DEMO_ENDPOINT_BASE_URL`
+  - `DEMO_ENDPOINT_MODEL`
+  - `DEMO_ENDPOINT_PROTOCOL`
+  - context and output token defaults
+- system admin credentials
+- test user credentials
+- default workspace / project / credential / endpoint / agent names
+
+`render-env.sh`, `bootstrap.sh`, and `verify.sh` consume these preset values through:
+
+- [preset-common.sh](/home/percy/works/mbos-v1/agentsmith/scripts/lib/preset-common.sh)
+
+Site-specific operator config may override these values, but the tracked preset file is the default truth for local rehearsal and standard deployment flows.
 - `RUNNER_NODE_BASE_IMAGE`
 - `VERIFY_PLAYWRIGHT_BASE_IMAGE`
 - `VERIFY_DOCKER_CLI_IMAGE`

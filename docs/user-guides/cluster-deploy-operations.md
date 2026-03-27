@@ -51,6 +51,18 @@ Tracked examples live under:
 
 - `infra/deploy/cluster/env/`
 
+Tracked preset defaults live in:
+
+- [defaults.env](/home/percy/works/mbos-v1/agentsmith/infra/deploy/shared/presets/defaults.env)
+
+These defaults include:
+
+- the default upstream LLM preset
+- system admin and test user credentials
+- default workspace / project / endpoint / agent preset names
+
+Override them in `config/site.env` only when an environment truly needs different values.
+
 ## Target Host Layout
 
 Target root:
@@ -237,6 +249,35 @@ bash scripts/cluster-deploy/bootstrap.sh
 bash scripts/cluster-deploy/verify.sh
 bash scripts/cluster-deploy/report.sh
 ```
+
+## Verified Full-Auto Rehearsal
+
+AgentSmith has been rehearsed locally with:
+
+- a clean Docker Compose install root under `/home/percy/agentsmith/cluster-deploy`
+- a clean `kind` cluster named `mbos`
+- `CLUSTER_DEPLOY_MODE=full-auto`
+- the tracked MiniMax preset defaults from `infra/deploy/shared/presets/defaults.env`
+
+The locally verified full-auto sequence is:
+
+- `prepare`
+- `publish-images`
+- `deploy-substrate`
+- `deploy-app`
+- `apply-cluster-prereqs`
+- `deploy-sandbox`
+- `bootstrap`
+- `verify`
+- `report`
+
+Latest local verification evidence:
+
+- `bash scripts/cluster-deploy/verify.sh`
+  - `4 passed`
+- `bash scripts/cluster-deploy/report.sh`
+  - report:
+    - `/home/percy/agentsmith/cluster-deploy/reports/20260327T151718Z.md`
 
 ### Optional wrapper
 

@@ -110,7 +110,7 @@ metadata:
   namespace: ${INTERNAL_AGENT_K8S_NAMESPACE}
 rules:
   - apiGroups: [""]
-    resources: ["services", "endpoints", "configmaps", "secrets"]
+    resources: ["services", "endpoints", "configmaps", "secrets", "serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]
@@ -217,6 +217,37 @@ images:
     newTag: $(image_tag_from_ref "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}")
 EOF
 
+if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+cat >> "${PREREQ_DIR}/juicefs-csi/kustomization.yaml" <<EOF
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: StatefulSet
+      name: juicefs-csi-controller
+    path: image-pull-secret-patch.yaml
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: juicefs-csi-dashboard
+    path: image-pull-secret-patch.yaml
+  - target:
+      group: apps
+      version: v1
+      kind: DaemonSet
+      name: juicefs-csi-node
+    path: image-pull-secret-patch.yaml
+EOF
+
+cat > "${PREREQ_DIR}/juicefs-csi/image-pull-secret-patch.yaml" <<EOF
+- op: add
+  path: /spec/template/spec/imagePullSecrets
+  value:
+    - name: ${REGISTRY_SECRET_NAME}
+EOF
+fi
+
 cat > "${PREREQ_DIR}/ingress-nginx/kustomization.yaml" <<EOF
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -245,6 +276,35 @@ images:
     newName: $(image_name_from_ref "${INGRESS_NGINX_CERTGEN_IMAGE}")
     newTag: $(image_tag_from_ref "${INGRESS_NGINX_CERTGEN_IMAGE}")
 EOF
+
+if [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]]; then
+cat >> "${PREREQ_DIR}/ingress-nginx/kustomization.yaml" <<EOF
+patches:
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: ingress-nginx-controller
+    path: image-pull-secret-patch.yaml
+  - target:
+      version: v1
+      kind: Job
+      name: ingress-nginx-admission-create
+    path: image-pull-secret-patch.yaml
+  - target:
+      version: v1
+      kind: Job
+      name: ingress-nginx-admission-patch
+    path: image-pull-secret-patch.yaml
+EOF
+
+cat > "${PREREQ_DIR}/ingress-nginx/image-pull-secret-patch.yaml" <<EOF
+- op: add
+  path: /spec/template/spec/imagePullSecrets
+  value:
+    - name: ${REGISTRY_SECRET_NAME}
+EOF
+fi
 
 cat > "${PREREQ_DIR}/ingress-nginx/service-patch.json" <<EOF
 - op: replace
@@ -320,6 +380,9 @@ KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart deployment/ingre
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart statefulset/juicefs-csi-controller -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart daemonset/juicefs-csi-node -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart deployment/juicefs-csi-dashboard -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete pod -n "${FULL_AUTO_JUICEFS_NAMESPACE}" -l app=juicefs-csi-controller --ignore-not-found >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete pod -n "${FULL_AUTO_JUICEFS_NAMESPACE}" -l app=juicefs-csi-node --ignore-not-found >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete pod -n "${FULL_AUTO_JUICEFS_NAMESPACE}" -l app=juicefs-csi-dashboard --ignore-not-found >/dev/null
 
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout status deployment/ingress-nginx-controller -n "${FULL_AUTO_INGRESS_NAMESPACE}" --timeout=240s >/dev/null
 if KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl get job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" >/dev/null 2>&1; then

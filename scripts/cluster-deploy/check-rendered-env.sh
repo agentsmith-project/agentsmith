@@ -37,4 +37,34 @@ grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.
   exit 1
 }
 
+python3 - <<'PY' "${ROOT_DIR}" "${TMP_ROOT}"
+import os
+import pathlib
+import subprocess
+import sys
+root = pathlib.Path(sys.argv[1])
+tmp = pathlib.Path(sys.argv[2])
+release = tmp / "release-ip"
+(release / "env").mkdir(parents=True, exist_ok=True)
+source = root / "infra/deploy/cluster/env/site.env.example"
+text = source.read_text(encoding="utf-8")
+text = text.replace("SANDBOX_MANAGER_INGRESS_HOST=sandbox-manager.mbos.imotion.ai", "SANDBOX_MANAGER_INGRESS_HOST=")
+text = text.replace("SANDBOX_MANAGER_PUBLIC_BASE_URL=https://sandbox-manager.mbos.imotion.ai", "SANDBOX_MANAGER_PUBLIC_BASE_URL=http://172.30.1.244")
+text = text.replace("COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=", "COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://172.30.1.244")
+(release / "env/site.env.example").write_text(text, encoding="utf-8")
+(release / "env/site.env").write_text(text, encoding="utf-8")
+subprocess.run(
+    ["bash", str(root / "scripts/cluster-deploy/render-env.sh")],
+    check=True,
+    env={
+        **os.environ,
+        "ROOT_DIR": str(root),
+        "RELEASE_ROOT": str(release),
+        "DEPLOY_ROOT": str(tmp / "cluster-root-ip"),
+    },
+)
+api_env = (release / "env/api.env").read_text(encoding="utf-8")
+assert "SANDBOX_MANAGER_URL=http://172.30.1.244" in api_env, "missing IP sandbox manager url"
+PY
+
 echo "[cluster-rendered-env] ok"

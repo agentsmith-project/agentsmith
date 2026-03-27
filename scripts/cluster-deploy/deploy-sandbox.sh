@@ -56,6 +56,10 @@ if [[ -n "${REGISTRY_USERNAME:-}" || -n "${REGISTRY_PASSWORD:-}" ]]; then
     --docker-username="${REGISTRY_USERNAME}" \
     --docker-password="${REGISTRY_PASSWORD}" \
     --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+  kubectl patch serviceaccount default \
+    --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
+    --type merge \
+    -p '{"imagePullSecrets":[{"name":"agentsmith-registry"}]}' >/dev/null
   IMAGE_PULL_SECRETS_YAML=$(cat <<'EOF'
       imagePullSecrets:
         - name: agentsmith-registry
@@ -119,6 +123,35 @@ if [[ -z "${NODE_SELECTOR_YAML}" ]]; then
 fi
 if [[ -z "${TOLERATIONS_YAML}" ]]; then
   TOLERATIONS_YAML="        []"
+fi
+INGRESS_RULE_HOST_BLOCK=""
+if [[ -n "${SANDBOX_MANAGER_INGRESS_HOST:-}" ]]; then
+  INGRESS_RULE_HOST_BLOCK="$(cat <<EOF
+    - host: ${SANDBOX_MANAGER_INGRESS_HOST}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sandbox-manager
+                port:
+                  number: 80
+EOF
+)"
+else
+  INGRESS_RULE_HOST_BLOCK="$(cat <<'EOF'
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: sandbox-manager
+                port:
+                  number: 80
+EOF
+)"
 fi
 cat > "${MANAGER_MANIFEST}" <<EOF
 apiVersion: v1
@@ -267,16 +300,7 @@ metadata:
 spec:
   ingressClassName: ${SANDBOX_MANAGER_INGRESS_CLASS_NAME}
   rules:
-    - host: ${SANDBOX_MANAGER_INGRESS_HOST}
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: sandbox-manager
-                port:
-                  number: 80
+${INGRESS_RULE_HOST_BLOCK}
 EOF
 kubectl apply -f "${MANAGER_MANIFEST}" >/dev/null
 kubectl rollout status deployment/sandbox-manager -n "${INTERNAL_AGENT_K8S_NAMESPACE}" --timeout=240s >/dev/null

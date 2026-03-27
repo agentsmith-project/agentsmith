@@ -15,7 +15,7 @@ metadata:
   namespace: mbos
 rules:
   - apiGroups: [""]
-    resources: ["services", "endpoints", "configmaps", "secrets"]
+    resources: ["services", "endpoints", "configmaps", "secrets", "serviceaccounts"]
     verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
   - apiGroups: ["apps"]
     resources: ["deployments"]

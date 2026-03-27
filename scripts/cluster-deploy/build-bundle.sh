@@ -103,22 +103,28 @@ bash "${ROOT_DIR}/scripts/cluster-deploy/build-images.sh"
 
 dep_registry_ref() {
   local source_image="$1"
+  local target_registry_host="$2"
+  local target_registry_project="$3"
   local source_repo="${source_image%:*}"
   local source_tag="${source_image##*:}"
   local normalized_repo
   normalized_repo="$(printf '%s' "${source_repo}" | tr '/.' '-' | tr '@' '-')"
-  printf '%s/%s/%s:%s\n' "${REGISTRY_HOST}" "${REGISTRY_PROJECT}" "thirdparty-${normalized_repo}" "${source_tag}"
+  printf '%s/%s/%s:%s\n' "${target_registry_host}" "${target_registry_project}" "thirdparty-${normalized_repo}" "${source_tag}"
 }
 
-JUICEFS_MOUNT_IMAGE="$(dep_registry_ref "juicedata/mount:ce-v1.3.1")"
-JUICEFS_CSI_DRIVER_IMAGE="$(dep_registry_ref "juicedata/juicefs-csi-driver:v0.31.3")"
-JUICEFS_CSI_DASHBOARD_IMAGE="$(dep_registry_ref "juicedata/csi-dashboard:v0.31.3")"
-JUICEFS_CSI_PROVISIONER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0")"
-JUICEFS_CSI_RESIZER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-resizer:v1.9.0")"
-JUICEFS_CSI_LIVENESSPROBE_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/livenessprobe:v2.11.0")"
-JUICEFS_CSI_NODE_REGISTRAR_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0")"
-INGRESS_NGINX_CONTROLLER_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/controller:v1.15.1")"
-INGRESS_NGINX_CERTGEN_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9")"
+TARGET_REGISTRY_HOST="$(awk -F= '$1=="registry_host"{print $2}' "${BUNDLE_DIR}/VERSION")"
+TARGET_REGISTRY_PROJECT="$(awk -F= '$1=="registry_project"{print $2}' "${BUNDLE_DIR}/VERSION")"
+[[ -n "${TARGET_REGISTRY_HOST}" && -n "${TARGET_REGISTRY_PROJECT}" ]] || die "VERSION is missing registry host/project after build-images"
+
+JUICEFS_MOUNT_IMAGE="$(dep_registry_ref "juicedata/mount:ce-v1.3.1" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+JUICEFS_CSI_DRIVER_IMAGE="$(dep_registry_ref "juicedata/juicefs-csi-driver:v0.31.3" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+JUICEFS_CSI_DASHBOARD_IMAGE="$(dep_registry_ref "juicedata/csi-dashboard:v0.31.3" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+JUICEFS_CSI_PROVISIONER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+JUICEFS_CSI_RESIZER_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-resizer:v1.9.0" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+JUICEFS_CSI_LIVENESSPROBE_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/livenessprobe:v2.11.0" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+JUICEFS_CSI_NODE_REGISTRAR_IMAGE="$(dep_registry_ref "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+INGRESS_NGINX_CONTROLLER_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/controller:v1.15.1" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
+INGRESS_NGINX_CERTGEN_IMAGE="$(dep_registry_ref "registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9" "${TARGET_REGISTRY_HOST}" "${TARGET_REGISTRY_PROJECT}")"
 
 APP_IMAGE="$(awk -F= '$1=="agentsmith_app_image"{print $2}' "${BUNDLE_DIR}/VERSION")"
 RUNNER_IMAGE="$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${BUNDLE_DIR}/VERSION")"

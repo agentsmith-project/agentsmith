@@ -22,6 +22,11 @@ import { readStoredAuthToken } from './integration-workspace-access';
 const INTERNAL_VISUAL_ARTIFACT_DIR = process.env.INTERNAL_REAL_VISUAL_ARTIFACT_DIR?.trim()
   ? path.resolve(process.env.INTERNAL_REAL_VISUAL_ARTIFACT_DIR)
   : path.resolve(`artifacts/backend-real-visual/internal-${Date.now()}`);
+const INTERNAL_CLIENT_MOUNT_OVERRIDES = {
+  metadataHostOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim() || undefined,
+  metadataPortOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim() || undefined,
+  storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
+} as const;
 
 type CaptureEntry = {
   name: string;
@@ -355,6 +360,7 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     const localMount = await mountFileLibraryLocally(
       workspaceAccessBody.metadata_url,
       workspaceAccessBody.storage_bucket_url,
+      INTERNAL_CLIENT_MOUNT_OVERRIDES,
     );
     try {
       console.log('[internal-real] verify first artifact via local mount');

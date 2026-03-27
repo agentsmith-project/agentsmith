@@ -159,7 +159,8 @@ This stage starts only:
 
 - `api`
 - `web`
-- `external-runner`
+
+`external-runner` is not expected to connect in this stage. It is provisioned and connected later by `bootstrap`.
 
 ### 9. Generate the administrator handoff package and pause
 

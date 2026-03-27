@@ -173,10 +173,6 @@ wait_cluster_app() {
   HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
   wait_tcp "127.0.0.1" "${API_PORT}" 240
   wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
-  local compose_project_name="${COMPOSE_PROJECT_NAME:-agentsmith-cluster}"
-  local external_runner_container_name="${EXTERNAL_RUNNER_CONTAINER_NAME:-${compose_project_name}-external-runner-1}"
-  docker inspect -f '{{.State.Running}}' "${external_runner_container_name}" 2>/dev/null | grep -q true || die "external-runner is not running"
-  docker logs "${external_runner_container_name}" 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "external-runner is not connected"
 }
 
 write_admin_ready_template() {

@@ -100,7 +100,8 @@ Application stage:
 
 - `api`
 - `web`
-- `external-runner`
+
+`external-runner` is provisioned during bootstrap after the preset external agent runtime env has been written.
 
 ### Real Kubernetes Cluster
 

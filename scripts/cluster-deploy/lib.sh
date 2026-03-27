@@ -12,12 +12,14 @@ CLUSTER_DEPLOY_ROOT="${DEPLOY_ROOT}"
 SHARED_REGISTRY_ENV="${CONFIG_DIR}/registry.env"
 SHARED_KUBECONFIG="${CONFIG_DIR}/kubeconfig"
 SHARED_MANAGER_KUBECONFIG="${CONFIG_DIR}/manager-kubeconfig"
+SHARED_ADMIN_READY_ENV="${CONFIG_DIR}/admin-ready.env"
+ADMIN_HANDOFF_DIR="${DEPLOY_ROOT}/admin-handoff"
 OPERATOR_CLUSTER_DIR="${ROOT_DIR}/.infra/cluster-deploy"
 OPERATOR_SITE_ENV="${OPERATOR_CLUSTER_DIR}/site.env"
 OPERATOR_REGISTRY_ENV="${OPERATOR_CLUSTER_DIR}/registry.env"
 OPERATOR_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/kubeconfig"
 OPERATOR_MANAGER_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/manager-kubeconfig"
-export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_MANAGER_KUBECONFIG OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
+export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_MANAGER_KUBECONFIG SHARED_ADMIN_READY_ENV ADMIN_HANDOFF_DIR OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
 
 ensure_operator_site_env() {
   ensure_dirs
@@ -110,4 +112,145 @@ load_registry_env() {
 load_kubeconfig() {
   ensure_operator_kubeconfig
   export KUBECONFIG="${SHARED_KUBECONFIG}"
+}
+
+read_version_value() {
+  local key="$1"
+  awk -F= -v target="${key}" '$1==target{print $2}' "${RELEASE_ROOT}/VERSION"
+}
+
+require_version_images() {
+  APP_IMAGE="$(read_version_value agentsmith_app_image)"
+  RUNNER_IMAGE="$(read_version_value agentsmith_runner_image)"
+  SANDBOX_MANAGER_IMAGE="$(read_version_value sandbox_manager_image)"
+  UNIVERSAL_PROXY_IMAGE="$(read_version_value llm_universal_proxy_image)"
+  VERIFY_RUNNER_IMAGE="$(read_version_value agentsmith_verify_runner_image)"
+  JUICEFS_MOUNT_IMAGE="$(read_version_value juicefs_mount_image)"
+  export APP_IMAGE RUNNER_IMAGE SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE
+  [[ -n "${APP_IMAGE}" && -n "${RUNNER_IMAGE}" && -n "${SANDBOX_MANAGER_IMAGE}" && -n "${UNIVERSAL_PROXY_IMAGE}" && -n "${VERIFY_RUNNER_IMAGE}" ]] \
+    || die "VERSION is missing prebuilt image refs; rebuild bundle on the development machine with cluster:bundle"
+  [[ -n "${JUICEFS_MOUNT_IMAGE}" ]] \
+    || die "VERSION is missing bundled JuiceFS mount image ref; rebuild bundle on the development machine with cluster:bundle"
+}
+
+bundled_image_archives() {
+  shopt -s nullglob
+  local archives=("${RELEASE_ROOT}"/images/*.tar)
+  shopt -u nullglob
+  if (( ${#archives[@]} == 0 )); then
+    die "no bundled image archives found under ${RELEASE_ROOT}/images"
+  fi
+  printf '%s\n' "${archives[@]}"
+}
+
+load_bundled_images() {
+  local tar_file
+  while IFS= read -r tar_file; do
+    docker load -i "${tar_file}" >/dev/null
+  done < <(bundled_image_archives)
+}
+
+push_release_images() {
+  docker login "${REGISTRY_HOST}" -u "${REGISTRY_USERNAME}" -p "${REGISTRY_PASSWORD}" >/dev/null
+  local image
+  for image in \
+    "${APP_IMAGE}" \
+    "${RUNNER_IMAGE}" \
+    "${VERIFY_RUNNER_IMAGE}" \
+    "${SANDBOX_MANAGER_IMAGE}" \
+    "${UNIVERSAL_PROXY_IMAGE}" \
+    "${JUICEFS_MOUNT_IMAGE}"; do
+    docker push "${image}" >/dev/null
+  done
+}
+
+wait_cluster_substrate() {
+  HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
+  wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
+}
+
+wait_cluster_app() {
+  HOST_LOCAL_WEB_BASE_URL="${HOST_LOCAL_WEB_BASE_URL:-http://127.0.0.1:${WEB_PORT:-3001}}"
+  wait_tcp "127.0.0.1" "${API_PORT}" 240
+  wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
+  local compose_project_name="${COMPOSE_PROJECT_NAME:-agentsmith-cluster}"
+  local external_runner_container_name="${EXTERNAL_RUNNER_CONTAINER_NAME:-${compose_project_name}-external-runner-1}"
+  docker inspect -f '{{.State.Running}}' "${external_runner_container_name}" 2>/dev/null | grep -q true || die "external-runner is not running"
+  docker logs "${external_runner_container_name}" 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "external-runner is not connected"
+}
+
+write_admin_ready_template() {
+  cat > "${SHARED_ADMIN_READY_ENV}" <<'EOF'
+# Set ADMIN_READY=1 after the cluster administrator completes the handoff package.
+# Optional:
+# ADMIN_CHECKED_AT=2026-03-26T00:00:00Z
+ADMIN_READY=0
+EOF
+}
+
+ensure_admin_ready() {
+  [[ -f "${SHARED_ADMIN_READY_ENV}" ]] || die "missing ${SHARED_ADMIN_READY_ENV}; run cluster:prepare-admin-handoff and wait for the administrator handoff"
+  local admin_ready checked_at
+  admin_ready="$(awk -F= '$1=="ADMIN_READY"{print $2}' "${SHARED_ADMIN_READY_ENV}" | tail -n1)"
+  checked_at="$(awk -F= '$1=="ADMIN_CHECKED_AT"{print $2}' "${SHARED_ADMIN_READY_ENV}" | tail -n1)"
+  [[ "${admin_ready}" == "1" ]] || die "cluster administrator handoff not complete; set ADMIN_READY=1 in ${SHARED_ADMIN_READY_ENV} after final checks"
+  state_set admin.ready 1
+  if [[ -n "${checked_at}" ]]; then
+    state_set admin.checked_at "${checked_at}"
+  fi
+}
+
+render_admin_handoff() {
+  ensure_dirs
+  mkdir -p "${ADMIN_HANDOFF_DIR}/examples"
+  cp "${SHARED_SITE_ENV}" "${ADMIN_HANDOFF_DIR}/site.env.todo"
+  cp "${ROOT_DIR}/infra/deploy/cluster/admin-examples/"*.yaml "${ADMIN_HANDOFF_DIR}/examples/"
+  write_admin_ready_template
+
+  cat > "${ADMIN_HANDOFF_DIR}/CHECKLIST.md" <<EOF
+# Cluster Admin Handoff Checklist
+
+1. Confirm namespace \`${INTERNAL_AGENT_K8S_NAMESPACE}\` exists.
+2. Confirm JuiceFS CSI is installed and healthy.
+3. Apply and verify:
+   - \`examples/juicefs-csi-secret.example.yaml\`
+   - \`examples/juicefs-storageclass.example.yaml\`
+4. Apply and verify:
+   - \`examples/deploy-role.example.yaml\`
+   - \`examples/manager-role.example.yaml\`
+   - \`examples/manager-pv-clusterrole.example.yaml\`
+5. Review and finalize \`site.env.todo\`.
+6. Deliver these files into \`${CONFIG_DIR}\`:
+   - \`site.env\`
+   - \`registry.env\`
+   - \`kubeconfig\`
+   - \`manager-kubeconfig\`
+7. Run the final verification commands from the cluster admin runbook.
+8. Edit \`${SHARED_ADMIN_READY_ENV}\` and set:
+   - \`ADMIN_READY=1\`
+   - optional \`ADMIN_CHECKED_AT=<timestamp>\`
+EOF
+
+  cat > "${ADMIN_HANDOFF_DIR}/SUMMARY.md" <<EOF
+# Cluster Admin Handoff Summary
+
+- release: ${RELEASE_ID}
+- target namespace: ${INTERNAL_AGENT_K8S_NAMESPACE}
+- config dir: ${CONFIG_DIR}
+- admin ready marker: ${SHARED_ADMIN_READY_ENV}
+- public web: ${PUBLIC_WEB_BASE_URL}
+- public api: ${PUBLIC_API_BASE_URL}
+- public keycloak: ${PUBLIC_KEYCLOAK_BASE_URL}
+- manager ingress host: ${SANDBOX_MANAGER_INGRESS_HOST}
+- manager public base: ${SANDBOX_MANAGER_PUBLIC_BASE_URL}
+- client postgres: ${CLIENT_PUBLIC_POSTGRES_HOST}:${CLIENT_PUBLIC_POSTGRES_PORT}
+- client minio: ${CLIENT_PUBLIC_MINIO_ENDPOINT}
+- k8s external postgres: ${K8S_EXTERNAL_POSTGRES_HOST}:${K8S_EXTERNAL_POSTGRES_PORT}
+- k8s external minio: ${K8S_EXTERNAL_MINIO_HOST}:${K8S_EXTERNAL_MINIO_PORT}
+- storage class: ${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}
+- manager selector: ${SANDBOX_MANAGER_NODE_SELECTOR_JSON}
+- manager tolerations: ${SANDBOX_MANAGER_TOLERATIONS_JSON}
+- workload selector: ${INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON}
+- workload tolerations: ${INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON}
+EOF
 }

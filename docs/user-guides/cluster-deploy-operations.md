@@ -116,16 +116,117 @@ tar -xzf agentsmith-<release-id>.tar.gz \
 ln -sfn "$HOME/agentsmith/cluster-deploy/releases/agentsmith-<release-id>" "$HOME/agentsmith/cluster-deploy/current"
 ```
 
-### 5. Run lifecycle commands
+### 5. Prepare the target host
 
 ```bash
 cd "$HOME/agentsmith/cluster-deploy/current"
 bash scripts/cluster-deploy/prepare.sh
-bash scripts/cluster-deploy/deploy.sh
+```
+
+### 6. Publish bundled images to the remote registry
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
+bash scripts/cluster-deploy/publish-images.sh
+```
+
+### 7. Deploy substrate services on the target host
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
+bash scripts/cluster-deploy/deploy-substrate.sh
+```
+
+This stage starts only:
+
+- `postgres`
+- `mongo`
+- `redis`
+- `minio`
+- `minio-init`
+- `keycloak`
+- `universal-proxy`
+
+### 8. Deploy application services on the target host
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
+bash scripts/cluster-deploy/deploy-app.sh
+```
+
+This stage starts only:
+
+- `api`
+- `web`
+- `external-runner`
+
+### 9. Generate the administrator handoff package and pause
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
+bash scripts/cluster-deploy/prepare-admin-handoff.sh
+```
+
+This generates:
+
+- `$HOME/agentsmith/cluster-deploy/admin-handoff/CHECKLIST.md`
+- `$HOME/agentsmith/cluster-deploy/admin-handoff/site.env.todo`
+- `$HOME/agentsmith/cluster-deploy/admin-handoff/examples/*.yaml`
+- `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
+
+At this point, stop and wait for the cluster administrator to complete:
+
+- [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
+
+The administrator must set:
+
+- `ADMIN_READY=1`
+
+in:
+
+- `$HOME/agentsmith/cluster-deploy/config/admin-ready.env`
+
+### 10. Continue with namespaced sandbox deployment
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
+bash scripts/cluster-deploy/deploy-sandbox.sh
+```
+
+This stage deploys only namespaced resources in `mbos`:
+
+- registry secret
+- manager kubeconfig secret
+- `postgres-external`
+- `minio-external`
+- sandbox-manager config / deployment / service / ingress
+
+### 11. Complete bootstrap, verification, and reporting
+
+```bash
+cd "$HOME/agentsmith/cluster-deploy/current"
 bash scripts/cluster-deploy/bootstrap.sh
 bash scripts/cluster-deploy/verify.sh
 bash scripts/cluster-deploy/report.sh
 ```
+
+### Optional wrapper
+
+`bash scripts/cluster-deploy/deploy.sh` is now only a convenience wrapper for:
+
+- `publish-images`
+- `deploy-substrate`
+- `deploy-app`
+- `prepare-admin-handoff`
+
+After the administrator completes the handoff, continue manually with:
+
+- `deploy-sandbox`
+- `bootstrap`
+- `verify`
+- `report`
+
+It intentionally stops before sandbox deployment so the cluster administrator can complete the handoff.
 
 ## Kubeconfig Roles
 
@@ -134,7 +235,7 @@ bash scripts/cluster-deploy/report.sh
 `config/kubeconfig` is used by:
 
 - `prepare.sh`
-- `deploy.sh`
+- `deploy-sandbox.sh`
 
 It should be namespace-scoped to `mbos`.
 
@@ -151,7 +252,7 @@ Do not reuse the deploy kubeconfig for manager runtime.
 
 ## Kubernetes Expectations
 
-Before automation runs, the cluster must already provide:
+Before sandbox deployment runs, the cluster must already provide:
 
 - the `mbos` namespace
 - a reachable Kubernetes API
@@ -163,9 +264,9 @@ Before automation runs, the cluster must already provide:
   - `INTERNAL_AGENT_WORKLOAD_NODE_SELECTOR_JSON`
   - `INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON`
 
-If these are missing, `prepare.sh` must fail fast.
+`prepare.sh` verifies only namespace-scoped deploy prerequisites.
 
-`prepare.sh` does not perform cluster-scope discovery for those prerequisites. It assumes the administrator has already completed and validated them.
+Cluster-scope validation and confirmation belong to the administrator handoff stage.
 
 ## External Dependency Model
 
@@ -207,5 +308,6 @@ It only:
 - extracts the offline bundle
 - loads bundled image archives
 - pushes bundled registry-tagged images to the configured registry
-- starts Compose services
-- applies namespaced Kubernetes manifests
+- starts substrate and app Compose services
+- pauses for the cluster administrator handoff
+- applies namespaced Kubernetes manifests only after `ADMIN_READY=1`

@@ -18,7 +18,7 @@ It exists alongside, not instead of, the current `demo-deploy` demo line:
 
 ## Delivery Model
 
-`cluster-deploy` uses a two-stage release model.
+`cluster-deploy` uses a two-stage release model with a staged target-host lifecycle.
 
 ### Stage 1. Build Machine / CI
 
@@ -38,9 +38,14 @@ Responsibilities:
 - read shared operator config from `$HOME/agentsmith/cluster-deploy/config`
 - load bundled images into the target-host Docker daemon
 - push bundled registry-tagged images to the configured registry
-- run namespace-only release automation:
+- run staged namespace-only release automation:
   - `prepare`
-  - `deploy`
+  - `publish-images`
+  - `deploy-substrate`
+  - `deploy-app`
+  - `prepare-admin-handoff`
+  - wait for administrator completion
+  - `deploy-sandbox`
   - `bootstrap`
   - `verify`
   - `report`
@@ -70,6 +75,8 @@ It must not:
 - create or delete cluster-scope storage objects
 - perform cluster-scope discovery checks as part of deploy automation
 
+The deploy automation must also stop at an explicit administrator handoff point before any namespaced sandbox deployment occurs.
+
 All cluster-scope preparation belongs to the separate administrator runbook:
 
 - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
@@ -78,16 +85,21 @@ All cluster-scope preparation belongs to the separate administrator runbook:
 
 ### Docker Compose
 
-The target host keeps the application services and data services on Compose:
+The target host keeps the application services and data services on Compose.
+
+Substrate stage:
 
 - `postgres`
 - `mongo`
 - `redis`
 - `minio`
 - `keycloak`
+- `universal-proxy`
+
+Application stage:
+
 - `api`
 - `web`
-- `universal-proxy`
 - `external-runner`
 
 ### Real Kubernetes Cluster
@@ -107,7 +119,7 @@ JuiceFS CSI and storage-class preparation are **preinstalled cluster capabilitie
 The deploy kubeconfig is namespace-scoped to `mbos` and is used by:
 
 - `prepare.sh`
-- `deploy.sh`
+- `deploy-sandbox.sh`
 
 It must be able to create namespaced resources such as:
 
@@ -267,10 +279,24 @@ The cluster line uses its own lifecycle:
 
 - `npm run cluster:bundle`
 - `npm run cluster:prepare`
+- `npm run cluster:publish-images`
+- `npm run cluster:deploy-substrate`
+- `npm run cluster:deploy-app`
+- `npm run cluster:prepare-admin-handoff`
+- `npm run cluster:deploy-sandbox`
 - `npm run cluster:deploy`
 - `npm run cluster:bootstrap`
 - `npm run cluster:verify`
 - `npm run cluster:report`
+
+`cluster:deploy` is only a convenience wrapper for:
+
+- `cluster:publish-images`
+- `cluster:deploy-substrate`
+- `cluster:deploy-app`
+- `cluster:prepare-admin-handoff`
+
+It intentionally stops before sandbox deployment so the administrator handoff can complete.
 
 `reset` is not part of the formal production release flow.
 
@@ -281,5 +307,5 @@ The minimum release proof for `cluster-deploy` is:
 1. bundle input checks pass
 2. rendered env checks pass
 3. cluster admin prerequisites are already complete
-4. `prepare -> deploy -> bootstrap -> verify -> report` passes on the target host
+4. `prepare -> publish-images -> deploy-substrate -> deploy-app -> prepare-admin-handoff -> deploy-sandbox -> bootstrap -> verify -> report` passes on the target host
 5. external and internal notebook flows succeed

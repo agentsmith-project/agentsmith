@@ -83,6 +83,11 @@ PY
 
 cluster_automation_files=(
   "${ROOT_DIR}/scripts/cluster-deploy/prepare.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/publish-images.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy-substrate.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy-app.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/prepare-admin-handoff.sh"
+  "${ROOT_DIR}/scripts/cluster-deploy/deploy-sandbox.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/deploy.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/bootstrap.sh"
   "${ROOT_DIR}/scripts/cluster-deploy/verify.sh"

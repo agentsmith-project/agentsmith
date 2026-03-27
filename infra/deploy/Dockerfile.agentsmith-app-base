@@ -20,7 +20,8 @@ COPY packages/contracts/package.json ./packages/contracts/package.json
 COPY packages/domain/package.json ./packages/domain/package.json
 COPY packages/ports/package.json ./packages/ports/package.json
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm \
+  set -eux; \
   export http_proxy="${HTTP_PROXY:-}" https_proxy="${HTTPS_PROXY:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" NO_PROXY="${NO_PROXY:-}" no_proxy="${NO_PROXY:-}"; \
   npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000; \
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY no_proxy

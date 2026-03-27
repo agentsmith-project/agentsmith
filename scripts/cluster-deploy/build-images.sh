@@ -3,6 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
+source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 
 ensure_operator_registry_env
 load_registry_env
@@ -39,37 +40,37 @@ SANDBOX_RUNTIME_BASE_IMAGE="${SANDBOX_RUNTIME_BASE_IMAGE:-ubuntu:22.04}"
 UNIVERSAL_PROXY_RUST_BASE_IMAGE="${UNIVERSAL_PROXY_RUST_BASE_IMAGE:-rust:1.88-bookworm}"
 UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE="${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE:-debian:bookworm-slim}"
 
-docker build \
+docker_build_local \
   --build-arg NODE_BASE_IMAGE="${APP_NODE_BASE_IMAGE}" \
   -t "${APP_BASE_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app-base" \
   "${APP_SOURCE_DIR}"
-docker build \
+docker_build_local \
   --build-arg APP_BASE_IMAGE="${APP_BASE_IMAGE}" \
   --build-arg NODE_RUNTIME_IMAGE="${APP_NODE_BASE_IMAGE}" \
   -t "${APP_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-app" \
   "${APP_SOURCE_DIR}"
-docker build \
+docker_build_local \
   --build-arg NODE_BASE_IMAGE="${RUNNER_NODE_BASE_IMAGE}" \
   -t "${RUNNER_BASE_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.agent-codex-runner-base" \
   "${APP_SOURCE_DIR}"
-docker build --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${APP_SOURCE_DIR}"
-docker build \
+docker_build_local --build-arg RUNNER_BASE_IMAGE="${RUNNER_BASE_IMAGE}" -t "${RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/runner/Dockerfile.agent-codex-runner" "${APP_SOURCE_DIR}"
+docker_build_local \
   --build-arg PLAYWRIGHT_IMAGE="${VERIFY_PLAYWRIGHT_BASE_IMAGE}" \
   --build-arg DOCKER_CLI_IMAGE="${VERIFY_DOCKER_CLI_IMAGE}" \
   -t "${VERIFY_RUNNER_BASE_IMAGE}" \
   -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner-base" \
   "${APP_SOURCE_DIR}"
-docker build --build-arg VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE}" -t "${VERIFY_RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner" "${APP_SOURCE_DIR}"
-docker build \
+docker_build_local --build-arg VERIFY_RUNNER_BASE_IMAGE="${VERIFY_RUNNER_BASE_IMAGE}" -t "${VERIFY_RUNNER_IMAGE}" -f "${APP_SOURCE_DIR}/infra/deploy/Dockerfile.agentsmith-verify-runner" "${APP_SOURCE_DIR}"
+docker_build_local \
   --build-arg GO_BASE_IMAGE="${SANDBOX_GO_BASE_IMAGE}" \
   --build-arg RUNTIME_BASE_IMAGE="${SANDBOX_RUNTIME_BASE_IMAGE}" \
   -t "${SANDBOX_MANAGER_IMAGE}" \
   -f "${SANDBOX_SOURCE_DIR}/Dockerfile" \
   "${SANDBOX_SOURCE_DIR}"
-docker build \
+docker_build_local \
   --build-arg RUST_BASE_IMAGE="${UNIVERSAL_PROXY_RUST_BASE_IMAGE}" \
   --build-arg RUNTIME_BASE_IMAGE="${UNIVERSAL_PROXY_RUNTIME_BASE_IMAGE}" \
   -t "${UNIVERSAL_PROXY_IMAGE}" \

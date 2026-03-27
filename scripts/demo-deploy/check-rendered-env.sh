@@ -19,6 +19,9 @@ cp "${ROOT_DIR}/scripts/demo-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROO
 cp "${ROOT_DIR}/scripts/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${RELEASE_ROOT}/scripts/lib/k8s-external-services.sh"
+cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${RELEASE_ROOT}/scripts/lib/preset-common.sh"
+mkdir -p "${RELEASE_ROOT}/infra/runtime"
+cp "${ROOT_DIR}/infra/runtime/presets.env" "${RELEASE_ROOT}/infra/runtime/presets.env"
 
 RESOLVED_RUNNER_HOST=host.docker.internal \
 RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
@@ -101,6 +104,11 @@ grep -Fxq 'EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' "${RELEASE_ROOT}/env
 
 grep -Fxq 'EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://localhost:19000' "${RELEASE_ROOT}/env/api.env" || {
   echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE' >&2
+  exit 1
+}
+
+grep -E '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' "${RELEASE_ROOT}/env/base.env" >/dev/null || {
+  echo 'rendered_env_mismatch:base.env:NO_PROXY' >&2
   exit 1
 }
 

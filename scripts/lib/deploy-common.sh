@@ -209,6 +209,31 @@ docker_compose() {
   fi
 }
 
+merge_no_proxy_entries() {
+  python3 - "$@" <<'PY'
+import sys
+
+seen = set()
+result = []
+for raw in sys.argv[1:]:
+    if not raw:
+        continue
+    for part in raw.split(','):
+        item = part.strip()
+        if not item or item in seen:
+            continue
+        seen.add(item)
+        result.append(item)
+print(','.join(result))
+PY
+}
+
+compose_runtime_no_proxy() {
+  merge_no_proxy_entries \
+    "${NO_PROXY:-${no_proxy:-}}" \
+    "postgres,mongo,redis,minio,keycloak,api,web,external-runner,universal-proxy,host.docker.internal,postgres-external,minio-external,sandbox-manager"
+}
+
 write_compose_env() {
   local app_image="${1:-}"
   local runner_image="${2:-}"
@@ -344,4 +369,25 @@ for item in data.get("items", []) or []:
         print(item.get("id", ""))
         break
 ' "${item_name}"
+}
+
+json_count_items_by_field() {
+  local field_name="$1"
+  local expected_value="$2"
+  python3 -c '
+import json
+import sys
+
+field_name = sys.argv[1]
+expected_value = sys.argv[2]
+data = json.load(sys.stdin)
+count = 0
+for item in data.get("items", []) or []:
+    value = item.get(field_name)
+    if value is None:
+        continue
+    if str(value) == expected_value:
+        count += 1
+print(count)
+' "${field_name}" "${expected_value}"
 }

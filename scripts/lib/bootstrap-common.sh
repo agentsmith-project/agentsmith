@@ -44,6 +44,7 @@ run_deploy_bootstrap() {
   COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-demo}"
   EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
   EXTERNAL_RUNNER_DEFAULT_NETWORK="${EXTERNAL_RUNNER_DEFAULT_NETWORK:-${COMPOSE_PROJECT_NAME}_default}"
+  RUNNER_NO_PROXY="${NO_PROXY:-${no_proxy:-}}"
   PREVIOUS_EXTERNAL_AGENT_ID="$(state_get agent.external_id 2>/dev/null || true)"
 
   [[ -n "${PRESET_ENDPOINT_API_KEY}" ]] || die "missing PRESET_ENDPOINT_API_KEY"
@@ -70,6 +71,13 @@ run_deploy_bootstrap() {
     local runner_logs
     runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
     grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}"
+  }
+
+  external_runner_has_expected_no_proxy() {
+    local current_no_proxy current_no_proxy_lower
+    current_no_proxy="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | awk -F= '$1=="NO_PROXY"{print substr($0,10)}')"
+    current_no_proxy_lower="$(docker inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | awk -F= '$1=="no_proxy"{print substr($0,10)}')"
+    [[ "${current_no_proxy}" == "${RUNNER_NO_PROXY}" && "${current_no_proxy_lower}" == "${RUNNER_NO_PROXY}" ]]
   }
 
   wait_docker_daemon() {
@@ -138,6 +146,8 @@ run_deploy_bootstrap() {
         --env-file "${RELEASE_ROOT}/env/base.env" \
         --env-file "${RELEASE_ROOT}/env/runner.env" \
         --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
+        -e "NO_PROXY=${RUNNER_NO_PROXY}" \
+        -e "no_proxy=${RUNNER_NO_PROXY}" \
         --add-host host.docker.internal:host-gateway \
         "${RUNNER_IMAGE}" 2>&1
     )"
@@ -162,6 +172,8 @@ run_deploy_bootstrap() {
         --env-file "${RELEASE_ROOT}/env/base.env" \
         --env-file "${RELEASE_ROOT}/env/runner.env" \
         --env-file "${RELEASE_ROOT}/env/runner-runtime.env" \
+        -e "NO_PROXY=${RUNNER_NO_PROXY}" \
+        -e "no_proxy=${RUNNER_NO_PROXY}" \
         --add-host host.docker.internal:host-gateway \
         "${RUNNER_IMAGE}" >/dev/null
       return 0
@@ -346,7 +358,7 @@ MBOS_AGENT_WS_URL=${EXTERNAL_AGENT_WS_URL}
 MBOS_AGENT_KEY=${EXTERNAL_AGENT_KEY}
 EOF
 
-  if external_runner_running && external_runner_connected && external_runner_matches_release_image && [[ -n "${PREVIOUS_EXTERNAL_AGENT_ID}" && "${PREVIOUS_EXTERNAL_AGENT_ID}" == "${EXTERNAL_AGENT_ID}" ]]; then
+  if external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy && [[ -n "${PREVIOUS_EXTERNAL_AGENT_ID}" && "${PREVIOUS_EXTERNAL_AGENT_ID}" == "${EXTERNAL_AGENT_ID}" ]]; then
     log "checking existing external-runner readiness"
     existing_runner_ready=0
     for _ in $(seq 1 20); do
@@ -370,7 +382,7 @@ EOF
         sleep 2
       done
     fi
-  elif external_runner_running && external_runner_connected && external_runner_matches_release_image; then
+  elif external_runner_running && external_runner_connected && external_runner_matches_release_image && external_runner_has_expected_no_proxy; then
     log "external-runner is connected for a stale external agent; recreating"
     timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
     ensure_external_runner_slot_available
@@ -386,6 +398,11 @@ EOF
     if external_runner_running && ! external_runner_matches_release_image; then
       log "existing external-runner image does not match current release; recreating"
       quarantine_stale_external_runner
+      run_external_runner_up
+    elif external_runner_running && external_runner_connected && ! external_runner_has_expected_no_proxy; then
+      log "existing external-runner proxy environment is stale; recreating"
+      timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true
+      ensure_external_runner_slot_available
       run_external_runner_up
     else
       timeout 10 docker rm -f "${EXTERNAL_RUNNER_CONTAINER_NAME}" >/dev/null 2>&1 || true

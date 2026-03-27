@@ -16,22 +16,13 @@ COPY messages ./messages
 COPY packages ./packages
 COPY scripts ./scripts
 COPY infra ./infra
-COPY docs ./docs
-COPY e2e ./e2e
-COPY tests ./tests
 COPY assets ./assets
-COPY marketing ./marketing
-COPY .storybook ./.storybook
 COPY components.json ./
 COPY next.config.ts ./
 COPY next-env.d.ts ./
 COPY postcss.config.js ./
 COPY tailwind.config.js ./
 COPY tsconfig.json ./
-COPY eslint.config.mjs ./
-COPY playwright.config.ts ./
-COPY playwright.config.integration.ts ./
-COPY playwright.config.workspace-governance.ts ./
 
 RUN npx next build --no-lint
 
@@ -47,7 +38,9 @@ WORKDIR /app
 COPY infra/vendor/juicefs /tmp/juicefs-dist
 COPY --from=mc-bin /usr/bin/mc /usr/local/bin/mc
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  set -eux; \
   apt-get update; \
   DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     bash \
@@ -56,7 +49,6 @@ RUN set -eux; \
     fuse3 \
     procps \
   ; \
-  rm -rf /var/lib/apt/lists/*; \
   arch="$(dpkg --print-architecture)"; \
   case "${arch}" in \
     amd64) juicefs_arch="amd64" ;; \

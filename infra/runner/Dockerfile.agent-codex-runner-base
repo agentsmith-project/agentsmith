@@ -9,7 +9,9 @@ ARG NO_PROXY
 
 COPY infra/vendor/juicefs /tmp/juicefs-dist
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+  --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+  set -eux; \
   if [ -n "${HTTP_PROXY:-}" ]; then echo "Acquire::http::Proxy \"${HTTP_PROXY}\";" > /etc/apt/apt.conf.d/99proxy; fi; \
   if [ -n "${HTTPS_PROXY:-}" ]; then echo "Acquire::https::Proxy \"${HTTPS_PROXY}\";" >> /etc/apt/apt.conf.d/99proxy; fi; \
   apt-get update; \
@@ -25,10 +27,10 @@ RUN set -eux; \
     python3-pip \
     tini \
   ; \
-  rm -f /etc/apt/apt.conf.d/99proxy; \
-  rm -rf /var/lib/apt/lists/*
+  rm -f /etc/apt/apt.conf.d/99proxy
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm \
+  set -eux; \
   arch="$(dpkg --print-architecture)"; \
   case "${arch}" in \
     amd64) juicefs_arch="amd64" ;; \
@@ -41,14 +43,16 @@ RUN set -eux; \
   install -m 0755 /tmp/juicefs /usr/local/bin/juicefs; \
   rm -rf /tmp/juicefs /tmp/juicefs-dist
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm \
+  set -eux; \
   export http_proxy="${HTTP_PROXY:-}" https_proxy="${HTTPS_PROXY:-}" HTTP_PROXY="${HTTP_PROXY:-}" HTTPS_PROXY="${HTTPS_PROXY:-}" NO_PROXY="${NO_PROXY:-}" no_proxy="${NO_PROXY:-}"; \
   npm install -g "@openai/codex@${CODEX_VERSION}"; \
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY no_proxy
 
 WORKDIR /opt/agent-runner
 
-RUN set -eux; \
+RUN --mount=type=cache,target=/root/.npm \
+  set -eux; \
   printf '%s\n' \
     '{' \
     '  "name": "agent-codex-runner-image",' \

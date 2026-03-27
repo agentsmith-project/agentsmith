@@ -10,6 +10,7 @@ SANDBOX_ROOT="$(cd "${ROOT_DIR}/../mbos-sandbox-v1" && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/backend-real-env.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
+source "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh"
 ensure_backend_real_state
 
 load_backend_real_env "${ROOT_DIR}/.env.backend-real"
@@ -66,7 +67,7 @@ CONFIG_PATH="${INTEGRATION_SANDBOX_CONFIG:-${INTEGRATION_DIR}/sandbox-manager.ya
 
 if [[ "${BUILD_RUNNER_IMAGE}" == "1" ]]; then
   info "building internal runner image ${RUNNER_IMAGE}"
-  docker build \
+  docker_build_local \
     -t "${RUNNER_IMAGE}" \
     -f "${ROOT_DIR}/infra/runner/Dockerfile.agent-codex-runner" \
     "${ROOT_DIR}" >/dev/null

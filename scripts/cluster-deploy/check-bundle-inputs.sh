@@ -69,6 +69,8 @@ for relative in manifest.get("bundle_files", []):
         source = root_dir / "scripts" / "check-preset-external-file-library.sh"
     elif relative.startswith("scripts/lib/"):
         source = root_dir / "scripts" / "lib" / pathlib.Path(relative).name
+    elif relative.startswith("infra/runtime/"):
+        source = root_dir / "infra" / "runtime" / pathlib.Path(relative).name
     elif relative.startswith("docs/"):
         source = root_dir / relative
     elif relative.startswith("e2e/"):

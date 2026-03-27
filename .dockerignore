@@ -8,5 +8,9 @@ test-results
 e2e/__screenshots__
 playwright-report
 storybook-static
+.tmp
 tmp
+.env.local-manual
+.env.backend-real
+.env.*.deprecated-*
 *.log

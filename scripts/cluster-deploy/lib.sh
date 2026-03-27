@@ -251,7 +251,7 @@ require_can_i() {
   shift
   local args=("\$@")
   local result
-  result="$(KUBECONFIG="\${kubeconfig_path}" kubectl auth can-i "\${args[@]}" 2>/dev/null || true)"
+  result="\$(KUBECONFIG=\"\${kubeconfig_path}\" kubectl auth can-i \"\${args[@]}\" 2>/dev/null || true)"
   [[ "\${result}" == "yes" ]] || {
     echo "missing permission for kubeconfig=\${kubeconfig_path}: kubectl auth can-i \${args[*]}" >&2
     exit 1

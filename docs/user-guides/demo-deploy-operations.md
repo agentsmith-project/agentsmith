@@ -2,6 +2,21 @@
 
 `docs/contracts/deployment-spec-v1.md` is the deployment contract. This guide is the short operator runbook for the current demo deployment flow.
 
+## Scope
+
+`demo-deploy` is the demo / single-host deployment line.
+
+Use it when:
+
+- one host runs the application services and data services
+- that same host runs a local `kind` cluster for sandbox simulation
+- you want an offline, host-local demo environment
+
+Do not use it as the real-cluster release line. For the real-cluster path, use:
+
+- [Cluster Deploy Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-deploy-operations.md)
+- [Cluster Deployment Spec](/home/percy/works/mbos-v1/agentsmith/docs/contracts/cluster-deployment-spec-v1.md)
+
 ## Host
 
 - Demo host: `percy@192.168.0.220`
@@ -46,6 +61,8 @@ Everything under `/home/percy/agentsmith/deploy` is managed deployment state. Do
   - internal agent workload pods
 
 External dependencies stay in Compose. Internal agent workloads use Kubernetes service names that point to those external dependencies.
+
+This local `kind` cluster belongs to the demo line only. It is not the production cluster model.
 
 ## Current Address Model
 

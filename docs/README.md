@@ -21,12 +21,16 @@
 - [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
 - [Demo Deploy Operations](./user-guides/demo-deploy-operations.md)
+  - Demo / single-host release line. Compose + local `kind` sandbox simulation.
 - [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
+  - Real-cluster release line. Compose on the target host, sandbox execution on a real Kubernetes cluster.
 - [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
+  - Cluster-scope prerequisites for the real-cluster line only.
 - Real visual review artifacts are generated locally under `artifacts/release-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)
+- [Demo Deployment Spec](./contracts/deployment-spec-v1.md)
 - [Cluster Deployment Spec](./contracts/cluster-deployment-spec-v1.md)
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
 - `UXUI/`（设计系统与交互规范）

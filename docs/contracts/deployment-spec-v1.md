@@ -1,17 +1,27 @@
-# Deployment Spec v1
+# Demo Deployment Spec v1
 
 ## Summary
-This document is the single source of truth for AgentSmith deployment topology, environment variables, offline bundle contents, bootstrap stages, and deployment verification.
+This document is the single source of truth for the `demo-deploy` line: deployment topology, environment variables, offline bundle contents, bootstrap stages, and deployment verification.
 
 Every deployment-facing script, env template, bundle manifest, and runbook must follow this document. If code, scripts, or env examples disagree with this spec, the implementation must be corrected. Deployments must not rely on manual fixes, container patching, ad hoc SQL, or Keycloak admin console changes.
 
-This specification defines the required deployment contract. The higher-level guidance for address truth, config ownership, release gates, and testing responsibilities is documented in:
+This specification defines the required contract for the demo deployment line only. The real-cluster line has a separate contract:
+
+- `docs/contracts/cluster-deployment-spec-v1.md`
+
+The higher-level guidance for address truth, config ownership, release gates, and testing responsibilities is documented in:
 
 - `docs/contracts/address-truth-and-release-governance-v1.md`
 
 That governance document does not override this spec. It explains how development, precheck, packaging, deployment, and verify must work together so this spec remains true in practice.
 
 ## Deployment Model
+
+### Purpose
+- `demo-deploy` is the demo / single-host release line.
+- It keeps application services on Docker Compose.
+- It uses local `kind` to simulate the internal sandbox execution surface.
+- It is not the real-cluster release path.
 
 ### Topology
 - Host services run with Docker Compose.

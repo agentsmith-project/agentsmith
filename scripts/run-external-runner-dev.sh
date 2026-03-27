@@ -51,6 +51,7 @@ cp "${SITE_ENV_PATH}" "${RELEASE_ROOT}/env/site.env"
 cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/remote-deploy/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
+cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
 
 bash "${RELEASE_ROOT}/scripts/remote-deploy/render-env.sh" >/dev/null
 

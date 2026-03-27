@@ -56,15 +56,13 @@ for relative in manifest.get("bundle_files", []):
     elif relative.startswith("keycloak/"):
         source = root_dir / "infra" / "integration" / "keycloak" / pathlib.Path(relative).name
     elif relative.startswith("universal-proxy/"):
-        source = root_dir / "infra" / "deploy" / "remote" / "universal-proxy" / pathlib.Path(relative).name
+        source = root_dir / "infra" / "deploy" / "shared" / "universal-proxy" / pathlib.Path(relative).name
     elif relative.startswith("scripts/cluster-deploy/"):
         source = root_dir / relative
-    elif relative == "scripts/remote-deploy/lib/common.sh":
-        source = root_dir / "scripts" / "remote-deploy" / "lib" / "common.sh"
-    elif relative == "scripts/remote-deploy/bootstrap.sh":
-        source = root_dir / "scripts" / "remote-deploy" / "bootstrap.sh"
-    elif relative == "scripts/lib/k8s-external-services.sh":
-        source = root_dir / "scripts" / "lib" / "k8s-external-services.sh"
+    elif relative == "scripts/check-preset-external-file-library.sh":
+        source = root_dir / "scripts" / "check-preset-external-file-library.sh"
+    elif relative.startswith("scripts/lib/"):
+        source = root_dir / "scripts" / "lib" / pathlib.Path(relative).name
     elif relative.startswith("docs/"):
         source = root_dir / relative
     elif relative.startswith("e2e/"):

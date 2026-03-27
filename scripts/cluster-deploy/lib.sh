@@ -3,11 +3,12 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-export REMOTE_DEPLOY_ROOT="${REMOTE_DEPLOY_ROOT:-${CLUSTER_DEPLOY_ROOT:-${HOME}/agentsmith/cluster-deploy}}"
+export DEPLOY_ROOT_DEFAULT="${CLUSTER_DEPLOY_ROOT:-${HOME}/agentsmith/cluster-deploy}"
+export DEPLOY_LOG_PREFIX="${DEPLOY_LOG_PREFIX:-cluster-deploy}"
 # shellcheck disable=SC1091
-source "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh"
+source "${ROOT_DIR}/scripts/lib/deploy-common.sh"
 
-CLUSTER_DEPLOY_ROOT="${REMOTE_DEPLOY_ROOT}"
+CLUSTER_DEPLOY_ROOT="${DEPLOY_ROOT}"
 SHARED_REGISTRY_ENV="${CONFIG_DIR}/registry.env"
 SHARED_KUBECONFIG="${CONFIG_DIR}/kubeconfig"
 SHARED_MANAGER_KUBECONFIG="${CONFIG_DIR}/manager-kubeconfig"
@@ -17,9 +18,6 @@ OPERATOR_REGISTRY_ENV="${OPERATOR_CLUSTER_DIR}/registry.env"
 OPERATOR_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/kubeconfig"
 OPERATOR_MANAGER_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/manager-kubeconfig"
 export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_MANAGER_KUBECONFIG OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
-
-log() { printf '[cluster-deploy] %s\n' "$*"; }
-die() { printf '[cluster-deploy] ERROR: %s\n' "$*" >&2; exit 1; }
 
 ensure_operator_site_env() {
   ensure_dirs

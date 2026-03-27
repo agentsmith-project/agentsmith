@@ -9,7 +9,7 @@ mkdir -p "${RELEASE_ROOT}/env"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
 
-REMOTE_DEPLOY_ROOT="${TMP_ROOT}/cluster-root" RELEASE_ROOT="${RELEASE_ROOT}" \
+DEPLOY_ROOT="${TMP_ROOT}/cluster-root" RELEASE_ROOT="${RELEASE_ROOT}" \
   bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 
 grep -Fxq 'SANDBOX_MANAGER_URL=https://sandbox-manager.mbos.imotion.ai' "${RELEASE_ROOT}/env/api.env" || {

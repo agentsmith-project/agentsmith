@@ -1,0 +1,10 @@
+listen: 0.0.0.0:8080
+routes:
+  - name: openai
+    prefix: /openai
+    strip_prefix: /openai
+    provider: openai
+  - name: anthropic
+    prefix: /anthropic
+    strip_prefix: /anthropic
+    provider: anthropic

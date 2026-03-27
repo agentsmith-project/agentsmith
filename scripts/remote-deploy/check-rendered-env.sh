@@ -17,6 +17,7 @@ cp "${ROOT_DIR}/scripts/remote-deploy/render-env.sh" "${RELEASE_ROOT}/scripts/re
 cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/remote-deploy/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/resolve-runtime-addresses.sh" "${RELEASE_ROOT}/scripts/resolve-runtime-addresses.sh"
 cp "${ROOT_DIR}/scripts/remote-deploy/lib/common.sh" "${RELEASE_ROOT}/scripts/lib/common.sh"
+cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${RELEASE_ROOT}/scripts/lib/deploy-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${RELEASE_ROOT}/scripts/lib/k8s-external-services.sh"
 
 RESOLVED_RUNNER_HOST=host.docker.internal \

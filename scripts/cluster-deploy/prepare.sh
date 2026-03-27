@@ -23,6 +23,7 @@ done
 if [[ "$(cluster_deploy_mode)" == "full-auto" ]]; then
   [[ -f "${RELEASE_ROOT}/addons/ingress-nginx/upstream-deploy.yaml" ]] || die "missing bundled ingress-nginx manifest for full-auto mode"
   [[ -f "${RELEASE_ROOT}/addons/juicefs-csi/upstream-manifest.yaml" ]] || die "missing bundled juicefs-csi manifest for full-auto mode"
+  kubectl kustomize --help >/dev/null 2>&1 || die "bundled kubectl must support kustomize for full-auto mode"
 fi
 
 python3 - <<'PY' "${RELEASE_ROOT}/deployment.manifest.json" "${RELEASE_ROOT}"

@@ -226,6 +226,12 @@ This stage:
 - generates `config/kubeconfig` and `config/manager-kubeconfig`
 - marks `config/admin-ready.env` ready automatically
 
+In `full-auto`, the ingress-nginx and JuiceFS CSI installation assets come from the
+cluster-owned snapshots bundled under:
+
+- `addons/ingress-nginx/`
+- `addons/juicefs-csi/`
+
 ### 10. Continue with namespaced sandbox deployment
 
 ```bash
@@ -257,7 +263,7 @@ AgentSmith has been rehearsed locally with:
 - a clean Docker Compose install root under `/home/percy/agentsmith/cluster-deploy`
 - a clean `kind` cluster named `mbos`
 - `CLUSTER_DEPLOY_MODE=full-auto`
-- the tracked MiniMax preset defaults from `infra/deploy/shared/presets/defaults.env`
+- the tracked MiniMax preset defaults from `infra/runtime/presets.env`
 
 The locally verified full-auto sequence is:
 
@@ -310,6 +316,9 @@ It performs the AgentSmith-owned cluster prerequisite installation:
 - JuiceFS CSI
 - storage class
 - deploy and manager RBAC
+
+These prerequisites are reconciled from the cluster bundle's pinned addon assets,
+not downloaded from upstream during installation.
 
 ### Deploy kubeconfig
 

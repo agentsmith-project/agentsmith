@@ -30,6 +30,14 @@ rm -rf "${PREREQ_DIR}"
 mkdir -p "${PREREQ_DIR}"
 REGISTRY_SECRET_NAME="agentsmith-registry"
 
+image_name_from_ref() {
+  printf '%s\n' "${1%:*}"
+}
+
+image_tag_from_ref() {
+  printf '%s\n' "${1##*:}"
+}
+
 cat > "${PREREQ_DIR}/namespace.yaml" <<EOF
 apiVersion: v1
 kind: Namespace
@@ -167,60 +175,60 @@ roleRef:
   name: agentsmith-manager-pv
 EOF
 
-python3 - <<'PY' "${RELEASE_ROOT}/addons/juicefs-csi/upstream-manifest.yaml" "${PREREQ_DIR}/juicefs-csi.yaml" "${FULL_AUTO_JUICEFS_NAMESPACE}" "${JUICEFS_CSI_DASHBOARD_IMAGE}" "${JUICEFS_CSI_DRIVER_IMAGE}" "${JUICEFS_CSI_PROVISIONER_IMAGE}" "${JUICEFS_CSI_RESIZER_IMAGE}" "${JUICEFS_CSI_LIVENESSPROBE_IMAGE}" "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}"
-from pathlib import Path
-import sys
+mkdir -p "${PREREQ_DIR}/juicefs-csi" "${PREREQ_DIR}/ingress-nginx"
+cp "${RELEASE_ROOT}/addons/juicefs-csi/upstream-manifest.yaml" "${PREREQ_DIR}/juicefs-csi/upstream-manifest.yaml"
+cp "${RELEASE_ROOT}/addons/ingress-nginx/upstream-deploy.yaml" "${PREREQ_DIR}/ingress-nginx/upstream-deploy.yaml"
 
-src = Path(sys.argv[1]).read_text(encoding="utf-8")
-dst = Path(sys.argv[2])
-namespace = sys.argv[3]
-replacements = {
-    "namespace: kube-system": f"namespace: {namespace}",
-    "image: juicedata/csi-dashboard:v0.31.3": f"image: {sys.argv[4]}",
-    "image: juicedata/juicefs-csi-driver:v0.31.3": f"image: {sys.argv[5]}",
-    "image: registry.k8s.io/sig-storage/csi-provisioner:v3.6.0": f"image: {sys.argv[6]}",
-    "image: registry.k8s.io/sig-storage/csi-resizer:v1.9.0": f"image: {sys.argv[7]}",
-    "image: registry.k8s.io/sig-storage/livenessprobe:v2.11.0": f"image: {sys.argv[8]}",
-    "image: registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0": f"image: {sys.argv[9]}",
-}
-for old, new in replacements.items():
-    src = src.replace(old, new)
-dst.write_text(src, encoding="utf-8")
-PY
+cat > "${PREREQ_DIR}/juicefs-csi/kustomization.yaml" <<EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ${FULL_AUTO_JUICEFS_NAMESPACE}
+resources:
+  - upstream-manifest.yaml
+images:
+  - name: juicedata/csi-dashboard
+    newName: $(image_name_from_ref "${JUICEFS_CSI_DASHBOARD_IMAGE}")
+    newTag: $(image_tag_from_ref "${JUICEFS_CSI_DASHBOARD_IMAGE}")
+  - name: juicedata/juicefs-csi-driver
+    newName: $(image_name_from_ref "${JUICEFS_CSI_DRIVER_IMAGE}")
+    newTag: $(image_tag_from_ref "${JUICEFS_CSI_DRIVER_IMAGE}")
+  - name: registry.k8s.io/sig-storage/csi-provisioner
+    newName: $(image_name_from_ref "${JUICEFS_CSI_PROVISIONER_IMAGE}")
+    newTag: $(image_tag_from_ref "${JUICEFS_CSI_PROVISIONER_IMAGE}")
+  - name: registry.k8s.io/sig-storage/csi-resizer
+    newName: $(image_name_from_ref "${JUICEFS_CSI_RESIZER_IMAGE}")
+    newTag: $(image_tag_from_ref "${JUICEFS_CSI_RESIZER_IMAGE}")
+  - name: registry.k8s.io/sig-storage/livenessprobe
+    newName: $(image_name_from_ref "${JUICEFS_CSI_LIVENESSPROBE_IMAGE}")
+    newTag: $(image_tag_from_ref "${JUICEFS_CSI_LIVENESSPROBE_IMAGE}")
+  - name: registry.k8s.io/sig-storage/csi-node-driver-registrar
+    newName: $(image_name_from_ref "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}")
+    newTag: $(image_tag_from_ref "${JUICEFS_CSI_NODE_REGISTRAR_IMAGE}")
+EOF
 
-python3 - <<'PY' "${RELEASE_ROOT}/addons/ingress-nginx/upstream-deploy.yaml" "${PREREQ_DIR}/ingress-nginx.yaml" "${FULL_AUTO_INGRESS_NAMESPACE}" "${INGRESS_NGINX_CONTROLLER_IMAGE}" "${INGRESS_NGINX_CERTGEN_IMAGE}"
-from pathlib import Path
-import sys
-
-lines = Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-dst = Path(sys.argv[2])
-namespace = sys.argv[3]
-controller_image = sys.argv[4]
-certgen_image = sys.argv[5]
-
-out = []
-current_kind = None
-for line in lines:
-    stripped = line.strip()
-    if stripped.startswith("kind: "):
-      current_kind = stripped.split(":", 1)[1].strip()
-    if current_kind == "Namespace" and stripped == "name: ingress-nginx":
-      indent = line[: len(line) - len(line.lstrip())]
-      line = f"{indent}name: {namespace}"
-    if stripped == "namespace: ingress-nginx":
-      indent = line[: len(line) - len(line.lstrip())]
-      line = f"{indent}namespace: {namespace}"
-    line = line.replace(
-      "image: registry.k8s.io/ingress-nginx/controller:v1.15.1@sha256:594ceea76b01c592858f803f9ff4d2cb40542cae2060410b2c95f75907d659e1",
-      f"image: {controller_image}",
-    )
-    line = line.replace(
-      "image: registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.6.9@sha256:01038e7de14b78d702d2849c3aad72fd25903c4765af63cf16aa3398f5d5f2dd",
-      f"image: {certgen_image}",
-    )
-    out.append(line)
-dst.write_text("\n".join(out) + "\n", encoding="utf-8")
-PY
+cat > "${PREREQ_DIR}/ingress-nginx/kustomization.yaml" <<EOF
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ${FULL_AUTO_INGRESS_NAMESPACE}
+resources:
+  - upstream-deploy.yaml
+patches:
+  - target:
+      version: v1
+      kind: Namespace
+      name: ingress-nginx
+    patch: |-
+      - op: replace
+        path: /metadata/name
+        value: ${FULL_AUTO_INGRESS_NAMESPACE}
+images:
+  - name: registry.k8s.io/ingress-nginx/controller
+    newName: $(image_name_from_ref "${INGRESS_NGINX_CONTROLLER_IMAGE}")
+    newTag: $(image_tag_from_ref "${INGRESS_NGINX_CONTROLLER_IMAGE}")
+  - name: registry.k8s.io/ingress-nginx/kube-webhook-certgen
+    newName: $(image_name_from_ref "${INGRESS_NGINX_CERTGEN_IMAGE}")
+    newTag: $(image_tag_from_ref "${INGRESS_NGINX_CERTGEN_IMAGE}")
+EOF
 
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/namespace.yaml" >/dev/null
 
@@ -250,8 +258,8 @@ ensure_registry_secret "${INTERNAL_AGENT_K8S_NAMESPACE}"
 
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-patch -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
-KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/ingress-nginx.yaml" >/dev/null
-KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/juicefs-csi.yaml" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -k "${PREREQ_DIR}/ingress-nginx" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -k "${PREREQ_DIR}/juicefs-csi" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/agentsmith-prereqs.yaml" >/dev/null
 
 patch_serviceaccount_pull_secret "${FULL_AUTO_INGRESS_NAMESPACE}" "ingress-nginx"
@@ -263,7 +271,7 @@ patch_serviceaccount_pull_secret "${FULL_AUTO_JUICEFS_NAMESPACE}" "juicefs-csi-n
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete pod -n "${FULL_AUTO_INGRESS_NAMESPACE}" -l app.kubernetes.io/component=controller --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-patch -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
-KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f "${PREREQ_DIR}/ingress-nginx.yaml" >/dev/null
+KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -k "${PREREQ_DIR}/ingress-nginx" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart deployment/ingress-nginx-controller -n "${FULL_AUTO_INGRESS_NAMESPACE}" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart statefulset/juicefs-csi-controller -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout restart daemonset/juicefs-csi-node -n "${FULL_AUTO_JUICEFS_NAMESPACE}" >/dev/null

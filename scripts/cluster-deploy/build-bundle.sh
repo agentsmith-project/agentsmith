@@ -17,7 +17,6 @@ require_cmd tar
 require_cmd sha256sum
 require_cmd kubectl
 require_cmd python3
-require_cmd curl
 require_cmd docker
 
 ensure_operator_registry_env
@@ -32,7 +31,6 @@ fi
 JUICEFS_VERSION="${JUICEFS_VERSION:-1.3.0}"
 JUICEFS_DOWNLOAD_BASE_URL="${JUICEFS_DOWNLOAD_BASE_URL:-https://github.com/juicedata/juicefs/releases/download/v${JUICEFS_VERSION}}"
 INGRESS_NGINX_VERSION="${INGRESS_NGINX_VERSION:-v1.15.1}"
-INGRESS_NGINX_MANIFEST_URL="${INGRESS_NGINX_MANIFEST_URL:-https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-${INGRESS_NGINX_VERSION}/deploy/static/provider/cloud/deploy.yaml}"
 
 mkdir -p "${OUT_DIR}"
 rm -rf "${BUNDLE_DIR}"
@@ -72,11 +70,15 @@ cp "${ROOT_DIR}/infra/deploy/shared/universal-proxy/config.yaml" "${BUNDLE_DIR}/
 cp "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh"
 cp "${ROOT_DIR}/scripts/cluster-deploy/"*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/"
 cp "${ROOT_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh"
+cp "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh" "${BUNDLE_DIR}/scripts/lib/docker-buildx-common.sh"
+cp "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh" "${BUNDLE_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${BUNDLE_DIR}/scripts/lib/deploy-common.sh"
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"
 cp "${ROOT_DIR}/infra/runtime/presets.env" "${BUNDLE_DIR}/infra/runtime/presets.env"
+cp -R "${ROOT_DIR}/infra/deploy/cluster/addons/ingress-nginx/." "${BUNDLE_DIR}/addons/ingress-nginx/"
+cp -R "${ROOT_DIR}/infra/deploy/cluster/addons/juicefs-csi/." "${BUNDLE_DIR}/addons/juicefs-csi/"
 cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"
 cp "${ROOT_DIR}/e2e/integration-workspace-entry.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-entry.spec.ts"
 cp "${ROOT_DIR}/e2e/integration-workspace-publish-usable.spec.ts" "${BUNDLE_DIR}/e2e/integration-workspace-publish-usable.spec.ts"
@@ -87,11 +89,6 @@ cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/doc
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
 chmod +x "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
-
-curl --fail --show-error --location --retry 5 --retry-delay 2 --retry-all-errors \
-  "${INGRESS_NGINX_MANIFEST_URL}" \
-  -o "${BUNDLE_DIR}/addons/ingress-nginx/upstream-deploy.yaml"
-cp "${ROOT_DIR}/infra/deploy/demo/k8s/juicefs-csi.yaml" "${BUNDLE_DIR}/addons/juicefs-csi/upstream-manifest.yaml"
 
 copy_source_tree "${ROOT_DIR}" "${BUNDLE_DIR}/sources/agentsmith"
 copy_source_tree "${SANDBOX_ROOT}/manager-service" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service"

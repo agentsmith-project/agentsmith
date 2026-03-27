@@ -125,6 +125,10 @@ The cluster runs only the internal execution surface:
 - internal sandbox runner / workload pods
 - namespaced external dependency service abstractions
 
+Unlike demo deploy, cluster deploy does not rely on API-local `juicefs` or `mc`
+tool mounts. Workspace and file-library execution paths are expected to run
+through sandbox-manager plus the namespaced external dependency services.
+
 In `semi-auto`, JuiceFS CSI and storage-class preparation are preinstalled cluster capabilities.
 
 In `full-auto`, AgentSmith installs and reconciles:
@@ -133,6 +137,10 @@ In `full-auto`, AgentSmith installs and reconciles:
 - JuiceFS CSI
 - the AgentSmith storage class
 - deploy and manager RBAC prerequisites
+
+The `full-auto` addon installation source of truth is the cluster-owned bundle
+assets under `infra/deploy/cluster/addons/`, not live upstream downloads during
+installation.
 
 ## Kubernetes Permission Model
 
@@ -146,6 +154,12 @@ It is used only for the AgentSmith-owned cluster prerequisite installation:
 - JuiceFS CSI
 - storage class
 - deploy and manager RBAC
+
+The cluster bundle itself must remain self-contained for these prerequisites:
+
+- addon snapshots are bundled
+- shared build helpers required by cluster scripts are bundled
+- cluster installation must not depend on downloading ingress or CSI manifests at deploy time
 
 It must not be reused for namespaced deploy automation or sandbox-manager runtime.
 

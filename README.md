@@ -103,9 +103,9 @@ npm run release:real:report
 
 Current configuration names:
 
-- dev-real: `DEMO_ENDPOINT_*`
-- real lane: `REAL_LANE_*`
-- demo deploy: `DEPLOY_*`
+- dev-real: `PRESET_ENDPOINT_*`
+- real lane env file: `PRESET_ENDPOINT_*` with derived `REAL_LANE_*` aliases
+- deploy presets: `PRESET_*`
 
 Templates:
 

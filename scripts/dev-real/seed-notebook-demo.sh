@@ -3,7 +3,7 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_dev_real_env
-require_demo_endpoint_env
+require_preset_endpoint_env
 
 if [[ ! -f "${API_READY_FILE}" || ! -f "${WEB_READY_FILE}" || ! -f "${PROXY_READY_FILE}" ]]; then
   err "dev-real platform is not ready; run make dev-real-up first"
@@ -25,12 +25,12 @@ info "initializing external notebook agent resources"
   cd "${ROOT_DIR}" && \
   API_BASE="http://localhost:${PORT_API}" \
   WORKSPACE_ID="${WORKSPACE_ID}" \
-  DEMO_ENDPOINT_API_KEY="${DEMO_ENDPOINT_API_KEY}" \
-  DEMO_ENDPOINT_BASE_URL="${DEMO_ENDPOINT_BASE_URL}" \
-  DEMO_ENDPOINT_MODEL="${DEMO_ENDPOINT_MODEL}" \
-  DEMO_ENDPOINT_PROTOCOL="${DEMO_ENDPOINT_PROTOCOL}" \
-  DEMO_ENDPOINT_MAX_CONTEXT_TOKENS="${DEMO_ENDPOINT_MAX_CONTEXT_TOKENS}" \
-  DEMO_ENDPOINT_MAX_OUTPUT_TOKENS="${DEMO_ENDPOINT_MAX_OUTPUT_TOKENS}" \
+  PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY}" \
+  PRESET_ENDPOINT_BASE_URL="${PRESET_ENDPOINT_BASE_URL}" \
+  PRESET_ENDPOINT_MODEL="${PRESET_ENDPOINT_MODEL}" \
+  PRESET_ENDPOINT_PROTOCOL="${PRESET_ENDPOINT_PROTOCOL}" \
+  PRESET_ENDPOINT_MAX_CONTEXT_TOKENS="${PRESET_ENDPOINT_MAX_CONTEXT_TOKENS}" \
+  PRESET_ENDPOINT_MAX_OUTPUT_TOKENS="${PRESET_ENDPOINT_MAX_OUTPUT_TOKENS}" \
   make notebook-agent-init-resources
 )
 

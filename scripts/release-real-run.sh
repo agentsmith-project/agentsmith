@@ -8,12 +8,12 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/real-lane-state.sh"
 ensure_real_lane_state
 
-REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
-REAL_LANE_MODEL_VALUE="${REAL_LANE_MODEL:-MiniMax-M2.7-highspeed}"
-REAL_LANE_OPENAI_BASE_URL_VALUE="${REAL_LANE_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}"
-REAL_LANE_ANTHROPIC_BASE_URL_VALUE="${REAL_LANE_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
+REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
+REAL_LANE_MODEL_VALUE="${PRESET_ENDPOINT_MODEL:-${REAL_LANE_MODEL:-MiniMax-M2.7-highspeed}}"
+REAL_LANE_OPENAI_BASE_URL_VALUE="${PRESET_ENDPOINT_BASE_URL:-${REAL_LANE_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}}"
+REAL_LANE_ANTHROPIC_BASE_URL_VALUE="${PRESET_ENDPOINT_BASE_URL:-${REAL_LANE_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/v1}}"
 if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[release-real-run] Missing REAL_LANE_API_KEY." >&2
+  echo "[release-real-run] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
   exit 1
 fi
 

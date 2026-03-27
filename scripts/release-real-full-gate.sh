@@ -11,7 +11,7 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   source "${ROOT_DIR}/.env.real.local"
   set +a
 fi
-REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
+REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
@@ -31,8 +31,8 @@ LOCAL_API_PID=""
 LOCAL_WEB_PID=""
 
 if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[release-real-full-gate] Missing REAL_LANE_API_KEY." >&2
-  echo "[release-real-full-gate] Export REAL_LANE_API_KEY before running this gate." >&2
+  echo "[release-real-full-gate] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
+  echo "[release-real-full-gate] Export PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias) before running this gate." >&2
   exit 1
 fi
 

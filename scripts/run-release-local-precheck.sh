@@ -15,9 +15,9 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set +a
 fi
 
-REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
+REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
 if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[release-local-precheck] Missing REAL_LANE_API_KEY." >&2
+  echo "[release-local-precheck] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
   exit 1
 fi
 

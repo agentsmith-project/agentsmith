@@ -129,7 +129,7 @@ Important:
 
 Current provider-neutral names:
 
-- `DEMO_ENDPOINT_*`
+- `PRESET_ENDPOINT_*`
 - `REAL_LANE_*`
 - `DEPLOY_*`
 - `OpenAI-compatible`

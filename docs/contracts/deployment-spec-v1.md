@@ -205,16 +205,19 @@ Preset workspace admin and project creator identities are selected by stable use
 - `MBOS_DEFAULT_WORKSPACE_ID`
 - `MBOS_DEFAULT_WORKSPACE_NAME`
 - `MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL`
-- `MBOS_DEMO_PROJECT_NAME`
-- `MBOS_DEMO_CREDENTIAL_NAME`
-- `MBOS_DEMO_ANTHROPIC_ENDPOINT_NAME`
-- `MBOS_DEMO_OPENAI_ENDPOINT_NAME`
-- `MBOS_DEMO_EXTERNAL_AGENT_NAME`
-- `MBOS_DEMO_INTERNAL_AGENT_NAME`
-- `DEPLOY_ENDPOINT_API_KEY`
-- `DEPLOY_ANTHROPIC_BASE_URL`
-- `DEPLOY_OPENAI_BASE_URL`
-- `DEPLOY_ENDPOINT_MODEL`
+- `PRESET_PROJECT_NAME`
+- `PRESET_CREDENTIAL_NAME`
+- `PRESET_PRIMARY_ENDPOINT_NAME`
+- `PRESET_SECONDARY_ENDPOINT_NAME`
+- `PRESET_EXTERNAL_AGENT_NAME`
+- `PRESET_INTERNAL_AGENT_NAME`
+- `PRESET_ENDPOINT_API_KEY`
+- `PRESET_ENDPOINT_BASE_URL`
+- `PRESET_ENDPOINT_PROTOCOL`
+- `PRESET_ENDPOINT_MODEL`
+- `PRESET_ENDPOINT_MAX_CONTEXT_TOKENS`
+- `PRESET_ENDPOINT_MAX_OUTPUT_TOKENS`
+- `PRESET_ENDPOINT_TIMEOUT_SECONDS`
 
 All deployment configuration keys must be declared in `env/site.env`. Generated service env files derive container-specific and runtime-specific values such as `DATABASE_URL`, `MONGO_URL`, `KEYCLOAK_ISSUER_URL`, `MBOS_API_BASE`, `NEXT_PUBLIC_API_BASE`, execution host URLs, and JuiceFS internal overrides. Deployment-specific defaults belong in `site.env`; runtime-derived host identities belong in the formal runtime address resolution step, not hidden in deploy-time sed rewrites.
 

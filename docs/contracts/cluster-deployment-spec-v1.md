@@ -270,10 +270,10 @@ These presets are part of the release contract for both `demo-deploy` and `clust
 They currently define:
 
 - the default upstream LLM endpoint preset
-  - `DEMO_ENDPOINT_API_KEY`
-  - `DEMO_ENDPOINT_BASE_URL`
-  - `DEMO_ENDPOINT_MODEL`
-  - `DEMO_ENDPOINT_PROTOCOL`
+  - `PRESET_ENDPOINT_API_KEY`
+  - `PRESET_ENDPOINT_BASE_URL`
+  - `PRESET_ENDPOINT_MODEL`
+  - `PRESET_ENDPOINT_PROTOCOL`
   - context and output token defaults
 - system admin credentials
 - test user credentials

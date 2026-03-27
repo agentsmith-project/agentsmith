@@ -56,7 +56,7 @@ npm run release:real:report
 
 当前有效配置命名：
 
-- dev-real: `DEMO_ENDPOINT_*`
+- dev-real: `PRESET_ENDPOINT_*`
 - real lane: `REAL_LANE_*`
 - demo deploy: `DEPLOY_*`
 
@@ -147,12 +147,12 @@ cp .env.dev.real.example .env.dev.real
 必须填写：
 
 ```bash
-DEMO_ENDPOINT_API_KEY=...
-DEMO_ENDPOINT_BASE_URL=https://api.minimaxi.com/v1
-DEMO_ENDPOINT_MODEL=MiniMax-M2.7-highspeed
-DEMO_ENDPOINT_PROTOCOL=openai_compatible
-DEMO_ENDPOINT_MAX_CONTEXT_TOKENS=204800
-DEMO_ENDPOINT_MAX_OUTPUT_TOKENS=8192
+PRESET_ENDPOINT_API_KEY=...
+PRESET_ENDPOINT_BASE_URL=https://api.minimaxi.com/v1
+PRESET_ENDPOINT_MODEL=MiniMax-M2.7-highspeed
+PRESET_ENDPOINT_PROTOCOL=openai_compatible
+PRESET_ENDPOINT_MAX_CONTEXT_TOKENS=204800
+PRESET_ENDPOINT_MAX_OUTPUT_TOKENS=128000
 ```
 
 注意：
@@ -385,7 +385,7 @@ npm run test:release:real:full
 Notes:
 
 1. `npm run test:visual` uses the repo's retrying mock-lane wrapper and is the preferred release-grade visual command.
-2. Real-lane notebook verification requires `REAL_LANE_API_KEY`.
+2. Real-lane notebook verification requires `PRESET_ENDPOINT_API_KEY` (or a derived `REAL_LANE_API_KEY` alias).
 3. `npm run test:visual:real:review` writes real-environment screenshots to `artifacts/release-real-visual/<run-id>/` for manual inspection.
 
 ## Test & Evidence Directory Contract

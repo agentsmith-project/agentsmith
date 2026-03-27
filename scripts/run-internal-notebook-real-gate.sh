@@ -18,7 +18,7 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   set +a
 fi
 
-REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
+REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
 API_PORT="${INTEGRATION_API_PORT:-20072}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3072}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
@@ -55,7 +55,7 @@ MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 info() { echo "[internal-real-gate] $*"; }
 
 if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[internal-real-gate] Missing REAL_LANE_API_KEY." >&2
+  echo "[internal-real-gate] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
   exit 1
 fi
 

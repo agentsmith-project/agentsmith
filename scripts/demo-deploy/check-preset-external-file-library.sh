@@ -18,8 +18,8 @@ KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
 INTEGRATION_DEV_ADMIN_USERNAME="${INTEGRATION_DEV_ADMIN_USERNAME:-dev-admin}"
 INTEGRATION_DEV_ADMIN_PASSWORD="${INTEGRATION_DEV_ADMIN_PASSWORD:-dev-admin-123}"
 WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
-DEMO_PROJECT_NAME="${MBOS_DEMO_PROJECT_NAME:-Demo Project}"
-DEMO_EXTERNAL_AGENT_NAME="${MBOS_DEMO_EXTERNAL_AGENT_NAME:-demo-external-agent}"
+PRESET_PROJECT_NAME_VALUE="${PRESET_PROJECT_NAME:-Demo Project}"
+PRESET_EXTERNAL_AGENT_NAME_VALUE="${PRESET_EXTERNAL_AGENT_NAME:-demo-external-agent}"
 
 BODY_FILE="$(mktemp)"
 cleanup() {
@@ -67,15 +67,15 @@ PROJECTS_JSON="$(
   curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/${WORKSPACE_ID}/projects?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
-PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${DEMO_PROJECT_NAME}")"
-[[ -n "${PROJECT_ID}" ]] || die "preset external file-library readiness failed: Demo Project missing"
+PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${PRESET_PROJECT_NAME_VALUE}")"
+[[ -n "${PROJECT_ID}" ]] || die "preset external file-library readiness failed: preset project missing"
 
 AGENTS_JSON="$(
   curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/${WORKSPACE_ID}/projects/${PROJECT_ID}/agents?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}"
 )"
-AGENT_ID="$(printf '%s' "${AGENTS_JSON}" | json_find_named_id "${DEMO_EXTERNAL_AGENT_NAME}")"
-[[ -n "${AGENT_ID}" ]] || die "preset external file-library readiness failed: demo external agent missing"
+AGENT_ID="$(printf '%s' "${AGENTS_JSON}" | json_find_named_id "${PRESET_EXTERNAL_AGENT_NAME_VALUE}")"
+[[ -n "${AGENT_ID}" ]] || die "preset external file-library readiness failed: preset external agent missing"
 
 READY_DEADLINE=$(( $(date +%s) + 90 ))
 TASK_ID=""

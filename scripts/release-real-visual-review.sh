@@ -11,7 +11,7 @@ if [[ -f "${ROOT_DIR}/.env.real.local" ]]; then
   source "${ROOT_DIR}/.env.real.local"
   set +a
 fi
-REAL_LANE_API_KEY_VALUE="${REAL_LANE_API_KEY:-}"
+REAL_LANE_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-${REAL_LANE_API_KEY:-}}"
 RUN_ID="${RELEASE_REAL_VISUAL_RUN_ID:-$(date +%Y%m%d-%H%M%S)}"
 ARTIFACT_DIR="${RELEASE_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/release-real-visual/${RUN_ID}}"
 API_PORT="${INTEGRATION_API_PORT:-20070}"
@@ -20,8 +20,8 @@ API_LOG="${INTEGRATION_API_LOG:-/tmp/agentsmith-api-real-visual.log}"
 WEB_LOG="${INTEGRATION_WEB_LOG:-/tmp/agentsmith-web-real-visual.log}"
 
 if [[ -z "${REAL_LANE_API_KEY_VALUE}" ]]; then
-  echo "[real-visual-review] Missing REAL_LANE_API_KEY." >&2
-  echo "[real-visual-review] Export REAL_LANE_API_KEY before running this review." >&2
+  echo "[real-visual-review] Missing PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias)." >&2
+  echo "[real-visual-review] Export PRESET_ENDPOINT_API_KEY (or REAL_LANE_API_KEY alias) before running this review." >&2
   exit 1
 fi
 

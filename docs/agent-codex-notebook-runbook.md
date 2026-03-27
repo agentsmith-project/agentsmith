@@ -192,8 +192,8 @@ Governance surfaces such as `Members` and `Resource Policy` are part of current 
   - `NEXT_PUBLIC_NOTEBOOK_SSE_DEBUG_PANEL=1` (development-only; shows `SSE Debug (latest 5)` panel)
 - Real dev bootstrap (`make dev-real-up`, `make dev-real-seed-notebook`)
   - `PORT_API`, `PORT_WEB`, `WORKSPACE_ID`, `LOCALE`
-  - `DEMO_ENDPOINT_API_KEY`, `DEMO_ENDPOINT_BASE_URL`, `DEMO_ENDPOINT_MODEL`, `DEMO_ENDPOINT_PROTOCOL`
-  - `DEMO_ENDPOINT_MAX_CONTEXT_TOKENS`, `DEMO_ENDPOINT_MAX_OUTPUT_TOKENS`
+  - `PRESET_ENDPOINT_API_KEY`, `PRESET_ENDPOINT_BASE_URL`, `PRESET_ENDPOINT_MODEL`, `PRESET_ENDPOINT_PROTOCOL`
+  - `PRESET_ENDPOINT_MAX_CONTEXT_TOKENS`, `PRESET_ENDPOINT_MAX_OUTPUT_TOKENS`
 - Note:
   - This runbook is the current **single place** for notebook/external-agent execution switches.
   - Repo-wide frontend-only switches outside notebook scope may still be documented in feature-specific docs.
@@ -248,13 +248,13 @@ make e2e-int-agent-auto PORT_API=20030 PORT_WEB=3011
 - Use this flow when manually testing notebook + external codex runner against the real local backend (not MSW).
 - Preconditions:
   - `.env.dev.real` exists
-  - `DEMO_ENDPOINT_API_KEY` is filled
+  - `PRESET_ENDPOINT_API_KEY` is filled
 
 ```bash
 cd /home/percy/works/mbos-v1/agentsmith
 
 cp .env.dev.real.example .env.dev.real
-# fill DEMO_ENDPOINT_API_KEY and adjust DEMO_ENDPOINT_* if needed
+# fill PRESET_ENDPOINT_API_KEY and adjust PRESET_ENDPOINT_* if needed
 
 make dev-real-up
 make dev-real-seed-notebook
@@ -727,7 +727,7 @@ npm run dev -w @mbos/api-entry-node
 
 # in another terminal, rebuild test resources (memory-mode ids are not reusable after API restart)
 make notebook-agent-refresh-token
-DEMO_ENDPOINT_API_KEY='***' make notebook-agent-init-resources
+PRESET_ENDPOINT_API_KEY='***' make notebook-agent-init-resources
 make notebook-agent-runner
 
 OUT_DIR=artifacts/real-lane/current/benchmarks/baseline-mongo make notebook-agent-benchmark-baseline

@@ -10,7 +10,7 @@ run_deploy_bootstrap() {
   load_agentsmith_presets "${ROOT_DIR}"
   load_release_env
   apply_non_environment_preset_defaults
-  apply_demo_endpoint_defaults
+  apply_preset_endpoint_defaults
 
   HOST_LOCAL_API_BASE_URL="${HOST_LOCAL_API_BASE_URL:-http://127.0.0.1:${API_PORT:-20000}}"
   HOST_LOCAL_KEYCLOAK_BASE_URL="${HOST_LOCAL_KEYCLOAK_BASE_URL:-http://127.0.0.1:${KEYCLOAK_PORT:-18080}}"
@@ -23,39 +23,34 @@ run_deploy_bootstrap() {
   BOOTSTRAP_KEYCLOAK_CLIENT_ID="${BOOTSTRAP_KEYCLOAK_CLIENT_ID:-agentsmith}"
   BOOTSTRAP_MONGO_URL="${BOOTSTRAP_MONGO_URL:-${MONGO_URL:-}}"
   BOOTSTRAP_MONGO_DB_NAME="${BOOTSTRAP_MONGO_DB_NAME:-${MONGO_DB_NAME:-}}"
-  DEPLOY_ENDPOINT_API_KEY="${DEPLOY_ENDPOINT_API_KEY:-}"
-  DEMO_ENDPOINT_PROTOCOL="${DEMO_ENDPOINT_PROTOCOL:-openai_compatible}"
-  DEPLOY_ANTHROPIC_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL:-${DEMO_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}}"
-  DEPLOY_OPENAI_BASE_URL="${DEPLOY_OPENAI_BASE_URL:-${DEMO_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}}"
-  DEPLOY_ENDPOINT_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
-  DEMO_ENDPOINT_TIMEOUT_SECONDS="${MBOS_DEMO_ENDPOINT_TIMEOUT_SECONDS:-900}"
-  DEMO_MODEL_CONTEXT_TOKENS="${MBOS_DEMO_MODEL_CONTEXT_TOKENS:-204800}"
-  DEMO_MODEL_MAX_OUTPUT_TOKENS="${MBOS_DEMO_MODEL_MAX_OUTPUT_TOKENS:-8192}"
+  PRESET_ENDPOINT_API_KEY="${PRESET_ENDPOINT_API_KEY:-}"
+  PRESET_ENDPOINT_BASE_URL="${PRESET_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}"
+  PRESET_ENDPOINT_PROTOCOL="${PRESET_ENDPOINT_PROTOCOL:-openai_compatible}"
+  PRESET_ENDPOINT_MODEL="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
+  PRESET_ENDPOINT_TIMEOUT_SECONDS="${PRESET_ENDPOINT_TIMEOUT_SECONDS:-900}"
+  PRESET_ENDPOINT_MAX_CONTEXT_TOKENS="${PRESET_ENDPOINT_MAX_CONTEXT_TOKENS:-204800}"
+  PRESET_ENDPOINT_MAX_OUTPUT_TOKENS="${PRESET_ENDPOINT_MAX_OUTPUT_TOKENS:-128000}"
   RUNNER_IMAGE="${RUNNER_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
   INTERNAL_AGENT_IMAGE="${INTERNAL_AGENT_IMAGE:-$(awk -F= '$1=="agentsmith_runner_image"{print $2}' "${RELEASE_ROOT}/VERSION")}"
   PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
-  DEMO_PROJECT_NAME="${MBOS_DEMO_PROJECT_NAME:-Demo Project}"
-  DEMO_CREDENTIAL_NAME="${MBOS_DEMO_CREDENTIAL_NAME:-minimax-shared-key}"
-  DEMO_ANTHROPIC_ENDPOINT_NAME="${MBOS_DEMO_ANTHROPIC_ENDPOINT_NAME:-minimax-anthropic-demo}"
-  DEMO_OPENAI_ENDPOINT_NAME="${MBOS_DEMO_OPENAI_ENDPOINT_NAME:-minimax-openai-demo}"
-  DEMO_EXTERNAL_AGENT_NAME="${MBOS_DEMO_EXTERNAL_AGENT_NAME:-demo-external-agent}"
-  DEMO_INTERNAL_AGENT_NAME="${MBOS_DEMO_INTERNAL_AGENT_NAME:-demo-internal-agent}"
+  PRESET_PROJECT_NAME="${PRESET_PROJECT_NAME:-Demo Project}"
+  PRESET_CREDENTIAL_NAME="${PRESET_CREDENTIAL_NAME:-minimax-shared-key}"
+  PRESET_PRIMARY_ENDPOINT_NAME="${PRESET_PRIMARY_ENDPOINT_NAME:-minimax-shared-primary}"
+  PRESET_SECONDARY_ENDPOINT_NAME="${PRESET_SECONDARY_ENDPOINT_NAME:-minimax-shared-secondary}"
+  PRESET_EXTERNAL_AGENT_NAME="${PRESET_EXTERNAL_AGENT_NAME:-demo-external-agent}"
+  PRESET_INTERNAL_AGENT_NAME="${PRESET_INTERNAL_AGENT_NAME:-demo-internal-agent}"
   COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-agentsmith-demo}"
   EXTERNAL_RUNNER_CONTAINER_NAME="${EXTERNAL_RUNNER_CONTAINER_NAME:-${COMPOSE_PROJECT_NAME}-external-runner-1}"
   EXTERNAL_RUNNER_DEFAULT_NETWORK="${EXTERNAL_RUNNER_DEFAULT_NETWORK:-${COMPOSE_PROJECT_NAME}_default}"
   PREVIOUS_EXTERNAL_AGENT_ID="$(state_get agent.external_id 2>/dev/null || true)"
 
-  [[ -n "${DEPLOY_ENDPOINT_API_KEY}" ]] || die "missing DEPLOY_ENDPOINT_API_KEY"
+  [[ -n "${PRESET_ENDPOINT_API_KEY}" ]] || die "missing PRESET_ENDPOINT_API_KEY"
   [[ -n "${BOOTSTRAP_MONGO_URL}" ]] || die "missing BOOTSTRAP_MONGO_URL"
   [[ -n "${BOOTSTRAP_MONGO_DB_NAME}" ]] || die "missing BOOTSTRAP_MONGO_DB_NAME"
 
-  PRIMARY_ENDPOINT_PROTOCOL="${DEMO_ENDPOINT_PROTOCOL}"
-  PRIMARY_ENDPOINT_BASE_URL="${DEPLOY_OPENAI_BASE_URL}"
-  PRIMARY_ENDPOINT_NAME="${DEMO_OPENAI_ENDPOINT_NAME}"
-  if [[ "${PRIMARY_ENDPOINT_PROTOCOL}" == "anthropic_compatible" ]]; then
-    PRIMARY_ENDPOINT_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL}"
-    PRIMARY_ENDPOINT_NAME="${DEMO_ANTHROPIC_ENDPOINT_NAME}"
-  fi
+  PRIMARY_ENDPOINT_PROTOCOL="${PRESET_ENDPOINT_PROTOCOL}"
+  PRIMARY_ENDPOINT_BASE_URL="${PRESET_ENDPOINT_BASE_URL}"
+  PRIMARY_ENDPOINT_NAME="${PRESET_PRIMARY_ENDPOINT_NAME}"
 
   external_runner_running() {
     docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true
@@ -218,13 +213,13 @@ run_deploy_bootstrap() {
     curl -sS "${WORKSPACE_BASE}/projects?page=1&page_size=100" \
       -H "Authorization: Bearer ${TOKEN}"
   )"
-  PROJECT_ID="$(printf '%s' "${project_list_resp}" | json_find_named_id "${DEMO_PROJECT_NAME}")"
+  PROJECT_ID="$(printf '%s' "${project_list_resp}" | json_find_named_id "${PRESET_PROJECT_NAME}")"
   if [[ -z "${PROJECT_ID}" ]]; then
     project_resp="$(
       curl -sS -X POST "${WORKSPACE_BASE}/projects" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], visibility:"private", join_policy:"approval_required"}))' "${DEMO_PROJECT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], visibility:"private", join_policy:"approval_required"}))' "${PRESET_PROJECT_NAME}")"
     )"
     PROJECT_ID="$(printf '%s' "${project_resp}" | json_extract id)"
   fi
@@ -234,20 +229,20 @@ run_deploy_bootstrap() {
     curl -sS "${PROJECT_BASE}/credentials?page=1&page_size=100" \
       -H "Authorization: Bearer ${TOKEN}"
   )"
-  CREDENTIAL_ID="$(printf '%s' "${credential_list_resp}" | json_find_named_id "${DEMO_CREDENTIAL_NAME}")"
+  CREDENTIAL_ID="$(printf '%s' "${credential_list_resp}" | json_find_named_id "${PRESET_CREDENTIAL_NAME}")"
   if [[ -z "${CREDENTIAL_ID}" ]]; then
     credential_resp="$(
       curl -sS -X POST "${PROJECT_BASE}/credentials" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:"api_key", value:process.argv[1]}))' "${DEPLOY_ENDPOINT_API_KEY}" "${DEMO_CREDENTIAL_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[2], type:"api_key", value:process.argv[1]}))' "${PRESET_ENDPOINT_API_KEY}" "${PRESET_CREDENTIAL_NAME}")"
     )"
     CREDENTIAL_ID="$(printf '%s' "${credential_resp}" | json_extract id)"
   else
     curl -fsS -X POST "${PROJECT_BASE}/credentials/${CREDENTIAL_ID}/rotate" \
       -H "Authorization: Bearer ${TOKEN}" \
       -H 'Content-Type: application/json' \
-      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({value:process.argv[1]}))' "${DEPLOY_ENDPOINT_API_KEY}")" >/dev/null
+      -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({value:process.argv[1]}))' "${PRESET_ENDPOINT_API_KEY}")" >/dev/null
   fi
 
   endpoint_list_resp="$(
@@ -260,7 +255,7 @@ run_deploy_bootstrap() {
       curl -sS -X POST "${PROJECT_BASE}/endpoints" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[8], protocol:process.argv[1], base_url:process.argv[2], model:process.argv[3], credential_ref:process.argv[4], limits:{timeout_seconds:Number(process.argv[5])}, model_profile:{max_context_tokens:Number(process.argv[6]), max_output_tokens:Number(process.argv[7]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${PRIMARY_ENDPOINT_PROTOCOL}" "${PRIMARY_ENDPOINT_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}" "${PRIMARY_ENDPOINT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[8], protocol:process.argv[1], base_url:process.argv[2], model:process.argv[3], credential_ref:process.argv[4], limits:{timeout_seconds:Number(process.argv[5])}, model_profile:{max_context_tokens:Number(process.argv[6]), max_output_tokens:Number(process.argv[7]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${PRIMARY_ENDPOINT_PROTOCOL}" "${PRIMARY_ENDPOINT_BASE_URL}" "${PRESET_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${PRESET_ENDPOINT_TIMEOUT_SECONDS}" "${PRESET_ENDPOINT_MAX_CONTEXT_TOKENS}" "${PRESET_ENDPOINT_MAX_OUTPUT_TOKENS}" "${PRIMARY_ENDPOINT_NAME}")"
     )"
     PRIMARY_ENDPOINT_ID="$(printf '%s' "${primary_endpoint_resp}" | json_extract id)"
   fi
@@ -268,19 +263,19 @@ run_deploy_bootstrap() {
   curl -fsS -X PUT "${PROJECT_BASE}/endpoints/${PRIMARY_ENDPOINT_ID}" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5], limits:{timeout_seconds:Number(process.argv[6])}, model_profile:{max_context_tokens:Number(process.argv[7]), max_output_tokens:Number(process.argv[8]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${PRIMARY_ENDPOINT_NAME}" "${PRIMARY_ENDPOINT_PROTOCOL}" "${PRIMARY_ENDPOINT_BASE_URL}" "${DEPLOY_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${DEMO_ENDPOINT_TIMEOUT_SECONDS}" "${DEMO_MODEL_CONTEXT_TOKENS}" "${DEMO_MODEL_MAX_OUTPUT_TOKENS}")" >/dev/null
+    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[1], protocol:process.argv[2], base_url:process.argv[3], model:process.argv[4], credential_ref:process.argv[5], limits:{timeout_seconds:Number(process.argv[6])}, model_profile:{max_context_tokens:Number(process.argv[7]), max_output_tokens:Number(process.argv[8]), supports_file:false, supports_tool_call:true, supports_reasoning:false, price_input_per_1m:0, price_output_per_1m:0, cache_read_discount_ratio:0, cache_write_discount_ratio:0}}))' "${PRIMARY_ENDPOINT_NAME}" "${PRIMARY_ENDPOINT_PROTOCOL}" "${PRIMARY_ENDPOINT_BASE_URL}" "${PRESET_ENDPOINT_MODEL}" "${CREDENTIAL_ID}" "${PRESET_ENDPOINT_TIMEOUT_SECONDS}" "${PRESET_ENDPOINT_MAX_CONTEXT_TOKENS}" "${PRESET_ENDPOINT_MAX_OUTPUT_TOKENS}")" >/dev/null
 
   agent_list_resp="$(
     curl -sS "${PROJECT_BASE}/agents?page=1&page_size=100" \
       -H "Authorization: Bearer ${TOKEN}"
   )"
-  EXTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${DEMO_EXTERNAL_AGENT_NAME}")"
+  EXTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${PRESET_EXTERNAL_AGENT_NAME}")"
   if [[ -z "${EXTERNAL_AGENT_ID}" ]]; then
     external_agent_resp="$(
       curl -sS -X POST "${PROJECT_BASE}/agents" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${PRIMARY_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${DEMO_EXTERNAL_AGENT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[3], mode:"external", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}, capabilities:{streaming_completion:true,multimodal_completion:false}}))' "${PRIMARY_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${PRESET_EXTERNAL_AGENT_NAME}")"
     )"
     EXTERNAL_AGENT_ID="$(printf '%s' "${external_agent_resp}" | json_extract id)"
   fi
@@ -288,7 +283,7 @@ run_deploy_bootstrap() {
   curl -sS -X PATCH "${PROJECT_BASE}/agents/${EXTERNAL_AGENT_ID}" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}}))' "${PRIMARY_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}")" >/dev/null
+    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{runner_runtime:"compose_managed"}}))' "${PRIMARY_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}")" >/dev/null
 
   EXTERNAL_AGENT_KEY="${MBOS_AGENT_KEY:-}"
   if [[ -z "${EXTERNAL_AGENT_KEY}" ]]; then
@@ -310,13 +305,13 @@ run_deploy_bootstrap() {
   OPENAI_ENDPOINT_ID="${PRIMARY_ENDPOINT_ID}"
   ANTHROPIC_ENDPOINT_ID="${PRIMARY_ENDPOINT_ID}"
 
-  INTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${DEMO_INTERNAL_AGENT_NAME}")"
+  INTERNAL_AGENT_ID="$(printf '%s' "${agent_list_resp}" | json_find_named_id "${PRESET_INTERNAL_AGENT_NAME}")"
   if [[ -z "${INTERNAL_AGENT_ID}" ]]; then
     internal_agent_resp="$(
       curl -sS -X POST "${PROJECT_BASE}/agents" \
         -H "Authorization: Bearer ${TOKEN}" \
         -H 'Content-Type: application/json' \
-        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], mode:"internal", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}, capabilities:{streaming_completion:true}}))' "${PRIMARY_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${DEMO_INTERNAL_AGENT_NAME}")"
+        -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({name:process.argv[4], mode:"internal", interaction_mode:"notebook", execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}, capabilities:{streaming_completion:true}}))' "${PRIMARY_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}" "${PRESET_INTERNAL_AGENT_NAME}")"
     )"
     INTERNAL_AGENT_ID="$(printf '%s' "${internal_agent_resp}" | json_extract id)"
   fi
@@ -324,7 +319,7 @@ run_deploy_bootstrap() {
   curl -sS -X PATCH "${PROJECT_BASE}/agents/${INTERNAL_AGENT_ID}" \
     -H "Authorization: Bearer ${TOKEN}" \
     -H 'Content-Type: application/json' \
-    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}}))' "${PRIMARY_ENDPOINT_ID}" "${DEPLOY_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}")" >/dev/null
+    -d "$(docker_compose exec -T api node -e 'console.log(JSON.stringify({execution_preferences:{notebook:{endpoint_id:process.argv[1], wire_api:"responses", model:process.argv[2]}}, config:{image:process.argv[3], endpoint_id:process.argv[1], cpu_request:"500m", cpu_limit:"2", memory_request:"512Mi", memory_limit:"4Gi", idle_timeout_sec:180, max_lifetime_sec:3600}}))' "${PRIMARY_ENDPOINT_ID}" "${PRESET_ENDPOINT_MODEL}" "${INTERNAL_AGENT_IMAGE}")" >/dev/null
 
   cat > "${RELEASE_ROOT}/env/runner-runtime.env" <<EOF
 # Generated by bootstrap.sh after preset external agent provisioning.

@@ -61,7 +61,7 @@ fail_if_legacy_env() {
   for key in GLM_API_KEY GLM_BASE_URL GLM_MODEL ENDPOINT_PROTOCOL; do
     if [[ -n "${!key:-}" ]]; then
       err "legacy env var is not supported: ${key}"
-      err "use DEMO_ENDPOINT_API_KEY / DEMO_ENDPOINT_BASE_URL / DEMO_ENDPOINT_MODEL / DEMO_ENDPOINT_PROTOCOL"
+      err "use PRESET_ENDPOINT_API_KEY / PRESET_ENDPOINT_BASE_URL / PRESET_ENDPOINT_MODEL / PRESET_ENDPOINT_PROTOCOL"
       exit 1
     fi
   done
@@ -98,13 +98,13 @@ init_dev_real_env() {
   MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-http://127.0.0.1:${PROXY_PORT}}"
 }
 
-require_demo_endpoint_env() {
-  require_var DEMO_ENDPOINT_API_KEY
-  require_var DEMO_ENDPOINT_BASE_URL
-  require_var DEMO_ENDPOINT_MODEL
-  require_var DEMO_ENDPOINT_PROTOCOL
-  require_var DEMO_ENDPOINT_MAX_CONTEXT_TOKENS
-  require_var DEMO_ENDPOINT_MAX_OUTPUT_TOKENS
+require_preset_endpoint_env() {
+  require_var PRESET_ENDPOINT_API_KEY
+  require_var PRESET_ENDPOINT_BASE_URL
+  require_var PRESET_ENDPOINT_MODEL
+  require_var PRESET_ENDPOINT_PROTOCOL
+  require_var PRESET_ENDPOINT_MAX_CONTEXT_TOKENS
+  require_var PRESET_ENDPOINT_MAX_OUTPUT_TOKENS
 }
 
 launch_detached() {

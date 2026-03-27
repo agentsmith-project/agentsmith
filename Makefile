@@ -671,22 +671,22 @@ notebook-agent-refresh-token:
 notebook-agent-init-resources:
 	@if [ -n "$(GLM_API_KEY)" ] || [ -n "$(GLM_BASE_URL)" ] || [ -n "$(GLM_MODEL)" ]; then \
 		echo "[make] Legacy GLM_* vars are no longer supported for notebook-agent-init-resources."; \
-		echo "[make] Use DEMO_ENDPOINT_API_KEY / DEMO_ENDPOINT_BASE_URL / DEMO_ENDPOINT_MODEL / DEMO_ENDPOINT_PROTOCOL."; \
+		echo "[make] Use PRESET_ENDPOINT_API_KEY / PRESET_ENDPOINT_BASE_URL / PRESET_ENDPOINT_MODEL / PRESET_ENDPOINT_PROTOCOL."; \
 		exit 1; \
 	fi
-	@if [ -z "$(DEMO_ENDPOINT_API_KEY)" ]; then \
-		echo "[make] Missing DEMO_ENDPOINT_API_KEY."; \
+	@if [ -z "$(PRESET_ENDPOINT_API_KEY)" ]; then \
+		echo "[make] Missing PRESET_ENDPOINT_API_KEY."; \
 		echo "[make] Example:"; \
-		echo "  DEMO_ENDPOINT_API_KEY='***' DEMO_ENDPOINT_BASE_URL='https://api.minimaxi.com/v1' DEMO_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' DEMO_ENDPOINT_PROTOCOL='openai_compatible' make notebook-agent-init-resources"; \
+		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ENDPOINT_BASE_URL='https://api.minimaxi.com/v1' PRESET_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' PRESET_ENDPOINT_PROTOCOL='openai_compatible' make notebook-agent-init-resources"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	DEMO_ENDPOINT_API_KEY="$(DEMO_ENDPOINT_API_KEY)" \
-	DEMO_ENDPOINT_BASE_URL="$(DEMO_ENDPOINT_BASE_URL)" \
-	DEMO_ENDPOINT_MODEL="$(DEMO_ENDPOINT_MODEL)" \
-	DEMO_ENDPOINT_PROTOCOL="$(DEMO_ENDPOINT_PROTOCOL)" \
-	DEMO_ENDPOINT_MAX_CONTEXT_TOKENS="$(DEMO_ENDPOINT_MAX_CONTEXT_TOKENS)" \
-	DEMO_ENDPOINT_MAX_OUTPUT_TOKENS="$(DEMO_ENDPOINT_MAX_OUTPUT_TOKENS)" \
+	PRESET_ENDPOINT_API_KEY="$(PRESET_ENDPOINT_API_KEY)" \
+	PRESET_ENDPOINT_BASE_URL="$(PRESET_ENDPOINT_BASE_URL)" \
+	PRESET_ENDPOINT_MODEL="$(PRESET_ENDPOINT_MODEL)" \
+	PRESET_ENDPOINT_PROTOCOL="$(PRESET_ENDPOINT_PROTOCOL)" \
+	PRESET_ENDPOINT_MAX_CONTEXT_TOKENS="$(PRESET_ENDPOINT_MAX_CONTEXT_TOKENS)" \
+	PRESET_ENDPOINT_MAX_OUTPUT_TOKENS="$(PRESET_ENDPOINT_MAX_OUTPUT_TOKENS)" \
 	./scripts/notebook-agent-init-resources.sh
 
 notebook-agent-runner:

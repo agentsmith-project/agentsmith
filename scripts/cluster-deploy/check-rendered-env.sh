@@ -16,6 +16,14 @@ grep -Fxq 'SANDBOX_MANAGER_URL=https://sandbox-manager.mbos.imotion.ai' "${RELEA
   echo "[cluster-rendered-env] missing sandbox manager url" >&2
   exit 1
 }
+grep -Fxq 'AGENT_EXECUTION_HTTP_BASE_URL=https://mbos.imotion.ai/api' "${RELEASE_ROOT}/env/api.env" || {
+  echo "[cluster-rendered-env] missing internal agent execution http base" >&2
+  exit 1
+}
+grep -Fxq 'AGENT_EXECUTION_WS_BASE_URL=wss://mbos.imotion.ai/api' "${RELEASE_ROOT}/env/api.env" || {
+  echo "[cluster-rendered-env] missing internal agent execution websocket base" >&2
+  exit 1
+}
 grep -Fxq 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' "${RELEASE_ROOT}/env/internal.env" || {
   echo "[cluster-rendered-env] missing internal cpu request default" >&2
   exit 1

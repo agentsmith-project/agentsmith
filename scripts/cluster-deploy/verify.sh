@@ -7,6 +7,16 @@ source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
 load_release_env
 load_kubeconfig
 
+REAL_LANE_PROTOCOL="${DEPLOY_ENDPOINT_PROTOCOL:-${DEMO_ENDPOINT_PROTOCOL:-openai_compatible}}"
+case "${REAL_LANE_PROTOCOL}" in
+  anthropic_compatible)
+    REAL_LANE_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
+    ;;
+  *)
+    REAL_LANE_BASE_URL="${DEPLOY_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}"
+    ;;
+esac
+
 PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-https://mbos.imotion.ai}"
 PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-https://mbos.imotion.ai/api}"
 PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-https://mbos.imotion.ai/keycloak}"
@@ -61,6 +71,8 @@ docker run --rm \
   -e KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
   -e INTEGRATION_PRESEEDED_SYSTEM_WORKSPACES=true \
   -e REAL_LANE_API_KEY="${DEPLOY_ENDPOINT_API_KEY:-}" \
+  -e REAL_LANE_PROTOCOL="${REAL_LANE_PROTOCOL}" \
+  -e REAL_LANE_BASE_URL="${REAL_LANE_BASE_URL}" \
   -e REAL_LANE_ANTHROPIC_BASE_URL="${DEPLOY_ANTHROPIC_BASE_URL:-https://api.minimaxi.com/anthropic/v1}" \
   -e REAL_LANE_OPENAI_BASE_URL="${DEPLOY_OPENAI_BASE_URL:-https://api.minimaxi.com/v1}" \
   -e REAL_LANE_MODEL="${DEPLOY_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}" \

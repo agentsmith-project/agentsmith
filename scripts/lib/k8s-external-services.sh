@@ -90,7 +90,7 @@ spec:
 apiVersion: v1
 kind: Endpoints
 metadata:
-  name: ${postgres_service_name}-external
+  name: ${postgres_service_name}
   namespace: ${namespace}
   labels:
     app.kubernetes.io/managed-by: agentsmith
@@ -118,7 +118,7 @@ spec:
 apiVersion: v1
 kind: Endpoints
 metadata:
-  name: ${minio_service_name}-external
+  name: ${minio_service_name}
   namespace: ${namespace}
   labels:
     app.kubernetes.io/managed-by: agentsmith

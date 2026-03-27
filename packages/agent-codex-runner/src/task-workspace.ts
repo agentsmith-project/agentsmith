@@ -63,6 +63,55 @@ function parseJuicefsMountOptions(raw: string | undefined): string[] {
     .filter(Boolean);
 }
 
+const JUICEFS_CLI_KEY_VALUE_OPTIONS = new Set([
+  'cache-size',
+  'prefetch',
+  'buffer-size',
+  'free-space-ratio',
+  'cache-items',
+  'upload-limit',
+  'download-limit',
+  'max-uploads',
+  'max-deletes',
+  'io-retries',
+  'get-timeout',
+  'put-timeout',
+]);
+
+function splitJuicefsMountOptions(raw: string | undefined): {
+  fuseOptions: string[];
+  cliArgs: string[];
+} {
+  const fuseOptions: string[] = [];
+  const cliArgs: string[] = [];
+  for (const option of parseJuicefsMountOptions(raw)) {
+    if (option.startsWith('--')) {
+      const trimmed = option.trim();
+      if (trimmed.includes('=')) {
+        const [flag, ...rest] = trimmed.split('=');
+        const value = rest.join('=').trim();
+        if (flag && value) {
+          cliArgs.push(flag, value);
+          continue;
+        }
+      }
+      cliArgs.push(trimmed);
+      continue;
+    }
+    const separatorIndex = option.indexOf('=');
+    if (separatorIndex > 0) {
+      const key = option.slice(0, separatorIndex).trim();
+      const value = option.slice(separatorIndex + 1).trim();
+      if (JUICEFS_CLI_KEY_VALUE_OPTIONS.has(key) && value.length > 0) {
+        cliArgs.push(`--${key}`, value);
+        continue;
+      }
+    }
+    fuseOptions.push(option);
+  }
+  return { fuseOptions, cliArgs };
+}
+
 function buildJuicefsMountEnv(): NodeJS.ProcessEnv {
   const env = { ...process.env };
   delete env.HTTP_PROXY;
@@ -102,9 +151,12 @@ function buildJuicefsMountArgs(input: {
   if ((input.storageBucketUrl ?? '').trim()) {
     commandArgs.push('--bucket', input.storageBucketUrl!.trim());
   }
-  const mountOptions = parseJuicefsMountOptions(process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS);
-  if (mountOptions.length > 0) {
-    commandArgs.push('-o', mountOptions.join(','));
+  const mountOptions = splitJuicefsMountOptions(process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS);
+  if (mountOptions.fuseOptions.length > 0) {
+    commandArgs.push('-o', mountOptions.fuseOptions.join(','));
+  }
+  if (mountOptions.cliArgs.length > 0) {
+    commandArgs.push(...mountOptions.cliArgs);
   }
   return commandArgs;
 }

@@ -256,7 +256,9 @@ describe('task-workspace', () => {
         'postgres://juicefs-meta',
         '/srv/ags-workspaces/market-analysis-q1',
         '-o',
-        'writeback_cache,cache-size=204800',
+        'writeback_cache',
+        '--cache-size',
+        '204800',
       ]),
       expect.objectContaining({
         detached: true,

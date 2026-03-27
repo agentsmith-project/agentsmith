@@ -39,6 +39,11 @@ metadata:
 apiVersion: v1
 kind: Namespace
 metadata:
+  name: ${FULL_AUTO_INGRESS_NAMESPACE}
+---
+apiVersion: v1
+kind: Namespace
+metadata:
   name: ${FULL_AUTO_JUICEFS_NAMESPACE}
 EOF
 
@@ -276,7 +281,7 @@ KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout status daemonset/juicefs
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl rollout status deployment/juicefs-csi-dashboard -n "${FULL_AUTO_JUICEFS_NAMESPACE}" --timeout=240s >/dev/null
 
 build_cluster_kubeconfig_from_admin "agentsmith-deploy" "${INTERNAL_AGENT_K8S_NAMESPACE}" "${SHARED_KUBECONFIG}"
-build_cluster_kubeconfig_from_admin "agentsmith-manager" "${INTERNAL_AGENT_K8S_NAMESPACE}" "${SHARED_MANAGER_KUBECONFIG}" "https://kubernetes.default.svc"
+build_cluster_kubeconfig_from_admin "agentsmith-manager" "${INTERNAL_AGENT_K8S_NAMESPACE}" "${SHARED_MANAGER_KUBECONFIG}"
 cp "${SHARED_KUBECONFIG}" "${RELEASE_ROOT}/env/kubeconfig"
 cp "${SHARED_MANAGER_KUBECONFIG}" "${RELEASE_ROOT}/env/manager-kubeconfig"
 

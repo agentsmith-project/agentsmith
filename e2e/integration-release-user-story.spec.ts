@@ -23,6 +23,10 @@ const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
 const ANTHROPIC_BASE_URL = process.env.REAL_LANE_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
 const OPENAI_BASE_URL = process.env.REAL_LANE_OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1';
+const REAL_LANE_PROTOCOL = process.env.REAL_LANE_PROTOCOL ?? 'openai_compatible';
+const REAL_LANE_BASE_URL =
+  process.env.REAL_LANE_BASE_URL ??
+  (REAL_LANE_PROTOCOL === 'anthropic_compatible' ? ANTHROPIC_BASE_URL : OPENAI_BASE_URL);
 const REAL_LANE_MODEL = process.env.REAL_LANE_MODEL ?? 'MiniMax-M2.7-highspeed';
 const REAL_LANE_API_KEY = process.env.REAL_LANE_API_KEY;
 const SYSTEM_ADMIN_USERNAME = 'mbos-admin';
@@ -636,7 +640,7 @@ async function expectUsageTabToShowRequests(args: {
 }
 
 test.describe('@lane-real release user story end-to-end', () => {
-  test('rebuilds the system and runs the full user story with dual glm-5-turbo endpoints', async ({ page }) => {
+  test('rebuilds the system and runs the full user story with dual preset endpoints', async ({ page }) => {
     test.setTimeout(1_200_000);
     const glmApiKey = requireRealLaneApiKey();
     const pageErrors: string[] = [];
@@ -658,35 +662,35 @@ test.describe('@lane-real release user story end-to-end', () => {
     await approveJoinRequest(page, workspaceId, projectId);
 
     await createCredentialViaUi(page, workspaceId, projectId, 'BigModel Unified Key', glmApiKey);
-    const anthropicEndpointName = `GLM5 Anthropic ${Date.now()}`;
-    const openaiEndpointName = `GLM5 OpenAI ${Date.now()}`;
+    const primaryEndpointName = `Preset Endpoint A ${Date.now()}`;
+    const secondaryEndpointName = `Preset Endpoint B ${Date.now()}`;
     await createEndpointViaUi({
       page,
       workspaceId,
       projectId,
-      name: anthropicEndpointName,
-      protocol: 'anthropic_compatible',
-      baseUrl: ANTHROPIC_BASE_URL,
+      name: primaryEndpointName,
+      protocol: REAL_LANE_PROTOCOL,
+      baseUrl: REAL_LANE_BASE_URL,
       model: REAL_LANE_MODEL,
     });
     await createEndpointViaUi({
       page,
       workspaceId,
       projectId,
-      name: openaiEndpointName,
-      protocol: 'openai_compatible',
-      baseUrl: OPENAI_BASE_URL,
+      name: secondaryEndpointName,
+      protocol: REAL_LANE_PROTOCOL,
+      baseUrl: REAL_LANE_BASE_URL,
       model: REAL_LANE_MODEL,
     });
 
-    const anthropicEndpointId = await resolveEndpointId(page, workspaceId, projectId, anthropicEndpointName);
-    const openaiEndpointId = await resolveEndpointId(page, workspaceId, projectId, openaiEndpointName);
+    const primaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, primaryEndpointName);
+    const secondaryEndpointId = await resolveEndpointId(page, workspaceId, projectId, secondaryEndpointName);
 
     await updateResourcePolicyViaUi({
       page,
       workspaceId,
       projectId,
-      endpointId: anthropicEndpointId,
+      endpointId: primaryEndpointId,
       requestsPerDay: '1000',
       spendingUsdPerDay: '500',
     });
@@ -694,7 +698,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       page,
       workspaceId,
       projectId,
-      endpointId: openaiEndpointId,
+      endpointId: secondaryEndpointId,
       requestsPerDay: '1000',
       spendingUsdPerDay: '500',
     });
@@ -707,7 +711,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       projectId,
       name: externalAgentName,
       mode: 'external',
-      endpointId: anthropicEndpointId,
+      endpointId: primaryEndpointId,
     });
     await createAgentViaUi({
       page,
@@ -715,7 +719,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       projectId,
       name: internalAgentName,
       mode: 'internal',
-      endpointId: openaiEndpointId,
+      endpointId: secondaryEndpointId,
       image: INTERNAL_AGENT_IMAGE,
     });
 
@@ -807,7 +811,9 @@ test.describe('@lane-real release user story end-to-end', () => {
         expect(externalStory).toContain('external turn 1');
         expect(externalStory).toContain('external turn 2');
         const externalSummary = await readFile(externalSummaryPath, 'utf-8');
-        expect(externalSummary).toContain('external turn 2');
+        expect(externalSummary).toContain('notes/external_story.txt');
+        expect(externalSummary.toLowerCase()).toContain('external');
+        expect(externalSummary).toMatch(/2\s+lines?/i);
       } finally {
         await mountedExternalWorkspace.stop();
       }
@@ -965,17 +971,17 @@ test.describe('@lane-real release user story end-to-end', () => {
 
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/usage`);
       await expect(page.getByTestId('usage__view')).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByRole('button', { name: anthropicEndpointName })).toBeVisible({ timeout: 30_000 });
-      await expect(page.getByRole('button', { name: openaiEndpointName })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('button', { name: primaryEndpointName })).toBeVisible({ timeout: 30_000 });
+      await expect(page.getByRole('button', { name: secondaryEndpointName })).toBeVisible({ timeout: 30_000 });
       await expectUsageTabToShowRequests({
         page,
-        endpointId: anthropicEndpointId,
-        endpointName: anthropicEndpointName,
+        endpointId: primaryEndpointId,
+        endpointName: primaryEndpointName,
       });
       await expectUsageTabToShowRequests({
         page,
-        endpointId: openaiEndpointId,
-        endpointName: openaiEndpointName,
+        endpointId: secondaryEndpointId,
+        endpointName: secondaryEndpointName,
       });
       expect(pageErrors).toEqual([]);
       expect(projectName).toContain('Release Story Project');

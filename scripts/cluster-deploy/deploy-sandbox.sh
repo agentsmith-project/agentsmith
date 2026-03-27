@@ -53,9 +53,31 @@ kubectl create secret docker-registry agentsmith-registry \
   --docker-password="${REGISTRY_PASSWORD}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
+RUNTIME_MANAGER_KUBECONFIG="${STATE_DIR}/manager-kubeconfig.runtime"
+python3 - "${SHARED_MANAGER_KUBECONFIG}" "${RUNTIME_MANAGER_KUBECONFIG}" <<'PY'
+import sys
+from pathlib import Path
+
+src = Path(sys.argv[1])
+dst = Path(sys.argv[2])
+lines = src.read_text(encoding="utf-8").splitlines()
+rewritten = []
+replaced = False
+for line in lines:
+    if line.strip().startswith("server: https://"):
+        indent = line[: len(line) - len(line.lstrip())]
+        rewritten.append(f"{indent}server: https://kubernetes.default.svc")
+        replaced = True
+    else:
+        rewritten.append(line)
+if not replaced:
+    raise SystemExit("failed to rewrite manager kubeconfig server")
+dst.write_text("\n".join(rewritten) + "\n", encoding="utf-8")
+PY
+
 kubectl create secret generic agentsmith-manager-kubeconfig \
   --namespace "${INTERNAL_AGENT_K8S_NAMESPACE}" \
-  --from-file=config="${SHARED_MANAGER_KUBECONFIG}" \
+  --from-file=config="${RUNTIME_MANAGER_KUBECONFIG}" \
   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 
 EXTERNAL_DEPS_MANIFEST="${STATE_DIR}/cluster-external-services.yaml"

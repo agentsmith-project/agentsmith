@@ -222,11 +222,29 @@ build_cluster_kubeconfig_from_admin() {
   local output_path="$3"
   local server_override="${4:-}"
   local cluster_name server ca_data token
+  local secret_name="${service_account}-token"
 
   cluster_name="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.contexts[0].context.cluster}')"
   server="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.server}')"
   ca_data="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')"
-  token="$(KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl -n "${namespace}" create token "${service_account}")"
+  KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl apply -f - >/dev/null <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: ${secret_name}
+  namespace: ${namespace}
+  annotations:
+    kubernetes.io/service-account.name: ${service_account}
+type: kubernetes.io/service-account-token
+EOF
+  for _ in $(seq 1 60); do
+    token="$(
+      KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl get secret "${secret_name}" -n "${namespace}" -o jsonpath='{.data.token}' 2>/dev/null \
+        | base64 -d 2>/dev/null || true
+    )"
+    [[ -n "${token}" ]] && break
+    sleep 1
+  done
   if [[ -n "${server_override}" ]]; then
     server="${server_override}"
   fi

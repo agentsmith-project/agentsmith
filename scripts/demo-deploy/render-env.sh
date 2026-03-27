@@ -9,6 +9,7 @@ else
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
+source "${ROOT_DIR}/scripts/lib/preset-common.sh"
 
 ensure_dirs
 mkdir -p "${RELEASE_ROOT}/env"
@@ -27,8 +28,11 @@ for deprecated_key in KEYCLOAK_INTERNAL_BASE_URL KEYCLOAK_PUBLIC_BASE_URL MBOS_A
 done
 
 set -a
+load_agentsmith_presets "${ROOT_DIR}"
 # shellcheck disable=SC1090
 source "${SITE_ENV}"
+apply_non_environment_preset_defaults
+apply_demo_endpoint_defaults
 set +a
 
 declare -A SITE_ENV_DECLARED=()
@@ -223,6 +227,7 @@ MBOS_DEFAULT_WORKSPACE_ID=${MBOS_DEFAULT_WORKSPACE_ID}
 MBOS_DEFAULT_WORKSPACE_NAME=${MBOS_DEFAULT_WORKSPACE_NAME}
 MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL=${MBOS_DEFAULT_WORKSPACE_ADMIN_EMAIL}
 DEPLOY_ENDPOINT_API_KEY=${DEPLOY_ENDPOINT_API_KEY}
+DEPLOY_ENDPOINT_PROTOCOL=${DEPLOY_ENDPOINT_PROTOCOL:-${DEMO_ENDPOINT_PROTOCOL:-openai_compatible}}
 DEPLOY_ANTHROPIC_BASE_URL=${DEPLOY_ANTHROPIC_BASE_URL}
 DEPLOY_OPENAI_BASE_URL=${DEPLOY_OPENAI_BASE_URL}
 DEPLOY_ENDPOINT_MODEL=${DEPLOY_ENDPOINT_MODEL}

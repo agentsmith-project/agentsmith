@@ -43,6 +43,38 @@ run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
 }
 
+run_clean_with_integration_env() {
+  run_clean env \
+    INTEGRATION_API_PORT="${API_PORT}" \
+    INTEGRATION_WEB_PORT="${WEB_PORT}" \
+    INTEGRATION_BASE_URL="${PLAYWRIGHT_BASE_URL}" \
+    INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
+    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
+    KEYCLOAK_URL="${KEYCLOAK_URL}" \
+    KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
+    PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL}" \
+    INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL}" \
+    DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}" \
+    MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}" \
+    REDIS_URL="${REDIS_URL:-redis://localhost:16379}" \
+    MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}" \
+    MINIO_PORT="${MINIO_PORT:-19000}" \
+    MINIO_USE_SSL="${MINIO_USE_SSL:-false}" \
+    MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
+    MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
+    MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
+    POSTGRES_PORT="${POSTGRES_PORT:-}" \
+    MONGO_PORT="${MONGO_PORT:-}" \
+    REDIS_PORT="${REDIS_PORT:-}" \
+    MINIO_API_PORT="${MINIO_API_PORT:-}" \
+    MINIO_CONSOLE_PORT="${MINIO_CONSOLE_PORT:-}" \
+    KEYCLOAK_PORT="${KEYCLOAK_PORT:-}" \
+    "$@"
+}
+
 start_background_job() {
   local log_file="$1"
   shift
@@ -132,13 +164,17 @@ port_in_use() {
 }
 
 if [[ "${BOOTSTRAP_DEPS}" == "true" ]]; then
-  run_clean npm run integration:deps:up
+  run_clean_with_integration_env npm run integration:deps:up
   run_clean make deps-ready
 fi
 
 if [[ "${INIT_DEPS}" == "true" ]]; then
-  run_clean npm run integration:deps:init:postgres
-  run_clean npm run integration:deps:init:keycloak
+  run_clean_with_integration_env npm run integration:deps:init:postgres
+  run_clean_with_integration_env npm run integration:deps:init:keycloak
+fi
+
+if [[ "${INTEGRATION_ENSURE_DEFAULT_WORKSPACE:-true}" == "true" ]]; then
+  run_clean_with_integration_env npx tsx scripts/ensure-default-workspace.ts >/dev/null
 fi
 
 if port_in_use "${API_PORT}"; then

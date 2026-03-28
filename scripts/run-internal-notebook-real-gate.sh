@@ -16,6 +16,12 @@ export_backend_real_endpoint_env
 
 API_PORT="${INTEGRATION_API_PORT:-20072}"
 WEB_PORT="${INTEGRATION_WEB_PORT:-3072}"
+INTEGRATION_POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT:-25432}"
+INTEGRATION_MONGO_PORT="${INTEGRATION_MONGO_PORT:-27027}"
+INTEGRATION_REDIS_PORT="${INTEGRATION_REDIS_PORT:-26379}"
+INTEGRATION_MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT:-29000}"
+INTEGRATION_MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT:-29001}"
+INTEGRATION_KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT:-28081}"
 SANDBOX_PORT="${INTERNAL_SANDBOX_MANAGER_PORT:-28080}"
 SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY:-agentsmith-internal-test-key}"
 K8S_NAMESPACE="${INTERNAL_AGENT_K8S_NAMESPACE:-agentsmith-sandbox}"
@@ -35,17 +41,33 @@ JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 ensure_backend_real_state
 INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR:-$(backend_real_tmp_file internal)}"
 mkdir -p "${INTERNAL_REAL_DIR}"
+INTERNAL_REAL_DIR="$(realpath -m "${INTERNAL_REAL_DIR}")"
 SANDBOX_LOG="${INTERNAL_SANDBOX_MANAGER_LOG:-${INTERNAL_REAL_DIR}/sandbox-manager.log}"
 CONFIG_PATH="${INTERNAL_SANDBOX_MANAGER_CONFIG:-${INTERNAL_REAL_DIR}/sandbox-manager.yaml}"
 CONFIG_PATH="$(realpath -m "${CONFIG_PATH}")"
+CONTROL_SCRIPT="${ROOT_DIR}/scripts/lib/internal-sandbox-real-control.sh"
+STATE_FILE="${INTERNAL_REAL_DIR}/sandbox-control.env"
+CLEANER_LOG="${INTERNAL_SANDBOX_CLEANER_LOG:-${INTERNAL_REAL_DIR}/sandbox-cleaner.log}"
+CLEANER_LOG="$(realpath -m "${CLEANER_LOG}")"
+CLEANER_LOG_DIR="$(dirname "${CLEANER_LOG}")"
+mkdir -p "${CLEANER_LOG_DIR}"
+SANDBOX_LOG="$(realpath -m "${SANDBOX_LOG}")"
+SANDBOX_LOG_DIR="$(dirname "${SANDBOX_LOG}")"
+mkdir -p "${SANDBOX_LOG_DIR}"
+CLEANER_INTERVAL_SECONDS="${INTERNAL_SANDBOX_CLEANER_INTERVAL_SECONDS:-15}"
 INTERNAL_VISUAL_ARTIFACT_DIR="${INTERNAL_REAL_VISUAL_ARTIFACT_DIR:-${ROOT_DIR}/artifacts/backend-real-visual/internal-$(date +%Y%m%d-%H%M%S)}"
 CONTEXT_NAME="$(kubectl config current-context 2>/dev/null || true)"
-KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-agentsmith}"
+DEFAULT_KIND_CLUSTER_NAME="agentsmith"
+if [[ -z "${INTERNAL_AGENT_KIND_CLUSTER_NAME:-}" ]] && kind get clusters 2>/dev/null | grep -qx 'mbos'; then
+  DEFAULT_KIND_CLUSTER_NAME="mbos"
+fi
+KIND_CLUSTER_NAME="${INTERNAL_AGENT_KIND_CLUSTER_NAME:-${DEFAULT_KIND_CLUSTER_NAME}}"
 KIND_CONTEXT_NAME="kind-${KIND_CLUSTER_NAME}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
 KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
 KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
-MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
+KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:${INTEGRATION_KEYCLOAK_PORT}}"
+MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:${INTEGRATION_MONGO_PORT}/admin}"
 MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
 
 info() { echo "[internal-real-gate] $*"; }
@@ -54,16 +76,6 @@ if [[ -z "${BACKEND_REAL_API_KEY_VALUE}" ]]; then
   echo "[internal-backend-real-gate] Missing PRESET_ENDPOINT_API_KEY." >&2
   exit 1
 fi
-
-(
-  cd "${ROOT_DIR}" && \
-  MONGO_URL="${MONGO_URL}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME}" \
-  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  npx tsx scripts/ensure-default-workspace.ts >/dev/null
-)
 
 if ! command -v kubectl >/dev/null 2>&1; then
   echo "[internal-real-gate] kubectl is required." >&2
@@ -134,9 +146,26 @@ ensure_local_image() {
 }
 
 ensure_juicefs_csi() {
+  local csi_namespace
   if ! kubectl get csidriver "${CSI_DRIVER}" >/dev/null 2>&1; then
     info "installing JuiceFS CSI driver ${CSI_DRIVER}"
     kubectl apply --validate=false -f https://raw.githubusercontent.com/juicedata/juicefs-csi-driver/master/deploy/k8s.yaml >/dev/null
+  fi
+
+  csi_namespace="$(
+    kubectl get statefulset -A --no-headers 2>/dev/null \
+      | awk '$2=="juicefs-csi-controller"{print $1; exit}' \
+      | tr -d '[:space:]'
+  )"
+  if [[ -z "${csi_namespace}" ]]; then
+    csi_namespace="$(
+      kubectl get daemonset -A --no-headers 2>/dev/null \
+        | awk '$2=="juicefs-csi-node"{print $1; exit}' \
+        | tr -d '[:space:]'
+    )"
+  fi
+  if [[ -z "${csi_namespace}" ]]; then
+    csi_namespace="juicefs-system"
   fi
 
   if [[ "${CONTEXT_NAME}" == kind-* ]]; then
@@ -151,25 +180,24 @@ ensure_juicefs_csi() {
     ensure_kind_image "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"
 
     info "patching local JuiceFS CSI workloads for kind"
-    kubectl scale statefulset/juicefs-csi-controller -n kube-system --replicas=1 >/dev/null
-    kubectl patch statefulset/juicefs-csi-controller -n kube-system --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/3"}]' >/dev/null || true
-    kubectl patch daemonset/juicefs-csi-node -n kube-system --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/2"}]' >/dev/null || true
-    kubectl delete pod -n kube-system -l app=juicefs-csi-controller >/dev/null 2>&1 || true
-    kubectl delete pod -n kube-system -l app=juicefs-csi-node >/dev/null 2>&1 || true
+    kubectl scale statefulset/juicefs-csi-controller -n "${csi_namespace}" --replicas=1 >/dev/null
+    kubectl patch statefulset/juicefs-csi-controller -n "${csi_namespace}" --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/3"}]' >/dev/null || true
+    kubectl patch daemonset/juicefs-csi-node -n "${csi_namespace}" --type='json' -p='[{"op":"remove","path":"/spec/template/spec/containers/2"}]' >/dev/null || true
+    kubectl delete pod -n "${csi_namespace}" -l app=juicefs-csi-controller >/dev/null 2>&1 || true
+    kubectl delete pod -n "${csi_namespace}" -l app=juicefs-csi-node >/dev/null 2>&1 || true
   fi
 
   info "waiting for JuiceFS CSI readiness"
-  kubectl rollout status statefulset/juicefs-csi-controller -n kube-system --timeout=180s >/dev/null
-  kubectl rollout status daemonset/juicefs-csi-node -n kube-system --timeout=180s >/dev/null
+  kubectl rollout status statefulset/juicefs-csi-controller -n "${csi_namespace}" --timeout=180s >/dev/null
+  kubectl rollout status daemonset/juicefs-csi-node -n "${csi_namespace}" --timeout=180s >/dev/null
 }
 
 kubectl create namespace "${K8S_NAMESPACE}" --dry-run=client -o yaml | kubectl apply --validate=false -f - >/dev/null
 
 KIND_NODE_NAME="${KIND_CLUSTER_NAME}-control-plane"
 if [[ "${CONTEXT_NAME}" == kind-* ]]; then
-  CLUSTER_NAME="${CONTEXT_NAME#kind-}"
-  info "loading ${RUNNER_IMAGE} into kind cluster ${CLUSTER_NAME}"
-  kind load docker-image "${RUNNER_IMAGE}" --name "${CLUSTER_NAME}" >/dev/null
+  info "loading ${RUNNER_IMAGE} into kind node ${KIND_NODE_NAME}"
+  ensure_kind_image "${RUNNER_IMAGE}"
 fi
 
 ensure_juicefs_csi
@@ -195,17 +223,17 @@ INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_META_H
 INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE:-5432}"
 INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://$(k8s_external_minio_fqdn "${K8S_NAMESPACE}"):9000}"
 INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE:-127.0.0.1}"
-INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-15432}"
-INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:19000}"
+INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE:-${INTEGRATION_POSTGRES_PORT}}"
+INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE:-http://127.0.0.1:${INTEGRATION_MINIO_API_PORT}}"
 
 EXTERNAL_DEPS_MANIFEST="${INTERNAL_REAL_DIR}/external-dependencies.yaml"
 render_k8s_external_dependency_services \
   "${EXTERNAL_DEPS_MANIFEST}" \
   "${K8S_NAMESPACE}" \
   "${KIND_GATEWAY}" \
-  15432 \
+  "${INTEGRATION_POSTGRES_PORT}" \
   "${KIND_GATEWAY}" \
-  19000
+  "${INTEGRATION_MINIO_API_PORT}"
 kubectl apply -f "${EXTERNAL_DEPS_MANIFEST}" >/dev/null
 
 cat > "${CONFIG_PATH}" <<EOF
@@ -309,7 +337,7 @@ files:
     rejectSymlinks: true
 
 storage:
-  endpoint: localhost:19000
+  endpoint: localhost:${INTEGRATION_MINIO_API_PORT}
   accessKey: ${MINIO_ACCESS_KEY:-mbos}
   secretKey: ${MINIO_SECRET_KEY:-mbos_dev_password}
   bucket: ${MINIO_BUCKET:-mbos-dev}
@@ -319,12 +347,9 @@ buffer:
   capacity: 10000
 EOF
 
-SANDBOX_PID=""
 cleanup() {
-  if [[ -n "${SANDBOX_PID}" ]] && kill -0 "${SANDBOX_PID}" >/dev/null 2>&1; then
-    kill "${SANDBOX_PID}" >/dev/null 2>&1 || true
-    wait "${SANDBOX_PID}" >/dev/null 2>&1 || true
-  fi
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-cleaner >/dev/null 2>&1 || true
+  INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" stop-manager >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
 
@@ -344,36 +369,28 @@ if [[ -n "${existing_sandbox_pid}" ]]; then
   fi
 fi
 
+cat > "${STATE_FILE}" <<EOF
+ROOT_DIR="${ROOT_DIR}"
+SANDBOX_ROOT="${SANDBOX_ROOT}"
+INTERNAL_REAL_DIR="${INTERNAL_REAL_DIR}"
+CONFIG_PATH="${CONFIG_PATH}"
+SANDBOX_PORT="${SANDBOX_PORT}"
+SANDBOX_SERVICE_KEY_VALUE="${SANDBOX_SERVICE_KEY_VALUE}"
+K8S_NAMESPACE="${K8S_NAMESPACE}"
+SANDBOX_LOG="${SANDBOX_LOG}"
+CLEANER_LOG="${CLEANER_LOG}"
+CLEANER_INTERVAL_SECONDS="${CLEANER_INTERVAL_SECONDS}"
+INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE="${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}"
+MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
+MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
+MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
+KUBECONFIG="${KUBECONFIG:-}"
+EOF
+
 info "starting local sandbox manager on :${SANDBOX_PORT}"
-(
-  cd "${SANDBOX_ROOT}/manager-service" && \
-    env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-    CONFIG_PATH="${CONFIG_PATH}" \
-    SERVICE_KEYS="${SANDBOX_SERVICE_KEY_VALUE}" \
-    JUICEFS_STORAGE_ENDPOINT="${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
-    JUICEFS_STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-    JUICEFS_STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-    STORAGE_ENDPOINT="localhost:19000" \
-    STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}" \
-    STORAGE_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}" \
-    STORAGE_BUCKET="${MINIO_BUCKET:-mbos-dev}" \
-    STORAGE_USE_SSL="false" \
-    go run ./cmd/manager
-) >"${SANDBOX_LOG}" 2>&1 &
-SANDBOX_PID=$!
-
-for _ in $(seq 1 60); do
-  if curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
-    break
-  fi
-  sleep 1
-done
-
-if ! curl -fsS -H "X-Service-Key: ${SANDBOX_SERVICE_KEY_VALUE}" "http://127.0.0.1:${SANDBOX_PORT}/readyz" >/dev/null 2>&1; then
-  echo "[internal-real-gate] sandbox manager failed to become ready." >&2
-  tail -n 120 "${SANDBOX_LOG}" >&2 || true
-  exit 1
-fi
+INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" start-manager
+info "starting local sandbox cleaner loop"
+INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" bash "${CONTROL_SCRIPT}" start-cleaner
 
 info "running internal notebook workspace real integration"
 info "internal screenshots and review artifacts will be written to:"
@@ -383,6 +400,14 @@ info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
     BACKEND_REAL_API_KEY="${BACKEND_REAL_API_KEY_VALUE}" \
     SANDBOX_MANAGER_URL="http://127.0.0.1:${SANDBOX_PORT}" \
     SANDBOX_SERVICE_KEY="${SANDBOX_SERVICE_KEY_VALUE}" \
+    DATABASE_URL="postgresql://mbos:mbos_dev_password@localhost:${INTEGRATION_POSTGRES_PORT}/mbos" \
+    MONGO_URL="${MONGO_URL}" \
+    MONGO_DB_NAME="${MONGO_DB_NAME}" \
+    REDIS_URL="redis://localhost:${INTEGRATION_REDIS_PORT}" \
+    MINIO_ENDPOINT="localhost" \
+    MINIO_PORT="${INTEGRATION_MINIO_API_PORT}" \
+    KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
+    KEYCLOAK_URL="${KEYCLOAK_BASE_URL%/}/realms" \
     INTERNAL_AGENT_K8S_NAMESPACE="${K8S_NAMESPACE}" \
     INTERNAL_AGENT_JUICEFS_CSI_DRIVER="${CSI_DRIVER}" \
     INTERNAL_AGENT_WORKSPACE_CAPACITY="${WORKSPACE_CAPACITY}" \
@@ -400,9 +425,18 @@ info "  ${INTERNAL_VISUAL_ARTIFACT_DIR}"
     INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
     AGENT_EXECUTION_WS_BASE_URL="${AGENT_EXECUTION_WS_BASE_URL_VALUE}" \
     INTERNAL_REAL_VISUAL_ARTIFACT_DIR="${INTERNAL_VISUAL_ARTIFACT_DIR}" \
+    INTERNAL_SANDBOX_REAL_STATE_FILE="${STATE_FILE}" \
+    POSTGRES_PORT="${INTEGRATION_POSTGRES_PORT}" \
+    MONGO_PORT="${INTEGRATION_MONGO_PORT}" \
+    REDIS_PORT="${INTEGRATION_REDIS_PORT}" \
+    MINIO_API_PORT="${INTEGRATION_MINIO_API_PORT}" \
+    MINIO_CONSOLE_PORT="${INTEGRATION_MINIO_CONSOLE_PORT}" \
+    KEYCLOAK_PORT="${INTEGRATION_KEYCLOAK_PORT}" \
     INTEGRATION_API_PORT="${API_PORT}" \
     INTEGRATION_WEB_PORT="${WEB_PORT}" \
-    bash scripts/run-integration-e2e-full.sh e2e/integration-internal-notebook-workspace.spec.ts
+    bash scripts/run-integration-e2e-full.sh \
+      e2e/integration-internal-notebook-workspace.spec.ts \
+      e2e/integration-internal-sandbox-reclaim.spec.ts
 )
 
 info "internal notebook workspace real gate passed"

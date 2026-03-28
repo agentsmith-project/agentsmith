@@ -499,6 +499,8 @@ export async function createInternalCodexAgent(
     endpointId: string;
     title: string;
     image?: string;
+    idleTimeoutSec?: number;
+    maxLifetimeSec?: number;
   },
 ): Promise<{ agentId: string; agentName: string }> {
   const token = await readStoredAuthToken(page);
@@ -528,8 +530,8 @@ export async function createInternalCodexAgent(
           cpu_limit: '2',
           memory_request: '512Mi',
           memory_limit: '4Gi',
-          idle_timeout_sec: 180,
-          max_lifetime_sec: 3600,
+          idle_timeout_sec: args.idleTimeoutSec ?? 300,
+          max_lifetime_sec: args.maxLifetimeSec ?? 3600,
         },
         capabilities: {
           streaming_completion: true,
@@ -544,6 +546,210 @@ export async function createInternalCodexAgent(
     agentId: createdAgent.id,
     agentName,
   };
+}
+
+export function sanitizeWorkloadId(id: string): string {
+  const normalized = id
+    .toLowerCase()
+    .replace(/[^a-z0-9-]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+  return normalized || 'workload';
+}
+
+export async function createNotebookTaskViaApi(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  title: string;
+  agentId: string;
+  fileLibraryId: string;
+}): Promise<string> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        title: args.title,
+        agent_id: args.agentId,
+        workspace_file_library_id: args.fileLibraryId,
+      },
+    },
+  );
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`create_notebook_task_failed:${response.status()}:${body}`);
+  }
+  const payload = (await response.json().catch(() => null)) as { id?: string; data?: { id?: string } } | null;
+  const taskId = payload?.id ?? payload?.data?.id;
+  expect(taskId).toBeTruthy();
+  return taskId!;
+}
+
+export async function sendTaskMessage(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  content: string;
+}): Promise<void> {
+  const token = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      data: {
+        role: 'user',
+        content: args.content,
+      },
+    },
+  );
+  expect(response.ok()).toBeTruthy();
+}
+
+export async function waitForAssistantToken(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  token: string;
+  minAgentMessages?: number;
+}): Promise<void> {
+  const authToken = await readStoredAuthToken(args.page);
+  await expect
+    .poll(
+      async () => {
+        const response = await args.page.request.get(
+          `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+          { headers: { Authorization: `Bearer ${authToken}` } },
+        );
+        if (!response.ok()) return false;
+        const payload = (await response.json()) as Array<{ role?: string; content?: string }>;
+        const agentMessages = payload.filter((item) => item.role === 'agent');
+        if (agentMessages.length < (args.minAgentMessages ?? 1)) return false;
+        return agentMessages.some((item) => item.content?.includes(args.token));
+      },
+      { timeout: 300_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .toBe(true);
+}
+
+export async function runInternalSandboxControl(command: string): Promise<void> {
+  const stateFile = process.env.INTERNAL_SANDBOX_REAL_STATE_FILE?.trim();
+  if (!stateFile) {
+    throw new Error('missing_INTERNAL_SANDBOX_REAL_STATE_FILE');
+  }
+  const result = await spawnAndCapture(
+    'bash',
+    ['scripts/lib/internal-sandbox-real-control.sh', command],
+    {
+      cwd: path.resolve(__dirname, '..'),
+      env: {
+        ...withoutProxyEnv(process.env),
+        INTERNAL_SANDBOX_REAL_STATE_FILE: stateFile,
+      },
+    },
+  );
+  if (result.code !== 0) {
+    throw new Error(`internal_sandbox_control_failed:${command}:${result.stderr || result.stdout}`);
+  }
+}
+
+export async function waitForWorkloadPodPresent(args: {
+  namespace: string;
+  workloadId: string;
+  timeoutMs?: number;
+}): Promise<string> {
+  let podName = '';
+  await expect
+    .poll(
+      async () => {
+        const result = await spawnAndCapture(
+          'kubectl',
+          [
+            'get',
+            'pods',
+            '-n',
+            args.namespace,
+            '-l',
+            `workload_id=${args.workloadId}`,
+            '-o',
+            'jsonpath={.items[0].metadata.name}',
+          ],
+          { env: withoutProxyEnv(process.env) },
+        );
+        podName = result.stdout.trim();
+        return podName.length > 0 ? podName : null;
+      },
+      { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .not.toBeNull();
+  return podName;
+}
+
+export async function waitForWorkloadPodDeleted(args: {
+  namespace: string;
+  workloadId: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const result = await spawnAndCapture(
+          'kubectl',
+          [
+            'get',
+            'pods',
+            '-n',
+            args.namespace,
+            '-l',
+            `workload_id=${args.workloadId}`,
+            '-o',
+            'jsonpath={.items[*].metadata.name}',
+          ],
+          { env: withoutProxyEnv(process.env) },
+        );
+        return result.stdout.trim();
+      },
+      { timeout: args.timeoutMs ?? 300_000, intervals: [2_000, 5_000, 10_000] },
+    )
+    .toBe('');
+}
+
+export async function patchWorkloadPodExpiry(args: {
+  namespace: string;
+  workloadId: string;
+  expiresAt: string;
+}): Promise<void> {
+  const podName = await waitForWorkloadPodPresent({
+    namespace: args.namespace,
+    workloadId: args.workloadId,
+    timeoutMs: 30_000,
+  });
+  const result = await spawnAndCapture(
+    'kubectl',
+    [
+      'annotate',
+      'pod',
+      podName,
+      '-n',
+      args.namespace,
+      `expires_at=${args.expiresAt}`,
+      '--overwrite',
+    ],
+    { env: withoutProxyEnv(process.env) },
+  );
+  if (result.code !== 0) {
+    throw new Error(`patch_workload_expiry_failed:${podName}:${result.stderr || result.stdout}`);
+  }
 }
 
 export async function deleteInternalWorkloadViaManager(args: {

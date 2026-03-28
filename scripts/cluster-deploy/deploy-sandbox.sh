@@ -277,6 +277,44 @@ ${TOLERATIONS_YAML}
           secret:
             secretName: agentsmith-manager-kubeconfig
 ---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sandbox-manager-cleaner
+  namespace: ${INTERNAL_AGENT_K8S_NAMESPACE}
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: sandbox-manager
+${IMAGE_PULL_SECRETS_YAML}
+          nodeSelector:
+${NODE_SELECTOR_YAML}
+          tolerations:
+${TOLERATIONS_YAML}
+          restartPolicy: Never
+          containers:
+            - name: cleaner
+              image: ${SANDBOX_MANAGER_IMAGE}
+              imagePullPolicy: ${SANDBOX_MANAGER_IMAGE_PULL_POLICY:-IfNotPresent}
+              command:
+                - /cleaner
+                - --namespace=${INTERNAL_AGENT_K8S_NAMESPACE}
+                - --dry-run=false
+                - --log-level=info
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+---
 apiVersion: v1
 kind: Service
 metadata:

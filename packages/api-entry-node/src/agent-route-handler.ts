@@ -3,6 +3,11 @@ import type { ProjectsRoute } from './projects-route-match.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import type { AuthenticatedUser } from './auth.js';
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS,
+} from '@mbos/contracts';
 
 interface AgentRouteHandlerArgs {
   route: ProjectsRoute;
@@ -47,6 +52,40 @@ function validateNotebookEndpoint(executionPreferences: Record<string, unknown> 
 
 function readObject(input: unknown): Record<string, unknown> | undefined {
   return typeof input === 'object' && input !== null ? (input as Record<string, unknown>) : undefined;
+}
+
+function readOptionalIntegerField(
+  config: Record<string, unknown> | undefined,
+  key: 'idle_timeout_sec' | 'max_lifetime_sec',
+): { value?: number; error?: string } {
+  if (!config || config[key] === undefined || config[key] === null) {
+    return {};
+  }
+  const raw = config[key];
+  if (typeof raw !== 'number' || !Number.isFinite(raw) || !Number.isInteger(raw) || raw <= 0) {
+    return { error: `${key}_invalid` };
+  }
+  return { value: raw };
+}
+
+function validateInternalSandboxConfig(config: Record<string, unknown> | undefined): string | null {
+  const idle = readOptionalIntegerField(config, 'idle_timeout_sec');
+  if (idle.error) return idle.error;
+  const maxLifetime = readOptionalIntegerField(config, 'max_lifetime_sec');
+  if (maxLifetime.error) return maxLifetime.error;
+
+  const effectiveIdle = idle.value ?? INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS;
+
+  if (effectiveIdle < INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS) {
+    return 'idle_timeout_sec_too_low';
+  }
+  if (maxLifetime.value !== undefined && maxLifetime.value < INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS) {
+    return 'max_lifetime_sec_too_low';
+  }
+  if (maxLifetime.value !== undefined && maxLifetime.value < effectiveIdle) {
+    return 'max_lifetime_sec_lt_idle_timeout_sec';
+  }
+  return null;
 }
 
 function stripInternalConfigFields(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
@@ -168,8 +207,14 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         json(res, 422, { error_code: 'AGENT_SANDBOX_NOT_CONFIGURED', message: 'agent_sandbox_not_configured' });
         return true;
       }
-      if (!readInternalImage(raw.config)) {
+      const internalConfig = readObject(raw.config);
+      if (!readInternalImage(internalConfig)) {
         json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_internal_image_required' });
+        return true;
+      }
+      const validationError = validateInternalSandboxConfig(internalConfig);
+      if (validationError) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: validationError });
         return true;
       }
     }
@@ -263,20 +308,6 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_notebook_endpoint_required' });
       return true;
     }
-    const requestedMode = raw.mode === 'internal' || raw.mode === 'external'
-      ? raw.mode
-      : existing.mode;
-    if (requestedMode === 'internal') {
-      if (!deps.internalAgentPodManager) {
-        json(res, 422, { error_code: 'AGENT_SANDBOX_NOT_CONFIGURED', message: 'agent_sandbox_not_configured' });
-        return true;
-      }
-      const config = raw.config !== undefined ? raw.config : existing.config;
-      if (!readInternalImage(config)) {
-        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_internal_image_required' });
-        return true;
-      }
-    }
     const existingConfig = readObject(existing.config) ?? {};
     const incomingConfig = readObject(raw.config);
     let mergedConfig = incomingConfig
@@ -285,7 +316,26 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         ...incomingConfig,
       }
       : undefined;
+    const requestedMode = raw.mode === 'internal' || raw.mode === 'external'
+      ? raw.mode
+      : existing.mode;
     if (requestedMode === 'internal') {
+      if (!deps.internalAgentPodManager) {
+        json(res, 422, { error_code: 'AGENT_SANDBOX_NOT_CONFIGURED', message: 'agent_sandbox_not_configured' });
+        return true;
+      }
+      const effectiveConfig = mergedConfig ?? existingConfig;
+      if (!readInternalImage(effectiveConfig)) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'agent_internal_image_required' });
+        return true;
+      }
+    }
+    if (requestedMode === 'internal') {
+      const validationError = validateInternalSandboxConfig(mergedConfig);
+      if (validationError) {
+        json(res, 422, { error_code: 'VALIDATION_ERROR', message: validationError });
+        return true;
+      }
       const currentRawKey = typeof existingConfig._internal_raw_key === 'string'
         ? existingConfig._internal_raw_key
         : '';

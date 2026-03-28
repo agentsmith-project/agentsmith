@@ -17,6 +17,10 @@ import type { UpdateAgentRequest } from '@/lib/api/endpoints/agents';
 import type { Agent } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+} from '@mbos/contracts';
 import { EditAgentBasicsSection } from './agent-dialogs/EditAgentBasicsSection';
 import { EditExecutionPreferencesSection } from './agent-dialogs/EditExecutionPreferencesSection';
 import { EditInternalAgentSection } from './agent-dialogs/EditInternalAgentSection';
@@ -62,8 +66,8 @@ export function EditAgentDialog({
   const [cpuLimit, setCpuLimit] = React.useState('2');
   const [memoryRequest, setMemoryRequest] = React.useState('512Mi');
   const [memoryLimit, setMemoryLimit] = React.useState('4Gi');
-  const [idleTimeoutSec, setIdleTimeoutSec] = React.useState('1800');
-  const [maxLifetimeSec, setMaxLifetimeSec] = React.useState('86400');
+  const [idleTimeoutSec, setIdleTimeoutSec] = React.useState(String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS));
+  const [maxLifetimeSec, setMaxLifetimeSec] = React.useState(String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS));
   const [envEntries, setEnvEntries] = React.useState<EnvEntry[]>([{ key: '', value: '' }]);
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);

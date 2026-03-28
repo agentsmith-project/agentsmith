@@ -52,6 +52,7 @@ wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
 
 kubectl get csidriver csi.juicefs.com >/dev/null
 kubectl get deploy sandbox-manager -n agentsmith-sandbox >/dev/null
+kubectl get cronjob sandbox-manager-cleaner -n agentsmith-sandbox >/dev/null
 docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true || die "preset verify failed: external-runner not running"
 docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 | grep -q '\[agent-codex-runner\] connected' || die "preset verify failed: external-runner not connected"
 docker_compose ps --status running universal-proxy | grep -q universal-proxy || die "preset verify failed: universal-proxy not running"

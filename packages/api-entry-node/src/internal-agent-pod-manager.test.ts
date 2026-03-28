@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
 import { InternalAgentPodManagerImpl, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import type { AgentRecord } from './resource-models.js';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+} from '@mbos/contracts';
 
 function buildAgent(config: Record<string, unknown>): AgentRecord {
   return {
@@ -209,5 +213,58 @@ describe('internal-agent-pod-manager', () => {
       if (previous.memoryLimit === undefined) delete process.env.INTERNAL_AGENT_DEFAULT_MEMORY_LIMIT;
       else process.env.INTERNAL_AGENT_DEFAULT_MEMORY_LIMIT = previous.memoryLimit;
     }
+  });
+
+  it('uses normalized sandbox lifecycle defaults when agent config omits them', async () => {
+    const createOrEnsurePod = vi.fn().mockResolvedValue({ httpStatus: 201, pod: { phase: 'Running' } });
+    const manager = new InternalAgentPodManagerImpl(
+      {
+        checkReady: vi.fn().mockResolvedValue(undefined),
+        getPodStatus: vi.fn()
+          .mockResolvedValueOnce({ phase: 'offline' })
+          .mockResolvedValueOnce({ phase: 'Running' }),
+        createOrEnsurePod,
+        deletePod: vi.fn().mockResolvedValue(undefined),
+        keepalive: vi.fn().mockResolvedValue(null),
+        exec: vi.fn(),
+      },
+      {
+        getAgentOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+        getAgentSessionOnlineState: vi.fn()
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(false)
+          .mockReturnValueOnce(true),
+      },
+      'ws://api:20000',
+      {
+        phasePollIntervalMs: 1,
+        onlinePollIntervalMs: 1,
+      },
+    );
+
+    await manager.ensureAgentReady({
+      workspaceId: 'ws_1',
+      projectId: 'proj_1',
+      workloadId: 'task_1',
+      sessionId: 'task_1',
+      agent: buildAgent({
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_xxx',
+      }),
+    });
+
+    expect(createOrEnsurePod).toHaveBeenCalledWith(
+      'ws_1',
+      'proj_1',
+      'task_1',
+      expect.objectContaining({
+        idle_timeout_sec: INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+        max_lifetime_sec: INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+      }),
+    );
   });
 });

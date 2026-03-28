@@ -16,6 +16,10 @@ import { AgentAPI, EndpointAPI, getApiClient } from '@/lib/api';
 import type { CreateAgentRequest } from '@/lib/api/endpoints/agents';
 import { toast } from '@/components/ui/toast';
 import { useApiError } from '@/lib/hooks/use-api-error';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+} from '@mbos/contracts';
 import { AgentBasicsSection } from './agent-dialogs/AgentBasicsSection';
 import { ExternalAgentSection } from './agent-dialogs/ExternalAgentSection';
 import { InternalAgentSection } from './agent-dialogs/InternalAgentSection';
@@ -56,8 +60,8 @@ export function CreateAgentDialog({
   const [cpuLimit, setCpuLimit] = React.useState('2');
   const [memoryRequest, setMemoryRequest] = React.useState('512Mi');
   const [memoryLimit, setMemoryLimit] = React.useState('4Gi');
-  const [idleTimeoutSec, setIdleTimeoutSec] = React.useState('1800');
-  const [maxLifetimeSec, setMaxLifetimeSec] = React.useState('86400');
+  const [idleTimeoutSec, setIdleTimeoutSec] = React.useState(String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS));
+  const [maxLifetimeSec, setMaxLifetimeSec] = React.useState(String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS));
 
   const agentAPI = React.useMemo(() => new AgentAPI(getApiClient()), []);
   const endpointAPI = React.useMemo(() => new EndpointAPI(getApiClient()), []);
@@ -104,8 +108,8 @@ export function CreateAgentDialog({
     setCpuLimit('2');
     setMemoryRequest('512Mi');
     setMemoryLimit('4Gi');
-    setIdleTimeoutSec('1800');
-    setMaxLifetimeSec('86400');
+    setIdleTimeoutSec(String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS));
+    setMaxLifetimeSec(String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS));
   };
 
   React.useEffect(() => {

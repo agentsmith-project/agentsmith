@@ -25,6 +25,7 @@
   ],
   "k8s_components": [
     "sandbox-manager",
+    "sandbox-manager-cleaner",
     "sandbox-manager-ingress",
     "internal-workloads",
     "external-dependency-services"

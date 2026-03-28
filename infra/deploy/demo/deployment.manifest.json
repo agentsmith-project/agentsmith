@@ -23,6 +23,7 @@
     "juicefs-csi-controller",
     "juicefs-csi-node",
     "sandbox-manager",
+    "sandbox-manager-cleaner",
     "internal-workloads"
   ],
   "address_roles": [

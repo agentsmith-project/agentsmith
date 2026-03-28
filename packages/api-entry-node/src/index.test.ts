@@ -14,6 +14,20 @@ import {
 } from './__integration__/chat-test-support.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './__integration__/test-support.js';
 
+async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): Promise<{ id: string; name: string }> {
+  const createLibraryRes = await apiFetch(
+    baseUrl,
+    '/api/v1/workspaces/ws_default/projects/proj_1/file-libraries',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ name, description: 'task workspace library' }),
+    },
+  );
+  expect(createLibraryRes.status).toBe(201);
+  return (await createLibraryRes.json()) as { id: string; name: string };
+}
+
 describe('api-entry-node me routes', () => {
   it('returns unread notification count for authenticated user', async () => {
     const { baseUrl } = startServer();
@@ -63,6 +77,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(createAgentRes.status).toBe(201);
     const agent = (await createAgentRes.json()) as { id: string };
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Truncate Trace Workspace');
 
     const keyRes = await apiFetch(
       baseUrl,
@@ -366,6 +381,84 @@ describe('api-entry-node projects routes', () => {
     expect(body.error_code).toBe('AGENT_SANDBOX_NOT_CONFIGURED');
   });
 
+  it('validates internal agent idle timeout floor on create', async () => {
+    const { baseUrl, deps } = startServer();
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+
+    const createInternalRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'internal-too-low-idle',
+          mode: 'internal',
+          interaction_mode: 'chat',
+          config: {
+            image: 'runner:v1',
+            idle_timeout_sec: 120,
+          },
+        }),
+      },
+    );
+    expect(createInternalRes.status).toBe(422);
+    const body = (await createInternalRes.json()) as { message?: string };
+    expect(body.message).toBe('idle_timeout_sec_too_low');
+  });
+
+  it('validates internal agent max lifetime against idle timeout on patch', async () => {
+    const { baseUrl, deps } = startServer();
+    deps.internalAgentPodManager = {
+      ensureAgentReady: vi.fn(async () => undefined),
+      keepalive: vi.fn(async () => undefined),
+      releasePod: vi.fn(async () => undefined),
+    };
+
+    const createInternalRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/agents',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: 'internal-patch-validate',
+          mode: 'internal',
+          interaction_mode: 'chat',
+          config: {
+            image: 'runner:v1',
+            idle_timeout_sec: 300,
+            max_lifetime_sec: 3600,
+          },
+        }),
+      },
+    );
+    expect(createInternalRes.status).toBe(201);
+    const created = (await createInternalRes.json()) as { id: string };
+
+    const patchRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/agents/${created.id}`,
+      {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config: {
+            idle_timeout_sec: 900,
+            max_lifetime_sec: 700,
+          },
+        }),
+      },
+    );
+    expect(patchRes.status).toBe(422);
+    const body = (await patchRes.json()) as { message?: string };
+    expect(body.message).toBe('max_lifetime_sec_lt_idle_timeout_sec');
+  });
+
   it('returns AGENT_SANDBOX_NOT_CONFIGURED for internal agent chat stream without pod manager', async () => {
     const { baseUrl, deps } = startServer();
     const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
@@ -518,6 +611,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           title: 'Internal Task',
           agent_id: internalAgent.id,
+          workspace_mode: 'create_new',
           initial_inputs: [],
         }),
       },
@@ -630,6 +724,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           title: 'Internal Task Delete',
           agent_id: internalAgent.id,
+          workspace_mode: 'create_new',
           initial_inputs: [],
         }),
       },
@@ -750,6 +845,17 @@ describe('api-entry-node projects routes', () => {
           wire_api: 'responses',
           base_url: 'https://example.com',
           model: 'glm-4.7',
+          model_profile: {
+            max_context_tokens: 204800,
+            max_output_tokens: 128000,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
+          },
           credential_ref: credential.id,
         }),
       },
@@ -774,6 +880,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(createAgent.status).toBe(201);
     const agent = (await createAgent.json()) as { id: string };
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Truncate Trace Workspace');
 
     const createAgentKeyRes = await apiFetch(
       baseUrl,
@@ -826,7 +933,15 @@ describe('api-entry-node projects routes', () => {
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Truncate trace details', agent_id: agent.id }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Truncate trace details',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
     );
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
@@ -839,12 +954,12 @@ describe('api-entry-node projects routes', () => {
     expect(postMessageRes.status).toBe(200);
 
     let tracesBody: { items: Array<{ details?: Record<string, unknown> }> } | null = null;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const tracesRes = await apiFetch(baseUrl, `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/traces`);
       expect(tracesRes.status).toBe(200);
       tracesBody = (await tracesRes.json()) as { items: Array<{ details?: Record<string, unknown> }> };
-      if (tracesBody.items.length > 0) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (tracesBody.items.some((item) => item.details?._truncated === true)) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
     expect(tracesBody).not.toBeNull();
     const detailEvent = tracesBody!.items.find((item) => item.details && Object.keys(item.details).length > 0);
@@ -854,7 +969,7 @@ describe('api-entry-node projects routes', () => {
     expect(typeof detailEvent!.details?._preview).toBe('string');
 
     executionSocket.close();
-  });
+  }, 20_000);
 
   it('writes notebook task data to docStore (tasks/messages/traces)', async () => {
     const deps = createDefaultNodeApiDeps();
@@ -885,6 +1000,17 @@ describe('api-entry-node projects routes', () => {
           wire_api: 'responses',
           base_url: 'https://example.com',
           model: 'glm-4.7',
+          model_profile: {
+            max_context_tokens: 204800,
+            max_output_tokens: 128000,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
+          },
           credential_ref: credential.id,
         }),
       },
@@ -909,6 +1035,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(createAgent.status).toBe(201);
     const agent = (await createAgent.json()) as { id: string };
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Persist Notebook Workspace');
 
     const createAgentKeyRes = await apiFetch(
       baseUrl,
@@ -964,7 +1091,15 @@ describe('api-entry-node projects routes', () => {
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Persist notebook docs', agent_id: agent.id }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Persist notebook docs',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
     );
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
@@ -976,13 +1111,16 @@ describe('api-entry-node projects routes', () => {
     );
     expect(postMessageRes.status).toBe(200);
 
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const traces = await deps.docStore.list<{ task_id: string }>('ws_default_notebook_task_trace_events', { task_id: task.id });
       const msgs = await deps.docStore.list<{ task_id: string; role: string; content: string }>('ws_default_notebook_task_messages', { task_id: task.id });
-      if (traces.length > 0 && msgs.some((m) => m.role === 'agent' && m.content.includes('persisted-output'))) {
+      if (
+        traces.some((trace) => trace.task_id === task.id)
+        && msgs.some((m) => m.role === 'agent' && m.content.includes('persisted-output'))
+      ) {
         break;
       }
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
 
     const baseTasks = await deps.docStore.list<{ id: string }>('notebook_tasks', {});
@@ -1001,7 +1139,7 @@ describe('api-entry-node projects routes', () => {
     expect(storedTraces.some((t) => t.category === 'progress')).toBe(true);
 
     executionSocket.close();
-  });
+  }, 20_000);
 
   it('keeps docStore traces bounded when retention truncation is triggered', async () => {
     const deps = createDefaultNodeApiDeps();
@@ -1032,6 +1170,17 @@ describe('api-entry-node projects routes', () => {
           wire_api: 'responses',
           base_url: 'https://example.com',
           model: 'glm-4.7',
+          model_profile: {
+            max_context_tokens: 204800,
+            max_output_tokens: 128000,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
+          },
           credential_ref: credential.id,
         }),
       },
@@ -1056,6 +1205,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(createAgent.status).toBe(201);
     const agent = (await createAgent.json()) as { id: string };
+    const workspaceLibrary = await createFileLibrary(baseUrl, 'Trace Retention Workspace');
 
     const createAgentKeyRes = await apiFetch(
       baseUrl,
@@ -1107,7 +1257,15 @@ describe('api-entry-node projects routes', () => {
     const createTaskRes = await apiFetch(
       baseUrl,
       '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: 'Trace retention bound', agent_id: agent.id }) },
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Trace retention bound',
+          agent_id: agent.id,
+          workspace_file_library_id: workspaceLibrary.id,
+        }),
+      },
     );
     expect(createTaskRes.status).toBe(201);
     const task = (await createTaskRes.json()) as { id: string };
@@ -1120,13 +1278,16 @@ describe('api-entry-node projects routes', () => {
     expect(postMessageRes.status).toBe(200);
 
     let storedTraces: Array<{ task_id: string; summary: string; name: string }> = [];
-    for (let attempt = 0; attempt < 200; attempt += 1) {
+    for (let attempt = 0; attempt < 300; attempt += 1) {
       storedTraces = await deps.docStore.list<{ task_id: string; summary: string; name: string }>(
         'ws_default_notebook_task_trace_events',
         { task_id: task.id },
       );
-      if (storedTraces.some((t) => t.name === 'trace.buffer')) break;
-      await new Promise((resolve) => setTimeout(resolve, 20));
+      if (
+        storedTraces.some((t) => t.name === 'trace.buffer')
+        || (storedTraces.length === 1000 && storedTraces.some((t) => t.summary === 'evt-1009'))
+      ) break;
+      await new Promise((resolve) => setTimeout(resolve, 50));
     }
 
     expect(storedTraces.length).toBeLessThanOrEqual(1000);
@@ -1138,6 +1299,6 @@ describe('api-entry-node projects routes', () => {
     expect(storedTraces.some((t) => t.summary === 'evt-1009')).toBe(true);
 
     executionSocket.close();
-  });
+  }, 20_000);
 
 });

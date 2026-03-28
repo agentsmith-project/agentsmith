@@ -11,6 +11,7 @@ import { writeProjectAuditEvent, writeProjectUsageFact } from './audit-usage-rec
 import { buildNotebookTaskInputs, type NotebookTaskInputRefRecord } from './notebook-input-refs.js';
 import { buildTaskTraceEvent, storeTaskTraceEvent } from './notebook-trace-store.js';
 import { buildSandboxStartingEvent, sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { enforceEndpointGovernancePreflight } from './governance-endpoint-preflight.js';
 import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
@@ -356,7 +357,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
           task.project_id,
           workloadId,
         ).catch(() => undefined);
-      }, 60_000);
+      }, INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000);
     }
     const wireApi = notebookPreferences.wire_api === 'responses' ? 'responses' : 'chat';
     const userHandle = buildProxyUsername(user);

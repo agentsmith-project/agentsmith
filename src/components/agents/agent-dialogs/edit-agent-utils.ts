@@ -1,6 +1,10 @@
 import type { UpdateAgentRequest } from '@/lib/api/endpoints/agents';
 import type { Agent } from '@/lib/api/types';
 import type { ExecutionPreferences } from '@/components/settings/ExecutionPreferencesEditor';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+} from '@mbos/contracts';
 
 import type { AgentInteractionMode, EnvEntry } from './types';
 
@@ -51,10 +55,14 @@ export function getEditAgentFormState(agent: Agent): EditAgentFormState {
       ? String(agent.capabilities.max_total_bytes)
       : '',
     externalMultimodal: agent.capabilities?.multimodal_completion ?? false,
-    idleTimeoutSec: typeof config.idle_timeout_sec === 'number' ? String(config.idle_timeout_sec) : '1800',
+    idleTimeoutSec: typeof config.idle_timeout_sec === 'number'
+      ? String(config.idle_timeout_sec)
+      : String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS),
     image: typeof config.image === 'string' ? config.image : '',
     interactionMode: agent.interaction_mode ?? 'both',
-    maxLifetimeSec: typeof config.max_lifetime_sec === 'number' ? String(config.max_lifetime_sec) : '86400',
+    maxLifetimeSec: typeof config.max_lifetime_sec === 'number'
+      ? String(config.max_lifetime_sec)
+      : String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS),
     memoryLimit: typeof config.memory_limit === 'string' ? config.memory_limit : '4Gi',
     memoryRequest: typeof config.memory_request === 'string' ? config.memory_request : '512Mi',
     name: agent.name ?? '',

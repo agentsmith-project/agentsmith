@@ -1,6 +1,12 @@
 import type { AgentRecord } from './resource-models.js';
 import type { ExecResponse, PodStatusResponse, SandboxPodCreateBody } from './sandbox-manager-client.js';
 import type { InternalAgentWorkspaceMount } from './internal-agent-workspace-provisioner.js';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS,
+} from '@mbos/contracts';
 
 interface SandboxManagerClientLike {
   createOrEnsurePod(
@@ -252,6 +258,15 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
     if (this.getOnlineState(agent.id, sessionId)) return;
 
     const config = readInternalConfig(agent);
+    const idleTimeoutSec = Math.max(
+      config.idleTimeoutSec ?? INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+      INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS,
+    );
+    const maxLifetimeSec = Math.max(
+      config.maxLifetimeSec ?? INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+      INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS,
+      idleTimeoutSec,
+    );
     const deadline = Date.now() + this.startupTimeoutMs;
     try {
       await this.sandboxClient.checkReady();
@@ -286,8 +301,8 @@ export class InternalAgentPodManagerImpl implements InternalAgentPodManager {
         cpu_limit: config.cpuLimit ?? '2',
         memory_request: config.memoryRequest ?? '512Mi',
         memory_limit: config.memoryLimit ?? '4Gi',
-        idle_timeout_sec: config.idleTimeoutSec ?? 1800,
-        max_lifetime_sec: config.maxLifetimeSec ?? 86400,
+        idle_timeout_sec: idleTimeoutSec,
+        max_lifetime_sec: maxLifetimeSec,
         ...(workspaceMount?.bindingId ? { workspace_binding_id: workspaceMount.bindingId } : {}),
       });
       status = await this.sandboxClient.getPodStatus(workspaceId, projectId, workloadId);

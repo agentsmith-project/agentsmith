@@ -1,6 +1,7 @@
 'use client';
 
 import { Plus, Trash2 } from 'lucide-react';
+import { INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS, INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS } from '@mbos/contracts';
 
 import { Input } from '@/components/ui/input';
 
@@ -158,28 +159,28 @@ export function InternalAgentSection({
 
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-2">
-          <label className="text-sm text-primary">{t('create_dialog.cpu_request')}</label>
-          <Input value={cpuRequest} onChange={(event) => onCpuRequestChange(event.target.value)} disabled={createPending} />
+          <label htmlFor="internal-agent-cpu-request" className="text-sm text-primary">{t('create_dialog.cpu_request')}</label>
+          <Input id="internal-agent-cpu-request" value={cpuRequest} onChange={(event) => onCpuRequestChange(event.target.value)} disabled={createPending} />
         </div>
         <div className="space-y-2">
-          <label className="text-sm text-primary">{t('create_dialog.cpu_limit')}</label>
-          <Input value={cpuLimit} onChange={(event) => onCpuLimitChange(event.target.value)} disabled={createPending} />
+          <label htmlFor="internal-agent-cpu-limit" className="text-sm text-primary">{t('create_dialog.cpu_limit')}</label>
+          <Input id="internal-agent-cpu-limit" value={cpuLimit} onChange={(event) => onCpuLimitChange(event.target.value)} disabled={createPending} />
         </div>
         <div className="space-y-2">
-          <label className="text-sm text-primary">{t('create_dialog.memory_request')}</label>
-          <Input value={memoryRequest} onChange={(event) => onMemoryRequestChange(event.target.value)} disabled={createPending} />
+          <label htmlFor="internal-agent-memory-request" className="text-sm text-primary">{t('create_dialog.memory_request')}</label>
+          <Input id="internal-agent-memory-request" value={memoryRequest} onChange={(event) => onMemoryRequestChange(event.target.value)} disabled={createPending} />
         </div>
         <div className="space-y-2">
-          <label className="text-sm text-primary">{t('create_dialog.memory_limit')}</label>
-          <Input value={memoryLimit} onChange={(event) => onMemoryLimitChange(event.target.value)} disabled={createPending} />
+          <label htmlFor="internal-agent-memory-limit" className="text-sm text-primary">{t('create_dialog.memory_limit')}</label>
+          <Input id="internal-agent-memory-limit" value={memoryLimit} onChange={(event) => onMemoryLimitChange(event.target.value)} disabled={createPending} />
         </div>
         <div className="space-y-2">
-          <label className="text-sm text-primary">{t('create_dialog.idle_timeout_sec')}</label>
-          <Input type="number" min={60} value={idleTimeoutSec} onChange={(event) => onIdleTimeoutSecChange(event.target.value)} disabled={createPending} />
+          <label htmlFor="internal-agent-idle-timeout-sec" className="text-sm text-primary">{t('create_dialog.idle_timeout_sec')}</label>
+          <Input id="internal-agent-idle-timeout-sec" type="number" min={INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS} value={idleTimeoutSec} onChange={(event) => onIdleTimeoutSecChange(event.target.value)} disabled={createPending} />
         </div>
         <div className="space-y-2">
-          <label className="text-sm text-primary">{t('create_dialog.max_lifetime_sec')}</label>
-          <Input type="number" min={600} value={maxLifetimeSec} onChange={(event) => onMaxLifetimeSecChange(event.target.value)} disabled={createPending} />
+          <label htmlFor="internal-agent-max-lifetime-sec" className="text-sm text-primary">{t('create_dialog.max_lifetime_sec')}</label>
+          <Input id="internal-agent-max-lifetime-sec" type="number" min={INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS} value={maxLifetimeSec} onChange={(event) => onMaxLifetimeSecChange(event.target.value)} disabled={createPending} />
         </div>
       </div>
     </div>

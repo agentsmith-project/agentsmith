@@ -31,6 +31,7 @@ import {
   toChatAttachmentSnapshots,
 } from './chat-input-refs.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 
 interface ChatStreamHandlerArgs {
@@ -637,7 +638,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
             route.projectId,
             workloadId,
           ).catch(() => undefined);
-        }, 60_000);
+        }, INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS * 1000);
       }
       const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
         deps.docStore,

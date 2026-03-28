@@ -1,5 +1,11 @@
 import { z } from 'zod';
 
+export const INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS = 60;
+export const INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS = 180;
+export const INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS = 300;
+export const INTERNAL_AGENT_MAX_LIFETIME_MIN_SECONDS = 600;
+export const INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS = 3600;
+
 export const ProjectVisibilitySchema = z.enum(['public', 'private']);
 export const ProjectJoinPolicySchema = z.enum(['approval_required', 'open']);
 export const ProjectStatusSchema = z.enum(['active', 'archived', 'deleted']);

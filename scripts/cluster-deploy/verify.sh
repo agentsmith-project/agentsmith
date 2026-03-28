@@ -31,6 +31,7 @@ wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 wait_http "${SANDBOX_MANAGER_PUBLIC_BASE_URL}/readyz" 240
 
 kubectl get deploy sandbox-manager -n "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
+kubectl get cronjob sandbox-manager-cleaner -n "${INTERNAL_AGENT_K8S_NAMESPACE}" >/dev/null
 docker inspect -f '{{.State.Running}}' "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>/dev/null | grep -q true || die "verify failed: external-runner not running"
 runner_logs="$(docker logs "${EXTERNAL_RUNNER_CONTAINER_NAME}" 2>&1 || true)"
 grep -q '\[agent-codex-runner\] connected' <<<"${runner_logs}" || die "verify failed: external-runner not connected"

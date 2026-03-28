@@ -4,6 +4,11 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NextIntlClientProvider } from 'next-intl';
 import { CreateAgentDialog } from '../CreateAgentDialog';
 import { EditAgentDialog } from '../EditAgentDialog';
+import {
+  INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS,
+  INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS,
+  INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS,
+} from '@mbos/contracts';
 
 const mockCreate = vi.fn();
 const mockUpdate = vi.fn();
@@ -231,5 +236,25 @@ describe('Agent dialogs', () => {
     expect(payload.config.env).toEqual({ FOO: 'baz' });
     expect(payload.execution_preferences.notebook.endpoint_id).toBe('ep_active_1');
     expect(payload.execution_preferences.notebook.model).toBeUndefined();
+  });
+
+  it('CreateAgentDialog uses the normalized internal sandbox defaults', async () => {
+    renderWithProviders(
+      <CreateAgentDialog
+        open
+        onOpenChange={vi.fn()}
+        workspaceId="ws_1"
+        projectId="proj_1"
+      />,
+    );
+
+    fireEvent.click(await screen.findByLabelText('Internal'));
+
+    const idleTimeoutInput = screen.getByLabelText('Idle Timeout (sec)') as HTMLInputElement;
+    const maxLifetimeInput = screen.getByLabelText('Max Lifetime (sec)') as HTMLInputElement;
+
+    expect(idleTimeoutInput.value).toBe(String(INTERNAL_AGENT_IDLE_TIMEOUT_DEFAULT_SECONDS));
+    expect(idleTimeoutInput.min).toBe(String(INTERNAL_AGENT_IDLE_TIMEOUT_MIN_SECONDS));
+    expect(maxLifetimeInput.value).toBe(String(INTERNAL_AGENT_MAX_LIFETIME_DEFAULT_SECONDS));
   });
 });

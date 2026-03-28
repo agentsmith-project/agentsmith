@@ -262,6 +262,39 @@ spec:
           configMap:
             name: sandbox-manager-config
 ---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: sandbox-manager-cleaner
+  namespace: agentsmith-sandbox
+spec:
+  schedule: "*/1 * * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          serviceAccountName: sandbox-manager
+          restartPolicy: Never
+          containers:
+            - name: cleaner
+              image: ${SANDBOX_MANAGER_IMAGE}
+              imagePullPolicy: IfNotPresent
+              command:
+                - /cleaner
+                - --namespace=agentsmith-sandbox
+                - --dry-run=false
+                - --log-level=info
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+---
 apiVersion: v1
 kind: Service
 metadata:

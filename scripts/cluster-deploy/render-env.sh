@@ -42,6 +42,13 @@ load_agentsmith_presets "${ROOT_DIR}"
 source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
+if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
+  if [[ "${PUBLIC_WEB_BASE_URL}" == https://* ]]; then
+    SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true
+  else
+    SYSTEM_ADMIN_SESSION_COOKIE_SECURE=false
+  fi
+fi
 COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL="${COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL:-${SANDBOX_MANAGER_PUBLIC_BASE_URL}}"
 COMPOSE_RUNTIME_NO_PROXY="$(compose_runtime_no_proxy \
   "${SANDBOX_MANAGER_INGRESS_HOST:-}" \
@@ -107,6 +114,10 @@ for url_key in \
   SANDBOX_MANAGER_PUBLIC_BASE_URL; do
   validate_http_url "${url_key}" "${!url_key}"
 done
+
+if [[ "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE}" == "true" && "${PUBLIC_WEB_BASE_URL}" != https://* ]]; then
+  die "SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true requires PUBLIC_WEB_BASE_URL to use https"
+fi
 
 cat > "${RELEASE_ROOT}/env/base.env" <<EOF
 POSTGRES_USER=${POSTGRES_USER}

@@ -33,6 +33,13 @@ load_agentsmith_presets "${ROOT_DIR}"
 source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
+if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
+  if [[ "${PUBLIC_WEB_BASE_URL}" == https://* ]]; then
+    SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true
+  else
+    SYSTEM_ADMIN_SESSION_COOKIE_SECURE=false
+  fi
+fi
 COMPOSE_RUNTIME_NO_PROXY="$(compose_runtime_no_proxy)"
 set +a
 
@@ -135,6 +142,10 @@ for url_key in \
   CLIENT_PUBLIC_MINIO_ENDPOINT; do
   validate_http_url "${url_key}" "${!url_key}"
 done
+
+if [[ "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE}" == "true" && "${PUBLIC_WEB_BASE_URL}" != https://* ]]; then
+  die "SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true requires PUBLIC_WEB_BASE_URL to use https"
+fi
 
 bash "${RELEASE_SCRIPT_DIR}/resolve-runtime-addresses.sh"
 

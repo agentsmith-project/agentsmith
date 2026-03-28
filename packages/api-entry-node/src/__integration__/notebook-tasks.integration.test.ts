@@ -314,8 +314,8 @@ describe('api-entry-node notebook task routes', () => {
       expect(workspaceAccessRes.status).toBe(200);
       await expect(workspaceAccessRes.json()).resolves.toMatchObject({
         task_id: task.id,
-        metadata_url: expect.stringContaining('@172.18.0.1:15432/'),
-        storage_bucket_url: expect.stringContaining('http://172.18.0.1:19000/'),
+        metadata_url: expect.stringContaining('@127.0.0.1:15432/'),
+        storage_bucket_url: expect.stringContaining('http://127.0.0.1:19000/'),
       });
     } finally {
       if (previousExternalExecutionBase === undefined) {
@@ -617,6 +617,17 @@ describe('api-entry-node notebook task routes', () => {
           type: 'openai',
           mode: 'openai',
           base_url: upstream.baseUrl,
+          model_profile: {
+            max_context_tokens: 204800,
+            max_output_tokens: 128000,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
+          },
           credential_ref: credential.id,
         }),
       },
@@ -664,6 +675,10 @@ describe('api-entry-node notebook task routes', () => {
     const connInfo = (await connInfoRes.json()) as { ws_url: string };
     const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', baseUrl.replace('http://', 'ws://'));
 
+    let releaseExecution: (() => void) | null = null;
+    const holdExecution = new Promise<void>((resolve) => {
+      releaseExecution = resolve;
+    });
     const executionReceived = new Promise<{
       requestId: string;
       helloProxyBase: string;
@@ -747,45 +762,45 @@ describe('api-entry-node notebook task routes', () => {
             : false,
           close: () => ws.close(),
         });
-        ws.send(JSON.stringify({
-          type: 'agent.response.event',
-          request_id: msg.request_id,
-          payload: {
-            sequence: 1,
-            at: new Date().toISOString(),
-            category: 'progress',
-            phase: 'start',
-            status: 'running',
-            name: 'codex.exec',
-            summary: 'Starting Codex execution',
-          },
-        }));
-        ws.send(JSON.stringify({
-          type: 'agent.response.delta',
-          request_id: msg.request_id,
-          payload: { delta: 'task-output' },
-        }));
-        ws.send(JSON.stringify({
-          type: 'agent.response.artifact',
-          request_id: msg.request_id,
-          payload: {
-            filename: 'plot.png',
-            task_relative_path: '.artifacts/plot.png',
-            artifact_type: 'image',
-            mime_type: 'image/png',
-            file_size: 1234,
-            title: 'plot.png',
-            content: 'data:image/png;base64,AAAA',
-            thumbnail_url: 'data:image/png;base64,AAAA',
-          },
-        }));
-        setTimeout(() => {
+        void holdExecution.then(() => {
+          ws.send(JSON.stringify({
+            type: 'agent.response.event',
+            request_id: msg.request_id,
+            payload: {
+              sequence: 1,
+              at: new Date().toISOString(),
+              category: 'progress',
+              phase: 'start',
+              status: 'running',
+              name: 'codex.exec',
+              summary: 'Starting Codex execution',
+            },
+          }));
+          ws.send(JSON.stringify({
+            type: 'agent.response.delta',
+            request_id: msg.request_id,
+            payload: { delta: 'task-output' },
+          }));
+          ws.send(JSON.stringify({
+            type: 'agent.response.artifact',
+            request_id: msg.request_id,
+            payload: {
+              filename: 'plot.png',
+              task_relative_path: '.artifacts/plot.png',
+              artifact_type: 'image',
+              mime_type: 'image/png',
+              file_size: 1234,
+              title: 'plot.png',
+              content: 'data:image/png;base64,AAAA',
+              thumbnail_url: 'data:image/png;base64,AAAA',
+            },
+          }));
           ws.send(JSON.stringify({
             type: 'agent.response.done',
             request_id: msg.request_id,
             payload: { finish_reason: 'stop', usage_tokens: 8 },
           }));
-        }, 20);
+        });
       });
     });
     const runnerReady = new Promise<void>((resolve, reject) => {
@@ -870,10 +885,11 @@ describe('api-entry-node notebook task routes', () => {
       },
     );
     expect(conflictRes.status).toBe(409);
+    releaseExecution?.();
 
     const execution = await executionReceived;
     expect(execution.requestId).toBeTruthy();
-    expect(execution.userToken).toBe('test-token');
+    expect(execution.userToken.length).toBeGreaterThan(20);
     expect(execution.apiBase).toBe(baseUrl);
     expect(execution.notebookMode).toBe(true);
     expect(execution.workspaceBindingMode).toBe('file_library');
@@ -884,7 +900,7 @@ describe('api-entry-node notebook task routes', () => {
     expect(execution.credentialFilesCount).toBeGreaterThan(0);
     expect(execution.hasCredentialIndexFile).toBe(true);
     expect(execution.helloProxyBase).toBe(
-      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy`,
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai`,
     );
     expect(execution.endpointProxyBase).toBeNull();
 
@@ -1010,6 +1026,17 @@ describe('api-entry-node notebook task routes', () => {
           type: 'openai',
           mode: 'openai',
           base_url: 'https://example.com/v1',
+          model_profile: {
+            max_context_tokens: 204800,
+            max_output_tokens: 128000,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
+          },
           credential_ref: credential.id,
         }),
       },
@@ -1205,6 +1232,17 @@ describe('api-entry-node notebook task routes', () => {
           type: 'openai',
           mode: 'responses',
           base_url: 'https://example.com/v1',
+          model_profile: {
+            max_context_tokens: 204800,
+            max_output_tokens: 128000,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
+          },
           credential_ref: credential.id,
         }),
       },

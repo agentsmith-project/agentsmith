@@ -16,6 +16,8 @@ import {
   deleteInternalWorkloadViaManager,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
+  waitForWorkloadPodDeleted,
+  waitForWorkloadPodIdentity,
 } from './integration-real-helpers';
 import { readStoredAuthToken } from './integration-workspace-access';
 
@@ -35,16 +37,18 @@ type CaptureEntry = {
   route: string;
 };
 
-function requireInternalSandboxEnv(): void {
+function requireInternalSandboxEnv(): string {
+  const namespace = process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim();
   if (!process.env.SANDBOX_MANAGER_URL?.trim()) {
     throw new Error('missing_SANDBOX_MANAGER_URL');
   }
   if (!process.env.SANDBOX_SERVICE_KEY?.trim()) {
     throw new Error('missing_SANDBOX_SERVICE_KEY');
   }
-  if (!process.env.INTERNAL_AGENT_K8S_NAMESPACE?.trim()) {
+  if (!namespace) {
     throw new Error('missing_INTERNAL_AGENT_K8S_NAMESPACE');
   }
+  return namespace;
 }
 
 function requireRealLaneApiKey(): string {
@@ -269,7 +273,7 @@ async function flushArtifacts(captures: CaptureEntry[]): Promise<void> {
 test.describe('@lane-real internal notebook workspace via sandbox manager', () => {
   test('lazy-starts an internal agent, writes into /workspace, and resumes after workload reclaim', async ({ page }) => {
     test.setTimeout(900_000);
-    requireInternalSandboxEnv();
+    const namespace = requireInternalSandboxEnv();
     const glmApiKey = requireRealLaneApiKey();
     const captures: CaptureEntry[] = [];
 
@@ -372,13 +376,22 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
         .toContain(firstToken);
 
       const workloadId = sanitizeWorkloadId(taskId);
+      const firstWorkloadPod = await waitForWorkloadPodIdentity({
+        namespace,
+        workloadId,
+        timeoutMs: 120_000,
+      });
       console.log('[internal-real] delete workload', workloadId);
       await deleteInternalWorkloadViaManager({
         workspaceId: 'ws_default',
         projectId,
         workloadId,
       });
-      await page.waitForTimeout(5_000);
+      await waitForWorkloadPodDeleted({
+        namespace,
+        workloadId,
+        timeoutMs: 60_000,
+      });
 
       const secondToken = `INTERNAL_WORKSPACE_RESUME_${Date.now()}`;
       const secondArtifact = `internal-resume-${Date.now()}.md`;
@@ -411,6 +424,13 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
         artifactPath: path.join(localMount.mountPath, '.artifacts', secondArtifact),
         minAgentMessages: 2,
       });
+      const secondWorkloadPod = await waitForWorkloadPodIdentity({
+        namespace,
+        workloadId,
+        timeoutMs: 120_000,
+      });
+      expect(secondWorkloadPod.name).toBe(firstWorkloadPod.name);
+      expect(secondWorkloadPod.uid).not.toBe(firstWorkloadPod.uid);
       await capturePage(page, captures, 'internal-task-detail-resumed', 'internal-k8s workload reclaim 后再次恢复执行的任务详情页');
 
       console.log('[internal-real] verify second artifact via local mount');

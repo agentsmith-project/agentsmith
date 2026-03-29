@@ -695,6 +695,42 @@ export async function waitForWorkloadPodPresent(args: {
   return podName;
 }
 
+export async function waitForWorkloadPodIdentity(args: {
+  namespace: string;
+  workloadId: string;
+  timeoutMs?: number;
+}): Promise<{ name: string; uid: string }> {
+  let pod = { name: '', uid: '' };
+  await expect
+    .poll(
+      async () => {
+        const result = await spawnAndCapture(
+          'kubectl',
+          [
+            'get',
+            'pods',
+            '-n',
+            args.namespace,
+            '-l',
+            `workload_id=${args.workloadId}`,
+            '-o',
+            'jsonpath={.items[0].metadata.name}{"\\n"}{.items[0].metadata.uid}',
+          ],
+          { env: withoutProxyEnv(process.env) },
+        );
+        const [name, uid] = result.stdout
+          .split('\n')
+          .map((value) => value.trim())
+          .filter(Boolean);
+        pod = { name: name ?? '', uid: uid ?? '' };
+        return pod.name && pod.uid ? pod : null;
+      },
+      { timeout: args.timeoutMs ?? 120_000, intervals: [1_000, 2_000, 5_000] },
+    )
+    .not.toBeNull();
+  return pod;
+}
+
 export async function waitForWorkloadPodDeleted(args: {
   namespace: string;
   workloadId: string;

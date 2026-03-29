@@ -17,6 +17,7 @@ import {
   sendTaskMessage,
   waitForAssistantToken,
   waitForWorkloadPodDeleted,
+  waitForWorkloadPodIdentity,
   waitForWorkloadPodPresent,
 } from './integration-real-helpers';
 
@@ -52,7 +53,7 @@ function buildNotebookCommand(token: string, fileName: string): string {
 }
 
 test.describe('@lane-real internal sandbox reclaim', () => {
-  test('reclaims idle workload pods and resumes cleanup after manager restart', async ({ page }) => {
+  test('reclaims idle workload pods, preserves unexpired pods across manager restart, and cleans expired pods after restart', async ({ page }) => {
     test.setTimeout(1_200_000);
     const { namespace } = requireReclaimEnv();
     const apiKey = requireApiKey();
@@ -131,16 +132,32 @@ test.describe('@lane-real internal sandbox reclaim', () => {
     });
 
     const workloadId2 = sanitizeWorkloadId(taskId2);
-    await waitForWorkloadPodPresent({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
+    const workloadPod2 = await waitForWorkloadPodIdentity({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
     await runInternalSandboxControl('stop-cleaner');
     await runInternalSandboxControl('stop-manager');
+    await runInternalSandboxControl('start-manager');
+
+    const workloadPod2AfterRestart = await waitForWorkloadPodIdentity({
+      namespace,
+      workloadId: workloadId2,
+      timeoutMs: 30_000,
+    });
+    expect(workloadPod2AfterRestart).toEqual(workloadPod2);
+
+    await runInternalSandboxControl('run-cleaner-once');
+    const workloadPod2AfterCleaner = await waitForWorkloadPodIdentity({
+      namespace,
+      workloadId: workloadId2,
+      timeoutMs: 10_000,
+    });
+    expect(workloadPod2AfterCleaner).toEqual(workloadPod2);
+
     await patchWorkloadPodExpiry({
       namespace,
       workloadId: workloadId2,
       expiresAt: new Date(Date.now() - 60_000).toISOString(),
     });
-    await runInternalSandboxControl('start-manager');
-    await runInternalSandboxControl('start-cleaner');
+    await runInternalSandboxControl('run-cleaner-once');
     await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId2, timeoutMs: 120_000 });
 
     expect(true).toBe(true);

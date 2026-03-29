@@ -33,6 +33,7 @@ load_agentsmith_presets "${ROOT_DIR}"
 source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
+MBOS_AGENT_JUICEFS_MOUNT_OPTIONS="${MBOS_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
   if [[ "${PUBLIC_WEB_BASE_URL}" == https://* ]]; then
     SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true

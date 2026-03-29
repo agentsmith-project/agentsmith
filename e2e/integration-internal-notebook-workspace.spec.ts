@@ -13,7 +13,6 @@ import {
   createFileLibraryViaUi,
   createInternalCodexAgent,
   createProjectInWorkspace,
-  deleteInternalWorkloadViaManager,
   keycloakLoginToWorkspace,
   mountFileLibraryLocally,
   waitForWorkloadPodDeleted,
@@ -301,6 +300,8 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       endpointId,
       title: 'internal-codex-workspace',
       image: INTERNAL_AGENT_IMAGE,
+      idleTimeoutSec: 180,
+      maxLifetimeSec: 3600,
     });
 
     const taskTitle = `Internal Workspace Task ${Date.now()}`;
@@ -381,16 +382,11 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
         workloadId,
         timeoutMs: 120_000,
       });
-      console.log('[internal-real] delete workload', workloadId);
-      await deleteInternalWorkloadViaManager({
-        workspaceId: 'ws_default',
-        projectId,
-        workloadId,
-      });
+      console.log('[internal-real] wait for idle reclaim', workloadId);
       await waitForWorkloadPodDeleted({
         namespace,
         workloadId,
-        timeoutMs: 60_000,
+        timeoutMs: 330_000,
       });
 
       const secondToken = `INTERNAL_WORKSPACE_RESUME_${Date.now()}`;

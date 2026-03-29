@@ -10,6 +10,8 @@ load_registry_env
 
 require_cmd docker
 
+K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST}}"
+
 APP_SOURCE_DIR="${RELEASE_ROOT}/sources/agentsmith"
 SANDBOX_SOURCE_DIR="${RELEASE_ROOT}/sources/mbos-sandbox-v1/manager-service"
 UNIVERSAL_PROXY_SOURCE_DIR="${RELEASE_ROOT}/sources/llm-universal-proxy"
@@ -81,12 +83,15 @@ cat > "${RELEASE_ROOT}/VERSION" <<EOF
 release_id=${RELEASE_ID}
 agentsmith_app_image=${APP_IMAGE}
 agentsmith_runner_image=${RUNNER_IMAGE}
+agentsmith_runner_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/agentsmith-codex-runner:${RELEASE_ID}
 agentsmith_verify_runner_image=${VERIFY_RUNNER_IMAGE}
 sandbox_manager_image=${SANDBOX_MANAGER_IMAGE}
+sandbox_manager_k8s_image=${K8S_REGISTRY_HOST}/${REGISTRY_PROJECT}/sandbox-manager:${RELEASE_ID}
 llm_universal_proxy_image=${UNIVERSAL_PROXY_IMAGE}
 juicefs_csi_version=${JUICEFS_CSI_VERSION}
 ingress_nginx_version=${INGRESS_NGINX_VERSION}
 registry_host=${REGISTRY_HOST}
+k8s_registry_host=${K8S_REGISTRY_HOST}
 registry_project=${REGISTRY_PROJECT}
 EOF
 

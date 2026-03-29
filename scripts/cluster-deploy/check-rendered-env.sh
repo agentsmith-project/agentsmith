@@ -8,6 +8,35 @@ RELEASE_ROOT="${TMP_ROOT}/release"
 mkdir -p "${RELEASE_ROOT}/env"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env"
+cat > "${RELEASE_ROOT}/env/registry.env" <<'EOF'
+REGISTRY_HOST=localhost:5001
+REGISTRY_PROJECT=mbos
+REGISTRY_USERNAME=
+REGISTRY_PASSWORD=
+K8S_REGISTRY_HOST=kind-registry:5000
+EOF
+cat > "${RELEASE_ROOT}/VERSION" <<'EOF'
+release_id=test-release
+agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release
+agentsmith_runner_image=localhost:5001/mbos/agentsmith-codex-runner:test-release
+agentsmith_runner_k8s_image=kind-registry:5000/mbos/agentsmith-codex-runner:test-release
+agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release
+sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release
+sandbox_manager_k8s_image=kind-registry:5000/mbos/sandbox-manager:test-release
+llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release
+juicefs_mount_image=localhost:5001/mbos/thirdparty-docker-io-juicedata-mount:ce-v1.3.1
+juicefs_csi_driver_image=localhost:5001/mbos/thirdparty-docker-io-juicedata-juicefs-csi-driver:v0.31.3
+juicefs_csi_dashboard_image=localhost:5001/mbos/thirdparty-docker-io-juicedata-csi-dashboard:v0.31.3
+juicefs_csi_provisioner_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-csi-provisioner:v3.6.0
+juicefs_csi_resizer_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-csi-resizer:v1.9.0
+juicefs_csi_livenessprobe_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-livenessprobe:v2.11.0
+juicefs_csi_node_registrar_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-csi-node-driver-registrar:v2.9.0
+ingress_nginx_controller_image=localhost:5001/mbos/thirdparty-registry-k8s-io-ingress-nginx-controller:v1.12.1
+ingress_nginx_certgen_image=localhost:5001/mbos/thirdparty-registry-k8s-io-ingress-nginx-kube-webhook-certgen:v1.6.9
+registry_host=localhost:5001
+k8s_registry_host=kind-registry:5000
+registry_project=mbos
+EOF
 
 DEPLOY_ROOT="${TMP_ROOT}/cluster-root" RELEASE_ROOT="${RELEASE_ROOT}" \
   bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
@@ -53,6 +82,47 @@ text = text.replace("SANDBOX_MANAGER_PUBLIC_BASE_URL=https://sandbox-manager.mbo
 text = text.replace("COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=", "COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL=http://172.30.1.244")
 (release / "env/site.env.example").write_text(text, encoding="utf-8")
 (release / "env/site.env").write_text(text, encoding="utf-8")
+(release / "env/registry.env").write_text(
+    "\n".join(
+        [
+            "REGISTRY_HOST=localhost:5001",
+            "REGISTRY_PROJECT=mbos",
+            "REGISTRY_USERNAME=",
+            "REGISTRY_PASSWORD=",
+            "K8S_REGISTRY_HOST=kind-registry:5000",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
+(release / "VERSION").write_text(
+    "\n".join(
+        [
+            "release_id=test-release",
+            "agentsmith_app_image=localhost:5001/mbos/agentsmith-app:test-release",
+            "agentsmith_runner_image=localhost:5001/mbos/agentsmith-codex-runner:test-release",
+            "agentsmith_runner_k8s_image=kind-registry:5000/mbos/agentsmith-codex-runner:test-release",
+            "agentsmith_verify_runner_image=localhost:5001/mbos/agentsmith-verify-runner:test-release",
+            "sandbox_manager_image=localhost:5001/mbos/sandbox-manager:test-release",
+            "sandbox_manager_k8s_image=kind-registry:5000/mbos/sandbox-manager:test-release",
+            "llm_universal_proxy_image=localhost:5001/mbos/llm-universal-proxy:test-release",
+            "juicefs_mount_image=localhost:5001/mbos/thirdparty-docker-io-juicedata-mount:ce-v1.3.1",
+            "juicefs_csi_driver_image=localhost:5001/mbos/thirdparty-docker-io-juicedata-juicefs-csi-driver:v0.31.3",
+            "juicefs_csi_dashboard_image=localhost:5001/mbos/thirdparty-docker-io-juicedata-csi-dashboard:v0.31.3",
+            "juicefs_csi_provisioner_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-csi-provisioner:v3.6.0",
+            "juicefs_csi_resizer_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-csi-resizer:v1.9.0",
+            "juicefs_csi_livenessprobe_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-livenessprobe:v2.11.0",
+            "juicefs_csi_node_registrar_image=localhost:5001/mbos/thirdparty-registry-k8s-io-sig-storage-csi-node-driver-registrar:v2.9.0",
+            "ingress_nginx_controller_image=localhost:5001/mbos/thirdparty-registry-k8s-io-ingress-nginx-controller:v1.12.1",
+            "ingress_nginx_certgen_image=localhost:5001/mbos/thirdparty-registry-k8s-io-ingress-nginx-kube-webhook-certgen:v1.6.9",
+            "registry_host=localhost:5001",
+            "k8s_registry_host=kind-registry:5000",
+            "registry_project=mbos",
+            "",
+        ]
+    ),
+    encoding="utf-8",
+)
 subprocess.run(
     ["bash", str(root / "scripts/cluster-deploy/render-env.sh")],
     check=True,

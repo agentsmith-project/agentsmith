@@ -119,10 +119,47 @@ for item in data:
  if sec is not None: lines.append("          tolerationSeconds: " + str(sec))
 print("\n".join(lines))' "${SANDBOX_MANAGER_TOLERATIONS_JSON}")"
 if [[ -z "${NODE_SELECTOR_YAML}" ]]; then
-  NODE_SELECTOR_YAML="        {}"
+  NODE_SELECTOR_BLOCK="      nodeSelector: {}"
+  JOB_NODE_SELECTOR_BLOCK="          nodeSelector: {}"
+else
+  NODE_SELECTOR_BLOCK="$(cat <<EOF
+      nodeSelector:
+${NODE_SELECTOR_YAML}
+EOF
+)"
+  JOB_NODE_SELECTOR_YAML="$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); print("\n".join([f"          {k}: {v}" for k,v in data.items()]))' "${SANDBOX_MANAGER_NODE_SELECTOR_JSON}")"
+  JOB_NODE_SELECTOR_BLOCK="$(cat <<EOF
+          nodeSelector:
+${JOB_NODE_SELECTOR_YAML}
+EOF
+)"
 fi
 if [[ -z "${TOLERATIONS_YAML}" ]]; then
-  TOLERATIONS_YAML="        []"
+  TOLERATIONS_BLOCK="      tolerations: []"
+  JOB_TOLERATIONS_BLOCK="          tolerations: []"
+else
+  TOLERATIONS_BLOCK="$(cat <<EOF
+      tolerations:
+${TOLERATIONS_YAML}
+EOF
+)"
+  JOB_TOLERATIONS_YAML="$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); lines=[];
+for item in data:
+ lines.append(\"          - key: \" + item.get(\"key\",\"\"))
+ op=item.get(\"operator\")
+ if op: lines.append(\"            operator: \" + op)
+ val=item.get(\"value\")
+ if val is not None: lines.append(\"            value: \" + str(val))
+ eff=item.get(\"effect\")
+ if eff: lines.append(\"            effect: \" + eff)
+ sec=item.get(\"tolerationSeconds\")
+ if sec is not None: lines.append(\"            tolerationSeconds: \" + str(sec))
+print(\"\\n\".join(lines))' "${SANDBOX_MANAGER_TOLERATIONS_JSON}")"
+  JOB_TOLERATIONS_BLOCK="$(cat <<EOF
+          tolerations:
+${JOB_TOLERATIONS_YAML}
+EOF
+)"
 fi
 INGRESS_RULE_HOST_BLOCK=""
 if [[ -n "${SANDBOX_MANAGER_INGRESS_HOST:-}" ]]; then
@@ -204,13 +241,11 @@ spec:
     spec:
       automountServiceAccountToken: false
 ${IMAGE_PULL_SECRETS_YAML}
-      nodeSelector:
-${NODE_SELECTOR_YAML}
-      tolerations:
-${TOLERATIONS_YAML}
+${NODE_SELECTOR_BLOCK}
+${TOLERATIONS_BLOCK}
       containers:
         - name: manager
-          image: ${SANDBOX_MANAGER_IMAGE}
+          image: ${K8S_SANDBOX_MANAGER_IMAGE}
           imagePullPolicy: ${SANDBOX_MANAGER_IMAGE_PULL_POLICY:-IfNotPresent}
           ports:
             - containerPort: 8080
@@ -236,7 +271,7 @@ ${TOLERATIONS_YAML}
             - name: JUICEFS_MOUNT_SERVICE_ACCOUNT
               value: ${INTERNAL_AGENT_JUICEFS_MOUNT_SERVICE_ACCOUNT}
             - name: JUICEFS_MOUNT_IMAGE
-              value: ${JUICEFS_MOUNT_IMAGE}
+              value: ${K8S_JUICEFS_MOUNT_IMAGE}
             - name: JUICEFS_STORAGE_ENDPOINT
               value: http://minio-external.${INTERNAL_AGENT_K8S_NAMESPACE}.svc.cluster.local:9000
             - name: JUICEFS_STORAGE_ACCESS_KEY
@@ -291,16 +326,14 @@ spec:
     spec:
       template:
         spec:
-          serviceAccountName: sandbox-manager
+          serviceAccountName: agentsmith-manager
 ${IMAGE_PULL_SECRETS_YAML}
-          nodeSelector:
-${NODE_SELECTOR_YAML}
-          tolerations:
-${TOLERATIONS_YAML}
+${JOB_NODE_SELECTOR_BLOCK}
+${JOB_TOLERATIONS_BLOCK}
           restartPolicy: Never
           containers:
             - name: cleaner
-              image: ${SANDBOX_MANAGER_IMAGE}
+              image: ${K8S_SANDBOX_MANAGER_IMAGE}
               imagePullPolicy: ${SANDBOX_MANAGER_IMAGE_PULL_POLICY:-IfNotPresent}
               command:
                 - /cleaner

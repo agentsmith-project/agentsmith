@@ -30,6 +30,9 @@ derive_ws_base_from_http_base() {
 
 ensure_dirs
 mkdir -p "${RELEASE_ROOT}/env"
+ensure_operator_registry_env
+load_registry_env
+require_version_images
 SITE_ENV_EXAMPLE="${RELEASE_ROOT}/env/site.env.example"
 SITE_ENV="${RELEASE_ROOT}/env/site.env"
 [[ -f "${SITE_ENV_EXAMPLE}" ]] || die "missing site env example at ${SITE_ENV_EXAMPLE}"
@@ -42,6 +45,7 @@ load_agentsmith_presets "${ROOT_DIR}"
 source "${SITE_ENV}"
 apply_non_environment_preset_defaults
 apply_preset_endpoint_defaults
+MBOS_AGENT_JUICEFS_MOUNT_OPTIONS="${MBOS_AGENT_JUICEFS_MOUNT_OPTIONS:-}"
 if [[ -z "${SYSTEM_ADMIN_SESSION_COOKIE_SECURE:-}" ]]; then
   if [[ "${PUBLIC_WEB_BASE_URL}" == https://* ]]; then
     SYSTEM_ADMIN_SESSION_COOKIE_SECURE=true
@@ -59,9 +63,8 @@ K8S_EXTERNAL_API_BASE_URL="${K8S_EXTERNAL_API_BASE_URL:-${PUBLIC_API_BASE_URL}}"
 K8S_EXTERNAL_API_WS_BASE_URL="$(derive_ws_base_from_http_base "${K8S_EXTERNAL_API_BASE_URL}")"
 set +a
 
-BUNDLED_JUICEFS_MOUNT_IMAGE="$(awk -F= '$1=="juicefs_mount_image"{print $2}' "${RELEASE_ROOT}/VERSION" 2>/dev/null || true)"
-if [[ -n "${BUNDLED_JUICEFS_MOUNT_IMAGE}" ]]; then
-  INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${BUNDLED_JUICEFS_MOUNT_IMAGE}"
+if [[ -n "${K8S_JUICEFS_MOUNT_IMAGE:-}" ]]; then
+  INTERNAL_AGENT_JUICEFS_MOUNT_IMAGE="${K8S_JUICEFS_MOUNT_IMAGE}"
 fi
 
 for required_nonempty_key in \
@@ -240,6 +243,7 @@ EOF
 
 cat > "${RELEASE_ROOT}/env/internal.env" <<EOF
 INTERNAL_AGENT_K8S_NAMESPACE=${INTERNAL_AGENT_K8S_NAMESPACE}
+INTERNAL_AGENT_IMAGE=${K8S_RUNNER_IMAGE}
 INTERNAL_AGENT_JUICEFS_CSI_DRIVER=${INTERNAL_AGENT_JUICEFS_CSI_DRIVER}
 INTERNAL_AGENT_WORKSPACE_CAPACITY=${INTERNAL_AGENT_WORKSPACE_CAPACITY}
 INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME=${INTERNAL_AGENT_JUICEFS_STORAGE_CLASS_NAME}

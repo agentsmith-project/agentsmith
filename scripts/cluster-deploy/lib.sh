@@ -136,8 +136,9 @@ load_registry_env() {
     [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
     local key="${line%%=*}"
     local value="${line#*=}"
-    export "${key}=${value}"
-  done < "${RELEASE_ROOT}/env/registry.env"
+        export "${key}=${value}"
+      done < "${RELEASE_ROOT}/env/registry.env"
+  export K8S_REGISTRY_HOST="${K8S_REGISTRY_HOST:-${REGISTRY_HOST:-}}"
 }
 
 load_kubeconfig() {
@@ -158,7 +159,9 @@ read_version_value() {
 require_version_images() {
   APP_IMAGE="$(read_version_value agentsmith_app_image)"
   RUNNER_IMAGE="$(read_version_value agentsmith_runner_image)"
+  K8S_RUNNER_IMAGE="$(read_version_value agentsmith_runner_k8s_image)"
   SANDBOX_MANAGER_IMAGE="$(read_version_value sandbox_manager_image)"
+  K8S_SANDBOX_MANAGER_IMAGE="$(read_version_value sandbox_manager_k8s_image)"
   UNIVERSAL_PROXY_IMAGE="$(read_version_value llm_universal_proxy_image)"
   VERIFY_RUNNER_IMAGE="$(read_version_value agentsmith_verify_runner_image)"
   JUICEFS_MOUNT_IMAGE="$(read_version_value juicefs_mount_image)"
@@ -170,7 +173,39 @@ require_version_images() {
   JUICEFS_CSI_NODE_REGISTRAR_IMAGE="$(read_version_value juicefs_csi_node_registrar_image)"
   INGRESS_NGINX_CONTROLLER_IMAGE="$(read_version_value ingress_nginx_controller_image)"
   INGRESS_NGINX_CERTGEN_IMAGE="$(read_version_value ingress_nginx_certgen_image)"
-  export APP_IMAGE RUNNER_IMAGE SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE JUICEFS_CSI_DRIVER_IMAGE JUICEFS_CSI_DASHBOARD_IMAGE JUICEFS_CSI_PROVISIONER_IMAGE JUICEFS_CSI_RESIZER_IMAGE JUICEFS_CSI_LIVENESSPROBE_IMAGE JUICEFS_CSI_NODE_REGISTRAR_IMAGE INGRESS_NGINX_CONTROLLER_IMAGE INGRESS_NGINX_CERTGEN_IMAGE
+  local image_var image_value k8s_var_name k8s_value
+  if [[ -z "${K8S_RUNNER_IMAGE}" ]]; then
+    K8S_RUNNER_IMAGE="${RUNNER_IMAGE}"
+    if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${RUNNER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
+      K8S_RUNNER_IMAGE="${K8S_REGISTRY_HOST}/${RUNNER_IMAGE#${REGISTRY_HOST}/}"
+    fi
+  fi
+  if [[ -z "${K8S_SANDBOX_MANAGER_IMAGE}" ]]; then
+    K8S_SANDBOX_MANAGER_IMAGE="${SANDBOX_MANAGER_IMAGE}"
+    if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${SANDBOX_MANAGER_IMAGE}" == "${REGISTRY_HOST}/"* ]]; then
+      K8S_SANDBOX_MANAGER_IMAGE="${K8S_REGISTRY_HOST}/${SANDBOX_MANAGER_IMAGE#${REGISTRY_HOST}/}"
+    fi
+  fi
+  for image_var in \
+    JUICEFS_MOUNT_IMAGE \
+    JUICEFS_CSI_DRIVER_IMAGE \
+    JUICEFS_CSI_DASHBOARD_IMAGE \
+    JUICEFS_CSI_PROVISIONER_IMAGE \
+    JUICEFS_CSI_RESIZER_IMAGE \
+    JUICEFS_CSI_LIVENESSPROBE_IMAGE \
+    JUICEFS_CSI_NODE_REGISTRAR_IMAGE \
+    INGRESS_NGINX_CONTROLLER_IMAGE \
+    INGRESS_NGINX_CERTGEN_IMAGE; do
+    image_value="${!image_var}"
+    k8s_value="${image_value}"
+    if [[ -n "${K8S_REGISTRY_HOST:-}" && -n "${REGISTRY_HOST:-}" && "${image_value}" == "${REGISTRY_HOST}/"* ]]; then
+      k8s_value="${K8S_REGISTRY_HOST}/${image_value#${REGISTRY_HOST}/}"
+    fi
+    k8s_var_name="K8S_${image_var}"
+    printf -v "${k8s_var_name}" '%s' "${k8s_value}"
+    export "${k8s_var_name}"
+  done
+  export APP_IMAGE RUNNER_IMAGE K8S_RUNNER_IMAGE SANDBOX_MANAGER_IMAGE K8S_SANDBOX_MANAGER_IMAGE UNIVERSAL_PROXY_IMAGE VERIFY_RUNNER_IMAGE JUICEFS_MOUNT_IMAGE JUICEFS_CSI_DRIVER_IMAGE JUICEFS_CSI_DASHBOARD_IMAGE JUICEFS_CSI_PROVISIONER_IMAGE JUICEFS_CSI_RESIZER_IMAGE JUICEFS_CSI_LIVENESSPROBE_IMAGE JUICEFS_CSI_NODE_REGISTRAR_IMAGE INGRESS_NGINX_CONTROLLER_IMAGE INGRESS_NGINX_CERTGEN_IMAGE K8S_JUICEFS_MOUNT_IMAGE K8S_JUICEFS_CSI_DRIVER_IMAGE K8S_JUICEFS_CSI_DASHBOARD_IMAGE K8S_JUICEFS_CSI_PROVISIONER_IMAGE K8S_JUICEFS_CSI_RESIZER_IMAGE K8S_JUICEFS_CSI_LIVENESSPROBE_IMAGE K8S_JUICEFS_CSI_NODE_REGISTRAR_IMAGE K8S_INGRESS_NGINX_CONTROLLER_IMAGE K8S_INGRESS_NGINX_CERTGEN_IMAGE
   [[ -n "${APP_IMAGE}" && -n "${RUNNER_IMAGE}" && -n "${SANDBOX_MANAGER_IMAGE}" && -n "${UNIVERSAL_PROXY_IMAGE}" && -n "${VERIFY_RUNNER_IMAGE}" ]] \
     || die "VERSION is missing prebuilt image refs; rebuild bundle on the development machine with cluster:bundle"
   [[ -n "${JUICEFS_MOUNT_IMAGE}" ]] \

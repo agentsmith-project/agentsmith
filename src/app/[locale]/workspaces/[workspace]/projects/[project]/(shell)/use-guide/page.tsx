@@ -3,13 +3,12 @@
 import { useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
-import { Copy, KeyRound, LinkIcon, ServerCog } from 'lucide-react';
+import { Copy, KeyRound, LinkIcon, ServerCog, ShieldCheck, TerminalSquare } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -289,29 +288,40 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
   return (
     <PageState state="success">
       <PageLayout header={<PageHeader title={t('title')} subtitle={t('subtitle')} variant="compact" />}>
-        <div className="mx-auto max-w-5xl space-y-6" data-testid="use-guide__page">
+        <div className="w-full space-y-6" data-testid="use-guide__page">
           <section className="rounded-[28px] border border-subtle bg-surface/95 px-6 py-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
-              <div className="max-w-2xl space-y-3">
-                <h2 className="text-lg font-semibold text-foreground">{t('selection.title')}</h2>
-                <p className="text-sm leading-6 text-tertiary">{t('selection.description')}</p>
-                <div className="flex flex-wrap gap-3 text-sm">
-                  <Link href={`/${locale}/user/api-keys`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-api-keys">
-                    <KeyRound className="h-4 w-4 text-secondary" />
-                    {t('quick_links.api_keys')}
-                  </Link>
-                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-endpoints">
-                    <ServerCog className="h-4 w-4 text-secondary" />
-                    {t('quick_links.endpoints')}
-                  </Link>
-                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-resource-policy">
-                    <LinkIcon className="h-4 w-4 text-secondary" />
-                    {t('quick_links.resource_policy')}
-                  </Link>
+            <div className="grid gap-5 xl:grid-cols-[minmax(0,1.35fr)_minmax(21rem,0.9fr)]">
+              <div className="space-y-4">
+                <Badge variant="outline" className="rounded-full px-3 py-1 text-[11px] tracking-[0.18em]" data-testid="use-guide__hero-badge">
+                  {t('hero.badge')}
+                </Badge>
+                <div className="space-y-3">
+                  <h2 className="max-w-4xl text-xl font-semibold leading-8 text-foreground">
+                    {t('hero.title')}
+                  </h2>
+                  <p className="max-w-4xl text-sm leading-7 text-tertiary">
+                    {t('hero.description')}
+                  </p>
+                </div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-[20px] border border-subtle bg-bg-base/40 p-4" data-testid="use-guide__hero-local-agent">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <TerminalSquare className="h-4 w-4 text-secondary" />
+                      {t('hero.local_agent.title')}
+                    </div>
+                    <p className="text-sm leading-6 text-tertiary">{t('hero.local_agent.description')}</p>
+                  </div>
+                  <div className="rounded-[20px] border border-subtle bg-bg-base/40 p-4" data-testid="use-guide__hero-governance">
+                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-foreground">
+                      <ShieldCheck className="h-4 w-4 text-secondary" />
+                      {t('hero.governance.title')}
+                    </div>
+                    <p className="text-sm leading-6 text-tertiary">{t('hero.governance.description')}</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="min-w-0 rounded-[22px] border border-subtle bg-bg-base/40 px-4 py-4 lg:w-[22rem]">
+              <div className="min-w-0 rounded-[22px] border border-subtle bg-bg-base/40 px-4 py-4">
                 <div className="space-y-3 text-sm">
                   <div data-testid="use-guide__status-api-keys">
                     <div className="flex items-start justify-between gap-3">
@@ -335,173 +345,206 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                     </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </section>
 
-          <section className="space-y-4">
-            <div className="space-y-2">
-              <div className="text-xs font-medium uppercase tracking-[0.2em] text-secondary">{t('selection.title')}</div>
-              {canReadEndpoints ? (
-                selectedEndpoint || endpointsLoading ? (
-                  <Select
-                    value={selectedEndpoint?.id ?? ''}
-                    onValueChange={(value) => updateQuery({ endpoint: value })}
-                    disabled={endpointsLoading || usableEndpoints.length === 0}
-                  >
-                    <SelectTrigger className="h-12 rounded-[18px] border-subtle bg-surface/95 text-left shadow-[0_10px_30px_rgba(0,0,0,0.12)]" data-testid="use-guide__endpoint-select">
-                      <SelectValue placeholder={t('selection.placeholder')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {usableEndpoints.map((endpoint) => (
-                        <SelectItem key={endpoint.id} value={endpoint.id}>
-                          {endpoint.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                ) : (
-                  <div className="rounded-[18px] border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-empty">
-                    {t('selection.empty')}
-                  </div>
-                )
-              ) : (
-                <div className="rounded-[18px] border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-unavailable">
-                  {t('selection.no_read_access')}
+                <div className="mt-4 flex flex-wrap gap-3 text-sm">
+                  <Link href={`/${locale}/user/api-keys`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-api-keys">
+                    <KeyRound className="h-4 w-4 text-secondary" />
+                    {t('quick_links.api_keys')}
+                  </Link>
+                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/endpoints`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-endpoints">
+                    <ServerCog className="h-4 w-4 text-secondary" />
+                    {t('quick_links.endpoints')}
+                  </Link>
+                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/resource-policy`} className="inline-flex items-center gap-2 rounded-full border border-subtle px-4 py-2 text-foreground transition hover:border-strong hover:bg-bg-base/60" data-testid="use-guide__link-resource-policy">
+                    <LinkIcon className="h-4 w-4 text-secondary" />
+                    {t('quick_links.resource_policy')}
+                  </Link>
                 </div>
-              )}
-            </div>
-
-            {selectedEndpoint ? (
-              <div className="flex flex-wrap items-center gap-2" data-testid="use-guide__endpoint-summary">
-                <Badge variant="outline">{selectedEndpoint.name}</Badge>
-                <Badge variant={getEndpointStatusTone(selectedEndpoint)}>{selectedEndpoint.protocol ?? 'custom'}</Badge>
-                <Badge variant="secondary">{selectedModelName}</Badge>
               </div>
-            ) : null}
+            </div>
           </section>
 
           <section className="rounded-[28px] border border-subtle bg-surface/95 px-6 py-6 shadow-[0_18px_40px_rgba(0,0,0,0.16)]">
-            <div className="mb-5 space-y-2">
-              <h2 className="text-lg font-semibold text-foreground">{t('api_examples.title')}</h2>
-              <p className="text-sm leading-6 text-tertiary">{t('gateway.description')}</p>
-              <div className="text-sm text-tertiary">{t('protocols.helper')}</div>
-            </div>
+            <div className="space-y-8">
+              <div className="space-y-3">
+                <div className="text-xs font-medium uppercase tracking-[0.2em] text-secondary">{t('selection.title')}</div>
+                <p className="max-w-4xl text-sm leading-6 text-tertiary">{t('selection.description')}</p>
+              </div>
 
-            <div className="space-y-4 rounded-[22px] border border-subtle bg-bg-base/30 p-4">
-              <Tabs value={effectiveProtocol} onValueChange={(value) => updateQuery({ protocol: value as ProtocolTab })}>
-                <TabsList className="mb-4 grid h-auto w-full grid-cols-2 rounded-[16px] bg-bg-base/70 p-1">
-                  <TabsTrigger value="openai" disabled={!protocolSupport.openai} data-testid="use-guide__tab-openai">
-                    {t('protocols.openai.title')}
-                  </TabsTrigger>
-                  <TabsTrigger value="anthropic" disabled={!protocolSupport.anthropic} data-testid="use-guide__tab-anthropic">
-                    {t('protocols.anthropic.title')}
-                  </TabsTrigger>
-                </TabsList>
+              <div className="space-y-4">
+                <div className="grid gap-4 xl:grid-cols-[minmax(20rem,28rem)_minmax(0,1fr)] xl:items-start">
+                  {canReadEndpoints ? (
+                    selectedEndpoint || endpointsLoading ? (
+                      <Select
+                        value={selectedEndpoint?.id ?? ''}
+                        onValueChange={(value) => updateQuery({ endpoint: value })}
+                        disabled={endpointsLoading || usableEndpoints.length === 0}
+                      >
+                        <SelectTrigger className="h-12 rounded-[18px] border-subtle bg-bg-base/50 text-left" data-testid="use-guide__endpoint-select">
+                          <SelectValue placeholder={t('selection.placeholder')} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {usableEndpoints.map((endpoint) => (
+                            <SelectItem key={endpoint.id} value={endpoint.id}>
+                              {endpoint.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <div className="rounded-[18px] border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-empty">
+                        {t('selection.empty')}
+                      </div>
+                    )
+                  ) : (
+                    <div className="rounded-[18px] border border-dashed border-subtle bg-bg-base/30 p-4 text-sm text-tertiary" data-testid="use-guide__endpoint-unavailable">
+                      {t('selection.no_read_access')}
+                    </div>
+                  )}
 
-                <TabsContent value="openai" className="space-y-4" data-testid="use-guide__protocol-openai">
-                  <p className="text-sm text-tertiary">{t('protocols.openai.description')}</p>
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
-                    <div className="space-y-4">
-                      <GuideCodeBlock
-                        title={t('protocols.openai.base_url_label')}
-                        value={openAiBaseUrl}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__openai-base-url"
-                      />
-                      <GuideCodeBlock
-                        title={t('protocols.model_label')}
-                        value={selectedModelName}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__model-name"
-                      />
-                    </div>
-                    <div className="space-y-4">
-                      <GuideCodeBlock
-                        title={t('protocols.openai.codex_label')}
-                        value={codexSample}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__codex-sample"
-                      />
-                      <GuideCodeBlock
-                        title={t('protocols.openai.responses_label')}
-                        value={openAiResponsesCurl}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__openai-responses-curl"
-                      />
-                      <GuideCodeBlock
-                        title={t('protocols.openai.chat_label')}
-                        value={openAiCompletionCurl}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__openai-chat-curl"
-                      />
-                    </div>
+                  <div className="min-h-12">
+                    {selectedEndpoint ? (
+                      <div className="space-y-3" data-testid="use-guide__endpoint-summary">
+                        <div className="rounded-[18px] border border-subtle bg-bg-base/35 p-4">
+                          <div className="text-sm font-semibold text-foreground">{selectedEndpoint.name}</div>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <Badge variant={getEndpointStatusTone(selectedEndpoint)}>{selectedEndpoint.protocol ?? 'custom'}</Badge>
+                            <Badge variant="secondary">{selectedModelName}</Badge>
+                          </div>
+                        </div>
+                        <div className="text-sm leading-6 text-tertiary">{t('selection.endpoint_help')}</div>
+                      </div>
+                    ) : (
+                      <div className="text-sm leading-6 text-tertiary">{t('selection.endpoint_help')}</div>
+                    )}
                   </div>
-                </TabsContent>
+                </div>
+              </div>
 
-                <TabsContent value="anthropic" className="space-y-4" data-testid="use-guide__protocol-anthropic">
-                  <p className="text-sm text-tertiary">{t('protocols.anthropic.description')}</p>
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.35fr)]">
-                    <div className="space-y-4">
-                      <GuideCodeBlock
-                        title={t('protocols.anthropic.base_url_label')}
-                        value={anthropicBaseUrl}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__anthropic-base-url"
-                      />
-                      <GuideCodeBlock
-                        title={t('protocols.model_label')}
-                        value={selectedModelName}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__model-name-anthropic"
-                      />
-                    </div>
-                    <div className="space-y-4">
-                      <GuideCodeBlock
-                        title={t('protocols.anthropic.claude_label')}
-                        value={claudeSample}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__claude-sample"
-                      />
-                      <GuideCodeBlock
-                        title={t('protocols.anthropic.messages_label')}
-                        value={anthropicCurl}
-                        copyLabel={tCommon('copy')}
-                        testId="use-guide__anthropic-curl"
-                      />
-                    </div>
+              <div className="space-y-4 border-t border-subtle pt-8">
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-[0.2em] text-secondary">{t('gateway.title')}</div>
+                  <p className="max-w-4xl text-sm leading-6 text-tertiary">{t('gateway.description')}</p>
+                </div>
+                <GuideCodeBlock
+                  title={t('gateway.title')}
+                  value={endpointProxyRootUrl}
+                  copyLabel={tCommon('copy')}
+                  testId="use-guide__gateway-base-url"
+                />
+              </div>
+
+              <div className="space-y-8 border-t border-subtle pt-8">
+                <div className="space-y-2">
+                  <h2 className="text-lg font-semibold text-foreground">{t('api_examples.title')}</h2>
+                  <p className="max-w-4xl text-sm leading-6 text-tertiary">{t('api_examples.description')}</p>
+                  <div className="text-sm text-tertiary">{t('protocols.helper')}</div>
+                </div>
+
+                <div className="space-y-4">
+                  <Tabs value={effectiveProtocol} onValueChange={(value) => updateQuery({ protocol: value as ProtocolTab })}>
+                    <TabsList className="mb-4 grid h-auto w-full grid-cols-2 rounded-[16px] bg-bg-base/70 p-1">
+                      <TabsTrigger value="openai" disabled={!protocolSupport.openai} data-testid="use-guide__tab-openai">
+                        {t('protocols.openai.title')}
+                      </TabsTrigger>
+                      <TabsTrigger value="anthropic" disabled={!protocolSupport.anthropic} data-testid="use-guide__tab-anthropic">
+                        {t('protocols.anthropic.title')}
+                      </TabsTrigger>
+                    </TabsList>
+
+                    <TabsContent value="openai" className="space-y-4" data-testid="use-guide__protocol-openai">
+                      <p className="text-sm text-tertiary">{t('protocols.openai.description')}</p>
+                      <div className="space-y-4">
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <GuideCodeBlock
+                            title={t('protocols.openai.base_url_label')}
+                            value={openAiBaseUrl}
+                            copyLabel={tCommon('copy')}
+                            testId="use-guide__openai-base-url"
+                          />
+                          <GuideCodeBlock
+                            title={t('protocols.model_label')}
+                            value={selectedModelName}
+                            copyLabel={tCommon('copy')}
+                            testId="use-guide__model-name"
+                          />
+                        </div>
+                        <GuideCodeBlock
+                          title={t('protocols.openai.codex_label')}
+                          value={codexSample}
+                          copyLabel={tCommon('copy')}
+                          testId="use-guide__codex-sample"
+                        />
+                        <div className="grid gap-4 2xl:grid-cols-2">
+                          <GuideCodeBlock
+                            title={t('protocols.openai.responses_label')}
+                            value={openAiResponsesCurl}
+                            copyLabel={tCommon('copy')}
+                            testId="use-guide__openai-responses-curl"
+                          />
+                          <GuideCodeBlock
+                            title={t('protocols.openai.chat_label')}
+                            value={openAiCompletionCurl}
+                            copyLabel={tCommon('copy')}
+                            testId="use-guide__openai-chat-curl"
+                          />
+                        </div>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="anthropic" className="space-y-4" data-testid="use-guide__protocol-anthropic">
+                      <p className="text-sm text-tertiary">{t('protocols.anthropic.description')}</p>
+                      <div className="space-y-4">
+                        <div className="grid gap-4 xl:grid-cols-2">
+                          <GuideCodeBlock
+                            title={t('protocols.anthropic.base_url_label')}
+                            value={anthropicBaseUrl}
+                            copyLabel={tCommon('copy')}
+                            testId="use-guide__anthropic-base-url"
+                          />
+                          <GuideCodeBlock
+                            title={t('protocols.model_label')}
+                            value={selectedModelName}
+                            copyLabel={tCommon('copy')}
+                            testId="use-guide__model-name-anthropic"
+                          />
+                        </div>
+                        <GuideCodeBlock
+                          title={t('protocols.anthropic.claude_label')}
+                          value={claudeSample}
+                          copyLabel={tCommon('copy')}
+                          testId="use-guide__claude-sample"
+                        />
+                        <GuideCodeBlock
+                          title={t('protocols.anthropic.messages_label')}
+                          value={anthropicCurl}
+                          copyLabel={tCommon('copy')}
+                          testId="use-guide__anthropic-curl"
+                        />
+                      </div>
+                    </TabsContent>
+                  </Tabs>
+                </div>
+
+                <section className="space-y-4 border-t border-subtle pt-6">
+                  <div>
+                    <h2 className="text-base font-semibold text-foreground">{t('troubleshooting.title')}</h2>
                   </div>
-                </TabsContent>
-              </Tabs>
-            </div>
-
-            <div className="mt-6 space-y-3 border-t border-subtle pt-6">
-              <div className="text-xs font-medium uppercase tracking-[0.2em] text-secondary">{t('gateway.title')}</div>
-              <GuideCodeBlock
-                title={t('gateway.title')}
-                value={endpointProxyRootUrl}
-                copyLabel={tCommon('copy')}
-                testId="use-guide__gateway-base-url"
-              />
-            </div>
-          </section>
-
-          <section className="space-y-4 border-t border-subtle pt-4">
-            <div>
-              <h2 className="text-base font-semibold text-foreground">{t('troubleshooting.title')}</h2>
-            </div>
-            <div className="grid gap-3 lg:grid-cols-2">
-                {(['auth', 'endpoint', 'rate_limit', 'protocol'] as const).map((key) => (
-                  <div key={key} className="rounded-[18px] border border-subtle bg-bg-base/30 p-4 space-y-1" data-testid={`use-guide__troubleshooting__${key}`}>
-                    <div className="text-sm font-semibold text-foreground">{t(`troubleshooting.items.${key}.title`)}</div>
-                    <p className="text-sm text-tertiary">{t(`troubleshooting.items.${key}.description`)}</p>
-                  </div>
-                ))}
-            </div>
-            <div className="flex flex-wrap gap-3 text-sm">
-              <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`} className="text-accent hover:underline" data-testid="use-guide__link-usage">
-                {t('quick_links.usage')}
-              </Link>
+                <div className="grid gap-3 xl:grid-cols-2 2xl:grid-cols-4">
+                  {(['auth', 'endpoint', 'rate_limit', 'protocol'] as const).map((key) => (
+                    <div key={key} className="rounded-[18px] border border-subtle bg-bg-base/30 p-4 space-y-1" data-testid={`use-guide__troubleshooting__${key}`}>
+                      <div className="text-sm font-semibold text-foreground">{t(`troubleshooting.items.${key}.title`)}</div>
+                      <p className="text-sm text-tertiary">{t(`troubleshooting.items.${key}.description`)}</p>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex flex-wrap gap-3 text-sm">
+                  <Link href={`/${locale}/workspaces/${workspaceId}/projects/${projectId}/usage`} className="text-accent hover:underline" data-testid="use-guide__link-usage">
+                    {t('quick_links.usage')}
+                  </Link>
+                </div>
+                </section>
+              </div>
             </div>
           </section>
         </div>

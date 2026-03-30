@@ -1274,7 +1274,20 @@
   },
   "use_guide": {
     "title": "API 接入手册",
-    "subtitle": "先准备 API Key，再选一个 endpoint，然后直接复制客户端对应的接入命令。",
+    "subtitle": "面向高级用户：把 Codex CLI、Claude Code 或其他本地运行 Agent 直接接到 AgentSmith 推理接入能力。",
+    "hero": {
+      "badge": "高级接入",
+      "title": "把你的本地 Agent 接到 AgentSmith 管理的推理接口。",
+      "description": "当你希望让 Codex CLI、Claude Code 或其他本地运行 Agent 直接调用 AgentSmith 时，使用这个页面。即使请求来自本地 Agent，所选 endpoint 的访问权限、配额、审计和项目级策略仍然由 AgentSmith 统一管理。",
+      "local_agent": {
+        "title": "本地 Agent 接入",
+        "description": "这些示例面向会在本机运行 Codex CLI、Claude Code 等工具，并希望把它们接入当前项目 endpoint 的高级用户。"
+      },
+      "governance": {
+        "title": "仍由 AgentSmith 治理",
+        "description": "即使本地 Agent 直接调用 endpoint，请求在到达上游模型之前，仍然会先经过 AgentSmith 的访问控制、配额校验、审计与项目级策略。"
+      }
+    },
     "readiness": {
       "title": "接入准备",
       "states": {
@@ -1305,6 +1318,7 @@
     "selection": {
       "title": "选择 Endpoint",
       "description": "选择要接入的 endpoint，下方所有命令会自动联动更新。",
+      "endpoint_help": "切换 endpoint 会更新目标 URL 和推荐模型，但不会决定你使用哪种本地客户端。",
       "placeholder": "选择一个 endpoint",
       "empty": "当前项目还没有可用于 API 接入的 active endpoint。",
       "no_read_access": "当前账号可以使用项目接入能力，但无法读取 endpoint 清单。请向项目管理员确认 endpoint ID 和模型名。"
@@ -1314,7 +1328,8 @@
       "description": "AgentSmith 通过这个 endpoint 代理根地址统一承接项目级身份、鉴权和治理。实际接入时请使用下面的协议化 Base URL。"
     },
     "api_examples": {
-      "title": "可直接复制的接入示例"
+      "title": "可直接复制的接入示例",
+      "description": "选择你要接的客户端协议。endpoint 保持不变，变化的只是请求格式和示例命令。"
     },
     "protocols": {
       "model_label": "使用这个模型名",

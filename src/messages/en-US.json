@@ -1272,7 +1272,20 @@
   },
   "use_guide": {
     "title": "API Access Guide",
-    "subtitle": "Create an API key, pick an endpoint, then copy the protocol-specific command your client needs.",
+    "subtitle": "For advanced users who want to connect Codex CLI, Claude Code, or other local agents directly to AgentSmith inference access.",
+    "hero": {
+      "badge": "Advanced Access",
+      "title": "Connect your local agent to AgentSmith-managed inference access.",
+      "description": "Use this page when you want Codex CLI, Claude Code, or another locally running agent to call AgentSmith directly. The selected endpoint, the access permission, and the quota checks all stay under AgentSmith governance.",
+      "local_agent": {
+        "title": "Local agent access",
+        "description": "These examples are for advanced users who run local tools such as Codex CLI or Claude Code and want to connect them to a project endpoint."
+      },
+      "governance": {
+        "title": "AgentSmith still governs usage",
+        "description": "Even when a local agent calls the endpoint directly, AgentSmith still enforces access, quota, audit, and project-level policy before the request reaches the upstream model."
+      }
+    },
     "readiness": {
       "title": "Access Readiness",
       "states": {
@@ -1303,6 +1316,7 @@
     "selection": {
       "title": "Choose Endpoint",
       "description": "Pick the endpoint you want to connect to. All commands below will update automatically.",
+      "endpoint_help": "Changing the endpoint changes the target URL and recommended model. It does not decide which local client you use.",
       "placeholder": "Select an endpoint",
       "empty": "This project does not have an active endpoint for API access yet.",
       "no_read_access": "This account can use project access but cannot read the endpoint list. Ask the project manager for the endpoint ID and model name."
@@ -1312,7 +1326,8 @@
       "description": "AgentSmith uses this endpoint proxy root as the single project-scoped access entry. Use the protocol-specific base URL below in your client."
     },
     "api_examples": {
-      "title": "Copy-Ready Client Examples"
+      "title": "Copy-Ready Client Examples",
+      "description": "Choose the client protocol you need. The endpoint stays the same; only the request format and example command change."
     },
     "protocols": {
       "model_label": "Use this model name",

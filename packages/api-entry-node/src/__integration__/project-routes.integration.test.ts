@@ -240,6 +240,69 @@ describe('api-entry-node project routes integration', () => {
     expect(created.owner_id).toBe('user_alt');
   });
 
+  it('keeps workspace admin permissions when the actor email matches after an idp switch', async () => {
+    const { baseUrl } = startServer();
+    seedPersistedSystemWorkspacesForTest([
+      workspaceRecord({
+        id: 'ws_default',
+        name: 'Default Workspace',
+        adminEmail: 'owner@example.com',
+        adminUserId: 'user_owner',
+        adminName: 'Owner User',
+        projectCreators: [{ user_id: 'user_alt', email: 'alt@example.com', name: 'Alt User' }],
+        issuerUrl: process.env.KEYCLOAK_ISSUER_URL!,
+        realm: 'mbos',
+        clientId: 'agentsmith-web',
+      }),
+    ]);
+
+    const membersRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/members', 'owner-email-switch-token');
+    expect(membersRes.status).toBe(200);
+    const membersBody = (await membersRes.json()) as {
+      items: Array<{ user_id: string; email: string; permissions: string[] }>;
+    };
+    expect(membersBody.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          user_id: 'user_owner_v2',
+          email: 'owner@example.com',
+          permissions: expect.arrayContaining(['workspace:governance:update', 'workspace:project:create']),
+        }),
+      ]),
+    );
+  });
+
+  it('keeps project creator permissions when the actor email matches after an idp switch', async () => {
+    const { baseUrl } = startServer();
+    seedPersistedSystemWorkspacesForTest([
+      workspaceRecord({
+        id: 'ws_default',
+        name: 'Default Workspace',
+        adminEmail: 'owner@example.com',
+        adminUserId: 'user_owner',
+        adminName: 'Owner User',
+        projectCreators: [{ user_id: 'user_alt', email: 'alt@example.com', name: 'Alt User' }],
+        issuerUrl: process.env.KEYCLOAK_ISSUER_URL!,
+        realm: 'mbos',
+        clientId: 'agentsmith-web',
+      }),
+    ]);
+
+    const allowedRes = await apiFetchWithToken(baseUrl, '/api/v1/workspaces/ws_default/projects', 'creator-email-switch-token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Creator Project After IdP Switch',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      }),
+    });
+    expect(allowedRes.status).toBe(201);
+    const created = (await allowedRes.json()) as { owner_id: string; name: string };
+    expect(created.name).toBe('Creator Project After IdP Switch');
+    expect(created.owner_id).toBe('user_alt_v2');
+  });
+
   it('supports create then list flow', async () => {
     const { baseUrl } = startServer();
 

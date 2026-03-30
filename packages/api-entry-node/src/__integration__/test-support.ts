@@ -57,6 +57,18 @@ const testUsers = {
     preferred_username: 'secret-user',
     name: 'Secret User',
   },
+  'owner-email-switch-token': {
+    sub: 'user_owner_v2',
+    email: 'owner@example.com',
+    preferred_username: 'owner-user-v2',
+    name: 'Owner User V2',
+  },
+  'creator-email-switch-token': {
+    sub: 'user_alt_v2',
+    email: 'alt@example.com',
+    preferred_username: 'alt-user-v2',
+    name: 'Alt User V2',
+  },
 } as const;
 
 async function issueTestAccessToken(token: string): Promise<string> {

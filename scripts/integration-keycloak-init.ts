@@ -21,6 +21,9 @@ type KeycloakClientConfig = {
   standardFlowEnabled?: boolean;
   publicClient?: boolean;
   serviceAccountsEnabled?: boolean;
+  enabled?: boolean;
+  protocol?: string;
+  secret?: string;
 };
 
 type KeycloakRealmConfig = {
@@ -59,8 +62,10 @@ const keycloakRealm = process.env.KEYCLOAK_REALM ?? 'mbos';
 const keycloakAdminUser = process.env.KEYCLOAK_ADMIN ?? 'admin';
 const keycloakAdminPassword = process.env.KEYCLOAK_ADMIN_PASSWORD ?? 'admin';
 const keycloakClientId = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
+const keycloakDirectoryClientId = process.env.KEYCLOAK_DIRECTORY_CLIENT_ID ?? 'agentsmith-directory';
+const keycloakDirectoryClientSecret = process.env.KEYCLOAK_DIRECTORY_CLIENT_SECRET ?? 'agentsmith-directory-secret';
 const integrationWebPort = process.env.INTEGRATION_WEB_PORT ?? '3001';
-const integrationWebPortsRaw = process.env.INTEGRATION_WEB_PORTS ?? '3001,3011,3021,3041,3051,3061,3066,3069,3070,3071,3081';
+const integrationWebPortsRaw = process.env.INTEGRATION_WEB_PORTS ?? '3001,3011,3021,3041,3051,3061,3066,3069,3070,3071,3081,3091,3101';
 const integrationPublicWebBasesRaw = process.env.INTEGRATION_PUBLIC_WEB_BASES ?? '';
 const publicKeycloakBaseUrlRaw = process.env.PUBLIC_KEYCLOAK_BASE_URL ?? '';
 const keycloakAccessTokenLifespanSec = Number(process.env.KEYCLOAK_ACCESS_TOKEN_LIFESPAN_SEC ?? '28800');
@@ -89,6 +94,20 @@ const seedUsers: SeedUser[] = [
     firstName: 'Integration',
     lastName: 'Member',
     email: 'integration-member@example.com',
+  },
+  {
+    username: process.env.INTEGRATION_GUEST_USERNAME ?? 'integration-guest',
+    password: process.env.INTEGRATION_GUEST_PASSWORD ?? 'integration-guest-123',
+    firstName: 'Integration',
+    lastName: 'Guest',
+    email: 'integration-guest@example.com',
+  },
+  {
+    username: process.env.INTEGRATION_INVITEE_USERNAME ?? 'integration-invitee',
+    password: process.env.INTEGRATION_INVITEE_PASSWORD ?? 'integration-invitee-123',
+    firstName: 'Integration',
+    lastName: 'Invitee',
+    email: 'integration-invitee@example.com',
   },
 ];
 
@@ -252,17 +271,33 @@ async function findClient(token: string, clientId: string): Promise<KeycloakClie
   return items[0] ?? null;
 }
 
-function toOriginAndRedirect(base: string): { origin: string; redirect: string } {
-  const origin = base.replace(/\/+$/, '');
-  return { origin, redirect: `${origin}/*` };
+type KeycloakRoleRepresentation = {
+  id: string;
+  name: string;
+  clientRole?: boolean;
+  containerId?: string;
+};
+
+async function createClient(token: string, payload: Record<string, unknown>): Promise<void> {
+  const res = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients`,
+    {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    },
+  );
+  if (!(res.status === 201 || res.status === 204)) {
+    const text = await res.text();
+    throw new Error(`keycloak_create_client_failed:${String(payload.clientId ?? 'unknown')}:${res.status}:${text}`);
+  }
 }
 
-async function ensureClientRedirects(token: string): Promise<void> {
-  const client = await findClient(token, keycloakClientId);
-  if (!client) {
-    throw new Error(`keycloak_client_not_found:${keycloakClientId}`);
+async function getClientConfig(token: string, clientId: string): Promise<KeycloakClientConfig> {
+  const client = await findClient(token, clientId);
+  if (!client?.id) {
+    throw new Error(`keycloak_client_not_found:${clientId}`);
   }
-
   const getRes = await adminFetch(
     token,
     `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(client.id)}`,
@@ -270,10 +305,106 @@ async function ensureClientRedirects(token: string): Promise<void> {
   );
   if (!getRes.ok) {
     const text = await getRes.text();
-    throw new Error(`keycloak_get_client_failed:${keycloakClientId}:${getRes.status}:${text}`);
+    throw new Error(`keycloak_get_client_failed:${clientId}:${getRes.status}:${text}`);
   }
+  return (await getRes.json()) as KeycloakClientConfig;
+}
 
-  const config = (await getRes.json()) as KeycloakClientConfig;
+async function putClientConfig(token: string, config: KeycloakClientConfig): Promise<void> {
+  const putRes = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(config.id)}`,
+    {
+      method: 'PUT',
+      body: JSON.stringify(config),
+    },
+  );
+  if (!(putRes.status === 200 || putRes.status === 204)) {
+    const text = await putRes.text();
+    throw new Error(`keycloak_update_client_failed:${config.clientId ?? config.id}:${putRes.status}:${text}`);
+  }
+}
+
+async function listClientRoles(token: string, clientUuid: string): Promise<KeycloakRoleRepresentation[]> {
+  const res = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(clientUuid)}/roles`,
+    { method: 'GET' },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`keycloak_list_client_roles_failed:${clientUuid}:${res.status}:${text}`);
+  }
+  const payload = (await res.json()) as KeycloakRoleRepresentation[];
+  return Array.isArray(payload) ? payload : [];
+}
+
+async function getServiceAccountUserId(token: string, clientUuid: string): Promise<string> {
+  const res = await adminFetch(
+    token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(clientUuid)}/service-account-user`,
+    { method: 'GET' },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`keycloak_service_account_lookup_failed:${clientUuid}:${res.status}:${text}`);
+  }
+  const payload = (await res.json()) as { id?: string };
+  const userId = payload.id?.trim();
+  if (!userId) {
+    throw new Error(`keycloak_service_account_missing:${clientUuid}`);
+  }
+  return userId;
+}
+
+async function listClientRoleMappings(args: {
+  token: string;
+  userId: string;
+  clientUuid: string;
+}): Promise<KeycloakRoleRepresentation[]> {
+  const res = await adminFetch(
+    args.token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/users/${encodeURIComponent(args.userId)}/role-mappings/clients/${encodeURIComponent(args.clientUuid)}`,
+    { method: 'GET' },
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`keycloak_list_role_mappings_failed:${args.clientUuid}:${res.status}:${text}`);
+  }
+  const payload = (await res.json()) as KeycloakRoleRepresentation[];
+  return Array.isArray(payload) ? payload : [];
+}
+
+async function addClientRoleMappings(args: {
+  token: string;
+  userId: string;
+  clientUuid: string;
+  roles: KeycloakRoleRepresentation[];
+}): Promise<void> {
+  if (args.roles.length === 0) {
+    return;
+  }
+  const res = await adminFetch(
+    args.token,
+    `/admin/realms/${encodeURIComponent(keycloakRealm)}/users/${encodeURIComponent(args.userId)}/role-mappings/clients/${encodeURIComponent(args.clientUuid)}`,
+    {
+      method: 'POST',
+      body: JSON.stringify(args.roles),
+    },
+  );
+  if (!(res.status === 200 || res.status === 204)) {
+    const text = await res.text();
+    throw new Error(`keycloak_add_role_mappings_failed:${args.clientUuid}:${res.status}:${text}`);
+  }
+}
+
+function toOriginAndRedirect(base: string): { origin: string; redirect: string } {
+  const origin = base.replace(/\/+$/, '');
+  return { origin, redirect: `${origin}/*` };
+}
+
+async function ensureClientRedirects(token: string): Promise<void> {
+  const config = await getClientConfig(token, keycloakClientId);
   const extraWebPorts = integrationWebPortsRaw
     .split(',')
     .map((item) => item.trim())
@@ -306,19 +437,68 @@ async function ensureClientRedirects(token: string): Promise<void> {
   config.publicClient = true;
   config.serviceAccountsEnabled = false;
 
-  const putRes = await adminFetch(
-    token,
-    `/admin/realms/${encodeURIComponent(keycloakRealm)}/clients/${encodeURIComponent(client.id)}`,
-    {
-      method: 'PUT',
-      body: JSON.stringify(config),
-    },
-  );
-  if (!(putRes.status === 200 || putRes.status === 204)) {
-    const text = await putRes.text();
-    throw new Error(`keycloak_update_client_failed:${keycloakClientId}:${putRes.status}:${text}`);
-  }
+  await putClientConfig(token, config);
   process.stdout.write(`[integration-keycloak-init] ensured redirects for ${keycloakClientId}\n`);
+}
+
+async function ensureDirectoryClient(token: string): Promise<void> {
+  let client = await findClient(token, keycloakDirectoryClientId);
+  if (!client?.id) {
+    await createClient(token, {
+      clientId: keycloakDirectoryClientId,
+      protocol: 'openid-connect',
+      enabled: true,
+      publicClient: false,
+      standardFlowEnabled: false,
+      directAccessGrantsEnabled: false,
+      serviceAccountsEnabled: true,
+      secret: keycloakDirectoryClientSecret,
+    });
+    client = await findClient(token, keycloakDirectoryClientId);
+  }
+  if (!client?.id) {
+    throw new Error(`keycloak_directory_client_missing:${keycloakDirectoryClientId}`);
+  }
+
+  const config = await getClientConfig(token, keycloakDirectoryClientId);
+  config.enabled = true;
+  config.protocol = 'openid-connect';
+  config.publicClient = false;
+  config.standardFlowEnabled = false;
+  config.directAccessGrantsEnabled = false;
+  config.serviceAccountsEnabled = true;
+  config.secret = keycloakDirectoryClientSecret;
+  await putClientConfig(token, config);
+
+  const realmManagement = await findClient(token, 'realm-management');
+  if (!realmManagement?.id) {
+    throw new Error('keycloak_realm_management_client_missing');
+  }
+
+  const serviceAccountUserId = await getServiceAccountUserId(token, client.id);
+  const availableRoles = await listClientRoles(token, realmManagement.id);
+  const requiredRoles = availableRoles.filter((role) => role.name === 'query-users' || role.name === 'view-users');
+  const currentRoles = await listClientRoleMappings({
+    token,
+    userId: serviceAccountUserId,
+    clientUuid: realmManagement.id,
+  });
+  const currentRoleNames = new Set(currentRoles.map((role) => role.name));
+  const missingRoles = requiredRoles
+    .filter((role) => !currentRoleNames.has(role.name))
+    .map((role) => ({
+      id: role.id,
+      name: role.name,
+      clientRole: true,
+      containerId: realmManagement.id,
+    }));
+  await addClientRoleMappings({
+    token,
+    userId: serviceAccountUserId,
+    clientUuid: realmManagement.id,
+    roles: missingRoles,
+  });
+  process.stdout.write(`[integration-keycloak-init] ensured directory client ${keycloakDirectoryClientId}\n`);
 }
 
 async function ensureRealmTokenLifespans(token: string): Promise<void> {
@@ -372,6 +552,7 @@ async function main(): Promise<void> {
   const token = await getAdminToken();
   await ensureRealmTokenLifespans(token);
   await ensureClientRedirects(token);
+  await ensureDirectoryClient(token);
   for (const user of seedUsers) {
     await ensureUser(token, user);
   }

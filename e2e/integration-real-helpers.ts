@@ -40,10 +40,25 @@ export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 
 export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+export const KEYCLOAK_DEV_ADMIN_EMAIL = process.env.INTEGRATION_KEYCLOAK_EMAIL ?? 'dev-admin@example.com';
 export const KEYCLOAK_INTEGRATION_USER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
 export const KEYCLOAK_INTEGRATION_USER_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
+export const KEYCLOAK_INTEGRATION_USER_EMAIL = process.env.INTEGRATION_USER_EMAIL ?? 'integration-user@example.com';
 export const KEYCLOAK_INTEGRATION_MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member';
 export const KEYCLOAK_INTEGRATION_MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123';
+export const KEYCLOAK_INTEGRATION_MEMBER_EMAIL = process.env.INTEGRATION_MEMBER_EMAIL ?? 'integration-member@example.com';
+export const KEYCLOAK_INTEGRATION_GUEST_USERNAME = process.env.INTEGRATION_GUEST_USERNAME ?? 'integration-guest';
+export const KEYCLOAK_INTEGRATION_GUEST_PASSWORD = process.env.INTEGRATION_GUEST_PASSWORD ?? 'integration-guest-123';
+export const KEYCLOAK_INTEGRATION_GUEST_EMAIL = process.env.INTEGRATION_GUEST_EMAIL ?? 'integration-guest@example.com';
+export const KEYCLOAK_INTEGRATION_INVITEE_USERNAME = process.env.INTEGRATION_INVITEE_USERNAME ?? 'integration-invitee';
+export const KEYCLOAK_INTEGRATION_INVITEE_PASSWORD = process.env.INTEGRATION_INVITEE_PASSWORD ?? 'integration-invitee-123';
+export const KEYCLOAK_INTEGRATION_INVITEE_EMAIL =
+  process.env.INTEGRATION_INVITEE_EMAIL ?? 'integration-invitee@example.com';
+export const KEYCLOAK_DIRECTORY_CLIENT_ID = process.env.KEYCLOAK_DIRECTORY_CLIENT_ID ?? 'agentsmith-directory';
+export const KEYCLOAK_DIRECTORY_CLIENT_SECRET = process.env.KEYCLOAK_DIRECTORY_CLIENT_SECRET ?? 'agentsmith-directory-secret';
+export const EXTERNAL_KEYCLOAK_BASE_URL = process.env.EXTERNAL_KEYCLOAK_BASE_URL ?? 'http://localhost:18180';
+export const SYSTEM_ADMIN_USERNAME = process.env.SYSTEM_ADMIN_USERNAME ?? 'mbos-admin';
+export const SYSTEM_ADMIN_PASSWORD = process.env.SYSTEM_ADMIN_PASSWORD ?? 'mbos-admin';
 
 async function collectChildPids(pid: number): Promise<number[]> {
   return new Promise((resolve) => {
@@ -193,6 +208,9 @@ export async function keycloakLoginToWorkspace(
   workspaceId: string,
   username = KEYCLOAK_DEV_ADMIN_USERNAME,
   password = KEYCLOAK_DEV_ADMIN_PASSWORD,
+  options?: {
+    ensureProjectCreatorAccess?: boolean;
+  },
 ): Promise<void> {
   await clearAppState(page, workspaceId);
 
@@ -244,7 +262,9 @@ export async function keycloakLoginToWorkspace(
 
     if (reachedWorkspace) {
       const token = await readStoredAuthToken(page);
-      await ensureWorkspaceProjectCreatorAccess({ page, apiBase: API_BASE, token, username });
+      if (options?.ensureProjectCreatorAccess !== false) {
+        await ensureWorkspaceProjectCreatorAccess({ page, apiBase: API_BASE, token, username });
+      }
       await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects`);
       await page.waitForURL(new RegExp(`/${LOCALE}/workspaces/${workspaceId}/projects(?:$|/)`), { timeout: 30_000 });
       return;
@@ -259,6 +279,209 @@ export async function keycloakLoginToWorkspace(
   }
 
   throw new Error(`workspace_login_retry_exhausted:${workspaceId}:${username}`);
+}
+
+export async function loginAsSystemAdmin(page: Page): Promise<void> {
+  await page.context().clearCookies();
+  await gotoWithRetry(page, `/${LOCALE}/system/login`);
+  await expect(page.getByTestId('system-login__heading')).toBeVisible({ timeout: 30_000 });
+  await page.getByTestId('system-login__username').fill(SYSTEM_ADMIN_USERNAME);
+  await page.getByTestId('system-login__password').fill(SYSTEM_ADMIN_PASSWORD);
+
+  let loginResponseOk = false;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const responsePromise = page
+      .waitForResponse(
+        (response) =>
+          response.url().includes('/api/system/session') && response.request().method() === 'POST',
+        { timeout: 5_000 },
+      )
+      .catch(() => null);
+    await page.getByTestId('system-login__submit').click();
+    const response = await responsePromise;
+    if (response) {
+      loginResponseOk = response.ok();
+      break;
+    }
+    await page.waitForTimeout(1_000);
+  }
+
+  expect(loginResponseOk).toBe(true);
+  await expect
+    .poll(() => page.url(), { timeout: 30_000 })
+    .toMatch(new RegExp(`/${LOCALE}/system/workspaces`));
+  await expect(page.getByTestId('system-workspaces__heading')).toBeVisible({ timeout: 30_000 });
+}
+
+async function resolveWorkspaceIdByName(page: Page, workspaceName: string): Promise<string> {
+  await expect
+    .poll(
+      async () => page.evaluate(async (name) => {
+        const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+        const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
+        return payload.items?.find((item) => item.name === name)?.id ?? null;
+      }, workspaceName),
+      { timeout: 30_000 },
+    )
+    .toBeTruthy();
+
+  const resolved = await page.evaluate(async (name) => {
+    const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+    const payload = (await response.json()) as { items?: Array<{ id: string; name: string }> };
+    return payload.items?.find((item) => item.name === name)?.id ?? null;
+  }, workspaceName);
+
+  if (!resolved) {
+    throw new Error('workspace_id_not_found');
+  }
+  return resolved;
+}
+
+export async function createAndPublishWorkspaceWithDirectoryAdmin(args: {
+  page: Page;
+  workspaceName: string;
+  keycloakBaseUrl?: string;
+  keycloakRealm?: string;
+  loginClientId?: string;
+  directoryClientId?: string;
+  directoryClientSecret?: string;
+  adminEmail?: string;
+}): Promise<string> {
+  const keycloakBaseUrl = args.keycloakBaseUrl ?? (process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080');
+  const keycloakRealm = args.keycloakRealm ?? (process.env.KEYCLOAK_REALM ?? 'mbos');
+  const loginClientId = args.loginClientId ?? (process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith');
+  const directoryClientId = args.directoryClientId ?? KEYCLOAK_DIRECTORY_CLIENT_ID;
+  const directoryClientSecret = args.directoryClientSecret ?? KEYCLOAK_DIRECTORY_CLIENT_SECRET;
+  const adminEmail = args.adminEmail ?? 'dev-admin@example.com';
+
+  await args.page.getByTestId('system-workspaces__new-workspace').click();
+  await args.page.waitForURL(new RegExp(`/${LOCALE}/system/workspaces/new$`), { timeout: 30_000 });
+  await expect(args.page.getByTestId('system-workspace-create__heading')).toBeVisible({ timeout: 30_000 });
+  await args.page.getByTestId('system-workspaces__draft-name').fill(args.workspaceName);
+  await args.page.getByTestId('system-workspace-create__next').click();
+
+  await args.page.getByTestId('system-workspaces__draft-idp-url').fill(keycloakBaseUrl);
+  await args.page.getByTestId('system-workspaces__draft-idp-realm').fill(keycloakRealm);
+  await args.page.getByTestId('system-workspaces__draft-idp-client-id').fill(loginClientId);
+  await args.page.getByTestId('system-workspaces__draft-directory-client-id').fill(directoryClientId);
+  await args.page.getByTestId('system-workspaces__draft-idp-client-secret').fill(directoryClientSecret);
+
+  const verifyResponse = args.page.waitForResponse(
+    (candidate) => candidate.url().includes('/api/system/workspaces/idp/verify') && candidate.request().method() === 'POST',
+    { timeout: 20_000 },
+  );
+  await args.page.getByTestId('system-workspaces__verify-idp').click();
+  expect((await verifyResponse).ok()).toBeTruthy();
+  await expect(args.page.getByTestId('system-workspaces__idp-status')).toHaveText(/verified/i, { timeout: 20_000 });
+
+  await args.page.getByTestId('system-workspace-create__next').click();
+  await args.page.getByTestId('system-workspaces__admin-mode--directory').click();
+  await selectWorkspaceAdminFromDirectory(args.page, adminEmail);
+
+  await args.page.getByTestId('system-workspace-create__next').click();
+  await args.page.getByTestId('system-workspace-create__create').click();
+
+  const workspaceId = await resolveWorkspaceIdByName(args.page, args.workspaceName);
+  await args.page.getByTestId(`system-workspaces__configure--${workspaceId}`).click();
+  await args.page.getByTestId('system-workspaces__publish').click();
+  await expect
+    .poll(
+      async () => args.page.evaluate(async (id) => {
+        const response = await fetch('/api/system/workspaces', { cache: 'no-store' });
+        const payload = (await response.json()) as {
+          items?: Array<{ id: string; provisioning_status: string; last_init_error?: string | null }>;
+        };
+        const item = payload.items?.find((candidate) => candidate.id === id);
+        return item ? `${item.provisioning_status}:${item.last_init_error ?? ''}` : 'missing';
+      }, workspaceId),
+      { timeout: 40_000 },
+    )
+    .toMatch(/^ready:/);
+
+  return workspaceId;
+}
+
+export async function selectWorkspaceAdminFromDirectory(page: Page, email: string): Promise<void> {
+  const adminInput = page.getByTestId('system-workspaces__draft-admin');
+  await expect(adminInput).toBeVisible({ timeout: 15_000 });
+  let lastFailure = 'directory_request_not_observed';
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const responsePromise = page.waitForResponse(
+      (candidate) =>
+        candidate.url().includes('/api/system/workspaces/directory/users') &&
+        candidate.request().method() === 'POST',
+      { timeout: 15_000 },
+    ).catch(() => null);
+    await adminInput.fill('');
+    await adminInput.fill(email);
+    const response = await responsePromise;
+    if (!response) {
+      lastFailure = 'directory_request_timeout';
+      continue;
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { items?: Array<{ user_id?: string; email?: string }> }
+      | { error_message?: string }
+      | null;
+    if (!response.ok()) {
+      lastFailure = `directory_response_${response.status()}`;
+      continue;
+    }
+
+    const matchedUser = Array.isArray(payload?.items)
+      ? payload.items.find((item) => item.email === email)
+      : null;
+    const userId = typeof matchedUser?.user_id === 'string' ? matchedUser.user_id : '';
+    if (!userId) {
+      lastFailure = 'directory_user_missing';
+      continue;
+    }
+
+    const adminOption = page.getByTestId(`system-workspaces__admin-option--${userId}`);
+    await expect(adminOption).toBeVisible({ timeout: 15_000 });
+    await adminOption.click();
+    await expect(page.getByTestId('system-workspaces__selected-admin')).toContainText(email);
+    return;
+  }
+
+  throw new Error(`workspace_admin_directory_user_missing:${email}:${lastFailure}`);
+}
+
+export async function ensureWorkspaceProjectCreatorViaUi(args: {
+  page: Page;
+  workspaceId: string;
+  creatorEmail: string;
+}): Promise<void> {
+  await gotoWithRetry(args.page, `/${LOCALE}/workspaces/${args.workspaceId}/settings`);
+  await expect(args.page.getByTestId('ws-settings__project-creators')).toBeVisible({ timeout: 30_000 });
+  const input = args.page.getByTestId('ws-settings__project-creators-input');
+  await input.fill(args.creatorEmail);
+  const option = args.page.getByTestId('ws-settings__project-creators-results').getByRole('button', {
+    name: new RegExp(args.creatorEmail.replace('.', '\\.')),
+  });
+  await expect(option).toBeVisible({ timeout: 20_000 });
+  await option.click();
+  await args.page.getByTestId('ws-settings__project-creators-save').click();
+  await expect(args.page.getByTestId('ws-settings__project-creators-selected')).toContainText(args.creatorEmail, { timeout: 20_000 });
+}
+
+export async function ensureExternalTestKeycloak(): Promise<void> {
+  const result = await spawnAndCapture('bash', ['scripts/external-keycloak-test.sh', 'up'], {
+    cwd: process.cwd(),
+    env: process.env,
+  });
+  if (result.code !== 0) {
+    throw new Error(`external_keycloak_up_failed:${result.stderr || result.stdout}`);
+  }
+}
+
+export async function teardownExternalTestKeycloak(): Promise<void> {
+  await spawnAndCapture('bash', ['scripts/external-keycloak-test.sh', 'down'], {
+    cwd: process.cwd(),
+    env: process.env,
+  });
 }
 
 export async function createProjectInWorkspace(

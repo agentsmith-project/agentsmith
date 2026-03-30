@@ -13,6 +13,7 @@ npm run test:cluster-bundle:inputs
 echo "[runtime-mainline-smoke] checking scenario status commands"
 make demo-rehearsal-status >/dev/null
 make cluster-rehearsal-status >/dev/null
+bash "${ROOT_DIR}/scripts/runtime-status-smoke.sh"
 
 echo "[runtime-mainline-smoke] checking scenario lock and stage command smoke"
 bash "${ROOT_DIR}/scripts/runtime-scenario-lock-smoke.sh"

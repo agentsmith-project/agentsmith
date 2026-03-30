@@ -14,6 +14,23 @@ current_active_scenario() {
   cat "${ACTIVE_SCENARIO_LOCK_FILE}" 2>/dev/null || true
 }
 
+scenario_http_code() {
+  local url="$1"
+  curl -sS -o /dev/null -w '%{http_code}' "${url}" 2>/dev/null || true
+}
+
+scenario_service_status() {
+  local scenario="$1"
+  local url="$2"
+  local active
+  active="$(current_active_scenario || true)"
+  if [[ "${active}" != "${scenario}" ]]; then
+    printf 'inactive\n'
+    return 0
+  fi
+  scenario_http_code "${url}"
+}
+
 acquire_scenario_lock() {
   local scenario="$1"
   ensure_scenario_dirs

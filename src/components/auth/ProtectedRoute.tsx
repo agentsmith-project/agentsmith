@@ -108,6 +108,10 @@ export function ProtectedRoute({
                 token?: string | null;
                 refreshToken?: string | null;
                 tokenExpiresAt?: number | null;
+                keycloakSession?: {
+                  realmBase?: string;
+                  clientId?: string;
+                } | null;
                 isAuthenticated?: boolean;
               };
             } : null;
@@ -138,6 +142,12 @@ export function ProtectedRoute({
                   {
                     refreshToken: persisted.refreshToken ?? null,
                     expiresIn,
+                    keycloakSession: persisted.keycloakSession?.realmBase && persisted.keycloakSession?.clientId
+                      ? {
+                          realmBase: persisted.keycloakSession.realmBase,
+                          clientId: persisted.keycloakSession.clientId,
+                        }
+                      : null,
                   },
                 );
                 return true;

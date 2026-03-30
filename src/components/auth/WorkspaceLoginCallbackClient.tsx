@@ -180,6 +180,10 @@ export function WorkspaceLoginCallbackClient({
         {
           refreshToken: token.refresh_token ?? null,
           expiresIn: token.expires_in,
+          keycloakSession: {
+            realmBase,
+            clientId: config.login_idp.client_id,
+          },
         },
       );
       getApiClient().setToken(token.access_token);

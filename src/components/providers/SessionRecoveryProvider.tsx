@@ -36,9 +36,9 @@ export function SessionRecoveryProvider({ children }: { children: React.ReactNod
       }
 
       const refreshPromise = (async () => {
-        const { refreshToken, setToken } = useAuthStore.getState();
-        const realmBase = getKeycloakRealmBase();
-        const clientId = getKeycloakClientId();
+        const { refreshToken, setToken, keycloakSession } = useAuthStore.getState();
+        const realmBase = keycloakSession?.realmBase ?? getKeycloakRealmBase();
+        const clientId = keycloakSession?.clientId ?? getKeycloakClientId();
         if (!refreshToken || !realmBase || !clientId) {
           return false;
         }

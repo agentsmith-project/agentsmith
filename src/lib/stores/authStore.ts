@@ -25,11 +25,17 @@ export interface User {
   locale?: Locale;
 }
 
+export interface KeycloakSessionConfig {
+  realmBase: string;
+  clientId: string;
+}
+
 interface AuthData {
   user: User | null;
   token: string | null;
   refreshToken: string | null;
   tokenExpiresAt: number | null;
+  keycloakSession: KeycloakSessionConfig | null;
   isAuthenticated: boolean;
 }
 
@@ -40,6 +46,7 @@ export interface AuthState extends AuthData {
     session?: {
       refreshToken?: string | null;
       expiresIn?: number;
+      keycloakSession?: KeycloakSessionConfig | null;
     }
   ) => void;
   setToken: (
@@ -47,6 +54,7 @@ export interface AuthState extends AuthData {
     session?: {
       refreshToken?: string | null;
       expiresIn?: number;
+      keycloakSession?: KeycloakSessionConfig | null;
     }
   ) => void;
   clearAuth: () => void;
@@ -82,6 +90,7 @@ const initialData: AuthData = {
   token: null,
   refreshToken: null,
   tokenExpiresAt: null,
+  keycloakSession: null,
   isAuthenticated: false,
 };
 
@@ -102,6 +111,7 @@ const createAuthStore = (): AuthStoreWithPersist => {
             tokenExpiresAt: typeof session?.expiresIn === 'number'
               ? Date.now() + session.expiresIn * 1000
               : null,
+            keycloakSession: session?.keycloakSession ?? null,
             isAuthenticated: true,
           });
         },
@@ -114,6 +124,9 @@ const createAuthStore = (): AuthStoreWithPersist => {
             tokenExpiresAt: typeof session?.expiresIn === 'number'
               ? Date.now() + session.expiresIn * 1000
               : state.tokenExpiresAt,
+            keycloakSession: session?.keycloakSession === undefined
+              ? state.keycloakSession
+              : (session.keycloakSession ?? null),
             isAuthenticated: Boolean(state.user),
           }));
         },
@@ -129,6 +142,7 @@ const createAuthStore = (): AuthStoreWithPersist => {
           token: state.token,
           refreshToken: state.refreshToken,
           tokenExpiresAt: state.tokenExpiresAt,
+          keycloakSession: state.keycloakSession,
           isAuthenticated: state.isAuthenticated,
         }),
       }
@@ -227,3 +241,4 @@ export const selectCurrentUser = (state: AuthState) => state.user;
 export const selectIsAuthenticated = (state: AuthState) => state.isAuthenticated;
 export const selectToken = (state: AuthState) => state.token;
 export const selectRefreshToken = (state: AuthState) => state.refreshToken;
+export const selectKeycloakSession = (state: AuthState) => state.keycloakSession;

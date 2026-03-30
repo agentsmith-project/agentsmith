@@ -10,9 +10,9 @@ function createEndpoint(overrides: Partial<EndpointRecord> = {}): EndpointRecord
     workspace_id: 'ws_default',
     project_id: 'proj_1',
     name: 'Demo Endpoint',
-    model: 'glm-5-turbo',
+    model: 'placeholder-model',
     type: 'openai',
-    base_url: 'https://open.bigmodel.cn/api/anthropic',
+    base_url: 'https://anthropic-compatible.provider.example',
     status: 'active',
     protocol: 'anthropic_compatible',
     created_at: '2026-03-22T00:00:00.000Z',
@@ -70,7 +70,7 @@ describe('UniversalProxyService', () => {
     };
     expect(payload.revision).toContain('2026-03-22T00:00:00.000Z:');
     expect(payload.config.upstreams[0]).toMatchObject({
-      api_root: 'https://open.bigmodel.cn/api/anthropic/v1',
+      api_root: 'https://anthropic-compatible.provider.example/v1',
       fixed_upstream_format: 'anthropic',
       auth_policy: 'force_server',
     });
@@ -91,7 +91,7 @@ describe('UniversalProxyService', () => {
       'proj_1',
       createEndpoint({
         protocol: 'openai_compatible',
-        base_url: 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions',
+        base_url: 'https://openai-compatible.provider.example/chat/completions',
       }),
       'secret-key',
     );
@@ -100,7 +100,7 @@ describe('UniversalProxyService', () => {
     const payload = JSON.parse(String(init.body)) as {
       config: { upstreams: Array<{ api_root: string }> };
     };
-    expect(payload.config.upstreams[0]?.api_root).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+    expect(payload.config.upstreams[0]?.api_root).toBe('https://openai-compatible.provider.example');
   });
 
   it('forwards a unified request through the namespaced proxy route', async () => {
@@ -125,7 +125,7 @@ describe('UniversalProxyService', () => {
       res,
       namespace: 'ws_default__proj_1__ep_1',
       proxyPath: 'openai/responses',
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       requestBody: { input: 'hello' },
     });
 
@@ -134,7 +134,7 @@ describe('UniversalProxyService', () => {
     expect(url).toBe('http://proxy.internal:8080/namespaces/ws_default__proj_1__ep_1/openai/v1/responses');
     expect(JSON.parse(String(init.body))).toMatchObject({
       input: 'hello',
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
     });
     expect(res.end).toHaveBeenCalled();
   });

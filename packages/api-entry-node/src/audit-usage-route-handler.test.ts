@@ -28,7 +28,7 @@ describe('audit-usage-route-handler', () => {
       request_id: 'req_usage_1',
       metadata_json: {
         provider: 'glm',
-        resolved_model: 'GLM-5',
+        resolved_model: 'placeholder-model',
       },
     });
 

@@ -37,7 +37,7 @@ proxy_precheck_status() {
     echo "000"
     return 0
   fi
-  url="${API_BASE}/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}/proxy/chat/completions"
+  url="${API_BASE}/workspaces/${WORKSPACE_ID}/projects/${project_id}/endpoints/${endpoint_id}/proxy/openai/chat/completions"
   curl -sS -o /dev/null -w '%{http_code}' \
     --max-time 20 \
     -X POST "${url}" \

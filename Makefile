@@ -734,15 +734,10 @@ notebook-agent-refresh-token:
 	node ./scripts/notebook-agent-refresh-token.js
 
 notebook-agent-init-resources:
-	@if [ -n "$(GLM_API_KEY)" ] || [ -n "$(GLM_BASE_URL)" ] || [ -n "$(GLM_MODEL)" ]; then \
-		echo "[make] Legacy GLM_* vars are no longer supported for notebook-agent-init-resources."; \
-		echo "[make] Use PRESET_ENDPOINT_API_KEY / PRESET_ANTHROPIC_ENDPOINT_BASE_URL / PRESET_ENDPOINT_MODEL / PRESET_ANTHROPIC_ENDPOINT_PROTOCOL."; \
-		exit 1; \
-	fi
 	@if [ -z "$(PRESET_ENDPOINT_API_KEY)" ]; then \
 		echo "[make] Missing PRESET_ENDPOINT_API_KEY."; \
 		echo "[make] Example:"; \
-		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='https://api.minimaxi.com/anthropic/v1' PRESET_ENDPOINT_MODEL='MiniMax-M2.7-highspeed' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_compatible' make notebook-agent-init-resources"; \
+		echo "  PRESET_ENDPOINT_API_KEY='***' PRESET_ANTHROPIC_ENDPOINT_BASE_URL='<YOUR_ANTHROPIC_BASE_URL>' PRESET_ENDPOINT_MODEL='<YOUR_MODEL_ID>' PRESET_ANTHROPIC_ENDPOINT_PROTOCOL='anthropic_compatible' make notebook-agent-init-resources"; \
 		exit 1; \
 	fi
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \

@@ -333,7 +333,7 @@ AgentSmith has been rehearsed locally with:
 - a clean Docker Compose install root under `/home/percy/agentsmith/cluster-deploy`
 - a clean `kind` cluster named `mbos`
 - `CLUSTER_DEPLOY_MODE=full-auto`
-- the tracked MiniMax preset defaults from `infra/runtime/presets.env`
+- the tracked preset defaults from `infra/runtime/presets.env`
 
 The locally verified full-auto sequence is:
 

@@ -188,7 +188,7 @@ describe('ModelPricing', () => {
 
   it('should create pricing with CNY currency', () => {
     const pricing: ModelPricing = {
-      modelId: 'glm-4',
+      modelId: 'placeholder-model',
       endpointId: 'ep-456',
       currency: 'CNY',
       inputTokenPrice: 0.5,

@@ -10,6 +10,10 @@ describe('resolveEffectiveEndpointProxyPath', () => {
     expect(resolveEffectiveEndpointProxyPath('chat', 'anthropic/messages', 'chat/completions')).toBe('anthropic/messages');
   });
 
+  it('preserves explicit anthropic v1 messages path for chat actions', () => {
+    expect(resolveEffectiveEndpointProxyPath('chat', 'anthropic/v1/messages', 'chat/completions')).toBe('anthropic/v1/messages');
+  });
+
   it('preserves explicit anthropic count tokens path for chat actions', () => {
     expect(resolveEffectiveEndpointProxyPath('chat', 'messages/count_tokens', 'messages')).toBe('messages/count_tokens');
   });

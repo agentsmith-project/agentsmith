@@ -81,9 +81,6 @@ forbidMatch(visualPolicy, /ignored by git/, 'visual baseline policy still says s
 requireMatch(constitution, /视觉验证属于独立证据通道/, 'constitution must describe visual verification as an independent evidence channel');
 forbidMatch(constitution, /smoke \+ chromium/, 'constitution still uses legacy smoke + chromium wording');
 
-forbidMatch(makefile, /\bGLM-5\b|\bglm-5\b/, 'Makefile help still contains legacy provider wording');
-forbidMatch(readme, /\bGLM-5\b|\bglm-5\b/, 'README still contains legacy provider wording');
-forbidMatch(development, /\bGLM-5\b|\bglm-5\b|\bGLM path\b/, 'DEVELOPMENT still contains legacy provider wording');
 
 if (failures.length > 0) {
   console.error('[contracts] engineering governance check failed:');

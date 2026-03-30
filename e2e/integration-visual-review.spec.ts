@@ -14,8 +14,8 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
-const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'MiniMax-M2.7-highspeed';
+const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://anthropic-compatible.provider.example/v1';
+const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'placeholder-model';
 const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
@@ -452,15 +452,15 @@ async function createCredential(page: Page, workspaceId: string, projectId: stri
   await page.getByTestId('credentials__create-btn').click();
   const dialog = page.getByTestId('credentials__create-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.locator('#cred-name').fill('BigModel Anthropic Key');
+  await dialog.locator('#cred-name').fill('Provider Anthropic Key');
   await dialog.locator('#cred-value').fill(apiKey);
   await dialog.getByRole('button', { name: /create/i }).click();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByText('BigModel Anthropic Key')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Provider Anthropic Key')).toBeVisible({ timeout: 30_000 });
 }
 
 async function createEndpoint(page: Page, workspaceId: string, projectId: string): Promise<{ endpointId: string; endpointName: string }> {
-  const endpointName = 'BigModel Anthropic Endpoint';
+  const endpointName = 'Provider Anthropic Endpoint';
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
   await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('endpoints__create-btn').click();
@@ -879,7 +879,7 @@ test.describe('@lane-real integration visual review', () => {
     test.setTimeout(900_000);
     const captures: CaptureEntry[] = [];
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20070';
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
 
     await gotoWithRetry(page, `/${LOCALE}/system/login`);
     await settlePage(page);
@@ -1003,7 +1003,7 @@ test.describe('@lane-real integration visual review', () => {
       notes: '真实环境创建凭据对话框',
     });
     await page.getByTestId('credentials__create-dialog').getByRole('button', { name: /cancel|取消/i }).click();
-    await createCredential(page, workspaceId, project.projectId, glmApiKey);
+    await createCredential(page, workspaceId, project.projectId, providerApiKey);
     await settlePage(page);
     await capturePage(page, captures, {
       name: 'project-credentials-real',

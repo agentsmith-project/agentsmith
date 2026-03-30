@@ -96,7 +96,7 @@ describe('api-entry-node notebook task event routes', () => {
         body: JSON.stringify({
           name: 'glm-key',
           type: 'api_key',
-          value: 'sk-glm-test',
+          value: 'sk-placeholder-test',
         }),
       },
     );
@@ -115,7 +115,7 @@ describe('api-entry-node notebook task event routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,
@@ -148,7 +148,7 @@ describe('api-entry-node notebook task event routes', () => {
             notebook: {
               endpoint_id: endpoint.id,
               wire_api: 'responses',
-              model: 'glm-4.7',
+              model: 'placeholder-model',
             },
           },
           capabilities: { streaming_completion: true, multimodal_completion: false },

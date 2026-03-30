@@ -179,7 +179,7 @@ main() {
 
   local temp_policy_url temp_proxy_url
   temp_policy_url="${base}/resources/endpoint/${temp_endpoint_id}/policy"
-  temp_proxy_url="${base}/endpoints/${temp_endpoint_id}/proxy/chat/completions"
+  temp_proxy_url="${base}/endpoints/${temp_endpoint_id}/proxy/openai/chat/completions"
 
   local original_policy_file patch_resp_file req1_file req2_file audit_file usage_file
   original_policy_file="$(mktemp)"

@@ -35,7 +35,7 @@ export const docObjectDbByLibraryId: Record<string, DocObjectRow[]> = {
       content_type: 'text/markdown',
       last_modified: now,
       etag: '"doc-usage-summary"',
-      content: '## 2026 W11 用量摘要\n\n- GLM-5 请求量 18,420\n- Claude 复杂推理请求量 4,180\n- 高峰时段 10:00-11:00 / 15:00-16:00',
+      content: '## 2026 W11 用量摘要\n\n- placeholder-model 请求量 18,420\n- Claude 复杂推理请求量 4,180\n- 高峰时段 10:00-11:00 / 15:00-16:00',
     },
     {
       kind: 'object',

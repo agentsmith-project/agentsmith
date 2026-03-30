@@ -21,7 +21,6 @@ import {
   safeAssistantFinishReason,
   safeAssistantUsageTokens,
 } from './chat-openai-payload.js';
-import { anthropicResponseToOpenAiChat, openAiChatRequestToAnthropic } from './protocol-bridge.js';
 import { logChatStreamEvent } from './chat-observability.js';
 import type { ChatAttachmentRecord } from './resource-models.js';
 import {
@@ -43,7 +42,6 @@ interface ChatStreamHandlerArgs {
   user: AuthenticatedUser;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
-  buildUpstreamUrl: (baseUrl: string, proxyPath: string) => string;
   sseWrite: (res: http.ServerResponse, event: string, data: unknown) => void;
 }
 
@@ -149,7 +147,7 @@ async function toDataUrlFromAttachmentOrFileLibraryObject(
 }
 
 export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, sseWrite } = args;
+  const { route, method, req, res, deps, user, json, readBody, sseWrite } = args;
   const isWritable = (candidate: http.ServerResponse): boolean =>
     !candidate.writableEnded && !candidate.destroyed;
 
@@ -971,26 +969,40 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     return true;
   }
 
-  const isAnthropicCompatible = endpoint.protocol === 'anthropic_compatible';
-  const upstreamProxyPath = isAnthropicCompatible ? 'messages' : 'chat/completions';
-  const upstreamUrl = buildUpstreamUrl(endpoint.base_url, upstreamProxyPath);
+  const universalProxyService = deps.universalProxyService;
+  if (!universalProxyService) {
+    json(res, 503, {
+      error_code: 'UNIVERSAL_PROXY_REQUIRED',
+      message: 'universal_proxy_required_for_llm_requests',
+    });
+    return true;
+  }
+  if (!universalProxyService.supportsEndpoint(endpoint)) {
+    json(res, 422, {
+      error_code: 'VALIDATION_ERROR',
+      message: 'universal_proxy_endpoint_protocol_not_supported',
+    });
+    return true;
+  }
   const sourceRequestBody = {
     model: raw.model ?? endpoint.model,
     stream: true,
     messages: upstreamMessages,
   };
-  const upstreamRequestBody = isAnthropicCompatible
-    ? openAiChatRequestToAnthropic(sourceRequestBody)
-    : sourceRequestBody;
   let upstreamRes: Response;
   try {
-    upstreamRes = await fetch(upstreamUrl, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(upstreamRequestBody),
+    const namespace = await universalProxyService.ensureEndpointNamespace(
+      route.workspaceId,
+      route.projectId,
+      endpoint,
+      apiKey,
+    );
+    upstreamRes = await universalProxyService.forwardRequest({
+      req,
+      namespace,
+      proxyPath: 'openai/chat/completions',
+      model: (raw.model ?? endpoint.model) || endpoint.model,
+      requestBody: sourceRequestBody,
       signal: streamAbortController.signal,
     });
   } catch (error) {
@@ -1257,12 +1269,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       }
     } else {
       const completionPayloadRaw = await upstreamRes.json().catch(() => ({}));
-      const completionPayload = isAnthropicCompatible
-        ? anthropicResponseToOpenAiChat(
-          completionPayloadRaw as Record<string, unknown>,
-          sourceRequestBody as Record<string, unknown>,
-        )
-        : completionPayloadRaw;
+      const completionPayload = completionPayloadRaw;
       assistantText = safeAssistantContent(completionPayload);
       finishReason = safeAssistantFinishReason(completionPayload);
       usageTokens = safeAssistantUsageTokens(completionPayload);

@@ -46,14 +46,14 @@ describe('endpoint-resource-service', () => {
 
     const credential = await service.createCredential('ws_1', 'proj_1', {
       name: 'glm-anthropic-key',
-      value: 'sk-glm-test',
+      value: 'sk-placeholder-test',
     });
 
     const endpoint = await service.createEndpoint('ws_1', 'proj_1', {
       name: 'glm-anthropic',
-      model: 'glm-4.7',
+      model: 'placeholder-model',
       type: 'custom',
-      base_url: 'https://open.bigmodel.cn/api/anthropic/messages',
+      base_url: 'https://anthropic-compatible.provider.example/messages',
       credential_ref: credential.id,
       provider_family: 'custom',
     });

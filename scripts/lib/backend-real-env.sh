@@ -12,9 +12,9 @@ load_backend_real_env() {
 
 export_backend_real_endpoint_env() {
   BACKEND_REAL_API_KEY_VALUE="${PRESET_ENDPOINT_API_KEY:-}"
-  BACKEND_REAL_MODEL_VALUE="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
-  BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
-  BACKEND_REAL_OPENAI_BASE_URL_VALUE="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}"
+  BACKEND_REAL_MODEL_VALUE="${PRESET_ENDPOINT_MODEL:-placeholder-model}"
+  BACKEND_REAL_ANTHROPIC_BASE_URL_VALUE="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://anthropic-compatible.provider.example/v1}"
+  BACKEND_REAL_OPENAI_BASE_URL_VALUE="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://openai-compatible.provider.example/v1}"
   export \
     BACKEND_REAL_API_KEY_VALUE \
     BACKEND_REAL_MODEL_VALUE \

@@ -55,26 +55,26 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
     );
   }
 
-  const gatewayBaseUrl = buildPublicApiUrl(`workspaces/${workspaceId}/projects/${projectId}/llm-gateway`);
-  const openAiChatCompletionsUrl = `${gatewayBaseUrl}/chat/completions`;
-  const openAiResponsesUrl = `${gatewayBaseUrl}/responses`;
-  const anthropicMessagesUrl = `${gatewayBaseUrl}/messages`;
+  const endpointProxyRootUrl = buildPublicApiUrl(`workspaces/${workspaceId}/projects/${projectId}/endpoints/<endpoint-id>/proxy`);
+  const openAiBaseUrl = `${endpointProxyRootUrl}/openai`;
+  const anthropicBaseUrl = `${endpointProxyRootUrl}/anthropic`;
+  const openAiChatCompletionsUrl = `${openAiBaseUrl}/chat/completions`;
+  const openAiResponsesUrl = `${openAiBaseUrl}/responses`;
+  const anthropicMessagesUrl = `${anthropicBaseUrl}/messages`;
 
-  const claudeEnvSample = `export ANTHROPIC_BASE_URL=${gatewayBaseUrl}\nexport ANTHROPIC_AUTH_TOKEN=<YOUR_PERSONAL_API_KEY>\nexport ANTHROPIC_DEFAULT_HAIKU_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_SONNET_MODEL=<project-model-name>\nexport ANTHROPIC_DEFAULT_OPUS_MODEL=<project-model-name>\nexport CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nexport CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS=1`;
+  const claudeSettingsVar = 'CLAUDE_SETTINGS=$(jq -nc';
+  const claudeEnvSample = `${claudeSettingsVar} \\\n  --arg base '${anthropicBaseUrl}' \\\n  --arg key '<YOUR_PERSONAL_API_KEY>' \\\n  '{env:{ANTHROPIC_BASE_URL:$base,ANTHROPIC_API_KEY:$key,CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC:"1",CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS:"1"}}') \\\nclaude --bare --settings "$CLAUDE_SETTINGS" -p --model <project-model-name> "Reply exactly: ok"`;
 
   const claudeJsonSample = `{
   "env": {
-    "ANTHROPIC_BASE_URL": "${gatewayBaseUrl}",
-    "ANTHROPIC_AUTH_TOKEN": "<YOUR_PERSONAL_API_KEY>",
-    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "<project-model-name>",
-    "ANTHROPIC_DEFAULT_SONNET_MODEL": "<project-model-name>",
-    "ANTHROPIC_DEFAULT_OPUS_MODEL": "<project-model-name>",
+    "ANTHROPIC_BASE_URL": "${anthropicBaseUrl}",
+    "ANTHROPIC_API_KEY": "<YOUR_PERSONAL_API_KEY>",
     "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1"
   }
 }`;
 
-  const codexSample = `export OPENAI_BASE_URL=${gatewayBaseUrl}\nexport OPENAI_API_KEY=<YOUR_PERSONAL_API_KEY>\n\ncodex --model <project-model-name>`;
+  const codexSample = `AGENTSMITH_API_KEY=<YOUR_PERSONAL_API_KEY> \\\ncodex exec --model <project-model-name> \\\n  -c 'model_provider="agentsmith"' \\\n  -c 'provider="agentsmith"' \\\n  -c 'model_providers.agentsmith.name="AgentSmith"' \\\n  -c 'model_providers.agentsmith.base_url="${openAiBaseUrl}"' \\\n  -c 'model_providers.agentsmith.env_key="AGENTSMITH_API_KEY"' \\\n  -c 'model_providers.agentsmith.wire_api="responses"' \\\n  -c 'model_context_window=200000' \\\n  -c 'model_auto_compact_token_limit=176000' \\\n  "Reply exactly: ok"`;
 
   const openAiCompletionCurl = `curl ${openAiChatCompletionsUrl} \\
   -H "Authorization: Bearer <YOUR_PERSONAL_API_KEY>" \\
@@ -128,7 +128,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
               <p>{t('gateway.description')}</p>
               <p>{t('gateway.protocol_note')}</p>
               <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__gateway-base-url">
-                {gatewayBaseUrl}
+                {endpointProxyRootUrl}
               </pre>
             </CardContent>
           </Card>
@@ -148,7 +148,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
                     {t('protocols.openai.base_url_label')}
                   </div>
                   <pre className="overflow-x-auto text-xs text-foreground" data-testid="use-guide__openai-base-url">
-                    {gatewayBaseUrl}
+                    {openAiBaseUrl}
                   </pre>
                 </div>
                 <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__codex-sample">
@@ -172,7 +172,7 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
                     {t('protocols.anthropic.base_url_label')}
                   </div>
                   <pre className="overflow-x-auto text-xs text-foreground" data-testid="use-guide__anthropic-base-url">
-                    {gatewayBaseUrl}
+                    {anthropicBaseUrl}
                   </pre>
                 </div>
                 <pre className="overflow-x-auto rounded-[18px] border border-subtle bg-bg-base/40 p-4 text-xs text-foreground" data-testid="use-guide__claude-sample">

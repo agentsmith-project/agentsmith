@@ -4,12 +4,18 @@ import {
   cleanupChatUpstreamServers,
   createChatSession,
   parseSseEventPayload,
-  startOpenAICompatibleUpstreamServer,
-  startSlowOpenAICompatibleUpstreamServer,
+  startUniversalProxyChatServer,
 } from './chat-test-support.js';
+
+const originalUniversalProxyBaseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
 
 afterEach(async () => {
   await cleanupChatUpstreamServers();
+  if (originalUniversalProxyBaseUrl === undefined) {
+    delete process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
+  } else {
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = originalUniversalProxyBaseUrl;
+  }
 });
 
 describe('api-entry-node chat stream routes', () => {
@@ -26,9 +32,13 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('supports chat stream via project endpoint and persists assistant reply', async () => {
+    const universalProxy = startUniversalProxyChatServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
-    const upstream = startOpenAICompatibleUpstreamServer();
-    const { endpointId, sessionId, userMessageId } = await createChatSession(baseUrl, upstream.baseUrl);
+    const { endpointId, sessionId, userMessageId } = await createChatSession(
+      baseUrl,
+      'https://openai-compatible.provider.example/v1',
+    );
 
     const stream = await apiFetch(
       baseUrl,
@@ -49,7 +59,8 @@ describe('api-entry-node chat stream routes', () => {
     const sse = await stream.text();
     expect(sse).toContain('event: meta');
     expect(sse).toContain('event: delta');
-    expect(sse).toContain('Hello from upstream.');
+    expect(sse).toContain('"delta":"Hello"');
+    expect(sse).toContain('"delta":" from universal proxy."');
     expect(sse).toContain('event: done');
 
     const history = await apiFetch(
@@ -62,17 +73,22 @@ describe('api-entry-node chat stream routes', () => {
     };
     expect(messages.items.length).toBe(2);
     expect(messages.items[0]).toMatchObject({ role: 'user', content: 'hello from user' });
-    expect(messages.items[1]).toMatchObject({ role: 'assistant', content: 'Hello from upstream.' });
+    expect(messages.items[1]).toMatchObject({ role: 'assistant', content: 'Hello from universal proxy.' });
 
-    const upstreamBody = upstream.lastBody() as { model?: string; messages?: Array<{ role: string }> };
+    const upstreamBody = universalProxy.lastBody() as { model?: string; messages?: Array<{ role: string }> };
     expect(upstreamBody.model).toBe('deepseek-chat');
     expect(upstreamBody.messages?.at(-1)?.role).toBe('user');
+    expect(universalProxy.lastPath()).toContain(`/namespaces/ws_default__proj_1__${endpointId}/openai/v1/chat/completions`);
   });
 
   it('supports stopping an active stream by session id', async () => {
+    const universalProxy = startUniversalProxyChatServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
-    const upstream = startSlowOpenAICompatibleUpstreamServer();
-    const { endpointId, sessionId, userMessageId } = await createChatSession(baseUrl, upstream.baseUrl);
+    const { endpointId, sessionId, userMessageId } = await createChatSession(
+      baseUrl,
+      'https://openai-compatible.provider.example/v1',
+    );
 
     const stream = await apiFetch(
       baseUrl,
@@ -89,6 +105,7 @@ describe('api-entry-node chat stream routes', () => {
       },
     );
     expect(stream.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 100));
 
     const stopBySession = await apiFetch(
       baseUrl,
@@ -109,9 +126,13 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('lists active stream ids by session for refresh recovery', async () => {
+    const universalProxy = startUniversalProxyChatServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
-    const upstream = startSlowOpenAICompatibleUpstreamServer();
-    const { endpointId, sessionId, userMessageId } = await createChatSession(baseUrl, upstream.baseUrl);
+    const { endpointId, sessionId, userMessageId } = await createChatSession(
+      baseUrl,
+      'https://openai-compatible.provider.example/v1',
+    );
 
     const stream = await apiFetch(
       baseUrl,
@@ -157,9 +178,13 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('returns empty active stream list after stream completion', async () => {
+    const universalProxy = startUniversalProxyChatServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
-    const upstream = startOpenAICompatibleUpstreamServer();
-    const { endpointId, sessionId, userMessageId } = await createChatSession(baseUrl, upstream.baseUrl);
+    const { endpointId, sessionId, userMessageId } = await createChatSession(
+      baseUrl,
+      'https://openai-compatible.provider.example/v1',
+    );
 
     const stream = await apiFetch(
       baseUrl,
@@ -192,9 +217,13 @@ describe('api-entry-node chat stream routes', () => {
   });
 
   it('rejects starting a second active stream for the same session', async () => {
+    const universalProxy = startUniversalProxyChatServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
-    const upstream = startSlowOpenAICompatibleUpstreamServer();
-    const { endpointId, sessionId, userMessageId } = await createChatSession(baseUrl, upstream.baseUrl);
+    const { endpointId, sessionId, userMessageId } = await createChatSession(
+      baseUrl,
+      'https://openai-compatible.provider.example/v1',
+    );
 
     const firstStream = await apiFetch(
       baseUrl,

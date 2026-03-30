@@ -15,13 +15,13 @@ export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 export const API_BASE = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 export const BACKEND_REAL_ANTHROPIC_BASE_URL =
   process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ??
-  'https://api.minimaxi.com/anthropic/v1';
+  'https://anthropic-compatible.provider.example/v1';
 export const BACKEND_REAL_MODEL =
   process.env.BACKEND_REAL_MODEL ??
-  'MiniMax-M2.7-highspeed';
+  'placeholder-model';
 export const BACKEND_REAL_OPENAI_BASE_URL =
   process.env.BACKEND_REAL_OPENAI_BASE_URL ??
-  'https://api.minimaxi.com/v1';
+  'https://openai-compatible.provider.example/v1';
 export const BACKEND_REAL_OPENAI_MODEL =
   process.env.BACKEND_REAL_OPENAI_MODEL ??
   BACKEND_REAL_MODEL;

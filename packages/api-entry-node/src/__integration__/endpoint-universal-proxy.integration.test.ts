@@ -121,6 +121,24 @@ function startUniversalProxyMockServer(options?: { failConfigPush?: boolean; str
           );
           return;
         }
+        if (requestUrl.pathname.endsWith('/openai/v1/chat/completions')) {
+          res.statusCode = 200;
+          res.setHeader('content-type', 'application/json');
+          res.end(
+            JSON.stringify({
+              object: 'chat.completion',
+              choices: [
+                {
+                  index: 0,
+                  message: { role: 'assistant', content: 'chat completions via universal proxy' },
+                  finish_reason: 'stop',
+                },
+              ],
+              usage: { total_tokens: 8 },
+            }),
+          );
+          return;
+        }
         if (requestUrl.pathname.endsWith('/anthropic/v1/messages')) {
           res.statusCode = 200;
           res.setHeader('content-type', 'application/json');
@@ -162,9 +180,9 @@ describe('api-entry-node universal proxy integration', () => {
     });
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-openai-endpoint',
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       type: 'openai',
-      base_url: 'https://open.bigmodel.cn/api/coding/paas/v4/chat/completions',
+      base_url: 'https://openai-compatible.provider.example/chat/completions',
       credential_ref: credential.id,
       provider_family: 'openai',
       protocol: 'openai_compatible',
@@ -192,7 +210,7 @@ describe('api-entry-node universal proxy integration', () => {
     });
     expect((universalProxy.configRequests()[0].body as {
       config?: { upstreams?: Array<{ api_root?: string }> };
-    }).config?.upstreams?.[0]?.api_root).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+    }).config?.upstreams?.[0]?.api_root).toBe('https://openai-compatible.provider.example');
 
     expect(universalProxy.namespaceRequests()).toHaveLength(1);
     expect(universalProxy.namespaceRequests()[0]?.path).toBe(
@@ -215,9 +233,9 @@ describe('api-entry-node universal proxy integration', () => {
     });
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-anth-endpoint',
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       type: 'anthropic',
-      base_url: 'https://open.bigmodel.cn/api/anthropic',
+      base_url: 'https://anthropic-compatible.provider.example',
       credential_ref: credential.id,
       provider_family: 'anthropic',
       protocol: 'anthropic_compatible',
@@ -250,7 +268,7 @@ describe('api-entry-node universal proxy integration', () => {
       config?: { upstreams?: Array<{ api_root?: string; fixed_upstream_format?: string }> };
     };
     expect(configPayload.config?.upstreams?.[0]).toMatchObject({
-      api_root: 'https://open.bigmodel.cn/api/anthropic/v1',
+      api_root: 'https://anthropic-compatible.provider.example/v1',
       fixed_upstream_format: 'anthropic',
     });
 
@@ -258,6 +276,96 @@ describe('api-entry-node universal proxy integration', () => {
     expect(forwarded?.path).toBe(`/namespaces/ws_default__proj_1__${endpoint.id}/anthropic/v1/messages`);
     expect(forwarded?.headers['anthropic-version']).toBe('2023-06-01');
     expect(forwarded?.headers['anthropic-beta']).toBe('prompt-caching-2024-07-31');
+  });
+
+  it('uses universal proxy for openai client requests against anthropic-compatible endpoints', async () => {
+    const universalProxy = startUniversalProxyMockServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
+    const { baseUrl, deps } = startServer();
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'upx-cross-anth-key',
+      value: 'sk-upx-cross-anth',
+      type: 'api_key',
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'upx-cross-anth-endpoint',
+      model: 'placeholder-model',
+      type: 'anthropic',
+      base_url: 'https://anthropic-compatible.provider.example',
+      credential_ref: credential.id,
+      provider_family: 'anthropic',
+      protocol: 'anthropic_compatible',
+    });
+
+    const proxyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          model: 'ignored-client-model',
+          input: 'bridge through universal proxy',
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(200);
+    const payload = (await proxyRes.json()) as { output_text?: string };
+    expect(payload.output_text).toBe('responses via universal proxy');
+
+    const configPayload = universalProxy.configRequests()[0]?.body as {
+      config?: { upstreams?: Array<{ api_root?: string; fixed_upstream_format?: string }> };
+    };
+    expect(configPayload.config?.upstreams?.[0]).toMatchObject({
+      api_root: 'https://anthropic-compatible.provider.example/v1',
+      fixed_upstream_format: 'anthropic',
+    });
+    expect(universalProxy.namespaceRequests()[0]?.path).toBe(
+      `/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/responses`,
+    );
+  });
+
+  it('uses universal proxy for anthropic client requests against openai-compatible endpoints', async () => {
+    const universalProxy = startUniversalProxyMockServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
+    const { baseUrl, deps } = startServer();
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'upx-cross-openai-key',
+      value: 'sk-upx-cross-openai',
+      type: 'api_key',
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'upx-cross-openai-endpoint',
+      model: 'placeholder-model',
+      type: 'openai',
+      base_url: 'https://openai-compatible.provider.example/chat/completions',
+      credential_ref: credential.id,
+      provider_family: 'openai',
+      protocol: 'openai_compatible',
+    });
+
+    const proxyRes = await apiFetch(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/anthropic/messages`,
+      {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'ignored-client-model',
+          max_tokens: 64,
+          messages: [{ role: 'user', content: [{ type: 'text', text: 'bridge through universal proxy' }] }],
+        }),
+      },
+    );
+    expect(proxyRes.status).toBe(200);
+    const payload = (await proxyRes.json()) as { content?: Array<{ text?: string }> };
+    expect(payload.content?.[0]?.text).toBe('messages via universal proxy');
+    expect(universalProxy.namespaceRequests()[0]?.path).toBe(
+      `/namespaces/ws_default__proj_1__${endpoint.id}/anthropic/v1/messages`,
+    );
   });
 
   it('fails fast when universal proxy rejects config push', async () => {
@@ -271,9 +379,9 @@ describe('api-entry-node universal proxy integration', () => {
     });
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-failing-endpoint',
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       type: 'openai',
-      base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
+      base_url: 'https://openai-compatible.provider.example',
       credential_ref: credential.id,
       provider_family: 'openai',
       protocol: 'openai_compatible',

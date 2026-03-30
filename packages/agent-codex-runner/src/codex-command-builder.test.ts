@@ -8,7 +8,7 @@ import {
 describe('codex-command-builder', () => {
   it('writes model context window, compact limit, and env-based auth into task codex config', () => {
     const config = buildTaskCodexConfig({
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       endpointProxyBase: 'http://proxy.local',
       wireApi: 'responses',
       modelContextWindow: 128000,
@@ -27,7 +27,7 @@ describe('codex-command-builder', () => {
 
   it('omits env-based auth headers when no auth env name is provided', () => {
     const config = buildTaskCodexConfig({
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       endpointProxyBase: 'http://proxy.local',
       wireApi: 'responses',
     });
@@ -37,7 +37,7 @@ describe('codex-command-builder', () => {
 
   it('builds yolo exec args without persisting auth in argv', () => {
     const args = buildCodexExecArgs({
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       prompt: 'hello',
       cwd: '/tmp/task',
       endpointProxyBase: 'http://proxy.local',
@@ -59,7 +59,7 @@ describe('codex-command-builder', () => {
 
   it('builds a text-only model catalog for a proxy-backed codex alias', () => {
     const catalogText = buildTaskCodexModelCatalog({
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
       inputModalities: ['text'],
@@ -71,7 +71,7 @@ describe('codex-command-builder', () => {
     };
 
     expect(catalog.models).toHaveLength(1);
-    expect(catalog.models[0]?.slug).toBe('glm-5-turbo');
+    expect(catalog.models[0]?.slug).toBe('placeholder-model');
     expect(catalog.models[0]?.context_window).toBe(128000);
     expect(catalog.models[0]?.auto_compact_token_limit).toBe(121600);
     expect(catalog.models[0]?.input_modalities).toEqual(['text']);

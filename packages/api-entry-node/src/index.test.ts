@@ -752,7 +752,7 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'glm-key',
           type: 'api_key',
-          value: 'sk-glm-test',
+          value: 'sk-placeholder-test',
         }),
       },
     );
@@ -767,7 +767,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'glm-chat',
-          model: 'glm-4-flash',
+          model: 'placeholder-model',
           type: 'custom',
           mode: 'openai',
           base_url: `${upstream.baseUrl}/chat/completions`,
@@ -789,7 +789,7 @@ describe('api-entry-node projects routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           endpoint_id: endpoint.id,
-          model: 'glm-4-flash',
+          model: 'placeholder-model',
         }),
       },
     );
@@ -820,7 +820,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-glm-test' }),
+        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-placeholder-test' }),
       },
     );
     expect(createCredential.status).toBe(201);
@@ -838,7 +838,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,
@@ -867,7 +867,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'placeholder-model' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },
@@ -975,7 +975,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-glm-test' }),
+        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-placeholder-test' }),
       },
     );
     expect(createCredential.status).toBe(201);
@@ -993,7 +993,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,
@@ -1022,7 +1022,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'placeholder-model' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },
@@ -1145,7 +1145,7 @@ describe('api-entry-node projects routes', () => {
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-glm-test' }),
+        body: JSON.stringify({ name: 'glm-key', type: 'api_key', value: 'sk-placeholder-test' }),
       },
     );
     expect(createCredential.status).toBe(201);
@@ -1163,7 +1163,7 @@ describe('api-entry-node projects routes', () => {
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,
@@ -1192,7 +1192,7 @@ describe('api-entry-node projects routes', () => {
           name: 'External notebook agent',
           mode: 'external',
           interaction_mode: 'notebook',
-          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' } },
+          execution_preferences: { notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'placeholder-model' } },
           capabilities: { streaming_completion: true, multimodal_completion: false },
         }),
       },

@@ -109,7 +109,7 @@ main() {
   local base endpoint_url proxy_url policy_url
   base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
   endpoint_url="${base}/endpoints/${endpoint_id}"
-  proxy_url="${endpoint_url}/proxy/chat/completions"
+  proxy_url="${endpoint_url}/proxy/openai/chat/completions"
   policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
 
   local endpoint_code

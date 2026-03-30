@@ -80,7 +80,7 @@ main() {
 
   local base="http://localhost:${PORT_API}/api/v1/workspaces/${WORKSPACE_ID}/projects/${project_id}"
   local endpoint_url="${base}/endpoints/${endpoint_id}"
-  local proxy_url="${endpoint_url}/proxy/chat/completions"
+  local proxy_url="${endpoint_url}/proxy/openai/chat/completions"
   local policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
   local endpoint_meta_file temp_endpoint_meta_file temp_endpoint_id=""
   local endpoint_protocol endpoint_base_url endpoint_model endpoint_credential_ref
@@ -158,7 +158,7 @@ main() {
   fi
   endpoint_id="${temp_endpoint_id}"
   endpoint_url="${base}/endpoints/${endpoint_id}"
-  proxy_url="${endpoint_url}/proxy/chat/completions"
+  proxy_url="${endpoint_url}/proxy/openai/chat/completions"
   policy_url="${base}/resources/endpoint/${endpoint_id}/policy"
 
   info "reading current endpoint policy"

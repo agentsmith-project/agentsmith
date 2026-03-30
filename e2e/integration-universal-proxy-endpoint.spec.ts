@@ -210,7 +210,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
       const credentialId = await createCredentialViaApi(page, token, projectId);
       const endpointId = await createEndpointViaApi(page, token, projectId, {
         name: `it-upx-openai-${Date.now()}`,
-        model: 'glm-5-turbo',
+        model: 'placeholder-model',
         baseUrl: upstream.baseUrl,
         credentialRef: credentialId,
         protocol: 'openai_compatible',
@@ -224,7 +224,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
             'Content-Type': 'application/json',
           },
           data: {
-            model: 'glm-5-turbo',
+            model: 'placeholder-model',
             input: 'reply with exactly dev-universal-responses-ok',
             max_output_tokens: 64,
           },
@@ -248,7 +248,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
       const credentialId = await createCredentialViaApi(page, token, projectId);
       const endpointId = await createEndpointViaApi(page, token, projectId, {
         name: `it-upx-anth-${Date.now()}`,
-        model: 'glm-5-turbo',
+        model: 'placeholder-model',
         baseUrl: upstream.baseUrl,
         credentialRef: credentialId,
         protocol: 'anthropic_compatible',
@@ -263,7 +263,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
             'anthropic-version': '2023-06-01',
           },
           data: {
-            model: 'glm-5-turbo',
+            model: 'placeholder-model',
             max_tokens: 64,
             stream: true,
             messages: [{ role: 'user', content: [{ type: 'text', text: 'hello' }] }],

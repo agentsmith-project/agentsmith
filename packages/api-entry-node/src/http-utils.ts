@@ -72,7 +72,7 @@ export function applyCors(res: http.ServerResponse): void {
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader(
     'Access-Control-Allow-Headers',
-    'Content-Type, Authorization, Idempotency-Key',
+    'Content-Type, Authorization, Idempotency-Key, X-API-Key, anthropic-version, anthropic-beta',
   );
 }
 

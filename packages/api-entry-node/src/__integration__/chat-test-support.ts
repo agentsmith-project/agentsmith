@@ -1,5 +1,5 @@
 import type { AddressInfo } from 'node:net';
-import http, { type Server } from 'node:http';
+import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { apiFetch } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -68,6 +68,95 @@ export function startOpenAICompatibleUpstreamServer(): {
   upstreamServers.push(server);
   const address = server.address() as AddressInfo;
   return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+}
+
+export function startUniversalProxyChatServer(): {
+  server: Server;
+  baseUrl: string;
+  lastBody: () => unknown;
+  lastPath: () => string;
+  lastHeaders: () => IncomingHttpHeaders;
+} {
+  let body: unknown = null;
+  let path = '';
+  let headers: IncomingHttpHeaders = {};
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      path = req.url ?? '';
+      headers = req.headers;
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      const text = Buffer.concat(chunks).toString('utf-8');
+      body = text ? JSON.parse(text) : {};
+
+      const configMatch = path.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
+      if (req.method === 'POST' && configMatch) {
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ status: 'applied' }));
+        return;
+      }
+
+      if (path.includes('/openai/v1/chat/completions')) {
+        const request = body as { stream?: boolean };
+        if (request.stream) {
+          res.statusCode = 200;
+          res.setHeader('content-type', 'text/event-stream');
+          res.write(
+            'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\n',
+          );
+          setTimeout(() => {
+            res.write(
+              'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{"content":" from universal proxy."},"finish_reason":null}]}\n\n',
+            );
+          }, 300);
+          setTimeout(() => {
+            res.write(
+              'data: {"id":"chatcmpl_slow","object":"chat.completion.chunk","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"total_tokens":12}}\n\n',
+            );
+            res.write('data: [DONE]\n\n');
+            res.end();
+          }, 1200);
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(
+          JSON.stringify({
+            id: 'chatcmpl_test',
+            object: 'chat.completion',
+            created: Math.floor(Date.now() / 1000),
+            model: 'placeholder-model',
+            choices: [
+              {
+                index: 0,
+                message: { role: 'assistant', content: 'Hello from universal proxy.' },
+                finish_reason: 'stop',
+              },
+            ],
+          }),
+        );
+        return;
+      }
+
+      res.statusCode = 404;
+      res.setHeader('content-type', 'application/json');
+      res.end(JSON.stringify({ error: 'not_found' }));
+    })();
+  });
+  server.listen(0);
+  upstreamServers.push(server);
+  const address = server.address() as AddressInfo;
+  return {
+    server,
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    lastBody: () => body,
+    lastPath: () => path,
+    lastHeaders: () => headers,
+  };
 }
 
 export function startPassthroughUpstreamServer(): {

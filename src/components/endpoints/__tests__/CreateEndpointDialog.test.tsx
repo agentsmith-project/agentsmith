@@ -160,14 +160,14 @@ beforeEach(() => {
       {
         id: 'p2',
         version_id: 'v1',
-        provider: 'zhipuai',
+        provider: 'providerai',
         family: 'custom',
-        provider_key: 'zhipuai',
-        provider_id: 'zhipuai',
-        name: 'Zhipu AI',
-        label: 'Zhipu AI',
-        api: 'https://open.bigmodel.cn/api/coding/paas/v4',
-        default_base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
+        provider_key: 'providerai',
+        provider_id: 'providerai',
+        name: 'Provider AI',
+        label: 'Provider AI',
+        api: 'https://openai-compatible.provider.example',
+        default_base_url: 'https://openai-compatible.provider.example',
         protocol: 'openai_compatible',
         compatibility_interface: 'openai',
         env: [],
@@ -275,7 +275,7 @@ describe('CreateEndpointDialog', () => {
     fireEvent.click(providerTrigger as HTMLElement);
     let providerOption: HTMLElement | null = null;
     await waitFor(() => {
-      const candidates = screen.getAllByText('Zhipu AI');
+      const candidates = screen.getAllByText('Provider AI');
       providerOption = (candidates
         .map((node) => node.closest('[role="option"]'))
         .find((node): node is HTMLElement => node instanceof HTMLElement))
@@ -286,7 +286,7 @@ describe('CreateEndpointDialog', () => {
     fireEvent.click(providerOption!);
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Base URL *')).toHaveValue('https://open.bigmodel.cn/api/coding/paas/v4');
+      expect(screen.getByLabelText('Base URL *')).toHaveValue('https://openai-compatible.provider.example');
     });
   });
 });

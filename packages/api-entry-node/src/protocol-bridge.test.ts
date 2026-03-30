@@ -15,6 +15,10 @@ describe('protocol bridge', () => {
     expect(detectProxyWireProtocol('/responses/')).toBe('openai_responses');
     expect(detectProxyWireProtocol('messages')).toBe('anthropic');
     expect(detectProxyWireProtocol('messages/count_tokens')).toBe('anthropic');
+    expect(detectProxyWireProtocol('openai/chat/completions')).toBe('openai_completion');
+    expect(detectProxyWireProtocol('openai/responses')).toBe('openai_responses');
+    expect(detectProxyWireProtocol('anthropic/messages')).toBe('anthropic');
+    expect(detectProxyWireProtocol('anthropic/messages/count_tokens')).toBe('anthropic');
   });
 
   it('converts openai chat request to anthropic messages request', () => {
@@ -46,7 +50,7 @@ describe('protocol bridge', () => {
 
   it('converts anthropic messages request to openai chat request', () => {
     const translated = anthropicRequestToOpenAiChat({
-      model: 'glm-5',
+      model: 'placeholder-model',
       system: 'you are helpful',
       messages: [
         {
@@ -115,29 +119,29 @@ describe('protocol bridge', () => {
     const plan = buildProxyBridgePlan({
       endpointProtocol: 'anthropic_compatible',
       proxyPath: 'chat/completions',
-      upstreamUrl: 'https://open.bigmodel.cn/api/anthropic',
+      upstreamUrl: 'https://anthropic-compatible.provider.example',
       body: {
-        model: 'glm-5',
+        model: 'placeholder-model',
         messages: [{ role: 'user', content: 'hi' }],
       },
     });
 
-    expect(plan.upstreamUrl).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages');
+    expect(plan.upstreamUrl).toBe('https://anthropic-compatible.provider.example/v1/messages');
   });
 
   it('keeps upstream anthropic sub-path when source and target protocol are both anthropic', () => {
     const plan = buildProxyBridgePlan({
       endpointProtocol: 'anthropic_compatible',
       proxyPath: 'messages/count_tokens',
-      upstreamUrl: 'https://open.bigmodel.cn/api/anthropic/v1/messages/count_tokens',
+      upstreamUrl: 'https://anthropic-compatible.provider.example/v1/messages/count_tokens',
       body: {
-        model: 'glm-5',
+        model: 'placeholder-model',
         messages: [{ role: 'user', content: 'hi' }],
       },
     });
 
     expect(plan.sourceProtocol).toBe('anthropic');
     expect(plan.targetProtocol).toBe('anthropic');
-    expect(plan.upstreamUrl).toBe('https://open.bigmodel.cn/api/anthropic/v1/messages/count_tokens');
+    expect(plan.upstreamUrl).toBe('https://anthropic-compatible.provider.example/v1/messages/count_tokens');
   });
 });

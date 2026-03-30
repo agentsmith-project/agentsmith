@@ -21,6 +21,7 @@ import { applyCors, json, proxyJsonRequest, readBody, unauthorized } from './htt
 import { mapRequestError } from './error-mapper.js';
 import { handleApiDocsRoute } from './api-docs-handler.js';
 import { handleMeRoute } from './me-route-handler.js';
+import { handleUserKeyRoute } from './user-key-route-handler.js';
 import {
   handleTaskRoute,
 } from './task-route-handler.js';
@@ -90,7 +91,7 @@ export async function handleRequest(
     }
 
   try {
-    const user = await verifyBearerToken(req, { cache: deps.cache });
+    const user = await verifyBearerToken(req, { cache: deps.cache, docStore: deps.docStore });
     if (!user) {
       unauthorized(res);
       return;
@@ -121,6 +122,17 @@ export async function handleRequest(
       cache: deps.cache,
       docStore: deps.docStore,
       governanceIncidentsDir: deps.governanceIncidentsDir,
+    })) {
+      return;
+    }
+    if (await handleUserKeyRoute({
+      req,
+      res,
+      method,
+      requestUrl,
+      user,
+      docStore: deps.docStore,
+      json,
     })) {
       return;
     }

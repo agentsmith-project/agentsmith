@@ -148,7 +148,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     summary: 'Chat 页面展示多轮对话、线程列表和输入区，适合做交互式提问、分析和结果迭代。',
     contentPoints: [
       '左侧为会话线程列表，右侧为当前会话消息内容。',
-      '示例数据展示了围绕 GLM-5 调用波动的多轮分析对话。',
+      '示例数据展示了围绕 placeholder-model 调用波动的多轮分析对话。',
     ],
     userSteps: [
       '在左侧选择已有会话，或新建会话。',
@@ -382,7 +382,7 @@ test('generate chinese product documentation artifacts', async ({ page, authedPa
     summary: 'Endpoint 页面统一管理各类模型入口，是 AI 开发工具、智能体和 Notebook 的统一接入面。',
     contentPoints: [
       '页面展示 endpoint 名称、模型、协议、状态和基础限额。',
-      '示例中包含 GLM-5 主生产和 Claude 复杂推理两个入口。',
+      '示例中包含 placeholder-model 主生产和 Claude 复杂推理两个入口。',
     ],
     userSteps: [
       '创建或编辑 endpoint。',

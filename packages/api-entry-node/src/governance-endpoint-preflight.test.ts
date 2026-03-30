@@ -13,7 +13,7 @@ function buildEndpoint(overrides?: Partial<EndpointRecord>): EndpointRecord {
     workspace_id: 'ws_1',
     project_id: 'proj_1',
     name: 'endpoint-1',
-    model: 'glm-5',
+    model: 'placeholder-model',
     type: 'openai',
     base_url: 'https://example.com',
     status: 'active',

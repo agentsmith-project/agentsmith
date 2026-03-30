@@ -103,7 +103,7 @@ describe('http-utils', () => {
         model?: string;
         messages?: Array<{ role: string; content: string }>;
       };
-      expect(body.model).toBe('glm-4.7');
+      expect(body.model).toBe('placeholder-model');
       expect(body.messages?.[0]?.role).toBe('system');
       expect(body.messages?.[0]?.content).toBe('You are helpful');
       expect(body.messages?.[1]?.role).toBe('user');
@@ -114,7 +114,7 @@ describe('http-utils', () => {
           id: 'chatcmpl_123',
           object: 'chat.completion',
           created: 1234567890,
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           choices: [
             {
               index: 0,
@@ -137,7 +137,7 @@ describe('http-utils', () => {
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(
           JSON.stringify({
-            model: 'glm-4.7',
+            model: 'placeholder-model',
             instructions: 'You are helpful',
             input: [
               {
@@ -214,7 +214,7 @@ describe('http-utils', () => {
           id: 'chatcmpl_x',
           object: 'chat.completion',
           created: 1,
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           choices: [{ index: 0, message: { role: 'assistant', content: 'done' }, finish_reason: 'stop' }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -227,7 +227,7 @@ describe('http-utils', () => {
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(
           JSON.stringify({
-            model: 'glm-4.7',
+            model: 'placeholder-model',
             input: [
               { type: 'function_call', call_id: 'call_1', name: 'read_file', arguments: '{"path":"a.txt"}' },
               { type: 'function_call_output', call_id: 'call_1', output: { ok: true } },
@@ -260,7 +260,7 @@ describe('http-utils', () => {
           id: 'chatcmpl_tools',
           object: 'chat.completion',
           created: 123,
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           choices: [
             {
               index: 0,
@@ -287,7 +287,7 @@ describe('http-utils', () => {
     const req = {
       method: 'POST',
       async *[Symbol.asyncIterator]() {
-        yield Buffer.from(JSON.stringify({ model: 'glm-4.7', input: 'hi' }));
+        yield Buffer.from(JSON.stringify({ model: 'placeholder-model', input: 'hi' }));
       },
     } as unknown as import('node:http').IncomingMessage;
 
@@ -335,7 +335,7 @@ describe('http-utils', () => {
           id: 'chatcmpl_ok',
           object: 'chat.completion',
           created: 1,
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -348,7 +348,7 @@ describe('http-utils', () => {
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(
           JSON.stringify({
-            model: 'glm-4.7',
+            model: 'placeholder-model',
             input: 'hi',
             tools: [
               { type: 'web_search' },
@@ -388,7 +388,7 @@ describe('http-utils', () => {
           id: 'chatcmpl_dev',
           object: 'chat.completion',
           created: 1,
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -401,7 +401,7 @@ describe('http-utils', () => {
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(
           JSON.stringify({
-            model: 'glm-4.7',
+            model: 'placeholder-model',
             input: [
               { role: 'developer', content: [{ type: 'input_text', text: 'internal policy' }] },
               { role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
@@ -440,7 +440,7 @@ describe('http-utils', () => {
           id: 'chatcmpl_tool_choice',
           object: 'chat.completion',
           created: 1,
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           choices: [{ index: 0, message: { role: 'assistant', content: 'ok' }, finish_reason: 'stop' }],
         }),
         { status: 200, headers: { 'content-type': 'application/json' } },
@@ -453,7 +453,7 @@ describe('http-utils', () => {
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(
           JSON.stringify({
-            model: 'glm-4.7',
+            model: 'placeholder-model',
             input: 'hi',
             tools: [{ type: 'function', name: 'shell', parameters: { type: 'object', properties: {} } }],
             tool_choice: { type: 'function', name: 'shell' },
@@ -480,9 +480,9 @@ describe('http-utils', () => {
   it('translates upstream chat SSE into responses SSE in real streaming mode', async () => {
     const encoder = new TextEncoder();
     const sseText = [
-      'data: {"id":"chatcmpl_stream","object":"chat.completion.chunk","created":123,"model":"glm-4.7","choices":[{"index":0,"delta":{"role":"assistant","content":"chain "},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl_stream","object":"chat.completion.chunk","created":123,"model":"placeholder-model","choices":[{"index":0,"delta":{"role":"assistant","content":"chain "},"finish_reason":null}]}',
       '',
-      'data: {"id":"chatcmpl_stream","object":"chat.completion.chunk","created":123,"model":"glm-4.7","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}',
+      'data: {"id":"chatcmpl_stream","object":"chat.completion.chunk","created":123,"model":"placeholder-model","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":2,"total_tokens":12}}',
       '',
       'data: [DONE]',
       '',
@@ -507,7 +507,7 @@ describe('http-utils', () => {
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(
           JSON.stringify({
-            model: 'glm-4.7',
+            model: 'placeholder-model',
             stream: true,
             input: [{ role: 'user', content: [{ type: 'input_text', text: 'hi' }] }],
           }),
@@ -549,7 +549,7 @@ describe('http-utils', () => {
   it('supports CRLF SSE separators when translating streaming chat to responses SSE', async () => {
     const encoder = new TextEncoder();
     const sseText = [
-      'data: {"id":"chatcmpl_stream","created":123,"model":"glm-4.7","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}',
+      'data: {"id":"chatcmpl_stream","created":123,"model":"placeholder-model","choices":[{"index":0,"delta":{"content":"ok"},"finish_reason":"stop"}]}',
       '',
       'data: [DONE]',
       '',
@@ -572,7 +572,7 @@ describe('http-utils', () => {
     const req = {
       method: 'POST',
       async *[Symbol.asyncIterator]() {
-        yield Buffer.from(JSON.stringify({ model: 'glm-4.7', stream: true, input: 'hi' }));
+        yield Buffer.from(JSON.stringify({ model: 'placeholder-model', stream: true, input: 'hi' }));
       },
     } as unknown as import('node:http').IncomingMessage;
 
@@ -601,9 +601,9 @@ describe('http-utils', () => {
   it('streams tool_call argument deltas and finalizes merged arguments across chunks', async () => {
     const encoder = new TextEncoder();
     const sseText = [
-      'data: {"id":"chatcmpl_tools_stream","created":123,"model":"glm-4.7","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_shell","function":{"name":"shell","arguments":"{\\"cmd\\":"}}]},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl_tools_stream","created":123,"model":"placeholder-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_shell","function":{"name":"shell","arguments":"{\\"cmd\\":"}}]},"finish_reason":null}]}',
       '',
-      'data: {"id":"chatcmpl_tools_stream","created":123,"model":"glm-4.7","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"pwd\\"}"}}]},"finish_reason":"tool_calls"}]}',
+      'data: {"id":"chatcmpl_tools_stream","created":123,"model":"placeholder-model","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"\\"pwd\\"}"}}]},"finish_reason":"tool_calls"}]}',
       '',
       'data: [DONE]',
       '',
@@ -626,7 +626,7 @@ describe('http-utils', () => {
     const req = {
       method: 'POST',
       async *[Symbol.asyncIterator]() {
-        yield Buffer.from(JSON.stringify({ model: 'glm-4.7', stream: true, input: 'hi' }));
+        yield Buffer.from(JSON.stringify({ model: 'placeholder-model', stream: true, input: 'hi' }));
       },
     } as unknown as import('node:http').IncomingMessage;
 
@@ -679,7 +679,7 @@ describe('http-utils', () => {
     const req = {
       method: 'POST',
       async *[Symbol.asyncIterator]() {
-        yield Buffer.from(JSON.stringify({ model: 'glm-4.7', stream: true, input: 'hi' }));
+        yield Buffer.from(JSON.stringify({ model: 'placeholder-model', stream: true, input: 'hi' }));
       },
     } as unknown as import('node:http').IncomingMessage;
 
@@ -785,9 +785,9 @@ describe('http-utils', () => {
   it('translates openai chat streaming into anthropic SSE when client uses messages path', async () => {
     const encoder = new TextEncoder();
     const sseText = [
-      'data: {"id":"chatcmpl_a","object":"chat.completion.chunk","created":1,"model":"glm-5","choices":[{"index":0,"delta":{"role":"assistant","content":"hello "},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl_a","object":"chat.completion.chunk","created":1,"model":"placeholder-model","choices":[{"index":0,"delta":{"role":"assistant","content":"hello "},"finish_reason":null}]}',
       '',
-      'data: {"id":"chatcmpl_a","object":"chat.completion.chunk","created":1,"model":"glm-5","choices":[{"index":0,"delta":{"content":"anthropic"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}',
+      'data: {"id":"chatcmpl_a","object":"chat.completion.chunk","created":1,"model":"placeholder-model","choices":[{"index":0,"delta":{"content":"anthropic"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}',
       '',
       'data: [DONE]',
       '',
@@ -811,7 +811,7 @@ describe('http-utils', () => {
       method: 'POST',
       async *[Symbol.asyncIterator]() {
         yield Buffer.from(JSON.stringify({
-          model: 'glm-5',
+          model: 'placeholder-model',
           stream: true,
           messages: [{ role: 'user', content: [{ type: 'text', text: 'hi' }] }],
         }));

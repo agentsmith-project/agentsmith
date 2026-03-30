@@ -15,7 +15,7 @@ export const docAuditEvents: AuditEvent[] = [
     result: 'ok',
     request_id: 'req-doc-001',
     metadata_json: {
-      endpoint_name: 'GLM-5 主生产',
+      endpoint_name: 'placeholder-model 主生产',
       changed_fields: ['requests_per_minute', 'usd_spending_per_day'],
       reason: '应对 Notebook 批处理峰值和成本抬升',
     },
@@ -34,8 +34,8 @@ export const docAuditEvents: AuditEvent[] = [
     result: 'ok',
     request_id: 'req-doc-002',
     metadata_json: {
-      endpoint_name: 'GLM-5 主生产',
-      model: 'GLM-5',
+      endpoint_name: 'placeholder-model 主生产',
+      model: 'placeholder-model',
       tokens_used: 16840,
       duration_ms: 4820,
       task_id: 'task_doc_001',
@@ -64,7 +64,7 @@ export const docAuditEvents: AuditEvent[] = [
 export const docUsageTopResources = [
   {
     resource_id: 'endpoint_001',
-    resource_name: 'GLM-5 主生产',
+    resource_name: 'placeholder-model 主生产',
     resource_type: 'endpoint',
     requests: 18420,
   },

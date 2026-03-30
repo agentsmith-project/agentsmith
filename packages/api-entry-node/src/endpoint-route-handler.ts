@@ -88,9 +88,14 @@ export function resolveEffectiveEndpointProxyPath(
     .replace(/\/+$/, '');
   const preserveClientWirePath = action === 'chat' && new Set([
     'openai/chat/completions',
+    'openai/v1/chat/completions',
     'openai/responses',
-    'anthropic/messages',
+    'openai/v1/responses',
     'messages/count_tokens',
+    'anthropic/messages',
+    'anthropic/v1/messages',
+    'anthropic/messages/count_tokens',
+    'anthropic/v1/messages/count_tokens',
   ]).has(normalizedOriginal);
 
   return preserveClientWirePath ? normalizedOriginal : (resolvedProxyPath || originalProxyPath);
@@ -101,11 +106,46 @@ function legacyBridgeProxyPath(proxyPath: string): string {
     .trim()
     .replace(/^\/+/, '')
     .replace(/^v1\//i, '')
+    .replace(/^(openai|anthropic)\/v1\//i, '$1/')
     .replace(/\/+$/, '');
   if (normalized === 'openai/chat/completions') return 'chat/completions';
   if (normalized === 'openai/responses') return 'responses';
   if (normalized === 'anthropic/messages') return 'messages';
+  if (normalized === 'anthropic/messages/count_tokens') return 'messages/count_tokens';
   return normalized;
+}
+
+function canonicalUniversalProxyPath(proxyPath: string): string | null {
+  const normalized = proxyPath
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/^v1\//i, '')
+    .replace(/^(openai|anthropic)\/v1\//i, '$1/')
+    .replace(/\/+$/, '');
+  if (
+    normalized === 'openai/chat/completions'
+    || normalized === 'openai/responses'
+    || normalized === 'anthropic/messages'
+    || normalized === 'anthropic/messages/count_tokens'
+  ) {
+    return normalized;
+  }
+  if (normalized === 'chat/completions' || normalized === 'responses') {
+    return `openai/${normalized}`;
+  }
+  if (normalized === 'messages' || normalized === 'messages/count_tokens') {
+    return `anthropic/${normalized}`;
+  }
+  return null;
+}
+
+function isCanonicalProtocolProxyPath(proxyPath: string): boolean {
+  const normalized = proxyPath
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/^v1\//i, '')
+    .replace(/\/+$/, '');
+  return normalized.startsWith('openai/') || normalized.startsWith('anthropic/');
 }
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
@@ -270,22 +310,71 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     try {
       const normalizedOriginalProxyPath = normalizeGatewayProxyPath(proxyPath);
       const universalProxyService = deps.universalProxyService;
-      const canUseUniversalProxy =
-        universalProxyService
-        && universalProxyService.supportsEndpoint(endpoint)
-        && universalProxyService.supportsProxyPath(
-          resolveEffectiveEndpointProxyPath(action, normalizedOriginalProxyPath, resolved.proxyPath),
-        );
-      const resolvedRequestBody =
-        typeof requestBody !== 'undefined'
-          ? requestBody
-          : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
       const effectiveProxyPath = resolveEffectiveEndpointProxyPath(
         action,
         normalizedOriginalProxyPath,
         resolved.proxyPath,
       );
+      const universalProxyPath =
+        action === 'chat'
+          ? canonicalUniversalProxyPath(effectiveProxyPath)
+          : null;
+      if (
+        action === 'chat'
+        && universalProxyPath
+        && !isCanonicalProtocolProxyPath(normalizedOriginalProxyPath)
+      ) {
+        json(res, 422, {
+          error_code: 'VALIDATION_ERROR',
+          message: 'gateway_proxy_path_requires_protocol_prefix',
+        });
+        return true;
+      }
+      const requiresUniversalProxyForLlm = Boolean(universalProxyPath);
+      if (requiresUniversalProxyForLlm && !universalProxyService) {
+        json(res, 503, {
+          error_code: 'UNIVERSAL_PROXY_REQUIRED',
+          message: 'universal_proxy_required_for_llm_requests',
+        });
+        return true;
+      }
+      if (
+        requiresUniversalProxyForLlm
+        && universalProxyService
+        && !universalProxyService.supportsEndpoint(endpoint)
+      ) {
+        json(res, 422, {
+          error_code: 'VALIDATION_ERROR',
+          message: 'universal_proxy_endpoint_protocol_not_supported',
+        });
+        return true;
+      }
+      if (
+        requiresUniversalProxyForLlm
+        && universalProxyService
+        && universalProxyPath
+        && !universalProxyService.supportsProxyPath(universalProxyPath)
+      ) {
+        json(res, 422, {
+          error_code: 'VALIDATION_ERROR',
+          message: 'universal_proxy_path_not_supported',
+        });
+        return true;
+      }
+      const canUseUniversalProxy =
+        universalProxyService
+        && universalProxyService.supportsEndpoint(endpoint)
+        && universalProxyPath
+        && universalProxyService.supportsProxyPath(universalProxyPath);
+      const resolvedRequestBody =
+        typeof requestBody !== 'undefined'
+          ? requestBody
+          : (method !== 'GET' && method !== 'HEAD' ? await readBody(req) : {});
       const legacyProxyPath = legacyBridgeProxyPath(effectiveProxyPath);
+      const targetUpstreamProxyPath =
+        normalizedOriginalProxyPath === 'anthropic/messages/count_tokens'
+          ? 'messages/count_tokens'
+          : resolved.proxyPath;
       const proxyResult = canUseUniversalProxy
         ? await (async () => {
           const namespace = await universalProxyService.ensureEndpointNamespace(
@@ -298,7 +387,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
             req,
             res,
             namespace,
-            proxyPath: effectiveProxyPath,
+            proxyPath: universalProxyPath ?? effectiveProxyPath,
             model: resolvedModel,
             requestBody: resolvedRequestBody,
             passthroughHeaders: collectPassthroughHeaders(req),
@@ -307,9 +396,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         : await proxyJsonRequest(req, res, {
           upstreamUrl: buildUpstreamUrl(
             endpoint.base_url,
-            normalizedOriginalProxyPath === 'messages/count_tokens'
-              ? normalizedOriginalProxyPath
-              : resolved.proxyPath,
+            targetUpstreamProxyPath,
           ),
           apiKey,
           endpointProtocol: endpoint.protocol,
@@ -623,13 +710,12 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
   }
 
   if (route.kind === 'llmGatewayProxy' && method === 'POST' && route.workspaceId && route.projectId && route.proxyPath) {
-    const normalizedProxyPath = normalizeGatewayProxyPath(route.proxyPath);
-    const proxyPath = normalizedProxyPath === 'completions' ? 'openai/chat/completions' : normalizedProxyPath;
+    const proxyPath = normalizeGatewayProxyPath(route.proxyPath);
     const supportedProxyPaths = new Set([
       'openai/chat/completions',
       'openai/responses',
       'anthropic/messages',
-      'messages/count_tokens',
+      'anthropic/messages/count_tokens',
     ]);
     if (!supportedProxyPaths.has(proxyPath)) {
       json(res, 422, { error_code: 'VALIDATION_ERROR', message: 'gateway_proxy_path_not_supported' });

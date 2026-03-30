@@ -105,16 +105,16 @@ async function openFolderByName(page: Page, name: string): Promise<void> {
 test.describe('@lane-real notebook external agent via real codex runner', () => {
   test('runs a notebook task and keeps the mounted workspace consistent across runner, Files UI, and local mount', async ({ page }) => {
     test.setTimeout(720_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Notebook');
     const workspaceLibraryName = `Notebook Workspace ${Date.now()}`;
     await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
-    const credentialName = `GLM Credential ${Date.now()}`;
-    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
-      endpointName: `GLM Endpoint ${Date.now()}`,
+      endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
@@ -240,16 +240,16 @@ test.describe('@lane-real notebook external agent via real codex runner', () => 
 
   test('runs a notebook task through docker runner with the same mounted workspace semantics', async ({ page }) => {
     test.setTimeout(900_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Docker Notebook');
     const workspaceLibraryName = `Docker Notebook Workspace ${Date.now()}`;
     await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
-    const credentialName = `GLM Docker Credential ${Date.now()}`;
-    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
+    const credentialName = `Provider Docker Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
-      endpointName: `GLM Docker Endpoint ${Date.now()}`,
+      endpointName: `Provider Docker Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,

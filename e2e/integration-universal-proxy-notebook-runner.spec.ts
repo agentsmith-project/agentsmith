@@ -226,7 +226,7 @@ async function createExternalNotebookAgentBundle(args: {
           notebook: {
             endpoint_id: args.endpointId,
             wire_api: 'responses',
-            model: args.model?.trim() || 'glm-5-turbo',
+            model: args.model?.trim() || 'placeholder-model',
           },
         },
         capabilities: {
@@ -452,7 +452,7 @@ async function startOpenAiChatCompletionsUpstream(replyText: string): Promise<Up
           id: 'chatcmpl_it',
           object: 'chat.completion.chunk',
           created: Math.floor(Date.now() / 1000),
-          model: 'glm-5',
+          model: 'placeholder-model',
           choices: [{ index: 0, delta: { content: replyText }, finish_reason: 'stop' }],
         });
         res.write(`data: ${payload}\n\n`);
@@ -588,7 +588,7 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
           token,
           projectId,
           name: `UPX Notebook ${scenario.kind} ${Date.now()}`,
-          model: 'glm-5-turbo',
+          model: 'placeholder-model',
           baseUrl: upstream.baseUrl,
           credentialRef: credential.id,
           protocol: scenario.protocol,
@@ -642,7 +642,7 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
             expect(upstream.requests?.length).toBeGreaterThan(0);
             const requestBody = upstream.requests?.at(-1);
             expect(requestBody?.messages).toBeTruthy();
-            expect(requestBody?.model).toBe('glm-5-turbo');
+            expect(requestBody?.model).toBe('placeholder-model');
             expect(requestBody?.store).toBeUndefined();
             expect(requestBody?.reasoning).toBeUndefined();
             expect(requestBody?.messages).toEqual(
@@ -666,10 +666,10 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
 test.describe('@lane-real notebook runner real upstream stability via universal proxy', () => {
   test('completes long multi-turn notebook tasks for openai-compatible and anthropic-compatible upstreams', async ({ page }) => {
     test.setTimeout(1_200_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
     const token = await issueDevToken(page);
     const projectId = await createProjectViaApi(page, token, `it-upx-notebook-real-${Date.now()}`);
-    const credential = await createCredentialViaApi(page, token, projectId, glmApiKey);
+    const credential = await createCredentialViaApi(page, token, projectId, providerApiKey);
 
     const scenarios = [
       {

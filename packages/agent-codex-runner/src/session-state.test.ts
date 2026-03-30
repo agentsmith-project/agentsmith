@@ -23,7 +23,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDir = await createCodexDir();
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -38,7 +38,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -49,7 +49,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     await writeFile(join(codexDir, 'state_5.sqlite'), 'keep');
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -65,7 +65,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -82,7 +82,7 @@ describe('ensureCodexSessionStateCompatible', () => {
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-b',
       notebookMode: true,
@@ -101,7 +101,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -112,7 +112,7 @@ describe('ensureCodexSessionStateCompatible', () => {
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -130,7 +130,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDirA = await createCodexDir();
     const codexDirB = await createCodexDir();
     const baseInput = {
-      model: 'glm-5-codex',
+      model: 'placeholder-model',
       wireApi: 'responses' as const,
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -159,7 +159,7 @@ describe('ensureCodexSessionStateCompatible', () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,
@@ -171,7 +171,7 @@ describe('ensureCodexSessionStateCompatible', () => {
 
     const result = await ensureCodexSessionStateCompatible({
       codexDir,
-      model: 'glm-5-turbo',
+      model: 'placeholder-model',
       wireApi: 'responses',
       resourceProxyBase: 'http://proxy-a',
       notebookMode: true,

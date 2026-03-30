@@ -122,7 +122,7 @@ describe('api-entry-node notebook task routes', () => {
         notebook: {
           endpoint_id: 'ep_external',
           wire_api: 'responses',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
         },
       },
     });
@@ -310,7 +310,7 @@ describe('api-entry-node notebook task routes', () => {
         notebook: {
           endpoint_id: 'ep_offline',
           wire_api: 'responses',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
         },
       },
     });
@@ -411,7 +411,7 @@ describe('api-entry-node notebook task routes', () => {
           notebook: {
             endpoint_id: 'ep_external',
             wire_api: 'responses',
-            model: 'glm-5-turbo',
+            model: 'placeholder-model',
           },
         },
       });
@@ -1359,7 +1359,7 @@ describe('api-entry-node notebook task routes', () => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           name: 'trace-metrics-endpoint',
-          model: 'glm-4.7',
+          model: 'placeholder-model',
           type: 'openai',
           mode: 'responses',
           base_url: 'https://example.com/v1',
@@ -1393,7 +1393,7 @@ describe('api-entry-node notebook task routes', () => {
       owner_id: 'user_test',
       visibility: 'private',
       execution_preferences_json: {
-        notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'glm-4.7' },
+        notebook: { endpoint_id: endpoint.id, wire_api: 'responses', model: 'placeholder-model' },
       },
     });
 

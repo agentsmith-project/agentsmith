@@ -83,10 +83,15 @@ function mapAnthropicToolChoiceToOpenAi(value: unknown): unknown {
 }
 
 export function detectProxyWireProtocol(proxyPath: string): ProxyWireProtocol {
-  const normalized = proxyPath.replace(/^\/+/, '').replace(/\/+$/, '').toLowerCase();
-  if (normalized === 'responses') return 'openai_responses';
-  if (normalized === 'chat/completions') return 'openai_completion';
-  if (normalized === 'messages' || normalized.startsWith('messages/')) return 'anthropic';
+  const normalized = proxyPath.replace(/^\/+/, '').replace(/^v1\//i, '').replace(/\/+$/, '').toLowerCase();
+  if (normalized === 'responses' || normalized === 'openai/responses') return 'openai_responses';
+  if (normalized === 'chat/completions' || normalized === 'openai/chat/completions') return 'openai_completion';
+  if (
+    normalized === 'messages'
+    || normalized.startsWith('messages/')
+    || normalized === 'anthropic/messages'
+    || normalized.startsWith('anthropic/messages/')
+  ) return 'anthropic';
   return 'unknown';
 }
 

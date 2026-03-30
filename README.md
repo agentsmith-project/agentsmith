@@ -160,7 +160,7 @@ Templates:
 - backend-real: `.env.backend-real.example`
 - demo deploy: `infra/deploy/demo/env/site.env.example`
 
-Old names and old demo commands are removed. Passing `GLM_*` to current entrypoints fails fast.
+Old names and old demo commands are removed. Current entrypoints use `PRESET_*`.
 
 ### No-Sandbox Deployment Baseline
 

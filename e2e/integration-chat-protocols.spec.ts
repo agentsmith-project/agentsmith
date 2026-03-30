@@ -227,7 +227,7 @@ async function startOpenAiCompatibleStreamingUpstream(replyText: string): Promis
         id: 'chatcmpl_it',
         object: 'chat.completion.chunk',
         created: Math.floor(Date.now() / 1000),
-        model: 'glm-5',
+        model: 'placeholder-model',
         choices: [{ index: 0, delta: { content: replyText }, finish_reason: 'stop' }],
       });
       res.write(`data: ${payload}\n\n`);
@@ -293,7 +293,7 @@ test.describe('@lane-real integration chat endpoint protocols', () => {
       const credentialId = await createCredentialViaApi(page, apiBase, projectId, token);
       const endpointId = await createEndpointViaApi(page, apiBase, projectId, token, {
         name: `it-openai-endpoint-${Date.now()}`,
-        model: 'glm-5',
+        model: 'placeholder-model',
         baseUrl: upstream.baseUrl,
         credentialRef: credentialId,
         protocol: 'openai_compatible',
@@ -321,7 +321,7 @@ test.describe('@lane-real integration chat endpoint protocols', () => {
       const credentialId = await createCredentialViaApi(page, apiBase, projectId, token);
       const endpointId = await createEndpointViaApi(page, apiBase, projectId, token, {
         name: `it-anthropic-endpoint-${Date.now()}`,
-        model: 'glm-5',
+        model: 'placeholder-model',
         baseUrl: `${upstream.baseUrl}/v1`,
         credentialRef: credentialId,
         protocol: 'anthropic_compatible',

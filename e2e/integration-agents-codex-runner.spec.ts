@@ -105,14 +105,14 @@ async function waitForLatestAssistantContent(args: {
 test.describe('@lane-real external agent codex-runner integration', () => {
   test('streams multi-turn chat through the real local codex runner and persists replies', async ({ page }) => {
     test.setTimeout(720_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Chat');
-    const credentialName = `GLM Credential ${Date.now()}`;
-    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
-      endpointName: `GLM Endpoint ${Date.now()}`,
+      endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,
@@ -165,14 +165,14 @@ test.describe('@lane-real external agent codex-runner integration', () => {
 
   test('preserves session continuity across refresh with the real local codex runner', async ({ page }) => {
     test.setTimeout(720_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
 
     await keycloakLoginToWorkspace(page, 'ws_default', KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     const { projectId } = await createProjectInWorkspace(page, 'ws_default', 'Codex Agent Memory');
-    const credentialName = `GLM Credential ${Date.now()}`;
-    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
+    const credentialName = `Provider Credential ${Date.now()}`;
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
-      endpointName: `GLM Endpoint ${Date.now()}`,
+      endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,

@@ -13,8 +13,8 @@ load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
 apply_preset_endpoint_defaults
 
-BACKEND_REAL_ANTHROPIC_BASE_URL="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
-BACKEND_REAL_OPENAI_BASE_URL="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}"
+BACKEND_REAL_ANTHROPIC_BASE_URL="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://anthropic-compatible.provider.example/v1}"
+BACKEND_REAL_OPENAI_BASE_URL="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://openai-compatible.provider.example/v1}"
 
 PUBLIC_WEB_BASE_URL="${PUBLIC_WEB_BASE_URL:-http://localhost:3001}"
 PUBLIC_API_BASE_URL="${PUBLIC_API_BASE_URL:-http://localhost:20000}"
@@ -84,9 +84,9 @@ PRESET_PROJECT_NAME_VALUE="${PRESET_PROJECT_NAME:-Demo Project}"
 PRESET_PROJECT_ID="$(printf '%s' "${PROJECTS_JSON}" | json_find_named_id "${PRESET_PROJECT_NAME_VALUE}")"
 [[ -n "${PRESET_PROJECT_ID}" ]] || die "preset verify failed: preset project missing in ws_default"
 
-EXPECTED_MODEL="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}"
-EXPECTED_ANTHROPIC_ENDPOINT_NAME="${PRESET_ANTHROPIC_ENDPOINT_NAME:-minimax-anthropic}"
-EXPECTED_OPENAI_ENDPOINT_NAME="${PRESET_OPENAI_ENDPOINT_NAME:-minimax-openai}"
+EXPECTED_MODEL="${PRESET_ENDPOINT_MODEL:-placeholder-model}"
+EXPECTED_ANTHROPIC_ENDPOINT_NAME="${PRESET_ANTHROPIC_ENDPOINT_NAME:-preset-anthropic-endpoint}"
+EXPECTED_OPENAI_ENDPOINT_NAME="${PRESET_OPENAI_ENDPOINT_NAME:-preset-openai-endpoint}"
 ENDPOINT_COUNT="$(
   curl -fsS "${HOST_LOCAL_API_BASE_URL}/api/v1/workspaces/ws_default/projects/${PRESET_PROJECT_ID}/endpoints?page=1&page_size=100" \
     -H "Authorization: Bearer ${ACCESS_TOKEN}" \
@@ -145,7 +145,7 @@ docker run --rm \
   -e BACKEND_REAL_API_KEY="${PRESET_ENDPOINT_API_KEY:-}" \
   -e BACKEND_REAL_ANTHROPIC_BASE_URL="${BACKEND_REAL_ANTHROPIC_BASE_URL}" \
   -e BACKEND_REAL_OPENAI_BASE_URL="${BACKEND_REAL_OPENAI_BASE_URL}" \
-  -e BACKEND_REAL_MODEL="${PRESET_ENDPOINT_MODEL:-MiniMax-M2.7-highspeed}" \
+  -e BACKEND_REAL_MODEL="${PRESET_ENDPOINT_MODEL:-placeholder-model}" \
   -e INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_INTERNAL_AGENT_IMAGE="${RUNNER_IMAGE}" \
   -e INTEGRATION_CODEX_RUNNER_EMBEDDED=1 \

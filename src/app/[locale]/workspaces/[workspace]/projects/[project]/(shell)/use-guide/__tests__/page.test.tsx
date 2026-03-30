@@ -14,7 +14,11 @@ describe('UseGuidePage route', () => {
     await waitFor(() => {
       expect(screen.getByTestId('use-guide__page')).toBeInTheDocument();
     });
-    expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/llm-gateway');
+    expect(screen.getByTestId('use-guide__gateway-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy');
+    expect(screen.getByTestId('use-guide__openai-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy/openai');
+    expect(screen.getByTestId('use-guide__anthropic-base-url')).toHaveTextContent('https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy/anthropic');
+    expect(screen.getByTestId('use-guide__codex-sample')).toHaveTextContent('model_providers.agentsmith.base_url="https://api.example.com/api/v1/workspaces/ws_1/projects/proj_1/endpoints/<endpoint-id>/proxy/openai"');
+    expect(screen.getByTestId('use-guide__claude-sample')).toHaveTextContent('CLAUDE_SETTINGS=$(jq -nc');
   });
 
   it('shows permission denied when token is missing', async () => {

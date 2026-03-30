@@ -39,6 +39,16 @@ type ProxyOptions = {
   passthroughHeaders?: Record<string, string>;
 };
 
+type ProxyForwardOptions = {
+  req: http.IncomingMessage;
+  namespace: string;
+  proxyPath: string;
+  model: string;
+  requestBody: unknown;
+  passthroughHeaders?: Record<string, string>;
+  signal?: AbortSignal;
+};
+
 type ProxyResult = { upstream_status: number; tokens_total?: number };
 
 function sanitizeBaseUrl(value: string): string {
@@ -67,6 +77,7 @@ function routePathForProxyPath(proxyPath: string): string | null {
   if (normalized === 'openai/chat/completions') return '/openai/v1/chat/completions';
   if (normalized === 'openai/responses') return '/openai/v1/responses';
   if (normalized === 'anthropic/messages') return '/anthropic/v1/messages';
+  if (normalized === 'anthropic/messages/count_tokens') return '/anthropic/v1/messages/count_tokens';
   return null;
 }
 
@@ -180,24 +191,7 @@ export class UniversalProxyService {
   }
 
   async proxyJsonRequest(options: ProxyOptions): Promise<ProxyResult> {
-    const routePath = routePathForProxyPath(options.proxyPath);
-    if (!routePath) {
-      throw new Error(`unsupported_universal_proxy_path:${options.proxyPath}`);
-    }
-    const upstreamResponse = await fetch(
-      `${sanitizeBaseUrl(this.baseUrl)}/namespaces/${encodeURIComponent(options.namespace)}${routePath}`,
-      {
-        method: options.req.method ?? 'POST',
-        headers: {
-          'content-type': 'application/json',
-          ...(options.passthroughHeaders ?? {}),
-        },
-        body: JSON.stringify({
-          ...(typeof options.requestBody === 'object' && options.requestBody !== null ? options.requestBody as Record<string, unknown> : {}),
-          model: options.model,
-        }),
-      },
-    );
+    const upstreamResponse = await this.forwardRequest(options);
 
     options.res.statusCode = upstreamResponse.status;
     const contentType = upstreamResponse.headers.get('content-type');
@@ -230,5 +224,27 @@ export class UniversalProxyService {
       upstream_status: upstreamResponse.status,
       tokens_total: parseTokenTotal(parsed),
     };
+  }
+
+  async forwardRequest(options: ProxyForwardOptions): Promise<Response> {
+    const routePath = routePathForProxyPath(options.proxyPath);
+    if (!routePath) {
+      throw new Error(`unsupported_universal_proxy_path:${options.proxyPath}`);
+    }
+    return fetch(
+      `${sanitizeBaseUrl(this.baseUrl)}/namespaces/${encodeURIComponent(options.namespace)}${routePath}`,
+      {
+        method: options.req.method ?? 'POST',
+        headers: {
+          'content-type': 'application/json',
+          ...(options.passthroughHeaders ?? {}),
+        },
+        body: JSON.stringify({
+          ...(typeof options.requestBody === 'object' && options.requestBody !== null ? options.requestBody as Record<string, unknown> : {}),
+          model: options.model,
+        }),
+        signal: options.signal,
+      },
+    );
   }
 }

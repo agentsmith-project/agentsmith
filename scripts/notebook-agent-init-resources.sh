@@ -32,14 +32,6 @@ PROJECT_JOIN_POLICY="${PROJECT_JOIN_POLICY:-approval_required}"
 MODEL_MAX_CONTEXT_TOKENS="${MODEL_MAX_CONTEXT_TOKENS:-204800}"
 MODEL_MAX_OUTPUT_TOKENS="${MODEL_MAX_OUTPUT_TOKENS:-128000}"
 
-for legacy_key in GLM_API_KEY GLM_BASE_URL GLM_MODEL ENDPOINT_PROTOCOL; do
-  if [[ -n "${!legacy_key:-}" ]]; then
-    echo "[init] legacy env var is not supported: ${legacy_key}" >&2
-    echo "[init] use PRESET_ENDPOINT_API_KEY plus PRESET_ANTHROPIC_ENDPOINT_BASE_URL / PRESET_ANTHROPIC_ENDPOINT_PROTOCOL / PRESET_ENDPOINT_MODEL" >&2
-    exit 1
-  fi
-done
-
 if [[ ! -f "${TOKEN_FILE}" ]]; then
   echo "[init] token file not found: ${TOKEN_FILE}" >&2
   echo "[init] run: make notebook-agent-refresh-token" >&2

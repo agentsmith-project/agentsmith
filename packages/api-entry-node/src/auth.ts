@@ -5,9 +5,10 @@ import {
   jwtVerify,
   type JWTPayload,
 } from 'jose';
-import type { CachePort } from '@mbos/ports';
+import type { CachePort, JsonDocStorePort } from '@mbos/ports';
 import { resolveSSETicket } from './sse-ticket-store.js';
 import { listPersistedSystemWorkspaces } from './system-workspace-persistence.js';
+import { verifyUserApiKey } from './user-api-key-store.js';
 import type { SystemWorkspaceRecord } from '../../../src/lib/system-admin/workspace-registry/types.js';
 
 export interface AuthenticatedUser {
@@ -181,6 +182,19 @@ export function extractBearerToken(req: http.IncomingMessage): string | null {
   return token || null;
 }
 
+function extractApiKeyHeaderToken(req: http.IncomingMessage): string | null {
+  const raw = req.headers['x-api-key'];
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim();
+    return trimmed || null;
+  }
+  if (Array.isArray(raw)) {
+    const trimmed = raw[0]?.trim();
+    return trimmed || null;
+  }
+  return null;
+}
+
 function extractSSETicket(req: http.IncomingMessage): string | null {
   try {
     const url = new URL(req.url ?? '', 'http://localhost');
@@ -204,65 +218,93 @@ const userInfoCache = new Map<string, { user: AuthenticatedUser; expiresAt: numb
 
 export async function verifyBearerToken(
   req: http.IncomingMessage,
-  options?: { cache?: CachePort },
+  options?: { cache?: CachePort; docStore?: JsonDocStorePort },
 ): Promise<AuthenticatedUser | null> {
   const headerToken = extractBearerToken(req);
+  const apiKeyHeaderToken = extractApiKeyHeaderToken(req);
   const ticketToken = canUseTicketQuery(req) && options?.cache
     ? (await resolveSSETicket(options.cache, extractSSETicket(req) ?? ''))?.bearerToken ?? null
     : null;
-  const token =
-    headerToken
-    ?? ticketToken;
-  if (!token) {
+  const candidateTokens = [headerToken, apiKeyHeaderToken, ticketToken]
+    .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index);
+  if (candidateTokens.length === 0) {
     return null;
   }
 
   const now = Date.now();
-  const cached = userInfoCache.get(token);
-  if (cached && cached.expiresAt > now) {
-    return cached.user;
-  }
+  const verifyAsUserApiKey = async (token: string): Promise<AuthenticatedUser | null> => {
+    if (!options?.docStore) {
+      return null;
+    }
+    const matchedKey = await verifyUserApiKey(options.docStore, token);
+    if (!matchedKey) {
+      return null;
+    }
+    return {
+      id: matchedKey.user_id,
+      email: matchedKey.user_email?.trim() || `${matchedKey.user_id}@api-key.local`,
+      name: matchedKey.user_name?.trim() || matchedKey.note?.trim() || matchedKey.user_id,
+    };
+  };
 
-  const issuerClaim = readIssuerClaim(token);
   const allowedConfigs = await resolveAllowedIssuerConfigs();
   const defaultIssuer = keycloakIssuerFromEnv();
-  const candidateConfigs = issuerClaim
-    ? allowedConfigs.filter((config) => config.issuer === issuerClaim)
-    : allowedConfigs.filter((config) => config.issuer === defaultIssuer);
 
-  if (candidateConfigs.length === 0) {
-    return null;
-  }
-
-  let payload: JWTPayload | null = null;
-  for (const config of candidateConfigs) {
-    try {
-      ({ payload } = await jwtVerify(token, getRemoteJwks(config.jwksUrl), {
-        issuer: config.issuer,
-      }));
-      break;
-    } catch {
-      payload = null;
+  for (const token of candidateTokens) {
+    const cached = userInfoCache.get(token);
+    if (cached && cached.expiresAt > now) {
+      return cached.user;
     }
+
+    const issuerClaim = readIssuerClaim(token);
+    const jwtCandidateConfigs = issuerClaim
+      ? allowedConfigs.filter((config) => config.issuer === issuerClaim)
+      : allowedConfigs.filter((config) => config.issuer === defaultIssuer);
+
+    if (jwtCandidateConfigs.length === 0) {
+      const apiKeyUser = await verifyAsUserApiKey(token);
+      if (apiKeyUser) {
+        return apiKeyUser;
+      }
+      continue;
+    }
+
+    let payload: JWTPayload | null = null;
+    for (const config of jwtCandidateConfigs) {
+      try {
+        ({ payload } = await jwtVerify(token, getRemoteJwks(config.jwksUrl), {
+          issuer: config.issuer,
+        }));
+        break;
+      } catch {
+        payload = null;
+      }
+    }
+
+    if (!payload) {
+      const apiKeyUser = await verifyAsUserApiKey(token);
+      if (apiKeyUser) {
+        return apiKeyUser;
+      }
+      continue;
+    }
+
+    const subject = readStringClaim(payload, 'sub');
+    if (!subject) {
+      continue;
+    }
+
+    const user: AuthenticatedUser = {
+      id: subject,
+      email: readStringClaim(payload, 'email') ?? `${subject}@unknown.local`,
+      name: readStringClaim(payload, 'name')
+        ?? readStringClaim(payload, 'preferred_username')
+        ?? readStringClaim(payload, 'email')
+        ?? subject,
+    };
+    userInfoCache.set(token, { user, expiresAt: now + 60_000 });
+    return user;
   }
 
-  if (!payload) {
-    return null;
-  }
-
-  const subject = readStringClaim(payload, 'sub');
-  if (!subject) {
-    return null;
-  }
-
-  const user: AuthenticatedUser = {
-    id: subject,
-    email: readStringClaim(payload, 'email') ?? `${subject}@unknown.local`,
-    name: readStringClaim(payload, 'name')
-      ?? readStringClaim(payload, 'preferred_username')
-      ?? readStringClaim(payload, 'email')
-      ?? subject,
-  };
-  userInfoCache.set(token, { user, expiresAt: now + 60_000 });
-  return user;
+  return null;
 }

@@ -43,17 +43,6 @@ require_var() {
   fi
 }
 
-fail_if_legacy_env() {
-  local key
-  for key in GLM_API_KEY GLM_BASE_URL GLM_MODEL ENDPOINT_PROTOCOL; do
-    if [[ -n "${!key:-}" ]]; then
-      err "legacy env var is not supported: ${key}"
-      err "use PRESET_ENDPOINT_API_KEY plus PRESET_ANTHROPIC_ENDPOINT_* / PRESET_OPENAI_ENDPOINT_*"
-      exit 1
-    fi
-  done
-}
-
 load_local_manual_substrate_env() {
   if [[ ! -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
     if [[ "${LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION:-0}" == "1" ]]; then
@@ -83,7 +72,6 @@ load_local_manual_substrate_env() {
 
 init_local_manual_env() {
   load_runtime_env_stack "local-manual" "${ENV_FILE}"
-  fail_if_legacy_env
 
   PORT_API="${PORT_API:-20000}"
   PORT_WEB="${PORT_WEB:-3001}"

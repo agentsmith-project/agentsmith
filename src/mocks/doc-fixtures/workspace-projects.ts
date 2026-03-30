@@ -138,9 +138,9 @@ export const docCredentialFixtures: Credential[] = [
     id: 'cred_001',
     workspace_id: 'ws_default',
     project_id: 'proj_001',
-    name: 'GLM-5 生产 API Key',
+    name: 'placeholder-model 生产 API Key',
     type: 'api_key',
-    fingerprint: '••••••••••••glm5',
+    fingerprint: '••••••••••••plh1',
     created_at: '2026-03-01T09:00:00Z',
     last_rotated_at: '2026-03-15T10:00:00Z',
   },
@@ -159,13 +159,13 @@ export const docEndpointFixtures: Endpoint[] = [
   {
     id: 'endpoint_001',
     project_id: 'proj_001',
-    name: 'GLM-5 主生产',
+    name: 'placeholder-model 主生产',
     description: '用于对话、Notebook 和智能体任务的主生产模型入口。',
-    model: 'GLM-5',
+    model: 'placeholder-model',
     type: 'custom',
-    provider_family: 'glm',
+    provider_family: 'custom',
     protocol: 'anthropic_compatible',
-    base_url: 'https://open.bigmodel.cn/api/anthropic',
+    base_url: 'https://anthropic-compatible.provider.example',
     status: 'active',
     credential_ref: 'cred_001',
     limits: {
@@ -213,7 +213,7 @@ export const docAgentFixtures: Agent[] = [
     config: {
       image: 'codex-runner:stable',
       env: {
-        MODEL: 'GLM-5',
+        MODEL: 'placeholder-model',
         LANG: 'zh-CN',
       },
       max_concurrent_sessions_override: 20,

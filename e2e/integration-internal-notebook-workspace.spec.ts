@@ -273,7 +273,7 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
   test('lazy-starts an internal agent, writes into /workspace, and resumes after workload reclaim', async ({ page }) => {
     test.setTimeout(900_000);
     const namespace = requireInternalSandboxEnv();
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
     const captures: CaptureEntry[] = [];
 
     console.log('[internal-real] login');
@@ -283,12 +283,12 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
     const workspaceLibraryName = `Internal Workspace ${Date.now()}`;
     console.log('[internal-real] create file library');
     const fileLibraryId = await createFileLibraryViaUi(page, 'ws_default', projectId, workspaceLibraryName);
-    const credentialName = `GLM Credential ${Date.now()}`;
+    const credentialName = `Provider Credential ${Date.now()}`;
     console.log('[internal-real] create credential');
-    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, glmApiKey);
+    await createCredentialViaUi(page, 'ws_default', projectId, credentialName, providerApiKey);
     console.log('[internal-real] create endpoint');
     const endpointId = await createEndpointViaApi(page, 'ws_default', projectId, {
-      endpointName: `GLM Endpoint ${Date.now()}`,
+      endpointName: `Provider Endpoint ${Date.now()}`,
       endpointModel: BACKEND_REAL_MODEL,
       upstreamBaseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
       credentialName,

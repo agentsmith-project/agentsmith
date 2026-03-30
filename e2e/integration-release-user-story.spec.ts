@@ -21,9 +21,9 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
-const OPENAI_BASE_URL = process.env.BACKEND_REAL_OPENAI_BASE_URL ?? 'https://api.minimaxi.com/v1';
-const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'MiniMax-M2.7-highspeed';
+const ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://anthropic-compatible.provider.example/v1';
+const OPENAI_BASE_URL = process.env.BACKEND_REAL_OPENAI_BASE_URL ?? 'https://openai-compatible.provider.example/v1';
+const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'placeholder-model';
 const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const SYSTEM_ADMIN_USERNAME = 'mbos-admin';
 const SYSTEM_ADMIN_PASSWORD = 'mbos-admin';
@@ -638,7 +638,7 @@ async function expectUsageTabToShowRequests(args: {
 test.describe('@lane-real release user story end-to-end', () => {
   test('rebuilds the system and runs the full user story with dual preset endpoints', async ({ page }) => {
     test.setTimeout(1_200_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
     const pageErrors: string[] = [];
     page.on('pageerror', (error) => pageErrors.push(error.message));
 
@@ -657,7 +657,7 @@ test.describe('@lane-real release user story end-to-end', () => {
     await loginToWorkspace(page, workspaceId, KEYCLOAK_DEV_ADMIN_USERNAME, KEYCLOAK_DEV_ADMIN_PASSWORD);
     await approveJoinRequest(page, workspaceId, projectId);
 
-    await createCredentialViaUi(page, workspaceId, projectId, 'BigModel Unified Key', glmApiKey);
+    await createCredentialViaUi(page, workspaceId, projectId, 'Provider Unified Key', providerApiKey);
     const anthropicEndpointName = `Preset Anthropic Endpoint ${Date.now()}`;
     const openaiEndpointName = `Preset OpenAI Endpoint ${Date.now()}`;
     await createEndpointViaUi({

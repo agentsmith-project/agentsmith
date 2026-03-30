@@ -251,13 +251,13 @@ describe('CustomEndpointWizard', () => {
         expect(nextButton).toBeDisabled();
       });
 
-      it('should allow valid https base URL without /v1 suffix (GLM coding path)', async () => {
+      it('should allow valid https base URL without /v1 suffix (Provider coding path)', async () => {
         renderComponent();
 
-        await user.type(screen.getByTestId('wizard-name-input'), 'GLM Coding Endpoint');
+        await user.type(screen.getByTestId('wizard-name-input'), 'Provider Compatible Endpoint');
         await user.type(
           screen.getByTestId('wizard-base-url-input'),
-          'https://open.bigmodel.cn/api/coding/paas/v4',
+          'https://openai-compatible.provider.example',
         );
 
         const nextButtons = screen.getAllByRole('button', { name: 'Next' });
@@ -270,10 +270,10 @@ describe('CustomEndpointWizard', () => {
       it('should allow valid https base URL without trailing slash (Anthropic path)', async () => {
         renderComponent();
 
-        await user.type(screen.getByTestId('wizard-name-input'), 'GLM Anthropic Endpoint');
+        await user.type(screen.getByTestId('wizard-name-input'), 'Provider Anthropic Endpoint');
         await user.type(
           screen.getByTestId('wizard-base-url-input'),
-          'https://open.bigmodel.cn/api/anthropic',
+          'https://anthropic-compatible.provider.example',
         );
 
         const nextButtons = screen.getAllByRole('button', { name: 'Next' });
@@ -390,7 +390,7 @@ describe('CustomEndpointWizard', () => {
         expect(screen.getByTestId('wizard-model-id-input')).toBeVisible();
       }, { timeout: 3000 });
 
-      await user.type(screen.getByTestId('wizard-model-id-input'), 'glm-5');
+      await user.type(screen.getByTestId('wizard-model-id-input'), 'placeholder-model');
       const cacheWriteInput = screen.getByTestId('wizard-cache-write-discount-ratio-input');
       await user.clear(cacheWriteInput);
       await user.type(cacheWriteInput, '1.2');

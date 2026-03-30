@@ -14,7 +14,7 @@ function makeStats(): RunnerFilterStats {
 describe('codex-output-filter', () => {
   it('removes model metadata warning event shell from delta output and counts hit', () => {
     const stats = makeStats();
-    const input = '{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `glm-4.7` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}}';
+    const input = '{"type":"item.completed","item":{"id":"item_0","type":"error","message":"Model metadata for `placeholder-model` not found. Defaulting to fallback metadata; this can degrade performance and cause issues."}}';
     const out = sanitizeAgentDeltaChunk(input, () => stats);
     expect(out).toBe('');
     expect(stats.delta_metadata_warning_event).toBe(1);

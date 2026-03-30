@@ -31,7 +31,7 @@ function createFakeResponse() {
 describe('responses-sse-translate', () => {
   it('translates simple chat SSE content into responses SSE events', async () => {
     const upstream = [
-      'data: {"id":"chatcmpl_1","created":1,"model":"glm-4.7","choices":[{"delta":{"content":"hi"},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl_1","created":1,"model":"placeholder-model","choices":[{"delta":{"content":"hi"},"finish_reason":null}]}',
       '',
       'data: {"choices":[{"delta":{},"finish_reason":"stop"}]}',
       '',
@@ -40,7 +40,7 @@ describe('responses-sse-translate', () => {
     ].join('\n');
     const { res, writes } = createFakeResponse();
 
-    await pipeTranslatedChatSseAsResponses(streamFromText(upstream), res, { model: 'glm-4.7' });
+    await pipeTranslatedChatSseAsResponses(streamFromText(upstream), res, { model: 'placeholder-model' });
 
     const payload = writes.join('');
     expect(payload).toContain('event: response.created');
@@ -56,7 +56,7 @@ describe('responses-sse-translate', () => {
     ].join('\n');
     const { res, writes } = createFakeResponse();
 
-    await pipeTranslatedChatSseAsResponses(streamFromText(upstream), res, { model: 'glm-4.7' });
+    await pipeTranslatedChatSseAsResponses(streamFromText(upstream), res, { model: 'placeholder-model' });
 
     const payload = writes.join('');
     expect(payload).toContain('event: response.completed');

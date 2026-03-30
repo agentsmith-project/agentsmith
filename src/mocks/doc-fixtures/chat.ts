@@ -26,7 +26,7 @@ export const docChatSessions: DocChatSession[] = [
     project_id: 'proj_001',
     user_id: 'user_001',
     title: '北美消费电子市场量化诊断',
-    model: 'GLM-5',
+    model: 'placeholder-model',
     endpoint_id: 'endpoint_001',
     pinned: true,
     starred: true,

@@ -97,7 +97,7 @@ npm run marketing:assets:generate
 - backend-real: `.env.backend-real.example`
 - demo deploy: `infra/deploy/demo/env/site.env.example`
 
-旧 demo 命令与 `GLM_*` 命名已经移除；传入旧名字会直接 fail fast。
+旧 demo 命令和旧供应商命名已经移除；当前入口统一使用 `PRESET_*`。
 
 ## Quick Start
 
@@ -181,22 +181,20 @@ cp .env.local-manual.example .env.local-manual
 
 ```bash
 PRESET_ENDPOINT_API_KEY=...
-PRESET_ENDPOINT_MODEL=MiniMax-M2.7-highspeed
+PRESET_ENDPOINT_MODEL=<YOUR_MODEL_ID>
 PRESET_ENDPOINT_MAX_CONTEXT_TOKENS=204800
 PRESET_ENDPOINT_MAX_OUTPUT_TOKENS=128000
-PRESET_ANTHROPIC_ENDPOINT_BASE_URL=https://api.minimaxi.com/anthropic/v1
+PRESET_ANTHROPIC_ENDPOINT_BASE_URL=<YOUR_ANTHROPIC_BASE_URL>
 PRESET_ANTHROPIC_ENDPOINT_PROTOCOL=anthropic_compatible
-PRESET_OPENAI_ENDPOINT_BASE_URL=https://api.minimaxi.com/v1
+PRESET_OPENAI_ENDPOINT_BASE_URL=<YOUR_OPENAI_BASE_URL>
 PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible
 ```
 
 注意：
 
-1. 旧 `GLM_*` 变量名在 `local-manual` 主路径下**不再支持**
-2. 发现 `GLM_*` 会直接 fail fast
-3. `local-manual` 现在默认使用共享受管 substrate；需要完整重建底座时，直接使用 `make substrate-reset`
-4. 当前本机规则是“共享一套底座，一次只跑一条工作线”
-5. 如果本机要和其它工作线串行切换，`local-manual` 只需要保留自己的 app 端口：
+1. `local-manual` 现在默认使用共享受管 substrate；需要完整重建底座时，直接使用 `make substrate-reset`
+2. 当前本机规则是“共享一套底座，一次只跑一条工作线”
+3. 如果本机要和其它工作线串行切换，`local-manual` 只需要保留自己的 app 端口：
 
 ```bash
 PORT_API=21000

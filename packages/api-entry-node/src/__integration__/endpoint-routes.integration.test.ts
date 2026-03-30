@@ -1,10 +1,11 @@
 import type { AddressInfo } from 'node:net';
-import http, { type Server } from 'node:http';
+import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { apiFetch, startServer } from './test-support.js';
 import { recordUsageFact } from '../audit-usage-store.js';
 
 const upstreamServers: Server[] = [];
+const originalUniversalProxyBaseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
 
 afterEach(async () => {
   await Promise.all(
@@ -18,45 +19,86 @@ afterEach(async () => {
     ),
   );
   upstreamServers.length = 0;
+  if (originalUniversalProxyBaseUrl === undefined) {
+    delete process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
+  } else {
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = originalUniversalProxyBaseUrl;
+  }
 });
 
-function startUpstreamServer(): {
-  server: Server;
+function startUniversalProxyMockServer(): {
   baseUrl: string;
-  lastBody: () => unknown;
-  lastPath: () => string;
+  configRequests: () => Array<{ namespace: string; body: unknown }>;
+  namespaceRequests: () => Array<{
+    method: string;
+    path: string;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }>;
 } {
-  let body: unknown = null;
-  let path = '';
+  const configRequests: Array<{ namespace: string; body: unknown }> = [];
+  const namespaceRequests: Array<{
+    method: string;
+    path: string;
+    headers: IncomingHttpHeaders;
+    body: unknown;
+  }> = [];
   const server = http.createServer((req, res) => {
     void (async () => {
-      path = req.url ?? '';
+      const requestUrl = new URL(req.url ?? '/', 'http://127.0.0.1');
       const chunks: Buffer[] = [];
       for await (const chunk of req) {
         chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
       }
       const text = Buffer.concat(chunks).toString('utf-8');
-      body = text ? JSON.parse(text) : {};
-      res.statusCode = 200;
+      const body = text ? JSON.parse(text) : {};
+
+      const configMatch = requestUrl.pathname.match(/^\/admin\/namespaces\/([^/]+)\/config$/);
+      if (req.method === 'POST' && configMatch) {
+        configRequests.push({
+          namespace: decodeURIComponent(configMatch[1]),
+          body,
+        });
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ status: 'applied' }));
+        return;
+      }
+
+      const namespaceMatch = requestUrl.pathname.match(/^\/namespaces\/([^/]+)\/(.+)$/);
+      if (req.method === 'POST' && namespaceMatch) {
+        namespaceRequests.push({
+          method: req.method,
+          path: requestUrl.pathname,
+          headers: req.headers,
+          body,
+        });
+        res.statusCode = 200;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ ok: true, echoed: body }));
+        return;
+      }
+
+      res.statusCode = 404;
       res.setHeader('content-type', 'application/json');
-      res.end(JSON.stringify({ ok: true, echoed: body }));
+      res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
   server.listen(0);
   upstreamServers.push(server);
   const address = server.address() as AddressInfo;
   return {
-    server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
-    lastBody: () => body,
-    lastPath: () => path,
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    configRequests: () => configRequests,
+    namespaceRequests: () => namespaceRequests,
   };
 }
 
 describe('api-entry-node endpoint and credential routes', () => {
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
+    const universalProxy = startUniversalProxyMockServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl, deps } = startServer();
-    const upstream = startUpstreamServer();
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -87,7 +129,7 @@ describe('api-entry-node endpoint and credential routes', () => {
           model: 'deepseek-chat',
           type: 'openai',
           mode: 'openai',
-          base_url: upstream.baseUrl,
+          base_url: 'https://openai-compatible.provider.example/v1',
           credential_ref: credential.id,
         }),
       },
@@ -98,7 +140,7 @@ describe('api-entry-node endpoint and credential routes', () => {
 
     const proxy = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -111,7 +153,12 @@ describe('api-entry-node endpoint and credential routes', () => {
     expect(proxy.status).toBe(200);
     const proxied = (await proxy.json()) as { ok: boolean };
     expect(proxied.ok).toBe(true);
-    const echoed = upstream.lastBody() as { model?: string };
+    expect(universalProxy.configRequests()).toHaveLength(1);
+    expect(universalProxy.namespaceRequests()).toHaveLength(1);
+    expect(universalProxy.namespaceRequests()[0]?.path).toBe(
+      `/namespaces/ws_default__proj_1__${endpoint.id}/openai/v1/chat/completions`,
+    );
+    const echoed = universalProxy.namespaceRequests()[0]?.body as { model?: string };
     expect(echoed.model).toBe('deepseek-chat');
 
     const usageStart = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -146,7 +193,7 @@ describe('api-entry-node endpoint and credential routes', () => {
 
     const deniedProxy = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -179,7 +226,7 @@ describe('api-entry-node endpoint and credential routes', () => {
 
     const allowListedProxy = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -208,7 +255,7 @@ describe('api-entry-node endpoint and credential routes', () => {
 
     const firstRateLimitedProxy = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -222,7 +269,7 @@ describe('api-entry-node endpoint and credential routes', () => {
 
     const secondRateLimitedProxy = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -236,7 +283,7 @@ describe('api-entry-node endpoint and credential routes', () => {
 
     const thirdRateLimitedProxy = await apiFetch(
       baseUrl,
-      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/chat/completions`,
+      `/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/chat/completions`,
       {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

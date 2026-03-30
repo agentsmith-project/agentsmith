@@ -64,9 +64,9 @@ describe('anthropic SSE translators', () => {
   it('translates openai chat SSE into anthropic SSE', async () => {
     const encoder = new TextEncoder();
     const sse = [
-      'data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1,"model":"glm-5","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi "},"finish_reason":null}]}',
+      'data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1,"model":"placeholder-model","choices":[{"index":0,"delta":{"role":"assistant","content":"Hi "},"finish_reason":null}]}',
       '',
-      'data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1,"model":"glm-5","choices":[{"index":0,"delta":{"content":"there"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}',
+      'data: {"id":"chatcmpl_1","object":"chat.completion.chunk","created":1,"model":"placeholder-model","choices":[{"index":0,"delta":{"content":"there"},"finish_reason":"stop"}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}',
       '',
       'data: [DONE]',
       '',
@@ -80,7 +80,7 @@ describe('anthropic SSE translators', () => {
     });
 
     const { res, getOutput } = buildResCollector();
-    await pipeOpenAiChatSseAsAnthropic(stream, res, { model: 'glm-5', stream: true });
+    await pipeOpenAiChatSseAsAnthropic(stream, res, { model: 'placeholder-model', stream: true });
     const output = getOutput();
 
     expect(output).toContain('event: message_start');

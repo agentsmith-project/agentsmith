@@ -11,12 +11,6 @@ type Rule = {
   allowedFiles?: Set<string>;
 };
 
-const failFastFiles = new Set([
-  'Makefile',
-  'scripts/local-manual/common.sh',
-  'scripts/notebook-agent-init-resources.sh',
-]);
-
 const rules: Rule[] = [
   {
     pattern: /notebook-agent-demo-(up|down|status|check|restart-runner)/,
@@ -29,15 +23,6 @@ const rules: Rule[] = [
   {
     pattern: /\bmake dev-up\b|\bmake dev-down\b/,
     message: 'legacy dev-up/dev-down command leaked into current path',
-  },
-  {
-    pattern: /\bGLM_API_KEY\b|\bGLM_APIKEY\b|\bGLM_BASE_URL\b|\bGLM_MODEL\b|\bINTEGRATION_GLM_MODEL\b|\bINTEGRATION_GLM_BASE_URL\b/,
-    message: 'legacy GLM_* naming leaked into current path',
-    allowedFiles: failFastFiles,
-  },
-  {
-    pattern: /\bGLM-5\b|\bglm-5\b|\bGLM path\b/,
-    message: 'legacy provider wording leaked into current path',
   },
   {
     pattern:

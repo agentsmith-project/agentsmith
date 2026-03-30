@@ -6,8 +6,8 @@ const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
 const KEYCLOAK_BASE_URL = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
 const KEYCLOAK_REALM = process.env.KEYCLOAK_REALM ?? 'mbos';
 const KEYCLOAK_WORKSPACE_CLIENT_ID = process.env.KEYCLOAK_CLIENT_ID ?? 'agentsmith';
-const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://api.minimaxi.com/anthropic/v1';
-const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'MiniMax-M2.7-highspeed';
+const BACKEND_REAL_ANTHROPIC_BASE_URL = process.env.BACKEND_REAL_ANTHROPIC_BASE_URL ?? 'https://anthropic-compatible.provider.example/v1';
+const BACKEND_REAL_MODEL = process.env.BACKEND_REAL_MODEL ?? 'placeholder-model';
 const BACKEND_REAL_API_KEY = process.env.BACKEND_REAL_API_KEY;
 const DEV_ADMIN_USERNAME = process.env.INTEGRATION_DEV_ADMIN_USERNAME ?? 'dev-admin';
 const DEV_ADMIN_PASSWORD = process.env.INTEGRATION_DEV_ADMIN_PASSWORD ?? 'dev-admin-123';
@@ -422,11 +422,11 @@ async function createCredential(page: Page, workspaceId: string, projectId: stri
 
   const dialog = page.getByTestId('credentials__create-dialog');
   await expect(dialog).toBeVisible();
-  await dialog.locator('#cred-name').fill('BigModel Anthropic Key');
+  await dialog.locator('#cred-name').fill('Provider Anthropic Key');
   await dialog.locator('#cred-value').fill(apiKey);
   await dialog.getByRole('button', { name: /create/i }).click();
   await expect(dialog).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByText('BigModel Anthropic Key')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Provider Anthropic Key')).toBeVisible({ timeout: 30_000 });
 }
 
 async function createFileLibrary(page: Page, workspaceId: string, projectId: string): Promise<string> {
@@ -457,7 +457,7 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
 
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });
-  await wizard.getByTestId('wizard-name-input').fill('BigModel Anthropic Endpoint');
+  await wizard.getByTestId('wizard-name-input').fill('Provider Anthropic Endpoint');
   await wizard.getByTestId('protocol-anthropic_compatible').click();
   await wizard.getByTestId('wizard-base-url-input').fill(BACKEND_REAL_ANTHROPIC_BASE_URL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
@@ -469,7 +469,7 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled({ timeout: 30_000 });
   await wizard.getByTestId('wizard-create-button').click();
   await expect(wizard).toBeHidden({ timeout: 30_000 });
-  await expect(page.getByText('BigModel Anthropic Endpoint')).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText('Provider Anthropic Endpoint')).toBeVisible({ timeout: 30_000 });
 }
 
 async function createAgent(page: Page, workspaceId: string, projectId: string): Promise<string> {
@@ -798,7 +798,7 @@ async function runNotebookTask(
 test.describe('@lane-real integration system-to-notebook mainline', () => {
   test('completes fresh workspace setup to real notebook work', async ({ page }) => {
     test.setTimeout(600_000);
-    const glmApiKey = requireRealLaneApiKey();
+    const providerApiKey = requireRealLaneApiKey();
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
     const pageErrors: string[] = [];
 
@@ -821,7 +821,7 @@ test.describe('@lane-real integration system-to-notebook mainline', () => {
     await promoteJoinedMemberToProjectAdmin(page, workspaceId, projectId);
 
     await loginToWorkspace(page, workspaceId, PROJECT_CREATOR_USERNAME, PROJECT_CREATOR_PASSWORD);
-    await createCredential(page, workspaceId, projectId, glmApiKey);
+    await createCredential(page, workspaceId, projectId, providerApiKey);
     await createEndpoint(page, workspaceId, projectId);
     const workspaceLibraryName = await createFileLibrary(page, workspaceId, projectId);
     const agentName = await createAgent(page, workspaceId, projectId);

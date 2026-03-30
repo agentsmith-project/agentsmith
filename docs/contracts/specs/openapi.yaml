@@ -1764,9 +1764,9 @@ paths:
       operationId: post_llmGatewayProxy
       summary: Project-scoped LLM gateway proxy
       description: |
-        Uses one project gateway identity and auth surface, but clients still call the protocol path
-        they expect. Use `/chat/completions` or `/responses` for OpenAI-compatible clients, and
-        `/messages` for Anthropic-compatible clients.
+        Uses one project gateway identity and auth surface, with explicit protocol-prefixed paths.
+        Use `/openai/chat/completions` or `/openai/responses` for OpenAI-compatible clients, and
+        `/anthropic/messages` or `/anthropic/messages/count_tokens` for Anthropic-compatible clients.
       responses:
         "200":
           description: OK
@@ -1786,6 +1786,52 @@ paths:
             schema:
               type: object
               additionalProperties: true
+  /api/v1/user/keys:
+    get:
+      tags:
+        - User
+      operationId: get_userKeys
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      tags:
+        - User
+      operationId: post_userKeys
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+  /api/v1/user/keys/{keyId}:
+    delete:
+      tags:
+        - User
+      operationId: delete_userKeyItem
+      responses:
+        "204":
+          description: No Content
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/v1/workspaces/{workspaceId}/projects/{projectId}/endpoints:import-openai-compatible:
     post:
       tags:

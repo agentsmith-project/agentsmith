@@ -411,18 +411,18 @@ test.describe('Endpoints Page', () => {
       await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled();
     });
 
-    test('accepts GLM coding URL without /v1 and creates endpoint', async ({ authedPage }) => {
+    test('accepts Provider coding URL without /v1 and creates endpoint', async ({ authedPage }) => {
       const wizard = await openCustomWizardFromCreateDialog(authedPage);
 
-      await wizard.getByTestId('wizard-name-input').fill(`E2E GLM Coding ${Date.now()}`);
-      await wizard.getByTestId('wizard-base-url-input').fill('https://open.bigmodel.cn/api/coding/paas/v4');
+      await wizard.getByTestId('wizard-name-input').fill(`E2E Provider Compatible ${Date.now()}`);
+      await wizard.getByTestId('wizard-base-url-input').fill('https://openai-compatible.provider.example');
 
       let nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
       await expect(nextBtn).toBeEnabled();
       await nextBtn.click();
 
       await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible();
-      await wizard.getByTestId('wizard-model-id-input').fill('glm-4.5');
+      await wizard.getByTestId('wizard-model-id-input').fill('placeholder-model');
 
       nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
       if (!(await nextBtn.isEnabled().catch(() => false))) {
@@ -445,21 +445,21 @@ test.describe('Endpoints Page', () => {
       const payload = req.postDataJSON() as { base_url?: string; type?: string; protocol?: string };
       expect(payload.type).toBe('custom');
       expect(payload.protocol).toBe('openai_compatible');
-      expect(payload.base_url).toBe('https://open.bigmodel.cn/api/coding/paas/v4');
+      expect(payload.base_url).toBe('https://openai-compatible.provider.example');
     });
 
-    test('accepts GLM anthropic URL and can pass validation check', async ({ authedPage }) => {
+    test('accepts Provider anthropic URL and can pass validation check', async ({ authedPage }) => {
       const wizard = await openCustomWizardFromCreateDialog(authedPage);
 
-      await wizard.getByTestId('wizard-name-input').fill(`E2E GLM Anthropic ${Date.now()}`);
+      await wizard.getByTestId('wizard-name-input').fill(`E2E Provider Anthropic ${Date.now()}`);
       await wizard.getByTestId('protocol-anthropic_compatible').click();
-      await wizard.getByTestId('wizard-base-url-input').fill('https://open.bigmodel.cn/api/anthropic');
+      await wizard.getByTestId('wizard-base-url-input').fill('https://anthropic-compatible.provider.example');
 
       let nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
       await expect(nextBtn).toBeEnabled();
       await nextBtn.click();
 
-      await wizard.getByTestId('wizard-model-id-input').fill('glm-5');
+      await wizard.getByTestId('wizard-model-id-input').fill('placeholder-model');
       nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
       if (!(await nextBtn.isEnabled().catch(() => false))) {
         const credentialPicked = await pickSelectOption(
@@ -480,7 +480,7 @@ test.describe('Endpoints Page', () => {
       const wizard = await openCustomWizardFromCreateDialog(authedPage);
 
       await wizard.getByTestId('wizard-name-input').fill('E2E Invalid URL');
-      await wizard.getByTestId('wizard-base-url-input').fill('http://open.bigmodel.cn/api/anthropic');
+      await wizard.getByTestId('wizard-base-url-input').fill('http://open.provider.cn/api/anthropic');
 
       const nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
       await expect(nextBtn).toBeDisabled();

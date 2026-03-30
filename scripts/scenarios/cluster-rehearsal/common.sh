@@ -111,6 +111,18 @@ elif value is not None:
 PY
 }
 
+cluster_release_id() {
+  local value
+  value="$(cluster_state_value release.id)"
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${value}"
+    return 0
+  fi
+  if [[ -L "${CLUSTER_REHEARSAL_CURRENT_LINK}" || -d "${CLUSTER_REHEARSAL_CURRENT_LINK}" ]]; then
+    awk -F= '$1=="release_id"{print $2}' "${CLUSTER_REHEARSAL_CURRENT_LINK}/VERSION" 2>/dev/null || true
+  fi
+}
+
 cluster_site_env_path() {
   if [[ -f "${CLUSTER_REHEARSAL_ROOT}/config/site.env" ]]; then
     printf '%s\n' "${CLUSTER_REHEARSAL_ROOT}/config/site.env"

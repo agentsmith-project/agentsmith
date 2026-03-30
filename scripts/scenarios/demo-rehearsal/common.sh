@@ -64,6 +64,18 @@ elif value is not None:
 PY
 }
 
+demo_release_id() {
+  local value
+  value="$(demo_state_value release.id)"
+  if [[ -n "${value}" ]]; then
+    printf '%s\n' "${value}"
+    return 0
+  fi
+  if [[ -L "${DEMO_REHEARSAL_CURRENT_LINK}" || -d "${DEMO_REHEARSAL_CURRENT_LINK}" ]]; then
+    awk -F= '$1=="release_id"{print $2}' "${DEMO_REHEARSAL_CURRENT_LINK}/VERSION" 2>/dev/null || true
+  fi
+}
+
 demo_site_env_path() {
   if [[ -f "${DEMO_REHEARSAL_ROOT}/config/site.env" ]]; then
     printf '%s\n' "${DEMO_REHEARSAL_ROOT}/config/site.env"

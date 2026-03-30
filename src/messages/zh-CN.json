@@ -1274,40 +1274,90 @@
   },
   "use_guide": {
     "title": "API 接入手册",
-    "subtitle": "先创建个人 API Key，再按客户端协议选择对应的项目网关 Base URL。",
-    "steps": {
-      "title": "快速开始",
-      "step_1": "在用户中心创建个人 API Key（用户 > API 密钥）。",
-      "step_2": "飞书请在当前工作区的连接页面完成绑定；Jira、GitHub、Gitee 与自定义凭据仍在用户 > 第三方账户中管理。",
-      "step_3": "请项目管理员在资源策略里授予你对应 endpoint 访问权限。",
-      "step_4": "确保目标 endpoint 在项目内配置了唯一模型名（model）。",
-      "step_5": "OpenAI-compatible 客户端使用项目 OpenAI Base URL，Anthropic-compatible 客户端使用项目 Anthropic Base URL。",
-      "step_6": "若请求失败，请到用量与审计页面查看权限/限流/花费限制原因。"
+    "subtitle": "先准备 API Key，再选一个 endpoint，然后直接复制客户端对应的接入命令。",
+    "readiness": {
+      "title": "接入准备",
+      "states": {
+        "ready": "已就绪",
+        "action_needed": "需要处理",
+        "info": "检查中"
+      },
+      "api_keys": {
+        "title": "个人 API Key",
+        "ready": "已有 {count} 个可用 API Key。",
+        "pending": "请先创建个人 API Key，再使用 CLI、SDK 或 curl 示例。",
+        "action": "打开 API 密钥"
+      },
+      "endpoint": {
+        "title": "项目 Endpoint",
+        "loading": "正在检查当前项目可用的 endpoint。",
+        "ready": "{name} 已可用于协议化接入。",
+        "pending": "当前没有可用于 API 接入的 active endpoint，请联系项目管理员或打开 Endpoints 页面。",
+        "unavailable": "当前账号可以进入接入手册，但没有 endpoint 清单读取权限。",
+        "action": "打开 Endpoints"
+      },
+      "policy": {
+        "title": "项目访问权限",
+        "ready": "你已经具备打开当前接入手册的项目访问权限。",
+        "action": "打开资源策略"
+      }
+    },
+    "selection": {
+      "title": "选择 Endpoint",
+      "description": "选择要接入的 endpoint，下方所有命令会自动联动更新。",
+      "placeholder": "选择一个 endpoint",
+      "empty": "当前项目还没有可用于 API 接入的 active endpoint。",
+      "no_read_access": "当前账号可以使用项目接入能力，但无法读取 endpoint 清单。请向项目管理员确认 endpoint ID 和模型名。"
     },
     "gateway": {
-      "title": "项目网关根地址",
-      "description": "这个项目网关是统一的项目身份、鉴权与治理入口。",
-      "protocol_note": "不要把裸根地址直接填给 SDK 或 CLI。OpenAI-compatible 客户端使用 /openai，Anthropic-compatible 客户端使用 /anthropic。"
+      "title": "Endpoint 代理根地址",
+      "description": "AgentSmith 通过这个 endpoint 代理根地址统一承接项目级身份、鉴权和治理。实际接入时请使用下面的协议化 Base URL。"
     },
     "api_examples": {
-      "title": "客户端协议示例"
+      "title": "可直接复制的接入示例"
     },
     "protocols": {
+      "model_label": "使用这个模型名",
+      "helper": "切换 endpoint 只会更新接入 URL 和模型名；切换协议只会改变请求格式和客户端示例。",
       "openai": {
         "title": "OpenAI-compatible 客户端",
-        "description": "适用于 Codex、OpenAI SDK，以及任何期待 OpenAI-compatible chat 或 responses 接口的工具。",
-        "base_url_label": "将此值用作 OPENAI_BASE_URL"
+        "description": "适用于 Codex、OpenAI SDK，以及任何期待 OpenAI-compatible chat 或 responses 接口的客户端。",
+        "base_url_label": "将此值用作 OPENAI_BASE_URL",
+        "codex_label": "Codex CLI 一次性命令",
+        "responses_label": "cURL：/responses",
+        "chat_label": "cURL：/chat/completions"
       },
       "anthropic": {
         "title": "Anthropic-compatible 客户端",
-        "description": "适用于 Claude Code、Anthropic SDK，以及任何期待 Anthropic Messages API 的工具。",
-        "base_url_label": "将此值用作 ANTHROPIC_BASE_URL"
+        "description": "适用于 Claude Code、Anthropic SDK，以及任何期待 Messages API 的客户端。",
+        "base_url_label": "将此值用作 ANTHROPIC_BASE_URL",
+        "claude_label": "Claude Code 一次性命令",
+        "messages_label": "cURL：/messages"
+      }
+    },
+    "troubleshooting": {
+      "title": "排查建议",
+      "items": {
+        "auth": {
+          "title": "401 或 403",
+          "description": "先检查个人 API Key，再确认资源策略里是否授予了 endpoint 使用权限。"
+        },
+        "endpoint": {
+          "title": "找不到 endpoint",
+          "description": "确认所选 endpoint 仍然是 active，并且使用的是正确的 endpoint URL。"
+        },
+        "rate_limit": {
+          "title": "429 或额度限制",
+          "description": "到用量或审计页面确认是否被限流规则或花费限制拦截。"
+        },
+        "protocol": {
+          "title": "客户端协议不匹配",
+          "description": "OpenAI-compatible 客户端必须使用 OpenAI Base URL，Claude Code 必须使用 Anthropic Base URL。"
+        }
       }
     },
     "quick_links": {
-      "title": "快捷入口",
       "api_keys": "打开 API 密钥",
-      "third_party_accounts": "打开第三方账户",
       "endpoints": "打开 Endpoints",
       "resource_policy": "打开资源策略",
       "usage": "打开我的用量"

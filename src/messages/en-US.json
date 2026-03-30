@@ -1272,40 +1272,90 @@
   },
   "use_guide": {
     "title": "API Access Guide",
-    "subtitle": "Create your personal API key first, then use the protocol-specific gateway base URL your client expects.",
-    "steps": {
-      "title": "Quick Setup",
-      "step_1": "Create your personal API key in User > API Keys.",
-      "step_2": "Bind Feishu from the current workspace Connections page. Keep using User > Third-Party Accounts for Jira, GitHub, Gitee, and custom credentials.",
-      "step_3": "Ask project manager to grant endpoint access in Resource Policy.",
-      "step_4": "Ensure your endpoint has a unique model name configured in project endpoints.",
-      "step_5": "Use the project OpenAI base URL for OpenAI-compatible clients, or the project Anthropic base URL for Anthropic-compatible clients.",
-      "step_6": "If request fails, check Usage and Audit pages for permission/rate/spending details."
+    "subtitle": "Create an API key, pick an endpoint, then copy the protocol-specific command your client needs.",
+    "readiness": {
+      "title": "Access Readiness",
+      "states": {
+        "ready": "Ready",
+        "action_needed": "Action needed",
+        "info": "Checking"
+      },
+      "api_keys": {
+        "title": "Personal API key",
+        "ready": "{count} active keys are ready to use.",
+        "pending": "Create your first personal API key before using CLI, SDK, or curl examples.",
+        "action": "Open API Keys"
+      },
+      "endpoint": {
+        "title": "Project endpoint",
+        "loading": "Checking which endpoints you can use in this project.",
+        "ready": "{name} is ready for protocol-specific access.",
+        "pending": "No active endpoint is available yet. Ask the project manager or open the endpoint page.",
+        "unavailable": "You can use project access, but this account cannot read the endpoint list.",
+        "action": "Open Endpoints"
+      },
+      "policy": {
+        "title": "Project access",
+        "ready": "You already have project-level access to open this guide.",
+        "action": "Open Resource Policy"
+      }
+    },
+    "selection": {
+      "title": "Choose Endpoint",
+      "description": "Pick the endpoint you want to connect to. All commands below will update automatically.",
+      "placeholder": "Select an endpoint",
+      "empty": "This project does not have an active endpoint for API access yet.",
+      "no_read_access": "This account can use project access but cannot read the endpoint list. Ask the project manager for the endpoint ID and model name."
     },
     "gateway": {
-      "title": "Project Gateway Root",
-      "description": "This project gateway is the single identity, auth, and governance entry for your project-scoped model access.",
-      "protocol_note": "Do not use the bare root directly in SDKs or CLIs. Use /openai for OpenAI-compatible clients and /anthropic for Anthropic-compatible clients."
+      "title": "Endpoint Proxy Root",
+      "description": "AgentSmith uses this endpoint proxy root as the single project-scoped access entry. Use the protocol-specific base URL below in your client."
     },
     "api_examples": {
-      "title": "Client Protocol Examples"
+      "title": "Copy-Ready Client Examples"
     },
     "protocols": {
+      "model_label": "Use this model name",
+      "helper": "Switching the endpoint updates the URL and model. Switching the protocol only changes the request format and client example.",
       "openai": {
         "title": "OpenAI-compatible clients",
-        "description": "Use this section for Codex, OpenAI SDKs, and any tool that expects OpenAI-compatible chat or responses endpoints.",
-        "base_url_label": "Use this as OPENAI_BASE_URL"
+        "description": "Use this for Codex, OpenAI SDKs, and any client that expects OpenAI-compatible chat or responses endpoints.",
+        "base_url_label": "Use this as OPENAI_BASE_URL",
+        "codex_label": "Codex CLI one-shot command",
+        "responses_label": "cURL: /responses",
+        "chat_label": "cURL: /chat/completions"
       },
       "anthropic": {
         "title": "Anthropic-compatible clients",
-        "description": "Use this section for Claude Code, Anthropic SDKs, and any tool that expects the Anthropic Messages API.",
-        "base_url_label": "Use this as ANTHROPIC_BASE_URL"
+        "description": "Use this for Claude Code, Anthropic SDKs, and any client that expects the Messages API.",
+        "base_url_label": "Use this as ANTHROPIC_BASE_URL",
+        "claude_label": "Claude Code one-shot command",
+        "messages_label": "cURL: /messages"
+      }
+    },
+    "troubleshooting": {
+      "title": "Troubleshooting",
+      "items": {
+        "auth": {
+          "title": "401 or 403",
+          "description": "Check your personal API key first, then confirm endpoint access in Resource Policy."
+        },
+        "endpoint": {
+          "title": "Endpoint not found",
+          "description": "Confirm that the selected endpoint is still active and that you are using the correct endpoint URL."
+        },
+        "rate_limit": {
+          "title": "429 or spending limit",
+          "description": "Open Usage or Audit to confirm whether a rate or spending limit blocked the request."
+        },
+        "protocol": {
+          "title": "Client protocol mismatch",
+          "description": "OpenAI-compatible clients must use the OpenAI base URL. Claude Code must use the Anthropic base URL."
+        }
       }
     },
     "quick_links": {
-      "title": "Quick Links",
       "api_keys": "Open API Keys",
-      "third_party_accounts": "Open Third-Party Accounts",
       "endpoints": "Open Endpoints",
       "resource_policy": "Open Resource Policy",
       "usage": "Open My Usage"

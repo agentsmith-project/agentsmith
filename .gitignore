@@ -102,3 +102,4 @@ artifacts/governance-incidents/*.json
 # Local operator env files
 .env.local-manual
 .env.backend-real
+env/

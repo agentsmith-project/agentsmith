@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input';
 import { CheckCircle, ShieldCheck, XCircle, Clock, UserPlus } from 'lucide-react';
 import { formatRelativeTime } from '@/lib/utils/formatters';
-import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { useApproveJoinRequest, useRejectJoinRequest } from '@/lib/hooks/use-join-requests';
 import { useProjectGroups, useUpdateProjectGroup } from '@/lib/hooks/use-members';
 import { projectKeys } from '@/lib/hooks/use-projects-queries';
@@ -37,7 +37,7 @@ export function JoinRequestsTab({
   onReject,
 }: JoinRequestsTabProps) {
   const t = useTranslations('members.join_requests');
-  const canApprove = useCanManageMemberGovernance();
+  const { canManage: canApprove } = useMemberPageCapabilities();
   const queryClient = useQueryClient();
   const { data: projectGroups = [] } = useProjectGroups(workspaceId, projectId);
   const updateProjectGroup = useUpdateProjectGroup(workspaceId, projectId);

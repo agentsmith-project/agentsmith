@@ -97,3 +97,7 @@ artifacts/governance-incidents/*.json
 .infra/cluster-deploy/*
 !.infra/cluster-deploy/.gitkeep
 /infra/vendor/juicefs/
+
+# Local operator env files
+.env.local-manual
+.env.backend-real

@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { listAuditEvents } from './audit-usage-store.js';
-import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 

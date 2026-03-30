@@ -282,20 +282,11 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     if (!endpoint || endpoint.status !== 'active') {
       throw Object.assign(new Error('endpoint_not_available'), { code: 'VALIDATION_ERROR' });
     }
-    let endpointModel = endpoint.model?.trim() ?? '';
-    let modelContextWindow: number | undefined;
-    let modelAutoCompactTokenLimit: number | undefined;
-    let modelCatalog:
-      | {
-        input_modalities: string[];
-        supports_search_tool: boolean;
-        supports_parallel_tool_calls: boolean;
-      }
-      | undefined;
+    const endpointModel = endpoint.model?.trim() ?? '';
     const modelWindow = deriveNotebookModelWindow(endpoint.model_profile);
-    modelContextWindow = modelWindow.modelContextWindow;
-    modelAutoCompactTokenLimit = modelWindow.modelAutoCompactTokenLimit;
-    modelCatalog = deriveNotebookCodexModelCatalog({
+    const modelContextWindow = modelWindow.modelContextWindow;
+    const modelAutoCompactTokenLimit = modelWindow.modelAutoCompactTokenLimit;
+    const modelCatalog = deriveNotebookCodexModelCatalog({
       capabilities: endpoint.capabilities,
     });
     if (agent.mode !== 'internal') {

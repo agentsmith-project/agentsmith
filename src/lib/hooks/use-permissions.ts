@@ -92,14 +92,6 @@ export function useCanManageProjectLifecycle(): boolean {
   return useHasPermission('project:lifecycle:update');
 }
 
-export function useCanManageMemberGovernance(): boolean {
-  return useHasPermission('project:membership:update');
-}
-
-export function useCanManageResourcePolicy(): boolean {
-  return useHasPermission('project:governance:update');
-}
-
 export function useCanReadProjectPolicy(): boolean {
   return useHasPermission('project:governance:update');
 }
@@ -117,30 +109,124 @@ export function useCanAccessChat(): boolean {
   return useHasPermission('project:endpoint:use');
 }
 
-export function useCanUseChat(): boolean {
-  return useCanAccessChat();
-}
-
-export function useCanManageChatSessions(): boolean {
-  return useCanAccessChat();
-}
-
 export function useCanAccessNotebook(): boolean {
   return useHasPermission('project:endpoint:use');
 }
 
-export function useCanReadTasks(): boolean {
-  return useCanAccessNotebook();
+export function useAgentPageCapabilities() {
+  const canManage = useHasPermission('project:agent:manage');
+  const canPublic = useHasPermission('project:agent:public');
+
+  return useMemo(() => ({
+    canRead: canManage,
+    canCreate: canManage,
+    canUpdate: canManage,
+    canDelete: canManage,
+    canIssueKeys: canManage,
+    canRevokeKeys: canManage,
+    canManage,
+    canPublic,
+  }), [canManage, canPublic]);
 }
 
-export function useCanCreateTask(): boolean {
-  return useCanAccessNotebook();
+export function useEndpointPageCapabilities() {
+  const canUse = useHasPermission('project:endpoint:use');
+  const canManage = useHasPermission('project:governance:update');
+
+  return useMemo(() => ({
+    canUse,
+    canManage,
+    canRead: canUse || canManage,
+  }), [canManage, canUse]);
 }
 
-export function useCanUpdateTask(): boolean {
-  return useCanAccessNotebook();
+export function useAlertPageCapabilities() {
+  const canRead = useCanReadAudit();
+  const canManage = useHasPermission('project:governance:update');
+
+  return useMemo(() => ({
+    canRead,
+    canManage,
+  }), [canManage, canRead]);
 }
 
-export function useCanDeleteTask(): boolean {
-  return useCanAccessNotebook();
+export function useUsagePageCapabilities() {
+  const canRead = useHasPermission('project:endpoint:use');
+
+  return useMemo(() => ({
+    canRead,
+  }), [canRead]);
+}
+
+export function useFilesPageCapabilities() {
+  const canRead = useHasPermission('project:endpoint:use');
+  const canManage = useHasPermission('project:files:update');
+  const canExchangeCredentialsViaDedicatedPermission = useHasPermission('project:file_library:credential_exchange');
+  const canExchangeCredentials = canExchangeCredentialsViaDedicatedPermission || canManage;
+
+  return useMemo(() => ({
+    canRead,
+    canManage,
+    canExchangeCredentials,
+  }), [canExchangeCredentials, canManage, canRead]);
+}
+
+export function useMemberPageCapabilities() {
+  const canRead = useHasPermission('project:membership:update');
+  const canManage = canRead;
+
+  return useMemo(() => ({
+    canRead,
+    canManage,
+  }), [canManage, canRead]);
+}
+
+export function useProjectOverviewCapabilities() {
+  const canUseProject = useHasPermission('project:endpoint:use');
+  const canManageAgents = useHasPermission('project:agent:manage');
+  const canManageGovernance = useHasPermission('project:governance:update');
+  const canManageMembership = useHasPermission('project:membership:update');
+  const canReadAudit = useCanReadAudit();
+  const canReadProjectSettings = useCanReadProjectSettings();
+
+  return useMemo(() => ({
+    canUseProject,
+    canManageAgents,
+    canManageGovernance,
+    canManageMembership,
+    canReadAudit,
+    canReadProjectSettings,
+  }), [
+    canManageAgents,
+    canManageGovernance,
+    canManageMembership,
+    canReadAudit,
+    canReadProjectSettings,
+    canUseProject,
+  ]);
+}
+
+export function useProjectSettingsCapabilities() {
+  const canReadSettings = useCanReadProjectSettings();
+  const canReadAudit = useCanReadAudit();
+  const canManageProjectLifecycle = useCanManageProjectLifecycle();
+  const canManageProjectAdmins = useCanManageProjectAdmins();
+  const canManageGovernance = useHasPermission('project:governance:update');
+  const canManageMembership = useHasPermission('project:membership:update');
+
+  return useMemo(() => ({
+    canReadSettings,
+    canReadAudit,
+    canManageProjectLifecycle,
+    canManageProjectAdmins,
+    canManageGovernance,
+    canManageMembership,
+  }), [
+    canManageGovernance,
+    canManageMembership,
+    canManageProjectAdmins,
+    canManageProjectLifecycle,
+    canReadAudit,
+    canReadSettings,
+  ]);
 }

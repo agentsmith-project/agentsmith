@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { JoinRequestsTab } from '../JoinRequestsTab';
-import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 
 vi.mock('next-intl', () => ({
@@ -12,7 +12,7 @@ vi.mock('next-intl', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanManageMemberGovernance: vi.fn(),
+  useMemberPageCapabilities: vi.fn(),
 }));
 
 const {
@@ -112,7 +112,7 @@ describe('JoinRequestsTab', () => {
   }
 
   it('shows approve and reject actions for project owners', () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: true });
 
     renderTab();
 
@@ -125,7 +125,7 @@ describe('JoinRequestsTab', () => {
   });
 
   it('hides approve and reject actions for project admins without owner controls', () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(false);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: false });
 
     renderTab();
 
@@ -134,7 +134,7 @@ describe('JoinRequestsTab', () => {
   });
 
   it('opens reject dialog when owner clicks reject', async () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: true });
     const user = userEvent.setup();
 
     renderTab();
@@ -146,7 +146,7 @@ describe('JoinRequestsTab', () => {
   });
 
   it('can approve and grant project admin in one action', async () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: true });
     const user = userEvent.setup();
 
     renderTab();
@@ -162,7 +162,7 @@ describe('JoinRequestsTab', () => {
   });
 
   it('shows loading state through i18n key', () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: true });
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
@@ -177,7 +177,7 @@ describe('JoinRequestsTab', () => {
   });
 
   it('shows approved requests with project admin outcome when the user is already a project admin', () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(true);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: true });
     mockUseProjectGroups.mockReturnValue({
       data: [
         {

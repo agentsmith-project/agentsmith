@@ -23,8 +23,8 @@ require_cmd juicefs
 require_cmd mc
 
 if [[ "${SKIP_BUNDLE_INPUTS_CHECK:-0}" != "1" ]]; then
-  (cd "${ROOT_DIR}" && npm run test:bundle:inputs)
-  (cd "${ROOT_DIR}" && npm run test:rendered-env)
+  (cd "${ROOT_DIR}" && npm run test:demo-bundle:inputs)
+  (cd "${ROOT_DIR}" && npm run test:demo-rendered-env)
   (cd "${ROOT_DIR}" && npm run test:client-public-runtime)
 fi
 
@@ -226,6 +226,7 @@ cp "${ROOT_DIR}/scripts/demo-deploy/"*.sh "${BUNDLE_DIR}/scripts/"
 mkdir -p "${BUNDLE_DIR}/scripts/lib"
 cp "${ROOT_DIR}/scripts/lib/common.sh" "${BUNDLE_DIR}/scripts/lib/common.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${BUNDLE_DIR}/scripts/lib/deploy-common.sh"
+cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/release-stage-common.sh"
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"

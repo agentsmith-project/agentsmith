@@ -5,7 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
-import { useCanManageMemberGovernance, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { useMembersContext } from './MembersContext';
 import { MembersTable } from './MembersTable';
 import { MemberDetailDrawer } from './MemberDetailDrawer';
@@ -41,8 +41,7 @@ export function PeopleTab({ workspaceId, projectId, locale = 'en-US' }: PeopleTa
   const PAGE_SIZE = 20;
   const t = useTranslations('members');
   const context = useMembersContext();
-  const canReadMembers = useHasPermission('project:membership:update');
-  const canManageMembers = useCanManageMemberGovernance();
+  const { canRead: canReadMembers, canManage: canManageMembers } = useMemberPageCapabilities();
   const searchParams = useSearchParams();
   const [search, setSearch] = React.useState('');
   const [accessFilter, setAccessFilter] = React.useState<'all' | 'governance' | 'resource_manage' | 'access_only'>(

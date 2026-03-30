@@ -6,7 +6,6 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { MembersPage } from '@/components/members/MembersPage';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
@@ -14,8 +13,8 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
 interface MembersPageProps {
@@ -25,30 +24,12 @@ interface MembersPageProps {
 export default function MembersRoute({ params }: MembersPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('members');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
-  const canReadMembers = useHasPermission('project:membership:update');
+  const resolvedParams = useResolvedProjectRoute(params);
+  const { canRead: canReadMembers } = useMemberPageCapabilities();
   const featureAvailability = getFeatureAvailability('members');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('members');
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -56,7 +37,7 @@ export default function MembersRoute({ params }: MembersPageProps) {
     );
   }
 
-  if (!resolvedParams.workspace || !resolvedParams.project) {
+  if (!resolvedParams.isValid || !resolvedParams.workspace || !resolvedParams.project) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

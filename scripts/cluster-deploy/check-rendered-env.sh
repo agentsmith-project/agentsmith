@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-TMP_ROOT="$(mktemp -d)"
-trap 'rm -rf "${TMP_ROOT}"' EXIT
+source "${ROOT_DIR}/scripts/lib/release-check-common.sh"
+release_check_init_tmp_root
 RELEASE_ROOT="${TMP_ROOT}/release"
 mkdir -p "${RELEASE_ROOT}/env"
 cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${RELEASE_ROOT}/env/site.env.example"
@@ -41,30 +41,12 @@ EOF
 DEPLOY_ROOT="${TMP_ROOT}/cluster-root" RELEASE_ROOT="${RELEASE_ROOT}" \
   bash "${ROOT_DIR}/scripts/cluster-deploy/render-env.sh"
 
-grep -Fxq 'SANDBOX_MANAGER_URL=https://sandbox-manager.mbos.imotion.ai' "${RELEASE_ROOT}/env/api.env" || {
-  echo "[cluster-rendered-env] missing sandbox manager url" >&2
-  exit 1
-}
-grep -Fxq 'AGENT_EXECUTION_HTTP_BASE_URL=https://mbos.imotion.ai/api' "${RELEASE_ROOT}/env/api.env" || {
-  echo "[cluster-rendered-env] missing internal agent execution http base" >&2
-  exit 1
-}
-grep -Fxq 'AGENT_EXECUTION_WS_BASE_URL=wss://mbos.imotion.ai/api' "${RELEASE_ROOT}/env/api.env" || {
-  echo "[cluster-rendered-env] missing internal agent execution websocket base" >&2
-  exit 1
-}
-grep -Fxq 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' "${RELEASE_ROOT}/env/internal.env" || {
-  echo "[cluster-rendered-env] missing internal cpu request default" >&2
-  exit 1
-}
-grep -E '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' "${RELEASE_ROOT}/env/base.env" >/dev/null || {
-  echo "[cluster-rendered-env] missing compose no_proxy entries" >&2
-  exit 1
-}
-grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' "${RELEASE_ROOT}/env/internal.env" || {
-  echo "[cluster-rendered-env] missing internal postgres external fqdn" >&2
-  exit 1
-}
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'SANDBOX_MANAGER_URL=https://sandbox-manager.mbos.imotion.ai' '[cluster-rendered-env] missing sandbox manager url'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=https://mbos.imotion.ai/api' '[cluster-rendered-env] missing internal agent execution http base'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_WS_BASE_URL=wss://mbos.imotion.ai/api' '[cluster-rendered-env] missing internal agent execution websocket base'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_DEFAULT_CPU_REQUEST=1' '[cluster-rendered-env] missing internal cpu request default'
+release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' '[cluster-rendered-env] missing compose no_proxy entries'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.mbos.svc.cluster.local' '[cluster-rendered-env] missing internal postgres external fqdn'
 
 python3 - <<'PY' "${ROOT_DIR}" "${TMP_ROOT}"
 import os

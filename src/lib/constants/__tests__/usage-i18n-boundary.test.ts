@@ -13,65 +13,60 @@ const EXPECTED_USAGE_TOP_LEVEL_KEYS = [
 ];
 
 const EXPECTED_USAGE_VIEW_KEYS = [
-  'limit_mode_all',
-  'limit_mode_label',
-  'limit_mode_rate',
-  'limit_mode_spending',
-  'rate_limit_title',
-  'spending_limit_title',
-  'limit_group_empty',
-  'window',
-  'limits_section_title',
+  'active_limits',
+  'card_out_of',
+  'card_remaining',
+  'cards',
+  'endpoints_label',
+  'last_30_days',
+  'limit_not_configured',
   'limit_reset_at',
   'limits_empty',
-  'panel_title',
-  'trend_section_title',
+  'limits_section_title',
   'no_data',
   'no_data_hint',
-  'period',
-];
-
-const EXPECTED_USAGE_VIEW_PERIOD_KEYS = [
-  '24h',
-  '48h',
+  'panel_title',
+  'trend_last_30_days',
+  'trend_section_title',
+  'window',
 ];
 
 const EXPECTED_USAGE_DETAIL_KEYS = [
-  'title',
-  'subtitle',
   'aggregate_bucket',
-  'requests',
-  'recovered',
+  'attempt_label',
   'cost',
-  'errors_badge',
-  'recovered_badge',
-  'recovered_status',
-  'missing_price',
-  'pricing_source',
-  'provider',
-  'model',
-  'error_class',
-  'governance_title',
-  'governance_kind',
-  'enforcement_kind',
-  'limit_key',
-  'scope',
-  'effective_limit',
   'current_usage',
-  'usage_unit',
-  'reason_label',
+  'decision_id',
+  'effective_limit',
+  'empty',
+  'enforcement_kind',
+  'error_class',
+  'errors_badge',
+  'estimated_cost',
+  'governance_kind',
+  'governance_title',
+  'limit_key',
   'membership_status',
   'missing_permissions',
+  'missing_price',
+  'model',
+  'open_audit',
   'open_member_access',
   'open_resource_policy',
-  'open_audit',
-  'tokens',
-  'decision_id',
-  'estimated_cost',
-  'timeline_title',
+  'pricing_source',
+  'provider',
+  'reason_label',
+  'recovered',
+  'recovered_badge',
+  'recovered_status',
+  'requests',
+  'scope',
+  'subtitle',
   'timeline_empty',
-  'attempt_label',
-  'empty',
+  'timeline_title',
+  'title',
+  'tokens',
+  'usage_unit',
 ];
 
 const FORBIDDEN_USAGE_KEYS = [
@@ -106,9 +101,6 @@ describe('usage i18n boundary guard', () => {
 
     const view = usage.view as Record<string, unknown>;
     expect(Object.keys(view).sort()).toEqual([...EXPECTED_USAGE_VIEW_KEYS].sort());
-
-    const viewPeriod = view.period as Record<string, unknown>;
-    expect(Object.keys(viewPeriod).sort()).toEqual([...EXPECTED_USAGE_VIEW_PERIOD_KEYS].sort());
 
     const detail = usage.detail as Record<string, unknown>;
     expect(Object.keys(detail).sort()).toEqual([...EXPECTED_USAGE_DETAIL_KEYS].sort());

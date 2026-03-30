@@ -27,7 +27,7 @@ Rules:
 If needed, override discovery with:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   --credential-dir /abs/path/to/.codex/credential/jira \
   myself
 ```

@@ -16,10 +16,10 @@ vi.mock('next-intl', () => ({
 }));
 
 // Mock use-permissions hook
-const mockHasPermission = vi.fn<(permission?: string) => boolean>(() => true);
+const mockUseAlertPageCapabilities = vi.fn(() => ({ canRead: true, canManage: true }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission?: string) => mockHasPermission(permission),
+  useAlertPageCapabilities: () => mockUseAlertPageCapabilities(),
 }));
 
 // Mock child components
@@ -99,7 +99,7 @@ const _mockAlerts: Alert[] = [
 
 describe('AlertCenterPage', () => {
   beforeEach(() => {
-    mockHasPermission.mockReturnValue(true);
+    mockUseAlertPageCapabilities.mockReturnValue({ canRead: true, canManage: true });
   });
 
   it('renders tabs for rules and notifications', () => {
@@ -170,7 +170,7 @@ describe('AlertCenterPage', () => {
   });
 
   it('hides create button for audit readers without governance update', () => {
-    mockHasPermission.mockImplementation((permission?: string) => permission === 'project:audit:read');
+    mockUseAlertPageCapabilities.mockReturnValue({ canRead: true, canManage: false });
 
     render(
       <AlertCenterPage

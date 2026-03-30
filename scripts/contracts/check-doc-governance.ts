@@ -7,6 +7,17 @@ const SCAN_ROOTS = ['README.md', 'CLAUDE.md', 'DEVELOPMENT.md', 'docs'] as const
 
 const EXCLUDED_DIRS = new Set(['.git', 'node_modules', 'artifacts', 'marketing']);
 
+const DOC_INDEX_EXPECTATIONS: Array<{ file: string; includes: string[] }> = [
+  {
+    file: 'docs/user-guides/README.md',
+    includes: ['file-library-local-mount.md', 'product-doc-artifacts.md'],
+  },
+  {
+    file: 'docs/README.md',
+    includes: ['file-library-local-mount.md', 'product-doc-artifacts.md'],
+  },
+];
+
 type Violation = {
   file: string;
   line: number;
@@ -132,6 +143,58 @@ function checkMarkdownLinks(filePath: string, content: string): Violation[] {
   return violations;
 }
 
+function checkHistoricalDocsPlacement(filePath: string, content: string): Violation[] {
+  const relativePath = toRel(filePath);
+  if (relativePath.startsWith('docs/archive/')) {
+    return [];
+  }
+
+  const violations: Violation[] = [];
+  const basename = path.basename(relativePath).toLowerCase();
+  const historicalMarkers = ['handoff', 'refactor-note'];
+  if (historicalMarkers.some((marker) => basename.includes(marker))) {
+    violations.push({
+      file: relativePath,
+      line: 1,
+      rule: 'historical-doc-outside-archive',
+      detail: 'Historical handoff/refactor-note docs must live under docs/archive/.',
+    });
+  }
+
+  if (/Historical handoff note/i.test(content)) {
+    violations.push({
+      file: relativePath,
+      line: 1,
+      rule: 'historical-doc-outside-archive',
+      detail: 'Docs marked as historical handoff notes must live under docs/archive/.',
+    });
+  }
+
+  return violations;
+}
+
+function checkIndexExpectations(): Violation[] {
+  const violations: Violation[] = [];
+  for (const expectation of DOC_INDEX_EXPECTATIONS) {
+    const absPath = path.join(ROOT, expectation.file);
+    if (!fs.existsSync(absPath)) {
+      continue;
+    }
+    const content = fs.readFileSync(absPath, 'utf8');
+    for (const needle of expectation.includes) {
+      if (!content.includes(needle)) {
+        violations.push({
+          file: expectation.file,
+          line: 1,
+          rule: 'missing-doc-index-entry',
+          detail: `Current doc index must include ${needle}.`,
+        });
+      }
+    }
+  }
+  return violations;
+}
+
 function main(): void {
   const files = SCAN_ROOTS.flatMap((target) => collectMarkdownFiles(target)).sort();
   const violations: Violation[] = [];
@@ -140,7 +203,10 @@ function main(): void {
     const content = fs.readFileSync(file, 'utf8');
     violations.push(...findViolations(file, content));
     violations.push(...checkMarkdownLinks(file, content));
+    violations.push(...checkHistoricalDocsPlacement(file, content));
   }
+
+  violations.push(...checkIndexExpectations());
 
   if (violations.length > 0) {
     console.error('[docs-governance] check failed.');

@@ -89,7 +89,7 @@ RUNNER_IMAGE="${RUNNER_IMAGE:-agentsmith-codex-runner:cnpy312-v1}"
 
 MBOS_AGENT_WS_URL="${MBOS_AGENT_WS_URL:-ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_1772685779403_6631}"
 MBOS_AGENT_KEY="${MBOS_AGENT_KEY:-ask_9650f58723ad6abdd86b3c66e82886e22741a41992526e44}"
-MBOS_AGENT_BUILTIN_SKILLS_DIR="${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/app/packages/agent-codex-runner/builtin-skills}"
+MBOS_AGENT_BUILTIN_SKILLS_DIR="${MBOS_AGENT_BUILTIN_SKILLS_DIR:-/etc/codex/skills}"
 
 docker rm -f "$RUNNER_CONTAINER" "$WEB_CONTAINER" "$API_CONTAINER" >/dev/null 2>&1 || true
 

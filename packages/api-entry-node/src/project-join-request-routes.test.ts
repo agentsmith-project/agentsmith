@@ -36,7 +36,6 @@ vi.mock('./project-route-handler-utils.js', async () => {
 import {
   getProjectJoinRequest,
   handleProjectJoinRequestsRoute,
-  listProjectJoinRequests,
   saveProjectJoinRequest,
 } from './project-join-request-routes.js';
 import { getProjectMembership } from './project-member-governance-persistence.js';

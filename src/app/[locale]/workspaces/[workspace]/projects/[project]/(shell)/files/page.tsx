@@ -1,12 +1,11 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { FilesPage as FilesPageComponent } from '@/components/files/FilesPage';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useFilesPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 
 interface FilesPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -14,32 +13,10 @@ interface FilesPageProps {
 
 export default function FilesPage({ params }: FilesPageProps) {
   const tErrors = useTranslations('errors');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
-  const canUseFiles = useHasPermission('project:endpoint:use');
+  const { canRead: canUseFiles } = useFilesPageCapabilities();
+  const resolvedParams = useResolvedProjectRoute(params);
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -47,7 +24,7 @@ export default function FilesPage({ params }: FilesPageProps) {
     );
   }
 
-  if (!resolvedParams.workspace || !resolvedParams.project) {
+  if (!resolvedParams.isValid || !resolvedParams.workspace || !resolvedParams.project) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -71,11 +48,11 @@ export default function FilesPage({ params }: FilesPageProps) {
 
   return (
     <PageState state="success">
-      <FilesPageComponent
-        workspaceId={resolvedParams.workspace}
-        projectId={resolvedParams.project}
-        locale={resolvedParams.locale}
-      />
-    </PageState>
+        <FilesPageComponent
+          workspaceId={resolvedParams.workspace}
+          projectId={resolvedParams.project}
+          locale={resolvedParams.locale}
+        />
+      </PageState>
   );
 }

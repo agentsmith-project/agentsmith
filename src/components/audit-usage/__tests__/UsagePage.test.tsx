@@ -21,7 +21,7 @@ vi.mock('@tanstack/react-query', async () => {
 });
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) => permission === 'project:endpoint:use',
+  useUsagePageCapabilities: () => ({ canRead: true }),
 }));
 
 vi.mock('@/lib/hooks/use-audit-usage', () => ({

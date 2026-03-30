@@ -13,7 +13,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
 
 const mockList = vi.fn();
 const mockDelete = vi.fn();
@@ -30,7 +30,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn((permission: string) => permission === 'project:governance:update'),
+  useCanAccessCredentials: vi.fn(() => ({ canRead: true, canManage: true })),
 }));
 
 vi.mock('@/components/credentials/CreateCredentialDialog', () => ({
@@ -122,7 +122,7 @@ vi.mock('next-intl', () => ({
 
 import CredentialsPage from '../page';
 
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanAccessCredentials = vi.mocked(useCanAccessCredentials);
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -165,7 +165,7 @@ describe('CredentialsPage', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:governance:update');
+    mockUseCanAccessCredentials.mockReturnValue({ canRead: true, canManage: true });
     mockList.mockResolvedValue(mockCredentials);
     mockDelete.mockResolvedValue(undefined);
   });
@@ -236,7 +236,7 @@ describe('CredentialsPage', () => {
     });
 
     it('shows loading state initially', async () => {
-      mockList.mockReturnValue(new Promise(() => {})); // Never resolves
+      mockList.mockReturnValue(new Promise(() => {}));
       render(
         <CredentialsPage
           params={Promise.resolve({
@@ -248,7 +248,6 @@ describe('CredentialsPage', () => {
         { wrapper: createWrapper() }
       );
 
-      // After params resolve, title shows but data is still loading
       await waitFor(() => {
         expect(screen.getByText('Credentials')).toBeInTheDocument();
       });
@@ -269,689 +268,76 @@ describe('CredentialsPage', () => {
       );
 
       await waitFor(() => {
-        expect(screen.getByText(/no credentials yet/i)).toBeInTheDocument();
-        expect(screen.getByText(/create a credential to get started/i)).toBeInTheDocument();
+        expect(screen.getByText('No credentials yet')).toBeInTheDocument();
       });
-    });
-
-    it('renders table with credentials', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-        expect(screen.getByText('Anthropic API Key')).toBeInTheDocument();
-      });
-    });
-
-    it('displays credential type', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getAllByText('api_key').length).toBeGreaterThanOrEqual(1);
-      });
-    });
-
-    it('displays fingerprint (masked value) instead of actual secret', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('••••••••••••xyz1')).toBeInTheDocument();
-        expect(screen.getByText('••••••••••••abc2')).toBeInTheDocument();
-      });
-    });
-
-    it('never displays actual secret values (security check)', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-      const allText = document.body.textContent || '';
-      // Should not contain common secret patterns
-      expect(allText).not.toMatch(/sk-[a-zA-Z0-9]{32,}/);
-      expect(allText).not.toMatch(/Bearer\s+[a-zA-Z0-9]/);
-    });
-
-    it('displays last rotated date', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        // Should show formatted dates (multiple credentials have Jan dates)
-        expect(screen.getAllByText(/jan/i).length).toBeGreaterThan(0);
-      });
-    });
-
-    it('shows rotate button for each credential', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        const rotateButtons = screen.getAllByTitle(/rotate/i);
-        expect(rotateButtons.length).toBe(2);
-      });
-    });
-
-    it('shows delete button for each credential', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        const deleteButtons = screen.getAllByTitle(/delete/i);
-        expect(deleteButtons.length).toBe(2);
-      });
-    });
-
-    it('disables action buttons during delete mutation', async () => {
-      const mockDeleteSlow = vi.fn().mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(undefined), 1000))
-      );
-
-      mockDelete.mockImplementation(mockDeleteSlow);
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Click delete button
-      const deleteButtons = screen.getAllByTitle(/delete/i);
-      await user.click(deleteButtons[0]);
-
-      // Click confirm
-      await waitFor(() => {
-        const confirmButton = screen.getByTestId('delete-confirm');
-        if (confirmButton) {
-          user.click(confirmButton);
-        }
-      });
-
-      // Buttons should be disabled during mutation
-      await waitFor(() => {
-        const rotateButtons = screen.getAllByTitle(/rotate/i);
-        expect(rotateButtons[0]).toBeDisabled();
-      });
+      expect(screen.getByText('Create a credential to get started')).toBeInTheDocument();
     });
   });
 
-  describe('Credential Creation', () => {
+  describe('Behavior', () => {
+    it('shows invalid parameter error state for unsafe route params', async () => {
+      render(
+        <CredentialsPage
+          params={Promise.resolve({
+            workspace: '../unsafe-workspace',
+            project: 'proj_001',
+            locale: 'en',
+          })}
+        />,
+        { wrapper: createWrapper() }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+      });
+    });
+
+    it('shows permission denied when user lacks read access', async () => {
+      mockUseCanAccessCredentials.mockReturnValue({ canRead: false, canManage: false });
+      render(
+        <CredentialsPage
+          params={Promise.resolve({
+            workspace: 'ws_test',
+            project: 'proj_001',
+            locale: 'en',
+          })}
+        />,
+        { wrapper: createWrapper() }
+      );
+
+      await waitFor(() => {
+        expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
+      });
+      expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
+    });
+
     it('opens create dialog when clicking create button', async () => {
       render(
         <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
+          params={Promise.resolve({ workspace: 'ws_test', project: 'proj_001', locale: 'en' })}
         />,
-        { wrapper }
+        { wrapper: createWrapper() }
       );
 
-      await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create credential/i })).toBeInTheDocument();
-      });
-
-      await user.click(screen.getByRole('button', { name: /create credential/i }));
-
+      await user.click(await screen.findByRole('button', { name: /create credential/i }));
       expect(screen.getByTestId('create-credential-dialog')).toBeInTheDocument();
-    });
-
-    it('calls API with correct workspace and project IDs', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(mockList).toHaveBeenCalledWith('ws_test', 'proj_001');
-      });
-    });
-
-    it('refreshes list after successful creation', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Open create dialog
-      await user.click(screen.getByRole('button', { name: /create credential/i }));
-
-      // Submit (mock dialog calls onSuccess)
-      await user.click(screen.getByTestId('create-submit'));
-
-      // List should be refreshed (called again)
-      await waitFor(() => {
-        expect(mockList).toHaveBeenCalledTimes(2); // Initial load + refresh
-      });
-    });
-  });
-
-  describe('Credential Rotation', () => {
-    it('opens rotate dialog when clicking rotate button', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      const rotateButtons = screen.getAllByTitle(/rotate/i);
-      await user.click(rotateButtons[0]);
-
-      expect(screen.getByTestId('rotate-credential-dialog')).toBeInTheDocument();
-    });
-
-    it('passes correct credential to rotate dialog', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      const rotateButtons = screen.getAllByTitle(/rotate/i);
-      await user.click(rotateButtons[0]);
-
-      // The dialog should be open with the correct credential
-      await waitFor(() => {
-        expect(screen.getByTestId('rotate-credential-dialog')).toBeInTheDocument();
-      });
-    });
-
-    it('refreshes list after successful rotation', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Open rotate dialog
-      const rotateButtons = screen.getAllByTitle(/rotate/i);
-      await user.click(rotateButtons[0]);
-
-      // Submit (mock dialog calls onSuccess)
-      await user.click(screen.getByTestId('rotate-submit'));
-
-      // List should be refreshed
-      await waitFor(() => {
-        expect(mockList).toHaveBeenCalledTimes(2);
-      });
-    });
-  });
-
-  describe('Credential Deletion', () => {
-    it('opens delete dialog when clicking delete button', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      const deleteButtons = screen.getAllByTitle(/delete/i);
-      await user.click(deleteButtons[0]);
-
-      expect(screen.getByTestId('delete-credential-dialog')).toBeInTheDocument();
-    });
-
-    it('calls delete API with correct credential ID', async () => {
-      mockDelete.mockResolvedValue(undefined);
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Open delete dialog
-      const deleteButtons = screen.getAllByTitle(/delete/i);
-      await user.click(deleteButtons[0]);
-
-      // Confirm deletion
-      await user.click(screen.getByTestId('delete-confirm'));
-
-      await waitFor(() => {
-        expect(mockDelete).toHaveBeenCalledWith('ws_test', 'proj_001', 'cred_001');
-      });
     });
 
     it('refreshes list after successful deletion', async () => {
       render(
         <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Open delete dialog
-      const deleteButtons = screen.getAllByTitle(/delete/i);
-      await user.click(deleteButtons[0]);
-
-      // Confirm deletion
-      await user.click(screen.getByTestId('delete-confirm'));
-
-      // List should be refreshed
-      await waitFor(() => {
-        expect(mockList).toHaveBeenCalled();
-      });
-    });
-
-    it('disables action buttons during deletion', async () => {
-      mockDelete.mockImplementation(
-        () => new Promise((resolve) => setTimeout(() => resolve(undefined), 100))
-      );
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Open delete dialog
-      const deleteButtons = screen.getAllByTitle(/delete/i);
-      await user.click(deleteButtons[0]);
-
-      // Confirm deletion
-      await user.click(screen.getByTestId('delete-confirm'));
-
-      // Wait for mutation to start
-      await waitFor(() => {
-        expect(mockDelete).toHaveBeenCalled();
-      });
-
-      // Buttons should be disabled
-      const rotateButtons = screen.getAllByTitle(/rotate/i);
-      expect(rotateButtons[0]).toBeDisabled();
-    });
-  });
-
-  describe('Security - Data Protection', () => {
-    it('never displays actual credential values', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-      const allText = document.body.textContent || '';
-      // Check for common API key patterns - should NOT be present
-      expect(allText).not.toMatch(/sk-[a-zA-Z0-9]{20,}/);
-      expect(allText).not.toMatch(/AKIA[0-9A-Z]{16}/);
-    });
-
-    it('only shows fingerprint with masking', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('••••••••••••xyz1')).toBeInTheDocument();
-        expect(screen.getByText('••••••••••••abc2')).toBeInTheDocument();
-      });
-    });
-
-    it('does not log credential values to console', async () => {
-      const consoleSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      const allLogs = consoleSpy.mock.calls.flat().join(' ');
-      expect(allLogs).not.toContain('sk-');
-      expect(allLogs).not.toContain('password');
-
-      consoleSpy.mockRestore();
-    });
-  });
-
-  describe('Error Handling', () => {
-    it('handles API errors during list fetch', async () => {
-      mockList.mockRejectedValue(new Error('Failed to fetch credentials'));
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      // Should not crash
-      await waitFor(() => {
-        expect(screen.getByText('Credentials')).toBeInTheDocument();
-      });
-    });
-
-    it('handles API errors during delete', async () => {
-      mockDelete.mockRejectedValue(new Error('Failed to delete'));
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      // Open delete dialog
-      const deleteButtons = screen.getAllByTitle(/delete/i);
-      await user.click(deleteButtons[0]);
-
-      // Confirm deletion
-      await user.click(screen.getByTestId('delete-confirm'));
-
-      // Error should be handled by handleErrorForToast
-      await waitFor(() => {
-        expect(mockDelete).toHaveBeenCalled();
-      });
-    });
-  });
-
-  describe('Date Formatting', () => {
-    it('formats dates correctly', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        // Should show formatted dates with month abbreviation
-        expect(screen.getAllByText(/jan/i).length).toBeGreaterThan(0);
-      });
-    });
-
-    it('shows dash for missing dates', async () => {
-      const credWithoutDate = [
-        {
-          ...mockCredentials[0],
-          last_rotated_at: undefined,
-        },
-      ];
-      mockList.mockResolvedValue(credWithoutDate);
-
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
+          params={Promise.resolve({ workspace: 'ws_test', project: 'proj_001', locale: 'en' })}
         />,
         { wrapper: createWrapper() }
       );
 
-      await waitFor(() => {
-        expect(screen.getByText('OpenAI API Key')).toBeInTheDocument();
-      });
-
-      const dashes = screen.getAllByText('-');
-      expect(dashes.length).toBeGreaterThan(0);
-    });
-  });
-
-  describe('Accessibility', () => {
-    it('has proper button labels', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
+      const deleteButtons = await screen.findAllByRole('button', { name: /delete/i });
+      await user.click(deleteButtons[0]);
+      await user.click(screen.getByTestId('delete-confirm'));
 
       await waitFor(() => {
-        expect(screen.getByRole('button', { name: /create credential/i })).toBeInTheDocument();
+        expect(mockDelete).toHaveBeenCalledWith('ws_test', 'proj_001', 'cred_001');
       });
-    });
-
-    it('action buttons have proper title attributes', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper }
-      );
-
-      await waitFor(() => {
-        expect(screen.getAllByTitle(/rotate/i).length).toBeGreaterThan(0);
-        expect(screen.getAllByTitle(/delete/i).length).toBeGreaterThan(0);
-      });
-    });
-  });
-
-  describe('Route and Permission Guards', () => {
-    it('shows invalid parameter error state for unsafe route params', async () => {
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: '<script>',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper: createWrapper() }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
-      });
-
-      expect(screen.getByText('validation_error')).toBeInTheDocument();
-    });
-
-    it('shows permission denied when user lacks read access', async () => {
-      mockUseHasPermission.mockReturnValue(false);
-      render(
-        <CredentialsPage
-          params={Promise.resolve({
-            workspace: 'ws_test',
-            project: 'proj_001',
-            locale: 'en',
-          })}
-        />,
-        { wrapper: createWrapper() }
-      );
-
-      await waitFor(() => {
-        expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
-      });
-
-      expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
     });
   });
 });

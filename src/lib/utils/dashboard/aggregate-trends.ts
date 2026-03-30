@@ -25,16 +25,17 @@ function _getDateKey(timestamp: string, granularity: 'day' | 'week' | 'month'): 
   switch (granularity) {
     case 'day':
       return date.toISOString().split('T')[0]; // YYYY-MM-DD
-    case 'week':
-      // Get Monday of the week
+    case 'week': {
+      // Get Monday of the week in UTC to avoid local timezone skew.
       const d = new Date(date);
-      const day = d.getDay();
-      const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-      d.setDate(diff);
-      d.setHours(0, 0, 0, 0);
+      const day = d.getUTCDay();
+      const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1);
+      d.setUTCDate(diff);
+      d.setUTCHours(0, 0, 0, 0);
       return d.toISOString().split('T')[0];
+    }
     case 'month':
-      return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+      return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
   }
 }
 
@@ -132,11 +133,11 @@ export function aggregateByWeek(data: DataPoint[]): DataPoint[] {
 
   return aggregateByDateKey(data, (ts) => {
     const date = new Date(ts);
-    const day = date.getDay();
-    const diff = date.getDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday
+    const day = date.getUTCDay();
+    const diff = date.getUTCDate() - day + (day === 0 ? -6 : 1); // Adjust to Monday in UTC
     const monday = new Date(date);
-    monday.setDate(diff);
-    monday.setHours(0, 0, 0, 0);
+    monday.setUTCDate(diff);
+    monday.setUTCHours(0, 0, 0, 0);
     return monday.toISOString().split('T')[0];
   });
 }
@@ -149,7 +150,7 @@ export function aggregateByMonth(data: DataPoint[]): DataPoint[] {
 
   return aggregateByDateKey(data, (ts) => {
     const date = new Date(ts);
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-01`;
+    return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
   });
 }
 

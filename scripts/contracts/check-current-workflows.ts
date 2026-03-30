@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+import { CURRENT_WORKFLOW_DOCUMENT_FILES } from '../governance/current-workflow-manifest';
 
 const rootDir = process.cwd();
 
@@ -43,6 +44,11 @@ const rules: Rule[] = [
       /\btest:mainline:strict\b|\btest:mainline:strict:real\b|\btest:governance:strict\b|\btest:visual:strict\b|\btest:smoke:real:notebook-mainline\b|\bgate:main\b|\bgate-main\b|\bworkspace-project-mainline-gate\.sh\b|\bgovernance-mainline-gate\.sh\b|\bsystem-notebook-real-smoke-gate\.sh\b|\bworkspace-project-mainline-engineering-checklist\.md\b|\bgovernance-mainline-engineering-checklist\.md\b/,
     message: 'legacy current command naming leaked into current path',
   },
+  {
+    pattern:
+      /\btest:e2e:lane:mock:full\b(?!:with-visual)|\btest:members-governance\b|\btest:bundle:inputs\b|\btest:rendered-env\b|\bcontracts:check-engineering-sync\b/,
+    message: 'duplicate workflow alias leaked into current path',
+  },
 ];
 
 function listTrackedFiles(): string[] {
@@ -51,21 +57,10 @@ function listTrackedFiles(): string[] {
     encoding: 'utf8',
   });
   const currentPathFiles = new Set([
-    'README.md',
-    'DEVELOPMENT.md',
-    'Makefile',
+    ...CURRENT_WORKFLOW_DOCUMENT_FILES,
     'package.json',
     'playwright.config.ts',
-    'docs/CURRENT_BASELINE.md',
     'docs/项目宪法.md',
-    'docs/current-engineering-governance-model.md',
-    'docs/troubleshooting-guide-v1.md',
-    'docs/agent-codex-notebook-runbook.md',
-    'docs/UXUI/01-通用规范/visual-baseline-policy-v1.md',
-    'scripts/local-manual/common.sh',
-    'scripts/notebook-agent-init-resources.sh',
-    'scripts/contracts/check-current-workflows.ts',
-    'scripts/contracts/check-engineering-governance.ts',
   ]);
 
   return stdout

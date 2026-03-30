@@ -7,13 +7,13 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 ensure_backend_real_state
 
-API_BASE="${API_BASE:-http://localhost:20000}"
-BASE_URL="${BASE_URL:-http://localhost:3001}"
+API_BASE="${API_BASE:-http://localhost:${PORT_API:-21000}}"
+BASE_URL="${BASE_URL:-http://localhost:${PORT_WEB:-3101}}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 PROJECT_ID="${PROJECT_ID:-$(state_get project.id)}"
 PROMPT="${PROMPT:-check credential sync}"
-RUNNER_LOG="${RUNNER_LOG:-$(backend_real_demo_log_file runner)}"
+RUNNER_LOG="${RUNNER_LOG:-$(backend_real_state_root)/local-manual/runner.log}"
 TASK_LOG="${TASK_LOG:-$(backend_real_state_root)/credential-sync-smoke-task.log}"
 
 if [[ -z "${PROJECT_ID}" ]]; then
@@ -96,19 +96,25 @@ if [[ -z "${REQUEST_ID}" ]]; then
   echo "[credential-sync-smoke] failed to infer request_id from ${RUNNER_LOG} for task ${TASK_ID}" >&2
   exit 1
 fi
-CWD="$(
+RUN_CONTEXT_LINE="$(
   rg -n "\"request_id\":\"${REQUEST_ID}\"" "${RUNNER_LOG}" | \
-  rg 'prepared task workspace' | tail -n1 | \
-  sed -nE 's/.*"cwd":"([^"]+)".*/\1/p'
+  rg 'prepared task workspace' | tail -n1
 )"
-if [[ -z "${CWD}" ]]; then
-  echo "[credential-sync-smoke] failed to infer cwd from ${RUNNER_LOG} for task ${TASK_ID}" >&2
+if [[ -z "${RUN_CONTEXT_LINE}" ]]; then
+  echo "[credential-sync-smoke] failed to infer run context from ${RUNNER_LOG} for task ${TASK_ID}" >&2
   exit 1
 fi
-INDEX_PATH="${CWD}/.codex/credential/index.json"
-PROVIDER_PATH="${CWD}/.codex/credential/jira/connections.json"
+CWD="$(printf '%s' "${RUN_CONTEXT_LINE}" | sed -nE 's/.*"cwd":"([^"]+)".*/\1/p')"
+CREDENTIAL_DIR="$(printf '%s' "${RUN_CONTEXT_LINE}" | sed -nE 's/.*"credential_dir":"([^"]+)".*/\1/p')"
+if [[ -z "${CWD}" || -z "${CREDENTIAL_DIR}" ]]; then
+  echo "[credential-sync-smoke] failed to infer cwd/credential_dir from ${RUNNER_LOG} for task ${TASK_ID}" >&2
+  echo "${RUN_CONTEXT_LINE}" >&2
+  exit 1
+fi
+INDEX_PATH="${CREDENTIAL_DIR}/index.json"
+PROVIDER_PATH="${CREDENTIAL_DIR}/jira/connections.json"
 
-echo "[credential-sync-smoke] checking generated files in ${CWD}"
+echo "[credential-sync-smoke] checking generated files in ${CREDENTIAL_DIR} (cwd=${CWD})"
 [[ -f "${INDEX_PATH}" ]] || { echo "[credential-sync-smoke] missing ${INDEX_PATH}" >&2; exit 1; }
 [[ -f "${PROVIDER_PATH}" ]] || { echo "[credential-sync-smoke] missing ${PROVIDER_PATH}" >&2; exit 1; }
 

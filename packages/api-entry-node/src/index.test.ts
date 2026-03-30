@@ -1,18 +1,12 @@
 import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps } from './index.js';
-import { recordAuditEvent, recordUsageFact } from './audit-usage-store.js';
-import type { GovernanceRunnerController } from './governance-runner.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import {
-  parseDefaultSseBlocks,
-  readSseBlocks,
-  parseSseEventPayload,
   startOpenAICompatibleUpstreamServer,
   startPassthroughUpstreamServer as startUpstreamServer,
-  startSlowOpenAICompatibleUpstreamServer,
 } from './__integration__/chat-test-support.js';
-import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './__integration__/test-support.js';
+import { apiFetch, startServer, startServerWithDeps } from './__integration__/test-support.js';
 
 async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): Promise<{ id: string; name: string }> {
   const createLibraryRes = await apiFetch(
@@ -77,7 +71,7 @@ describe('api-entry-node projects routes', () => {
     );
     expect(createAgentRes.status).toBe(201);
     const agent = (await createAgentRes.json()) as { id: string };
-    const workspaceLibrary = await createFileLibrary(baseUrl, 'Truncate Trace Workspace');
+    await createFileLibrary(baseUrl, 'Truncate Trace Workspace');
 
     const keyRes = await apiFetch(
       baseUrl,

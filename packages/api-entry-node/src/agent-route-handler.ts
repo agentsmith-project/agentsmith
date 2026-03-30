@@ -113,7 +113,7 @@ export function resolveAgentPresenceForApi(input: {
   if (input.mode === 'internal') {
     return 'managed';
   }
-  return input.socketOnline || input.storedPresence === 'online' ? 'online' : 'offline';
+  return input.socketOnline ? 'online' : 'offline';
 }
 
 function toPublicAgent<T extends {

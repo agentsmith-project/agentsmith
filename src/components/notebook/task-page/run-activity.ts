@@ -38,7 +38,17 @@ export function deriveRunAction({ event, fallbackSummary }: DeriveRunActionArgs)
     const toolName = typeof event.details?.tool_name === 'string' ? event.details.tool_name.trim() : '';
     return {
       kind: 'tool',
-      summary: toolName ? `tool: ${toolName}` : (event.summary || fallbackSummary),
+      summary: toolName || event.summary || fallbackSummary,
+    };
+  }
+  if (event.name === 'workspace.files_changed') {
+    const added = Array.isArray(event.details?.added) ? event.details.added.length : 0;
+    const modified = Array.isArray(event.details?.modified) ? event.details.modified.length : 0;
+    const deleted = Array.isArray(event.details?.deleted) ? event.details.deleted.length : 0;
+    const summary = added || modified || deleted ? `${added} added · ${modified} modified · ${deleted} deleted` : (event.summary || fallbackSummary);
+    return {
+      kind: 'artifact',
+      summary,
     };
   }
   if (event.name === 'runner.artifact') {

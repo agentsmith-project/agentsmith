@@ -13,7 +13,7 @@ interface ConnectionInfoCardProps {
 }
 
 export function ConnectionInfoCard({
-  copied,
+  copied: _copied,
   copyLabel,
   title,
   wsUrl,

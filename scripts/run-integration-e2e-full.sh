@@ -38,6 +38,8 @@ WEB_LOG="${INTEGRATION_WEB_LOG:-${INTEGRATION_LOG_DIR}/web.log}"
 API_PID=""
 WEB_PID=""
 PLAYWRIGHT_PID=""
+PLAYWRIGHT_STATUS=0
+KEEP_FAILED_ENV="${INTEGRATION_KEEP_FAILED_ENV:-0}"
 
 run_clean() {
   env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "$@"
@@ -233,6 +235,15 @@ WEB_PID="$(
 )"
 
 cleanup() {
+  if [[ "${KEEP_FAILED_ENV}" == "1" && "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
+    echo "[integration-e2e-full] keeping failed integration environment for inspection" >&2
+    echo "[integration-e2e-full] api_log=${API_LOG}" >&2
+    echo "[integration-e2e-full] web_log=${WEB_LOG}" >&2
+    echo "[integration-e2e-full] playwright_base_url=${PLAYWRIGHT_BASE_URL}" >&2
+    echo "[integration-e2e-full] api_base=${INTEGRATION_API_BASE}" >&2
+    echo "[integration-e2e-full] test_results=${ROOT_DIR}/test-results" >&2
+    return 0
+  fi
   stop_background_job "${PLAYWRIGHT_PID}"
   stop_background_job "${WEB_PID}"
   stop_background_job "${API_PID}"
@@ -288,4 +299,10 @@ BASE_URL="${PLAYWRIGHT_BASE_URL}" \
 INTEGRATION_API_BASE="${INTEGRATION_API_BASE}" \
 run_clean npx playwright test --config playwright.config.integration.ts "${SPEC_FILE}" --project=chromium --workers=1 "$@" &
 PLAYWRIGHT_PID=$!
+set +e
 wait "${PLAYWRIGHT_PID}"
+PLAYWRIGHT_STATUS=$?
+set -e
+if [[ "${PLAYWRIGHT_STATUS}" -ne 0 ]]; then
+  exit "${PLAYWRIGHT_STATUS}"
+fi

@@ -2,8 +2,8 @@
  * Tests for ArtifactCard component
  */
 
-import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ArtifactCard } from '../ArtifactCard';
 import type { Artifact } from '@/lib/types/task';
@@ -78,6 +78,10 @@ describe('ArtifactCard', () => {
     writeTextMock.mockResolvedValue(undefined);
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   const renderComponent = (artifact: Artifact, props = {}) => {
     return render(
         <ArtifactCard
@@ -103,6 +107,7 @@ describe('ArtifactCard', () => {
     });
 
     it('reveals the floating detail panel on hover', () => {
+      vi.useFakeTimers();
       renderComponent(mockTextArtifact);
 
       const card = screen.getByTestId('notebook__artifact-card');
@@ -110,7 +115,30 @@ describe('ArtifactCard', () => {
       expect(screen.getByTestId('notebook__artifact-hover-panel')).toBeInTheDocument();
       expect(screen.getByText(/This is a text artifact/)).toBeInTheDocument();
       fireEvent.mouseLeave(card);
+      act(() => {
+        vi.advanceTimersByTime(140);
+      });
       expect(screen.queryByTestId('notebook__artifact-hover-panel')).not.toBeInTheDocument();
+    });
+
+    it('keeps the hover panel open long enough to move into it', () => {
+      vi.useFakeTimers();
+      renderComponent(mockTextArtifact);
+
+      const card = screen.getByTestId('notebook__artifact-card');
+      fireEvent.mouseEnter(card);
+      const panel = screen.getByTestId('notebook__artifact-hover-panel');
+      fireEvent.mouseLeave(card);
+
+      expect(screen.getByTestId('notebook__artifact-hover-panel')).toBeInTheDocument();
+      act(() => {
+        vi.advanceTimersByTime(80);
+      });
+      fireEvent.mouseEnter(panel);
+      act(() => {
+        vi.advanceTimersByTime(120);
+      });
+      expect(screen.getByTestId('notebook__artifact-hover-panel')).toBeInTheDocument();
     });
 
     it('shows default title when title is missing', () => {

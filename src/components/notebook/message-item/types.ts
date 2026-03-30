@@ -19,7 +19,5 @@ export type TraceStep = {
   events: TaskTraceEvent[];
 };
 
-export type TraceViewMode = 'timeline' | 'raw';
-export type TraceFilterMode = 'all' | 'progress' | 'tool' | 'alerts' | 'debug';
 export type TransportTraceKind = 'gap_fill' | 'reconcile';
 export type TransportTracePhase = 'start' | 'done' | 'error';

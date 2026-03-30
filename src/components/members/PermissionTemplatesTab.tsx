@@ -20,7 +20,7 @@ import {
   useMembers,
 } from '@/lib/hooks/use-members';
 import { getProjectBuiltInTemplateOptions } from '@/lib/governance/member-groups';
-import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { CreateTemplateDrawer } from './CreateTemplateDrawer';
 import { ApplyTemplateDialog } from './ApplyTemplateDialog';
 import { EditTemplateDrawer } from './EditTemplateDrawer';
@@ -51,7 +51,7 @@ export function PermissionTemplatesTab({
   const { data: members = [] } = useMembers(workspaceId, projectId);
   const createTemplate = useCreatePermissionTemplate(workspaceId, projectId);
   const batchApplyTemplate = useBatchApplyPermissionTemplate(workspaceId, projectId);
-  const canManage = useCanManageMemberGovernance();
+  const { canManage } = useMemberPageCapabilities();
   const [selectedTemplate, setSelectedTemplate] = React.useState<PermissionTemplate | null>(null);
   const [editingTemplateId, setEditingTemplateId] = React.useState('');
   const updateTemplate = useUpdatePermissionTemplate(workspaceId, projectId, editingTemplateId);

@@ -1,21 +1,32 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { ArtifactsPanel } from '@/components/notebook/ArtifactsPanel';
-import { ConversationPanel } from '@/components/notebook/ConversationPanel';
-import { NotebookSseDebugPanel } from '@/components/notebook/NotebookSseDebugPanel';
-import type { Artifact, TaskMessage } from '@/lib/types/task';
+import * as React from "react";
+import { ArtifactsPanel } from "@/components/notebook/ArtifactsPanel";
+import { ConversationPanel } from "@/components/notebook/ConversationPanel";
+import { NotebookSseDebugPanel } from "@/components/notebook/NotebookSseDebugPanel";
+import type { Artifact, TaskMessage } from "@/lib/types/task";
 
 interface TaskPageContentProps {
   agentIsBusy: boolean;
+  activeAgentMessageId: string | null;
   artifacts: Artifact[];
   canUpdateTask: boolean;
-  connectionErrorCode: React.ComponentProps<typeof ConversationPanel>['connectionErrorCode'];
-  connectionErrorMessage: React.ComponentProps<typeof ConversationPanel>['connectionErrorMessage'];
-  connectionStatus: React.ComponentProps<typeof ConversationPanel>['connectionStatus'];
-  diagnosticsLinks: React.ComponentProps<typeof ConversationPanel>['diagnosticsLinks'];
+  connectionErrorCode: React.ComponentProps<
+    typeof ConversationPanel
+  >["connectionErrorCode"];
+  connectionErrorMessage: React.ComponentProps<
+    typeof ConversationPanel
+  >["connectionErrorMessage"];
+  connectionStatus: React.ComponentProps<
+    typeof ConversationPanel
+  >["connectionStatus"];
+  diagnosticsLinks: React.ComponentProps<
+    typeof ConversationPanel
+  >["diagnosticsLinks"];
   disabled: boolean;
-  fetchTracesForMessage: NonNullable<React.ComponentProps<typeof ConversationPanel>['onTraceExpand']>;
+  fetchTracesForMessage: NonNullable<
+    React.ComponentProps<typeof ConversationPanel>["onTraceExpand"]
+  >;
   focusTraceMessageId: string | null;
   focusTraceName: string | null;
   focusTraceToken: number;
@@ -29,19 +40,33 @@ interface TaskPageContentProps {
   loadMoreTracesForMessage: (messageId: string) => void;
   messages: TaskMessage[];
   pendingMessages: Array<{ id: string; content: string }>;
-  runActivity: NonNullable<React.ComponentProps<typeof ConversationPanel>['runActivity']>;
+  runActivity: NonNullable<
+    React.ComponentProps<typeof ConversationPanel>["runActivity"]
+  >;
   sandboxStarting: boolean;
   sending: boolean;
   showSseDebugPanel: boolean;
-  sseDebugEvents: React.ComponentProps<typeof NotebookSseDebugPanel>['events'];
+  sseDebugEvents: React.ComponentProps<typeof NotebookSseDebugPanel>["events"];
   streamingContent: string;
   streamingMessageId: string | null;
-  traceErrorByMessageId: React.ComponentProps<typeof ConversationPanel>['traceErrorByMessageId'];
-  traceEventsByMessageId: React.ComponentProps<typeof ConversationPanel>['traceEventsByMessageId'];
-  traceHasMoreByMessageId: React.ComponentProps<typeof ConversationPanel>['traceHasMoreByMessageId'];
-  traceLoadMoreLoadingByMessageId: React.ComponentProps<typeof ConversationPanel>['traceLoadMoreLoadingByMessageId'];
-  traceLoadingByMessageId: React.ComponentProps<typeof ConversationPanel>['traceLoadingByMessageId'];
-  onRunActionClick: NonNullable<React.ComponentProps<typeof ConversationPanel>['onRunActionClick']>;
+  traceErrorByMessageId: React.ComponentProps<
+    typeof ConversationPanel
+  >["traceErrorByMessageId"];
+  traceEventsByMessageId: React.ComponentProps<
+    typeof ConversationPanel
+  >["traceEventsByMessageId"];
+  traceHasMoreByMessageId: React.ComponentProps<
+    typeof ConversationPanel
+  >["traceHasMoreByMessageId"];
+  traceLoadMoreLoadingByMessageId: React.ComponentProps<
+    typeof ConversationPanel
+  >["traceLoadMoreLoadingByMessageId"];
+  traceLoadingByMessageId: React.ComponentProps<
+    typeof ConversationPanel
+  >["traceLoadingByMessageId"];
+  onRunActionClick: NonNullable<
+    React.ComponentProps<typeof ConversationPanel>["onRunActionClick"]
+  >;
   workspaceId: string;
   projectId: string;
   taskId: string;
@@ -49,6 +74,7 @@ interface TaskPageContentProps {
 
 export function TaskPageContent({
   agentIsBusy,
+  activeAgentMessageId,
   artifacts,
   canUpdateTask,
   connectionErrorCode,
@@ -71,7 +97,7 @@ export function TaskPageContent({
   messages,
   onRunActionClick,
   pendingMessages,
-  projectId,
+  projectId: _projectId,
   runActivity,
   sandboxStarting,
   sending,
@@ -79,18 +105,20 @@ export function TaskPageContent({
   sseDebugEvents,
   streamingContent,
   streamingMessageId,
-  taskId,
+  taskId: _taskId,
   traceErrorByMessageId,
   traceEventsByMessageId,
   traceHasMoreByMessageId,
   traceLoadMoreLoadingByMessageId,
   traceLoadingByMessageId,
-  workspaceId,
+  workspaceId: _workspaceId,
 }: TaskPageContentProps) {
   return (
-    <div className="flex min-h-0 flex-1 gap-3 bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
-      <div className="min-w-0 flex-1 rounded-[18px] border border-white/5 bg-surface/70 p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
-        {showSseDebugPanel ? <NotebookSseDebugPanel events={sseDebugEvents} /> : null}
+    <div className="flex min-h-0 flex-1 gap-3 overflow-hidden bg-[radial-gradient(circle_at_top,_rgba(255,255,255,0.03),_transparent_40%)]">
+      <div className="min-h-0 min-w-0 flex-1 overflow-hidden rounded-[18px] border border-white/5 bg-surface/70 p-1.5 shadow-[0_12px_28px_rgba(0,0,0,0.12)]">
+        {showSseDebugPanel ? (
+          <NotebookSseDebugPanel events={sseDebugEvents} />
+        ) : null}
         <ConversationPanel
           messages={messages}
           streamingMessageId={streamingMessageId}
@@ -119,10 +147,11 @@ export function TaskPageContent({
           focusTraceToken={focusTraceToken}
           sandboxStarting={sandboxStarting}
           disabled={disabled}
+          activeAgentMessageId={activeAgentMessageId}
           sending={sending}
         />
       </div>
-      <div className="w-[216px] flex-shrink-0 rounded-[16px] border border-white/5 bg-surface/68 p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
+      <div className="flex h-full min-h-0 w-[216px] flex-shrink-0 overflow-hidden rounded-[16px] border border-white/5 bg-surface/68 p-1.5 shadow-[0_10px_24px_rgba(0,0,0,0.1)]">
         <ArtifactsPanel
           artifacts={artifacts}
           onView={handleViewArtifact}

@@ -35,7 +35,7 @@ export function TaskPageDialogs({
   projectId,
   savingTask,
   selectedArtifact,
-  tCommon,
+  tCommon: _tCommon,
   task,
   workspaceId,
   onArtifactDownload,

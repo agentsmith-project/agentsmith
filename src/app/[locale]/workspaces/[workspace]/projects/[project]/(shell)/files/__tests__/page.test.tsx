@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useFilesPageCapabilities } from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/files/FilesPage', () => ({
   FilesPage: ({ workspaceId, projectId, locale }: { workspaceId: string; projectId: string; locale?: string }) => (
@@ -11,16 +11,16 @@ vi.mock('@/components/files/FilesPage', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn(() => true),
+  useFilesPageCapabilities: vi.fn(() => ({ canRead: true, canManage: true, canExchangeCredentials: true })),
 }));
 
 import FilesPage from '../page';
 
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseFilesPageCapabilities = vi.mocked(useFilesPageCapabilities);
 
 describe('FilesPage route', () => {
   it('renders files page with validated params', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseFilesPageCapabilities.mockReturnValue({ canRead: true, canManage: true, canExchangeCredentials: true });
     render(
       <FilesPage
         params={Promise.resolve({
@@ -38,7 +38,7 @@ describe('FilesPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe params', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseFilesPageCapabilities.mockReturnValue({ canRead: true, canManage: true, canExchangeCredentials: true });
     render(
       <FilesPage
         params={Promise.resolve({
@@ -56,7 +56,7 @@ describe('FilesPage route', () => {
   });
 
   it('shows permission denied when user lacks files read permission', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseFilesPageCapabilities.mockReturnValue({ canRead: false, canManage: false, canExchangeCredentials: false });
     render(
       <FilesPage
         params={Promise.resolve({

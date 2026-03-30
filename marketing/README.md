@@ -1,86 +1,82 @@
 # MBOS Marketing Materials
 
-本目录包含 MBOS 智能体平台的技术文档、市场推广文案及全站截图。
+本目录存放营销截图等静态资产。当前唯一推荐入口是 `npm run marketing:assets:generate`，它会运行专用截图脚本，并直接刷新 `marketing/screenshots/`。
 
-## 截图目录结构（分类组织）
+命令约定：
 
-> 截图由 E2E 脚本生成到临时目录 `test-results/screenshots/`。如需用于 marketing，请手动拷贝到本目录。
+- `npm run marketing:assets:generate` 是唯一 current 入口
+- 这条命令只生成营销静态资产，不属于测试、门禁或发布主路径
+- 如需产品说明书截图与 Markdown 产物，请使用 `npm run docs:artifacts:generate`
 
-```
-screenshots/   # 手动拷贝后使用
-├── 01-auth/                    # 认证入口
+## 截图目录结构
+
+```text
+screenshots/
+├── 01-auth/
 │   ├── login.png
+│   ├── join-invalid.png
+│   ├── login-workspace.png
 │   └── workspace-select.png
-├── 02-projects/                # 项目管理
+├── 02-projects/
 │   └── projects-list.png
-├── 03-overview/                # 项目概览
+├── 03-overview/
 │   └── overview.png
-├── 04-chat/                    # 对话
+├── 04-chat/
 │   └── chat.png
-├── 05-studio/                  # AI Studio
-│   └── studio.png
-├── 06-agents/                  # 智能体管理
+├── 05-notebook/
+│   ├── notebook.png
+│   └── task-detail.png
+├── 06-agents/
 │   └── agents.png
-├── 07-endpoints/               # 端点管理
+├── 07-endpoints/
 │   └── endpoints.png
-├── 08-members/                 # 成员管理（含权限、配额、资源ACL）
+├── 08-members/
 │   ├── members-list.png
 │   ├── member-detail-overview.png
-│   ├── member-permissions-template.png
-│   ├── member-permissions-advanced.png   # 权限配置详情（高级模式）
-│   ├── member-limits.png                  # 配额覆盖
-│   └── member-resource-acl.png           # 资源 ACL
-├── 09-audit/                   # 审计日志
+│   └── invite-member-dialog.png
+├── 09-audit/
 │   └── audit.png
-├── 10-usage/                   # 用量统计
+├── 10-usage/
 │   └── usage.png
-├── 11-settings/                # 项目设置（含全部 token 展示）
-│   ├── settings-general.png
-│   ├── settings-execution-with-tokens.png   # 执行偏好 + 支持的 token
-│   ├── settings-governance-with-tokens.png # 治理规则 + 全部 limit/rate_limits/checks token
-│   └── settings-limits-with-tokens.png    # 资源限制 + 全部 limits token
-├── 12-sources/                 # 文件管理
-│   └── sources.png
-├── 13-credentials/             # 凭据管理
+├── 11-settings/
+│   └── settings-general.png
+├── 12-files/
+│   ├── files.png
+│   ├── create-library-dialog.png
+│   └── library-mount-access-dialog.png
+├── 13-credentials/
 │   ├── credentials-list.png
 │   └── create-credential-dialog.png
-└── 14-user/                    # 用户中心
-    ├── profile.png
-    └── api-keys.png
+├── 14-user/
+│   ├── profile.png
+│   └── api-keys.png
+└── 16-workspace/
+    └── workspace-settings.png
 ```
 
-## 支持的 Token 说明
-
-### 执行偏好 (Execution Preferences)
-- `locale.language`, `locale.timezone`
-- `ai_behavior.tone`, `ai_behavior.verbosity`
-- `shared_context.*`, `extensions`
-
-### 治理规则 (Governance) - Limit / Rate Limits / Checks
-- **Capabilities**: userdata.storage/docdb/vectordb, endpoint, plugins
-- **Limits**: storage bytes/objects, docdb collections/document/query_timeout, vectordb indexes/top_k/upsert, endpoint requests
-- **Rate Limits**: user_rpm, agent_rpm, agent_rpm_high_risk
-- **Checks**: agent_invoke max_depth/max_concurrent/budgets, turns, internal_agents
-
-### 资源限制 (Limits)
-- **UserData**: max_total_bytes, max_total_collections, max_total_indexes
-- **Endpoint**: tokens_per_day/min, requests_per_day/min, timeout_ms, max_concurrent
+目录与文件名应始终以当前脚本输出为准，不手工维护旧分类说明。
 
 ## 截图生成
 
-运行以下命令生成截图到临时目录 `test-results/screenshots/`（需先启动 dev server `npm run dev`）：
-
 ```bash
-npx playwright test e2e/capture-screenshots.spec.ts --project=chromium --timeout=180000
+npm run marketing:assets:generate
 ```
 
-生成后如需用于 marketing，手动拷贝：
+当前脚本 contract：
+
+- 使用 Playwright `marketing-assets` 项目
+- 页面与目录命名以 `e2e/capture-screenshots.spec.ts` 为准
+- 默认先写入临时目录，再同步到 `marketing/screenshots/`
+- 可通过 `MARKETING_ASSETS_OUTPUT_DIR=/abs/path` 覆盖最终输出目录
+- 采用“两层策略”：核心页面与稳定对话框必须产出，扩展场景在页面状态允许时额外补拍，但不阻断整批生成
+
+如需只生成到自定义目录：
 
 ```bash
-cp -r test-results/screenshots/* marketing/screenshots/
+MARKETING_ASSETS_OUTPUT_DIR=/tmp/agentsmith-marketing npm run marketing:assets:generate
 ```
 
-## 测试账号
+## 说明
 
-- 入口：http://localhost:3000/zh-CN/login
-- 用户：demo@demo.com（Mock 模式任意邮箱均可）
+- 这套资产默认基于 mock 场景生成，不代表真实生产数据。
+- 如需调整页面范围，优先更新 `e2e/capture-screenshots.spec.ts`，而不是手工改截图目录说明。

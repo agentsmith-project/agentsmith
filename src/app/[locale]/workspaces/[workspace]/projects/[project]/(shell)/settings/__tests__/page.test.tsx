@@ -1,13 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import {
-  useCanReadAudit,
-  useCanManageProjectAdmins,
-  useCanManageProjectLifecycle,
-  useHasPermission,
-  useCanReadProjectSettings,
-} from '@/lib/hooks/use-permissions';
+import { useProjectSettingsCapabilities } from '@/lib/hooks/use-permissions';
 import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
 
 const mockPush = vi.fn();
@@ -56,13 +50,14 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanReadProjectSettings: vi.fn(() => true),
-  useCanReadAudit: vi.fn(() => true),
-  useCanManageProjectLifecycle: vi.fn(() => true),
-  useCanManageProjectAdmins: vi.fn(() => true),
-  useHasPermission: vi.fn((permission: string) =>
-    permission === 'project:governance:update' || permission === 'project:membership:update'
-  ),
+  useProjectSettingsCapabilities: vi.fn(() => ({
+    canReadSettings: true,
+    canReadAudit: true,
+    canManageProjectLifecycle: true,
+    canManageProjectAdmins: true,
+    canManageGovernance: true,
+    canManageMembership: true,
+  })),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -140,22 +135,19 @@ vi.mock('@/components/ui/tabs', () => ({
 
 import SettingsPage from '../page';
 
-const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
-const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
-const mockUseCanManageProjectLifecycle = vi.mocked(useCanManageProjectLifecycle);
-const mockUseCanManageProjectAdmins = vi.mocked(useCanManageProjectAdmins);
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseProjectSettingsCapabilities = vi.mocked(useProjectSettingsCapabilities);
 
 describe('SettingsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseCanReadProjectSettings.mockReturnValue(true);
-    mockUseCanReadAudit.mockReturnValue(true);
-    mockUseCanManageProjectLifecycle.mockReturnValue(true);
-    mockUseCanManageProjectAdmins.mockReturnValue(true);
-    mockUseHasPermission.mockImplementation((permission: string) =>
-      permission === 'project:governance:update' || permission === 'project:membership:update'
-    );
+    mockUseProjectSettingsCapabilities.mockReturnValue({
+      canReadSettings: true,
+      canReadAudit: true,
+      canManageProjectLifecycle: true,
+      canManageProjectAdmins: true,
+      canManageGovernance: true,
+      canManageMembership: true,
+    });
     mockAuthUser.mockReturnValue({ id: 'owner_1' });
     mockProjectUpdate.mockResolvedValue(undefined);
     mockProjectDelete.mockResolvedValue(undefined);
@@ -191,9 +183,14 @@ describe('SettingsPage route', () => {
   });
 
   it('allows project admins with split governance permissions to access settings', async () => {
-    mockUseCanReadProjectSettings.mockReturnValue(true);
-    mockUseCanManageProjectLifecycle.mockReturnValue(false);
-    mockUseCanManageProjectAdmins.mockReturnValue(false);
+    mockUseProjectSettingsCapabilities.mockReturnValue({
+      canReadSettings: true,
+      canReadAudit: true,
+      canManageProjectLifecycle: false,
+      canManageProjectAdmins: false,
+      canManageGovernance: true,
+      canManageMembership: true,
+    });
     mockAuthUser.mockReturnValue({ id: 'admin_1' });
 
     render(
@@ -223,11 +220,14 @@ describe('SettingsPage route', () => {
   });
 
   it('allows governance managers to read settings in read-only mode', async () => {
-    mockUseCanReadProjectSettings.mockReturnValue(true);
-    mockUseCanReadAudit.mockReturnValue(false);
-    mockUseCanManageProjectLifecycle.mockReturnValue(false);
-    mockUseCanManageProjectAdmins.mockReturnValue(false);
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseProjectSettingsCapabilities.mockReturnValue({
+      canReadSettings: true,
+      canReadAudit: false,
+      canManageProjectLifecycle: false,
+      canManageProjectAdmins: false,
+      canManageGovernance: false,
+      canManageMembership: false,
+    });
     mockAuthUser.mockReturnValue({ id: 'governance_1' });
 
     render(
@@ -297,9 +297,14 @@ describe('SettingsPage route', () => {
   });
 
   it('shows permission denied when user lacks settings manage permission', async () => {
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanManageProjectLifecycle.mockReturnValue(false);
-    mockUseCanManageProjectAdmins.mockReturnValue(false);
+    mockUseProjectSettingsCapabilities.mockReturnValue({
+      canReadSettings: false,
+      canReadAudit: false,
+      canManageProjectLifecycle: false,
+      canManageProjectAdmins: false,
+      canManageGovernance: false,
+      canManageMembership: false,
+    });
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -317,7 +322,14 @@ describe('SettingsPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe route params', async () => {
-    mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseProjectSettingsCapabilities.mockReturnValue({
+      canReadSettings: true,
+      canReadAudit: true,
+      canManageProjectLifecycle: true,
+      canManageProjectAdmins: true,
+      canManageGovernance: true,
+      canManageMembership: true,
+    });
     render(
       <SettingsPage
         params={Promise.resolve({
@@ -335,9 +347,14 @@ describe('SettingsPage route', () => {
   });
 
   it('shows permission denied when user lacks settings read permission', async () => {
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanManageProjectLifecycle.mockReturnValue(false);
-    mockUseCanManageProjectAdmins.mockReturnValue(false);
+    mockUseProjectSettingsCapabilities.mockReturnValue({
+      canReadSettings: false,
+      canReadAudit: false,
+      canManageProjectLifecycle: false,
+      canManageProjectAdmins: false,
+      canManageGovernance: false,
+      canManageMembership: false,
+    });
     render(
       <SettingsPage
         params={Promise.resolve({

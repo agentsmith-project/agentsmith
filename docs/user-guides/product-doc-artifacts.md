@@ -32,6 +32,12 @@ npm run docs:artifacts:generate
 DOC_ARTIFACTS_RUN_ID=whitepaper-20260317 npm run docs:artifacts:generate
 ```
 
+命令约定：
+
+- `npm run docs:artifacts:generate` 是唯一 current 入口
+- 这条命令只生成静态文档产物，不属于测试、门禁或发布主路径
+- 如需营销截图，请使用 `npm run marketing:assets:generate`
+
 ## 运行特征
 
 - 固定使用 `zh-CN`
@@ -69,3 +75,4 @@ artifacts/product-docs/<run-id>/
 - 这套产物使用的是专门的文档 mock 数据，不代表真实线上业务数据。
 - 如需新增页面，优先扩展 `e2e/doc-artifacts.spec.ts` 中的 capture 清单。
 - 如需调整页面内容的真实性，优先更新 `src/mocks/doc-fixtures/`。
+- 当前脚本会直接写入目标输出目录；如需保留多次产物，请显式传入 `DOC_ARTIFACTS_RUN_ID` 或 `DOC_ARTIFACTS_OUTPUT_DIR`。

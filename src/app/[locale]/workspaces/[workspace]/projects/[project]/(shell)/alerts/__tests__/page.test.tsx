@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import AlertsPage from '../page';
 
-const mockHasPermission = vi.fn((_permission?: string) => true);
+const mockUseAlertPageCapabilities = vi.fn(() => ({ canRead: true, canManage: true }));
 const mockListRules = vi.fn(async () => []);
 const mockListNotifications = vi.fn(async () => []);
 const STABLE_RULES: never[] = [];
@@ -14,7 +14,7 @@ vi.mock('@/components/alerts/AlertCenterPage', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission?: string) => mockHasPermission(permission),
+  useAlertPageCapabilities: () => mockUseAlertPageCapabilities(),
 }));
 
 vi.mock('@/lib/api', () => ({
@@ -56,9 +56,7 @@ vi.mock('@tanstack/react-query', async () => {
 describe('AlertsPage route', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockHasPermission.mockImplementation((permission?: string) =>
-      permission === 'project:audit:read' || permission === 'project:governance:update',
-    );
+    mockUseAlertPageCapabilities.mockReturnValue({ canRead: true, canManage: true });
   });
 
   it('renders alert center when params and permission are valid', async () => {
@@ -80,7 +78,7 @@ describe('AlertsPage route', () => {
   });
 
   it('shows permission denied when user lacks alert view permission', async () => {
-    mockHasPermission.mockReturnValue(false);
+    mockUseAlertPageCapabilities.mockReturnValue({ canRead: false, canManage: false });
     render(
       <AlertsPage
         params={Promise.resolve({
@@ -98,7 +96,7 @@ describe('AlertsPage route', () => {
   });
 
   it('allows audit readers to access alerts without governance update', async () => {
-    mockHasPermission.mockImplementation((permission?: string) => permission === 'project:audit:read');
+    mockUseAlertPageCapabilities.mockReturnValue({ canRead: true, canManage: false });
     render(
       <AlertsPage
         params={Promise.resolve({

@@ -3,7 +3,11 @@
 Last updated: 2026-03-24  
 Status: `authoritative`
 
-This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document.
+This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifest in `scripts/governance/current-workflow-manifest.ts`.
+
+Canonical entrypoint rule:
+- `npm run` names are the authoritative current command names.
+- `make` targets may wrap them for convenience, but they are not a second naming model.
 
 ## 1. Allowed top-level terms
 
@@ -36,8 +40,17 @@ The following may still appear in file names or legacy script names, but they mu
 - `workflow`
 - `runtime`
 
-## 2. Current command model
+## 2. Runtime baseline
 
+Current engineering runtime baseline:
+
+- `Node 24.14.1 LTS` for local development, CI, build images, and deployment images
+- do not mix Node 20/22/25 across current engineering paths
+- repo version files are `.nvmrc`, `.node-version`, `package.json` `engines.node`, and `package.json` `packageManager` (`npm@11.11.0`)
+
+## 3. Current command model
+
+<!-- current-workflow:governance-model:start -->
 ### 环境
 
 ```bash
@@ -55,6 +68,8 @@ npm run test:default-e2e
 npm run test:visual
 npm run test:governance
 npm run test:backend-real:core
+npm run test:demo-bundle:inputs
+npm run test:demo-rendered-env
 npm run test:notebook:backend-real:smoke
 ```
 
@@ -84,8 +99,9 @@ npm run backend-real:ready
 npm run backend-real:run
 npm run backend-real:report
 ```
+<!-- current-workflow:governance-model:end -->
 
-## 3. Playwright model
+## 4. Playwright model
 
 Current Playwright projects map to the workflow model as follows:
 
@@ -107,7 +123,7 @@ Important:
 - `默认 e2e` is not “all e2e”.
 - A spec not included in the default Playwright range is not automatically broken or removed.
 
-## 4. Visual evidence rules
+## 5. Visual evidence rules
 
 1. `整页视觉基线`
 - For page-level structure and layout changes.
@@ -125,7 +141,7 @@ Important:
 - The visual verification lane fails when visual checks fail.
 - Release-grade visual review requirements must be stated explicitly in release guidance.
 
-## 5. Current configuration language
+## 6. Current configuration language
 
 Current provider-neutral names:
 
@@ -137,7 +153,7 @@ Current provider-neutral names:
 
 Historical provider-specific names and descriptions do not belong in current workflow guidance.
 
-## 6. Maintenance rules
+## 7. Maintenance rules
 
 1. When adding a new command, classify it first as:
 - 环境 / 测试 / 门禁 / 验证通道 / 发布
@@ -147,7 +163,7 @@ Historical provider-specific names and descriptions do not belong in current wor
 3. When adding a visual scene, decide first:
 - 整页视觉基线 or 局部视觉基线
 
-4. When changing the current workflow, update together:
+4. When changing the current workflow, update `scripts/governance/current-workflow-manifest.ts` first, then sync:
 - `README.md`
 - `DEVELOPMENT.md`
 - `docs/CURRENT_BASELINE.md` if current baseline meaning changes

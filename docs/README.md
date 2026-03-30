@@ -28,6 +28,9 @@
   - Cluster-scope prerequisites for the real-cluster line only.
 - Real visual review artifacts are generated locally under `artifacts/backend-real-visual/<run-id>/`
 - [Test & Evidence Directory Model](./user-guides/test-and-evidence-directory-model.md)
+- [File Library Client Mount](./user-guides/file-library-local-mount.md)
+- [Product Doc Artifacts](./user-guides/product-doc-artifacts.md)
+- [Marketing Assets](../marketing/README.md)
 - [Visual Baseline Policy](./UXUI/01-通用规范/visual-baseline-policy-v1.md)
 - [Contracts Index](./contracts/README.md)
 - [Demo Deployment Spec](./contracts/deployment-spec-v1.md)
@@ -46,5 +49,5 @@
 
 ## 说明
 
-1. 历史方案、过程评审、阶段计划、旧版发布资料已移除。
+1. 历史方案、过程评审、阶段计划、旧版发布资料已迁入 `docs/archive/`。
 2. 当前治理结构以“项目级 + LLM endpoint 统一约束链路”为唯一主线。

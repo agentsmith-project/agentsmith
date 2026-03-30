@@ -29,6 +29,8 @@ See [DESIGN_SYSTEM.md](./DESIGN_SYSTEM.md) for the design system index. All UI d
 
 ## Getting Started
 
+Runtime baseline: `Node 24.14.1 LTS` with `npm 11.11.0` for local development, CI, build images, and deployment images.
+
 ```bash
 # Install dependencies
 npm install
@@ -48,63 +50,68 @@ npm start
 
 ## Make Quick Commands
 
+<!-- current-workflow:readme:start -->
 Use this minimal command set for daily work.
 
 Current workflow model:
 - `环境`
+- `测试`
 - `门禁`
 - `验证通道`
 - `发布`
 
 Authoritative definition:
 - [Current Engineering Governance Model](./docs/current-engineering-governance-model.md)
+- Machine-readable source: [`scripts/governance/current-workflow-manifest.ts`](./scripts/governance/current-workflow-manifest.ts)
+
+Command naming rule:
+- `npm run` names are the canonical current entrypoints
+- `make` targets are convenience wrappers for the same paths
 
 ### 环境
 
 ```bash
-cp .env.local-manual.example .env.local-manual
 make local-manual-up
 make local-manual-seed-notebook
 make local-manual-status
-make local-manual-down
-make local-manual-reset
+```
+
+### 测试
+
+```bash
+npm run test:default-e2e
+npm run test:visual
+npm run test:governance
+npm run test:backend-real:core
 ```
 
 ### 门禁
 
 ```bash
-make gate-fast
-make gate-default
-make gate-release
+npm run gate:fast
+npm run gate:default
 ```
 
 ### 验证通道
 
 ```bash
-make lane-mock
-make lane-visual
-
-cp .env.backend-real.example .env.backend-real
-npm run lane:backend-real:core
+npm run lane:mock
+npm run lane:visual
 npm run lane:backend-real:release
-npm run test:release:precheck
-npm run test:visual:backend-real:review
 ```
 
 ### 发布
 
 ```bash
-npm run backend-real:reset
-npm run backend-real:bootstrap
-npm run backend-real:ready
 npm run backend-real:run
 npm run backend-real:report
 ```
+<!-- current-workflow:readme:end -->
 
 Current configuration names:
 
 - local-manual: `PRESET_ENDPOINT_*`
-- backend-real secrets: `PRESET_*` in `.env.backend-real`
+- backend-real secrets: `PRESET_*` in `.env.backend-real`, with `BACKEND_REAL_*` aliases used only by some wrapper scripts
 - deploy presets: `PRESET_*`
 
 Templates:
@@ -128,23 +135,23 @@ This validates the required behavior for MVP deployment without sandbox:
 ### Default Gates And Verification Channels
 
 ```bash
-make gate-fast
-make gate-default
-make gate-release
+npm run gate:fast
+npm run gate:default
+npm run gate:release
 ```
 
 Recommended release flow:
 
 ```bash
-make backend-real-reset
-make backend-real-bootstrap
-make backend-real-ready
+npm run backend-real:reset
+npm run backend-real:bootstrap
+npm run backend-real:ready
 make manual-feishu-admin
 make manual-feishu-check
 make manual-feishu-user
 make manual-feishu-check
-make backend-real-run
-make backend-real-report
+npm run backend-real:run
+npm run backend-real:report
 ```
 
 ### Dependency Recovery (only when the environment is broken)
@@ -216,6 +223,9 @@ src/
 - [User Guides Index](./docs/user-guides/README.md) — 用户手册总入口（MVP-first）
 - [MVP Core Smoke Runbook](./docs/user-guides/mvp-core-smoke-runbook.md) — 真实后端 MVP 核心回归执行手册
 - [Third-Party Accounts & Feishu OAuth](./docs/user-guides/third-party-accounts-feishu.md) — 用户级第三方账户、Feishu OAuth、回调模式与手动验收说明
+- [File Library Client Mount](./docs/user-guides/file-library-local-mount.md) — 本地挂载 project file library 与双向同步校验
+- [Product Doc Artifacts](./docs/user-guides/product-doc-artifacts.md) — 生成产品说明截图与配套 Markdown 产物
+- [Marketing Assets](./marketing/README.md) — 刷新 marketing 截图资产
 - [Product Engineering Governance Methodology](./docs/design/agentsmith-product-engineering-governance-methodology-v1.md) — 产品设计、工程交付与治理方法论基线
 - [Design System](./DESIGN_SYSTEM.md)
 - [Development Guide](./DEVELOPMENT.md)

@@ -6,6 +6,7 @@ const sessionModule = vi.hoisted(() => ({
 
 const keycloakDirectoryModule = vi.hoisted(() => ({
   verifyKeycloakIdentityProvider: vi.fn(),
+  verifyKeycloakLoginIdentityProvider: vi.fn(),
 }));
 
 vi.mock('@/lib/system-admin/session', () => sessionModule);
@@ -17,10 +18,12 @@ describe('/api/system/workspaces/idp/verify', () => {
   beforeEach(() => {
     sessionModule.isSystemAdminAuthenticated.mockReset();
     keycloakDirectoryModule.verifyKeycloakIdentityProvider.mockReset();
+    keycloakDirectoryModule.verifyKeycloakLoginIdentityProvider.mockReset();
   });
 
   it('returns verification result for authenticated system admin', async () => {
     sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    keycloakDirectoryModule.verifyKeycloakLoginIdentityProvider.mockResolvedValue(undefined);
     keycloakDirectoryModule.verifyKeycloakIdentityProvider.mockResolvedValue({
       idp_ok: true,
       directory_search_supported: false,
@@ -50,6 +53,7 @@ describe('/api/system/workspaces/idp/verify', () => {
 
   it('allows verification without client secret', async () => {
     sessionModule.isSystemAdminAuthenticated.mockResolvedValue(true);
+    keycloakDirectoryModule.verifyKeycloakLoginIdentityProvider.mockResolvedValue(undefined);
     keycloakDirectoryModule.verifyKeycloakIdentityProvider.mockResolvedValue({
       idp_ok: true,
       directory_search_supported: false,

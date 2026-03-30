@@ -10,8 +10,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn(),
-  useCanManageMemberGovernance: vi.fn(),
+  useMemberPageCapabilities: vi.fn(),
 }));
 
 vi.mock('@/lib/hooks/use-join-requests', () => ({
@@ -64,19 +63,17 @@ vi.mock('../BatchApplyPermissionDialog', () => ({
 
 import { MembersPage } from '../MembersPage';
 import { useMembersList } from '@/lib/hooks/use-members-list';
-import { useCanManageMemberGovernance, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { useJoinRequests } from '@/lib/hooks/use-join-requests';
 
 const mockUseMembersList = vi.mocked(useMembersList);
-const mockUseHasPermission = vi.mocked(useHasPermission);
-const mockUseCanManageMemberGovernance = vi.mocked(useCanManageMemberGovernance);
+const mockUseMemberPageCapabilities = vi.mocked(useMemberPageCapabilities);
 const mockUseJoinRequests = vi.mocked(useJoinRequests);
 const STABLE_EMPTY_JOIN_REQUESTS = { data: [], isLoading: false } as any;
 
 describe('MembersPage', () => {
   beforeEach(() => {
-    mockUseHasPermission.mockReturnValue(true);
-    mockUseCanManageMemberGovernance.mockReturnValue(true);
+    mockUseMemberPageCapabilities.mockReturnValue({ canRead: true, canManage: true });
     mockUseJoinRequests.mockReturnValue(STABLE_EMPTY_JOIN_REQUESTS);
     mockUseMembersList.mockReturnValue({
       project: null,
@@ -131,7 +128,7 @@ describe('MembersPage', () => {
   });
 
   it('disables invite action for non-owners', () => {
-    mockUseCanManageMemberGovernance.mockReturnValue(false);
+    mockUseMemberPageCapabilities.mockReturnValue({ canRead: true, canManage: false });
 
     render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
 
@@ -139,7 +136,7 @@ describe('MembersPage', () => {
   });
 
   it('hides join requests tab when the actor cannot manage member governance', () => {
-    mockUseCanManageMemberGovernance.mockReturnValue(false);
+    mockUseMemberPageCapabilities.mockReturnValue({ canRead: true, canManage: false });
 
     render(<MembersPage workspaceId="ws_1" projectId="proj_1" />);
 

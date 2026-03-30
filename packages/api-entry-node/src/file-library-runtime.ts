@@ -55,12 +55,6 @@ function envNumber(name: string, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
-function envBoolean(name: string, fallback: boolean): boolean {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  return raw === '1' || raw.toLowerCase() === 'true';
-}
-
 function envString(name: string): string | undefined {
   const raw = process.env[name]?.trim();
   return raw ? raw : undefined;

@@ -28,6 +28,13 @@
 | [Alert Center](./alert-center.md) | Alert rules and notification operations. |
 | [Usage Limits Summary Backend Alignment Checklist](./usage-limits-summary-backend-alignment-checklist.md) | Contract-to-implementation checklist for `/limits/summary` endpoint matrix payload. |
 | [Third-Party Accounts & Workspace Feishu](./third-party-accounts-feishu.md) | Current split between personal third-party credentials and workspace-scoped Feishu integration. |
+| [File Library Client Mount](./file-library-local-mount.md) | Local JuiceFS mount instructions and sync validation path for project file libraries. |
+| [Product Doc Artifacts](./product-doc-artifacts.md) | Generate screenshot + Markdown bundles for product-facing documentation artifacts. |
+| [Marketing Assets](../../marketing/README.md) | Generate and refresh marketing screenshot assets under `marketing/screenshots/`. |
+
+Archived environment-specific examples:
+
+- [mbos.imotion.ai Demo Deploy Runbook](../archive/env-specific/demo-deploy-mbos-imotion-ai.md)
 
 Quick links:
 

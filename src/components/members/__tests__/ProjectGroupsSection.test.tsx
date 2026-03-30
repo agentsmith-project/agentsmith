@@ -2,7 +2,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import userEvent from '@testing-library/user-event';
 import { ProjectGroupsSection } from '../ProjectGroupsSection';
-import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 
 const mockCreateMutateAsync = vi.fn().mockResolvedValue({});
 const mockCreateTemplateMutateAsync = vi.fn().mockResolvedValue({
@@ -93,7 +93,7 @@ vi.mock('@/lib/hooks/use-members', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useCanManageMemberGovernance: vi.fn(() => true),
+  useMemberPageCapabilities: vi.fn(() => ({ canRead: true, canManage: true })),
 }));
 
 vi.mock('next-intl', () => ({
@@ -261,7 +261,7 @@ describe('ProjectGroupsSection', () => {
   });
 
   it('renders group management controls as read-only for project admins', () => {
-    vi.mocked(useCanManageMemberGovernance).mockReturnValue(false);
+    vi.mocked(useMemberPageCapabilities).mockReturnValue({ canRead: true, canManage: false });
 
     render(<ProjectGroupsSection workspaceId="ws_1" projectId="proj_1" />);
 

@@ -22,7 +22,7 @@ import { MoveDialogs } from '@/components/files/files-page/MoveDialogs';
 import { ObjectOperationDialogs } from '@/components/files/files-page/ObjectOperationDialogs';
 
 import type { FileLibrary, FileLibraryClientMountAccess, FileObjectsListItem } from '@/lib/api/types';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useFilesPageCapabilities } from '@/lib/hooks/use-permissions';
 import {
   useCreateFileLibrary,
   useDeleteFileLibrary,
@@ -60,11 +60,7 @@ export interface FilesPageProps {
 export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPageProps) {
   const t = useTranslations('files');
   const tErrors = useTranslations('errors');
-  const canManage = useHasPermission('project:files:update');
-  const canExchangeCredentialsViaDedicatedPermission = useHasPermission('project:file_library:credential_exchange');
-  const canExchangeCredentialsViaFilesPermission = useHasPermission('project:files:update');
-  const canExchangeCredentials =
-    canExchangeCredentialsViaDedicatedPermission || canExchangeCredentialsViaFilesPermission;
+  const { canManage, canExchangeCredentials } = useFilesPageCapabilities();
   const { layoutMode } = useProjectLayoutMode();
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
 
@@ -130,11 +126,9 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
   const {
     allSelected,
     clearSelection,
-    exitMultiMode,
     handleRowActivate,
     handleToggleRowCheckbox,
     hasSelection,
-    isMultiMode,
     navigateToPrefix,
     selectLibrary,
     selected,
@@ -143,7 +137,6 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
     selectionMode,
     setSelectedIds,
     toggleAll,
-    visibleSelectedCount,
   } = useFilesSelectionState({
     filteredItems,
     isFetching: objectsQuery.isFetching,
@@ -215,7 +208,7 @@ export function FilesPage({ workspaceId, projectId, locale = 'en-US' }: FilesPag
           .map((item) => (item.kind === 'object' ? (`o:${item.key}` as const) : (`p:${item.prefix}` as const))),
       );
     },
-    [selected],
+    [selected, setSelectedIds],
   );
 
   const {

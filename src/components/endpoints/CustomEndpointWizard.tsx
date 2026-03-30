@@ -24,9 +24,6 @@ import {
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { EndpointAPI, CredentialsAPI, getApiClient } from '@/lib/api';
 import type { CreateEndpointRequest } from '@/lib/api/endpoints/endpoints';
-import type {
-  CustomEndpointProtocol,
-} from '@/lib/api/types/endpoints';
 import { getCustomProtocolConfig } from '@/lib/endpoints/provider-catalog';
 import { toast } from '@/components/ui/toast';
 import { BasicInfoStep } from './custom-endpoint-wizard/BasicInfoStep';
@@ -89,7 +86,6 @@ export function CustomEndpointWizard({
     if (credentials.length > 0 && !form.credentialRef) {
       setForm((prev) => ({ ...prev, credentialRef: credentials[0].id }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [credentials, form.credentialRef]);
 
   const createMutation = useMutation({
@@ -114,7 +110,6 @@ export function CustomEndpointWizard({
     if (config && !form.baseUrl) {
       setForm((prev) => ({ ...prev, baseUrl: config.default_base_url }));
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.baseUrl, form.protocol]);
 
   const resetForm = () => {

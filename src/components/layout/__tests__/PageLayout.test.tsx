@@ -18,7 +18,8 @@ test('applies consistent chrome spacing', () => {
 
   const chrome = container.querySelector('[data-testid="page-layout"] > div');
   expect(chrome).toHaveClass('px-[var(--layout-padding)]');
-  expect(chrome).toHaveClass('py-[var(--layout-padding)]');
+  expect(chrome).toHaveClass('py-5');
+  expect(chrome).toHaveClass('md:py-6');
   expect(chrome).toHaveClass('gap-[var(--layout-gap)]');
 });
 

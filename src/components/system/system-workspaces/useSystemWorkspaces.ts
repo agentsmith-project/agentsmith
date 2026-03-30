@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { PublicSystemWorkspaceRecord } from '@/lib/system-admin/workspace-registry';
 import type {
   SystemWorkspaceAction,
@@ -263,47 +263,59 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
     }
   };
 
-  const searchAdminDirectory = async (query: string) => {
-    const normalizedQuery = query.trim();
-    if (
-      normalizedQuery.length < 2 ||
-      idpVerificationState !== 'verified_with_directory' ||
-      !draft.loginIdpUrl.trim() ||
-      !draft.loginIdpRealm.trim() ||
-      !draft.directoryClientId.trim() ||
-      !effectiveDirectoryClientSecret
-    ) {
-      setAdminSearchResults([]);
-      setAdminSearchError(null);
-      return;
-    }
-    setAdminSearchLoading(true);
-    setAdminSearchError(null);
-    try {
-      const response = await fetch('/api/system/workspaces/directory/users', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          login_idp_url: draft.loginIdpUrl,
-          login_idp_realm: draft.loginIdpRealm,
-          login_client_id: draft.loginClientId,
-          directory_client_id: draft.directoryClientId,
-          directory_client_secret: draft.directoryClientSecret.trim() || undefined,
-          workspace_id: selectedWorkspaceId ?? undefined,
-          query: normalizedQuery,
-        }),
-      });
-      const data = await parseJson<DirectorySearchResponse>(response);
-      if (!response.ok) {
+  const searchAdminDirectory = useCallback(
+    async (query: string) => {
+      const normalizedQuery = query.trim();
+      if (
+        normalizedQuery.length < 2 ||
+        idpVerificationState !== 'verified_with_directory' ||
+        !draft.loginIdpUrl.trim() ||
+        !draft.loginIdpRealm.trim() ||
+        !draft.directoryClientId.trim() ||
+        !effectiveDirectoryClientSecret
+      ) {
         setAdminSearchResults([]);
-        setAdminSearchError(data?.error_message || 'keycloak_directory_unavailable');
+        setAdminSearchError(null);
         return;
       }
-      setAdminSearchResults(Array.isArray(data?.items) ? data.items : []);
-    } finally {
-      setAdminSearchLoading(false);
-    }
-  };
+      setAdminSearchLoading(true);
+      setAdminSearchError(null);
+      try {
+        const response = await fetch('/api/system/workspaces/directory/users', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            login_idp_url: draft.loginIdpUrl,
+            login_idp_realm: draft.loginIdpRealm,
+            login_client_id: draft.loginClientId,
+            directory_client_id: draft.directoryClientId,
+            directory_client_secret: draft.directoryClientSecret.trim() || undefined,
+            workspace_id: selectedWorkspaceId ?? undefined,
+            query: normalizedQuery,
+          }),
+        });
+        const data = await parseJson<DirectorySearchResponse>(response);
+        if (!response.ok) {
+          setAdminSearchResults([]);
+          setAdminSearchError(data?.error_message || 'keycloak_directory_unavailable');
+          return;
+        }
+        setAdminSearchResults(Array.isArray(data?.items) ? data.items : []);
+      } finally {
+        setAdminSearchLoading(false);
+      }
+    },
+    [
+      draft.directoryClientId,
+      draft.directoryClientSecret,
+      draft.loginClientId,
+      draft.loginIdpRealm,
+      draft.loginIdpUrl,
+      effectiveDirectoryClientSecret,
+      idpVerificationState,
+      selectedWorkspaceId,
+    ],
+  );
 
   useEffect(() => {
     if (draft.adminMode !== 'directory_user') {
@@ -315,7 +327,7 @@ export function useSystemWorkspaces({ t }: UseSystemWorkspacesArgs) {
       void searchAdminDirectory(draft.adminQuery);
     }, 250);
     return () => window.clearTimeout(handle);
-  }, [draft.adminMode, draft.adminQuery, draft.directoryClientId, draft.directoryClientSecret, draft.loginIdpRealm, draft.loginIdpUrl, idpVerificationState, selectedWorkspaceId, effectiveDirectoryClientSecret]);
+  }, [draft.adminMode, draft.adminQuery, draft.directoryClientId, draft.directoryClientSecret, draft.loginIdpRealm, draft.loginIdpUrl, effectiveDirectoryClientSecret, idpVerificationState, searchAdminDirectory, selectedWorkspaceId]);
 
   const runMutation = async (action: Exclude<SystemWorkspaceAction, null>, execute: () => Promise<void>) => {
     setIsSubmitting(true);

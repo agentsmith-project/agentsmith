@@ -16,9 +16,12 @@ const isCI = !!process.env.CI;
 const desktopViewport = { width: 1920, height: 1080 };
 const desktopWindowArgs = ['--window-size=1920,1080'];
 
-const webServerCommand = ['bash -lc', JSON.stringify('NEXT_PUBLIC_USE_MSW=true NEXT_PUBLIC_MSW_STRICT_READY=true AGENTSMITH_ENABLE_TEST_ROUTES=true npm run dev:test -- --port 3001')].join(
-  ' ',
-);
+const webServerCommand = [
+  'bash -lc',
+  JSON.stringify(
+    'NEXT_PUBLIC_USE_MSW=true NEXT_PUBLIC_MSW_STRICT_READY=true AGENTSMITH_ENABLE_TEST_ROUTES=true SYSTEM_WORKSPACE_REGISTRY_MODE=memory npm run dev:test -- --port 3001',
+  ),
+].join(' ');
 
 // Default E2E range: keep the default chromium project focused on the current
 // engineering regression range. Archived/manual specs are intentionally excluded
@@ -143,6 +146,19 @@ export default defineConfig({
     {
       name: 'doc-artifacts',
       testMatch: /doc-artifacts\.spec\.ts$/,
+      use: {
+        ...devices['Desktop Chrome'],
+        viewport: desktopViewport,
+        launchOptions: {
+          args: desktopWindowArgs,
+        },
+      },
+      fullyParallel: false,
+      workers: 1,
+    },
+    {
+      name: 'marketing-assets',
+      testMatch: /capture-screenshots\.spec\.ts$/,
       use: {
         ...devices['Desktop Chrome'],
         viewport: desktopViewport,

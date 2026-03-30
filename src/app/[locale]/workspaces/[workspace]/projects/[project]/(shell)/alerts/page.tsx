@@ -11,8 +11,8 @@ import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { buttonVariants } from '@/components/ui/button';
 import { getApiClient, AlertAPI } from '@/lib/api';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useAlertPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { toast } from '@/components/ui/toast';
 import { buildSharedOpsFilterQuery } from '@/lib/ops-filter-context';
 import { cn } from '@/lib/utils';
@@ -125,38 +125,16 @@ export default function AlertsPage({ params }: AlertsPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('alerts');
   const tCommon = useTranslations('common');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const queryClient = useQueryClient();
   const alertAPI = useMemo(() => new AlertAPI(getApiClient()), []);
   const timeRange = useMemo(() => defaultTimeRange(), []);
   const [localAlerts, setLocalAlerts] = useState<Alert[]>([]);
-  const canViewAlerts = useHasPermission('project:audit:read');
+  const { canRead: canViewAlerts } = useAlertPageCapabilities();
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const locale = resolvedParams?.locale ?? 'en-US';
-
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
+  const locale = resolvedParams.locale;
 
   const { data: rules = EMPTY_ALERT_RULES } = useQuery({
     queryKey: ['alert-rules', workspaceId, projectId],
@@ -184,7 +162,7 @@ export default function AlertsPage({ params }: AlertsPageProps) {
     }
   }, [notifications, workspaceId, projectId]);
 
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -192,7 +170,7 @@ export default function AlertsPage({ params }: AlertsPageProps) {
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

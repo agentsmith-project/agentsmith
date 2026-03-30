@@ -1,6 +1,5 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { PageLayout } from '@/components/layout/PageLayout';
@@ -8,8 +7,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useEndpointPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { buildPublicApiUrl } from '@/lib/public-runtime-config';
 
 interface UseGuidePageProps {
@@ -19,32 +18,10 @@ interface UseGuidePageProps {
 export default function UseGuidePage({ params }: UseGuidePageProps) {
   const t = useTranslations('use_guide');
   const tErrors = useTranslations('errors');
-  const canUseProject = useHasPermission('project:endpoint:use');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
+  const { canUse: canUseProject } = useEndpointPageCapabilities();
+  const resolvedParams = useResolvedProjectRoute(params);
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -54,9 +31,9 @@ export default function UseGuidePage({ params }: UseGuidePageProps) {
 
   const workspaceId = resolvedParams.workspace ?? '';
   const projectId = resolvedParams.project ?? '';
-  const locale = resolvedParams.locale ?? 'en-US';
+  const locale = resolvedParams.locale;
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

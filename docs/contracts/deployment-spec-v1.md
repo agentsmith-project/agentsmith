@@ -278,8 +278,8 @@ The bundle build must fail if any required file, tool, image, or manifest refere
 
 ### Local Precheck Contract
 - Before building release images or an offline bundle, developers must run `npm run test:release:precheck`.
-- Before building release images or an offline bundle, developers must also run `npm run test:bundle:inputs`.
-- Before building release images or an offline bundle, developers must also run `npm run test:rendered-env`.
+- Before building release images or an offline bundle, developers must also run `npm run test:demo-bundle:inputs`.
+- Before building release images or an offline bundle, developers must also run `npm run test:demo-rendered-env`.
 - Before building release images or an offline bundle, developers must also run `npm run test:client-public-runtime`.
 - Developers running an external runner directly from source must use `npm run agent:external:dev` with the same `site.env` schema instead of ad hoc env exports.
 - The local precheck must use locally started Web/API services and real Keycloak dependencies instead of a release bundle.

@@ -125,6 +125,36 @@ describe('ensureCodexSessionStateCompatible', () => {
     await expect(import('node:fs/promises').then(({ access }) => access(join(codexDir, 'state_5.sqlite')))).rejects.toBeTruthy();
   });
 
+
+  it('resets only the changed task-scoped codex directory', async () => {
+    const codexDirA = await createCodexDir();
+    const codexDirB = await createCodexDir();
+    const baseInput = {
+      model: 'glm-5-codex',
+      wireApi: 'responses' as const,
+      resourceProxyBase: 'http://proxy-a',
+      notebookMode: true,
+      modelContextWindow: 128000,
+      modelAutoCompactTokenLimit: 121600,
+      modelCatalogSignature: '{"input_modalities":["text"]}',
+    };
+
+    await ensureCodexSessionStateCompatible({ codexDir: codexDirA, ...baseInput });
+    await ensureCodexSessionStateCompatible({ codexDir: codexDirB, ...baseInput });
+    await writeFile(join(codexDirA, 'state_5.sqlite'), 'stale-a');
+    await writeFile(join(codexDirB, 'state_5.sqlite'), 'keep-b');
+
+    const result = await ensureCodexSessionStateCompatible({
+      codexDir: codexDirA,
+      ...baseInput,
+      modelCatalogSignature: '{"input_modalities":["text","image"]}',
+    });
+
+    expect(result).toEqual({ resetPerformed: true, reason: 'changed' });
+    await expect(import('node:fs/promises').then(({ access }) => access(join(codexDirA, 'state_5.sqlite')))).rejects.toBeTruthy();
+    await expect(import('node:fs/promises').then(({ readFile }) => readFile(join(codexDirB, 'state_5.sqlite'), 'utf8'))).resolves.toBe('keep-b');
+  });
+
   it('resets persisted session files when model catalog signature changes', async () => {
     const codexDir = await createCodexDir();
     await ensureCodexSessionStateCompatible({

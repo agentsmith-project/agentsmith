@@ -1,7 +1,8 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process';
 import { mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { createHash } from 'node:crypto';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { promisify } from 'node:util';
 
@@ -37,10 +38,11 @@ type TaskWorkspaceAccessPayload = {
 
 export type TaskWorkspacePaths = {
   rootCwd: string;
-  sharedSkillsDir: string;
-  codexDir: string;
+  codexRootDir: string;
+  codexHomeDir: string;
   homeDir: string;
   artifactsDir: string;
+  credentialDir: string;
 };
 
 const mountedWorkspaceByMountPath = new Set<string>();
@@ -203,13 +205,26 @@ async function waitForMountPointReady(mountPath: string, logPath: string): Promi
   );
 }
 
-export function buildTaskWorkspacePaths(cwd: string, _taskId: string): TaskWorkspacePaths {
+function buildStableWorkspaceStateKey(cwd: string): string {
+  const label = sanitizePathPart(basename(cwd), 'workspace');
+  const digest = createHash('sha256').update(cwd).digest('hex').slice(0, 12);
+  return `${label}-${digest}`;
+}
+
+export function buildTaskWorkspacePaths(cwd: string, taskId: string): TaskWorkspacePaths {
+  const codexWorkspaceRoot = join(
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT?.trim() || '/var/tmp/agentsmith-codex',
+    buildStableWorkspaceStateKey(cwd),
+  );
+  const codexRootDir = join(codexWorkspaceRoot, 'tasks');
+  const codexHomeDir = join(codexRootDir, taskId);
   return {
     rootCwd: cwd,
-    sharedSkillsDir: join(cwd, '.codex', 'skills'),
-    codexDir: join(cwd, '.codex'),
-    homeDir: cwd,
+    codexRootDir,
+    codexHomeDir,
+    homeDir: join(codexHomeDir, 'home'),
     artifactsDir: join(cwd, '.artifacts'),
+    credentialDir: join(codexWorkspaceRoot, 'credentials', taskId),
   };
 }
 

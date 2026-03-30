@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { executeModelRequest } from './model-request-execution.js';
+import { createModelConfigStore } from './model-config-store.js';
 
 function createDeps(): NodeApiDeps {
   return {
@@ -53,7 +54,8 @@ describe('model-request-execution', () => {
       };
     })();
 
-    await deps.docStore.upsert('provider_connections', 'rpc_1', {
+    const modelConfigStore = createModelConfigStore(deps.docStore);
+    await modelConfigStore.upsertProvider({
       id: 'rpc_1',
       workspace_id: 'ws_default',
       project_id: 'proj_1',
@@ -65,8 +67,8 @@ describe('model-request-execution', () => {
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
-    await deps.docStore.upsert('project_pricing_maps', 'project_pricing_ws_default_proj_1', {
-      id: 'project_pricing_ws_default_proj_1',
+    await modelConfigStore.upsertPricing({
+      id: modelConfigStore.pricingRecordId({ workspaceId: 'ws_default', projectId: 'proj_1' }),
       workspace_id: 'ws_default',
       project_id: 'proj_1',
       pricing_map: {

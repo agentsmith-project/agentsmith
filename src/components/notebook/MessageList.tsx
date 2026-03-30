@@ -18,6 +18,7 @@ export interface MessageListProps {
   traceLoadMoreLoadingByMessageId?: Record<string, boolean>;
   traceErrorByMessageId?: Record<string, { kind: NotebookTraceFailureKind; message: string }>;
   disabled?: boolean;
+  activeAgentMessageId?: string | null;
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
 }
@@ -35,34 +36,71 @@ export function MessageList({
   traceLoadMoreLoadingByMessageId,
   traceErrorByMessageId,
   disabled = false,
+  activeAgentMessageId = null,
   onTraceExpand,
   onTraceLoadMore,
 }: MessageListProps) {
   const messagesEndRef = React.useRef<HTMLDivElement>(null);
-
-  // Auto-scroll to bottom when new messages arrive (only if user is near bottom)
-  const [isNearBottom, setIsNearBottom] = React.useState(true);
+  const contentRef = React.useRef<HTMLDivElement>(null);
+  const shouldStickToBottomRef = React.useRef(true);
   const containerRef = React.useRef<HTMLDivElement>(null);
+
+  const traceEventCount = React.useMemo(
+    () =>
+      Object.values(traceEventsByMessageId ?? {}).reduce(
+        (count, events) => count + events.length,
+        0,
+      ),
+    [traceEventsByMessageId],
+  );
+
+  const updateStickyState = React.useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
+    const nearBottom = distanceFromBottom < 96;
+    shouldStickToBottomRef.current = nearBottom;
+  }, []);
+
+  const scrollToBottom = React.useCallback((behavior: ScrollBehavior = 'auto') => {
+    const container = containerRef.current;
+    if (!container) return;
+    if (typeof container.scrollTo === 'function') {
+      container.scrollTo({ top: container.scrollHeight, behavior });
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
+    messagesEndRef.current?.scrollIntoView({ behavior });
+  }, []);
 
   React.useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container;
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-      setIsNearBottom(distanceFromBottom < 100);
-    };
+    updateStickyState();
+    const handleScroll = () => updateStickyState();
 
-    container.addEventListener('scroll', handleScroll);
+    container.addEventListener('scroll', handleScroll, { passive: true });
     return () => container.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [updateStickyState]);
+
+  React.useLayoutEffect(() => {
+    if (!shouldStickToBottomRef.current) return;
+    scrollToBottom(streamingContent != null ? 'auto' : 'smooth');
+  }, [messages, streamingMessageId, streamingContent, traceEventCount, scrollToBottom]);
 
   React.useEffect(() => {
-    if (isNearBottom && messagesEndRef.current) {
-      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [messages, streamingContent, isNearBottom]);
+    const content = contentRef.current;
+    if (!content || typeof ResizeObserver === 'undefined') return;
+
+    const observer = new ResizeObserver(() => {
+      if (!shouldStickToBottomRef.current) return;
+      requestAnimationFrame(() => scrollToBottom('auto'));
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [scrollToBottom]);
 
   if (messages.length === 0 && !streamingContent) {
     return (
@@ -76,8 +114,9 @@ export function MessageList({
   }
 
   return (
-    <div ref={containerRef} className="h-full overflow-y-auto px-4 py-3 space-y-3">
-      {messages.map((message) => (
+    <div ref={containerRef} className="h-full overflow-y-auto px-3 py-3 sm:px-4 lg:px-5">
+      <div ref={contentRef} className="space-y-3">
+        {messages.map((message) => (
         <MessageItem
           key={message.id}
           message={message}
@@ -92,11 +131,12 @@ export function MessageList({
           traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[message.id] ?? false}
           traceError={traceErrorByMessageId?.[message.id]}
           disabled={disabled}
+          forceRunning={streamingMessageId === activeAgentMessageId}
           onTraceExpand={onTraceExpand}
           onTraceLoadMore={onTraceLoadMore}
         />
       ))}
-      {streamingMessageId && !messages.find((m) => m.id === streamingMessageId) && (
+        {streamingMessageId && !messages.find((m) => m.id === streamingMessageId) && (
         <MessageItem
           message={{
             id: streamingMessageId,
@@ -114,11 +154,13 @@ export function MessageList({
           traceLoadMoreLoading={traceLoadMoreLoadingByMessageId?.[streamingMessageId] ?? false}
           traceError={traceErrorByMessageId?.[streamingMessageId]}
           disabled={disabled}
+          forceRunning={streamingMessageId === activeAgentMessageId}
           onTraceExpand={onTraceExpand}
           onTraceLoadMore={onTraceLoadMore}
         />
       )}
-      <div ref={messagesEndRef} />
+        <div ref={messagesEndRef} />
+      </div>
     </div>
   );
 }

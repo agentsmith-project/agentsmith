@@ -20,5 +20,5 @@ Use for reading document content as Markdown.
 ## Typical Usage
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool fetch-doc --params '{"doc_id":"https://gw8cavjn6kt.feishu.cn/wiki/xxxx"}'
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool fetch-doc --params '{"doc_id":"https://gw8cavjn6kt.feishu.cn/wiki/xxxx"}'
 ```

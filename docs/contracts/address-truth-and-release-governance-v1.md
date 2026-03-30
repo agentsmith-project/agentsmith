@@ -292,8 +292,8 @@ Agent 的业务语义仍然只有两种：
 以后固定按这个顺序工作：
 
 1. 开发快速 gate
-2. `npm run test:bundle:inputs`
-3. `npm run test:rendered-env`
+2. `npm run test:demo-bundle:inputs`
+3. `npm run test:demo-rendered-env`
 4. `npm run test:client-public-runtime`
 5. `npm run test:release:precheck`
 6. `build-offline-bundle.sh`

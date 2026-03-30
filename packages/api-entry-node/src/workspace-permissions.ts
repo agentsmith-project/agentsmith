@@ -82,7 +82,7 @@ export async function resolveWorkspacePermissions(args: {
   actorEmail?: string;
   defaultWorkspaceId?: string;
 }): Promise<readonly string[]> {
-  const { workspaceId, actorId, actorEmail, defaultWorkspaceId } = args;
+  const { workspaceId, actorId, actorEmail } = args;
   const registered = await bindRegisteredWorkspaceAdminIfMatched({
     workspaceId,
     actorId,

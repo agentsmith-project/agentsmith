@@ -14,8 +14,8 @@ Provide a single operational path to validate MVP core readiness on real backend
 
 Note:
 
-- Current command names use `engineering-*` / `governance-*` naming consistently.
-- In current MVP, these commands are used only for focused engineering validation and evidence generation, not for DevOps orchestration.
+- Current workflow uses `npm run` as the canonical naming model; this runbook keeps `make` only as a convenience layer for focused verification.
+- In current MVP, these commands are used only for focused verification and evidence capture, not for DevOps orchestration.
 
 ## Prerequisites
 
@@ -42,7 +42,7 @@ make governance-report REPORT_ARCHIVE=1
 ## One-command Smoke Path
 
 ```bash
-make engineering-core-smoke
+make governance-core-smoke
 ```
 
 This runs:

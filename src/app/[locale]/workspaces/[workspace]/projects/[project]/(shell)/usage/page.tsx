@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { UsagePage as UsagePageComponent } from '@/components/audit-usage/UsagePage';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
@@ -9,8 +8,8 @@ import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
 import { useAuthStore } from '@/lib/stores/authStore';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useUsagePageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
@@ -21,38 +20,16 @@ interface UsagePageProps {
 export default function UsagePage({ params }: UsagePageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('usage');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const currentUser = useAuthStore((s) => s.user);
-  const canViewUsage = useHasPermission('project:endpoint:use');
+  const { canRead: canViewUsage } = useUsagePageCapabilities();
   const featureAvailability = getFeatureAvailability('usage');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('usage');
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -60,7 +37,7 @@ export default function UsagePage({ params }: UsagePageProps) {
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

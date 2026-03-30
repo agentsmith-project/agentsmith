@@ -117,10 +117,6 @@ type ArtifactLookup = {
   task_relative_path?: string;
 };
 
-function readString(input: unknown): string | undefined {
-  return typeof input === 'string' && input.trim().length > 0 ? input.trim() : undefined;
-}
-
 export async function buildNotebookTaskInputs(args: {
   deps: SourceLookupDeps;
   workspaceId: string;

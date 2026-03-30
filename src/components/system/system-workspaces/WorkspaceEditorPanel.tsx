@@ -1,8 +1,6 @@
 import Link from 'next/link';
 import {
-  AlertTriangle,
   ArrowRight,
-  CheckCircle2,
   Mail,
   ShieldCheck,
   UserRoundSearch,

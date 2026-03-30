@@ -277,7 +277,7 @@ Optional operator config:
 
 Environment-independent bootstrap defaults are tracked in:
 
-- [defaults.env](/home/percy/works/mbos-v1/agentsmith/infra/deploy/shared/presets/defaults.env)
+- [presets.env](/home/percy/works/mbos-v1/agentsmith/infra/runtime/presets.env)
 
 These presets are part of the release contract for both `demo-deploy` and `cluster-deploy`.
 

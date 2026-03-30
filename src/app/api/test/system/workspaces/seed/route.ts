@@ -56,6 +56,15 @@ function isSystemWorkspaceRecord(value: unknown): value is SystemWorkspaceRecord
     && typeof record['updated_at'] === 'string';
 }
 
+
+export async function GET() {
+  if (process.env.NEXT_PUBLIC_USE_MSW !== 'true' && process.env.AGENTSMITH_ENABLE_TEST_ROUTES !== 'true') {
+    return NextResponse.json({ error_code: 'NOT_FOUND', error_message: 'not_found' }, { status: 404 });
+  }
+
+  return NextResponse.json({ items: await listPersistedSystemWorkspaces() });
+}
+
 export async function POST(request: Request) {
   if (process.env.NEXT_PUBLIC_USE_MSW !== 'true' && process.env.AGENTSMITH_ENABLE_TEST_ROUTES !== 'true') {
     return NextResponse.json({ error_code: 'NOT_FOUND', error_message: 'not_found' }, { status: 404 });

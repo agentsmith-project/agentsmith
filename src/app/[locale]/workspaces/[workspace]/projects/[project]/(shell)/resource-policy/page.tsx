@@ -29,8 +29,8 @@ import { ResourcePolicyTable, type ResourceRow } from '@/components/resource-pol
 import { useMembers, useProjectGroups, useResourcePolicy, useUpdateResourcePolicy } from '@/lib/hooks/use-members';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { useAuthorizationCheck } from '@/lib/hooks/use-governance-explainability';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
+import { useCanReadProjectPolicy, useCanUpdateProjectPolicy } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import {
   getResourcePolicyStatus,
 } from '@/lib/constants/resource-policy';
@@ -69,7 +69,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const drilldownContext = useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
   const featureAvailability = getFeatureAvailability('resource_policy');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('resource_policy');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const [selectedResource, setSelectedResource] = useState<ResourceRow | null>(null);
   const [accessMode, setAccessMode] = useState<'allow_all_members' | 'allow_list'>('allow_all_members');
   const [rootDraftRules, setRootDraftRules] = useState<Partial<Record<PolicyRuleKey, string>>>({});
@@ -78,30 +78,12 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
   const [explainSubjectId, setExplainSubjectId] = useState('');
   const [explainAction, setExplainAction] = useState('invoke');
   const [authorizationResult, setAuthorizationResult] = useState<GovernanceAuthorizationResponse | null>(null);
-  const canUpdatePolicy = useHasPermission('project:governance:update');
-  const canReadPolicy = canUpdatePolicy;
-
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
+  const canUpdatePolicy = useCanUpdateProjectPolicy();
+  const canReadPolicy = useCanReadProjectPolicy();
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
-  const locale = resolvedParams?.locale ?? 'en-US';
+  const locale = resolvedParams.locale;
   const { isLoading: permissionLoading } = useProject(workspaceId, projectId);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;
   const endpointAPI = useMemo(() => new EndpointAPI(getApiClient()), []);
@@ -387,7 +369,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
 
   const explainOptions = explainSubjectType === 'user' ? userOptions : groupOptions;
 
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -395,7 +377,7 @@ export default function ResourcePolicyPage({ params }: ResourcePolicyPageProps) 
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

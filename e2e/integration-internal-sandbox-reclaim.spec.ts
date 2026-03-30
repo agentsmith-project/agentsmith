@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import {
   BACKEND_REAL_ANTHROPIC_BASE_URL,
@@ -8,14 +9,17 @@ import {
   createInternalCodexAgent,
   createNotebookTaskViaApi,
   createProjectInWorkspace,
+  mountFileLibraryLocally,
   KEYCLOAK_DEV_ADMIN_PASSWORD,
   KEYCLOAK_DEV_ADMIN_USERNAME,
   keycloakLoginToWorkspace,
   patchWorkloadPodExpiry,
   runInternalSandboxControl,
   sanitizeWorkloadId,
+  requestTaskWorkspaceAccess,
   sendTaskMessage,
-  waitForAssistantToken,
+  waitForJuicefsCsiReady,
+  waitForNotebookExecutionOutcome,
   waitForWorkloadPodDeleted,
   waitForWorkloadPodIdentity,
   waitForWorkloadPodPresent,
@@ -37,6 +41,12 @@ function requireApiKey(): string {
   }
   return value;
 }
+
+const INTERNAL_CLIENT_MOUNT_OVERRIDES = {
+  metadataHostOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_HOST_OVERRIDE?.trim() || undefined,
+  metadataPortOverride: process.env.INTEGRATION_CLIENT_JUICEFS_META_PORT_OVERRIDE?.trim() || undefined,
+  storageEndpointOverride: process.env.INTEGRATION_CLIENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE?.trim() || undefined,
+} as const;
 
 function buildNotebookCommand(token: string, fileName: string): string {
   return [
@@ -78,6 +88,8 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       maxLifetimeSec: 3600,
     });
 
+    await waitForJuicefsCsiReady();
+
     const taskId1 = await createNotebookTaskViaApi({
       page,
       workspaceId: 'ws_default',
@@ -87,26 +99,48 @@ test.describe('@lane-real internal sandbox reclaim', () => {
       fileLibraryId,
     });
     const token1 = `INTERNAL_IDLE_RECLAIM_${Date.now()}`;
+    const firstArtifactName = `idle-reclaim-${Date.now()}.md`;
     await sendTaskMessage({
       page,
       workspaceId: 'ws_default',
       projectId,
       taskId: taskId1,
-      content: buildNotebookCommand(token1, `idle-reclaim-${Date.now()}.md`),
+      content: buildNotebookCommand(token1, firstArtifactName),
     });
-    await waitForAssistantToken({
+
+    const workloadId1 = sanitizeWorkloadId(taskId1);
+    const workspaceAccess1 = await requestTaskWorkspaceAccess({
       page,
       workspaceId: 'ws_default',
       projectId,
       taskId: taskId1,
-      token: token1,
     });
+    const localMount1 = await mountFileLibraryLocally(
+      workspaceAccess1.metadata_url,
+      workspaceAccess1.storage_bucket_url,
+      INTERNAL_CLIENT_MOUNT_OVERRIDES,
+    );
+    try {
+      await waitForNotebookExecutionOutcome({
+        page,
+        workspaceId: 'ws_default',
+        projectId,
+        taskId: taskId1,
+        token: token1,
+        artifactPath: path.join(localMount1.mountPath, '.artifacts', firstArtifactName),
+        namespace,
+        workloadId: workloadId1,
+      });
+    } finally {
+      await localMount1.stop();
+    }
 
-    const workloadId1 = sanitizeWorkloadId(taskId1);
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 120_000 });
     await page.waitForTimeout(15_000);
     await waitForWorkloadPodPresent({ namespace, workloadId: workloadId1, timeoutMs: 10_000 });
     await waitForWorkloadPodDeleted({ namespace, workloadId: workloadId1, timeoutMs: 330_000 });
+
+    await waitForJuicefsCsiReady();
 
     const restartFileLibraryId = await createFileLibraryViaUi(
       page,

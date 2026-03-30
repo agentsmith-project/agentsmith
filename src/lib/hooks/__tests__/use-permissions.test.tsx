@@ -9,18 +9,15 @@ import {
   useHasAllPermissions,
   useCanAccessChat,
   useCanAccessNotebook,
-  useCanCreateTask,
-  useCanUpdateTask,
-  useCanDeleteTask,
-  useCanManageMemberGovernance,
-  useCanManageProjectAdmins,
-  useCanManageProjectLifecycle,
-  useCanManageResourcePolicy,
   useCanReadAudit,
-  useCanReadProjectSettings,
-  useCanReadProjectPolicy,
-  useCanUpdateProjectPolicy,
-  useCanAccessCredentials,
+  useAgentPageCapabilities,
+  useAlertPageCapabilities,
+  useEndpointPageCapabilities,
+  useFilesPageCapabilities,
+  useMemberPageCapabilities,
+  useProjectOverviewCapabilities,
+  useProjectSettingsCapabilities,
+  useUsagePageCapabilities,
 } from '../use-permissions';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
@@ -282,181 +279,6 @@ describe('use-permissions hooks', () => {
       expect(result.current).toBe(false);
     });
 
-    it('notebook task capability hooks should all follow notebook access', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:endpoint:use'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result: createResult } = renderHook(() => useCanCreateTask(), {
-        wrapper: createWrapper(),
-      });
-      const { result: updateResult } = renderHook(() => useCanUpdateTask(), {
-        wrapper: createWrapper(),
-      });
-      const { result: deleteResult } = renderHook(() => useCanDeleteTask(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(createResult.current).toBe(true);
-      expect(updateResult.current).toBe(true);
-      expect(deleteResult.current).toBe(true);
-    });
-  });
-
-  describe('useCanManageMemberGovernance', () => {
-    it('should return true when membership update permission is present', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'owner' as const,
-        permissions: ['project:governance:update', 'project:membership:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useCanManageMemberGovernance(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(true);
-    });
-
-    it('should return false without membership update permission', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        role: 'admin' as const,
-        permissions: ['project:governance:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useCanManageMemberGovernance(), {
-        wrapper: createWrapper(),
-      });
-
-      expect(result.current).toBe(false);
-    });
-  });
-
-  describe('governance capability hooks', () => {
-    it('project settings read should accept governance, admins, or lifecycle permissions', () => {
-      const baseProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-      };
-
-      mockUseProject.mockReturnValue({
-        data: { ...baseProject, permissions: ['project:governance:update'] },
-        isLoading: false,
-      });
-      expect(renderHook(() => useCanReadProjectSettings(), { wrapper: createWrapper() }).result.current).toBe(true);
-
-      mockUseProject.mockReturnValue({
-        data: { ...baseProject, permissions: ['project:admins:update'] },
-        isLoading: false,
-      });
-      expect(renderHook(() => useCanReadProjectSettings(), { wrapper: createWrapper() }).result.current).toBe(true);
-
-      mockUseProject.mockReturnValue({
-        data: { ...baseProject, permissions: ['project:lifecycle:update'] },
-        isLoading: false,
-      });
-      expect(renderHook(() => useCanReadProjectSettings(), { wrapper: createWrapper() }).result.current).toBe(true);
-    });
-
-    it('project admin and lifecycle helpers should require their specific split permissions', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:admins:update', 'project:lifecycle:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result: canManageAdmins } = renderHook(() => useCanManageProjectAdmins(), { wrapper: createWrapper() });
-      const { result: canManageLifecycle } = renderHook(() => useCanManageProjectLifecycle(), { wrapper: createWrapper() });
-
-      expect(canManageAdmins.current).toBe(true);
-      expect(canManageLifecycle.current).toBe(true);
-    });
-
-    it('resource policy governance helpers should require project:governance:update', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:governance:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result: canManage } = renderHook(() => useCanManageResourcePolicy(), { wrapper: createWrapper() });
-      const { result: canRead } = renderHook(() => useCanReadProjectPolicy(), { wrapper: createWrapper() });
-      const { result: canUpdate } = renderHook(() => useCanUpdateProjectPolicy(), { wrapper: createWrapper() });
-
-      expect(canManage.current).toBe(true);
-      expect(canRead.current).toBe(true);
-      expect(canUpdate.current).toBe(true);
-    });
-
-    it('credentials access should require project:governance:update', () => {
-      const mockProject = {
-        id: 'proj_001',
-        workspace_id: 'ws_default',
-        name: 'Test Project',
-        owner_id: 'user_001',
-        status: 'active' as const,
-        visibility: 'public' as const,
-        created_at: '2026-01-01T00:00:00Z',
-        updated_at: '2026-01-01T00:00:00Z',
-        permissions: ['project:governance:update'],
-      };
-
-      mockUseProject.mockReturnValue({ data: mockProject, isLoading: false });
-
-      const { result } = renderHook(() => useCanAccessCredentials(), { wrapper: createWrapper() });
-      expect(result.current).toEqual({ canRead: true, canManage: true });
-    });
   });
 
   describe('useIsAuthenticated', () => {
@@ -716,6 +538,218 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current).toBe(true);
+    });
+  });
+
+  describe('page capability hooks', () => {
+    it('useAgentPageCapabilities should fan out project:agent:manage', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:agent:manage', 'project:agent:public'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useAgentPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+      expect(result.current.canCreate).toBe(true);
+      expect(result.current.canIssueKeys).toBe(true);
+      expect(result.current.canPublic).toBe(true);
+    });
+
+    it('useEndpointPageCapabilities should allow read when use or manage exists', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:governance:update'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useEndpointPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canUse).toBe(false);
+      expect(result.current.canManage).toBe(true);
+      expect(result.current.canRead).toBe(true);
+    });
+
+    it('useProjectOverviewCapabilities should aggregate project governance flags', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: [
+            'project:endpoint:use',
+            'project:membership:update',
+            'project:audit:read',
+            'project:admins:update',
+          ],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useProjectOverviewCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canUseProject).toBe(true);
+      expect(result.current.canManageMembership).toBe(true);
+      expect(result.current.canReadAudit).toBe(true);
+      expect(result.current.canReadProjectSettings).toBe(true);
+      expect(result.current.canManageAgents).toBe(false);
+    });
+
+    it('useAlertPageCapabilities should separate read and manage', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:audit:read'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useAlertPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+      expect(result.current.canManage).toBe(false);
+    });
+
+    it('useUsagePageCapabilities should expose usage read flag', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:endpoint:use'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useUsagePageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+    });
+
+    it('useFilesPageCapabilities should merge files management and credential exchange', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:endpoint:use', 'project:file_library:credential_exchange'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useFilesPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+      expect(result.current.canManage).toBe(false);
+      expect(result.current.canExchangeCredentials).toBe(true);
+    });
+
+    it('useMemberPageCapabilities should expose member read and manage flags', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: ['project:membership:update'],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useMemberPageCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canRead).toBe(true);
+      expect(result.current.canManage).toBe(true);
+    });
+
+    it('useProjectSettingsCapabilities should aggregate settings flags', () => {
+      mockUseProject.mockReturnValue({
+        data: {
+          id: 'proj_001',
+          workspace_id: 'ws_default',
+          name: 'Test Project',
+          owner_id: 'user_001',
+          status: 'active' as const,
+          visibility: 'public' as const,
+          created_at: '2026-01-01T00:00:00Z',
+          updated_at: '2026-01-01T00:00:00Z',
+          permissions: [
+            'project:governance:update',
+            'project:membership:update',
+            'project:lifecycle:update',
+          ],
+        },
+        isLoading: false,
+      });
+
+      const { result } = renderHook(() => useProjectSettingsCapabilities(), {
+        wrapper: createWrapper(),
+      });
+
+      expect(result.current.canReadSettings).toBe(true);
+      expect(result.current.canManageProjectLifecycle).toBe(true);
+      expect(result.current.canManageGovernance).toBe(true);
+      expect(result.current.canManageMembership).toBe(true);
+      expect(result.current.canReadAudit).toBe(false);
     });
   });
 });

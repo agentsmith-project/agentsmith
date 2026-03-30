@@ -26,25 +26,30 @@
 
 ## 验证顺序
 
+命名约定：
+
+- `npm run` 是当前权威命令名
+- 这里保留的 `make` 写法只是同一路径的便捷包装
+
 按下面顺序执行：
 
 ```bash
-make gate-fast
-make gate-default
-make lane-visual
-make backend-real-reset
-make backend-real-bootstrap
-make backend-real-ready
+npm run gate:fast
+npm run gate:default
+npm run lane:visual
+npm run backend-real:reset
+npm run backend-real:bootstrap
+npm run backend-real:ready
 make manual-feishu-admin
 make manual-feishu-check
 make manual-feishu-user
 make manual-feishu-check
-make backend-real-run
-make backend-real-report
-make gate-release
+npm run backend-real:run
+npm run backend-real:report
+npm run gate:release
 ```
 
-`make gate-release` 会基于当前发布状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。
+`npm run gate:release` 会基于当前发布状态机校验发布级工程门禁、真实 notebook 主线、Feishu 人工步骤完成状态，以及真实环境截图巡检。
 
 真实截图默认输出到：
 

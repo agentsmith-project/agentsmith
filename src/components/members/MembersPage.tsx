@@ -27,7 +27,7 @@ import {
 import { Plus } from 'lucide-react';
 import { MembersProvider, useMembersContext } from './MembersContext';
 import { useMembersList } from '@/lib/hooks/use-members-list';
-import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import { useJoinRequests } from '@/lib/hooks/use-join-requests';
 import { ChangeHistoryDrawer } from './ChangeHistoryDrawer';
 import { InviteMemberDialog } from './InviteMemberDialog';
@@ -46,7 +46,7 @@ export interface MembersPageProps {
 
 function MembersPageContent({ workspaceId, projectId, locale = 'en-US' }: MembersPageProps) {
   const t = useTranslations('members');
-  const canManageMembers = useCanManageMemberGovernance();
+  const { canManage: canManageMembers } = useMemberPageCapabilities();
   const searchParams = useSearchParams();
   const drilldownContext = React.useMemo(() => parseGovernanceDrilldownContext(searchParams), [searchParams]);
   const basePath = `/${locale}/workspaces/${workspaceId}/projects/${projectId}`;

@@ -39,9 +39,9 @@ import { ChatMainPane } from '@/components/chat/ChatMainPane';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessChat } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { cn } from '@/lib/utils';
-import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
 import { ChatDialogs } from './_components/ChatDialogs';
 import {
   ChatPageLoadingState,
@@ -49,7 +49,6 @@ import {
   ChatPageValidationErrorState,
 } from './_components/ChatPageState';
 import { useChatAttachmentActions } from './useChatAttachmentActions';
-import { useResolvedChatParams } from './useResolvedChatParams';
 
 interface ChatPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -61,8 +60,8 @@ export default function ChatPage({ params }: ChatPageProps) {
   const tErrors = useTranslations('errors');
 
   const token = useAuthStore((s) => s.token);
-  const resolvedParams = useResolvedChatParams(params);
-  const canAccessChat = useHasPermission('project:endpoint:use');
+  const resolvedParams = useResolvedProjectRoute(params);
+  const canAccessChat = useCanAccessChat();
   const canReadThreads = canAccessChat;
   const canUseChat = canAccessChat;
   const canManageChatSessions = canAccessChat;
@@ -77,8 +76,8 @@ export default function ChatPage({ params }: ChatPageProps) {
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const workspaceId = validateWorkspaceParam(resolvedParams?.workspace) ?? '';
-  const projectId = validateProjectParam(resolvedParams?.project) ?? '';
+  const workspaceId = resolvedParams?.workspace ?? '';
+  const projectId = resolvedParams?.project ?? '';
   const locale = resolvedParams?.locale ?? 'en-US';
   const { layoutMode } = useProjectLayoutMode();
 
@@ -355,11 +354,11 @@ export default function ChatPage({ params }: ChatPageProps) {
     urlInput,
   });
 
-  if (!resolvedParams) {
+  if (!resolvedParams || !resolvedParams.isReady) {
     return <ChatPageLoadingState message={t('loading')} />;
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <ChatPageValidationErrorState
         title={tErrors('validation_error')}

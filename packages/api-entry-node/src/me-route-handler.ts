@@ -94,7 +94,7 @@ export async function handleMeRoute(args: {
   docStore: JsonDocStorePort;
   governanceIncidentsDir?: string;
 }): Promise<boolean> {
-  const { req, res, method, requestUrl, user, cache, docStore, governanceIncidentsDir } = args;
+  const { req, res, method, requestUrl, user, docStore, governanceIncidentsDir } = args;
   const pathname = requestUrl.pathname;
   if (!pathname.startsWith('/api/v1/me/')) {
     return false;

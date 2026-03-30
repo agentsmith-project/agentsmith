@@ -63,6 +63,8 @@ init_local_manual_env() {
   PORT_API="${PORT_API:-20000}"
   PORT_WEB="${PORT_WEB:-3001}"
   PROXY_PORT="${PROXY_PORT:-38080}"
+  LOCAL_MANUAL_REUSE_SUPPORT_SERVICES="${LOCAL_MANUAL_REUSE_SUPPORT_SERVICES:-0}"
+  LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP="${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP:-0}"
   LOCALE="${LOCALE:-zh-CN}"
   WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 
@@ -85,6 +87,21 @@ init_local_manual_env() {
   MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
   MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
   MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-http://127.0.0.1:${PROXY_PORT}}"
+}
+
+run_local_manual_support_services_prepare() {
+  if [[ "${LOCAL_MANUAL_REUSE_SUPPORT_SERVICES}" == "1" ]]; then
+    info "reusing existing integration support services"
+    (
+      cd "${ROOT_DIR}" &&       npm run integration:deps:init:postgres &&       INTEGRATION_WEB_PORT="${PORT_WEB}" npm run integration:deps:init:keycloak &&       npm run integration:deps:smoke
+    )
+    return 0
+  fi
+
+  info "starting local dependencies"
+  (
+    cd "${ROOT_DIR}" &&     make deps-up &&     make deps-ready &&     npm run integration:deps:init:postgres &&     INTEGRATION_WEB_PORT="${PORT_WEB}" npm run integration:deps:init:keycloak &&     npm run integration:deps:smoke
+  )
 }
 
 require_preset_endpoint_env() {

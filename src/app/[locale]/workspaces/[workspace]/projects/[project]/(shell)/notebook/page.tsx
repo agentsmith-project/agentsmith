@@ -6,16 +6,15 @@
 
 'use client';
 
-import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { TaskList } from '@/components/notebook/TaskList';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { ProjectWorkbenchBar, ProjectWorkbenchSwitcher } from '@/components/layout/ProjectWorkbenchBar';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessNotebook } from '@/lib/hooks/use-permissions';
 import { useProjectLayoutMode } from '@/lib/hooks/use-project-layout-mode';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 
 interface NotebookPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -24,33 +23,11 @@ interface NotebookPageProps {
 export default function NotebookPage({ params }: NotebookPageProps) {
   const t = useTranslations('notebook');
   const tErrors = useTranslations('errors');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
-  const canAccessNotebook = useHasPermission('project:endpoint:use');
+  const resolvedParams = useResolvedProjectRoute(params);
+  const canAccessNotebook = useCanAccessNotebook();
   const { layoutMode } = useProjectLayoutMode();
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -58,7 +35,7 @@ export default function NotebookPage({ params }: NotebookPageProps) {
     );
   }
 
-  if (!resolvedParams.workspace || !resolvedParams.project) {
+  if (!resolvedParams.isValid || !resolvedParams.workspace || !resolvedParams.project) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

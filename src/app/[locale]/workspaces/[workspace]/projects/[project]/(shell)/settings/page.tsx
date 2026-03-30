@@ -21,13 +21,9 @@ import { DeleteProjectDialog } from '@/components/projects/DeleteProjectDialog';
 import { useApiError } from '@/lib/hooks/use-api-error';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import {
-  useCanReadAudit,
-  useCanManageProjectAdmins,
-  useCanManageProjectLifecycle,
-  useHasPermission,
-  useCanReadProjectSettings,
+  useProjectSettingsCapabilities,
 } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { useWorkspaceMembers } from '@/lib/hooks/use-workspaces';
 import { useMembers, useProjectGroups, useUpdateProjectGroup } from '@/lib/hooks/use-members';
 import { GeneralSettingsSection } from './_components/GeneralSettingsSection';
@@ -35,17 +31,14 @@ import { GovernanceSection } from './_components/GovernanceSection';
 import { ProjectAdminGroupSection } from './_components/ProjectAdminGroupSection';
 import { ProjectOwnerSection } from './_components/ProjectOwnerSection';
 import { PROJECT_BUILT_IN_GROUP_IDS } from '@/lib/governance/member-groups';
-import type {
-  ResolvedProjectSettingsParams,
-  SettingsProjectAdminOption,
-} from './settings-page-types';
+import type { SettingsProjectAdminOption } from './settings-page-types';
 
 interface SettingsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
 
 export default function SettingsPage({ params }: SettingsPageProps) {
-  const [resolvedParams, setResolvedParams] = useState<ResolvedProjectSettingsParams | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const [savingGeneral, setSavingGeneral] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -59,32 +52,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
   const tErrors = useTranslations('errors');
   const { handleError } = useApiError();
   const queryClient = useQueryClient();
-  const canReadSettings = useCanReadProjectSettings();
-  const canReadAudit = useCanReadAudit();
-  const canManageProjectLifecyclePermission = useCanManageProjectLifecycle();
-  const canManageProjectAdminsPermission = useCanManageProjectAdmins();
-  const canManageGovernance = useHasPermission('project:governance:update');
-  const canManageMembership = useHasPermission('project:membership:update');
+  const capabilities = useProjectSettingsCapabilities();
 
   const projectAPI = useMemo(() => new ProjectAPI(getApiClient()), []);
-
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
 
   // Fetch project data
   const { data: currentProject } = useProject(
@@ -171,10 +141,10 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     return [...merged.values()];
   }, [projectMembers, selectedProjectAdmins, workspaceMembers]);
 
-  const canManageProjectLifecycle = canManageProjectLifecyclePermission;
-  const canDeleteProject = canManageProjectLifecyclePermission;
-  const canAssignProjectAdmins = canManageProjectAdminsPermission;
-  const canTransferProjectOwner = canManageProjectLifecyclePermission;
+  const canManageProjectLifecycle = capabilities.canManageProjectLifecycle;
+  const canDeleteProject = capabilities.canManageProjectLifecycle;
+  const canAssignProjectAdmins = capabilities.canManageProjectAdmins;
+  const canTransferProjectOwner = capabilities.canManageProjectLifecycle;
   const projectAdminCount = selectedProjectAdmins.length;
   const membersHref = resolvedParams
     ? `/${resolvedParams.locale}/workspaces/${resolvedParams.workspace}/projects/${resolvedParams.project}/members?member_tab=requests`
@@ -279,7 +249,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
 
 
 
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -287,7 +257,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     );
   }
 
-  if (!resolvedParams.workspace || !resolvedParams.project) {
+  if (!resolvedParams.isValid || !resolvedParams.workspace || !resolvedParams.project) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -298,7 +268,7 @@ export default function SettingsPage({ params }: SettingsPageProps) {
     );
   }
 
-  if (!canReadSettings) {
+  if (!capabilities.canReadSettings) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -346,9 +316,9 @@ export default function SettingsPage({ params }: SettingsPageProps) {
           </div>
 
           <GovernanceSection
-            canManageGovernance={canManageGovernance}
-            canManageMembership={canManageMembership}
-            canReadAudit={canReadAudit}
+            canManageGovernance={capabilities.canManageGovernance}
+            canManageMembership={capabilities.canManageMembership}
+            canReadAudit={capabilities.canReadAudit}
             locale={resolvedParams.locale}
             projectId={resolvedParams.project}
             settingsT={settingsT}

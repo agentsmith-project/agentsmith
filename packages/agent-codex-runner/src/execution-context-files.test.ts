@@ -24,6 +24,30 @@ describe('execution-context-files', () => {
     expect(payload).toContain('"ok":true');
   });
 
+
+  it('writes credential files into the provided credential root', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'runner-execution-files-'));
+    const credentialDir = join(cwd, 'runner-state', 'credentials', 'task_1');
+    const result = await applyExecutionContextFiles(
+      cwd,
+      [
+        {
+          relative_path: '.codex/credential/jira/connections.json',
+          content: '{"ok":true}',
+        },
+        {
+          relative_path: '.codex/credential/index.json',
+          content: '{"files":[]}',
+        },
+      ],
+      { credentialDir },
+    );
+
+    expect(result.written).toBe(2);
+    const payload = await readFile(join(credentialDir, 'jira/connections.json'), 'utf-8');
+    expect(payload).toContain('"ok":true');
+  });
+
   it('rejects path traversal', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'runner-execution-files-'));
     await expect(

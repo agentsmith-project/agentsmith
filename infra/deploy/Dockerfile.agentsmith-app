@@ -1,5 +1,5 @@
 ARG APP_BASE_IMAGE=agentsmith-app-base:local
-ARG NODE_RUNTIME_IMAGE=node:22-bookworm
+ARG NODE_RUNTIME_IMAGE=node:24.14.1-bookworm
 ARG MC_IMAGE=minio/mc:latest
 
 FROM ${MC_IMAGE} AS mc-bin

@@ -54,26 +54,36 @@ stop_matching_processes() {
   xargs -r kill -9 >/dev/null 2>&1 <<< "${pids}" || true
 }
 
+maybe_stop_untracked_port() {
+  local port="$1"
+  if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP}" != "1" ]]; then
+    return 0
+  fi
+  stop_listeners_on_port "${port}"
+}
+
 stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"
 stop_pid_file_if_running "${WEB_PID_FILE}" "web"
 stop_pid_file_if_running "${API_PID_FILE}" "api"
 stop_pid_file_if_running "${PROXY_PID_FILE}" "universal-proxy"
 
-stop_matching_processes 'run-next-dev-safe.sh --port 3001'
-stop_matching_processes 'npm run dev:test --port 3001'
-stop_matching_processes 'next dev --port 3001'
+stop_matching_processes "run-next-dev-safe.sh --port ${PORT_WEB}"
+stop_matching_processes "npm run dev:test --port ${PORT_WEB}"
+stop_matching_processes "next dev --port ${PORT_WEB}"
 stop_matching_processes 'node .*/node_modules/.bin/tsx src/index.ts'
 stop_matching_processes 'llm-universal-proxy --config'
 stop_matching_processes 'make notebook-agent-runner'
 
-stop_listeners_on_port 3001
-stop_listeners_on_port 20000
-stop_listeners_on_port 38080
+maybe_stop_untracked_port "${PORT_WEB}"
+maybe_stop_untracked_port "${PORT_API}"
+maybe_stop_untracked_port "${PROXY_PORT}"
 
 remove_local_manual_runtime_files
 reset_local_manual_state
 
 docker ps --format '{{.Names}}' | rg 'agentsmith-demo|agentsmith-control-plane' | xargs -r docker rm -f >/dev/null 2>&1 || true
-(cd "${ROOT_DIR}" && make deps-down >/dev/null 2>&1 || true)
+if [[ "${LOCAL_MANUAL_REUSE_SUPPORT_SERVICES}" != "1" ]]; then
+  (cd "${ROOT_DIR}" && make deps-down >/dev/null 2>&1 || true)
+fi
 
 info "done"

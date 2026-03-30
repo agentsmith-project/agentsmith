@@ -1,6 +1,8 @@
 ARG PLAYWRIGHT_IMAGE=mcr.microsoft.com/playwright:v1.58.1-noble
 ARG DOCKER_CLI_IMAGE=docker:28.5.1-cli
+ARG NODE_IMAGE=node:24.14.1-bookworm
 FROM ${DOCKER_CLI_IMAGE} AS docker-cli
+FROM ${NODE_IMAGE} AS node-runtime
 
 FROM ${PLAYWRIGHT_IMAGE}
 
@@ -14,6 +16,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 WORKDIR /app
 
 COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=node-runtime /usr/local/ /usr/local/
 
 COPY package.json package-lock.json ./
 COPY packages/adapters-cf/package.json ./packages/adapters-cf/package.json
@@ -44,6 +47,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
   test -f "${archive}"; \
   tar -xzf "${archive}" -C /tmp; \
   install -m 0755 /tmp/juicefs /usr/local/bin/juicefs; \
+  node -v; npm -v; \
   npm ci --no-audit --no-fund --fetch-retries=5 --fetch-retry-maxtimeout=120000; \
   unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY NO_PROXY no_proxy; \
   rm -rf /tmp/juicefs /tmp/juicefs-dist

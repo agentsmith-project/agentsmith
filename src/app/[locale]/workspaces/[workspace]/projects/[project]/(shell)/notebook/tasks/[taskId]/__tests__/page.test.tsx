@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useCanAccessNotebook } from '@/lib/hooks/use-permissions';
 
 vi.mock('@/components/notebook/TaskPage', () => ({
   TaskPage: ({
@@ -25,16 +25,16 @@ vi.mock('@/components/notebook/TaskPage', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn((permission: string) => permission === 'project:endpoint:use'),
+  useCanAccessNotebook: vi.fn(() => true),
 }));
 
 import NotebookTaskDetailPage from '../page';
 
-const mockUseHasPermission = vi.mocked(useHasPermission);
+const mockUseCanAccessNotebook = vi.mocked(useCanAccessNotebook);
 
 describe('NotebookTaskDetailPage route', () => {
   it('renders task page with validated params', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessNotebook.mockReturnValue(true);
     render(
       <NotebookTaskDetailPage
         params={Promise.resolve({
@@ -56,7 +56,7 @@ describe('NotebookTaskDetailPage route', () => {
   });
 
   it('shows invalid parameter error for unsafe taskId', async () => {
-    mockUseHasPermission.mockReturnValue(true);
+    mockUseCanAccessNotebook.mockReturnValue(true);
     render(
       <NotebookTaskDetailPage
         params={Promise.resolve({
@@ -75,7 +75,7 @@ describe('NotebookTaskDetailPage route', () => {
   });
 
   it('shows permission denied when user lacks notebook access', async () => {
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseCanAccessNotebook.mockReturnValue(false);
     render(
       <NotebookTaskDetailPage
         params={Promise.resolve({

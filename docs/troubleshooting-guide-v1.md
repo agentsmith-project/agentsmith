@@ -5,7 +5,7 @@
 
 这份文档只保留当前仍然有效的排障入口，不再重复历史阶段性流程、过时环境值或已被新版 user guide 取代的说明。
 
-术语边界：文中的 `governance-smoke`、`governance:report` 等命令名沿用历史脚本命名，仅用于本项目工程验收与排障（engineering gate）；`permission gate` 仅表示产品权限门禁语义，不代表平台对外发布管理能力。
+术语边界：文中的 `governance-smoke`、`governance:report` 等命令名是当前保留的 focused verification / evidence commands，仅用于本项目工程验收与排障；`permission gate` 仅表示产品权限门禁语义，不代表平台对外发布管理能力。
 
 当前工程术语与命令模型统一见：
 - [Current Engineering Governance Model](./current-engineering-governance-model.md)

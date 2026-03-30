@@ -22,7 +22,7 @@ import {
 } from './artifact-scan.js';
 import { prepareTaskWorkspace } from './task-workspace.js';
 import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
-import { resolveBuiltinSkillsConfig, syncBuiltinSkills } from './builtin-skills.js';
+import { inspectBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
 import { ensureCodexSessionStateCompatible } from './session-state.js';
@@ -89,7 +89,8 @@ const wsUrl = process.env.MBOS_AGENT_WS_URL;
 const key = process.env.MBOS_AGENT_KEY;
 const codexBin = process.env.CODEX_BIN ?? 'codex';
 const runnerDebug = process.env.MBOS_AGENT_RUNNER_DEBUG === '1';
-const codexYolo = process.env.MBOS_AGENT_CODEX_YOLO === '1';
+const codexYolo = process.env.MBOS_AGENT_CODEX_YOLO !== '0';
+const proxyAuthHeaderEnvName = 'MBOS_CODEX_PROXY_AUTH_HEADER';
 const cancelKillDelayMs = (() => {
   const raw = Number.parseInt(process.env.MBOS_AGENT_CANCEL_KILL_DELAY_MS ?? '', 10);
   if (Number.isFinite(raw) && raw >= 1_000) return raw;
@@ -599,23 +600,22 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
   const cwd = cwdResult.cwd;
   const taskPaths = cwdResult.paths;
-  await mkdir(cwd, { recursive: true });
+  await Promise.all([
+    mkdir(cwd, { recursive: true }),
+    mkdir(taskPaths.codexHomeDir, { recursive: true }),
+    mkdir(taskPaths.homeDir, { recursive: true }),
+  ]);
   const builtinSkillsConfig = resolveBuiltinSkillsConfig();
-  debugLog('syncing builtin skills', {
+  debugLog('checking builtin skills', {
     request_id: requestId,
     cwd,
     source_dir: builtinSkillsConfig.sourceDir,
     skills: builtinSkillsConfig.skills,
   });
-  const builtinSkillsResult = await syncBuiltinSkills({
-    cwd,
+  const builtinSkillsResult = await inspectBuiltinSkills({
     sourceDir: builtinSkillsConfig.sourceDir,
     skills: builtinSkillsConfig.skills,
     required: builtinSkillsConfig.required,
-    // Builtin skills are immutable runner assets, not task workspace state.
-    // Always mount them via symlink so file-library workspaces don't block on
-    // recursive copies into JuiceFS-backed directories.
-    strategy: 'symlink',
   });
   const isNotebookMode = executionContext.notebook_mode === true;
   const resumeSession = isNotebookMode || sessionId.length > 0;
@@ -640,7 +640,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     request_id: requestId,
     credential_files_count: credentialFiles.length,
   });
-  const executionFilesResult = await applyExecutionContextFiles(cwd, credentialFiles);
+  const executionFilesResult = await applyExecutionContextFiles(cwd, credentialFiles, {
+    credentialDir: taskPaths.credentialDir,
+  });
   const prompt = isNotebookMode
     ? `${buildNotebookHeadlessPreamble({
       artifactsDir,
@@ -668,7 +670,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const modelCatalogSupportsSearchTool = executionContext.model_catalog?.supports_search_tool === true;
   const modelCatalogSupportsParallelToolCalls = executionContext.model_catalog?.supports_parallel_tool_calls === true;
   const sessionStateResult = await ensureCodexSessionStateCompatible({
-    codexDir: taskPaths.codexDir,
+    codexDir: taskPaths.codexHomeDir,
     model: payload.model ?? executionContext.model ?? 'gpt-5-codex',
     wireApi: executionContext.wire_api ?? 'responses',
     resourceProxyBase: endpointProxyBase,
@@ -683,7 +685,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   });
   debugLog('validated codex session state', {
     request_id: requestId,
-    codex_dir: taskPaths.codexDir,
+    codex_dir: taskPaths.codexHomeDir,
     reset_performed: sessionStateResult.resetPerformed,
     reason: sessionStateResult.reason,
   });
@@ -691,7 +693,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
   const wireApi = 'responses';
 
   const model = executionContext.model ?? payload.model ?? 'gpt-5-codex';
-  const codexConfigDir = taskPaths.codexDir;
+  const codexConfigDir = taskPaths.codexHomeDir;
   await mkdir(codexConfigDir, { recursive: true });
   const modelCatalogPath = join(codexConfigDir, 'catalog.json');
   await writeFile(
@@ -720,7 +722,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       modelContextWindow,
       modelAutoCompactTokenLimit,
       modelCatalogPath,
-      userBearerToken: executionContext.user_bearer_token,
+      proxyAuthHeaderEnvName: executionContext.user_bearer_token ? proxyAuthHeaderEnvName : undefined,
     }),
     'utf-8',
   );
@@ -746,8 +748,9 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     credential_files_count: executionFilesResult.written,
     credential_files_bytes: executionFilesResult.totalBytes,
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
-    builtin_skills_mounted: builtinSkillsResult.mounted,
+    builtin_skills_mounted: builtinSkillsResult.available,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
+    credential_dir: taskPaths.credentialDir,
     cwd_source: cwdResult.source,
   });
 
@@ -760,7 +763,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     modelContextWindow,
     modelAutoCompactTokenLimit,
     modelCatalogPath,
-    userBearerToken: executionContext.user_bearer_token,
     resumeSession,
     yolo: codexYolo,
   });
@@ -773,14 +775,17 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       env: {
         ...process.env,
         HOME: taskPaths.homeDir,
-        CODEX_HOME: taskPaths.codexDir,
+        CODEX_HOME: taskPaths.codexHomeDir,
         NO_COLOR: '1',
-        MBOS_TASK_CREDENTIAL_DIR: './.codex/credential',
+        MBOS_TASK_CREDENTIAL_DIR: taskPaths.credentialDir,
         ...(isNotebookMode ? {
           MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
           MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
           MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
           MBOS_NOTEBOOK_USER_BEARER_TOKEN: executionContext.user_bearer_token ?? '',
+        } : {}),
+        ...(executionContext.user_bearer_token ? {
+          [proxyAuthHeaderEnvName]: `Bearer ${executionContext.user_bearer_token}`,
         } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -792,7 +797,6 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     cmd: codexBin,
     argv: codexArgs.map((arg) => {
       if (arg === prompt) return '<prompt>';
-      if (arg.includes('experimental_bearer_token=')) return 'model_providers.proxy.experimental_bearer_token="<redacted>"';
       return arg;
     }),
   });
@@ -822,7 +826,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       notebook_mode: isNotebookMode,
       task_inputs_count: taskInputs.length,
       credential_files_count: executionFilesResult.written,
-      builtin_skills_count: builtinSkillsResult.mounted.length,
+      builtin_skills_count: builtinSkillsResult.available.length,
       artifacts_dir: isNotebookMode ? './.artifacts/' : null,
     },
   });

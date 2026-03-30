@@ -16,7 +16,6 @@ import { PreviewDialog } from '@/components/files/file-object-details-panel/Prev
 import { PreviewSection } from '@/components/files/file-object-details-panel/PreviewSection';
 import { ShareLinkDialog } from '@/components/files/file-object-details-panel/ShareLinkDialog';
 import {
-  basename,
   formatMetaSummary,
   previewSupportsInline,
   previewTypeLabel,
@@ -211,7 +210,7 @@ export function FileObjectDetailsPanel({
   }
 
   const meta = metaQuery.data;
-  const { ext, filename, summary } = formatMetaSummary(meta, t, formatBytes);
+  const { filename, summary } = formatMetaSummary(meta, t, formatBytes);
 
   return (
     <div className="min-h-0 rounded-[16px] border border-white/5 bg-surface/74 overflow-hidden flex flex-col" data-testid="files__details-panel">

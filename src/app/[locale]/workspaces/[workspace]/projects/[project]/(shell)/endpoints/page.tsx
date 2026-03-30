@@ -1,11 +1,10 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { EndpointsPageView, type EndpointsPageProps } from '@/components/endpoints/EndpointsPage';
 import { PageState } from '@/components/layout/PageState';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useEndpointPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 
 interface EndpointsRouteProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
@@ -13,34 +12,14 @@ interface EndpointsRouteProps {
 
 export default function EndpointsPage({ params }: EndpointsRouteProps) {
   const tErrors = useTranslations('errors');
-  const [resolved, setResolved] = useState<{ workspace: string | null; project: string | null; locale: string } | null>(null);
-  const canUse = useHasPermission('project:endpoint:use');
-  const canManage = useHasPermission('project:governance:update');
-  const canRead = canUse || canManage;
+  const resolved = useResolvedProjectRoute(params);
+  const capabilities = useEndpointPageCapabilities();
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace) ?? null,
-        project: validateProjectParam(p.project) ?? null,
-        locale: p.locale ?? 'en-US',
-      };
-      setResolved((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolved) {
+  if (!resolved.isReady) {
     return <PageState state="loading" />;
   }
 
-  if (!resolved.workspace || !resolved.project) {
+  if (!resolved.isValid || !resolved.workspace || !resolved.project) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -51,7 +30,7 @@ export default function EndpointsPage({ params }: EndpointsRouteProps) {
     );
   }
 
-  if (!canRead) {
+  if (!capabilities.canRead) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

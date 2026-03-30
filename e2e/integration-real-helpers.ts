@@ -3,6 +3,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { expect, type Page } from '@playwright/test';
+import {
+  evaluateNotebookExecutionSnapshot,
+  summarizeNotebookMessages,
+  summarizeNotebookPod,
+  summarizeNotebookTraces,
+} from './notebook-execution-outcome';
 import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
 
 export const LOCALE = process.env.INTEGRATION_LOCALE ?? 'en-US';
@@ -642,6 +648,369 @@ export async function waitForAssistantToken(args: {
     .toBe(true);
 }
 
+type IntegrationTaskMessageSnapshot = {
+  id?: string;
+  role?: string;
+  content?: string;
+};
+
+type IntegrationTaskTraceSnapshot = {
+  id?: string;
+  category?: string;
+  phase?: string;
+  status?: string;
+  name?: string;
+  summary?: string;
+  at?: string;
+};
+
+type IntegrationTaskRealtimeSnapshot = {
+  id?: string;
+  status?: string;
+  run_state?: string;
+};
+
+type WorkloadPodSnapshot = {
+  name?: string | null;
+  phase?: string | null;
+  reason?: string | null;
+  exitCode?: number | null;
+};
+
+async function fetchTaskMessagesSnapshot(args: {
+  page: Page;
+  authToken: string;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<IntegrationTaskMessageSnapshot[]> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/messages`,
+    { headers: { Authorization: `Bearer ${args.authToken}` } },
+  );
+  if (!response.ok()) return [];
+  return (await response.json().catch(() => [])) as IntegrationTaskMessageSnapshot[];
+}
+
+async function fetchTaskTracesSnapshot(args: {
+  page: Page;
+  authToken: string;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  pageSize?: number;
+}): Promise<IntegrationTaskTraceSnapshot[]> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/traces?page_size=${args.pageSize ?? 100}`,
+    { headers: { Authorization: `Bearer ${args.authToken}` } },
+  );
+  if (!response.ok()) return [];
+  const payload = (await response.json().catch(() => null)) as { items?: IntegrationTaskTraceSnapshot[] } | null;
+  return payload?.items ?? [];
+}
+
+async function fetchTaskRealtimeSnapshot(args: {
+  page: Page;
+  authToken: string;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<IntegrationTaskRealtimeSnapshot | null> {
+  const response = await args.page.request.get(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}`,
+    { headers: { Authorization: `Bearer ${args.authToken}` } },
+  );
+  if (!response.ok()) return null;
+  return (await response.json().catch(() => null)) as IntegrationTaskRealtimeSnapshot | null;
+}
+
+async function fetchWorkloadPodSnapshot(args: {
+  namespace: string;
+  workloadId: string;
+}): Promise<WorkloadPodSnapshot | null> {
+  const result = await spawnAndCapture(
+    'kubectl',
+    ['get', 'pods', '-n', args.namespace, '-l', `workload_id=${args.workloadId}`, '-o', 'json'],
+    { env: withoutProxyEnv(process.env) },
+  );
+  if (result.code !== 0) return null;
+  const payload = JSON.parse(result.stdout || '{}') as {
+    items?: Array<{
+      metadata?: { name?: string };
+      status?: {
+        phase?: string;
+        reason?: string;
+        containerStatuses?: Array<{ state?: { terminated?: { exitCode?: number; reason?: string } } }>;
+      };
+    }>;
+  };
+  const item = payload.items?.[0];
+  if (!item) return null;
+  const terminated = item.status?.containerStatuses?.[0]?.state?.terminated;
+  return {
+    name: item.metadata?.name ?? null,
+    phase: item.status?.phase ?? null,
+    reason: terminated?.reason ?? item.status?.reason ?? null,
+    exitCode: typeof terminated?.exitCode === 'number' ? terminated.exitCode : null,
+  };
+}
+
+async function readArtifactText(artifactPath?: string): Promise<string | null> {
+  if (!artifactPath) return null;
+  try {
+    return await (await import('node:fs/promises')).readFile(artifactPath, 'utf-8');
+  } catch {
+    return null;
+  }
+}
+
+export async function requestTaskWorkspaceAccess(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+}): Promise<{
+  task_id: string;
+  workspace_binding_mode: string;
+  workspace_dir_name: string;
+  file_library_id: string;
+  file_library_name: string;
+  filesystem_name: string;
+  metadata_url: string;
+  storage_bucket_url?: string;
+  recommended_mount_path?: string;
+  created_at?: string;
+}> {
+  const authToken = await readStoredAuthToken(args.page);
+  const response = await args.page.request.post(
+    `${API_BASE}/api/v1/workspaces/${args.workspaceId}/projects/${args.projectId}/tasks/${args.taskId}/workspace-access`,
+    { headers: { Authorization: `Bearer ${authToken}` } },
+  );
+  if (!response.ok()) {
+    const body = await response.text().catch(() => '');
+    throw new Error(`task_workspace_access_failed:${response.status()}:${body}`);
+  }
+  return (await response.json()) as {
+    task_id: string;
+    workspace_binding_mode: string;
+    workspace_dir_name: string;
+    file_library_id: string;
+    file_library_name: string;
+    filesystem_name: string;
+    metadata_url: string;
+    storage_bucket_url?: string;
+    recommended_mount_path?: string;
+    created_at?: string;
+  };
+}
+
+export async function collectInternalTaskFailureContext(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  namespace?: string;
+  workloadId?: string;
+  authToken?: string;
+}): Promise<string> {
+  const authToken = args.authToken ?? (await readStoredAuthToken(args.page));
+  const [messages, traces, task, pod] = await Promise.all([
+    fetchTaskMessagesSnapshot({ ...args, authToken }),
+    fetchTaskTracesSnapshot({ ...args, authToken }),
+    fetchTaskRealtimeSnapshot({ ...args, authToken }),
+    args.namespace && args.workloadId
+      ? fetchWorkloadPodSnapshot({ namespace: args.namespace, workloadId: args.workloadId })
+      : Promise.resolve(null),
+  ]);
+  const messageSummary = summarizeNotebookMessages(messages);
+  const traceSummary = summarizeNotebookTraces(traces);
+  const sections = [
+    `task=${args.taskId}`,
+    `run_state=${task?.run_state ?? '<unknown>'}`,
+    `messages:\n${messageSummary.length > 0 ? messageSummary.join('\n') : '<none>'}`,
+    `traces:\n${traceSummary.length > 0 ? traceSummary.join('\n') : '<none>'}`,
+    `pod=${summarizeNotebookPod(pod)}`,
+  ];
+  return sections.join('\n\n');
+}
+
+export async function waitForNotebookExecutionOutcome(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  taskId: string;
+  token: string;
+  artifactPath?: string;
+  minAgentMessages?: number;
+  namespace?: string;
+  workloadId?: string;
+  timeoutMs?: number;
+}): Promise<void> {
+  const authToken = await readStoredAuthToken(args.page);
+  const timeoutMs = args.timeoutMs ?? 300_000;
+  const startedAt = Date.now();
+  let attempt = 0;
+  let podSeenBefore = false;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const [messages, traces, task, artifactText, pod] = await Promise.all([
+      fetchTaskMessagesSnapshot({ ...args, authToken }),
+      fetchTaskTracesSnapshot({ ...args, authToken }),
+      fetchTaskRealtimeSnapshot({ ...args, authToken }),
+      readArtifactText(args.artifactPath),
+      args.namespace && args.workloadId
+        ? fetchWorkloadPodSnapshot({ namespace: args.namespace, workloadId: args.workloadId })
+        : Promise.resolve(null),
+    ]);
+
+    if (pod?.name) podSeenBefore = true;
+
+    const outcome = evaluateNotebookExecutionSnapshot({
+      token: args.token,
+      minAgentMessages: args.minAgentMessages,
+      messages,
+      traces,
+      task,
+      artifactContent: artifactText,
+      pod,
+      podSeenBefore,
+    });
+
+    if (outcome.success) return;
+
+    if (outcome.failure) {
+      const context = await collectInternalTaskFailureContext({
+        page: args.page,
+        workspaceId: args.workspaceId,
+        projectId: args.projectId,
+        taskId: args.taskId,
+        namespace: args.namespace,
+        workloadId: args.workloadId,
+        authToken,
+      });
+      throw new Error(`notebook_execution_failed:${outcome.reason ?? 'unknown'}\n\n${context}`);
+    }
+
+    const intervals = [1_000, 2_000, 5_000];
+    const delay = intervals[Math.min(attempt, intervals.length - 1)] ?? 5_000;
+    attempt += 1;
+    await args.page.waitForTimeout(delay);
+  }
+
+  const timeoutContext = await collectInternalTaskFailureContext({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    taskId: args.taskId,
+    namespace: args.namespace,
+    workloadId: args.workloadId,
+    authToken,
+  });
+  throw new Error(`notebook_execution_timeout:${args.taskId}\n\n${timeoutContext}`);
+}
+
+async function readJuicefsCsiStatus(namespace: string): Promise<{
+  desired: number;
+  available: number;
+  controllerReady: number;
+  restartCountSum: number;
+  nodePodsReady: boolean;
+}> {
+  const [daemonSet, controller, pods] = await Promise.all([
+    spawnAndCapture('kubectl', ['get', 'daemonset', 'juicefs-csi-node', '-n', namespace, '-o', 'json'], {
+      env: withoutProxyEnv(process.env),
+    }),
+    spawnAndCapture('kubectl', ['get', 'statefulset', 'juicefs-csi-controller', '-n', namespace, '-o', 'json'], {
+      env: withoutProxyEnv(process.env),
+    }),
+    spawnAndCapture('kubectl', ['get', 'pods', '-n', namespace, '-l', 'app=juicefs-csi-node', '-o', 'json'], {
+      env: withoutProxyEnv(process.env),
+    }),
+  ]);
+
+  if (daemonSet.code !== 0 || controller.code !== 0 || pods.code !== 0) {
+    throw new Error('juicefs_csi_status_unavailable');
+  }
+
+  const daemonSetJson = JSON.parse(daemonSet.stdout || '{}') as {
+    status?: { desiredNumberScheduled?: number; numberAvailable?: number };
+  };
+  const controllerJson = JSON.parse(controller.stdout || '{}') as {
+    status?: { readyReplicas?: number };
+  };
+  const podsJson = JSON.parse(pods.stdout || '{}') as {
+    items?: Array<{
+      status?: {
+        containerStatuses?: Array<{ ready?: boolean; restartCount?: number }>;
+      };
+    }>;
+  };
+
+  const nodePods = podsJson.items ?? [];
+  const restartCountSum = nodePods.reduce((sum, pod) => {
+    return sum + (pod.status?.containerStatuses ?? []).reduce((podSum, status) => podSum + (status.restartCount ?? 0), 0);
+  }, 0);
+  const nodePodsReady = nodePods.length > 0 && nodePods.every((pod) => {
+    const statuses = pod.status?.containerStatuses ?? [];
+    return statuses.length > 0 && statuses.every((status) => status.ready === true);
+  });
+
+  return {
+    desired: daemonSetJson.status?.desiredNumberScheduled ?? 0,
+    available: daemonSetJson.status?.numberAvailable ?? 0,
+    controllerReady: controllerJson.status?.readyReplicas ?? 0,
+    restartCountSum,
+    nodePodsReady,
+  };
+}
+
+export async function waitForJuicefsCsiReady(args?: {
+  namespace?: string;
+  timeoutMs?: number;
+  stableWindowMs?: number;
+}): Promise<void> {
+  const namespace = args?.namespace?.trim() || 'juicefs-system';
+  const timeoutMs = args?.timeoutMs ?? 180_000;
+  const stableWindowMs = args?.stableWindowMs ?? 15_000;
+  const startedAt = Date.now();
+  let lastRestartCount: number | null = null;
+  let stableSince = 0;
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const status = await readJuicefsCsiStatus(namespace);
+      const ready =
+        status.desired > 0
+        && status.available >= status.desired
+        && status.controllerReady >= 1
+        && status.nodePodsReady;
+
+      if (ready) {
+        if (lastRestartCount === status.restartCountSum) {
+          if (stableSince === 0) stableSince = Date.now();
+          if (Date.now() - stableSince >= stableWindowMs) {
+            return;
+          }
+        } else {
+          lastRestartCount = status.restartCountSum;
+          stableSince = Date.now();
+        }
+      } else {
+        lastRestartCount = status.restartCountSum;
+        stableSince = 0;
+      }
+    } catch {
+      stableSince = 0;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
+  }
+
+  const status = await readJuicefsCsiStatus(namespace).catch(() => null);
+  throw new Error(
+    `juicefs_csi_not_ready:${namespace}:${status ? `desired=${status.desired}:available=${status.available}:controller_ready=${status.controllerReady}:restarts=${status.restartCountSum}:node_pods_ready=${status.nodePodsReady}` : 'status_unavailable'}`,
+  );
+}
+
 export async function runInternalSandboxControl(command: string): Promise<void> {
   const stateFile = process.env.INTERNAL_SANDBOX_REAL_STATE_FILE?.trim();
   if (!stateFile) {
@@ -877,7 +1246,7 @@ export async function startCodexRunnerProcess(args: {
           MBOS_AGENT_RUNNER_DEBUG: '1',
           MBOS_AGENT_WORKSPACE_ROOT: workspaceRoot,
           MBOS_AGENT_BUILTIN_SKILLS_DIR: builtinSkillsDir,
-          MBOS_AGENT_BUILTIN_SKILLS: '.system,feishu-docs,jira-ops',
+          MBOS_AGENT_BUILTIN_SKILLS: 'feishu-docs,jira-ops',
           MBOS_AGENT_BUILTIN_SKILLS_REQUIRED: '1',
           ...(args.codeBin ? { CODEX_BIN: args.codeBin } : {}),
         },
@@ -960,8 +1329,8 @@ export async function startCodexRunnerDockerProcess(args: {
   const imageTag = process.env.INTEGRATION_CODEX_RUNNER_DOCKER_IMAGE?.trim() || 'agentsmith-codex-runner:local';
   const embeddedRunner = process.env.INTEGRATION_CODEX_RUNNER_EMBEDDED?.trim() === '1';
   const builtinSkillsDir = embeddedRunner
-    ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/opt/agent-runner/builtin-skills'
-    : '/app/packages/agent-codex-runner/builtin-skills';
+    ? process.env.INTEGRATION_CODEX_RUNNER_BUILTIN_SKILLS_DIR?.trim() || '/etc/codex/skills'
+    : '/etc/codex/skills';
   const buildContext = path.resolve(__dirname, '..');
   const dockerfile = path.join(buildContext, 'infra/runner/Dockerfile.agent-codex-runner');
   const inspectResult = await spawnAndCapture('docker', ['image', 'inspect', imageTag]);
@@ -1029,7 +1398,7 @@ export async function startCodexRunnerDockerProcess(args: {
     '--env',
     `MBOS_AGENT_BUILTIN_SKILLS_DIR=${builtinSkillsDir}`,
     '--env',
-    'MBOS_AGENT_BUILTIN_SKILLS=.system,feishu-docs,jira-ops',
+    'MBOS_AGENT_BUILTIN_SKILLS=feishu-docs,jira-ops',
     '--env',
     'MBOS_AGENT_BUILTIN_SKILLS_REQUIRED=1',
     '--volume',

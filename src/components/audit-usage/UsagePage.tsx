@@ -6,7 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { UsageView } from './UsageView';
 import { useLimitsSummary, useUsageTimeseries } from '@/lib/hooks/use-audit-usage';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useUsagePageCapabilities } from '@/lib/hooks/use-permissions';
 import { toast } from '@/components/ui/toast';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
@@ -33,7 +33,7 @@ export function UsagePage({
   const t = useTranslations('usage');
   const commonT = useTranslations('common');
   const queryClient = useQueryClient();
-  const canReadUsage = useHasPermission('project:endpoint:use');
+  const { canRead: canReadUsage } = useUsagePageCapabilities();
   const effectiveEndUserId = defaultEndUserId ?? currentUserId;
   const [selectedEndpointId, setSelectedEndpointId] = React.useState<string>('all');
 

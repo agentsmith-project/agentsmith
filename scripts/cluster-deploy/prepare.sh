@@ -3,6 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
+source "${ROOT_DIR}/scripts/lib/release-stage-common.sh"
 
 ensure_dirs
 ensure_operator_site_env
@@ -14,15 +15,15 @@ require_supported_cluster_deploy_mode
 for cmd in docker curl tar sha256sum python3; do
   require_cmd "${cmd}"
 done
-[[ -f "${RELEASE_ROOT}/deployment.manifest.json" ]] || die "missing deployment.manifest.json in ${RELEASE_ROOT}"
-[[ -f "${RELEASE_ROOT}/docs/contracts/cluster-deployment-spec-v1.md" ]] || die "missing cluster deployment spec in ${RELEASE_ROOT}"
-[[ -f "${RELEASE_ROOT}/docs/user-guides/cluster-admin-runbook.md" ]] || die "missing cluster admin runbook in ${RELEASE_ROOT}"
-[[ -x "${TOOLS_DIR}/kubectl" ]] || die "missing bundled kubectl at ${TOOLS_DIR}/kubectl"
-[[ -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]] || die "missing compose asset in ${RELEASE_ROOT}"
-[[ -d "${RELEASE_ROOT}/images" ]] || die "missing bundled image archives directory at ${RELEASE_ROOT}/images"
+require_release_path "${RELEASE_ROOT}/deployment.manifest.json" "deployment.manifest.json"
+require_release_path "${RELEASE_ROOT}/docs/contracts/cluster-deployment-spec-v1.md" "cluster deployment spec"
+require_release_path "${RELEASE_ROOT}/docs/user-guides/cluster-admin-runbook.md" "cluster admin runbook"
+require_release_path "${TOOLS_DIR}/kubectl" "bundled kubectl" "exe"
+require_release_path "${RELEASE_ROOT}/compose/docker-compose.yml" "compose asset"
+require_release_path "${RELEASE_ROOT}/images" "bundled image archives directory" "dir"
 if [[ "$(cluster_deploy_mode)" == "full-auto" ]]; then
-  [[ -f "${RELEASE_ROOT}/addons/ingress-nginx/upstream-deploy.yaml" ]] || die "missing bundled ingress-nginx manifest for full-auto mode"
-  [[ -f "${RELEASE_ROOT}/addons/juicefs-csi/upstream-manifest.yaml" ]] || die "missing bundled juicefs-csi manifest for full-auto mode"
+  require_release_path "${RELEASE_ROOT}/addons/ingress-nginx/upstream-deploy.yaml" "bundled ingress-nginx manifest for full-auto mode"
+  require_release_path "${RELEASE_ROOT}/addons/juicefs-csi/upstream-manifest.yaml" "bundled juicefs-csi manifest for full-auto mode"
   kubectl kustomize --help >/dev/null 2>&1 || die "bundled kubectl must support kustomize for full-auto mode"
 fi
 

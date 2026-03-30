@@ -13,7 +13,7 @@ import { useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { Bell, ShieldAlert, Siren } from 'lucide-react';
 import { PageState } from '@/components/layout/PageState';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
+import { useAlertPageCapabilities } from '@/lib/hooks/use-permissions';
 import { AlertRuleFormDialog } from './AlertRuleFormDialog';
 import type { AlertRuleFormData } from './AlertRuleFormDialog';
 import type { AlertRule } from '@/lib/types/alerts';
@@ -70,8 +70,7 @@ export function AlertCenterPage({
   const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
 
   // Authorization checks
-  const canViewAlerts = useHasPermission('project:audit:read');
-  const canManageAlerts = useHasPermission('project:governance:update');
+  const { canRead: canViewAlerts, canManage: canManageAlerts } = useAlertPageCapabilities();
 
   // Permission denied
   if (!canViewAlerts) {

@@ -53,7 +53,7 @@ Tracked examples live under:
 
 Tracked preset defaults live in:
 
-- [defaults.env](/home/percy/works/mbos-v1/agentsmith/infra/deploy/shared/presets/defaults.env)
+- [presets.env](/home/percy/works/mbos-v1/agentsmith/infra/runtime/presets.env)
 
 These defaults include:
 
@@ -62,6 +62,63 @@ These defaults include:
 - default workspace / project / endpoint / agent preset names
 
 Override them in `config/site.env` only when an environment truly needs different values.
+
+## Registry Configuration
+
+`cluster-deploy` expects a real operator-owned `registry.env`.
+
+For Harbor, fill:
+
+- `REGISTRY_HOST`
+  - Harbor host or host:port only
+  - do not include `https://`
+  - example: `harbor.example.com`
+- `REGISTRY_PROJECT`
+  - Harbor project / repository prefix used to store AgentSmith images
+  - example: `agentsmith-prod`
+- `REGISTRY_USERNAME`
+  - Harbor username used by the deploy host for `docker login` and `docker push`
+- `REGISTRY_PASSWORD`
+  - Harbor password or robot-account token paired with `REGISTRY_USERNAME`
+- `K8S_REGISTRY_HOST`
+  - optional override for Kubernetes pulls
+  - leave empty when cluster nodes can pull from the same host as `REGISTRY_HOST`
+  - set it only when cluster nodes must use a different address than the deploy host
+
+How the values are used:
+
+- `publish-images.sh`
+  - runs `docker login ${REGISTRY_HOST}` when username/password are provided
+  - pushes the bundled first-party and third-party images into `${REGISTRY_HOST}/${REGISTRY_PROJECT}`
+- `apply-cluster-prereqs.sh` and `deploy-sandbox.sh`
+  - create `agentsmith-registry` image pull secrets when username/password are provided
+  - attach those secrets to ingress, JuiceFS CSI, sandbox-manager, and related workloads
+
+Harbor examples:
+
+```env
+# Same Harbor address for deploy host and cluster nodes
+REGISTRY_HOST=harbor.example.com
+REGISTRY_PROJECT=agentsmith-prod
+REGISTRY_USERNAME=robot$agentsmith
+REGISTRY_PASSWORD=<harbor-robot-token>
+K8S_REGISTRY_HOST=
+```
+
+```env
+# Deploy host pushes to public Harbor hostname, cluster pulls through internal DNS
+REGISTRY_HOST=harbor.example.com
+REGISTRY_PROJECT=agentsmith-prod
+REGISTRY_USERNAME=robot$agentsmith
+REGISTRY_PASSWORD=<harbor-robot-token>
+K8S_REGISTRY_HOST=harbor.internal.svc.cluster.local
+```
+
+Rules:
+
+- do not include URL schemes like `https://` in `REGISTRY_HOST` or `K8S_REGISTRY_HOST`
+- if either `REGISTRY_USERNAME` or `REGISTRY_PASSWORD` is set, both must be set
+- if Harbor uses a private CA, the deploy host Docker daemon and cluster nodes must already trust that CA before `cluster-deploy` runs
 
 ## Target Host Layout
 

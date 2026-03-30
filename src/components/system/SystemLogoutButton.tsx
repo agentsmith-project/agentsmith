@@ -1,14 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter, useParams } from 'next/navigation';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 
 export function SystemLogoutButton() {
   const router = useRouter();
-  const params = useParams();
-  const locale = typeof params?.locale === 'string' ? params.locale : 'en-US';
   const t = useTranslations('system');
   const [isSubmitting, setIsSubmitting] = useState(false);
 

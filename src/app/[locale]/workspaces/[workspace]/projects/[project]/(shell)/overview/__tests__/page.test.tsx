@@ -1,43 +1,57 @@
 import { render, screen } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { useCanReadAudit, useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import OverviewPage from '../page';
 
-const mockUseParams = vi.fn(() => ({
-  workspace: 'ws_default',
-  project: 'proj_001',
-  locale: 'en-US',
-}));
-
 vi.mock('next/navigation', () => ({
-  useParams: () => mockUseParams(),
+  useParams: () => ({
+    workspace: 'ws_default',
+    project: 'proj_001',
+    locale: 'en-US',
+  }),
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: vi.fn(() => true),
-  useCanReadProjectSettings: vi.fn(() => true),
-  useCanReadAudit: vi.fn(() => true),
+  useProjectOverviewCapabilities: vi.fn(() => ({
+    canUseProject: true,
+    canReadAudit: true,
+    canManageGovernance: true,
+    canManageMembership: true,
+    canReadProjectSettings: true,
+    canManageAgents: true,
+  })),
+}));
+
+vi.mock('@/lib/hooks/use-resolved-project-route', () => ({
+  useResolvedProjectRoute: vi.fn(() => ({
+    workspace: 'ws_default',
+    project: 'proj_001',
+    locale: 'en-US',
+    isReady: true,
+    isValid: true,
+  })),
 }));
 
 describe('OverviewPage', () => {
-const mockUseHasPermission = vi.mocked(useHasPermission);
-const mockUseCanReadProjectSettings = vi.mocked(useCanReadProjectSettings);
-const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
+const mockUseProjectOverviewCapabilities = vi.mocked(useProjectOverviewCapabilities);
+const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
 
   beforeEach(() => {
-    mockUseHasPermission.mockImplementation((permission: string) => {
-      if (permission === 'project:endpoint:use') return true;
-      if (permission === 'project:agent:manage') return true;
-      if (permission === 'project:governance:update') return true;
-      if (permission === 'project:membership:update') return true;
-      return false;
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canReadAudit: true,
+      canManageGovernance: true,
+      canManageMembership: true,
+      canReadProjectSettings: true,
+      canManageAgents: true,
     });
-    mockUseCanReadProjectSettings.mockReturnValue(true);
-    mockUseCanReadAudit.mockReturnValue(true);
-    mockUseParams.mockReturnValue({
+    mockUseResolvedProjectRoute.mockReturnValue({
       workspace: 'ws_default',
       project: 'proj_001',
       locale: 'en-US',
+      isReady: true,
+      isValid: true,
     });
   });
 
@@ -56,9 +70,14 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
   });
 
   it('hides governance links that require project management permissions', () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(false);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canReadAudit: false,
+      canManageGovernance: false,
+      canManageMembership: false,
+      canReadProjectSettings: false,
+      canManageAgents: false,
+    });
 
     render(<OverviewPage />);
 
@@ -67,13 +86,14 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
   });
 
   it('shows governance resource links for governance managers without ownership actions', () => {
-    mockUseHasPermission.mockImplementation((permission: string) => {
-      if (permission === 'project:endpoint:use') return true;
-      if (permission === 'project:governance:update') return true;
-      return false;
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canReadAudit: false,
+      canManageGovernance: true,
+      canManageMembership: false,
+      canReadProjectSettings: false,
+      canManageAgents: false,
     });
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<OverviewPage />);
 
@@ -87,13 +107,14 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
   });
 
   it('shows members link for membership managers without owner-only settings', () => {
-    mockUseHasPermission.mockImplementation((permission: string) => {
-      if (permission === 'project:endpoint:use') return true;
-      if (permission === 'project:membership:update') return true;
-      return false;
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canReadAudit: false,
+      canManageGovernance: false,
+      canManageMembership: true,
+      canReadProjectSettings: false,
+      canManageAgents: false,
     });
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(false);
 
     render(<OverviewPage />);
 
@@ -107,9 +128,14 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
   });
 
   it('shows audit link only for users with audit read permission', () => {
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(true);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canReadAudit: true,
+      canManageGovernance: false,
+      canManageMembership: false,
+      canReadProjectSettings: false,
+      canManageAgents: false,
+    });
 
     render(<OverviewPage />);
 
@@ -119,10 +145,12 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
   });
 
   it('shows invalid parameter error for unsafe route params', () => {
-    mockUseParams.mockReturnValue({
-      workspace: '<script>',
+    mockUseResolvedProjectRoute.mockReturnValue({
+      workspace: null,
       project: 'proj_001',
       locale: 'en-US',
+      isReady: true,
+      isValid: false,
     });
 
     render(<OverviewPage />);
@@ -132,7 +160,14 @@ const mockUseCanReadAudit = vi.mocked(useCanReadAudit);
   });
 
   it('shows permission denied when user lacks project read permission', () => {
-    mockUseHasPermission.mockReturnValue(false);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: false,
+      canReadAudit: false,
+      canManageGovernance: false,
+      canManageMembership: false,
+      canReadProjectSettings: false,
+      canManageAgents: false,
+    });
 
     render(<OverviewPage />);
 

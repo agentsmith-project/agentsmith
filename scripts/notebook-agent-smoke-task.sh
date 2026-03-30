@@ -7,7 +7,42 @@ ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 ensure_backend_real_state
 
-API_BASE="${API_BASE:-http://localhost:20000}"
+read_summary_value() {
+  local key="$1"
+  local summary_file
+  summary_file="$(backend_real_summary_file)"
+  [[ -f "${summary_file}" ]] || return 1
+  awk -F '=' -v key="${key}" '$1 == key { print substr($0, index($0, "=") + 1); found=1; exit } END { if (!found) exit 1 }' "${summary_file}"
+}
+
+derive_api_base_from_ws_url() {
+  local ws_url
+  ws_url="$(state_get agent.ws_url)"
+  [[ -n "${ws_url}" ]] || return 1
+  node -e '
+const raw = process.argv[1];
+try {
+  const url = new URL(raw);
+  url.protocol = url.protocol === "wss:" ? "https:" : "http:";
+  url.pathname = "";
+  url.search = "";
+  url.hash = "";
+  process.stdout.write(url.toString().replace(/\/+$/, ""));
+} catch {
+  process.exit(1);
+}
+' "${ws_url}"
+}
+
+read_local_manual_port() {
+  local name="$1"
+  local port_file
+  port_file="$(backend_real_state_root)/local-manual/${name}.port"
+  [[ -f "${port_file}" ]] || return 1
+  tr -d '[:space:]' < "${port_file}"
+}
+
+API_BASE="${API_BASE:-$(read_summary_value API_BASE || derive_api_base_from_ws_url || echo http://localhost:20000)}"
 WORKSPACE_ID="${WORKSPACE_ID:-$(state_get workspace.id ws_default)}"
 TOKEN_FILE="${TOKEN_FILE:-$(backend_real_token_file)}"
 KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
@@ -37,7 +72,7 @@ if [[ ! -f "${TOKEN_FILE}" ]]; then
   exit 1
 fi
 TOKEN="$(cat "${TOKEN_FILE}")"
-DEFAULT_WEB_BASE_URL="${BASE_URL:-http://localhost:3001}"
+DEFAULT_WEB_BASE_URL="${BASE_URL:-http://localhost:$(read_local_manual_port web || echo 3001)}"
 
 userinfo_status="$(
   curl -sS -o "$(backend_real_tmp_file userinfo-check.json)" -w '%{http_code}' \

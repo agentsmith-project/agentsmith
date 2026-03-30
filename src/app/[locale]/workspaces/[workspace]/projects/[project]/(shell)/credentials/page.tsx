@@ -7,7 +7,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
@@ -23,8 +23,8 @@ import { Button } from '@/components/ui/button';
 import { CreateCredentialDialog } from '@/components/credentials/CreateCredentialDialog';
 import { RotateCredentialDialog } from '@/components/credentials/RotateCredentialDialog';
 import { DeleteCredentialDialog } from '@/components/credentials/DeleteCredentialDialog';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useCanAccessCredentials } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { CredentialsContent } from './_components/CredentialsContent';
 import { CredentialsHeaderActions } from './_components/CredentialsHeaderActions';
 import { createCredentialColumns } from './credentials-table';
@@ -36,35 +36,12 @@ interface CredentialsPageProps {
 export default function CredentialsPage({ params }: CredentialsPageProps) {
   const t = useTranslations('credentials');
   const tErrors = useTranslations('errors');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [rotateDialogOpen, setRotateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [selectedCredential, setSelectedCredential] = useState<Credential | null>(null);
-  const canManageCredentials = useHasPermission('project:governance:update');
-  const canReadCredentials = canManageCredentials;
-
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
+  const { canRead: canReadCredentials, canManage: canManageCredentials } = useCanAccessCredentials();
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
@@ -125,7 +102,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
   const rotatedCount = credentialList.filter((credential) => credential.last_rotated_at).length;
   const credentialTypeCount = new Set(credentialList.map((credential) => credential.type)).size;
 
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -133,7 +110,7 @@ export default function CredentialsPage({ params }: CredentialsPageProps) {
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

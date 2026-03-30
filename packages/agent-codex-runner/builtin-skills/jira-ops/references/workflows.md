@@ -3,7 +3,7 @@
 ## Search By Project + Summary
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   search \
   --jql 'project = "DALO DEV" AND summary ~ "DCU adaptor layer on RTE api"'
 ```
@@ -11,7 +11,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 Use POST search for long JQL:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   search \
   --use-post \
   --jql 'project = "DALO DEV" AND status in ("开放","进行中") AND summary ~ "DCU adaptor layer on RTE api"'
@@ -20,7 +20,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 ## Read Issue
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   get-issue ASWINF-106 \
   --fields summary,description,status,assignee,comment
 ```
@@ -28,7 +28,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 ## Add Comment
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   add-comment ASWINF-106 \
   --body 'This is a test'
 ```
@@ -38,7 +38,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 Before changing fields on an unfamiliar issue type or project:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   editmeta ASWINF-106
 ```
 
@@ -47,7 +47,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 List valid transitions first:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   list-transitions ASWINF-106 \
   --expand-fields
 ```
@@ -55,7 +55,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 Then transition with an id:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   transition ASWINF-106 \
   --transition-id 31 \
   --comment 'Moving this issue forward'
@@ -64,7 +64,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 If the transition screen requires fields such as `resolution`, provide them explicitly:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   transition ASWINF-106 \
   --transition-id 31 \
   --fields-json '{"resolution":{"name":"Done"}}'
@@ -73,7 +73,7 @@ python ./.codex/skills/jira-ops/scripts/jira_ops.py \
 ## Edit Basic Fields
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   edit-fields ASWINF-106 \
   --fields-json '{"summary":"New summary"}'
 ```

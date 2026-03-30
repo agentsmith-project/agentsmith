@@ -7,11 +7,10 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Button } from '@/components/ui/button';
 import { PlugZap, Settings2 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { CredentialsAPI, EndpointAPI, ModelConfigAPI, getApiClient } from '@/lib/api';
-import type { Endpoint, EndpointCapabilityType } from '@/lib/api/types';
+import type { Endpoint } from '@/lib/api/types';
 import {
   buildModelCatalogProviderOptions,
   CUSTOM_MODEL_CATALOG_PROVIDER_OPTION,

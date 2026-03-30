@@ -1,27 +1,21 @@
-'use client';
+"use client";
 
-import * as React from 'react';
-import { Copy } from 'lucide-react';
-import { useTranslations } from 'next-intl';
-import type { NotebookTraceFailureKind } from '@/lib/build-failure-explainability';
-import type { TaskMessage, TaskTraceEvent } from '@/lib/types/task';
-import { cn } from '@/lib/utils';
-import { toast } from '@/components/ui/toast';
-import { Button } from '@/components/ui/button';
-import { Markdown } from '@/components/chat/Markdown';
-import { TracePanel } from '@/components/notebook/message-item/TracePanel';
-import type { TraceFilterMode, TraceSummary, TraceViewMode } from '@/components/notebook/message-item/types';
+import * as React from "react";
+import { ChevronDown, ChevronUp, Copy } from "lucide-react";
+import { useTranslations } from "next-intl";
+import type { NotebookTraceFailureKind } from "@/lib/build-failure-explainability";
+import type { TaskMessage, TaskTraceEvent } from "@/lib/types/task";
+import { cn } from "@/lib/utils";
+import { toast } from "@/components/ui/toast";
+import { Button } from "@/components/ui/button";
+import { Markdown } from "@/components/chat/Markdown";
 import {
-  aggregateTraceSteps,
+  buildRenderableExecution,
   decodeCodexEventText,
   formatCancelledReasonKey,
-  formatDuration,
   formatTraceStatusKey,
-  getTransportTraceMeta,
-  isExecutionTraceEvent,
-  matchesTraceFilter,
-  summarizeTraceEvents,
-} from '@/components/notebook/message-item/utils';
+  type RenderableExecutionStep,
+} from "@/components/notebook/message-item/utils";
 
 export interface MessageItemProps {
   message: TaskMessage;
@@ -34,8 +28,95 @@ export interface MessageItemProps {
   traceLoadMoreLoading?: boolean;
   traceError?: { kind: NotebookTraceFailureKind; message: string };
   disabled?: boolean;
+  forceRunning?: boolean;
   onTraceExpand?: (messageId: string) => void;
   onTraceLoadMore?: (messageId: string) => void;
+}
+
+const DEFAULT_VISIBLE_STEPS = 2;
+
+function RunStatusIcon({ running }: { running: boolean }) {
+  return (
+    <span className="relative inline-flex h-2.5 w-2.5 items-center justify-center">
+      {running ? (
+        <span className="absolute inline-flex h-2.5 w-2.5 rounded-full bg-current/25 animate-ping" />
+      ) : null}
+      <span className={cn("inline-flex h-1.5 w-1.5 rounded-full bg-current", !running && "opacity-80")} />
+    </span>
+  );
+}
+
+function StepRow(props: {
+  step: RenderableExecutionStep;
+  tNotebookConversation: (
+    key: string,
+    values?: Record<string, string | number>,
+  ) => string;
+  highlighted?: boolean;
+  latest?: boolean;
+}) {
+  const {
+    step,
+    tNotebookConversation,
+    highlighted = false,
+    latest = false,
+  } = props;
+  const statusDotClass =
+    step.status === "success"
+      ? "text-green-300"
+      : step.status === "error"
+        ? "text-red-300"
+        : step.status === "cancelled"
+          ? "text-amber-300"
+          : "text-blue-300";
+  const detailText = step.detail.startsWith("process_")
+    ? tNotebookConversation(step.detail)
+    : step.detail;
+
+  return (
+    <div
+      className={cn(
+        "relative border-l border-white/8 pl-4 pr-2 py-1.5",
+        latest && "border-white/18",
+        (highlighted || latest) && "rounded-r-md bg-white/[0.035]",
+      )}
+      data-testid="notebook__message-step-row"
+    >
+      <div className="flex items-start gap-2 text-[12px] text-secondary">
+        <span
+          className={cn(
+            "mt-[2px] shrink-0 text-[13px] leading-none",
+            statusDotClass,
+          )}
+          aria-hidden
+        >
+          •
+        </span>
+        <div className="min-w-0">
+          <div
+            className={cn(
+              "font-medium",
+              latest ? "text-primary" : "text-secondary",
+            )}
+          >
+            {tNotebookConversation(step.title)}
+          </div>
+          <div
+            className={cn(
+              "mt-1 flex gap-2 text-[12px] leading-5",
+              latest ? "text-secondary" : "text-tertiary",
+            )}
+            data-testid="notebook__message-step-detail"
+          >
+            <span className="shrink-0 text-tertiary/70">└</span>
+            <span className="min-w-0 whitespace-pre-wrap break-words overflow-hidden [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3]">
+              {detailText}
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function MessageItem({
@@ -49,198 +130,314 @@ export function MessageItem({
   traceLoadMoreLoading = false,
   traceError,
   disabled = false,
+  forceRunning = false,
   onTraceExpand,
   onTraceLoadMore,
 }: MessageItemProps) {
-  const t = useTranslations('common.toast');
-  const tCommon = useTranslations('common');
-  const tNotebookConversation = useTranslations('notebook.conversation');
-  const isUser = message.role === 'user';
-  const [traceExpanded, setTraceExpanded] = React.useState(false);
-  const [expandedStepKeys, setExpandedStepKeys] = React.useState<Record<string, boolean>>({});
-  const [focusedStepKey, setFocusedStepKey] = React.useState<string | null>(null);
-  const [traceViewMode, setTraceViewMode] = React.useState<TraceViewMode>('timeline');
-  const [traceFilterMode, setTraceFilterMode] = React.useState<TraceFilterMode>('progress');
-  const appliedFocusTokenRef = React.useRef(0);
-  const stepElementRefs = React.useRef<Record<string, HTMLDivElement | null>>({});
+  const t = useTranslations("common.toast");
+  const tCommon = useTranslations("common");
+  const tNotebookConversation = useTranslations("notebook.conversation");
+  const isUser = message.role === "user";
+  const [showAllSteps, setShowAllSteps] = React.useState(false);
+  const requestedInitialTraceRef = React.useRef(false);
 
   const rawDisplayContent = streamingContent ?? message.content;
-  const displayContent = isUser ? rawDisplayContent : decodeCodexEventText(rawDisplayContent);
-  const traceSummary = !isUser ? summarizeTraceEvents(traceEvents) : { status: 'idle' as const, stepCount: 0 };
-  const hasTrace = !isUser && traceEvents.length > 0;
-  const canShowTraceToggle = !isUser;
-  const visibleRunStatus: TraceSummary['status'] = !isUser && streamingContent != null && traceSummary.status === 'idle' ? 'running' : traceSummary.status;
-  const sortedTraceEvents = React.useMemo(() => [...traceEvents].sort((a, b) => (a.seq !== b.seq ? a.seq - b.seq : a.at.localeCompare(b.at))), [traceEvents]);
-  const filteredTraceEvents = React.useMemo(() => sortedTraceEvents.filter((evt) => matchesTraceFilter(evt, traceFilterMode)), [sortedTraceEvents, traceFilterMode]);
-  const filteredExecutionTraceEvents = React.useMemo(() => filteredTraceEvents.filter(isExecutionTraceEvent), [filteredTraceEvents]);
-  const transportTraceEvents = React.useMemo(() => sortedTraceEvents.filter((evt) => getTransportTraceMeta(evt) != null), [sortedTraceEvents]);
-  const traceSteps = React.useMemo(() => aggregateTraceSteps(filteredExecutionTraceEvents), [filteredExecutionTraceEvents]);
-  const traceErrorCount = React.useMemo(() => filteredExecutionTraceEvents.filter((evt) => evt.category === 'error').length, [filteredExecutionTraceEvents]);
-  const traceWarningCount = React.useMemo(() => filteredExecutionTraceEvents.filter((evt) => evt.category === 'warning').length, [filteredExecutionTraceEvents]);
-  const visibleRunStatusClass = visibleRunStatus === 'success'
-    ? 'text-green-300 border-green-500/30 bg-green-500/10'
-    : visibleRunStatus === 'error'
-      ? 'text-red-300 border-red-500/30 bg-red-500/10'
-      : visibleRunStatus === 'cancelled'
-        ? 'text-amber-300 border-amber-500/30 bg-amber-500/10'
-        : 'text-blue-300 border-blue-500/30 bg-blue-500/10';
-  const visibleRunCancelledReasonKey = visibleRunStatus === 'cancelled' ? formatCancelledReasonKey(traceSummary) : null;
-  const traceToggleLabel = React.useMemo(() => {
-    if (traceDetailsLoading && !hasTrace) return tNotebookConversation('trace_details_loading');
-    if (!hasTrace) return tNotebookConversation('trace_no_details');
-    const parts = [
-      tNotebookConversation('trace_step_count', { count: traceSummary.stepCount }),
-      traceSummary.durationMs != null ? tNotebookConversation('trace_stats_duration', { value: formatDuration(traceSummary.durationMs) }) : null,
-      traceSummary.currentStep ?? null,
-      traceExpanded ? tNotebookConversation('trace_hide') : tNotebookConversation('trace_view'),
-    ].filter((part): part is string => typeof part === 'string' && part.trim().length > 0);
-    return parts.join(' · ');
-  }, [hasTrace, tNotebookConversation, traceDetailsLoading, traceExpanded, traceSummary.currentStep, traceSummary.durationMs, traceSummary.stepCount]);
+  const displayContent = isUser
+    ? rawDisplayContent
+    : decodeCodexEventText(rawDisplayContent);
+  const renderableExecution = React.useMemo(
+    () =>
+      buildRenderableExecution({
+        traceEvents,
+        streamingContent,
+        fallbackAnswer: displayContent,
+      }),
+    [displayContent, streamingContent, traceEvents],
+  );
+  const visibleStatus =
+    !isUser &&
+    ((streamingContent != null || forceRunning) &&
+      renderableExecution.summary.status === "idle")
+      ? "running"
+      : renderableExecution.summary.status;
+  const visibleSteps = showAllSteps
+    ? renderableExecution.steps
+    : renderableExecution.steps.slice(-DEFAULT_VISIBLE_STEPS);
+  const hiddenStepCount = Math.max(
+    0,
+    renderableExecution.steps.length - visibleSteps.length,
+  );
+  const canToggleSteps =
+    renderableExecution.steps.length > DEFAULT_VISIBLE_STEPS;
+  const cancelledReasonKey = formatCancelledReasonKey({
+    status: visibleStatus,
+    cancelledOutcome: renderableExecution.summary.cancelledOutcome,
+  });
 
   React.useEffect(() => {
-    setExpandedStepKeys((prev) => {
-      const valid = new Set(traceSteps.map((step) => step.key));
-      let changed = false;
-      const next: Record<string, boolean> = {};
-      for (const [key, value] of Object.entries(prev)) {
-        if (!valid.has(key)) {
-          changed = true;
-          continue;
-        }
-        next[key] = value;
-      }
-      return changed ? next : prev;
-    });
-  }, [traceSteps]);
-
-  React.useEffect(() => {
-    if (!traceExpanded) return;
-    onTraceExpand?.(message.id);
-  }, [message.id, onTraceExpand, traceExpanded]);
+    if (isUser || requestedInitialTraceRef.current) return;
+    if (!onTraceExpand) return;
+    if (traceDetailsLoading) return;
+    if (traceEvents.length > 0) return;
+    if (traceError) return;
+    requestedInitialTraceRef.current = true;
+    onTraceExpand(message.id);
+  }, [
+    isUser,
+    message.id,
+    onTraceExpand,
+    traceDetailsLoading,
+    traceError,
+    traceEvents.length,
+  ]);
 
   React.useEffect(() => {
     if (!focusTraceName || focusTraceToken <= 0) return;
-    if (appliedFocusTokenRef.current === focusTraceToken) return;
-    appliedFocusTokenRef.current = focusTraceToken;
-    setTraceExpanded(true);
-    setTraceViewMode('timeline');
-    setTraceFilterMode('all');
+    setShowAllSteps(true);
   }, [focusTraceName, focusTraceToken]);
-
-  React.useEffect(() => {
-    if (!traceExpanded || !focusTraceName || focusTraceToken <= 0) return;
-    const target = traceSteps.find((step) => step.name === focusTraceName);
-    if (!target) return;
-    setExpandedStepKeys((prev) => ({ ...prev, [target.key]: true }));
-    setFocusedStepKey(target.key);
-    const timer = setTimeout(() => {
-      setFocusedStepKey((current) => (current === target.key ? null : current));
-    }, 2200);
-    const el = stepElementRefs.current[target.key];
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-    return () => clearTimeout(timer);
-  }, [focusTraceName, focusTraceToken, traceExpanded, traceSteps]);
 
   const handleCopy = async () => {
     try {
       await navigator.clipboard.writeText(displayContent);
-      toast.info(t('copied'));
+      toast.info(t("copied"));
     } catch {
-      toast.error(t('copy_failed'));
+      toast.error(t("copy_failed"));
     }
   };
 
-  const handleCopyTraceLogs = async () => {
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(filteredTraceEvents, null, 2));
-      toast.info(t('copied'));
-    } catch {
-      toast.error(t('copy_failed'));
-    }
-  };
+  const formatTime = (dateString: string) =>
+    new Date(dateString).toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
 
-  const formatTime = (dateString: string) => new Date(dateString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[min(680px,62%)] rounded-[16px] border border-subtle bg-hover px-4 py-3 text-foreground shadow-[0_8px_24px_rgba(0,0,0,0.08)]">
+          <div className="space-y-2">
+            <Markdown content={displayContent} />
+          </div>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <span className="text-[11px] text-tertiary">
+              {formatTime(message.created_at)}
+            </span>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleCopy}
+              disabled={disabled}
+              aria-label={tCommon("copy")}
+              title={tCommon("copy")}
+            >
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className={cn('flex', isUser ? 'justify-end' : 'justify-start')}>
-      <div className={cn('max-w-[80%] rounded-md px-4 py-3 border relative', isUser ? 'bg-hover text-foreground border-subtle' : 'bg-surface-high text-primary border-subtle')}>
-        <div className="space-y-2">
-          {streamingContent != null ? (
-            <div className="min-h-[48px]">
-              {displayContent.trim().length === 0 ? (
-                <div className="space-y-2">
-                  <div className="h-3 w-2/3 rounded-sm bg-surface-high/60 animate-pulse" />
-                  <div className="h-3 w-1/2 rounded-sm bg-surface-high/60 animate-pulse" />
-                  <div className="h-3 w-1/3 rounded-sm bg-surface-high/60 animate-pulse" />
-                  <div className="pt-1 text-xs text-tertiary" data-testid="notebook__agent-streaming-status">{tNotebookConversation('agent_working')}</div>
-                </div>
-              ) : (
-                <Markdown content={displayContent || '…'} />
-              )}
+    <div className="flex w-full justify-start pr-2">
+      <div
+        className="w-full max-w-[1120px] rounded-[22px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.038),rgba(255,255,255,0.016))] px-5 py-4 shadow-[0_18px_42px_rgba(0,0,0,0.14)] text-primary"
+        data-testid="notebook__agent-message-bubble"
+      >
+        <div data-testid="notebook__message-process-panel">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <div className="text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary/90">
+                {tNotebookConversation("process_title")}
+              </div>
+              <div
+                className="mt-1 text-xs text-secondary"
+                data-testid="notebook__message-process-summary"
+              >
+                {traceDetailsLoading && renderableExecution.steps.length === 0
+                  ? tNotebookConversation("process_loading")
+                  : renderableExecution.steps.length === 0
+                    ? tNotebookConversation("process_no_steps")
+                    : tNotebookConversation("process_recent_steps", {
+                        count: visibleSteps.length,
+                      })}
+              </div>
             </div>
-          ) : (
-            <Markdown content={displayContent} />
-          )}
+            {canToggleSteps ? (
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 text-xs text-tertiary hover:text-primary"
+                onClick={() => setShowAllSteps((prev) => !prev)}
+                disabled={disabled}
+                data-testid="notebook__message-process-toggle"
+              >
+                {showAllSteps ? (
+                  <ChevronUp className="h-3.5 w-3.5" />
+                ) : (
+                  <ChevronDown className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {showAllSteps
+                    ? tNotebookConversation("process_collapse")
+                    : tNotebookConversation("process_expand", {
+                        count: hiddenStepCount,
+                      })}
+                </span>
+              </button>
+            ) : null}
+          </div>
+
+          {traceError ? (
+            <div
+              className="mt-3 rounded-md border border-red-500/30 bg-red-500/10 p-2 text-xs"
+              data-testid="notebook__message-process-error"
+            >
+              <div className="font-medium text-red-200">
+                {traceError.message}
+              </div>
+            </div>
+          ) : null}
+
+          <div
+            className="mt-3 space-y-1"
+            data-testid="notebook__message-process-steps"
+          >
+            {visibleSteps.map((step, index) => (
+              <StepRow
+                key={step.key}
+                step={step}
+                tNotebookConversation={tNotebookConversation}
+                highlighted={
+                  focusTraceName != null &&
+                  step.traceNames.includes(focusTraceName)
+                }
+                latest={index === visibleSteps.length - 1}
+              />
+            ))}
+            {!traceDetailsLoading && renderableExecution.steps.length === 0 ? (
+              <div
+                className="text-xs text-tertiary"
+                data-testid="notebook__message-process-empty"
+              >
+                {tNotebookConversation("process_no_steps")}
+              </div>
+            ) : null}
+          </div>
+
+          {showAllSteps && traceHasMore ? (
+            <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+              <div className="text-tertiary">
+                {tNotebookConversation("process_more_available")}
+              </div>
+              <button
+                type="button"
+                className="text-tertiary underline underline-offset-2 hover:text-primary disabled:opacity-50"
+                onClick={() => onTraceLoadMore?.(message.id)}
+                disabled={disabled || traceLoadMoreLoading}
+                data-testid="notebook__message-trace-load-more"
+              >
+                {traceLoadMoreLoading
+                  ? tNotebookConversation("process_load_more_loading")
+                  : tNotebookConversation("process_load_more")}
+              </button>
+            </div>
+          ) : null}
         </div>
 
-        <div className="mt-2 flex items-center gap-2 justify-end">
-          {!isUser ? (
-            <span className={cn('mr-auto inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium', visibleRunStatusClass)} data-testid="notebook__message-run-status">
-              {tNotebookConversation(formatTraceStatusKey({ status: visibleRunStatus, ...(visibleRunStatus === 'cancelled' ? { cancelledOutcome: traceSummary.cancelledOutcome } : {}) }))}
-            </span>
-          ) : null}
-          {canShowTraceToggle ? (
-            <button
-              type="button"
-              className="mr-auto min-w-0 text-[11px] text-tertiary hover:text-primary"
-              onClick={() => setTraceExpanded((prev) => !prev)}
-              disabled={disabled}
-              data-testid="notebook__message-trace-toggle"
-              data-trace-message-id={message.id}
-              title={traceToggleLabel}
+        {displayContent.trim().length > 0 ? (
+          <div
+            className="mt-4 border-t border-white/8 pt-4"
+            data-testid="notebook__message-final-answer"
+          >
+            <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary/90">
+              {tNotebookConversation("final_answer_title")}
+            </div>
+            <div className="max-w-[88ch]">
+              <Markdown content={displayContent} />
+            </div>
+          </div>
+        ) : streamingContent != null || forceRunning ? (
+          <div
+            className="mt-4 border-t border-white/8 pt-4"
+            data-testid="notebook__message-final-answer-pending"
+          >
+            <div className="mb-3 text-[11px] font-medium uppercase tracking-[0.14em] text-tertiary/90">
+              {tNotebookConversation("final_answer_title")}
+            </div>
+            <div className="space-y-2">
+              <div className="h-3 w-2/3 animate-pulse rounded-sm bg-surface-high/60" />
+              <div className="h-3 w-1/2 animate-pulse rounded-sm bg-surface-high/60" />
+            </div>
+          </div>
+        ) : null}
+
+        {cancelledReasonKey ? (
+          <div
+            className="mt-3 text-[11px] text-amber-200/90"
+            data-testid="notebook__message-run-reason"
+          >
+            {tNotebookConversation(cancelledReasonKey)}
+          </div>
+        ) : null}
+
+        <div
+          className="mt-3 flex items-center justify-between gap-2 border-t border-white/8 pt-3 text-[11px]"
+          data-testid="notebook__message-status-footer"
+        >
+          <div className="flex min-w-0 flex-wrap items-center gap-2 text-tertiary">
+            <span
+              className={cn(
+                "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 font-medium",
+                visibleStatus === "success"
+                  ? "border-green-500/30 bg-green-500/10 text-green-300"
+                  : visibleStatus === "error"
+                    ? "border-red-500/30 bg-red-500/10 text-red-300"
+                    : visibleStatus === "cancelled"
+                      ? "border-amber-500/30 bg-amber-500/10 text-amber-300"
+                      : "border-blue-500/30 bg-blue-500/10 text-blue-300",
+              )}
+              data-testid="notebook__message-run-status"
             >
-              <span className={cn('block truncate', traceDetailsLoading && !hasTrace ? 'text-blue-300' : !hasTrace ? 'text-tertiary' : undefined)}>
-                {traceToggleLabel}
+              <RunStatusIcon running={visibleStatus === "running"} />
+              {tNotebookConversation(
+                formatTraceStatusKey({
+                  status: visibleStatus,
+                  ...(visibleStatus === "cancelled"
+                    ? {
+                        cancelledOutcome:
+                          renderableExecution.summary.cancelledOutcome,
+                      }
+                    : {}),
+                }),
+              )}
+            </span>
+            {renderableExecution.summary.durationMs != null ? (
+              <span
+                className="text-tertiary"
+                data-testid="notebook__message-run-duration"
+              >
+                {tNotebookConversation("process_duration", {
+                  value: renderableExecution.summary.durationText ?? "",
+                })}
               </span>
-            </button>
-          ) : null}
-          <span className="text-[11px] text-tertiary">{formatTime(message.created_at)}</span>
-          <Button type="button" variant="ghost" size="icon" className="h-8 w-8" onClick={handleCopy} disabled={disabled} aria-label={tCommon('copy')} title={tCommon('copy')}>
-            <Copy className="w-4 h-4" />
+            ) : null}
+            <span className="text-tertiary">{formatTime(message.created_at)}</span>
+          </div>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8"
+            onClick={handleCopy}
+            disabled={disabled}
+            aria-label={tCommon("copy")}
+            title={tCommon("copy")}
+          >
+            <Copy className="h-4 w-4" />
           </Button>
         </div>
-        {!isUser && visibleRunCancelledReasonKey ? (
-          <div className="mt-1 text-[11px] text-amber-200/90" data-testid="notebook__message-run-reason">{tNotebookConversation(visibleRunCancelledReasonKey)}</div>
-        ) : null}
-        {canShowTraceToggle && traceExpanded ? (
-          <TracePanel
-            tNotebookConversation={tNotebookConversation}
-            messageId={message.id}
-            disabled={disabled}
-            hasTrace={hasTrace}
-            traceDetailsLoading={traceDetailsLoading}
-            traceError={traceError}
-            traceSummary={traceSummary}
-            traceViewMode={traceViewMode}
-            onTraceViewModeChange={setTraceViewMode}
-            traceFilterMode={traceFilterMode}
-            onTraceFilterModeChange={setTraceFilterMode}
-            filteredExecutionTraceEvents={filteredExecutionTraceEvents}
-            filteredTraceEvents={filteredTraceEvents}
-            transportTraceEvents={transportTraceEvents}
-            traceSteps={traceSteps}
-            traceWarningCount={traceWarningCount}
-            traceErrorCount={traceErrorCount}
-            traceHasMore={traceHasMore}
-            traceLoadMoreLoading={traceLoadMoreLoading}
-            onTraceLoadMore={onTraceLoadMore}
-            onCopyTraceLogs={handleCopyTraceLogs}
-            expandedStepKeys={expandedStepKeys}
-            onExpandedStepKeysChange={setExpandedStepKeys}
-            focusedStepKey={focusedStepKey}
-            stepElementRefs={stepElementRefs}
-          />
-        ) : null}
       </div>
     </div>
   );

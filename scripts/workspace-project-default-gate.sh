@@ -31,7 +31,7 @@ run_cmd "npm run contracts:check"
 run_cmd "npm run contracts:check-openapi"
 run_cmd "npm run openapi:check-generated"
 run_cmd "npm run test:client-public-runtime"
-run_cmd "npm run test:rendered-env"
+run_cmd "npm run test:demo-rendered-env"
 run_cmd "npx eslint \
   'src/app/[locale]/join/page.tsx' \
   'src/app/[locale]/workspaces/[workspace]/page.tsx' \

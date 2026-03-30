@@ -7,22 +7,17 @@ else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
+source "${ROOT_DIR}/scripts/lib/release-stage-common.sh"
 
 ensure_dirs
 for cmd in docker curl tar sha256sum; do
   require_cmd "${cmd}"
 done
-[[ -f "${RELEASE_ROOT}/deployment.manifest.json" ]] || die "missing deployment.manifest.json in ${RELEASE_ROOT}"
-[[ -f "${RELEASE_ROOT}/docs/contracts/deployment-spec-v1.md" ]] || die "missing deployment-spec-v1.md in ${RELEASE_ROOT}"
-if [[ ! -x "${TOOLS_DIR}/kind" ]]; then
-  die "missing bundled kind at ${TOOLS_DIR}/kind"
-fi
-if [[ ! -x "${TOOLS_DIR}/kubectl" ]]; then
-  die "missing bundled kubectl at ${TOOLS_DIR}/kubectl"
-fi
-if [[ ! -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]]; then
-  die "missing compose asset in ${RELEASE_ROOT}"
-fi
+require_release_path "${RELEASE_ROOT}/deployment.manifest.json" "deployment.manifest.json"
+require_release_path "${RELEASE_ROOT}/docs/contracts/deployment-spec-v1.md" "deployment-spec-v1.md"
+require_release_path "${TOOLS_DIR}/kind" "bundled kind" "exe"
+require_release_path "${TOOLS_DIR}/kubectl" "bundled kubectl" "exe"
+require_release_path "${RELEASE_ROOT}/compose/docker-compose.yml" "compose asset"
 python3 - <<'PY' "${RELEASE_ROOT}/deployment.manifest.json" "${RELEASE_ROOT}"
 import json
 import pathlib

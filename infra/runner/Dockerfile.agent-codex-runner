@@ -3,4 +3,5 @@ ARG RUNNER_BASE_IMAGE=agentsmith-codex-runner-base:local
 FROM ${RUNNER_BASE_IMAGE}
 
 COPY packages/agent-codex-runner/src ./src
-COPY packages/agent-codex-runner/builtin-skills ./builtin-skills
+COPY packages/agent-codex-runner/builtin-skills/feishu-docs /etc/codex/skills/feishu-docs
+COPY packages/agent-codex-runner/builtin-skills/jira-ops /etc/codex/skills/jira-ops

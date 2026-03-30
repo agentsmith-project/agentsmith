@@ -52,6 +52,19 @@ All frames are JSON objects:
       - `credential_files?: Array<{ relative_path: string; content: string; description?: string }>`
         - Backend provides user third-party credential files per request.
         - Runner writes these files under workspace-relative paths before executing the turn.
+      - runner path model (implementation contract):
+
+        | Item | External bare (`file_library`) | External docker (`file_library`) | Internal (`pre_mounted`) |
+        | --- | --- | --- | --- |
+        | `cwd` | `${MBOS_AGENT_WORKSPACE_ROOT:-$HOST_HOME/ags-workspaces}/<workspace_dir_name>/` | `${MBOS_AGENT_WORKSPACE_ROOT:-/workspace/ags-workspaces}/<workspace_dir_name>/` | `/workspace/` |
+        | `CODEX_HOME` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/` |
+        | `HOME` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>/home/` |
+        | credentials | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` via `MBOS_TASK_CREDENTIAL_DIR` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` via `MBOS_TASK_CREDENTIAL_DIR` | `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/` via `MBOS_TASK_CREDENTIAL_DIR` |
+
+        Notes:
+        - `cwd` is the only path Codex uses as the editable workspace truth.
+        - `CODEX_HOME` is task-scoped Codex runtime state and is not shared across tasks.
+        - `HOME` is an isolated child-process home, not the developer's real host home.
 - `server.request.cancel`
   - payload: `{ "reason": "client_cancelled" }`
 - `server.ping`
@@ -163,10 +176,12 @@ tsx packages/api-entry-node/examples/external-agent-echo.ts
 
 - `R1` user token forwarding to runner:
   - MBOS forwards user bearer token in execution context for project proxy auth/audit.
-  - This token must stay in-memory only and must never be logged/persisted.
+  - Runner must keep this token in-memory only by injecting it through child-process environment variables.
+  - The token must never be written to Codex config files, workspace files, or CLI argv.
   - Follow-up hardening: replace with short-lived ticket exchange.
 
 - `R3` workspace isolation level:
-  - Current v1 runner isolation is directory-level only (`/tmp/<username>/<task_id>`).
+  - Runner isolation is task-scoped under `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/tasks/<task_id>` for Codex state, and credential files are injected under `${MBOS_AGENT_CODEX_STATE_ROOT:-/var/tmp/agentsmith-codex}/<workspace-key>/credentials/<task_id>/`.
+  - Real workspace files remain shared at the workspace root so notebook/file-library behavior is unchanged.
   - No automatic cleanup and no process/container sandbox in v1.
   - Ops must enforce periodic cleanup and disk monitoring.

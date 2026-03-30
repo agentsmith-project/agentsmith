@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTranslations } from 'next-intl';
 import { useSearchParams } from 'next/navigation';
@@ -23,8 +23,8 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageToolbar } from '@/components/layout/PageToolbar';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useAgentPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -38,8 +38,6 @@ import {
 import { AgentDetailsCard } from './_components/AgentDetailsCard';
 import { AgentsHeaderActions } from './_components/AgentsHeaderActions';
 import { AgentsTable } from './_components/AgentsTable';
-import type { ResolvedAgentsPageParams } from './agents-page-types';
-
 interface AgentsPageProps {
   params: Promise<{ workspace: string; project: string; locale: string }>;
 }
@@ -50,7 +48,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const tErrors = useTranslations('errors');
   const queryClient = useQueryClient();
   const searchParams = useSearchParams();
-  const [resolvedParams, setResolvedParams] = useState<ResolvedAgentsPageParams | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogAgent, setEditDialogAgent] = useState<Agent | null>(null);
   const [keysDialogAgent, setKeysDialogAgent] = useState<Agent | null>(null);
@@ -58,35 +56,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [agentToDelete, setAgentToDelete] = useState<Agent | null>(null);
-  const canAgentRead = useHasPermission('project:agent:manage');
-  const canAgentCreate = useHasPermission('project:agent:manage');
-  const canAgentUpdate = useHasPermission('project:agent:manage');
-  const canAgentDelete = useHasPermission('project:agent:manage');
-  const canAgentKeyIssue = useHasPermission('project:agent:manage');
-  const canAgentKeyRevoke = useHasPermission('project:agent:manage');
-  const canAgentPublicPermission = useHasPermission('project:agent:public');
-  const canAgentPublic = canAgentPublicPermission;
-  const canReadAgents = canAgentRead || canAgentCreate || canAgentUpdate || canAgentDelete;
-  const canManageAgents = canAgentCreate || canAgentUpdate || canAgentDelete;
-  const canIssueAgentKeys = canAgentKeyIssue || canAgentKeyRevoke;
-
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
+  const capabilities = useAgentPageCapabilities();
 
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
@@ -98,14 +68,14 @@ export default function AgentsPage({ params }: AgentsPageProps) {
   const { data: agentsData, isLoading: agentsLoading } = useQuery({
     queryKey: ['agents', workspaceId, projectId],
     queryFn: () => agentAPI.list(workspaceId, projectId),
-    enabled: !!workspaceId && !!projectId && canReadAgents,
+    enabled: !!workspaceId && !!projectId && capabilities.canRead,
   });
 
   const { data: diagnosticsData, isLoading: diagnosticsLoading } = useQuery({
     queryKey: ['agents', workspaceId, projectId, detailsAgent?.id, 'diagnostics'],
     queryFn: () =>
       detailsAgent ? agentAPI.getDiagnostics(workspaceId, projectId, detailsAgent.id) : Promise.resolve(null),
-    enabled: !!detailsAgent && !!workspaceId && !!projectId && canReadAgents,
+    enabled: !!detailsAgent && !!workspaceId && !!projectId && capabilities.canRead,
   });
 
   const invalidateAgents = () => {
@@ -147,7 +117,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     setDetailsOpen(true);
   }, [agents, searchParams]);
 
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -155,7 +125,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -166,7 +136,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
     );
   }
 
-  if (!canReadAgents) {
+  if (!capabilities.canRead) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">
@@ -203,7 +173,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
               type="button"
               variant="action"
               onClick={() => setCreateDialogOpen(true)}
-              disabled={!canManageAgents}
+              disabled={!capabilities.canManage}
               data-testid="agents__create-btn"
               className="gap-2"
             >
@@ -221,7 +191,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
               icon={Bot}
               title={t('empty.title')}
               description={t('empty.description')}
-              action={canManageAgents ? {
+              action={capabilities.canManage ? {
                 label: t('create'),
                 onClick: () => setCreateDialogOpen(true),
               } : undefined}
@@ -229,8 +199,8 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           ) : (
             <AgentsTable
               agents={agents}
-              canIssueAgentKeys={canIssueAgentKeys}
-              canManageAgents={canManageAgents}
+              canIssueAgentKeys={capabilities.canIssueKeys}
+              canManageAgents={capabilities.canManage}
               isUpdating={updateAgentMutation.isPending}
               t={t}
               onDeleteRequest={(agent) => {
@@ -263,7 +233,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
         </div>
 
         <CreateAgentDialog
-          open={canManageAgents && createDialogOpen}
+          open={capabilities.canManage && createDialogOpen}
           onOpenChange={setCreateDialogOpen}
           workspaceId={workspaceId}
           projectId={projectId}
@@ -276,7 +246,7 @@ export default function AgentsPage({ params }: AgentsPageProps) {
           workspaceId={workspaceId}
           projectId={projectId}
           agent={editDialogAgent}
-          canSetVisibility={canAgentPublic}
+          canSetVisibility={capabilities.canPublic}
           onSuccess={invalidateAgents}
         />
 

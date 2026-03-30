@@ -1,6 +1,5 @@
 'use client';
 
-import { useState, useEffect } from 'react';
 import { useTranslations } from 'next-intl';
 import { AuditPage as AuditPageComponent } from '@/components/audit-usage/AuditPage';
 import { FeatureAvailabilityBanner } from '@/components/ui/FeatureAvailabilityBanner';
@@ -8,8 +7,8 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { PageLoading } from '@/components/ui/loading';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
 import { useCanReadAudit } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { getFeatureAvailability, isFeatureBlockedInCurrentMode } from '@/lib/constants/feature-availability';
 
@@ -20,11 +19,7 @@ interface AuditPageProps {
 export default function AuditPage({ params }: AuditPageProps) {
   const tErrors = useTranslations('errors');
   const t = useTranslations('audit');
-  const [resolvedParams, setResolvedParams] = useState<{
-    workspace?: string;
-    project?: string;
-    locale?: string;
-  } | null>(null);
+  const resolvedParams = useResolvedProjectRoute(params);
   const workspaceId = resolvedParams?.workspace ?? '';
   const projectId = resolvedParams?.project ?? '';
   const canViewAudit = useCanReadAudit();
@@ -32,25 +27,7 @@ export default function AuditPage({ params }: AuditPageProps) {
   const featureAvailability = getFeatureAvailability('audit');
   const isFeatureBlocked = isFeatureBlockedInCurrentMode('audit');
 
-  useEffect(() => {
-    params.then((p) => {
-      const nextParams = {
-        workspace: validateWorkspaceParam(p.workspace),
-        project: validateProjectParam(p.project),
-        locale: p.locale,
-      };
-      setResolvedParams((previous) =>
-        previous &&
-        previous.workspace === nextParams.workspace &&
-        previous.project === nextParams.project &&
-        previous.locale === nextParams.locale
-          ? previous
-          : nextParams,
-      );
-    });
-  }, [params]);
-
-  if (!resolvedParams) {
+  if (!resolvedParams.isReady) {
     return (
       <PageState state="loading">
         <PageLoading />
@@ -58,7 +35,7 @@ export default function AuditPage({ params }: AuditPageProps) {
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         <div className="max-w-md text-center space-y-2">

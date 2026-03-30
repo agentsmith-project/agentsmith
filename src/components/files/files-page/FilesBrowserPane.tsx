@@ -124,8 +124,8 @@ export function FilesBrowserPane(props: FilesBrowserPaneProps) {
     onRowActivate,
     onRowOpen,
     onToggleRowCheckbox,
-    selectedForMove,
-    moveNamePlaceholder,
+    selectedForMove: _selectedForMove,
+    moveNamePlaceholder: _moveNamePlaceholder,
   } = props;
 
   const isMultiMode = selectionMode === 'multi';

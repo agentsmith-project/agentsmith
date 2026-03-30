@@ -63,7 +63,7 @@ export function ChatHeader({
   }, [endpoints, session]);
   const currentAgent = React.useMemo(() => {
     return findCurrentExternalAgent(session, externalAgents ?? []);
-  }, [externalAgents, session?.external_agent_id]);
+  }, [externalAgents, session]);
   const usingExternalAgent = !!session?.external_agent_id;
 
   const statusText = React.useMemo(() => {

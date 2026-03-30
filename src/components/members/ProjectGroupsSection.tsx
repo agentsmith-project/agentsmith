@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import { useTranslations } from 'next-intl';
-import { Button } from '@/components/ui/button';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,7 +23,7 @@ import {
   useUpdatePermissionTemplate,
   useUpdateProjectGroup,
 } from '@/lib/hooks/use-members';
-import { useCanManageMemberGovernance } from '@/lib/hooks/use-permissions';
+import { useMemberPageCapabilities } from '@/lib/hooks/use-permissions';
 import type { ProjectGroup } from '@/lib/api/endpoints/members';
 import type { PermissionTemplate } from '@/lib/api/types';
 import { toast } from '@/components/ui/toast';
@@ -50,7 +49,7 @@ export function ProjectGroupsSection({ workspaceId, projectId }: ProjectGroupsSe
   const t = useTranslations('members.templates');
   const membersT = useTranslations('members');
   const commonT = useTranslations('common');
-  const canManage = useCanManageMemberGovernance();
+  const { canManage } = useMemberPageCapabilities();
   const { data: groups = [] } = useProjectGroups(workspaceId, projectId);
   const { data: members = [], refetch: refetchMembers } = useMembers(workspaceId, projectId);
   const { data: templates = [] } = usePermissionTemplates(workspaceId, projectId);

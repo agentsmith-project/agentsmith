@@ -1,64 +1,92 @@
 # AgentSmith - Development Guide
 
+## Runtime Baseline
+
+Use `Node 24.14.1 LTS` for local development, CI, build jobs, and deployment images. Do not mix Node 20/22/25 across environments.
+
+Repo version files:
+- `.nvmrc`
+- `.node-version`
+- `package.json` `engines.node`
+- `package.json` `packageManager` (`npm@11.11.0`)
+
 ## Current Engineering Workflow
 
+<!-- current-workflow:development:start -->
 当前仓库只保留这几类 current 主路径：
 
 - `环境`
+- `测试`
 - `门禁`
 - `验证通道`
 - `发布`
 
 权威定义：
 - [docs/current-engineering-governance-model.md](./docs/current-engineering-governance-model.md)
+- machine-readable source: [`scripts/governance/current-workflow-manifest.ts`](./scripts/governance/current-workflow-manifest.ts)
+
+命令命名约定：
+- `npm run` 是 current canonical entrypoint
+- `make` 只作为同一路径的便捷包装
 
 ### 环境
 
 ```bash
-cp .env.local-manual.example .env.local-manual
 make local-manual-up
 make local-manual-seed-notebook
 make local-manual-status
-make local-manual-down
-make local-manual-reset
+```
+
+### 测试
+
+```bash
+npm run test:default-e2e
+npm run test:visual
+npm run test:governance
+npm run test:backend-real:core
 ```
 
 ### 门禁
 
 ```bash
-make gate-fast
-make gate-default
-make gate-release
+npm run gate:fast
+npm run gate:default
 ```
 
 ### 验证通道
 
 ```bash
-make lane-mock
-make lane-visual
-
-cp .env.backend-real.example .env.backend-real
-npm run lane:backend-real:core
+npm run lane:mock
+npm run lane:visual
 npm run lane:backend-real:release
-npm run test:release:precheck
-npm run test:visual:backend-real:review
 ```
 
 ### 发布
 
 ```bash
-npm run backend-real:reset
-npm run backend-real:bootstrap
-npm run backend-real:ready
 npm run backend-real:run
 npm run backend-real:report
+```
+<!-- current-workflow:development:end -->
+
+### Focused Helpers
+
+这几条命令保留用于专项验证、治理证据或静态产物生成，不属于 current 主路径：
+
+```bash
+make verify-contracts
+make verify-governance
+make verify-governance-with-report
+make governance-report REPORT_ARCHIVE=1
+npm run docs:artifacts:generate
+npm run marketing:assets:generate
 ```
 
 当前有效配置命名：
 
 - local-manual: `PRESET_ENDPOINT_*`
-- backend-real runtime: `BACKEND_REAL_*`
-- demo deploy: `DEPLOY_*`
+- backend-real runtime: `.env.backend-real` 以 `PRESET_*` 为主；部分包装脚本会派生 `BACKEND_REAL_*` 别名
+- demo deploy: `PRESET_*` 与 deploy-specific 配置并存
 
 模板入口：
 
@@ -161,6 +189,20 @@ PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible
 
 1. 旧 `GLM_*` 变量名在 `local-manual` 主路径下**不再支持**
 2. 发现 `GLM_*` 会直接 fail fast
+3. 如果本机已经有 cluster deploy rehearsal 在跑，建议把 `local-manual` 切到独立 app 端口，同时复用已运行的支撑服务：
+
+```bash
+LOCAL_MANUAL_REUSE_SUPPORT_SERVICES=1
+PORT_API=21000
+PORT_WEB=3101
+PROXY_PORT=39080
+```
+
+说明：
+
+1. 这组端口只改变本地 API / Web / universal-proxy，不改 Postgres / Redis / Mongo / MinIO / Keycloak
+2. `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES=1` 会跳过 `deps-up` / `deps-down`，改为直接对现有支撑服务执行 init/smoke
+3. `local-manual-down` 默认不再清理未追踪的端口监听，避免误停 cluster rehearsal；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
 
 ### Start platform only
 
@@ -411,17 +453,19 @@ Notes:
 - `artifacts/`
 - 其中长期结构约定为：
   - `artifacts/backend-real-visual/`
-  - `artifacts/release-evidence/`
+  - `artifacts/backend-real/current/`
+  - `artifacts/release-runs/`
+  - `artifacts/release-reports/`
+  - `artifacts/release-escalations/`
   - `artifacts/governance-reports/`
-  - `artifacts/system-state/`
-  - `artifacts/notebook-runner/`
 
 使用规则：
 1. 日常失败排查看 `test-results/`
 2. mock visual 基线看 `e2e/__screenshots__/`
 3. 真实后端人工界面审查看 `artifacts/backend-real-visual/<run-id>/`
-4. 不再新增泛化的 `tests/` 目录承载主测试代码
-5. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
+4. notebook / integration 当前运行态日志与状态优先看 `artifacts/backend-real/current/`
+5. 不再新增泛化的 `tests/` 目录承载主测试代码
+6. `artifacts/system-workspace-provisioning/` 仍是当前工作区发布/初始化尝试记录输出路径，不要按新目录约定直接重命名或手工迁走
 
 ## 默认治理门禁
 
@@ -794,6 +838,21 @@ When business logic changes are large, run this manual flow once before freeze:
 For step-by-step details and engineering verification workflow, see:
 - `docs/CURRENT_BASELINE.md`
 - `docs/user-guides/mvp-core-smoke-runbook.md`
+
+## Project Shell Page Contract
+
+When adding or refactoring a project shell page, use this exact governance path:
+
+1. Add the route to `PROJECT_ROUTE_POLICY_MANIFEST`.
+2. Resolve `workspace/project/locale` through `useResolvedProjectRoute()`.
+3. Consume page capability hooks from `use-permissions.ts`; do not compose raw tokens in the page or page-level component.
+4. Add route tests for:
+   - happy path
+   - invalid params
+   - forbidden
+   - feature blocked when the page supports that state
+
+This is the only allowed project shell governance pattern. Do not introduce a second route guard, a second policy manifest, or page-local permission composition.
 
 ## Permission Gate Hook Rule (Important)
 

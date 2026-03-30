@@ -6,7 +6,7 @@ import {
 } from './codex-command-builder.js';
 
 describe('codex-command-builder', () => {
-  it('writes model context window and compact limit into task codex config', () => {
+  it('writes model context window, compact limit, and env-based auth into task codex config', () => {
     const config = buildTaskCodexConfig({
       model: 'glm-5-turbo',
       endpointProxyBase: 'http://proxy.local',
@@ -14,14 +14,28 @@ describe('codex-command-builder', () => {
       modelContextWindow: 128000,
       modelAutoCompactTokenLimit: 121600,
       modelCatalogPath: '/tmp/catalog.json',
+      proxyAuthHeaderEnvName: 'MBOS_CODEX_PROXY_AUTH_HEADER',
     });
 
     expect(config).toContain('model_context_window = 128000');
     expect(config).toContain('model_auto_compact_token_limit = 121600');
     expect(config).toContain('model_catalog_json = "/tmp/catalog.json"');
+    expect(config).toContain('env_http_headers = { Authorization = "MBOS_CODEX_PROXY_AUTH_HEADER" }');
+    expect(config).not.toContain('experimental_bearer_token');
   });
 
-  it('writes model context window and compact limit into codex exec args', () => {
+
+  it('omits env-based auth headers when no auth env name is provided', () => {
+    const config = buildTaskCodexConfig({
+      model: 'glm-5-turbo',
+      endpointProxyBase: 'http://proxy.local',
+      wireApi: 'responses',
+    });
+
+    expect(config).not.toContain('env_http_headers');
+  });
+
+  it('builds yolo exec args without persisting auth in argv', () => {
     const args = buildCodexExecArgs({
       model: 'glm-5-turbo',
       prompt: 'hello',
@@ -32,13 +46,15 @@ describe('codex-command-builder', () => {
       modelAutoCompactTokenLimit: 121600,
       modelCatalogPath: '/tmp/catalog.json',
       resumeSession: true,
-      yolo: true,
     });
 
-    expect(args.slice(0, 3)).toEqual(['exec', 'resume', '--last']);
+    expect(args.slice(0, 4)).toEqual(['exec', 'resume', '--last', '--dangerously-bypass-approvals-and-sandbox']);
+    expect(args).toContain('--json');
     expect(args).toContain('model_context_window=128000');
     expect(args).toContain('model_auto_compact_token_limit=121600');
     expect(args).toContain('model_catalog_json="/tmp/catalog.json"');
+    expect(args.join(' ')).not.toContain('experimental_bearer_token');
+    expect(args).not.toContain('--full-auto');
   });
 
   it('builds a text-only model catalog for a proxy-backed codex alias', () => {

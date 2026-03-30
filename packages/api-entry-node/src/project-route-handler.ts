@@ -1,4 +1,3 @@
-import type http from 'node:http';
 import {
   handleProjectCrudRoutes,
   handleFileLibraryRoutes,
@@ -13,16 +12,10 @@ import type {
 export async function handleProjectRoute(args: ProjectRouteHandlerArgs): Promise<boolean> {
   const {
     route,
-    method,
     req,
     res,
-    deps,
-    user,
     workspaces,
-    defaultWorkspace,
-    requestUrl,
     json,
-    readBody,
   } = args;
   const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
 

@@ -17,7 +17,9 @@ const MINIO_ACCESS_KEY = process.env.MINIO_ACCESS_KEY ?? 'mbos';
 const MINIO_SECRET_KEY = process.env.MINIO_SECRET_KEY ?? 'mbos_dev_password';
 const MINIO_BUCKET = process.env.MINIO_BUCKET ?? 'mbos-dev';
 
-describe('adapters-private integration', () => {
+const describeRealIntegration = process.env.RUN_ADAPTERS_PRIVATE_INTEGRATION === 'true' ? describe : describe.skip;
+
+describeRealIntegration('adapters-private integration', () => {
   it('postgres project repo CRUD works against real db', async () => {
     const pool = new Pool({ connectionString: POSTGRES_URL });
     const repo = new PostgresProjectRepo(pool);

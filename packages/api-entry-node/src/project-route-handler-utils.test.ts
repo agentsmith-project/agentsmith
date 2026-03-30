@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { InMemoryJsonDocStore } from '@mbos/adapters-private';
 import {
   projectScopedKey,
   readProjectPermissionContext,
@@ -56,6 +57,7 @@ describe('project-route-handler utils', () => {
       governance_json: {},
     });
     const deps = {
+      docStore: new InMemoryJsonDocStore(),
       getProjectUseCase: { execute },
     } as never;
 
@@ -68,6 +70,7 @@ describe('project-route-handler utils', () => {
 
     expect(context?.ownerId).toBe('owner-1');
     expect(context?.permissions).toContain('project:lifecycle:update');
+    expect(context?.permissions).toContain('project:endpoint:use');
 
     execute.mockRejectedValueOnce(new Error('boom'));
     await expect(

@@ -235,8 +235,6 @@ export async function handleProjectCrudRoutes(context: ProjectRouteContext): Pro
     }
     let normalizedInput = input;
     if (touchesProjectOwner && existingProject) {
-      const previousOwnerId = existingProject.owner_id;
-      const nextOwnerId = input.owner_id!.trim();
       const requestedGovernance = typeof input.governance_json === 'object' && input.governance_json !== null
         ? input.governance_json
         : {};

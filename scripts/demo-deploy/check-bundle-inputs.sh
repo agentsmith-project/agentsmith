@@ -5,28 +5,19 @@ ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 MANIFEST_PATH="${ROOT_DIR}/infra/deploy/demo/deployment.manifest.json"
 SITE_ENV_EXAMPLE="${ROOT_DIR}/infra/deploy/demo/env/site.env.example"
 
-python3 - <<'PY' "${MANIFEST_PATH}" "${SITE_ENV_EXAMPLE}" "${ROOT_DIR}"
+python3 "${ROOT_DIR}/scripts/lib/check-required-env-templates.py" \
+  "${MANIFEST_PATH}" \
+  "${SITE_ENV_EXAMPLE}"
+
+python3 - <<'PY' "${MANIFEST_PATH}" "${ROOT_DIR}"
 import json
 import pathlib
 import sys
 
 manifest_path = pathlib.Path(sys.argv[1])
-site_env_path = pathlib.Path(sys.argv[2])
-root_dir = pathlib.Path(sys.argv[3])
+root_dir = pathlib.Path(sys.argv[2])
 
 manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
-
-env_keys = set()
-for raw_line in site_env_path.read_text(encoding='utf-8').splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith('#') or '=' not in line:
-        continue
-    env_keys.add(line.split('=', 1)[0].strip())
-
-for group_name, group in manifest.get("required_env", {}).items():
-    for key in group:
-        if key not in env_keys:
-            raise SystemExit(f"missing_env_template_key:{group_name}:{key}")
 
 for relative in manifest.get("bundle_files", []):
     source = root_dir / relative if not relative.startswith("tools/") else pathlib.Path("/nonexistent")

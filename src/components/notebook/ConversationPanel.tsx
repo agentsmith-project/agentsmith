@@ -56,6 +56,7 @@ export interface ConversationPanelProps {
   focusTraceName?: string | null;
   focusTraceToken?: number;
   disabled?: boolean;
+  activeAgentMessageId?: string | null;
   sending?: boolean;
   diagnosticsLinks?: {
     audit: string;
@@ -91,6 +92,7 @@ export function ConversationPanel({
   focusTraceName,
   focusTraceToken,
   disabled = false,
+  activeAgentMessageId = null,
   sending = false,
   diagnosticsLinks,
   sandboxStarting = false,
@@ -125,7 +127,7 @@ export function ConversationPanel({
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-[16px] bg-background/55">
       {(connectionStatus && connectionStatus !== 'connected') || sandboxStarting || runActivity?.active ? (
-        <div className="border-b border-white/6 bg-white/[0.015] px-3.5 py-1.5">
+        <div className="border-b border-white/6 bg-[linear-gradient(180deg,rgba(255,255,255,0.018),rgba(255,255,255,0.008))] px-3.5 py-2">
           <div className="flex flex-wrap items-start justify-between gap-3" data-testid="notebook__execution-visibility">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-1.5">
@@ -140,7 +142,7 @@ export function ConversationPanel({
                   </span>
                 ) : null}
                 {runActivity?.active ? (
-                  <span className="rounded-full border border-white/8 bg-white/[0.035] px-1.5 py-0.5 text-[10px] font-medium text-secondary">
+                  <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-secondary">
                     {t('run_active_title', { duration: formatElapsed(runActivity.elapsedSeconds) })}
                   </span>
                 ) : null}
@@ -157,7 +159,7 @@ export function ConversationPanel({
                   latestRunAction ? (
                     <button
                       type="button"
-                      className="block w-full truncate text-left text-tertiary hover:text-secondary"
+                      className="block w-full truncate text-left text-secondary/85 hover:text-secondary"
                       onClick={() => onRunActionClick?.(latestRunAction)}
                       title={runSummaryTitle ?? undefined}
                       data-testid="notebook__run-activity-summary"
@@ -165,7 +167,7 @@ export function ConversationPanel({
                       {runSummaryText}
                     </button>
                   ) : (
-                    <div className="truncate text-tertiary" title={runSummaryTitle ?? undefined} data-testid="notebook__run-activity-summary">
+                    <div className="truncate text-secondary/85" title={runSummaryTitle ?? undefined} data-testid="notebook__run-activity-summary">
                       {runSummaryText}
                     </div>
                   )
@@ -173,14 +175,14 @@ export function ConversationPanel({
               </div>
               {connectionStatus && connectionStatus !== 'connected' && diagnosticsLinks ? (
                 <div className="mt-1.5 flex flex-wrap gap-2 text-[11px]">
-                  <Link href={diagnosticsLinks.audit} data-testid="notebook__sse-status-open-audit" className="text-primary hover:underline">
+                  <Link href={diagnosticsLinks.audit} data-testid="notebook__sse-status-open-audit" className="text-secondary hover:text-primary hover:underline">
                     {t('open_audit')}
                   </Link>
-                  <Link href={diagnosticsLinks.usage} data-testid="notebook__sse-status-open-usage" className="text-primary hover:underline">
+                  <Link href={diagnosticsLinks.usage} data-testid="notebook__sse-status-open-usage" className="text-secondary hover:text-primary hover:underline">
                     {t('open_usage')}
                   </Link>
                   {diagnosticsLinks.agent ? (
-                    <Link href={diagnosticsLinks.agent} data-testid="notebook__sse-status-open-agent" className="text-primary hover:underline">
+                    <Link href={diagnosticsLinks.agent} data-testid="notebook__sse-status-open-agent" className="text-secondary hover:text-primary hover:underline">
                       {t('open_agent_diagnostics')}
                     </Link>
                   ) : null}
@@ -218,6 +220,7 @@ export function ConversationPanel({
           traceLoadMoreLoadingByMessageId={traceLoadMoreLoadingByMessageId}
           traceErrorByMessageId={traceErrorByMessageId}
           disabled={disabled}
+          activeAgentMessageId={activeAgentMessageId}
           onTraceExpand={onTraceExpand}
           onTraceLoadMore={onTraceLoadMore}
         />

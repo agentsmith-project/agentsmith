@@ -8,8 +8,7 @@ bash "${ROOT_DIR}/scripts/local-manual/down.sh"
 remove_local_manual_runtime_files
 reset_local_manual_state
 
-info "starting local dependencies"
-(cd "${ROOT_DIR}" && make deps-up && make deps-ready && make deps-init)
+run_local_manual_support_services_prepare
 
 info "ensuring default workspace"
 (

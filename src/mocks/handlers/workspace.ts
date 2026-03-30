@@ -165,12 +165,25 @@ type SystemWorkspaceRecord = {
   id: string;
   name: string;
   provisioning_status?: string | null;
+  login_idp?: {
+    kind?: 'keycloak';
+    url?: string;
+    realm?: string;
+    client_id?: string;
+  } | null;
   idp?: {
     kind?: 'keycloak';
     url?: string;
     realm?: string;
     client_id?: string;
   } | null;
+  created_at?: string;
+  updated_at?: string;
+};
+
+type PublicWorkspaceSummary = {
+  id: string;
+  name: string;
   created_at?: string;
   updated_at?: string;
 };
@@ -192,7 +205,7 @@ function readMockValue(request: Request, header: string, cookie: string): string
 
 async function readSystemWorkspaces(request: Request): Promise<SystemWorkspaceRecord[]> {
   try {
-    const url = new URL('/api/system/workspaces', request.url);
+    const url = new URL('/api/test/system/workspaces/seed', request.url);
     const response = await fetch(
       bypass(
         new Request(url, {
@@ -209,7 +222,7 @@ async function readSystemWorkspaces(request: Request): Promise<SystemWorkspaceRe
   }
 }
 
-function mapSystemWorkspaceToPublicConfig(workspace: SystemWorkspaceRecord) {
+export function mapSystemWorkspaceToPublicConfig(workspace: SystemWorkspaceRecord) {
   const loginIdp = (workspace as SystemWorkspaceRecord & {
     login_idp?: {
       kind: 'keycloak';
@@ -253,9 +266,11 @@ function mapSystemWorkspaceToPublicConfig(workspace: SystemWorkspaceRecord) {
   };
 }
 
-async function readAvailableWorkspaces(request: Request) {
-  const systemWorkspaces = await readSystemWorkspaces(request);
-  const readySystemWorkspaces = systemWorkspaces
+export function mergeAvailableWorkspaceSummaries(args: {
+  fixtureWorkspaces: PublicWorkspaceSummary[];
+  systemWorkspaces: SystemWorkspaceRecord[];
+}): PublicWorkspaceSummary[] {
+  const readySystemWorkspaces = args.systemWorkspaces
     .filter((workspace) => workspace.provisioning_status === 'ready')
     .map((workspace) => ({
       id: workspace.id,
@@ -265,13 +280,56 @@ async function readAvailableWorkspaces(request: Request) {
     }));
 
   const seen = new Set<string>();
-  const merged = [...workspaceItems, ...readySystemWorkspaces].filter((workspace) => {
+  return [...readySystemWorkspaces, ...args.fixtureWorkspaces.map((workspace) => ({
+    id: workspace.id,
+    name: workspace.name,
+    created_at: workspace.created_at ?? new Date().toISOString(),
+    updated_at: workspace.updated_at ?? new Date().toISOString(),
+  }))].filter((workspace) => {
     if (seen.has(workspace.id)) return false;
     seen.add(workspace.id);
     return true;
   });
+}
 
-  return { merged, systemWorkspaces };
+export function resolvePublicWorkspaceConfig(args: {
+  workspaceId: string;
+  systemWorkspaces: SystemWorkspaceRecord[];
+  fixtureWorkspaces: Array<{ id: string; name: string }>;
+  env: NodeJS.ProcessEnv;
+}) {
+  const systemWorkspace = args.systemWorkspaces.find((item) => item.id === args.workspaceId);
+  const publicConfig = systemWorkspace ? mapSystemWorkspaceToPublicConfig(systemWorkspace) : null;
+  if (publicConfig) {
+    return publicConfig;
+  }
+
+  const workspace = args.fixtureWorkspaces.find((item) => item.id === args.workspaceId);
+  if (!workspace) {
+    return null;
+  }
+
+  return {
+    id: workspace.id,
+    name: workspace.name,
+    login_idp: {
+      kind: 'keycloak' as const,
+      url: args.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() || 'http://localhost:8080',
+      realm: args.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() || 'mbos',
+      client_id: args.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID?.trim() || 'agentsmith-web',
+    },
+  };
+}
+
+async function readAvailableWorkspaces(request: Request) {
+  const systemWorkspaces = await readSystemWorkspaces(request);
+  return {
+    merged: mergeAvailableWorkspaceSummaries({
+      fixtureWorkspaces: workspaceItems,
+      systemWorkspaces,
+    }),
+    systemWorkspaces,
+  };
 }
 
 export const workspaceHandlers = [
@@ -291,22 +349,13 @@ export const workspaceHandlers = [
   }),
   http.get('/api/public/workspaces/:id', async ({ params, request }) => {
     const workspaceId = String(params.id ?? '');
-    const workspace = workspaceItems.find((item) => item.id === workspaceId);
-    if (workspace) {
-      return HttpResponse.json({
-        id: workspace.id,
-        name: workspace.name,
-        login_idp: {
-          kind: 'keycloak',
-          url: process.env.NEXT_PUBLIC_KEYCLOAK_URL?.trim() || 'http://localhost:8080',
-          realm: process.env.NEXT_PUBLIC_KEYCLOAK_REALM?.trim() || 'mbos',
-          client_id: process.env.NEXT_PUBLIC_KEYCLOAK_CLIENT_ID?.trim() || 'agentsmith-web',
-        },
-      });
-    }
-
-    const systemWorkspace = (await readSystemWorkspaces(request)).find((item) => item.id === workspaceId);
-    const publicConfig = systemWorkspace ? mapSystemWorkspaceToPublicConfig(systemWorkspace) : null;
+    const systemWorkspaces = await readSystemWorkspaces(request);
+    const publicConfig = resolvePublicWorkspaceConfig({
+      workspaceId,
+      systemWorkspaces,
+      fixtureWorkspaces: workspaceItems,
+      env: process.env,
+    });
     if (publicConfig) return HttpResponse.json(publicConfig);
 
     return HttpResponse.json({ error_code: 'WORKSPACE_NOT_FOUND', error_message: 'workspace_not_found' }, { status: 404 });

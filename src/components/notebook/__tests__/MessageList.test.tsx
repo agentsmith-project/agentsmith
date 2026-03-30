@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MessageList } from '../MessageList';
 import type { TaskMessage } from '@/lib/types/task';
 
@@ -28,6 +28,8 @@ vi.mock('@/components/ui/loading', () => ({
 }));
 
 describe('MessageList', () => {
+  let resizeObserverCallback: ResizeObserverCallback | null = null;
+  let scrollToMock: ReturnType<typeof vi.fn>;
   const mockMessages: TaskMessage[] = [
     {
       id: 'msg-1',
@@ -47,13 +49,30 @@ describe('MessageList', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    // Mock IntersectionObserver
+    resizeObserverCallback = null;
+    scrollToMock = vi.fn();
     global.IntersectionObserver = vi.fn(() => ({
       observe: vi.fn(),
       disconnect: vi.fn(),
       unobserve: vi.fn(),
     })) as any;
-    // Mock scrollIntoView (not available in jsdom/happy-dom)
+    class ResizeObserverMock {
+      observe = vi.fn();
+      disconnect = vi.fn();
+      unobserve = vi.fn();
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallback = callback;
+      }
+    }
+    global.ResizeObserver = ResizeObserverMock as any;
+    global.requestAnimationFrame = vi.fn((callback: FrameRequestCallback) => {
+      callback(0);
+      return 0;
+    }) as any;
+    Object.defineProperty(HTMLElement.prototype, 'scrollTo', {
+      configurable: true,
+      value: scrollToMock,
+    });
     Element.prototype.scrollIntoView = vi.fn();
   });
 
@@ -176,6 +195,89 @@ describe('MessageList', () => {
   });
 
   describe('Auto-scroll Behavior', () => {
+    it('keeps following content growth while the user is pinned to the bottom', () => {
+      const { container, rerender } = render(
+        <MessageList
+          messages={mockMessages}
+          streamingMessageId="msg-2"
+          streamingContent="First chunk"
+        />,
+      );
+
+      const scrollContainer = container.querySelector('.overflow-y-auto') as HTMLDivElement;
+      Object.defineProperty(scrollContainer, 'scrollTop', {
+        configurable: true,
+        value: 500,
+        writable: true,
+      });
+      Object.defineProperty(scrollContainer, 'scrollHeight', {
+        configurable: true,
+        value: 600,
+      });
+      Object.defineProperty(scrollContainer, 'clientHeight', {
+        configurable: true,
+        value: 80,
+      });
+
+      fireEvent.scroll(scrollContainer);
+      rerender(
+        <MessageList
+          messages={mockMessages}
+          streamingMessageId="msg-2"
+          streamingContent="First chunk
+Second chunk"
+        />,
+      );
+
+      expect(scrollToMock).toHaveBeenCalled();
+      act(() => {
+        resizeObserverCallback?.([], {} as ResizeObserver);
+      });
+      expect(scrollToMock.mock.calls.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('does not force scrolling when the user has moved away from the bottom', () => {
+      const { container, rerender } = render(
+        <MessageList
+          messages={mockMessages}
+          streamingMessageId="msg-2"
+          streamingContent="First chunk"
+        />,
+      );
+
+      const scrollContainer = container.querySelector('.overflow-y-auto') as HTMLDivElement;
+      Object.defineProperty(scrollContainer, 'scrollTop', {
+        configurable: true,
+        value: 100,
+        writable: true,
+      });
+      Object.defineProperty(scrollContainer, 'scrollHeight', {
+        configurable: true,
+        value: 600,
+      });
+      Object.defineProperty(scrollContainer, 'clientHeight', {
+        configurable: true,
+        value: 200,
+      });
+
+      fireEvent.scroll(scrollContainer);
+      scrollToMock.mockClear();
+      rerender(
+        <MessageList
+          messages={mockMessages}
+          streamingMessageId="msg-2"
+          streamingContent="First chunk
+Second chunk"
+        />,
+      );
+
+      expect(scrollToMock).not.toHaveBeenCalled();
+      act(() => {
+        resizeObserverCallback?.([], {} as ResizeObserver);
+      });
+      expect(scrollToMock).not.toHaveBeenCalled();
+    });
+
     it('sets up scroll event listener', () => {
       const { container } = renderComponent();
 
@@ -203,14 +305,17 @@ describe('MessageList', () => {
     it('applies padding classes', () => {
       const { container } = renderComponent();
 
-      const listContainer = container.querySelector('.px-4.py-4');
+      const listContainer = container.querySelector('.overflow-y-auto') as HTMLElement | null;
       expect(listContainer).toBeInTheDocument();
+      expect(listContainer?.className ?? '').toContain('px-3');
+      expect(listContainer?.className ?? '').toContain('sm:px-4');
+      expect(listContainer?.className ?? '').toContain('lg:px-5');
     });
 
     it('uses flex layout for message items', () => {
       const { container } = renderComponent();
 
-      const listContainer = container.querySelector('.space-y-4');
+      const listContainer = container.querySelector('.space-y-3');
       expect(listContainer).toBeInTheDocument();
     });
   });

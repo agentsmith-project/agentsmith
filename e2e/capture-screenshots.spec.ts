@@ -1,11 +1,11 @@
 /**
  * MBOS Platform Screenshot Capture
  *
- * Run: npx playwright test e2e/capture-screenshots.spec.ts --project=chromium
- * Requires: dev server at localhost:3000
+ * Run: npx playwright test e2e/capture-screenshots.spec.ts --project=marketing-assets
+ * Requires: current mock E2E dev server at localhost:3001 or Playwright managed webServer
  *
- * Output: test-results/screenshots/ (temporary, gitignored)
- * For marketing use: manually copy to marketing/screenshots/
+ * Output: test-results/screenshots/ by default
+ * Override with MARKETING_ASSETS_OUTPUT_DIR=/abs/path
  */
 
 import { test } from '@playwright/test';
@@ -13,7 +13,9 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { gotoAndWait } from './utils/navigation';
 
-const BASE = path.join(process.cwd(), 'test-results', 'screenshots');
+const BASE = process.env.MARKETING_ASSETS_OUTPUT_DIR?.trim()
+  ? path.resolve(process.env.MARKETING_ASSETS_OUTPUT_DIR)
+  : path.join(process.cwd(), 'test-results', 'screenshots');
 const WS_ID = 'ws_default';
 const PROJECT_ID = 'proj_001';
 
@@ -141,43 +143,86 @@ test.describe('Screenshot Capture', () => {
     // === 06-agents ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/agents`);
     await page.screenshot({ path: path.join(BASE, '06-agents', 'agents.png'), fullPage: true });
+    const createAgentBtn = page.getByTestId('agents__create-btn');
+    if (await createAgentBtn.isVisible().catch(() => false)) {
+      await createAgentBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('agents__create-dialog').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '06-agents', 'create-agent-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
+    const agentKeysBtn = page.locator('[data-testid^="agents__keys-btn--"]').first();
+    if (await agentKeysBtn.isVisible().catch(() => false)) {
+      await agentKeysBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('agents__dialog__keys').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '06-agents', 'connection-info-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
 
     // === 07-endpoints ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/endpoints`);
     await page.screenshot({ path: path.join(BASE, '07-endpoints', 'endpoints.png'), fullPage: true });
+    const createEndpointBtn = page.getByTestId('endpoints__create-btn');
+    if (await createEndpointBtn.isVisible().catch(() => false)) {
+      await createEndpointBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('endpoints__create-dialog').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '07-endpoints', 'create-endpoint-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
 
     // === 08-members ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/members`);
     await page.screenshot({ path: path.join(BASE, '08-members', 'members-list.png'), fullPage: true });
+    const inviteMemberBtn = page.getByTestId('members__invite-btn');
+    if (await inviteMemberBtn.isVisible().catch(() => false)) {
+      await inviteMemberBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('members__invite-dialog').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '08-members', 'invite-member-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
 
+    const memberActionButton = page.locator('table tbody tr button').first();
     const memberRow = page.locator('table tbody tr').first();
-    if (await memberRow.isVisible()) {
+    if (await memberActionButton.isVisible().catch(() => false)) {
+      await memberActionButton.click();
+      await page.waitForTimeout(1200);
+      await page.screenshot({ path: path.join(BASE, '08-members', 'member-detail-overview.png'), fullPage: true });
+      await page.keyboard.press('Escape');
+    } else if (await memberRow.isVisible().catch(() => false)) {
       await memberRow.click();
       await page.waitForTimeout(1200);
       await page.screenshot({ path: path.join(BASE, '08-members', 'member-detail-overview.png'), fullPage: true });
-
-      const drawerTabs = page.locator('[role="tablist"]').first().getByRole('tab');
-      await drawerTabs.nth(0).click();
-      await page.waitForTimeout(600);
-      await page.screenshot({ path: path.join(BASE, '08-members', 'member-permissions-template.png'), fullPage: true });
-      const advTab = page.getByRole('tab').filter({ hasText: /高级模式|Advanced Mode/ });
-      if (await advTab.count() > 0) {
-        await advTab.first().click();
-        await page.waitForTimeout(600);
-        await page.screenshot({ path: path.join(BASE, '08-members', 'member-permissions-advanced.png'), fullPage: true });
-      }
-      await drawerTabs.nth(1).click();
-      await page.waitForTimeout(600);
-      await page.screenshot({ path: path.join(BASE, '08-members', 'member-limits.png'), fullPage: true });
-      await drawerTabs.nth(2).click();
-      await page.waitForTimeout(600);
-      await page.screenshot({ path: path.join(BASE, '08-members', 'member-resource-acl.png'), fullPage: true });
-      await page.keyboard.press('Escape');
     }
 
     // === 09-audit ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/audit`);
     await page.screenshot({ path: path.join(BASE, '09-audit', 'audit.png'), fullPage: true });
+    const auditActionButton = page.locator('[data-testid^="audit__row-actions--"]').first();
+    if (await auditActionButton.isVisible().catch(() => false)) {
+      await auditActionButton.click();
+      await page.waitForTimeout(300);
+      const viewDetailsButton = page.locator('[data-testid^="audit__view-details--"]').first();
+      if (await viewDetailsButton.isVisible().catch(() => false)) {
+        await viewDetailsButton.click();
+        await page.waitForTimeout(700);
+        if (await page.getByTestId('audit__detail-summary').isVisible().catch(() => false)) {
+          await page.screenshot({ path: path.join(BASE, '09-audit', 'audit-detail-drawer.png'), fullPage: true });
+        }
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(300);
+      }
+    }
 
     // === 10-usage ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/usage`);
@@ -198,6 +243,36 @@ test.describe('Screenshot Capture', () => {
     // === 12-files ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/files`);
     await page.screenshot({ path: path.join(BASE, '12-files', 'files.png'), fullPage: true });
+    const libraryCreateBtn = page.getByTestId('files__library-create');
+    if (await libraryCreateBtn.isVisible().catch(() => false)) {
+      await libraryCreateBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('files__dialog__library-create').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '12-files', 'create-library-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
+    const mountAccessBtn = page.locator('[data-testid^="files__library-mount-access--"]').first();
+    if (await mountAccessBtn.isVisible().catch(() => false)) {
+      await mountAccessBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('files__dialog__library-mount-access').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '12-files', 'library-mount-access-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
+    const deleteLibraryBtn = page.locator('[data-testid^="files__library-delete-btn--"]').first();
+    if (await deleteLibraryBtn.isVisible().catch(() => false)) {
+      await deleteLibraryBtn.click();
+      await page.waitForTimeout(500);
+      if (await page.getByTestId('files__dialog__library-delete').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '12-files', 'delete-library-dialog.png'), fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(300);
+    }
 
     // === 13-credentials ===
     await navigateForCapture(page, `/zh-CN/workspaces/${WS_ID}/projects/${PROJECT_ID}/credentials`);
@@ -206,7 +281,9 @@ test.describe('Screenshot Capture', () => {
     if (await createKeyBtn.isVisible()) {
       await createKeyBtn.click();
       await page.waitForTimeout(500);
-      await page.screenshot({ path: path.join(BASE, '13-credentials', 'create-credential-dialog.png'), fullPage: true });
+      if (await page.getByTestId('credentials__create-dialog').isVisible().catch(() => false)) {
+        await page.screenshot({ path: path.join(BASE, '13-credentials', 'create-credential-dialog.png'), fullPage: true });
+      }
       await page.keyboard.press('Escape');
     }
 

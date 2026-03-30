@@ -14,16 +14,16 @@ Use a local helper script to perform common Jira REST operations with Bearer tok
 Validate auth:
 
 ```bash
-python ./.codex/skills/jira-ops/scripts/jira_ops.py \
+python /etc/codex/skills/jira-ops/scripts/jira_ops.py \
   myself
 ```
 
 ## Workflow
 
-1. Read [common.md](/home/percy/.codex/skills/jira-ops/references/common.md) first.
+1. Read [common.md](/etc/codex/skills/jira-ops/references/common.md) first.
 2. Inspect `MBOS_TASK_CREDENTIAL_DIR/jira/` or `.codex/credential/jira/` in the current workspace. Do not assume fixed file names or formats; read the files and use their self-describing contents to identify the Jira token and, if present, the base URL.
-3. If the issue key is unknown, use [jql.md](/home/percy/.codex/skills/jira-ops/references/jql.md) and search before mutating.
-4. If the user wants a common action, follow [workflows.md](/home/percy/.codex/skills/jira-ops/references/workflows.md).
+3. If the issue key is unknown, use [jql.md](/etc/codex/skills/jira-ops/references/jql.md) and search before mutating.
+4. If the user wants a common action, follow [workflows.md](/etc/codex/skills/jira-ops/references/workflows.md).
 5. Before field edits, inspect `editmeta` if field names or allowed values are unclear.
 6. Before transitions, inspect transitions with expanded field metadata.
 7. Before mutating, prefer reading the issue or narrowing the search so the target is unambiguous.

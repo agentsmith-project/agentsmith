@@ -3,7 +3,7 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 
 import UsagePage from '../page';
 
-const mockHasPermission = vi.fn((_permission?: string) => true);
+const mockUseUsagePageCapabilities = vi.fn(() => ({ canRead: true }));
 const mockUsagePageComponent = vi.fn((props: unknown) => (
   <div data-testid="usage-page-component" data-props={JSON.stringify(props)} />
 ));
@@ -13,7 +13,7 @@ vi.mock('@/components/audit-usage/UsagePage', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) => mockHasPermission(permission),
+  useUsagePageCapabilities: () => mockUseUsagePageCapabilities(),
 }));
 
 vi.mock('@/lib/stores/authStore', () => ({
@@ -27,29 +27,13 @@ vi.mock('@/lib/hooks/use-projects-queries', () => ({
 
 describe('UsagePage route', () => {
   beforeEach(() => {
-    mockHasPermission.mockClear();
-    mockHasPermission.mockReturnValue(true);
+    mockUseUsagePageCapabilities.mockClear();
+    mockUseUsagePageCapabilities.mockReturnValue({ canRead: true });
     mockUsagePageComponent.mockClear();
   });
 
-  it('checks usage permission with endpoint-use token', async () => {
-    render(
-      <UsagePage
-        params={Promise.resolve({
-          workspace: 'ws_1',
-          project: 'proj_1',
-          locale: 'en',
-        })}
-      />,
-    );
-
-    await waitFor(() => {
-      expect(mockHasPermission).toHaveBeenCalledWith('project:endpoint:use');
-    });
-  });
-
   it('shows permission error when usage token is missing', async () => {
-    mockHasPermission.mockReturnValue(false);
+    mockUseUsagePageCapabilities.mockReturnValue({ canRead: false });
     render(
       <UsagePage
         params={Promise.resolve({
@@ -64,7 +48,6 @@ describe('UsagePage route', () => {
       expect(screen.getByTestId('page-state__error')).toBeInTheDocument();
     });
     expect(screen.getByText('permission_denied_title')).toBeInTheDocument();
-    mockHasPermission.mockReturnValue(true);
   });
 
   it('passes route params and current user to usage component', async () => {

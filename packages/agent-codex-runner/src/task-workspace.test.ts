@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -37,6 +38,12 @@ import {
 } from './task-workspace.js';
 
 describe('task-workspace', () => {
+  function workspaceStateRoot(cwd: string): string {
+    const label = cwd.split('/').filter(Boolean).at(-1) ?? 'workspace';
+    const digest = createHash('sha256').update(cwd).digest('hex').slice(0, 12);
+    return `/codex-state/${label}-${digest}/tasks`;
+  }
+
   beforeEach(() => {
     vi.clearAllMocks();
     clearPreparedTaskWorkspaces();
@@ -69,6 +76,7 @@ describe('task-workspace', () => {
     vi.stubGlobal('fetch', fetchMock);
     fetchMock.mockReset();
     delete process.env.MBOS_AGENT_WORKSPACE_ROOT;
+    process.env.MBOS_AGENT_CODEX_STATE_ROOT = '/codex-state';
     delete process.env.MBOS_AGENT_JUICEFS_MOUNT_OPTIONS;
     delete process.env.WORKSPACE_PATH;
   });
@@ -110,11 +118,23 @@ describe('task-workspace', () => {
   it('builds stable workspace paths within a persistent file library root', () => {
     expect(buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_1')).toEqual({
       rootCwd: '/srv/ags-workspaces/market-analysis-q1',
-      sharedSkillsDir: '/srv/ags-workspaces/market-analysis-q1/.codex/skills',
-      codexDir: '/srv/ags-workspaces/market-analysis-q1/.codex',
-      homeDir: '/srv/ags-workspaces/market-analysis-q1',
+      codexRootDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}`,
+      codexHomeDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1`,
+      homeDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1/home`,
       artifactsDir: '/srv/ags-workspaces/market-analysis-q1/.artifacts',
+      credentialDir: `${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1').replace(/\/tasks$/, '')}/credentials/task_1`,
     });
+  });
+
+
+  it('uses task-scoped codex state directories while keeping the workspace root stable', () => {
+    const taskOne = buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_1');
+    const taskTwo = buildTaskWorkspacePaths('/srv/ags-workspaces/market-analysis-q1', 'task_2');
+
+    expect(taskOne.rootCwd).toBe(taskTwo.rootCwd);
+    expect(taskOne.codexHomeDir).not.toBe(taskTwo.codexHomeDir);
+    expect(taskOne.homeDir).not.toBe(taskTwo.homeDir);
+    expect(taskOne.credentialDir).not.toBe(taskTwo.credentialDir);
   });
 
   it('fetches task-bound workspace access with bearer auth', async () => {
@@ -218,6 +238,9 @@ describe('task-workspace', () => {
     expect(resolved.cwd).toBe('/srv/ags-workspaces/market-analysis-q1');
     expect(resolved.source).toBe('file_library_mount');
     expect(resolved.paths.artifactsDir).toBe('/srv/ags-workspaces/market-analysis-q1/.artifacts');
+    expect(resolved.paths.codexHomeDir).toBe(`${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1`);
+    expect(resolved.paths.homeDir).toBe(`${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1')}/task_1/home`);
+    expect(resolved.paths.credentialDir).toBe(`${workspaceStateRoot('/srv/ags-workspaces/market-analysis-q1').replace(/\/tasks$/, '')}/credentials/task_1`);
   });
 
   it('passes explicit JuiceFS mount options when configured', async () => {
@@ -384,5 +407,7 @@ describe('task-workspace', () => {
     expect(resolved.cwd).toBe('/workspace');
     expect(resolved.source).toBe('workspace_path');
     expect(resolved.paths.artifactsDir).toBe('/workspace/.artifacts');
+    expect(resolved.paths.codexHomeDir).toBe(`${workspaceStateRoot('/workspace')}/task_internal`);
+    expect(resolved.paths.homeDir).toBe(`${workspaceStateRoot('/workspace')}/task_internal/home`);
   });
 });

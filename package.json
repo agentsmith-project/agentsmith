@@ -23,7 +23,6 @@
     "test:e2e:lane:mock:visual": "playwright test --project=visual",
     "test:e2e:lane:mock:visual:update": "playwright test --project=visual --update-snapshots",
     "test:visual": "bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1",
-    "test:e2e:lane:mock:full": "playwright test --project=smoke --project=chromium --project=chromium-serial",
     "test:e2e:lane:mock:full:with-visual": "bash scripts/run-mock-lane-playwright.sh --project=smoke --workers=1 && bash scripts/run-mock-lane-playwright.sh --project=chromium --workers=4 && bash scripts/run-mock-lane-playwright.sh --project=chromium-serial --workers=1 && bash scripts/run-mock-lane-playwright.sh --project=visual --workers=1",
     "test:e2e:lane:backend-real": "playwright test --config playwright.config.integration.ts --project=chromium",
     "test:e2e:integration:minimal": "playwright test --config playwright.config.integration.ts e2e/integration-minimal.spec.ts --project=chromium --workers=1",
@@ -46,7 +45,6 @@
     "test:default-e2e": "bash scripts/workspace-project-default-gate.sh",
     "test:backend-real:core": "bash scripts/workspace-project-default-gate.sh --with-backend-real",
     "test:governance": "bash scripts/governance-default-gate.sh",
-    "test:members-governance": "bash scripts/governance-default-gate.sh",
     "test:notebook:backend-real:smoke": "bash scripts/notebook-real-smoke-gate.sh",
     "test:internal:backend-real:notebook-workspace": "bash scripts/run-internal-notebook-real-gate.sh",
     "test:agents:backend-real:codex": "bash scripts/run-integration-e2e-full.sh e2e/integration-agents-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts && bash scripts/run-integration-e2e-full.sh e2e/integration-notebook-codex-runner.spec.ts --grep docker",
@@ -56,19 +54,17 @@
     "test:files:release:strict": "bash scripts/run-mock-lane-playwright.sh e2e/files.spec.ts --project=chromium --workers=1 && bash scripts/run-mock-lane-playwright.sh e2e/visual.spec.ts --project=visual --workers=1 --grep 'files' && bash scripts/run-file-library-real-gate.sh",
     "test:visual:backend-real:review": "bash scripts/backend-real-visual-review.sh",
     "test:release:precheck": "bash scripts/run-release-local-precheck.sh",
-    "test:bundle:inputs": "bash scripts/demo-deploy/check-bundle-inputs.sh",
     "test:demo-bundle:inputs": "bash scripts/demo-deploy/check-bundle-inputs.sh",
     "test:cluster-bundle:inputs": "bash scripts/cluster-deploy/check-bundle-inputs.sh",
-    "test:rendered-env": "bash scripts/demo-deploy/check-rendered-env.sh",
     "test:demo-rendered-env": "bash scripts/demo-deploy/check-rendered-env.sh",
     "test:cluster-rendered-env": "bash scripts/cluster-deploy/check-rendered-env.sh",
     "test:client-public-runtime": "bash scripts/check-client-public-runtime.sh",
     "gate:fast": "npm run contracts:check && npx tsc --noEmit && npm run test:e2e:lane:mock:smoke",
     "gate:default": "npm run test:default-e2e && npm run test:governance && npm run test:visual",
-    "gate:release": "bash scripts/backend-real-full-gate.sh",
-    "lane:mock": "npm run test:e2e:lane:mock:full",
+    "gate:release": "npm run lane:backend-real:release",
+    "lane:mock": "npm run test:e2e",
     "lane:visual": "npm run test:visual",
-    "lane:backend-real:core": "bash scripts/backend-real-run.sh",
+    "lane:backend-real:core": "npm run backend-real:run",
     "lane:backend-real:release": "bash scripts/backend-real-full-gate.sh",
     "manual:feishu:admin": "bash scripts/manual-feishu-admin.sh",
     "manual:feishu:user": "bash scripts/manual-feishu-user.sh",
@@ -97,6 +93,7 @@
     "cluster:verify": "bash scripts/cluster-deploy/verify.sh",
     "cluster:report": "bash scripts/cluster-deploy/report.sh",
     "docs:artifacts:generate": "bash scripts/generate-doc-artifacts.sh",
+    "marketing:assets:generate": "bash scripts/generate-marketing-assets.sh",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:debug": "playwright test --debug",
     "integration:deps:up": "docker compose -f infra/integration/docker-compose.yml up -d",
@@ -111,7 +108,7 @@
     "integration:test:adapters": "npm run test -w @mbos/adapters-private",
     "api:node:dev:pg": "DATABASE_URL=postgresql://mbos:mbos_dev_password@localhost:15432/mbos npm run api:node:dev",
     "contracts:check-limit-naming": "tsx scripts/contracts/check-limit-naming-boundary.ts",
-    "contracts:check-current-workflows": "tsx scripts/contracts/check-current-workflows.ts",
+    "contracts:check-current-workflows": "npm run current-workflow:check && tsx scripts/contracts/check-current-workflows.ts",
     "contracts:check-engineering-governance": "tsx scripts/contracts/check-engineering-governance.ts",
     "contracts:check": "npm run contracts:check-limit-naming && npm run contracts:check-current-workflows && npm run contracts:check-engineering-governance && tsx scripts/contracts/check-permission-gates.ts",
     "contracts:check-doc-governance": "tsx scripts/contracts/check-doc-governance.ts",
@@ -134,7 +131,11 @@
     "ws:typecheck": "npm run --workspaces typecheck --if-present",
     "ws:build": "npm run --workspaces build --if-present",
     "ws:test": "npm run --workspaces test --if-present",
-    "contracts:check-engineering-sync": "npm run contracts:check-doc-governance"
+    "current-workflow:sync": "tsx scripts/governance/sync-current-workflow-docs.ts",
+    "current-workflow:check": "tsx scripts/governance/sync-current-workflow-docs.ts --check",
+    "oss:export": "tsx scripts/oss-export/build-oss-tree.ts",
+    "oss:verify": "tsx scripts/oss-export/verify-oss-tree.ts",
+    "oss:publish": "tsx scripts/oss-export/publish-oss.ts"
   },
   "msw": {
     "workerDirectory": "public"
@@ -204,5 +205,9 @@
     "typescript": "^5.9.3",
     "vitest": "^4.0.18",
     "yaml": "^2.8.2"
-  }
+  },
+  "engines": {
+    "node": "24.14.1"
+  },
+  "packageManager": "npm@11.11.0"
 }

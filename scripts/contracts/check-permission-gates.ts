@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { ALL_PLATFORM_PERMISSIONS } from '@/lib/constants/permissions';
+import { PROJECT_ROUTE_POLICY_MANIFEST } from '@/lib/routes/project-route-policy-manifest';
 
 const ROOT = process.cwd();
 const SHELL_DIR = path.join(
@@ -20,6 +21,8 @@ type PageReport = {
   hasInvalidParamTest: boolean;
   hasForbiddenTest: boolean;
   hasAuthFallbackGate: boolean;
+  hasRoutePolicy: boolean;
+  hasUnifiedRouteGuard: boolean;
 };
 
 type RemovedTokenUsage = {
@@ -81,6 +84,11 @@ function toWorkspaceRelative(filePath: string): string {
 }
 
 function extractPermissions(source: string): string[] {
+  const routePolicyPermissions = extractRoutePolicyPermissions(source);
+  if (routePolicyPermissions.length > 0) {
+    return routePolicyPermissions;
+  }
+
   const regex = /useHasPermission\('([^']+)'\)/g;
   const found = new Set<string>();
   let match = regex.exec(source);
@@ -91,17 +99,30 @@ function extractPermissions(source: string): string[] {
   return [...found].sort();
 }
 
+function extractRoutePolicyPermissions(source: string): string[] {
+  return [];
+}
+
 function requiresProjectParamValidation(pageFile: string): boolean {
   return pageFile.includes('/projects/[project]/');
 }
 
 function hasParamValidation(pageFile: string, source: string): boolean {
+  const relativePagePath = toWorkspaceRelative(pageFile);
+  if (PROJECT_ROUTE_POLICY_MANIFEST[relativePagePath as keyof typeof PROJECT_ROUTE_POLICY_MANIFEST]) {
+    return true;
+  }
+
   const hasWorkspaceParamValidation = source.includes('validateWorkspaceParam');
   const hasProjectParamValidation = source.includes('validateProjectParam');
 
   if (!hasWorkspaceParamValidation) return false;
   if (requiresProjectParamValidation(pageFile) && !hasProjectParamValidation) return false;
   return true;
+}
+
+function hasUnifiedRouteGuard(source: string): boolean {
+  return source.includes('useResolvedProjectRoute(');
 }
 
 function getRouteTestPath(pageFile: string): string {
@@ -140,6 +161,10 @@ function hasAuthFallbackGate(pageFile: string, source: string): boolean {
   const createFallback =
     /const\s+canCreateProject\s*=\s*[^;]*(?:isAuthenticated|currentWorkspace)/.test(source);
   return readFallback || createFallback;
+}
+
+function requiresRoutePolicy(pageFile: string): boolean {
+  return pageFile !== PROJECTS_LIST_PAGE;
 }
 
 function collectRemovedTokenUsageInSource(): RemovedTokenUsage[] {
@@ -192,18 +217,26 @@ function main(): void {
 
   const reports: PageReport[] = pageFiles.map((page) => {
     const source = fs.readFileSync(page, 'utf8');
+    const relativePagePath = toWorkspaceRelative(page);
     const testPath = getRouteTestPath(page);
     const routeTestExists = fs.existsSync(testPath);
     const testSource = routeTestExists ? fs.readFileSync(testPath, 'utf8') : '';
-    const permissions = extractPermissions(source);
+    const permissions = (
+      PROJECT_ROUTE_POLICY_MANIFEST[relativePagePath as keyof typeof PROJECT_ROUTE_POLICY_MANIFEST]?.permissions
+      ?? extractPermissions(source)
+    ).slice();
     return {
-      page: toWorkspaceRelative(page),
+      page: relativePagePath,
       permissions,
       hasParamValidation: hasParamValidation(page, source),
       hasRouteTest: routeTestExists,
       hasInvalidParamTest: hasInvalidParamTest(testSource),
       hasForbiddenTest: permissions.length === 0 ? true : hasForbiddenTest(testSource),
       hasAuthFallbackGate: hasAuthFallbackGate(page, source),
+      hasRoutePolicy: Boolean(
+        PROJECT_ROUTE_POLICY_MANIFEST[relativePagePath as keyof typeof PROJECT_ROUTE_POLICY_MANIFEST],
+      ),
+      hasUnifiedRouteGuard: hasUnifiedRouteGuard(source),
     };
   });
 
@@ -213,6 +246,8 @@ function main(): void {
   const pagesMissingInvalidParamTest: string[] = [];
   const pagesMissingForbiddenTest: string[] = [];
   const pagesWithAuthFallbackGate: string[] = [];
+  const pagesMissingRoutePolicy: string[] = [];
+  const pagesMissingUnifiedRouteGuard: string[] = [];
   const removedTokenUsage = collectRemovedTokenUsageInSource();
   const removedTokenUsageInDocs = collectRemovedTokenUsageInContractDocs();
 
@@ -237,6 +272,12 @@ function main(): void {
     if (report.hasAuthFallbackGate) {
       pagesWithAuthFallbackGate.push(report.page);
     }
+    if (requiresRoutePolicy(path.join(ROOT, report.page)) && !report.hasRoutePolicy) {
+      pagesMissingRoutePolicy.push(report.page);
+    }
+    if (requiresRoutePolicy(path.join(ROOT, report.page)) && !report.hasUnifiedRouteGuard) {
+      pagesMissingUnifiedRouteGuard.push(report.page);
+    }
   }
 
   console.log('Permission Gate Check Report');
@@ -250,6 +291,8 @@ function main(): void {
     console.log(`  invalid_param_test: ${report.hasInvalidParamTest ? 'yes' : 'no'}`);
     console.log(`  forbidden_test: ${report.hasForbiddenTest ? 'yes' : 'no'}`);
     console.log(`  auth_fallback_gate: ${report.hasAuthFallbackGate ? 'yes' : 'no'}`);
+    console.log(`  route_policy: ${report.hasRoutePolicy ? 'yes' : 'no'}`);
+    console.log(`  unified_route_guard: ${report.hasUnifiedRouteGuard ? 'yes' : 'no'}`);
   }
 
   let hasErrors = false;
@@ -298,6 +341,22 @@ function main(): void {
     hasErrors = true;
     console.error('\nPages with non-strict auth fallback gate logic:');
     for (const page of pagesWithAuthFallbackGate) {
+      console.error(`  - ${page}`);
+    }
+  }
+
+  if (pagesMissingRoutePolicy.length > 0) {
+    hasErrors = true;
+    console.error('\nPages missing routePolicy declaration:');
+    for (const page of pagesMissingRoutePolicy) {
+      console.error(`  - ${page}`);
+    }
+  }
+
+  if (pagesMissingUnifiedRouteGuard.length > 0) {
+    hasErrors = true;
+    console.error('\nPages missing unified route guard:');
+    for (const page of pagesMissingUnifiedRouteGuard) {
       console.error(`  - ${page}`);
     }
   }

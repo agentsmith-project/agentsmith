@@ -47,6 +47,7 @@ import {
   classifyFailure,
   getQuickRecommendation,
 } from './failure-classifier';
+import { GOVERNANCE_CHECK_DEFINITIONS } from './check-definitions';
 import { evaluateGovernance } from '../../packages/api-entry-node/src/governance-evaluation.js';
 
 // Default configuration
@@ -61,50 +62,16 @@ const DEFAULT_ORGANIZATION_GOVERNANCE_EVIDENCE_FILE = 'organization-governance-e
 
 const TRANSIENT_UPSTREAM_CATEGORIES = new Set<FailureType>(['network', 'timeout', 'rate_limit']);
 
-// Check definitions - map to existing make targets
 const CHECK_DEFINITIONS: Array<{
   id: string;
   name: string;
   category: CheckCategory;
   command: string;
   timeout: number;
-}> = [
-  {
-    id: 'typecheck',
-    name: 'TypeScript typecheck',
-    category: 'typecheck',
-    command: 'npm run ws:typecheck',
-    timeout: 60000,
-  },
-  {
-    id: 'openapi-check',
-    name: 'OpenAPI generated check',
-    category: 'contract',
-    command: 'npm run openapi:check-generated',
-    timeout: 30000,
-  },
-  {
-    id: 'contracts-check',
-    name: 'OpenAPI contract checks',
-    category: 'contract',
-    command: 'npm run contracts:check-openapi',
-    timeout: 30000,
-  },
-  {
-    id: 'lane-real-core',
-    name: 'Core backend-real',
-    category: 'lane-real-core',
-    command: 'make notebook-agent-engineering-smoke-full',
-    timeout: 600000, // 10 minutes
-  },
-  {
-    id: 'workspace-overview-evidence',
-    name: 'Workspace overview workflow',
-    category: 'e2e',
-    command: 'make workspace-overview-smoke',
-    timeout: 300000, // 5 minutes
-  },
-];
+}> = GOVERNANCE_CHECK_DEFINITIONS.map((definition) => ({
+  ...definition,
+  category: definition.category as CheckCategory,
+}));
 
 /**
  * Main entry point

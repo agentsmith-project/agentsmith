@@ -4,8 +4,8 @@
  * Server state management for workspaces using React Query.
  */
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { createApiClient, getApiClient } from '@/lib/api/client';
+import { useQuery } from '@tanstack/react-query';
+import { getApiClient } from '@/lib/api/client';
 import { WorkspaceAPI } from '@/lib/api/endpoints/workspaces';
 import type { Workspace } from '@/lib/api/types';
 import { useAuthStore } from '@/lib/stores/authStore';

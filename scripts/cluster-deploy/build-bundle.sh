@@ -73,6 +73,7 @@ cp "${ROOT_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/cluster-de
 cp "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh" "${BUNDLE_DIR}/scripts/lib/docker-buildx-common.sh"
 cp "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh" "${BUNDLE_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
 cp "${ROOT_DIR}/scripts/lib/deploy-common.sh" "${BUNDLE_DIR}/scripts/lib/deploy-common.sh"
+cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/release-stage-common.sh"
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"

@@ -1,7 +1,6 @@
 import type { NodeApiDeps } from '../node-api-deps.js';
 import { resolveWorkspaceScopedCollection } from '../workspace-tenant-collections.js';
 import {
-  asObject,
   buildId,
   normalizeTaskRecord,
   type TaskArtifactRecord,

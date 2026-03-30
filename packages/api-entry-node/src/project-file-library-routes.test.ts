@@ -89,20 +89,24 @@ describe('project-file-library-routes', () => {
       readBody: vi.fn(),
     })).resolves.toBe(true);
 
-    expect(exchangeJson).toHaveBeenCalledWith(
-      res,
-      200,
-      expect.objectContaining({
-        filesystem_name: expect.any(String),
-        metadata_url: expect.stringContaining('postgres://'),
-        storage_bucket_url: expect.stringContaining('http://localhost:19000/'),
-        recommended_mount_commands: expect.objectContaining({
-          linux: expect.stringContaining('"$HOME/Agentsmith/'),
-          macos: expect.stringContaining('"$HOME/Agentsmith/'),
-          windows: expect.stringContaining('%USERPROFILE%\\\\.juicefs\\\\cache\\\\agentsmith\\\\'),
-        }),
-      }),
-    );
+    expect(exchangeJson).toHaveBeenCalledTimes(1);
+    const [, statusCode, payload] = exchangeJson.mock.calls[0] as [unknown, number, {
+      client_mount_access?: {
+        filesystem_name?: string;
+        metadata_url?: string;
+        storage_bucket_url?: string;
+        recommended_mount_commands?: Record<string, string>;
+      };
+    }];
+    expect(statusCode).toBe(200);
+    expect(payload.client_mount_access).toMatchObject({
+      filesystem_name: expect.any(String),
+      metadata_url: expect.stringContaining('postgres://'),
+      storage_bucket_url: expect.stringContaining('http://localhost:19000/'),
+    });
+    expect(payload.client_mount_access?.recommended_mount_commands?.linux).toContain('"$HOME/Agentsmith/');
+    expect(payload.client_mount_access?.recommended_mount_commands?.macos).toContain('"$HOME/Agentsmith/');
+    expect(payload.client_mount_access?.recommended_mount_commands?.windows).toContain('%USERPROFILE%');
   });
 
   it('does not expose metadata credentials from backend details', async () => {

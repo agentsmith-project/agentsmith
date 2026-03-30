@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { useReactTable, getCoreRowModel } from '@tanstack/react-table';
 import { useTranslations } from 'next-intl';
 import { useMutation } from '@tanstack/react-query';
@@ -15,8 +15,8 @@ import type { Endpoint } from '@/lib/api/types';
 import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
-import { useHasPermission } from '@/lib/hooks/use-permissions';
-import { validateWorkspaceParam, validateProjectParam } from '@/lib/utils/validate-url-params';
+import { useEndpointPageCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { toast } from '@/components/ui/toast';
 import { useEndpointsData } from '@/lib/endpoints/use-endpoints-data';
 import { useEndpointsMutations } from '@/lib/endpoints/use-endpoints-mutations';
@@ -40,7 +40,6 @@ export interface EndpointsPageProps {
 export function EndpointsPageView({ params }: EndpointsPageProps) {
   const t = useTranslations('endpoints');
   const tErrors = useTranslations('errors');
-  const [resolvedParams, setResolvedParams] = useState<{ workspace?: string; project?: string; locale?: string } | null>(null);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedEndpoint, setSelectedEndpoint] = useState<Endpoint | null>(null);
@@ -50,25 +49,12 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
   const [importPayloadText, setImportPayloadText] = useState(
     '{\n  "completion": {\n    "model": "deepseek-chat",\n    "api_base": "https://api.deepseek.com",\n    "api_key": "YOUR_API_KEY"\n  }\n}',
   );
-  const canProjectEndpointRead = useHasPermission('project:endpoint:use');
-  const canProjectEndpointUpdate = useHasPermission('project:governance:update');
-  const canProjectEndpointCreate = useHasPermission('project:governance:update');
-  const canProjectEndpointDelete = useHasPermission('project:governance:update');
-  const canReadEndpoints = canProjectEndpointRead || canProjectEndpointUpdate;
-  const canManageEndpoints = canProjectEndpointCreate || canProjectEndpointUpdate || canProjectEndpointDelete;
+  const resolvedRoute = useResolvedProjectRoute(params);
+  const { canRead: canReadEndpoints, canManage: canManageEndpoints } = useEndpointPageCapabilities();
 
-
-  useEffect(() => {
-    params.then((p) => {
-      const workspace = validateWorkspaceParam(p.workspace);
-      const project = validateProjectParam(p.project);
-      setResolvedParams({ workspace, project, locale: p.locale });
-    });
-  }, [params]);
-
-  const workspaceId = resolvedParams?.workspace ?? '';
-  const projectId = resolvedParams?.project ?? '';
-  const locale = resolvedParams?.locale ?? 'en-US';
+  const workspaceId = resolvedRoute.workspace ?? '';
+  const projectId = resolvedRoute.project ?? '';
+  const locale = resolvedRoute.locale;
   const basePath = buildEndpointsBasePath(locale, workspaceId, projectId);
 
   const { endpoints, endpointsLoading } = useEndpointsData({
@@ -183,7 +169,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     getCoreRowModel: getCoreRowModel(),
   });
 
-  if (!resolvedParams) {
+  if (!resolvedRoute.isReady) {
     return (
       <PageState state="loading">
         <div className="flex items-center justify-center h-full">
@@ -193,7 +179,7 @@ export function EndpointsPageView({ params }: EndpointsPageProps) {
     );
   }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedRoute.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         {createEndpointsErrorContent(

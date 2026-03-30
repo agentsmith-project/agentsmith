@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
-TMP_ROOT="$(mktemp -d)"
-trap 'rm -rf "${TMP_ROOT}"' EXIT
+source "${ROOT_DIR}/scripts/lib/release-check-common.sh"
+release_check_init_tmp_root
 
 DEMO_DEPLOY_ROOT="${TMP_ROOT}/deploy-root"
 RELEASE_ROOT="${TMP_ROOT}/release"
@@ -28,103 +28,31 @@ RESOLVED_KIND_GATEWAY_HOST=10.88.0.1 \
 ALLOW_UNRESOLVED_KIND_GATEWAY=1 \
 bash "${ROOT_DIR}/scripts/demo-deploy/render-env.sh" >/dev/null
 
-for required_file in \
+release_check_require_files "missing_rendered_env" \
   "${RELEASE_ROOT}/env/base.env" \
   "${RELEASE_ROOT}/env/api.env" \
   "${RELEASE_ROOT}/env/web.env" \
   "${RELEASE_ROOT}/env/keycloak.env" \
   "${RELEASE_ROOT}/env/internal.env" \
   "${RELEASE_ROOT}/env/runner.env" \
-  "${RELEASE_ROOT}/env/runtime-addresses.env"; do
-  [[ -f "${required_file}" ]] || {
-    echo "missing_rendered_env:${required_file}" >&2
-    exit 1
-  }
-done
+  "${RELEASE_ROOT}/env/runtime-addresses.env"
 
-grep -Fxq 'NEXT_PUBLIC_API_BASE=http://localhost:20000' "${RELEASE_ROOT}/env/web.env" || {
-  echo 'rendered_env_mismatch:web.env:NEXT_PUBLIC_API_BASE' >&2
-  exit 1
-}
-
-grep -Fxq 'KEYCLOAK_ISSUER_URL=http://localhost:18080/realms/mbos' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:KEYCLOAK_ISSUER_URL' >&2
-  exit 1
-}
-
-grep -Fxq 'MBOS_API_BASE=http://api:20000' "${RELEASE_ROOT}/env/runner.env" || {
-  echo 'rendered_env_mismatch:runner.env:MBOS_API_BASE' >&2
-  exit 1
-}
-
-grep -Fxq 'PUBLIC_KEYCLOAK_BASE_URL=http://localhost:18080' "${RELEASE_ROOT}/env/keycloak.env" || {
-  echo 'rendered_env_mismatch:keycloak.env:PUBLIC_KEYCLOAK_BASE_URL' >&2
-  exit 1
-}
-
-grep -Fxq 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://host.docker.internal:20000' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL' >&2
-  exit 1
-}
-
-grep -Fxq 'AGENT_EXECUTION_HTTP_BASE_URL=http://10.88.0.1:20000' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:AGENT_EXECUTION_HTTP_BASE_URL' >&2
-  exit 1
-}
-
-grep -Fxq 'MBOS_UNIVERSAL_PROXY_BASE_URL=http://universal-proxy:8080' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:MBOS_UNIVERSAL_PROXY_BASE_URL' >&2
-  exit 1
-}
-
-grep -Fxq 'FILE_LIBRARY_CLIENT_POSTGRES_HOST=localhost' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_HOST' >&2
-  exit 1
-}
-
-grep -Fxq 'FILE_LIBRARY_CLIENT_POSTGRES_PORT=15432' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_PORT' >&2
-  exit 1
-}
-
-grep -Fxq 'FILE_LIBRARY_CLIENT_MINIO_ENDPOINT=http://localhost:19000' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_MINIO_ENDPOINT' >&2
-  exit 1
-}
-
-grep -Fxq 'EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=localhost' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE' >&2
-  exit 1
-}
-
-grep -Fxq 'EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE' >&2
-  exit 1
-}
-
-grep -Fxq 'EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://localhost:19000' "${RELEASE_ROOT}/env/api.env" || {
-  echo 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE' >&2
-  exit 1
-}
-
-grep -E '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' "${RELEASE_ROOT}/env/base.env" >/dev/null || {
-  echo 'rendered_env_mismatch:base.env:NO_PROXY' >&2
-  exit 1
-}
-
-grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' "${RELEASE_ROOT}/env/internal.env" || {
-  echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE' >&2
-  exit 1
-}
-
-grep -Fxq 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=5432' "${RELEASE_ROOT}/env/internal.env" || {
-  echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE' >&2
-  exit 1
-}
-
-grep -Fxq 'INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' "${RELEASE_ROOT}/env/internal.env" || {
-  echo 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE' >&2
-  exit 1
-}
+release_check_require_exact_line "${RELEASE_ROOT}/env/web.env" 'NEXT_PUBLIC_API_BASE=http://localhost:20000' 'rendered_env_mismatch:web.env:NEXT_PUBLIC_API_BASE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'KEYCLOAK_ISSUER_URL=http://localhost:18080/realms/mbos' 'rendered_env_mismatch:api.env:KEYCLOAK_ISSUER_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/runner.env" 'MBOS_API_BASE=http://api:20000' 'rendered_env_mismatch:runner.env:MBOS_API_BASE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/keycloak.env" 'PUBLIC_KEYCLOAK_BASE_URL=http://localhost:18080' 'rendered_env_mismatch:keycloak.env:PUBLIC_KEYCLOAK_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL=http://host.docker.internal:20000' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'AGENT_EXECUTION_HTTP_BASE_URL=http://10.88.0.1:20000' 'rendered_env_mismatch:api.env:AGENT_EXECUTION_HTTP_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'MBOS_UNIVERSAL_PROXY_BASE_URL=http://universal-proxy:8080' 'rendered_env_mismatch:api.env:MBOS_UNIVERSAL_PROXY_BASE_URL'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'FILE_LIBRARY_CLIENT_POSTGRES_HOST=localhost' 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_HOST'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'FILE_LIBRARY_CLIENT_POSTGRES_PORT=15432' 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_POSTGRES_PORT'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'FILE_LIBRARY_CLIENT_MINIO_ENDPOINT=http://localhost:19000' 'rendered_env_mismatch:api.env:FILE_LIBRARY_CLIENT_MINIO_ENDPOINT'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=localhost' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=15432' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/api.env" 'EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://localhost:19000' 'rendered_env_mismatch:api.env:EXTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
+release_check_require_pattern "${RELEASE_ROOT}/env/base.env" '^NO_PROXY=.*(^|,)(postgres|minio)(,|$)' 'rendered_env_mismatch:base.env:NO_PROXY'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE=postgres-external.agentsmith-sandbox.svc.cluster.local' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_HOST_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE=5432' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_META_PORT_OVERRIDE'
+release_check_require_exact_line "${RELEASE_ROOT}/env/internal.env" 'INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE=http://minio-external.agentsmith-sandbox.svc.cluster.local:9000' 'rendered_env_mismatch:internal.env:INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE'
 
 echo "[rendered-env] ok"

@@ -14,8 +14,8 @@ Call Feishu remote MCP directly over HTTP through a local helper script. Read cr
 Use the helper script in this skill:
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"roadmap"}'
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"roadmap"}'
 ```
 
 The helper script now defaults to the full Feishu tool whitelist. For tighter control on risky edits, still prefer passing a minimal `--allowed-tools` set explicitly.
@@ -26,53 +26,53 @@ The helper script now defaults to the full Feishu tool whitelist. For tighter co
 2. If the request is vague about the target document, start with `search-doc`.
 3. If the user provides a doc URL or doc id, use `fetch-doc`.
 4. For edits, call only the specific mutation tool needed, for example `update-doc` or `add-comments`.
-5. If the call fails with auth-related errors, run `python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token` from the workspace and retry once.
+5. If the call fails with auth-related errors, run `python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token` from the workspace and retry once.
 
 ## Commands
 
 List tools:
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py tools-list
 ```
 
 Search docs:
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"quarterly planning"}'
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool search-doc --params '{"query":"quarterly planning"}'
 ```
 
 Fetch a doc:
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool fetch-doc --params '{"doc_id":"https://example.feishu.cn/docx/..."}'
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool fetch-doc --params '{"doc_id":"https://example.feishu.cn/docx/..."}'
 ```
 
 Update a doc with an explicit narrow whitelist:
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --allowed-tools 'fetch-doc,update-doc' --params '{"doc_id":"docx123","requests":[]}'
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py call-tool update-doc --allowed-tools 'fetch-doc,update-doc' --params '{"doc_id":"docx123","requests":[]}'
 ```
 
 Refresh the current workspace token:
 
 ```bash
-python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token
+python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token
 ```
 
 ## Tool Selection
 
-Read [tooling.md](/home/percy/.codex/skills/feishu-docs/references/tooling.md) first to choose the right reference file.
+Read [tooling.md](/etc/codex/skills/feishu-docs/references/tooling.md) first to choose the right reference file.
 
 Reference loading rules:
 
-- Always read [common.md](/home/percy/.codex/skills/feishu-docs/references/common.md) before writing code that consumes tool output
-- Read [search-doc.md](/home/percy/.codex/skills/feishu-docs/references/search-doc.md) for keyword search, owner filters, time filters, or pagination
-- Read [fetch-doc.md](/home/percy/.codex/skills/feishu-docs/references/fetch-doc.md) before reading document bodies
-- Read [create-doc.md](/home/percy/.codex/skills/feishu-docs/references/create-doc.md) before creating documents
-- Read [update-doc.md](/home/percy/.codex/skills/feishu-docs/references/update-doc.md) before any document body mutation
-- Read [add-comments.md](/home/percy/.codex/skills/feishu-docs/references/add-comments.md) before adding comments
-- Read [simple-tools.md](/home/percy/.codex/skills/feishu-docs/references/simple-tools.md) for the lower-complexity tools
+- Always read [common.md](/etc/codex/skills/feishu-docs/references/common.md) before writing code that consumes tool output
+- Read [search-doc.md](/etc/codex/skills/feishu-docs/references/search-doc.md) for keyword search, owner filters, time filters, or pagination
+- Read [fetch-doc.md](/etc/codex/skills/feishu-docs/references/fetch-doc.md) before reading document bodies
+- Read [create-doc.md](/etc/codex/skills/feishu-docs/references/create-doc.md) before creating documents
+- Read [update-doc.md](/etc/codex/skills/feishu-docs/references/update-doc.md) before any document body mutation
+- Read [add-comments.md](/etc/codex/skills/feishu-docs/references/add-comments.md) before adding comments
+- Read [simple-tools.md](/etc/codex/skills/feishu-docs/references/simple-tools.md) for the lower-complexity tools
 
 Practical defaults:
 
@@ -83,7 +83,7 @@ Practical defaults:
 
 ## Failure Recovery
 
-- If token or auth errors appear, run `python3 ./.codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token`
+- If token or auth errors appear, run `python3 /etc/codex/skills/feishu-docs/scripts/feishu_mcp.py refresh-token`
 - If refresh fails, inspect and update the credential files under `MBOS_TASK_CREDENTIAL_DIR` or `.codex/credential`
 - Do not re-register Feishu as a Codex MCP server for this skill; use the helper script directly
 

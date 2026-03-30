@@ -79,7 +79,7 @@ The default gate also runs targeted visual coverage for the default entry pages:
 If the UI intentionally changes:
 
 ```bash
-NEXT_PUBLIC_USE_MSW=true BASE_URL=http://localhost:3000 \
+NEXT_PUBLIC_USE_MSW=true BASE_URL=http://localhost:3001 \
 npx playwright test e2e/visual.spec.ts --project=visual \
   --grep 'workspace selection|workspace login|workspace home|workspace home - project creator|projects list|projects empty state|workspace settings|workspace settings create project dialog|overview' \
   --update-snapshots

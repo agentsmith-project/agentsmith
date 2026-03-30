@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useMemo } from 'react';
 import { useParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ArrowLeft, ShieldCheck, Sparkles, Workflow, Wrench } from 'lucide-react';
@@ -8,8 +9,8 @@ import { PageLayout } from '@/components/layout/PageLayout';
 import { PageHeader } from '@/components/layout/PageHeader';
 import { PageState } from '@/components/layout/PageState';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { validateProjectParam, validateWorkspaceParam } from '@/lib/utils/validate-url-params';
-import { useCanReadAudit, useCanReadProjectSettings, useHasPermission } from '@/lib/hooks/use-permissions';
+import { useProjectOverviewCapabilities } from '@/lib/hooks/use-permissions';
+import { useResolvedProjectRoute } from '@/lib/hooks/use-resolved-project-route';
 import { OverviewLinkSection } from './_components/OverviewLinkSection';
 import {
   buildGovernanceLinks,
@@ -18,25 +19,43 @@ import {
   createOverviewErrorContent,
 } from './overview-page-utils';
 
-export default function OverviewPage() {
-  const params = useParams();
+interface OverviewPageProps {
+  params?: Promise<{ workspace: string; project: string; locale: string }>;
+}
+
+export default function OverviewPage({ params }: OverviewPageProps) {
+  const routeParams = useParams();
+  const paramsPromise = useMemo(() => (
+    params
+    ?? Promise.resolve({
+      workspace: String(routeParams.workspace ?? ''),
+      project: String(routeParams.project ?? ''),
+      locale: String(routeParams.locale ?? 'en-US'),
+    })
+  ), [params, routeParams.locale, routeParams.project, routeParams.workspace]);
+  const resolvedParams = useResolvedProjectRoute(paramsPromise);
   const tNav = useTranslations('nav');
   const tOverview = useTranslations('overview');
   const tWorkspace = useTranslations('workspace');
   const tProjects = useTranslations('projects');
   const tErrors = useTranslations('errors');
-  const canUseProject = useHasPermission('project:endpoint:use');
-  const canReadAudit = useCanReadAudit();
-  const canManageGovernance = useHasPermission('project:governance:update');
-  const canManageMembership = useHasPermission('project:membership:update');
-  const canReadProjectSettings = useCanReadProjectSettings();
-  const canManageAgents = useHasPermission('project:agent:manage');
+  const {
+    canUseProject,
+    canReadAudit,
+    canManageGovernance,
+    canManageMembership,
+    canReadProjectSettings,
+    canManageAgents,
+  } = useProjectOverviewCapabilities();
+  const workspaceId = resolvedParams.workspace;
+  const projectId = resolvedParams.project;
+  const locale = resolvedParams.locale;
 
-  const workspaceId = validateWorkspaceParam(params.workspace);
-  const projectId = validateProjectParam(params.project);
-  const locale = (params.locale as string) || 'en-US';
+  if (!resolvedParams.isReady) {
+    return <PageState state="loading" />;
+  }
 
-  if (!workspaceId || !projectId) {
+  if (!resolvedParams.isValid || !workspaceId || !projectId) {
     return (
       <PageState state="error">
         {createOverviewErrorContent(

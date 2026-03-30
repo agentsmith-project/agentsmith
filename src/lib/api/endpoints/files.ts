@@ -12,7 +12,7 @@ import type {
   FileObjectShareLink,
   FileObjectItem,
 } from '../types';
-import { API_BASE, USE_MSW } from '../client';
+import { API_BASE } from '../client';
 import type { ApiClient } from '../client';
 import { APIError } from '../errors';
 

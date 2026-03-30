@@ -7,7 +7,7 @@
  */
 
 import * as React from 'react';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 
 import { FilesPage } from '../FilesPage';
@@ -46,7 +46,7 @@ vi.mock('react-virtuoso', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
+  useFilesPageCapabilities: () => ({ canRead: true, canManage: true, canExchangeCredentials: true }),
 }));
 
 vi.mock('@/lib/hooks/use-file-libraries-v2', () => ({

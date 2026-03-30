@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { TaskPage } from '../TaskPage';
 import { ApiError } from '@/lib/api/client';
@@ -45,8 +45,7 @@ vi.mock('next-intl', () => ({
       'notebook.task.not_found_title': 'Task not found',
       'notebook.task.not_found_description': "The task you're looking for doesn't exist or has been deleted.",
       'notebook.task.back_to_notebook': 'Go back to Notebook',
-      'notebook.conversation.trace_view': 'View execution details',
-      'notebook.conversation.trace_load_more': 'Load earlier logs',
+      'notebook.conversation.process_load_more': 'Load older steps',
       'notebook.conversation.send_rate_limited_title': 'Request rate limited',
       'notebook.conversation.send_rate_limited_description': 'This request exceeded the current limit. Please retry shortly.',
       'notebook.conversation.send_conflict_title': 'Task run still in progress',

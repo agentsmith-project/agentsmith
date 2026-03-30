@@ -1,5 +1,4 @@
 import { http, HttpResponse } from 'msw';
-import p0 from '../fixtures/p0.json';
 import type { FileLibrary } from '@/lib/api/types';
 import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docFileLibraries } from '../doc-fixtures/workspace-projects';

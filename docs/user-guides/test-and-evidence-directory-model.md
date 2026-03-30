@@ -71,14 +71,16 @@
 当前建议结构：
 - `artifacts/backend-real-visual/`
   - 真实后端截图巡检与 `review.md`
-- `artifacts/release-evidence/`
-  - 发布级汇总结论与门禁证据
+- `artifacts/backend-real/current/`
+  - backend-real 当前运行轮次的日志、状态与中间输出
+- `artifacts/release-runs/`
+  - 单次发布验证运行目录
+- `artifacts/release-reports/`
+  - 发布级汇总结论与门禁报告
+- `artifacts/release-escalations/`
+  - 发布阻断与升级记录
 - `artifacts/governance-reports/`
   - 治理报告与治理执行证据
-- `artifacts/system-state/`
-  - system 管理侧导出的配置与状态快照
-- `artifacts/notebook-runner/`
-  - notebook runner / external agent 长期运行产物
 
 说明：
 - `artifacts/` 是“长期证据总入口”
@@ -103,7 +105,7 @@
 看：
 - 严格门禁命令输出
 - `artifacts/backend-real-visual/<run-id>/review.md`
-- 未来统一收口到 `artifacts/release-evidence/`
+- `artifacts/release-reports/`
 
 ## 当前目录治理结论
 
@@ -142,4 +144,4 @@
 
 当前正确理解是：
 - `artifacts/system-workspace-provisioning/` 是**当前运行时输出路径**
-- `artifacts/system-state/` 是**后续长期状态快照与审查资产**的收口方向
+- 如后续需要新增 system 长期状态快照目录，应先同步脚本与文档，再引入新命名

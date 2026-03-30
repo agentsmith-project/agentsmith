@@ -6,10 +6,8 @@ import { useTranslations } from 'next-intl';
 import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import {
-  useCanReadAudit,
-  useCanReadProjectSettings,
-  useHasPermission,
   useHasWorkspacePermission,
+  useProjectOverviewCapabilities,
 } from '@/lib/hooks/use-permissions';
 import { useProject } from '@/lib/hooks/use-projects-queries';
 import { Button } from '@/components/ui/button';
@@ -102,14 +100,15 @@ export function AppShellSidebar({
   const pathname = usePathname();
   const t = useTranslations('nav');
   const [collapsed, setCollapsed] = React.useState(false);
-  const canUseProject = useHasPermission('project:endpoint:use');
-  const canReadAgents = useHasPermission('project:agent:manage');
-  const canReadAudit = useCanReadAudit();
-  const canManageGovernance = useHasPermission('project:governance:update');
-  const canManageMembership = useHasPermission('project:membership:update');
-  const canReadProjectSettings = useCanReadProjectSettings();
+  const {
+    canUseProject,
+    canManageAgents: canReadAgents,
+    canReadAudit,
+    canManageGovernance,
+    canManageMembership,
+    canReadProjectSettings,
+  } = useProjectOverviewCapabilities();
   const canReadWorkspace = useHasWorkspacePermission('workspace:read');
-  const canCreateWorkspaceProject = useHasWorkspacePermission('workspace:project:create');
   const canManageWorkspaceGovernance = useHasWorkspacePermission('workspace:governance:update');
 
   const workspaceId = params?.workspace as string | undefined;
@@ -164,7 +163,6 @@ export function AppShellSidebar({
     },
   ];
   const visibleWorkspaceMenuItems = workspaceMenuItems.filter((item) => item.visible);
-  const menuItems = currentProject ? projectMenuItems : visibleWorkspaceMenuItems;
 
   const baseProjectPath =
     locale && workspaceId && projectId

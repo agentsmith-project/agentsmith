@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import type { Artifact } from '@/lib/types/task';
 import { toast } from '@/components/ui/toast';
 import { formatBytes } from '@/lib/utils/formatters';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 export interface ArtifactCardProps {
   artifact: Artifact;
@@ -40,6 +40,7 @@ export function ArtifactCard({
   const [isDetailsVisible, setIsDetailsVisible] = React.useState(false);
   const [hoverRect, setHoverRect] = React.useState<DOMRect | null>(null);
   const [isHoveringPanel, setIsHoveringPanel] = React.useState(false);
+  const closeDetailsTimeoutRef = React.useRef<number | null>(null);
   const isActionsMenuOpen = false;
 
   const compactTextPreview = React.useMemo(() => {
@@ -61,6 +62,26 @@ export function ArtifactCard({
     return tStudio('artifact.file_default');
   }, [artifact.title, artifact.type, tStudio]);
 
+  const cancelScheduledClose = React.useCallback(() => {
+    if (closeDetailsTimeoutRef.current != null) {
+      window.clearTimeout(closeDetailsTimeoutRef.current);
+      closeDetailsTimeoutRef.current = null;
+    }
+  }, []);
+
+  const scheduleClose = React.useCallback(() => {
+    cancelScheduledClose();
+    closeDetailsTimeoutRef.current = window.setTimeout(() => {
+      if (!isActionsMenuOpen) {
+        setIsDetailsVisible(false);
+        setIsHoveringPanel(false);
+      }
+      closeDetailsTimeoutRef.current = null;
+    }, 120);
+  }, [cancelScheduledClose, isActionsMenuOpen]);
+
+  React.useEffect(() => () => cancelScheduledClose(), [cancelScheduledClose]);
+
   const previewNode = React.useMemo(() => {
     if (artifact.type === 'image') {
       const src = artifact.thumbnail_url || artifact.content || null;
@@ -81,23 +102,24 @@ export function ArtifactCard({
 
   const handleBlur = (event: React.FocusEvent<HTMLDivElement>) => {
     if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
-    if (!isHoveringPanel && !isActionsMenuOpen) setIsDetailsVisible(false);
+    if (!isHoveringPanel && !isActionsMenuOpen) scheduleClose();
   };
 
   const openDetails = (element: HTMLDivElement) => {
+    cancelScheduledClose();
     setHoverRect(element.getBoundingClientRect());
     setIsDetailsVisible(true);
   };
 
   const closeDetails = () => {
     if (isHoveringPanel || isActionsMenuOpen) return;
-    setIsDetailsVisible(false);
+    scheduleClose();
   };
 
   const hoverStyle = React.useMemo(() => {
     if (!hoverRect) return undefined;
     const width = 252;
-    const gap = 12;
+    const gap = 4;
     const left = Math.max(16, hoverRect.left - width - gap);
     const top = Math.max(16, hoverRect.top + hoverRect.height / 2 - 72);
     return { left: `${left}px`, top: `${top}px`, width: `${width}px` };
@@ -129,10 +151,13 @@ export function ArtifactCard({
                 className="fixed z-[90] rounded-xl border border-white/10 bg-background/95 p-2.5 shadow-[0_18px_40px_rgba(0,0,0,0.4)]"
                 style={hoverStyle}
                 data-testid="notebook__artifact-hover-panel"
-                onMouseEnter={() => setIsHoveringPanel(true)}
+                onMouseEnter={() => {
+                  cancelScheduledClose();
+                  setIsHoveringPanel(true);
+                }}
                 onMouseLeave={() => {
                   setIsHoveringPanel(false);
-                  setIsDetailsVisible(false);
+                  scheduleClose();
                 }}
               >
                 <div className="space-y-2">

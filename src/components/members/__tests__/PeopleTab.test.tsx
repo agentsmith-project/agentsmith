@@ -20,8 +20,7 @@ vi.mock('next/navigation', () => ({
 }));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: () => true,
-  useCanManageMemberGovernance: () => false,
+  useMemberPageCapabilities: () => ({ canRead: true, canManage: false }),
 }));
 
 const members = Array.from({ length: 25 }).map((_, index) => ({

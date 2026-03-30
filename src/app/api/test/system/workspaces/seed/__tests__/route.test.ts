@@ -8,7 +8,7 @@ const storageModule = vi.hoisted(() => ({
 
 vi.mock('@/lib/system-admin/workspace-registry/persistence', () => storageModule);
 
-import { POST } from '../route';
+import { GET, POST } from '../route';
 
 function buildRecord(overrides: Partial<Record<string, unknown>> = {}) {
   return {
@@ -101,6 +101,20 @@ describe('/api/test/system/workspaces/seed', () => {
         last_init_error: 'identity_provider_config_incomplete',
       }),
     );
+  });
+
+
+
+  it('returns seeded records in mock mode', async () => {
+    storageModule.listPersistedSystemWorkspaces.mockResolvedValue([buildRecord()]);
+
+    const response = await GET();
+    const payload = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(payload).toEqual({
+      items: [expect.objectContaining({ id: 'ws_seeded', name: 'Seeded Workspace' })],
+    });
   });
 
   it('returns not found outside mock lane', async () => {

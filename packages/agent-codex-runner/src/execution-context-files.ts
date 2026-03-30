@@ -48,9 +48,26 @@ function resolveCredentialRoot(relativePath: string): string | null {
   return null;
 }
 
+function resolveCredentialRelativePath(relativePath: string): string {
+  const normalized = normalizeRelativePath(relativePath);
+  if (normalized === '.codex/credential') {
+    return '';
+  }
+  if (normalized === '.codex/credential/index.json') {
+    return 'index.json';
+  }
+  if (normalized.startsWith('.codex/credential/')) {
+    return normalized.slice('.codex/credential/'.length);
+  }
+  return normalized;
+}
+
 export async function applyExecutionContextFiles(
   cwd: string,
   inputItems: ExecutionContextFileItem[] | undefined,
+  options?: {
+    credentialDir?: string;
+  },
 ): Promise<{ written: number; totalBytes: number }> {
   const items = Array.isArray(inputItems) ? inputItems : [];
   if (items.length > MAX_FILE_COUNT) {
@@ -67,7 +84,12 @@ export async function applyExecutionContextFiles(
   }
   await Promise.all(
     Array.from(credentialRoots, (credentialRoot) =>
-      rm(join(cwd, credentialRoot), { recursive: true, force: true })),
+      rm(
+        options?.credentialDir && credentialRoot === '.codex/credential'
+          ? options.credentialDir
+          : join(cwd, credentialRoot),
+        { recursive: true, force: true },
+      )),
   );
 
   let totalBytes = 0;
@@ -88,7 +110,10 @@ export async function applyExecutionContextFiles(
       throw new Error('execution_files_total_size_exceeded');
     }
 
-    const targetPath = resolveSafeTargetPath(cwd, relativePath);
+    const credentialRoot = resolveCredentialRoot(relativePath);
+    const targetPath = credentialRoot && options?.credentialDir
+      ? resolveSafeTargetPath(options.credentialDir, resolveCredentialRelativePath(relativePath))
+      : resolveSafeTargetPath(cwd, relativePath);
     await mkdir(dirname(targetPath), { recursive: true });
     await writeFile(targetPath, content, { encoding: 'utf-8', mode: 0o600 });
     written += 1;

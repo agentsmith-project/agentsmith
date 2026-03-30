@@ -51,15 +51,18 @@ vi.mock('next-intl', () => ({
 const mockUseHasWorkspacePermission = vi.fn(
   (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
 );
-const mockUseHasPermission = vi.fn((_: string) => true);
-const mockUseCanReadProjectSettings = vi.fn(() => true);
-const mockUseCanReadAudit = vi.fn(() => true);
+const mockUseProjectOverviewCapabilities = vi.fn(() => ({
+  canUseProject: true,
+  canManageAgents: true,
+  canManageGovernance: true,
+  canManageMembership: true,
+  canReadAudit: true,
+  canReadProjectSettings: true,
+}));
 
 vi.mock('@/lib/hooks/use-permissions', () => ({
-  useHasPermission: (permission: string) => mockUseHasPermission(permission),
   useHasWorkspacePermission: (permission: string) => mockUseHasWorkspacePermission(permission),
-  useCanReadProjectSettings: () => mockUseCanReadProjectSettings(),
-  useCanReadAudit: () => mockUseCanReadAudit(),
+  useProjectOverviewCapabilities: () => mockUseProjectOverviewCapabilities(),
 }));
 
 vi.mock('@/lib/hooks/use-projects-queries', () => ({
@@ -113,9 +116,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
       project: 'proj_001',
       locale: 'en-US',
     });
-    mockUseHasPermission.mockReturnValue(true);
-    mockUseCanReadProjectSettings.mockReturnValue(true);
-    mockUseCanReadAudit.mockReturnValue(true);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canManageAgents: true,
+      canManageGovernance: true,
+      canManageMembership: true,
+      canReadAudit: true,
+      canReadProjectSettings: true,
+    });
     mockUseHasWorkspacePermission.mockImplementation(
       (permission: string) => permission === 'workspace:read' || permission === 'workspace:governance:update',
     );
@@ -201,12 +209,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
   it('shows governance project links for project admins', () => {
     const wrapper = createWrapper();
-    mockUseHasPermission.mockImplementation((permission: string) =>
-      permission === 'project:endpoint:use'
-      || permission === 'project:governance:update'
-      || permission === 'project:membership:update'
-          );
-    mockUseCanReadProjectSettings.mockReturnValue(true);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canManageAgents: false,
+      canManageGovernance: true,
+      canManageMembership: true,
+      canReadAudit: true,
+      canReadProjectSettings: true,
+    });
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -220,11 +230,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
   it('shows only governance resource links for governance-only users', () => {
     const wrapper = createWrapper();
-    mockUseHasPermission.mockImplementation((permission: string) =>
-      permission === 'project:endpoint:use' || permission === 'project:governance:update',
-    );
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(false);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canManageAgents: false,
+      canManageGovernance: true,
+      canManageMembership: false,
+      canReadAudit: false,
+      canReadProjectSettings: false,
+    });
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -238,11 +251,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
   it('shows members for membership managers without owner-only settings', () => {
     const wrapper = createWrapper();
-    mockUseHasPermission.mockImplementation((permission: string) =>
-      permission === 'project:endpoint:use' || permission === 'project:membership:update',
-    );
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(false);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canManageAgents: false,
+      canManageGovernance: false,
+      canManageMembership: true,
+      canReadAudit: false,
+      canReadProjectSettings: false,
+    });
 
     render(<AppShellSidebar />, { wrapper });
 
@@ -256,9 +272,14 @@ describe('AppShellSidebar (simplified MVP navigation)', () => {
 
   it('shows audit only for users with project audit read permission', () => {
     const wrapper = createWrapper();
-    mockUseHasPermission.mockImplementation((permission: string) => permission === 'project:endpoint:use');
-    mockUseCanReadProjectSettings.mockReturnValue(false);
-    mockUseCanReadAudit.mockReturnValue(true);
+    mockUseProjectOverviewCapabilities.mockReturnValue({
+      canUseProject: true,
+      canManageAgents: false,
+      canManageGovernance: false,
+      canManageMembership: false,
+      canReadAudit: true,
+      canReadProjectSettings: false,
+    });
 
     render(<AppShellSidebar />, { wrapper });
 

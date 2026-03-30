@@ -4,6 +4,17 @@
 
 `cluster-deploy` is the real-cluster release line.
 
+Keep this distinction simple:
+
+- `cluster-rehearsal`
+  - local rehearsal on a development host
+  - reuses the shared local substrate and local `kind-agentsmith`
+- `cluster-deploy`
+  - real release on the target host
+  - connects to a real Kubernetes cluster
+
+Do not mix these two flows in one explanation or one runbook.
+
 Modes:
 
 - `semi-auto`
@@ -21,6 +32,8 @@ Use it when:
   - [cluster-admin-runbook.md](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-admin-runbook.md)
 
 Do not use it to replace the current demo deployment line.
+
+For local rehearsal on a development host, use the `cluster-rehearsal` commands instead of this runbook.
 
 ## Authority Boundary
 

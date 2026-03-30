@@ -50,6 +50,11 @@ npm start
 
 ## Make Quick Commands
 
+Local runtime rule:
+- start the shared `substrate` first
+- run one `flow` at a time
+- switch flows by stopping the current one first
+
 <!-- current-workflow:readme:start -->
 Use this minimal command set for daily work.
 
@@ -110,6 +115,38 @@ npm run backend-real:run
 npm run backend-real:report
 ```
 <!-- current-workflow:readme:end -->
+
+## Local Runtime In Plain Words
+
+For daily development and rehearsal on one host, use this simple model:
+
+- `substrate`
+  - one shared local dependency stack
+  - postgres, mongo, redis, minio, keycloak, and universal-proxy
+- `flow`
+  - one complete working line such as `local-manual`, `demo-rehearsal`, or `cluster-rehearsal`
+
+Rules:
+
+- on one host, start the shared substrate once
+- only run one flow at a time
+- before switching flows, run the current flow's `down` or `reset`
+- local rehearsal uses the same local `kind-agentsmith` cluster and local registry defaults
+
+Typical local sequence:
+
+```bash
+make substrate-up
+make substrate-reseed
+make local-manual-up
+```
+
+Switch to a rehearsal flow:
+
+```bash
+make local-manual-down
+make demo-rehearsal-up
+```
 
 Current configuration names:
 

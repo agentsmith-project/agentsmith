@@ -6,6 +6,17 @@
 
 `demo-deploy` is the demo / single-host deployment line.
 
+For local development hosts, keep the mental model simple:
+
+- there is one shared local `substrate`
+- there is one active `flow` at a time
+- `demo-rehearsal` reuses that shared substrate and the local `kind-agentsmith` cluster
+
+In other words:
+
+- `demo-rehearsal` is the local rehearsal flow on a development host
+- `demo-deploy` is the packaged single-host deployment flow under `/home/percy/agentsmith/deploy`
+
 Use it when:
 
 - one host runs the application services and data services
@@ -62,7 +73,7 @@ Everything under `/home/percy/agentsmith/deploy` is managed deployment state. Do
 
 External dependencies stay in Compose. Internal agent workloads use Kubernetes service names that point to those external dependencies.
 
-This local `kind` cluster belongs to the demo line only. It is not the production cluster model.
+On a development host, this local `kind` cluster is shared by the local rehearsal flows. It is not the production cluster model.
 
 ## Current Address Model
 

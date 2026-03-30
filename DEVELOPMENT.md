@@ -194,8 +194,9 @@ PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible
 
 1. 旧 `GLM_*` 变量名在 `local-manual` 主路径下**不再支持**
 2. 发现 `GLM_*` 会直接 fail fast
-3. `local-manual` 现在默认使用受管 substrate；需要完整重建底座时，优先使用 `make substrate-reset SUBSTRATE=local-dev`
-4. 如果本机要和其它运行线串行切换，保持 `local-manual` 使用独立 app 端口即可：
+3. `local-manual` 现在默认使用共享受管 substrate；需要完整重建底座时，直接使用 `make substrate-reset`
+4. 当前本机规则是“共享一套底座，一次只跑一条工作线”
+5. 如果本机要和其它工作线串行切换，`local-manual` 只需要保留自己的 app 端口：
 
 ```bash
 PORT_API=21000
@@ -205,10 +206,11 @@ PROXY_PORT=39080
 
 说明：
 
-1. 这组端口只改变本地 API / Web / universal-proxy，不改 Postgres / Redis / Mongo / MinIO / Keycloak
-2. `local-manual` 不再依赖 `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES` 这类隐藏状态开关
-3. `local-manual-down` 默认不再清理未追踪的端口监听，避免误停其它运行线；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
-4. 当前单机基线是同一时刻只运行一条 scenario；切换前先执行上一条线的 `*-down` 或 `*-reset`
+1. 这组端口只改变本地 API / Web / universal-proxy，不改共享 substrate
+2. `local-manual` 必须读取 substrate 生成的连接文件；底座没起时会直接失败，不再 fallback 自己拼地址
+3. `local-manual` 不再依赖 `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES` 这类隐藏状态开关
+4. `local-manual-down` 默认不再清理未追踪的端口监听，避免误停其它工作线；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
+5. 当前单机基线是同一时刻只运行一条工作线；切换前先执行上一条线的 `*-down` 或 `*-reset`
 
 ### Start platform only
 

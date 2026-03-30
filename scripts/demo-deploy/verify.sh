@@ -7,8 +7,11 @@ else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
+source "${ROOT_DIR}/scripts/lib/preset-common.sh"
 
+load_agentsmith_presets "${ROOT_DIR}"
 load_release_env
+apply_preset_endpoint_defaults
 
 BACKEND_REAL_ANTHROPIC_BASE_URL="${PRESET_ANTHROPIC_ENDPOINT_BASE_URL:-https://api.minimaxi.com/anthropic/v1}"
 BACKEND_REAL_OPENAI_BASE_URL="${PRESET_OPENAI_ENDPOINT_BASE_URL:-https://api.minimaxi.com/v1}"

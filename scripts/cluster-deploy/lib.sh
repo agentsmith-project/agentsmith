@@ -23,6 +23,14 @@ OPERATOR_ADMIN_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/admin-kubeconfig"
 OPERATOR_MANAGER_KUBECONFIG="${OPERATOR_CLUSTER_DIR}/manager-kubeconfig"
 export CLUSTER_DEPLOY_ROOT SHARED_REGISTRY_ENV SHARED_KUBECONFIG SHARED_ADMIN_KUBECONFIG SHARED_MANAGER_KUBECONFIG SHARED_ADMIN_READY_ENV ADMIN_HANDOFF_DIR OPERATOR_CLUSTER_DIR OPERATOR_SITE_ENV OPERATOR_REGISTRY_ENV OPERATOR_KUBECONFIG OPERATOR_ADMIN_KUBECONFIG OPERATOR_MANAGER_KUBECONFIG
 
+LOCAL_KIND_KUBECONFIG="${HOME}/.kube/config"
+LOCAL_KIND_CONTEXT_NAME="kind-agentsmith"
+
+local_kind_kubeconfig_ready() {
+  [[ -f "${LOCAL_KIND_KUBECONFIG}" ]] || return 1
+  kubectl --kubeconfig "${LOCAL_KIND_KUBECONFIG}" config get-contexts "${LOCAL_KIND_CONTEXT_NAME}" >/dev/null 2>&1
+}
+
 cluster_deploy_mode() {
   printf '%s\n' "${CLUSTER_DEPLOY_MODE:-semi-auto}"
 }
@@ -80,6 +88,8 @@ ensure_operator_kubeconfig() {
   if [[ ! -f "${SHARED_KUBECONFIG}" ]]; then
     if [[ -f "${OPERATOR_KUBECONFIG}" ]]; then
       cp "${OPERATOR_KUBECONFIG}" "${SHARED_KUBECONFIG}"
+    elif local_kind_kubeconfig_ready; then
+      cp "${LOCAL_KIND_KUBECONFIG}" "${SHARED_KUBECONFIG}"
     elif [[ -f "${RELEASE_ROOT}/env/kubeconfig" ]]; then
       cp "${RELEASE_ROOT}/env/kubeconfig" "${SHARED_KUBECONFIG}"
     elif [[ -f "${RELEASE_ROOT}/env/kubeconfig.example.yaml" ]]; then
@@ -99,6 +109,8 @@ ensure_operator_admin_kubeconfig() {
   if [[ ! -f "${SHARED_ADMIN_KUBECONFIG}" ]]; then
     if [[ -f "${OPERATOR_ADMIN_KUBECONFIG}" ]]; then
       cp "${OPERATOR_ADMIN_KUBECONFIG}" "${SHARED_ADMIN_KUBECONFIG}"
+    elif local_kind_kubeconfig_ready; then
+      cp "${LOCAL_KIND_KUBECONFIG}" "${SHARED_ADMIN_KUBECONFIG}"
     elif [[ -f "${RELEASE_ROOT}/env/admin-kubeconfig" ]]; then
       cp "${RELEASE_ROOT}/env/admin-kubeconfig" "${SHARED_ADMIN_KUBECONFIG}"
     elif [[ -f "${RELEASE_ROOT}/env/admin-kubeconfig.example.yaml" ]]; then

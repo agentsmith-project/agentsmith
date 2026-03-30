@@ -230,6 +230,10 @@ cp "${ROOT_DIR}/scripts/lib/release-stage-common.sh" "${BUNDLE_DIR}/scripts/lib/
 cp "${ROOT_DIR}/scripts/lib/bootstrap-common.sh" "${BUNDLE_DIR}/scripts/lib/bootstrap-common.sh"
 cp "${ROOT_DIR}/scripts/lib/k8s-external-services.sh" "${BUNDLE_DIR}/scripts/lib/k8s-external-services.sh"
 cp "${ROOT_DIR}/scripts/lib/preset-common.sh" "${BUNDLE_DIR}/scripts/lib/preset-common.sh"
+mkdir -p "${BUNDLE_DIR}/scripts/substrate"
+cp "${ROOT_DIR}/scripts/substrate/deploy-common.sh" "${BUNDLE_DIR}/scripts/substrate/deploy-common.sh"
+mkdir -p "${BUNDLE_DIR}/scripts/app"
+cp "${ROOT_DIR}/scripts/app/deploy-common.sh" "${BUNDLE_DIR}/scripts/app/deploy-common.sh"
 cp "${ROOT_DIR}/infra/runtime/presets.env" "${BUNDLE_DIR}/infra/runtime/presets.env"
 chmod +x "${BUNDLE_DIR}"/scripts/*.sh "${BUNDLE_DIR}/scripts/lib/"*.sh
 cp "${ROOT_DIR}/e2e/integration-real-helpers.ts" "${BUNDLE_DIR}/e2e/integration-real-helpers.ts"

@@ -40,9 +40,7 @@ runner_status() {
 
 echo "Scenario: $(current_active_scenario || true)"
 echo "Substrate: $(curl -sS -o /dev/null -w '%{http_code}' "${MBOS_UNIVERSAL_PROXY_BASE_URL}/admin/state" || true) proxy / $(curl -sS -o /dev/null -w '%{http_code}' "${KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" || true) keycloak"
-echo "API:    $(service_status "${API_PID_FILE}" "${API_READY_FILE}" "http://localhost:${PORT_API}/api/v1/openapi.json")"
-echo "Web:    $(service_status "${WEB_PID_FILE}" "${WEB_READY_FILE}" "http://localhost:${PORT_WEB}/${LOCALE}/login/workspace")"
-echo "Runner: $(runner_status)"
+APP_MODE=local-manual SUBSTRATE="${SUBSTRATE}" ENV_FILE="${ENV_FILE}" bash "${ROOT_DIR}/scripts/app/status.sh"
 
 PROJECT_ID="$(state_get project.id)"
 if [[ -n "${PROJECT_ID}" ]]; then

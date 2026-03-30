@@ -9,6 +9,7 @@ fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
 source "${ROOT_DIR}/scripts/substrate/deploy-common.sh"
+source "${ROOT_DIR}/scripts/app/deploy-common.sh"
 
 ensure_dirs
 ensure_operator_site_env
@@ -26,6 +27,13 @@ SANDBOX_MANAGER_IMAGE="$(awk -F= '$1=="sandbox_manager_image"{print $2}' "${RELE
 UNIVERSAL_PROXY_IMAGE="$(awk -F= '$1=="llm_universal_proxy_image"{print $2}' "${RELEASE_ROOT}/VERSION")"
 KIND_CLUSTER_NAME="${KIND_CLUSTER_NAME:-agentsmith}"
 KIND_CONTEXT="kind-${KIND_CLUSTER_NAME}"
+KIND_CONFIG_PATH="${RELEASE_ROOT}/kind/config.yaml"
+KIND_NODE_IMAGE="$(awk '/image:/ {print $2; exit}' "${KIND_CONFIG_PATH}")"
+[[ -n "${KIND_NODE_IMAGE}" ]] || die "failed to resolve kind node image from ${KIND_CONFIG_PATH}"
+if ! docker image inspect "${KIND_NODE_IMAGE}" >/dev/null 2>&1; then
+  log "prefetching kind node image ${KIND_NODE_IMAGE} via docker proxy"
+  docker pull "${KIND_NODE_IMAGE}" >/dev/null
+fi
 
 image_tar_name() {
   printf '%s' "$1" | tr '/:@' '---'
@@ -60,8 +68,14 @@ fi
 
 if ! kind get clusters 2>/dev/null | grep -qx "${KIND_CLUSTER_NAME}"; then
   log "creating kind cluster"
-  kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${RELEASE_ROOT}/kind/config.yaml"
+  if ! kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}"; then
+    log "kind cluster creation failed; deleting cluster and retrying once"
+    kind delete cluster --name "${KIND_CLUSTER_NAME}" >/dev/null || true
+    sleep 2
+    kind create cluster --name "${KIND_CLUSTER_NAME}" --config "${KIND_CONFIG_PATH}"
+  fi
 fi
+kind export kubeconfig --name "${KIND_CLUSTER_NAME}" >/dev/null
 
 JUICEFS_CSI_VERSION="${JUICEFS_CSI_VERSION:-v0.31.3}"
 for image in "${RUNNER_IMAGE}" "${SANDBOX_MANAGER_IMAGE}" "juicedata/juicefs-csi-driver:${JUICEFS_CSI_VERSION}" "juicedata/csi-dashboard:${JUICEFS_CSI_VERSION}" "juicedata/mount:ce-v1.3.1" "registry.k8s.io/sig-storage/csi-provisioner:v3.6.0" "registry.k8s.io/sig-storage/csi-resizer:v1.9.0" "registry.k8s.io/sig-storage/csi-node-driver-registrar:v2.9.0" "registry.k8s.io/sig-storage/livenessprobe:v2.11.0"; do
@@ -85,7 +99,7 @@ bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
 release_substrate_up
-docker_compose up -d api web
+release_app_up
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
@@ -331,7 +345,7 @@ kubectl rollout status deployment/sandbox-manager -n agentsmith-sandbox --timeou
 wait_tcp "127.0.0.1" "${SANDBOX_HOST_PORT:-29080}" 240
 wait_http "http://localhost:${SANDBOX_HOST_PORT:-29080}/readyz" 240
 
-docker_compose up -d api web
+release_app_up
 wait_tcp "127.0.0.1" "${API_PORT}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 

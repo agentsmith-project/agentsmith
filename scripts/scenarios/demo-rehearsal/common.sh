@@ -7,12 +7,32 @@ source "${ROOT_DIR}/scripts/scenarios/common.sh"
 DEMO_REHEARSAL_NAME="demo-rehearsal"
 DEMO_REHEARSAL_ROOT_DEFAULT="${ROOT_DIR}/artifacts/runtime/scenario/${DEMO_REHEARSAL_NAME}"
 DEMO_REHEARSAL_ROOT="${DEMO_REHEARSAL_ROOT:-${DEMO_REHEARSAL_ROOT_DEFAULT}}"
+DEMO_REHEARSAL_RELEASES_DIR="${DEMO_REHEARSAL_ROOT}/releases"
+DEMO_REHEARSAL_CURRENT_LINK="${DEMO_REHEARSAL_ROOT}/current"
+DEMO_REHEARSAL_CONFIG_DIR="${DEMO_REHEARSAL_ROOT}/config"
+DEMO_REHEARSAL_KUBECONFIG_DEFAULT="${HOME}/.kube/config"
+DEMO_REHEARSAL_KUBECONFIG="${DEMO_REHEARSAL_KUBECONFIG:-${DEMO_REHEARSAL_KUBECONFIG_DEFAULT}}"
 
 init_demo_rehearsal_env() {
-  mkdir -p "${DEMO_REHEARSAL_ROOT}"
+  mkdir -p "${DEMO_REHEARSAL_ROOT}" "${DEMO_REHEARSAL_RELEASES_DIR}" "${DEMO_REHEARSAL_CONFIG_DIR}" "$(dirname "${DEMO_REHEARSAL_KUBECONFIG}")"
   export ROOT_DIR
   export DEMO_DEPLOY_ROOT="${DEMO_REHEARSAL_ROOT}"
-  export RELEASE_ROOT="${ROOT_DIR}"
+  export KUBECONFIG="${DEMO_REHEARSAL_KUBECONFIG}"
+  if [[ -e "${DEMO_REHEARSAL_CURRENT_LINK}" ]]; then
+    export RELEASE_ROOT="$(cd -P "${DEMO_REHEARSAL_CURRENT_LINK}" && pwd)"
+  else
+    export RELEASE_ROOT="${ROOT_DIR}"
+  fi
+}
+
+ensure_demo_rehearsal_release_bundle() {
+  if [[ -e "${DEMO_REHEARSAL_CURRENT_LINK}" ]]; then
+    export RELEASE_ROOT="$(cd -P "${DEMO_REHEARSAL_CURRENT_LINK}" && pwd)"
+    return 0
+  fi
+  local release_id="demo-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
+  OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
+  export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"
 }
 
 demo_state_file() {
@@ -78,4 +98,9 @@ PY
 http_code() {
   local url="$1"
   curl -sS -o /dev/null -w '%{http_code}' "${url}" 2>/dev/null || true
+}
+
+run_stage() {
+  local stage="$1"
+  bash "${ROOT_DIR}/scripts/demo-deploy/${stage}.sh"
 }

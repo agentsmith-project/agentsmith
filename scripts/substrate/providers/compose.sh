@@ -80,11 +80,22 @@ substrate_reset() {
 
 substrate_status() {
   write_status_json
-  local proxy_code="$(curl -sS -o /dev/null -w '%{http_code}' "${SUBSTRATE_PROXY_BASE_URL}/admin/state" || true)"
-  local keycloak_code="$(curl -sS -o /dev/null -w '%{http_code}' "${SUBSTRATE_KEYCLOAK_BASE_URL}/realms/${SUBSTRATE_KEYCLOAK_REALM}/.well-known/openid-configuration" || true)"
+  local keycloak_base_url="${SUBSTRATE_KEYCLOAK_BASE_URL}"
+  local keycloak_realm="${SUBSTRATE_KEYCLOAK_REALM}"
+  local proxy_base_url="${SUBSTRATE_PROXY_BASE_URL}"
+  if [[ -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
+    keycloak_base_url="$(awk -F= '$1=="KEYCLOAK_BASE_URL"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
+    keycloak_realm="$(awk -F= '$1=="KEYCLOAK_REALM"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
+    proxy_base_url="$(awk -F= '$1=="MBOS_UNIVERSAL_PROXY_BASE_URL"{print substr($0, index($0,$2))}' "${SUBSTRATE_CONNECTION_ENV}" | tail -n1)"
+    keycloak_base_url="${keycloak_base_url:-${SUBSTRATE_KEYCLOAK_BASE_URL}}"
+    keycloak_realm="${keycloak_realm:-${SUBSTRATE_KEYCLOAK_REALM}}"
+    proxy_base_url="${proxy_base_url:-${SUBSTRATE_PROXY_BASE_URL}}"
+  fi
+  local proxy_code="$(curl -sS -o /dev/null -w '%{http_code}' "${proxy_base_url}/admin/state" || true)"
+  local keycloak_code="$(curl -sS -o /dev/null -w '%{http_code}' "${keycloak_base_url}/realms/${keycloak_realm}/.well-known/openid-configuration" || true)"
   echo "Substrate: ${SUBSTRATE}"
   echo "Type: ${SUBSTRATE_TYPE}"
-  echo "Keycloak: http=${keycloak_code}"
-  echo "Proxy: http=${proxy_code}"
+  echo "Keycloak: http=${keycloak_code} (${keycloak_base_url})"
+  echo "Proxy: http=${proxy_code} (${proxy_base_url})"
   echo "Connection env: ${SUBSTRATE_CONNECTION_ENV}"
 }

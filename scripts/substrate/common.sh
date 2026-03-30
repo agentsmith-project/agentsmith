@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
+DEFAULT_PROXY_URL="${DEFAULT_PROXY_URL:-http://192.168.0.210:8889}"
+DEFAULT_NO_PROXY="${DEFAULT_NO_PROXY:-harbor.pullot.com,.pullot.com,localhost,127.0.0.1,::1,0.0.0.0,host.docker.internal,.svc,.cluster.local,10.0.0.0/8,10.7.0.0/16,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16}"
+export HTTP_PROXY="${HTTP_PROXY:-${http_proxy:-${DEFAULT_PROXY_URL}}}"
+export HTTPS_PROXY="${HTTPS_PROXY:-${https_proxy:-${DEFAULT_PROXY_URL}}}"
+export NO_PROXY="${NO_PROXY:-${no_proxy:-${DEFAULT_NO_PROXY}}}"
+export http_proxy="${HTTP_PROXY}"
+export https_proxy="${HTTPS_PROXY}"
+export no_proxy="${NO_PROXY}"
+unset all_proxy ALL_PROXY
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"

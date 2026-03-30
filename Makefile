@@ -12,8 +12,8 @@
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-notebook \
-	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset \
-	cluster-rehearsal-up cluster-rehearsal-down cluster-rehearsal-status cluster-rehearsal-reset \
+	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset demo-rehearsal-bootstrap demo-rehearsal-verify demo-rehearsal-report \
+	cluster-rehearsal-up cluster-rehearsal-down cluster-rehearsal-status cluster-rehearsal-reset cluster-rehearsal-bootstrap cluster-rehearsal-verify cluster-rehearsal-report \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
@@ -84,11 +84,11 @@ help-extended:
 	@echo "  note: npm script names are canonical; make targets below are convenience wrappers"
 	@echo ""
 	@echo "Environment:"
-	@echo "  make substrate-up SUBSTRATE=local-dev  # start the local managed substrate"
-	@echo "  make substrate-reseed SUBSTRATE=local-dev  # rebuild minimum substrate data"
-	@echo "  make substrate-status SUBSTRATE=local-dev  # inspect the managed substrate"
-	@echo "  make substrate-down SUBSTRATE=local-dev  # stop the managed substrate"
-	@echo "  make substrate-reset SUBSTRATE=local-dev  # clear the managed substrate"
+	@echo "  make substrate-up  # start the local managed substrate"
+	@echo "  make substrate-reseed  # rebuild minimum substrate data"
+	@echo "  make substrate-status  # inspect the managed substrate"
+	@echo "  make substrate-down  # stop the managed substrate"
+	@echo "  make substrate-reset  # clear the managed substrate"
 	@echo "  make local-manual-up  # start the real local manual-test environment"
 	@echo "  make local-manual-seed-notebook  # create notebook demo resources and start the host runner"
 	@echo "  make local-manual-status  # show the current real local environment state"
@@ -97,9 +97,17 @@ help-extended:
 	@echo "  make demo-rehearsal-up  # start the local demo deploy rehearsal line"
 	@echo "  make demo-rehearsal-status  # inspect the local demo deploy rehearsal line"
 	@echo "  make demo-rehearsal-down  # clear the local demo deploy rehearsal line"
+	@echo "  make demo-rehearsal-reset  # reset the local demo deploy rehearsal line"
+	@echo "  make demo-rehearsal-bootstrap  # bootstrap the local demo deploy rehearsal line"
+	@echo "  make demo-rehearsal-verify  # verify the local demo deploy rehearsal line"
+	@echo "  make demo-rehearsal-report  # write the local demo deploy rehearsal report"
 	@echo "  make cluster-rehearsal-up  # start the local cluster deploy rehearsal line"
 	@echo "  make cluster-rehearsal-status  # inspect the local cluster deploy rehearsal line"
 	@echo "  make cluster-rehearsal-down  # clear the local cluster deploy rehearsal line"
+	@echo "  make cluster-rehearsal-reset  # reset the local cluster deploy rehearsal line"
+	@echo "  make cluster-rehearsal-bootstrap  # bootstrap the local cluster deploy rehearsal line"
+	@echo "  make cluster-rehearsal-verify  # verify the local cluster deploy rehearsal line"
+	@echo "  make cluster-rehearsal-report  # write the local cluster deploy rehearsal report"
 	@echo ""
 	@echo "Tests:"
 	@echo "  npm run test:default-e2e  # run the default mock UI regression range"
@@ -249,6 +257,15 @@ quick-help:
 	@echo "MBOS Recommended Commands"
 	@echo ""
 	@echo "  note: make is the convenience layer; canonical names live under npm run"
+	@echo ""
+	@echo "  make substrate-up"
+	@echo "    Start the local managed substrate."
+	@echo ""
+	@echo "  make substrate-reseed"
+	@echo "    Rebuild minimum substrate data."
+	@echo ""
+	@echo "  make substrate-status"
+	@echo "    Inspect the managed substrate."
 	@echo ""
 	@echo "  make local-manual-up"
 	@echo "    Start the real local manual-test environment."
@@ -758,77 +775,78 @@ notebook-agent-runner:
 	$(NPM) run agent:codex-runner
 
 substrate-up:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
 	bash ./scripts/substrate/up.sh
 
 substrate-down:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
 	bash ./scripts/substrate/down.sh
 
 substrate-reset:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
 	bash ./scripts/substrate/reset.sh
 
 substrate-reseed:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
 	bash ./scripts/substrate/reseed.sh
 
 substrate-status:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
 	bash ./scripts/substrate/status.sh
 
 
 demo-rehearsal-up:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/demo-rehearsal-up.sh
 
 demo-rehearsal-down:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/demo-rehearsal-down.sh
 
 demo-rehearsal-status:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/demo-rehearsal-status.sh
 
 demo-rehearsal-reset:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/demo-rehearsal-reset.sh
 
+demo-rehearsal-bootstrap:
+	./scripts/demo-rehearsal-bootstrap.sh
+
+demo-rehearsal-verify:
+	./scripts/demo-rehearsal-verify.sh
+
+demo-rehearsal-report:
+	./scripts/demo-rehearsal-report.sh
+
 cluster-rehearsal-up:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/cluster-rehearsal-up.sh
 
 cluster-rehearsal-down:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/cluster-rehearsal-down.sh
 
 cluster-rehearsal-status:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/cluster-rehearsal-status.sh
 
 cluster-rehearsal-reset:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/cluster-rehearsal-reset.sh
 
+cluster-rehearsal-bootstrap:
+	./scripts/cluster-rehearsal-bootstrap.sh
+
+cluster-rehearsal-verify:
+	./scripts/cluster-rehearsal-verify.sh
+
+cluster-rehearsal-report:
+	./scripts/cluster-rehearsal-report.sh
+
 local-manual-up:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual-up.sh
 
 local-manual-seed-notebook:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual/seed-notebook-demo.sh
 
 local-manual-down:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual-down.sh
 
 local-manual-status:
-	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual-status.sh
 
 local-manual-reset:

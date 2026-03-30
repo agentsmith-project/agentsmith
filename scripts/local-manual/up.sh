@@ -13,9 +13,7 @@ SUBSTRATE_ENV_FILE="${ENV_FILE}" SUBSTRATE="${SUBSTRATE}" bash "${ROOT_DIR}/scri
 SUBSTRATE_ENV_FILE="${ENV_FILE}" SUBSTRATE="${SUBSTRATE}" bash "${ROOT_DIR}/scripts/substrate/reseed.sh"
 load_local_manual_substrate_env
 
-bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
-bash "${ROOT_DIR}/scripts/local-manual/start-web.sh"
-bash "${ROOT_DIR}/scripts/local-manual/verify.sh"
+APP_MODE=local-manual SUBSTRATE="${SUBSTRATE}" ENV_FILE="${ENV_FILE}" bash "${ROOT_DIR}/scripts/app/up.sh"
 
 info "ready"
 info "Web: http://localhost:${PORT_WEB}/${LOCALE}/login/workspace"

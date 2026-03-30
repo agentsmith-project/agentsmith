@@ -139,6 +139,46 @@ function readInternalImage(config: unknown): string {
   return image;
 }
 
+function readImageRegistryHost(image: string): string {
+  const trimmed = image.trim();
+  if (!trimmed.includes('/')) return '';
+  const firstSegment = trimmed.slice(0, trimmed.indexOf('/'));
+  if (firstSegment === 'localhost' || firstSegment.includes('.') || firstSegment.includes(':')) {
+    return firstSegment;
+  }
+  return '';
+}
+
+export function normalizeInternalAgentImageForRuntime(image: string, runtimeImage = process.env.INTERNAL_AGENT_IMAGE ?? ''): string {
+  const requested = image.trim();
+  const runtime = runtimeImage.trim();
+  if (!requested || !runtime) return requested;
+
+  const requestedRegistry = readImageRegistryHost(requested);
+  const runtimeRegistry = readImageRegistryHost(runtime);
+  if (!requestedRegistry || !runtimeRegistry || requestedRegistry === runtimeRegistry) {
+    return requested;
+  }
+
+  if (requestedRegistry !== 'localhost:5001') {
+    return requested;
+  }
+
+  return `${runtimeRegistry}/${requested.slice(requested.indexOf('/') + 1)}`;
+}
+
+function normalizeInternalConfig(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!config) return config;
+  const image = typeof config.image === 'string' ? config.image.trim() : '';
+  if (!image) return config;
+  const normalizedImage = normalizeInternalAgentImageForRuntime(image);
+  if (normalizedImage === image) return config;
+  return {
+    ...config,
+    image: normalizedImage,
+  };
+}
+
 function toPublicKeyRecord(item: {
   id: string;
   agent_id: string;
@@ -228,7 +268,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
           : 'both',
       status: raw.status === 'disabled' ? 'disabled' : 'enabled',
       execution_preferences_json: executionPreferences,
-      config: readObject(raw.config) as never,
+      config: normalizeInternalConfig(readObject(raw.config)) as never,
       capabilities:
         typeof raw.capabilities === 'object' && raw.capabilities !== null
           ? (raw.capabilities as Record<string, unknown>) as never
@@ -316,6 +356,7 @@ export async function handleAgentRoute(args: AgentRouteHandlerArgs): Promise<boo
         ...incomingConfig,
       }
       : undefined;
+    mergedConfig = normalizeInternalConfig(mergedConfig);
     const requestedMode = raw.mode === 'internal' || raw.mode === 'external'
       ? raw.mode
       : existing.mode;

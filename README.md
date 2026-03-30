@@ -71,6 +71,9 @@ Command naming rule:
 ### 环境
 
 ```bash
+make substrate-up SUBSTRATE=local-dev
+make substrate-reseed SUBSTRATE=local-dev
+make substrate-status SUBSTRATE=local-dev
 make local-manual-up
 make local-manual-seed-notebook
 make local-manual-status

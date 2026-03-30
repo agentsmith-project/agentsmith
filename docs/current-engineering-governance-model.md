@@ -68,10 +68,16 @@ make demo-rehearsal-up
 make demo-rehearsal-status
 make demo-rehearsal-down
 make demo-rehearsal-reset
+make demo-rehearsal-bootstrap
+make demo-rehearsal-verify
+make demo-rehearsal-report
 make cluster-rehearsal-up
 make cluster-rehearsal-status
 make cluster-rehearsal-down
 make cluster-rehearsal-reset
+make cluster-rehearsal-bootstrap
+make cluster-rehearsal-verify
+make cluster-rehearsal-report
 ```
 
 ### 测试

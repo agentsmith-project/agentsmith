@@ -4,11 +4,19 @@ set -euo pipefail
 load_agentsmith_presets() {
   local root_dir="$1"
   local preset_file="${root_dir}/infra/runtime/presets.env"
-  [[ -f "${preset_file}" ]] || return 0
-  set -a
-  # shellcheck disable=SC1090
-  source "${preset_file}"
-  set +a
+  local backend_real_file="${root_dir}/.env.backend-real"
+  if [[ -f "${preset_file}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${preset_file}"
+    set +a
+  fi
+  if [[ -f "${backend_real_file}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    source "${backend_real_file}"
+    set +a
+  fi
   local key preset_key
   for key in \
     SYSTEM_ADMIN_USERNAME \

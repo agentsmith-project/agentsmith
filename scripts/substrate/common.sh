@@ -115,6 +115,23 @@ wait_port_free() {
   done
 }
 
+stop_matching_listeners_on_port() {
+  local port="$1"
+  local pattern="$2"
+  local pids pid
+  pids="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  [[ -n "${pids}" ]] || return 0
+  while IFS= read -r pid; do
+    [[ -n "${pid}" ]] || continue
+    if ps -p "${pid}" -o command= 2>/dev/null | grep -q "${pattern}"; then
+      info "stopping stale listener on port ${port}: pid=${pid} pattern=${pattern}"
+      kill "${pid}" >/dev/null 2>&1 || true
+      sleep 1
+      kill -9 "${pid}" >/dev/null 2>&1 || true
+    fi
+  done <<< "${pids}"
+}
+
 launch_detached() {
   local pid_file="$1"
   local log_file="$2"

@@ -12,6 +12,7 @@ CLUSTER_REHEARSAL_CURRENT_LINK="${CLUSTER_REHEARSAL_ROOT}/current"
 CLUSTER_REHEARSAL_CONFIG_DIR="${CLUSTER_REHEARSAL_ROOT}/config"
 
 init_cluster_rehearsal_env() {
+  load_flow_env "${CLUSTER_REHEARSAL_NAME}"
   mkdir -p "${CLUSTER_REHEARSAL_ROOT}" "${CLUSTER_REHEARSAL_RELEASES_DIR}" "${CLUSTER_REHEARSAL_CONFIG_DIR}"
   export ROOT_DIR
   export CLUSTER_DEPLOY_ROOT="${CLUSTER_REHEARSAL_ROOT}"
@@ -44,32 +45,7 @@ ensure_cluster_rehearsal_site_env() {
       cp "${ROOT_DIR}/infra/deploy/cluster/env/site.env.example" "${site_env}"
     fi
   fi
-  python3 - <<'PYTHON' "${site_env}"
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-lines = path.read_text(encoding="utf-8").splitlines()
-desired = {
-    "MBOS_AGENT_BUILTIN_SKILLS_DIR": "/etc/codex/skills",
-    "COMPOSE_INTERNAL_SANDBOX_MANAGER_BASE_URL": "http://host.docker.internal:29080",
-}
-updated = []
-seen = set()
-for line in lines:
-    replaced = False
-    for key, value in desired.items():
-        if line.startswith(f"{key}="):
-            updated.append(f"{key}={value}")
-            seen.add(key)
-            replaced = True
-            break
-    if not replaced:
-        updated.append(line)
-for key, value in desired.items():
-    if key not in seen:
-        updated.append(f"{key}={value}")
-path.write_text("\n".join(updated) + "\n", encoding="utf-8")
-PYTHON
+  apply_flow_site_env_overrides "${site_env}"
 }
 
 ensure_cluster_rehearsal_release_bundle() {

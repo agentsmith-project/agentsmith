@@ -35,6 +35,7 @@ run_compose() {
 }
 
 start_local_proxy() {
+  stop_matching_listeners_on_port "${SUBSTRATE_PROXY_PORT}" 'llm-universal-proxy'
   wait_port_free "${SUBSTRATE_PROXY_PORT}" "substrate proxy" 30
   if [[ ! -x "${PROXY_ROOT}/target/debug/llm-universal-proxy" ]]; then
     info "building llm-universal-proxy debug binary"

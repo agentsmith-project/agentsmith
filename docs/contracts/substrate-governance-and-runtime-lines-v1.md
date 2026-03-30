@@ -5,6 +5,12 @@ Last updated: 2026-03-30
 
 This document is the authoritative engineering contract for AgentSmith local runtime lines, deployment rehearsal lines, and substrate lifecycle management.
 
+Current KISS baseline:
+
+- one shared local `substrate`
+- one active `scenario` at a time
+- all local flows reuse the same substrate
+
 It defines exactly three runtime concepts:
 
 - `substrate`
@@ -187,6 +193,14 @@ This is a deliberate governance rule to reduce:
 Scenario commands must fail fast if another scenario is already marked active.
 
 ## 6. Runtime-line rules
+
+### 6.0 Local host baseline
+
+Current local-host baseline:
+
+- one shared local substrate managed by `scripts/substrate/*`
+- `local-manual`, `demo-rehearsal`, and `cluster-rehearsal` all reuse it
+- local mode switching is controlled by the scenario lock, not by multiple local substrate instances
 
 ### 6.1 `local-manual`
 

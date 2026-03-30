@@ -4,6 +4,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_demo_rehearsal_env
 acquire_scenario_lock "${DEMO_REHEARSAL_NAME}"
+ensure_demo_rehearsal_site_env
 ensure_demo_rehearsal_release_bundle
 ensure_local_kind_cluster
 clear_local_dev_substrate

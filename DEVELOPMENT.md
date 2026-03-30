@@ -32,9 +32,9 @@ Repo version files:
 ### 环境
 
 ```bash
-make substrate-up SUBSTRATE=local-dev
-make substrate-reseed SUBSTRATE=local-dev
-make substrate-status SUBSTRATE=local-dev
+make substrate-up
+make substrate-reseed
+make substrate-status
 make local-manual-up
 make local-manual-seed-notebook
 make local-manual-status
@@ -147,10 +147,10 @@ make e2e-int-chat       # chat 集成测试
 make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
 make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
 make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
-make substrate-up SUBSTRATE=local-dev      # 启动受管 substrate
-make substrate-reseed SUBSTRATE=local-dev  # 重建 substrate 最小可用数据
-make substrate-down SUBSTRATE=local-dev    # 关闭受管 substrate
-make substrate-reset SUBSTRATE=local-dev   # 清空并重建 substrate 底座
+make substrate-up      # 启动受管 substrate
+make substrate-reseed  # 重建 substrate 最小可用数据
+make substrate-down    # 关闭受管 substrate
+make substrate-reset   # 清空并重建 substrate 底座
 make openapi-generate # 基于 OpenAPI contract 生成前端类型
 make openapi-check-generated # 校验 generated types 是否需要更新
 make openapi-changelog # 生成 OpenAPI 相对 origin/main 的变更摘要

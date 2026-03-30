@@ -14,6 +14,58 @@ current_active_scenario() {
   cat "${ACTIVE_SCENARIO_LOCK_FILE}" 2>/dev/null || true
 }
 
+flow_env_file() {
+  local flow_name="$1"
+  printf '%s/infra/flows/%s.env\n' "${ROOT_DIR}" "${flow_name}"
+}
+
+load_flow_env() {
+  local flow_name="$1"
+  local file
+  file="$(flow_env_file "${flow_name}")"
+  [[ -f "${file}" ]] || return 0
+  set -a
+  # shellcheck disable=SC1090
+  source "${file}"
+  set +a
+}
+
+apply_flow_site_env_overrides() {
+  local path="$1"
+  python3 - <<'PY' "${path}"
+from pathlib import Path
+import os
+import sys
+
+path = Path(sys.argv[1])
+lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+desired = {}
+for key, value in os.environ.items():
+    if key.startswith("FLOW_SITE_ENV_"):
+        desired[key[len("FLOW_SITE_ENV_"):]] = value
+
+if not desired:
+    raise SystemExit(0)
+
+updated = []
+seen = set()
+for line in lines:
+    replaced = False
+    for key, value in desired.items():
+        if line.startswith(f"{key}="):
+            updated.append(f"{key}={value}")
+            seen.add(key)
+            replaced = True
+            break
+    if not replaced:
+        updated.append(line)
+for key, value in desired.items():
+    if key not in seen:
+        updated.append(f"{key}={value}")
+path.write_text("\n".join(updated) + "\n", encoding="utf-8")
+PY
+}
+
 scenario_http_code() {
   local url="$1"
   curl -sS -o /dev/null -w '%{http_code}' "${url}" 2>/dev/null || true

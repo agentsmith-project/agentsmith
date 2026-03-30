@@ -54,11 +54,11 @@ Current engineering runtime baseline:
 ### 环境
 
 ```bash
-make substrate-up SUBSTRATE=local-dev
-make substrate-reseed SUBSTRATE=local-dev
-make substrate-status SUBSTRATE=local-dev
-make substrate-down SUBSTRATE=local-dev
-make substrate-reset SUBSTRATE=local-dev
+make substrate-up
+make substrate-reseed
+make substrate-status
+make substrate-down
+make substrate-reset
 make local-manual-up
 make local-manual-seed-notebook
 make local-manual-status

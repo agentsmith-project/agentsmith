@@ -14,6 +14,7 @@ DEMO_REHEARSAL_KUBECONFIG_DEFAULT="${HOME}/.kube/config"
 DEMO_REHEARSAL_KUBECONFIG="${DEMO_REHEARSAL_KUBECONFIG:-${DEMO_REHEARSAL_KUBECONFIG_DEFAULT}}"
 
 init_demo_rehearsal_env() {
+  load_flow_env "${DEMO_REHEARSAL_NAME}"
   mkdir -p "${DEMO_REHEARSAL_ROOT}" "${DEMO_REHEARSAL_RELEASES_DIR}" "${DEMO_REHEARSAL_CONFIG_DIR}" "$(dirname "${DEMO_REHEARSAL_KUBECONFIG}")"
   export ROOT_DIR
   export DEMO_DEPLOY_ROOT="${DEMO_REHEARSAL_ROOT}"
@@ -23,6 +24,14 @@ init_demo_rehearsal_env() {
   else
     export RELEASE_ROOT="${ROOT_DIR}"
   fi
+}
+
+ensure_demo_rehearsal_site_env() {
+  local site_env="${DEMO_REHEARSAL_CONFIG_DIR}/site.env"
+  if [[ ! -f "${site_env}" ]]; then
+    cp "${ROOT_DIR}/infra/deploy/demo/env/site.env.example" "${site_env}"
+  fi
+  apply_flow_site_env_overrides "${site_env}"
 }
 
 ensure_demo_rehearsal_release_bundle() {

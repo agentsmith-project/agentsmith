@@ -2,6 +2,7 @@
 set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+LOCAL_MANUAL_ALLOW_MISSING_SUBSTRATE_CONNECTION=1
 init_local_manual_env
 
 service_status() {

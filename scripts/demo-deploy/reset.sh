@@ -7,6 +7,7 @@ else
   ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
+source "${ROOT_DIR}/scripts/substrate/deploy-common.sh"
 
 ensure_dirs
 if [[ -d "${CURRENT_LINK}" ]]; then
@@ -27,15 +28,7 @@ if kind get clusters 2>/dev/null | grep -qx 'agentsmith'; then
   kind delete cluster --name agentsmith || true
 fi
 
-if [[ -d "${REPORT_DIR}" ]]; then
-  docker run --rm \
-    --user 0:0 \
-    --entrypoint /bin/sh \
-    -v "${REPORT_DIR}:/artifacts" \
-    minio/mc:latest \
-    -lc "rm -rf /artifacts/* /artifacts/.[!.]* /artifacts/..?* 2>/dev/null || true; chown -R $(id -u):$(id -g) /artifacts || true"
-fi
-
+cleanup_report_dir_artifacts "${REPORT_DIR}"
 rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/* "${REPORT_DIR}"/*
 state_set release.phase reset_completed
 log "reset ok"

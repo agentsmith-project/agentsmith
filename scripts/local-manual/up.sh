@@ -3,25 +3,16 @@ set -euo pipefail
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 init_local_manual_env
+acquire_scenario_lock local-manual
 
-bash "${ROOT_DIR}/scripts/local-manual/down.sh"
+stop_local_manual_processes
 remove_local_manual_runtime_files
 reset_local_manual_state
 
-run_local_manual_support_services_prepare
+SUBSTRATE_ENV_FILE="${ENV_FILE}" SUBSTRATE="${SUBSTRATE}" bash "${ROOT_DIR}/scripts/substrate/up.sh"
+SUBSTRATE_ENV_FILE="${ENV_FILE}" SUBSTRATE="${SUBSTRATE}" bash "${ROOT_DIR}/scripts/substrate/reseed.sh"
+load_local_manual_substrate_env
 
-info "ensuring default workspace"
-(
-  cd "${ROOT_DIR}" && \
-  MONGO_URL="${MONGO_URL}" \
-  MONGO_DB_NAME="${MONGO_DB_NAME}" \
-  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL}" \
-  KEYCLOAK_REALM="${KEYCLOAK_REALM}" \
-  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID}" \
-  make ensure-default-workspace
-)
-
-bash "${ROOT_DIR}/scripts/local-manual/start-proxy.sh"
 bash "${ROOT_DIR}/scripts/local-manual/start-api.sh"
 bash "${ROOT_DIR}/scripts/local-manual/start-web.sh"
 bash "${ROOT_DIR}/scripts/local-manual/verify.sh"

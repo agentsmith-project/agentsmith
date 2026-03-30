@@ -144,8 +144,10 @@ make e2e-int-chat       # chat 集成测试
 make e2e-int-chat-auto  # 自动启动依赖+API+前端后执行 chat 集成测试
 make e2e-int-chat-ux-auto # 自动启动并执行 chat UX 关键集成用例
 make agent-test-runner AGENT_WS_URL='ws://localhost:20000/api/v1/agent-execution/ws?agent_id=ag_xxx' AGENT_KEY='ask_xxx' # 启动外部 agent 测试进程
-make deps-down     # 关闭依赖
-make deps-reset    # 关闭并清空依赖数据卷
+make substrate-up SUBSTRATE=local-dev      # 启动受管 substrate
+make substrate-reseed SUBSTRATE=local-dev  # 重建 substrate 最小可用数据
+make substrate-down SUBSTRATE=local-dev    # 关闭受管 substrate
+make substrate-reset SUBSTRATE=local-dev   # 清空并重建 substrate 底座
 make openapi-generate # 基于 OpenAPI contract 生成前端类型
 make openapi-check-generated # 校验 generated types 是否需要更新
 make openapi-changelog # 生成 OpenAPI 相对 origin/main 的变更摘要
@@ -189,10 +191,10 @@ PRESET_OPENAI_ENDPOINT_PROTOCOL=openai_compatible
 
 1. 旧 `GLM_*` 变量名在 `local-manual` 主路径下**不再支持**
 2. 发现 `GLM_*` 会直接 fail fast
-3. 如果本机已经有 cluster deploy rehearsal 在跑，建议把 `local-manual` 切到独立 app 端口，同时复用已运行的支撑服务：
+3. `local-manual` 现在默认使用受管 substrate；需要完整重建底座时，优先使用 `make substrate-reset SUBSTRATE=local-dev`
+4. 如果本机要和其它运行线串行切换，保持 `local-manual` 使用独立 app 端口即可：
 
 ```bash
-LOCAL_MANUAL_REUSE_SUPPORT_SERVICES=1
 PORT_API=21000
 PORT_WEB=3101
 PROXY_PORT=39080
@@ -201,8 +203,9 @@ PROXY_PORT=39080
 说明：
 
 1. 这组端口只改变本地 API / Web / universal-proxy，不改 Postgres / Redis / Mongo / MinIO / Keycloak
-2. `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES=1` 会跳过 `deps-up` / `deps-down`，改为直接对现有支撑服务执行 init/smoke
-3. `local-manual-down` 默认不再清理未追踪的端口监听，避免误停 cluster rehearsal；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
+2. `local-manual` 不再依赖 `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES` 这类隐藏状态开关
+3. `local-manual-down` 默认不再清理未追踪的端口监听，避免误停其它运行线；只有显式设置 `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1` 才会强制按端口清理
+4. 当前单机基线是同一时刻只运行一条 scenario；切换前先执行上一条线的 `*-down` 或 `*-reset`
 
 ### Start platform only
 

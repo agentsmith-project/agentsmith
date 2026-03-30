@@ -332,9 +332,8 @@ cd /home/percy/works/mbos-v1/agentsmith
 cp .env.local-manual.example .env.local-manual
 # fill PRESET_ENDPOINT_API_KEY and adjust PRESET_ENDPOINT_* if needed
 
-# if cluster deploy rehearsal is already using 20000 / 3001 / 38080 on this machine,
-# keep the shared support services and move only the local-manual app ports
-# LOCAL_MANUAL_REUSE_SUPPORT_SERVICES=1
+# if another runtime line previously used the default app ports on this machine,
+# keep local-manual on dedicated app ports before you start it
 # PORT_API=21000
 # PORT_WEB=3101
 # PROXY_PORT=39080
@@ -356,9 +355,10 @@ Expected behavior:
 - in `next dev`, notebook task page shows `SSE Debug (latest 5)` for frontend stream diagnostics
 
 Coexistence notes:
-- `LOCAL_MANUAL_REUSE_SUPPORT_SERVICES=1` skips `deps-up` / `deps-down` and reuses the existing support services
+- `local-manual` now manages its substrate through the shared `make substrate-* SUBSTRATE=local-dev` commands
+- switch runtime lines serially on the same host; stop the previous scenario before starting the next one
+- keep app ports on `21000 / 3101 / 39080` when you want local-manual separated from another line's app listeners
 - `local-manual-down` no longer force-kills untracked listeners unless `LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP=1`
-- keep dependency ports on `15432 / 16379 / 17017 / 19000 / 18080` when reusing the rehearsal support services
 
 Helper state written by bootstrap:
 - `artifacts/backend-real/current/state.json`

@@ -7,10 +7,13 @@
 	e2e-int-core-local-api e2e-int-core-auto governance-core-smoke \
 	agent-test-runner agent-codex-runner notebook-agent-refresh-token notebook-agent-smoke-task notebook-agent-credential-sync-smoke \
 	notebook-agent-engineering-smoke notebook-agent-engineering-smoke-full governance-smoke governance-pages-real-backend-smoke governance-pages-real-backend-smoke-strict governance-pages-real-backend-smoke-tolerant governance-pages-real-backend-interaction-smoke governance-pages-real-backend-interaction-smoke-strict governance-pages-real-backend-interaction-smoke-tolerant governance-policy-effect-smoke \
+	substrate-up substrate-down substrate-reset substrate-reseed substrate-status \
 	governance-policy-access-effect-smoke governance-policy-group-access-effect-smoke governance-policy-update-audit-smoke governance-config-audit-effect-smoke governance-policy-spending-effect-smoke governance-policy-requests-rate-effect-smoke governance-member-permission-effect-smoke governance-member-lifecycle-effect-smoke \
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-notebook \
+	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset \
+	cluster-rehearsal-up cluster-rehearsal-down cluster-rehearsal-status cluster-rehearsal-reset \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
 	notebook-agent-monitor notebook-agent-load-test notebook-agent-load-matrix \
 	notebook-agent-benchmark-baseline notebook-agent-benchmark-compare notebook-agent-traces-query-bench \
@@ -81,11 +84,22 @@ help-extended:
 	@echo "  note: npm script names are canonical; make targets below are convenience wrappers"
 	@echo ""
 	@echo "Environment:"
+	@echo "  make substrate-up SUBSTRATE=local-dev  # start the local managed substrate"
+	@echo "  make substrate-reseed SUBSTRATE=local-dev  # rebuild minimum substrate data"
+	@echo "  make substrate-status SUBSTRATE=local-dev  # inspect the managed substrate"
+	@echo "  make substrate-down SUBSTRATE=local-dev  # stop the managed substrate"
+	@echo "  make substrate-reset SUBSTRATE=local-dev  # clear the managed substrate"
 	@echo "  make local-manual-up  # start the real local manual-test environment"
 	@echo "  make local-manual-seed-notebook  # create notebook demo resources and start the host runner"
 	@echo "  make local-manual-status  # show the current real local environment state"
 	@echo "  make local-manual-down  # stop the real local manual-test environment"
 	@echo "  make local-manual-reset  # rebuild the real local manual-test environment"
+	@echo "  make demo-rehearsal-up  # start the local demo deploy rehearsal line"
+	@echo "  make demo-rehearsal-status  # inspect the local demo deploy rehearsal line"
+	@echo "  make demo-rehearsal-down  # clear the local demo deploy rehearsal line"
+	@echo "  make cluster-rehearsal-up  # start the local cluster deploy rehearsal line"
+	@echo "  make cluster-rehearsal-status  # inspect the local cluster deploy rehearsal line"
+	@echo "  make cluster-rehearsal-down  # clear the local cluster deploy rehearsal line"
 	@echo ""
 	@echo "Tests:"
 	@echo "  npm run test:default-e2e  # run the default mock UI regression range"
@@ -119,14 +133,14 @@ help-extended:
 	@echo ""
 # current-workflow:help-extended:end
 	@echo "Dependencies:"
-	@echo "  make deps-up       # start docker deps (postgres+pgvector/mongo/redis/minio/keycloak)"
+	@echo "  make deps-up       # legacy direct deps start (prefer substrate-up)"
 	@echo "  make deps-ready    # wait for postgres/keycloak to accept connections (after deps-up)"
 	@echo "  make deps-init    # apply postgres schemas + seed/reset keycloak users (requires deps-ready)"
 	@echo "  make deps-smoke   # verify all deps healthy (requires deps-init for pgvector)"
 	@echo "  make deps-init-postgres # apply postgres schemas (projects + pgvector tables)"
 	@echo "  make deps-init-keycloak # ensure/reset keycloak integration users"
-	@echo "  make deps-down     # stop deps"
-	@echo "  make deps-reset    # stop deps and remove volumes"
+	@echo "  make deps-down     # legacy direct deps stop (prefer substrate-down)"
+	@echo "  make deps-reset    # legacy direct deps reset (prefer substrate-reset)"
 	@echo "  make deps-logs     # tail deps logs"
 	@echo "  make deps-ps       # list deps status"
 	@echo ""
@@ -743,6 +757,64 @@ notebook-agent-runner:
 	MBOS_AGENT_CODEX_YOLO="$${MBOS_AGENT_CODEX_YOLO:-1}" \
 	$(NPM) run agent:codex-runner
 
+substrate-up:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
+	bash ./scripts/substrate/up.sh
+
+substrate-down:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
+	bash ./scripts/substrate/down.sh
+
+substrate-reset:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
+	bash ./scripts/substrate/reset.sh
+
+substrate-reseed:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
+	bash ./scripts/substrate/reseed.sh
+
+substrate-status:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	SUBSTRATE="$${SUBSTRATE:-local-dev}" \
+	bash ./scripts/substrate/status.sh
+
+
+demo-rehearsal-up:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/demo-rehearsal-up.sh
+
+demo-rehearsal-down:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/demo-rehearsal-down.sh
+
+demo-rehearsal-status:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/demo-rehearsal-status.sh
+
+demo-rehearsal-reset:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/demo-rehearsal-reset.sh
+
+cluster-rehearsal-up:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/cluster-rehearsal-up.sh
+
+cluster-rehearsal-down:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/cluster-rehearsal-down.sh
+
+cluster-rehearsal-status:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/cluster-rehearsal-status.sh
+
+cluster-rehearsal-reset:
+	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+	./scripts/cluster-rehearsal-reset.sh
+
 local-manual-up:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual-up.sh
@@ -761,7 +833,7 @@ local-manual-status:
 
 local-manual-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-	./scripts/local-manual-down.sh && $(MAKE) deps-reset && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
+	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
 
 notebook-agent-no-sandbox-smoke:
 	@set -e; \

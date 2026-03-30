@@ -1,6 +1,6 @@
 # Current Engineering Governance Model
 
-Last updated: 2026-03-24  
+Last updated: 2026-03-30  
 Status: `authoritative`
 
 This document defines the current engineering governance model for AgentSmith. README, DEVELOPMENT, Make help, workflow checks, and current runbooks must follow this document and the machine-readable manifest in `scripts/governance/current-workflow-manifest.ts`.
@@ -54,11 +54,24 @@ Current engineering runtime baseline:
 ### 环境
 
 ```bash
+make substrate-up SUBSTRATE=local-dev
+make substrate-reseed SUBSTRATE=local-dev
+make substrate-status SUBSTRATE=local-dev
+make substrate-down SUBSTRATE=local-dev
+make substrate-reset SUBSTRATE=local-dev
 make local-manual-up
 make local-manual-seed-notebook
 make local-manual-status
 make local-manual-down
 make local-manual-reset
+make demo-rehearsal-up
+make demo-rehearsal-status
+make demo-rehearsal-down
+make demo-rehearsal-reset
+make cluster-rehearsal-up
+make cluster-rehearsal-status
+make cluster-rehearsal-down
+make cluster-rehearsal-reset
 ```
 
 ### 测试

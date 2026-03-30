@@ -8,6 +8,7 @@ else
 fi
 source "${ROOT_DIR}/scripts/lib/common.sh"
 source "${ROOT_DIR}/scripts/lib/k8s-external-services.sh"
+source "${ROOT_DIR}/scripts/substrate/deploy-common.sh"
 
 ensure_dirs
 ensure_operator_site_env
@@ -83,7 +84,8 @@ bash "${RELEASE_SCRIPT_DIR}/resolve-runtime-addresses.sh"
 bash "${RELEASE_SCRIPT_DIR}/render-env.sh"
 load_release_env
 
-docker_compose up -d postgres mongo redis minio minio-init keycloak universal-proxy api web
+release_substrate_up
+docker_compose up -d api web
 wait_http "${HOST_LOCAL_KEYCLOAK_BASE_URL}/realms/${KEYCLOAK_REALM}/.well-known/openid-configuration" 240
 wait_tcp "127.0.0.1" "${API_PORT}" 240
 wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240

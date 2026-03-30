@@ -3,6 +3,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 source "${ROOT_DIR}/scripts/cluster-deploy/lib.sh"
+source "${ROOT_DIR}/scripts/substrate/deploy-common.sh"
 
 ensure_dirs
 load_kubeconfig || true
@@ -20,6 +21,7 @@ if [[ -f "${RELEASE_ROOT}/compose/docker-compose.yml" ]]; then
   docker_compose down -v --remove-orphans || true
 fi
 
+cleanup_report_dir_artifacts "${REPORT_DIR}"
 rm -rf "${STATE_DIR}"/* "${LOG_DIR}"/* "${REPORT_DIR}"/*
 state_set release.phase reset_completed
 log "reset ok (compose and local state only; kubernetes resources were left untouched)"

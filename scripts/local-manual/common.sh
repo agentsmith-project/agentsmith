@@ -4,34 +4,34 @@ set -euo pipefail
 unset http_proxy https_proxy all_proxy HTTP_PROXY HTTPS_PROXY ALL_PROXY no_proxy NO_PROXY
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-PROXY_ROOT="$(cd "${ROOT_DIR}/../llm-universal-proxy" && pwd)"
+ENV_FILE="${ENV_FILE:-${ROOT_DIR}/.env.local-manual}"
+SUBSTRATE="${SUBSTRATE:-local-dev}"
+SUBSTRATE_ENV_FILE="${ENV_FILE}"
+
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
+source "${ROOT_DIR}/scripts/scenarios/common.sh"
+source "${ROOT_DIR}/scripts/substrate/common.sh"
 ensure_backend_real_state
 
-ENV_FILE="${ENV_FILE:-${ROOT_DIR}/.env.local-manual}"
 LOCAL_MANUAL_ROOT="$(backend_real_state_root)/local-manual"
 mkdir -p "${LOCAL_MANUAL_ROOT}"
 
-PROXY_PID_FILE="${LOCAL_MANUAL_ROOT}/proxy.pid"
 API_PID_FILE="${LOCAL_MANUAL_ROOT}/api.pid"
 WEB_PID_FILE="${LOCAL_MANUAL_ROOT}/web.pid"
 RUNNER_PID_FILE="${LOCAL_MANUAL_ROOT}/runner.pid"
 
-PROXY_READY_FILE="${LOCAL_MANUAL_ROOT}/proxy.ready"
 API_READY_FILE="${LOCAL_MANUAL_ROOT}/api.ready"
 WEB_READY_FILE="${LOCAL_MANUAL_ROOT}/web.ready"
 RUNNER_READY_FILE="${LOCAL_MANUAL_ROOT}/runner.ready"
+PROXY_READY_FILE="${SUBSTRATE_PROXY_READY_FILE}"
 
-PROXY_PORT_FILE="${LOCAL_MANUAL_ROOT}/proxy.port"
 API_PORT_FILE="${LOCAL_MANUAL_ROOT}/api.port"
 WEB_PORT_FILE="${LOCAL_MANUAL_ROOT}/web.port"
 
-PROXY_LOG="${LOCAL_MANUAL_ROOT}/proxy.log"
 API_LOG="${LOCAL_MANUAL_ROOT}/api.log"
 WEB_LOG="${LOCAL_MANUAL_ROOT}/web.log"
 RUNNER_LOG="${LOCAL_MANUAL_ROOT}/runner.log"
-PROXY_CONFIG="${LOCAL_MANUAL_ROOT}/universal-proxy.yaml"
 
 info() { echo "[local-manual] $*"; }
 err() { echo "[local-manual] ERROR: $*" >&2; }
@@ -56,52 +56,45 @@ fail_if_legacy_env() {
   done
 }
 
+load_local_manual_substrate_env() {
+  if [[ -f "${SUBSTRATE_CONNECTION_ENV}" ]]; then
+    set -a
+    source "${SUBSTRATE_CONNECTION_ENV}"
+    set +a
+  else
+    DATABASE_URL="postgresql://${SUBSTRATE_DB_USER}:${SUBSTRATE_DB_PASSWORD}@localhost:${SUBSTRATE_POSTGRES_PORT}/${SUBSTRATE_DB_NAME}"
+    REDIS_URL="redis://localhost:${SUBSTRATE_REDIS_PORT}"
+    MONGO_URL="mongodb://${SUBSTRATE_MONGO_USER}:${SUBSTRATE_MONGO_PASSWORD}@localhost:${SUBSTRATE_MONGO_PORT}/admin"
+    MONGO_DB_NAME="${SUBSTRATE_MONGO_DB}"
+    MINIO_ENDPOINT="localhost"
+    MINIO_PORT="${SUBSTRATE_MINIO_API_PORT}"
+    MINIO_USE_SSL="false"
+    MINIO_ACCESS_KEY="${SUBSTRATE_MINIO_ACCESS_KEY}"
+    MINIO_SECRET_KEY="${SUBSTRATE_MINIO_SECRET_KEY}"
+    MINIO_BUCKET="${SUBSTRATE_MINIO_BUCKET}"
+    KEYCLOAK_BASE_URL="${SUBSTRATE_KEYCLOAK_BASE_URL}"
+    KEYCLOAK_REALM="${SUBSTRATE_KEYCLOAK_REALM}"
+    KEYCLOAK_CLIENT_ID="${SUBSTRATE_KEYCLOAK_CLIENT_ID}"
+    KEYCLOAK_ISSUER_URL="${SUBSTRATE_KEYCLOAK_ISSUER_URL}"
+    MBOS_UNIVERSAL_PROXY_BASE_URL="${SUBSTRATE_PROXY_BASE_URL}"
+  fi
+  PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+  INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
+  KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_BASE_URL}/realms}"
+  PROXY_PORT="${PROXY_PORT:-${MBOS_UNIVERSAL_PROXY_BASE_URL##*:}}"
+}
+
 init_local_manual_env() {
   load_runtime_env_stack "local-manual" "${ENV_FILE}"
   fail_if_legacy_env
 
   PORT_API="${PORT_API:-20000}"
   PORT_WEB="${PORT_WEB:-3001}"
-  PROXY_PORT="${PROXY_PORT:-38080}"
-  LOCAL_MANUAL_REUSE_SUPPORT_SERVICES="${LOCAL_MANUAL_REUSE_SUPPORT_SERVICES:-0}"
   LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP="${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP:-0}"
   LOCALE="${LOCALE:-zh-CN}"
   WORKSPACE_ID="${WORKSPACE_ID:-ws_default}"
 
-  KEYCLOAK_BASE_URL="${KEYCLOAK_BASE_URL:-http://localhost:18080}"
-  PUBLIC_KEYCLOAK_BASE_URL="${PUBLIC_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
-  INTERNAL_KEYCLOAK_BASE_URL="${INTERNAL_KEYCLOAK_BASE_URL:-${KEYCLOAK_BASE_URL}}"
-  KEYCLOAK_REALM="${KEYCLOAK_REALM:-mbos}"
-  KEYCLOAK_CLIENT_ID="${KEYCLOAK_CLIENT_ID:-agentsmith}"
-  KEYCLOAK_URL="${KEYCLOAK_URL:-${KEYCLOAK_BASE_URL}/realms}"
-  KEYCLOAK_ISSUER_URL="${KEYCLOAK_ISSUER_URL:-${PUBLIC_KEYCLOAK_BASE_URL%/}/realms/${KEYCLOAK_REALM}}"
-
-  DATABASE_URL="${DATABASE_URL:-postgresql://mbos:mbos_dev_password@localhost:15432/mbos}"
-  REDIS_URL="${REDIS_URL:-redis://localhost:16379}"
-  MONGO_URL="${MONGO_URL:-mongodb://mbos:mbos_dev_password@localhost:17017/admin}"
-  MONGO_DB_NAME="${MONGO_DB_NAME:-mbos}"
-  MINIO_ENDPOINT="${MINIO_ENDPOINT:-localhost}"
-  MINIO_PORT="${MINIO_PORT:-19000}"
-  MINIO_USE_SSL="${MINIO_USE_SSL:-false}"
-  MINIO_ACCESS_KEY="${MINIO_ACCESS_KEY:-mbos}"
-  MINIO_SECRET_KEY="${MINIO_SECRET_KEY:-mbos_dev_password}"
-  MINIO_BUCKET="${MINIO_BUCKET:-mbos-dev}"
-  MBOS_UNIVERSAL_PROXY_BASE_URL="${MBOS_UNIVERSAL_PROXY_BASE_URL:-http://127.0.0.1:${PROXY_PORT}}"
-}
-
-run_local_manual_support_services_prepare() {
-  if [[ "${LOCAL_MANUAL_REUSE_SUPPORT_SERVICES}" == "1" ]]; then
-    info "reusing existing integration support services"
-    (
-      cd "${ROOT_DIR}" &&       npm run integration:deps:init:postgres &&       INTEGRATION_WEB_PORT="${PORT_WEB}" npm run integration:deps:init:keycloak &&       npm run integration:deps:smoke
-    )
-    return 0
-  fi
-
-  info "starting local dependencies"
-  (
-    cd "${ROOT_DIR}" &&     make deps-up &&     make deps-ready &&     npm run integration:deps:init:postgres &&     INTEGRATION_WEB_PORT="${PORT_WEB}" npm run integration:deps:init:keycloak &&     npm run integration:deps:smoke
-  )
+  load_local_manual_substrate_env
 }
 
 require_preset_endpoint_env() {
@@ -189,9 +182,9 @@ write_ready_file() {
 
 remove_local_manual_runtime_files() {
   rm -f \
-    "${PROXY_READY_FILE}" "${API_READY_FILE}" "${WEB_READY_FILE}" "${RUNNER_READY_FILE}" \
-    "${PROXY_PORT_FILE}" "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
-    "${PROXY_PID_FILE}" "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}"
+    "${API_READY_FILE}" "${WEB_READY_FILE}" "${RUNNER_READY_FILE}" \
+    "${API_PORT_FILE}" "${WEB_PORT_FILE}" \
+    "${API_PID_FILE}" "${WEB_PID_FILE}" "${RUNNER_PID_FILE}"
 }
 
 reset_local_manual_state() {
@@ -204,4 +197,53 @@ fs.writeFileSync(file, `${JSON.stringify(next, null, 2)}\n`);
 NODE
   rm -f "$(backend_real_token_file)"
   state_write_summary
+}
+
+stop_listeners_on_port() {
+  local port="$1"
+  local pids
+  pids="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  [[ -n "${pids}" ]] || return 0
+  info "stopping listeners on port ${port}: ${pids//$'\n'/ }"
+  xargs -r kill >/dev/null 2>&1 <<< "${pids}" || true
+  sleep 1
+  pids="$(lsof -tiTCP:"${port}" -sTCP:LISTEN 2>/dev/null || true)"
+  [[ -n "${pids}" ]] || return 0
+  xargs -r kill -9 >/dev/null 2>&1 <<< "${pids}" || true
+}
+
+stop_matching_processes() {
+  local pattern="$1"
+  local pids
+  pids="$(pgrep -f "${pattern}" || true)"
+  [[ -n "${pids}" ]] || return 0
+  info "stopping processes matching ${pattern}: ${pids//$'\n'/ }"
+  xargs -r kill >/dev/null 2>&1 <<< "${pids}" || true
+  sleep 1
+  pids="$(pgrep -f "${pattern}" || true)"
+  [[ -n "${pids}" ]] || return 0
+  xargs -r kill -9 >/dev/null 2>&1 <<< "${pids}" || true
+}
+
+maybe_stop_untracked_port() {
+  local port="$1"
+  if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP}" != "1" ]]; then
+    return 0
+  fi
+  stop_listeners_on_port "${port}"
+}
+
+stop_local_manual_processes() {
+  stop_pid_file_if_running "${RUNNER_PID_FILE}" "runner"
+  stop_pid_file_if_running "${WEB_PID_FILE}" "web"
+  stop_pid_file_if_running "${API_PID_FILE}" "api"
+
+  stop_matching_processes "run-next-dev-safe.sh --port ${PORT_WEB}"
+  stop_matching_processes "npm run dev:test --port ${PORT_WEB}"
+  stop_matching_processes "next dev --port ${PORT_WEB}"
+  stop_matching_processes 'node .*/node_modules/.bin/tsx src/index.ts'
+  stop_matching_processes 'make notebook-agent-runner'
+
+  maybe_stop_untracked_port "${PORT_WEB}"
+  maybe_stop_untracked_port "${PORT_API}"
 }

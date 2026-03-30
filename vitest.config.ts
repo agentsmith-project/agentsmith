@@ -20,6 +20,8 @@ export default defineConfig({
     include: ['**/__tests__/**/*.{test,spec}.{js,ts,tsx}', '**/*.{test,spec}.{js,ts,tsx}'],
     exclude: [
       'node_modules/',
+      'artifacts/',
+      'env/',
       '.worktrees/',
       '**/.worktrees/**',
       'dist/',
@@ -34,6 +36,8 @@ export default defineConfig({
       reporter: ['text', 'json', 'html'],
       exclude: [
         'node_modules/',
+        'artifacts/',
+        'env/',
         'src/test/',
         '**/*.d.ts',
         '**/*.config.*',

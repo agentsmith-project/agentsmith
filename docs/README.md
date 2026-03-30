@@ -20,6 +20,8 @@
 - [Workspace / Project Default Engineering Gate Checklist](./user-guides/workspace-project-default-engineering-gate-checklist.md)
 - [Governance Default Engineering Gate Checklist](./user-guides/governance-default-engineering-gate-checklist.md)
 - [Release Readiness Checklist](./user-guides/release-readiness-checklist.md)
+- [Local Runtime Flows](./user-guides/local-runtime-flows.md)
+  - One shared local substrate, one active flow at a time, and the shortest command path for `local-manual` / `demo-rehearsal` / `cluster-rehearsal`.
 - [Demo Deploy Operations](./user-guides/demo-deploy-operations.md)
   - Demo / single-host release line. Compose + local `kind` sandbox simulation.
 - [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)

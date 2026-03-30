@@ -18,6 +18,7 @@ describe('ChatResourceService', () => {
     const session = await service.createSession({
       workspaceId,
       projectId,
+      ownerUserId: 'user_test',
       model: 'deepseek-chat',
       endpointId: 'ep_1',
     });
@@ -70,6 +71,7 @@ describe('ChatResourceService', () => {
     const session = await service.createSession({
       workspaceId,
       projectId,
+      ownerUserId: 'user_test',
       model: 'deepseek-chat',
       endpointId: 'ep_1',
     });
@@ -145,6 +147,7 @@ describe('ChatResourceService', () => {
     const session = await service.createSession({
       workspaceId,
       projectId,
+      ownerUserId: 'user_test',
       model: 'deepseek-chat',
       endpointId: 'ep_1',
     });
@@ -171,6 +174,8 @@ describe('ChatResourceService', () => {
     expect(await docStore.list('ws_default_chat_messages', {})).toHaveLength(1);
     expect(await docStore.list('ws_default_chat_attachments', {})).toHaveLength(1);
     expect(await service.listSessions(workspaceId, projectId)).toHaveLength(1);
+    expect(await service.listSessionsForUser(workspaceId, projectId, 'user_test')).toHaveLength(1);
+    expect(await service.listSessionsForUser(workspaceId, projectId, 'user_other')).toHaveLength(0);
     expect(await service.listMessages(workspaceId, projectId, session.id)).toHaveLength(1);
     expect(await service.listAttachments(workspaceId, projectId, session.id)).toHaveLength(1);
   });

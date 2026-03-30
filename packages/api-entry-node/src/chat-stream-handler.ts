@@ -222,10 +222,11 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     return false;
   }
 
-  const session = await deps.chatResourceService.getSession(
+  const session = await deps.chatResourceService.getSessionForUser(
     route.workspaceId,
     route.projectId,
     route.sessionId,
+    user.id,
   );
   if (!session) {
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });

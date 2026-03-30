@@ -135,7 +135,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       pageSize: 100,
       maxPageSize: 500,
     });
-    const items = await deps.chatResourceService.listSessions(route.workspaceId, route.projectId);
+    const items = await deps.chatResourceService.listSessionsForUser(route.workspaceId, route.projectId, user.id);
     const pageItems = items.slice(offset, offset + pageSize);
     const itemsWithRequestDetails = await Promise.all(
       pageItems.map(async (item) => ({
@@ -175,6 +175,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       const created = await deps.chatResourceService.createSession({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
+        ownerUserId: user.id,
         title: raw.title,
         model: raw.model ?? 'external-agent',
         endpointId: raw.endpoint_id ?? '',
@@ -195,6 +196,7 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
     const created = await deps.chatResourceService.createSession({
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      ownerUserId: user.id,
       title: raw.title,
       model: raw.model ?? chosenEndpoint.model,
       endpointId: chosenEndpoint.id,
@@ -204,10 +206,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatSessionItem' && method === 'GET') {
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -236,6 +239,16 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
         return true;
       }
     }
+    const session = await deps.chatResourceService.getSessionForUser(
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+      user.id,
+    );
+    if (!session) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      return true;
+    }
     const updated = await deps.chatResourceService.updateSession(
       route.workspaceId,
       route.projectId,
@@ -257,6 +270,16 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       route.projectId,
       route.sessionId,
     );
+    const session = await deps.chatResourceService.getSessionForUser(
+      route.workspaceId,
+      route.projectId,
+      route.sessionId,
+      user.id,
+    );
+    if (!session) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
+      return true;
+    }
     const deleted = await deps.chatResourceService.deleteSession(
       route.workspaceId,
       route.projectId,
@@ -271,10 +294,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatSessionStop' && method === 'POST') {
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -295,10 +319,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatSessionStreams' && method === 'GET') {
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -320,10 +345,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
       pageSize: 200,
       maxPageSize: 500,
     });
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -346,10 +372,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatMessages' && method === 'POST') {
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -489,10 +516,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatAttachments' && method === 'GET') {
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });
@@ -508,10 +536,11 @@ export async function handleChatNonStreamRoute(args: ChatNonStreamHandlerArgs): 
   }
 
   if (route.kind === 'chatAttachmentInit' && method === 'POST') {
-    const session = await deps.chatResourceService.getSession(
+    const session = await deps.chatResourceService.getSessionForUser(
       route.workspaceId,
       route.projectId,
       route.sessionId,
+      user.id,
     );
     if (!session) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'chat_session_not_found' });

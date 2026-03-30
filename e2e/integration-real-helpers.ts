@@ -40,6 +40,10 @@ export const DOCKER_BUILD_PROXY = process.env.INTEGRATION_DOCKER_BUILD_PROXY ?? 
 export const INTERNAL_AGENT_IMAGE = process.env.INTEGRATION_INTERNAL_AGENT_IMAGE?.trim() || 'agentsmith-codex-runner:local';
 export const KEYCLOAK_DEV_ADMIN_USERNAME = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
 export const KEYCLOAK_DEV_ADMIN_PASSWORD = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
+export const KEYCLOAK_INTEGRATION_USER_USERNAME = process.env.INTEGRATION_USER_USERNAME ?? 'integration-user';
+export const KEYCLOAK_INTEGRATION_USER_PASSWORD = process.env.INTEGRATION_USER_PASSWORD ?? 'integration-user-123';
+export const KEYCLOAK_INTEGRATION_MEMBER_USERNAME = process.env.INTEGRATION_MEMBER_USERNAME ?? 'integration-member';
+export const KEYCLOAK_INTEGRATION_MEMBER_PASSWORD = process.env.INTEGRATION_MEMBER_PASSWORD ?? 'integration-member-123';
 
 async function collectChildPids(pid: number): Promise<number[]> {
   return new Promise((resolve) => {
@@ -126,6 +130,17 @@ async function spawnAndCapture(command: string, args: string[], options?: { cwd?
       });
     });
   });
+}
+
+export async function ensureIntegrationKeycloakUsers(): Promise<void> {
+  const result = await spawnAndCapture(
+    'node_modules/.bin/tsx',
+    ['scripts/integration-keycloak-init.ts'],
+    { env: process.env },
+  );
+  if (result.code !== 0) {
+    throw new Error(`integration_keycloak_init_failed:${result.stderr || result.stdout}`);
+  }
 }
 
 function withoutProxyEnv(baseEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {

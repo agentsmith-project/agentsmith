@@ -49,10 +49,6 @@ ensure_cluster_rehearsal_site_env() {
 }
 
 ensure_cluster_rehearsal_release_bundle() {
-  if [[ -e "${CLUSTER_REHEARSAL_CURRENT_LINK}" ]]; then
-    export RELEASE_ROOT="$(cd -P "${CLUSTER_REHEARSAL_CURRENT_LINK}" && pwd)"
-    return 0
-  fi
   local release_id="cluster-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
   OUT_DIR="${CLUSTER_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" bash "${ROOT_DIR}/scripts/cluster-deploy/build-bundle.sh"
   export RELEASE_ROOT="${CLUSTER_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"

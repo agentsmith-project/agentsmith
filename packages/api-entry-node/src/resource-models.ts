@@ -136,6 +136,7 @@ export interface ChatSessionRecord {
   id: string;
   workspace_id: string;
   project_id: string;
+  owner_user_id: string;
   title: string;
   model: string;
   endpoint_id: string;

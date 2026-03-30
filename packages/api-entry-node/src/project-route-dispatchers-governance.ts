@@ -1,5 +1,6 @@
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
 import { handleProjectJoinRequestsRoute } from './project-join-request-routes.js';
+import { handleProjectInviteCreateRoute } from './project-invite-routes.js';
 import {
   handleProjectGroupsRoute,
   handleProjectMembershipGovernanceRoute,
@@ -124,6 +125,20 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
     }
     json(res, 200, { items, total: items.length });
     return true;
+  }
+
+  if (route.kind === 'projectInvites' && method === 'POST' && route.workspaceId && route.projectId) {
+    return handleProjectInviteCreateRoute({
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      method,
+      req,
+      res,
+      deps,
+      user,
+      json,
+      readBody,
+    });
   }
 
   if (

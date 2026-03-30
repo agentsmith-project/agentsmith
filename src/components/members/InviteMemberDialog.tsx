@@ -12,16 +12,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Copy, Loader2, Check, UserPlus } from 'lucide-react';
 import { useCreateInvite } from '@/lib/hooks/use-members';
-import { PROJECT_BUILT_IN_TEMPLATE_IDS } from '@/lib/governance/member-groups';
 
 export interface InviteMemberDialogProps {
   open: boolean;
@@ -39,7 +32,6 @@ export function InviteMemberDialog({
   const t = useTranslations('members.invite');
   const locale = useLocale();
   const [email, setEmail] = React.useState('');
-  const [groupTemplate, setGroupTemplate] = React.useState<string>(PROJECT_BUILT_IN_TEMPLATE_IDS.member);
   const [expiresInHours, setExpiresInHours] = React.useState<number>(168); // 7 days
   const [inviteUrl, setInviteUrl] = React.useState<string | null>(null);
   const [copied, setCopied] = React.useState(false);
@@ -48,7 +40,6 @@ export function InviteMemberDialog({
 
   const resetForm = React.useCallback(() => {
     setEmail('');
-    setGroupTemplate(PROJECT_BUILT_IN_TEMPLATE_IDS.member);
     setExpiresInHours(168);
     setInviteUrl(null);
     setCopied(false);
@@ -67,7 +58,6 @@ export function InviteMemberDialog({
     try {
       const result = await createInvite.mutateAsync({
         email: email.trim(),
-        group_template: groupTemplate,
         expires_in_hours: expiresInHours,
       });
       const path = result.invite_url.startsWith('/') ? result.invite_url.slice(1) : result.invite_url;
@@ -180,23 +170,6 @@ export function InviteMemberDialog({
                 disabled={createInvite.isPending}
                 className="rounded-lg"
               />
-            </div>
-
-            <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">
-              <Label htmlFor="invite-group">{t('group_label')}</Label>
-              <Select
-                value={groupTemplate}
-                onValueChange={setGroupTemplate}
-                disabled={createInvite.isPending}
-              >
-                <SelectTrigger id="invite-group" className="rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.admin}>{t('group_admin')}</SelectItem>
-                  <SelectItem value={PROJECT_BUILT_IN_TEMPLATE_IDS.member}>{t('group_user')}</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
 
             <div className="space-y-2 rounded-2xl border border-white/8 bg-white/[0.02] p-4">

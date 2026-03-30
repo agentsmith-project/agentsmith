@@ -391,6 +391,13 @@ describe('matchProjectsRoute', () => {
       projectId: 'proj_1',
     });
     expect(
+      matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/invites'),
+    ).toEqual({
+      kind: 'projectInvites',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+    });
+    expect(
       matchProjectsRoute('/api/v1/workspaces/ws_default/projects/proj_1/permission-templates'),
     ).toEqual({
       kind: 'projectPermissionTemplates',

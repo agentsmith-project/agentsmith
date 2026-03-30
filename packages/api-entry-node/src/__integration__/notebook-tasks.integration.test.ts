@@ -8,7 +8,10 @@ import {
   buildNotebookTaskRunState,
   getNotebookTaskRunCancellationRequest,
 } from '../notebook-task/task-run-coordination.js';
-import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
+import type { TaskRecord } from '../notebook-task/task-models.js';
+import { getTasks } from '../notebook-task/task-runtime-state.js';
+import { notebookTasksCollection } from '../notebook-task/task-store.js';
+import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 const upstreamServers: Server[] = [];
 const sockets: WebSocket[] = [];
@@ -83,6 +86,134 @@ async function createFileLibrary(baseUrl: string, name = 'Notebook Workspace'): 
 }
 
 describe('api-entry-node notebook task routes', () => {
+  it('isolates notebook tasks by owner for both external and internal agents', async () => {
+    const { baseUrl, deps } = startServer();
+    const internalWorkspaceLibrary = await createFileLibrary(baseUrl, 'Internal Isolation Workspace');
+    const externalWorkspaceLibrary = await createFileLibrary(baseUrl, 'External Isolation Workspace');
+    const internalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_internal',
+        },
+      },
+    });
+    const externalAgent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'external-notebook-agent',
+      mode: 'external',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      presence: 'online',
+      config: {
+        _external_key_source: 'generated',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_external',
+          wire_api: 'responses',
+          model: 'glm-4.7',
+        },
+      },
+    });
+
+    const createInternalTask = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Internal owner task',
+          agent_id: internalAgent.id,
+          workspace_file_library_id: internalWorkspaceLibrary.id,
+        }),
+      },
+    );
+    expect(createInternalTask.status).toBe(201);
+    const internalTask = await createInternalTask.json() as { id: string };
+
+    const externalCreatedAt = new Date().toISOString();
+    const externalTask: TaskRecord = {
+      id: 'task_external_isolated',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      owner_user_id: 'user_test',
+      title: 'External owner task',
+      agent_id: externalAgent.id,
+      agent_name: externalAgent.name,
+      workspace_file_library_id: externalWorkspaceLibrary.id,
+      workspace_file_library_name: externalWorkspaceLibrary.name,
+      status: 'active',
+      attached_inputs: [],
+      created_at: externalCreatedAt,
+      updated_at: externalCreatedAt,
+      last_activity_at: externalCreatedAt,
+    };
+    getTasks('ws_default', 'proj_1').unshift(externalTask);
+    await deps.docStore.upsert<TaskRecord>(notebookTasksCollection('ws_default'), externalTask.id, externalTask);
+
+    const ownerList = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'test-token',
+    );
+    expect(ownerList.status).toBe(200);
+    const ownerListBody = await ownerList.json() as { items: Array<{ id: string }> };
+    expect(ownerListBody.items.map((item) => item.id)).toContain(internalTask.id);
+    expect(ownerListBody.items.map((item) => item.id)).toContain(externalTask.id);
+
+    const otherList = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      'owner-token',
+    );
+    expect(otherList.status).toBe(200);
+    const otherListBody = await otherList.json() as { items: Array<{ id: string }> };
+    expect(otherListBody.items.map((item) => item.id)).not.toContain(internalTask.id);
+    expect(otherListBody.items.map((item) => item.id)).not.toContain(externalTask.id);
+
+    const otherGet = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${internalTask.id}`,
+      'owner-token',
+    );
+    expect(otherGet.status).toBe(404);
+
+    const otherMessages = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${internalTask.id}/messages`,
+      'owner-token',
+    );
+    expect(otherMessages.status).toBe(404);
+
+    const otherWorkspaceAccess = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${internalTask.id}/workspace-access`,
+      'owner-token',
+      { method: 'POST' },
+    );
+    expect(otherWorkspaceAccess.status).toBe(404);
+
+    const otherExternalGet = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${externalTask.id}`,
+      'owner-token',
+    );
+    expect(otherExternalGet.status).toBe(404);
+  });
+
   it('requires workspace file library when creating a notebook task without create-new mode', async () => {
     const { baseUrl, deps } = startServer();
     const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {

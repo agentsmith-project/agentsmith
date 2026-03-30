@@ -46,6 +46,19 @@ export class ChatResourceService {
     return items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
   }
 
+  async listSessionsForUser(
+    workspaceId: string,
+    projectId: string,
+    ownerUserId: string,
+  ): Promise<ChatSessionRecord[]> {
+    const items = await this.docStore.list<ChatSessionRecord>(this.sessionsCollection(workspaceId), {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      owner_user_id: ownerUserId,
+    });
+    return items.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  }
+
   async getSession(
     workspaceId: string,
     projectId: string,
@@ -61,9 +74,23 @@ export class ChatResourceService {
     return session;
   }
 
+  async getSessionForUser(
+    workspaceId: string,
+    projectId: string,
+    sessionId: string,
+    ownerUserId: string,
+  ): Promise<ChatSessionRecord | null> {
+    const session = await this.getSession(workspaceId, projectId, sessionId);
+    if (!session) {
+      return null;
+    }
+    return session.owner_user_id === ownerUserId ? session : null;
+  }
+
   async createSession(input: {
     workspaceId: string;
     projectId: string;
+    ownerUserId: string;
     model: string;
     endpointId: string;
     externalAgentId?: string;
@@ -74,6 +101,7 @@ export class ChatResourceService {
       id: this.sessionId(),
       workspace_id: input.workspaceId,
       project_id: input.projectId,
+      owner_user_id: input.ownerUserId,
       title: input.title?.trim() || 'New Chat',
       model: input.model,
       endpoint_id: input.endpointId,

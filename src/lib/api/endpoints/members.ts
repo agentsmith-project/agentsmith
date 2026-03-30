@@ -52,7 +52,6 @@ export interface CreateJoinRequestResponse {
 
 export interface CreateInviteRequest {
   email: string;
-  group_template?: string;
   expires_in_hours?: number;
 }
 

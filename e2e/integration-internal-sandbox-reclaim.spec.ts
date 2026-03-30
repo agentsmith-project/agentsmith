@@ -35,9 +35,9 @@ function requireReclaimEnv(): { namespace: string } {
 }
 
 function requireApiKey(): string {
-  const value = process.env.BACKEND_REAL_API_KEY?.trim();
+  const value = process.env.BACKEND_REAL_API_KEY?.trim() || process.env.PRESET_ENDPOINT_API_KEY?.trim();
   if (!value) {
-    throw new Error('missing_BACKEND_REAL_API_KEY');
+    throw new Error('missing_BACKEND_REAL_API_KEY_or_PRESET_ENDPOINT_API_KEY');
   }
   return value;
 }

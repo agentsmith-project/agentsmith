@@ -35,10 +35,6 @@ ensure_demo_rehearsal_site_env() {
 }
 
 ensure_demo_rehearsal_release_bundle() {
-  if [[ -e "${DEMO_REHEARSAL_CURRENT_LINK}" ]]; then
-    export RELEASE_ROOT="$(cd -P "${DEMO_REHEARSAL_CURRENT_LINK}" && pwd)"
-    return 0
-  fi
   local release_id="demo-rehearsal-$(date -u +%Y%m%dT%H%M%SZ)"
   OUT_DIR="${DEMO_REHEARSAL_RELEASES_DIR}" RELEASE_ID="${release_id}" bash "${ROOT_DIR}/scripts/demo-deploy/build-offline-bundle.sh"
   export RELEASE_ROOT="${DEMO_REHEARSAL_RELEASES_DIR}/agentsmith-${release_id}"

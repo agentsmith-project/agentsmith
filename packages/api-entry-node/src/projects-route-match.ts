@@ -57,6 +57,7 @@ export type ProjectsRoute =
   | { kind: 'usageOperationsSummary'; workspaceId: string; projectId: string }
   | { kind: 'limitsSummary'; workspaceId: string; projectId: string }
   | { kind: 'projectMembers'; workspaceId: string; projectId: string }
+  | { kind: 'projectInvites'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequests'; workspaceId: string; projectId: string }
   | { kind: 'projectJoinRequestApprove'; workspaceId: string; projectId: string; joinId: string }
   | { kind: 'projectJoinRequestReject'; workspaceId: string; projectId: string; joinId: string }
@@ -434,6 +435,15 @@ export function matchProjectsRoute(url: string): ProjectsRoute | null {
       kind: 'projectMembers',
       workspaceId: decodeURIComponent(projectMembersMatched[1]),
       projectId: decodeURIComponent(projectMembersMatched[2]),
+    };
+  }
+
+  const projectInvitesMatched = pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/projects\/([^/]+)\/invites\/?$/);
+  if (projectInvitesMatched) {
+    return {
+      kind: 'projectInvites',
+      workspaceId: decodeURIComponent(projectInvitesMatched[1]),
+      projectId: decodeURIComponent(projectInvitesMatched[2]),
     };
   }
 

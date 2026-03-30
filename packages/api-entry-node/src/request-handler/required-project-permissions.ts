@@ -34,6 +34,7 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
 
   if (
     route.kind === 'projectMembers'
+    || route.kind === 'projectInvites'
     || route.kind === 'projectJoinRequestApprove'
     || route.kind === 'projectJoinRequestReject'
     || route.kind === 'projectPermissionTemplates'

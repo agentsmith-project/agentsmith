@@ -27,6 +27,7 @@ import {
 import { issueSSETicket } from './sse-ticket-store.js';
 import { buildUpstreamUrl } from './request-handler/build-upstream-url.js';
 import { handleInternalRoutes } from './request-handler/internal-routes.js';
+import { handleJoinInviteActionRoute } from './project-invite-routes.js';
 import {
   isAgentRoute,
   isChatRoute,
@@ -120,6 +121,18 @@ export async function handleRequest(
       cache: deps.cache,
       docStore: deps.docStore,
       governanceIncidentsDir: deps.governanceIncidentsDir,
+    })) {
+      return;
+    }
+    if (await handleJoinInviteActionRoute({
+      pathname: requestUrl.pathname,
+      method,
+      req,
+      res,
+      deps,
+      user,
+      json,
+      readBody,
     })) {
       return;
     }

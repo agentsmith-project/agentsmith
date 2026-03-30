@@ -110,6 +110,27 @@ function debugNotebookExecution(message: string, extra?: Record<string, unknown>
 const NOTEBOOK_RUN_LEASE_HEARTBEAT_MS = 15_000;
 const NOTEBOOK_RUN_CANCEL_POLL_MS = 1_000;
 
+function listTasksForOwner(
+  workspaceId: string,
+  projectId: string,
+  ownerUserId: string,
+): TaskRecord[] {
+  return getTasks(workspaceId, projectId).filter((task) => task.owner_user_id === ownerUserId);
+}
+
+function findTaskForOwner(
+  workspaceId: string,
+  projectId: string,
+  taskId: string,
+  ownerUserId: string,
+): TaskRecord | undefined {
+  const task = findTask(workspaceId, projectId, taskId);
+  if (!task || task.owner_user_id !== ownerUserId) {
+    return undefined;
+  }
+  return task;
+}
+
 export function resolveTaskWorkspaceMountAccess(input: {
   agentMode: 'external' | 'internal' | null;
   agentConfig?: Record<string, unknown> | null;
@@ -196,7 +217,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const page = Math.max(1, Number(requestUrl.searchParams.get('page') ?? '1') || 1);
     const pageSize = Math.max(1, Number(requestUrl.searchParams.get('page_size') ?? '20') || 20);
 
-    const all = getTasks(route.workspaceId, route.projectId)
+    const all = listTasksForOwner(route.workspaceId, route.projectId, user.id)
       .filter((item) => (search ? item.title.toLowerCase().includes(search) : true))
       .sort((a, b) => {
         const aa = readSortValue(a, sortBy);
@@ -335,7 +356,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskItem' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -346,7 +367,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskWorkspaceAccess' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -401,7 +422,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskItem' && method === 'PATCH') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -429,7 +450,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   if (route.kind === 'taskItem' && method === 'DELETE') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     const tasks = getTasks(route.workspaceId, route.projectId);
-    const index = tasks.findIndex((item) => item.id === route.taskId);
+    const index = tasks.findIndex((item) => item.id === route.taskId && item.owner_user_id === user.id);
     if (index < 0) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -456,7 +477,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskInputs' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -465,7 +486,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     const inputs = readTaskInputRefs(body.inputs);
     for (const inputRef of inputs) {
       if (inputRef.kind !== 'artifact') continue;
-      const sourceTask = findTask(route.workspaceId, route.projectId, inputRef.task_id);
+      const sourceTask = findTaskForOwner(route.workspaceId, route.projectId, inputRef.task_id, user.id);
       if (!sourceTask) {
         json(res, 422, {
           error_code: 'VALIDATION_ERROR',
@@ -512,7 +533,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskInputs' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -539,7 +560,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskInputItem' && method === 'DELETE') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -566,6 +587,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskMessages' && method === 'GET') {
     await loadTaskMessages(deps, route.taskId);
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
     json(res, 200, getTaskMessages(route.taskId));
     return true;
   }
@@ -573,7 +600,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   if (route.kind === 'taskTraces' && method === 'GET') {
     const traceQueryStart = Date.now();
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -629,7 +656,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   if (route.kind === 'taskMessages' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
     await loadTaskMessages(deps, route.taskId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -812,7 +839,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskCancelRun' && method === 'POST') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTask(route.workspaceId, route.projectId, route.taskId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
@@ -863,6 +890,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskArtifacts' && method === 'GET') {
     await loadTaskArtifacts(deps, route.taskId);
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
     json(res, 200, getTaskArtifacts(route.taskId));
     return true;
   }
@@ -872,6 +905,12 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskArtifactDownload' && method === 'GET') {
+    await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
     await loadTaskArtifacts(deps, route.taskId);
     const artifact = getTaskArtifacts(route.taskId).find((item) => item.id === route.artifactId);
     if (!artifact) {
@@ -912,6 +951,11 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
 
   if (route.kind === 'taskEvents' && method === 'GET') {
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    if (!task) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
+      return true;
+    }
     const requestUrl = new URL(req.url ?? '', 'http://localhost');
     const lastEventId = requestUrl.searchParams.get('last_event_id')?.trim() || null;
     res.statusCode = 200;
@@ -925,7 +969,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     if (lastEventId) {
       replayBufferedNotebookTaskEvents(res, route.taskId, lastEventId);
     } else {
-      const currentTask = findTask(route.workspaceId, route.projectId, route.taskId);
+      const currentTask = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
       if (currentTask) {
         writeNotebookTaskSseEvent(res, {
           type: 'task_update',

@@ -1,4 +1,5 @@
 import { existsSync } from 'node:fs';
+import { cp, mkdir, rm, symlink } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,5 +77,37 @@ export async function inspectBuiltinSkills(args: {
     available,
     missing,
     sourceDir: args.sourceDir,
+  };
+}
+
+async function mirrorSkillDirectory(sourceDir: string, targetDir: string): Promise<void> {
+  await rm(targetDir, { recursive: true, force: true });
+  try {
+    await symlink(sourceDir, targetDir, 'dir');
+    return;
+  } catch {
+    await cp(sourceDir, targetDir, { recursive: true, force: true });
+  }
+}
+
+export async function materializeBuiltinSkills(args: {
+  sourceDir: string;
+  skills: string[];
+  targetDir: string;
+}): Promise<{
+  targetDir: string;
+  materialized: string[];
+}> {
+  await mkdir(args.targetDir, { recursive: true });
+  const materialized: string[] = [];
+  for (const skill of args.skills) {
+    const sourceSkillDir = resolve(args.sourceDir, skill);
+    const targetSkillDir = resolve(args.targetDir, skill);
+    await mirrorSkillDirectory(sourceSkillDir, targetSkillDir);
+    materialized.push(skill);
+  }
+  return {
+    targetDir: args.targetDir,
+    materialized,
   };
 }

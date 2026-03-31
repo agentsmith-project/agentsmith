@@ -22,7 +22,7 @@ import {
 } from './artifact-scan.js';
 import { prepareTaskWorkspace } from './task-workspace.js';
 import { applyExecutionContextFiles, type ExecutionContextFileItem } from './execution-context-files.js';
-import { inspectBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
+import { inspectBuiltinSkills, materializeBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
 import { selectLatestInstruction } from './prompt-selection.js';
 import { resolveRunnerSuccessPolicy } from './run-result-policy.js';
 import { ensureCodexSessionStateCompatible } from './session-state.js';
@@ -617,6 +617,11 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     skills: builtinSkillsConfig.skills,
     required: builtinSkillsConfig.required,
   });
+  const builtinSkillsRuntime = await materializeBuiltinSkills({
+    sourceDir: builtinSkillsResult.sourceDir,
+    skills: builtinSkillsResult.available,
+    targetDir: join(taskPaths.codexHomeDir, 'skills'),
+  });
   const isNotebookMode = executionContext.notebook_mode === true;
   const resumeSession = isNotebookMode || sessionId.length > 0;
   const userPrompt = selectLatestInstruction(payload.messages);
@@ -748,7 +753,8 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     credential_files_count: executionFilesResult.written,
     credential_files_bytes: executionFilesResult.totalBytes,
     builtin_skills_source_dir: builtinSkillsResult.sourceDir,
-    builtin_skills_mounted: builtinSkillsResult.available,
+    builtin_skills_runtime_dir: builtinSkillsRuntime.targetDir,
+    builtin_skills_mounted: builtinSkillsRuntime.materialized,
     artifacts_dir: isNotebookMode ? artifactsDir : null,
     credential_dir: taskPaths.credentialDir,
     cwd_source: cwdResult.source,

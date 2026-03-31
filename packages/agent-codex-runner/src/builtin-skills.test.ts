@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { inspectBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
+import { inspectBuiltinSkills, materializeBuiltinSkills, resolveBuiltinSkillsConfig } from './builtin-skills.js';
 
 describe('builtin-skills', () => {
   it('resolves dev fallback defaults when env vars are not set', () => {
@@ -75,6 +75,25 @@ describe('builtin-skills', () => {
       expect(result.missing).toEqual(['feishu-docs']);
     } finally {
       rmSync(sourceRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('materializes builtin skills into a task-scoped codex home directory', async () => {
+    const sourceRoot = mkdtempSync(join(tmpdir(), 'runner-skills-src-'));
+    const targetRoot = mkdtempSync(join(tmpdir(), 'runner-skills-target-'));
+    try {
+      mkdirSync(join(sourceRoot, 'feishu-docs'), { recursive: true });
+      writeFileSync(join(sourceRoot, 'feishu-docs', 'SKILL.md'), 'feishu');
+      const result = await materializeBuiltinSkills({
+        sourceDir: sourceRoot,
+        skills: ['feishu-docs'],
+        targetDir: targetRoot,
+      });
+      expect(result.materialized).toEqual(['feishu-docs']);
+      expect(readFileSync(join(targetRoot, 'feishu-docs', 'SKILL.md'), 'utf-8')).toBe('feishu');
+    } finally {
+      rmSync(sourceRoot, { recursive: true, force: true });
+      rmSync(targetRoot, { recursive: true, force: true });
     }
   });
 });

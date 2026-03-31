@@ -12,7 +12,7 @@ import {
   MoveFileLibraryEntryRequestSchema,
   UpdateFileLibraryRequestSchema,
 } from '@mbos/contracts';
-import { Client as MinioClient } from 'minio';
+import type { Client as MinioClient } from 'minio';
 import type { AuthenticatedUser } from './auth.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import {
@@ -20,7 +20,12 @@ import {
   JsonDocProjectFileLibraryCatalogRepo,
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
-import { getFileLibraryGatewayInternalCredentials } from './file-library-runtime.js';
+import {
+  createFileLibraryGatewayClient,
+  fileLibraryBucketName,
+  guessFileLibraryContentType,
+  normalizeFileLibraryPath,
+} from './file-library-gateway-client.js';
 import {
   createAndProvisionProjectFileLibrary,
   mapFileLibraryInfraError,
@@ -121,72 +126,12 @@ async function parseUploadAndExecute(
   });
 }
 
-function normalizePath(input?: string | null): string {
-  const value = (input ?? '').trim().replace(/^\/+/, '').replace(/\/{2,}/g, '/');
-  if (!value) return '';
-  const segments = value.split('/').filter(Boolean);
-  for (const segment of segments) {
-    if (segment === '.' || segment === '..') {
-      throw new Error('invalid_file_library_path');
-    }
-  }
-  return segments.join('/');
-}
-
 function ensureDirectoryPath(input: string): string {
-  const normalized = normalizePath(input);
+  const normalized = normalizeFileLibraryPath(input);
   if (!normalized) {
     throw new Error('invalid_file_library_directory_path');
   }
   return normalized.endsWith('/') ? normalized : `${normalized}/`;
-}
-
-function fileLibraryBucketName(filesystemName: string): string {
-  return filesystemName;
-}
-
-function guessContentType(path: string): string | undefined {
-  const lower = path.toLowerCase();
-  if (lower.endsWith('.txt') || lower.endsWith('.md')) return 'text/plain';
-  if (lower.endsWith('.json')) return 'application/json';
-  if (lower.endsWith('.png')) return 'image/png';
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return 'image/jpeg';
-  if (lower.endsWith('.pdf')) return 'application/pdf';
-  return undefined;
-}
-
-async function createGatewayClient(args: {
-  deps: NodeApiDeps;
-  workspaceId: string;
-  projectId: string;
-  libraryId: string;
-  filesystemName: string;
-}): Promise<MinioClient> {
-  const backend = await new JsonDocProjectFileLibraryBackendRepo(args.deps.docStore).getInternal(
-    args.workspaceId,
-    args.projectId,
-    args.libraryId,
-  );
-  if (!backend?.internal_metadata_url) {
-    throw new Error('file_library_backend_not_found');
-  }
-  if (!args.deps.fileLibraryGatewayManager) {
-    throw new Error('file_library_gateway_unavailable');
-  }
-  const gateway = await args.deps.fileLibraryGatewayManager.ensureGateway({
-    libraryId: args.libraryId,
-    filesystemName: args.filesystemName,
-    metadataUrl: backend.internal_metadata_url,
-  });
-  const url = new URL(gateway.loopbackUrl);
-  const credentials = getFileLibraryGatewayInternalCredentials(args.libraryId);
-  return new MinioClient({
-    endPoint: url.hostname,
-    port: Number(url.port),
-    useSSL: url.protocol === 'https:',
-    accessKey: credentials.accessKey,
-    secretKey: credentials.secretKey,
-  });
 }
 
 async function listGatewayObjects(
@@ -259,7 +204,7 @@ async function assertFileLibraryEmpty(args: {
   libraryId: string;
   filesystemName: string;
 }): Promise<void> {
-  const client = await createGatewayClient(args);
+  const client = await createFileLibraryGatewayClient(args);
   const bucket = fileLibraryBucketName(args.filesystemName);
   const listed = await listGatewayObjects(client, bucket, {
     prefix: '',
@@ -493,7 +438,7 @@ export async function handleProjectFileLibraryRoutes(args: {
     }
     const path = parsed.data.path ? ensureDirectoryPath(parsed.data.path) : '';
     const pageSize = parsed.data.page_size ?? 200;
-    const client = await createGatewayClient({
+    const client = await createFileLibraryGatewayClient({
       deps,
       workspaceId,
       projectId,
@@ -519,7 +464,7 @@ export async function handleProjectFileLibraryRoutes(args: {
           path: item.key,
           name: item.key.slice(path.length),
           size_bytes: item.sizeBytes,
-          content_type: guessContentType(item.key),
+          content_type: guessFileLibraryContentType(item.key),
           modified_at: item.lastModified,
           etag: item.etag,
         })),
@@ -558,7 +503,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     const folderPath = ensureDirectoryPath(parsed.data.path);
-    const client = await createGatewayClient({
+    const client = await createFileLibraryGatewayClient({
       deps,
       workspaceId,
       projectId,
@@ -579,7 +524,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_delete_request' });
       return true;
     }
-    const client = await createGatewayClient({
+    const client = await createFileLibraryGatewayClient({
       deps,
       workspaceId,
       projectId,
@@ -589,7 +534,7 @@ export async function handleProjectFileLibraryRoutes(args: {
     const bucket = fileLibraryBucketName(library.filesystem_name);
     const results: Array<{ path: string; status: 'deleted' | 'not_found' | 'error'; error_code?: string; message?: string }> = [];
     for (const rawPath of parsed.data.paths) {
-      const normalized = normalizePath(rawPath);
+      const normalized = normalizeFileLibraryPath(rawPath);
       try {
         const dirPath = rawPath.endsWith('/') ? ensureDirectoryPath(rawPath) : normalized;
         if (rawPath.endsWith('/')) {
@@ -625,7 +570,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 400, { error_code: 'VALIDATION_ERROR', message: 'invalid_file_library_move_request' });
       return true;
     }
-    const client = await createGatewayClient({
+    const client = await createFileLibraryGatewayClient({
       deps,
       workspaceId,
       projectId,
@@ -646,8 +591,8 @@ export async function handleProjectFileLibraryRoutes(args: {
       const keysToDelete = [fromPath, ...listed.objects.map((item) => item.key)];
       await deleteMany(client, bucket, keysToDelete);
     } else {
-      const fromPath = normalizePath(parsed.data.from_path);
-      const toPath = normalizePath(parsed.data.to_path);
+      const fromPath = normalizeFileLibraryPath(parsed.data.from_path);
+      const toPath = normalizeFileLibraryPath(parsed.data.to_path);
       await copyObject(client, bucket, fromPath, toPath, overwrite);
       await client.removeObject(bucket, fromPath);
     }
@@ -671,8 +616,8 @@ export async function handleProjectFileLibraryRoutes(args: {
         req,
         async ({ fileName, fileStream, contentType: uploadedContentType, prefix, overwrite }) => {
           const normalizedPrefix = prefix ? ensureDirectoryPath(prefix) : '';
-          const objectPath = normalizePath(`${normalizedPrefix}${fileName}`);
-          const client = await createGatewayClient({
+          const objectPath = normalizeFileLibraryPath(`${normalizedPrefix}${fileName}`);
+          const client = await createFileLibraryGatewayClient({
             deps,
             workspaceId,
             projectId,
@@ -692,7 +637,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             }
           }
           await client.putObject(bucket, objectPath, nodeStream, undefined, {
-            'Content-Type': uploadedContentType || guessContentType(objectPath) || 'application/octet-stream',
+            'Content-Type': uploadedContentType || guessFileLibraryContentType(objectPath) || 'application/octet-stream',
           });
           const stat = await client.statObject(bucket, objectPath);
           return {
@@ -700,7 +645,7 @@ export async function handleProjectFileLibraryRoutes(args: {
             path: objectPath,
             name: fileName,
             size_bytes: stat.size,
-            content_type: stat.metaData?.['content-type'] ?? uploadedContentType ?? guessContentType(objectPath),
+            content_type: stat.metaData?.['content-type'] ?? uploadedContentType ?? guessFileLibraryContentType(objectPath),
             modified_at: stat.lastModified.toISOString(),
             etag: stat.etag,
           };
@@ -726,8 +671,8 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     try {
-      const objectPath = normalizePath(parsed.data.path);
-      const client = await createGatewayClient({
+      const objectPath = normalizeFileLibraryPath(parsed.data.path);
+      const client = await createFileLibraryGatewayClient({
         deps,
         workspaceId,
         projectId,
@@ -739,7 +684,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       const objectStream = await client.getObject(bucket, objectPath);
       const fileName = objectPath.split('/').at(-1) || 'download.bin';
       res.statusCode = 200;
-      res.setHeader('Content-Type', stat.metaData?.['content-type'] ?? guessContentType(objectPath) ?? 'application/octet-stream');
+      res.setHeader('Content-Type', stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream');
       res.setHeader('Content-Length', String(stat.size));
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
       objectStream.on('error', () => {
@@ -765,8 +710,8 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     try {
-      const objectPath = normalizePath(path);
-      const client = await createGatewayClient({
+      const objectPath = normalizeFileLibraryPath(path);
+      const client = await createFileLibraryGatewayClient({
         deps,
         workspaceId,
         projectId,
@@ -777,7 +722,7 @@ export async function handleProjectFileLibraryRoutes(args: {
       json(res, 200, {
         key: objectPath,
         size_bytes: stat.size,
-        content_type: stat.metaData?.['content-type'] ?? guessContentType(objectPath) ?? 'application/octet-stream',
+        content_type: stat.metaData?.['content-type'] ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
         etag: stat.etag,
         last_modified: stat.lastModified.toISOString(),
         user_metadata: stat.metaData,
@@ -798,8 +743,8 @@ export async function handleProjectFileLibraryRoutes(args: {
       return true;
     }
     try {
-      const objectPath = normalizePath(parsed.data.path);
-      const client = await createGatewayClient({
+      const objectPath = normalizeFileLibraryPath(parsed.data.path);
+      const client = await createFileLibraryGatewayClient({
         deps,
         workspaceId,
         projectId,

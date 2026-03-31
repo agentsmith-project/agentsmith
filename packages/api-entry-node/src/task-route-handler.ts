@@ -29,6 +29,13 @@ import {
   JsonDocProjectFileLibraryMountAccessRepo,
 } from './file-library-persistence.js';
 import {
+  createFileLibraryGatewayClient,
+  fileLibraryBucketName,
+  getProjectFileLibraryRecord,
+  guessFileLibraryContentType,
+  normalizeFileLibraryPath,
+} from './file-library-gateway-client.js';
+import {
   resolveFileLibraryMetadataUrlForDockerManualExternalExecution,
   resolveFileLibraryMetadataUrlForComposeManagedExternalExecution,
   resolveFileLibraryMetadataUrlForExternalExecution,
@@ -201,6 +208,63 @@ async function maybeReleaseInternalAgentWorkload(
   ).catch((err: unknown) => {
     console.warn('[sandbox] releasePod failed for task %s: %s', task.id, err instanceof Error ? err.message : err);
   });
+}
+
+async function streamTaskArtifactFromWorkspaceLibrary(args: {
+  deps: NodeApiDeps;
+  res: http.ServerResponse;
+  workspaceId: string;
+  projectId: string;
+  task: TaskRecord;
+  artifact: {
+    title?: string;
+    task_relative_path?: string;
+    mime_type?: string;
+  };
+}): Promise<boolean> {
+  const libraryId = args.task.workspace_file_library_id?.trim();
+  const relativePath = args.artifact.task_relative_path?.trim();
+  if (!libraryId || !relativePath) {
+    return false;
+  }
+  const library = await getProjectFileLibraryRecord({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    libraryId,
+  });
+  if (!library) {
+    return false;
+  }
+  const objectPath = normalizeFileLibraryPath(relativePath);
+  if (!objectPath) {
+    return false;
+  }
+  const client = await createFileLibraryGatewayClient({
+    deps: args.deps,
+    workspaceId: args.workspaceId,
+    projectId: args.projectId,
+    libraryId,
+    filesystemName: library.filesystem_name,
+  });
+  const bucket = fileLibraryBucketName(library.filesystem_name);
+  const stat = await client.statObject(bucket, objectPath);
+  const objectStream = await client.getObject(bucket, objectPath);
+  const filename = (args.artifact.title?.trim() || objectPath.split('/').at(-1) || 'artifact');
+  args.res.statusCode = 200;
+  args.res.setHeader(
+    'Content-Type',
+    stat.metaData?.['content-type'] ?? args.artifact.mime_type?.trim() ?? guessFileLibraryContentType(objectPath) ?? 'application/octet-stream',
+  );
+  args.res.setHeader('Content-Length', String(stat.size));
+  args.res.setHeader('Content-Disposition', `attachment; filename="${filename.replace(/"/g, '')}"`);
+  objectStream.on('error', () => {
+    if (!args.res.writableEnded) {
+      args.res.destroy(new Error('task_artifact_download_stream_failed'));
+    }
+  });
+  objectStream.pipe(args.res);
+  return true;
 }
 
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {
@@ -942,6 +1006,21 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       res.setHeader('Content-Type', contentType.includes('charset=') ? contentType : `${contentType}; charset=utf-8`);
       res.end(artifact.content);
       return true;
+    }
+
+    try {
+      if (await streamTaskArtifactFromWorkspaceLibrary({
+        deps,
+        res,
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        task,
+        artifact,
+      })) {
+        return true;
+      }
+    } catch {
+      // Fall through to the existing explicit unavailable message so callers get a deterministic response.
     }
 
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');

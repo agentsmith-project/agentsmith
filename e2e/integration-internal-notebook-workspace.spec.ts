@@ -448,7 +448,15 @@ test.describe('@lane-real internal notebook workspace via sandbox manager', () =
       libraryName: workspaceLibraryName,
     });
     await openFolderByName(page, '.artifacts');
-    await expect(page.getByTestId('files__object-row').filter({ hasText: firstArtifact }).first()).toBeVisible({ timeout: 30_000 });
+    const firstArtifactRow = page.getByTestId('files__object-row').filter({ hasText: firstArtifact }).first();
+    await expect(firstArtifactRow).toBeVisible({ timeout: 30_000 });
+    const downloadResponse = await page.request.get(
+      `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/file-libraries/${fileLibraryId}/download?path=${encodeURIComponent(`.artifacts/${firstArtifact}`)}`,
+      { headers: { Authorization: `Bearer ${authToken}` } },
+    );
+    expect(downloadResponse.ok()).toBeTruthy();
+    expect(downloadResponse.headers()['content-type']).toContain('text/plain');
+    await expect(downloadResponse.text()).resolves.toContain(firstToken);
     await capturePage(page, captures, 'internal-files-artifacts-visible', 'Files 页面中已可见 internal-k8s notebook 生成的 .artifacts 交付物');
     await flushArtifacts(captures);
   });

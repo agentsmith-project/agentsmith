@@ -252,7 +252,7 @@ spec:
             - name: JUICEFS_STORAGE_CLASS_NAME
               value: ""
             - name: JUICEFS_MOUNT_OPTIONS
-              value: writeback_cache
+              value: ${INTERNAL_AGENT_JUICEFS_MOUNT_OPTIONS}
             - name: JUICEFS_MOUNT_IMAGE
               value: juicedata/mount:ce-v1.3.1
             - name: JUICEFS_STORAGE_ENDPOINT

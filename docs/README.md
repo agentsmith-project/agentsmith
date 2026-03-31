@@ -38,6 +38,8 @@
 - [Demo Deployment Spec](./contracts/deployment-spec-v1.md)
 - [Cluster Deployment Spec](./contracts/cluster-deployment-spec-v1.md)
 - [Substrate Governance And Runtime Lines](./contracts/substrate-governance-and-runtime-lines-v1.md)
+- [Endpoint Upstream Protocol Refactor Handoff](./contracts/endpoint-upstream-protocol-refactor-handoff-v1.md)
+  - Handoff for aligning AgentSmith endpoint truth with universal proxy's upstream protocol model.
 - [产品研发与治理方法论](./design/agentsmith-product-engineering-governance-methodology-v1.md)
 - `UXUI/`（设计系统与交互规范）
 - [User Guides Index](./user-guides/README.md)

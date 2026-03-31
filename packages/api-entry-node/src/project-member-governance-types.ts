@@ -1,6 +1,8 @@
 export type ProjectMembershipRecord = {
   project_id: string;
   user_id: string;
+  user_email?: string;
+  user_name?: string;
   role?: string;
   status: 'active' | 'pending' | 'suspended';
   joined_at: string;

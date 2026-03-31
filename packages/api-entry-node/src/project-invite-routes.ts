@@ -168,6 +168,8 @@ export async function handleJoinInviteActionRoute(args: {
   await upsertProjectMembershipRecord(deps.docStore, invite.workspace_id, invite.project_id, {
     project_id: invite.project_id,
     user_id: user.id,
+    user_email: user.email,
+    user_name: user.name,
     status: 'active',
     joined_at: existingMembership?.joined_at ?? joinedAt,
   });

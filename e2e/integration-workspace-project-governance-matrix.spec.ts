@@ -35,6 +35,7 @@ type UserIdentity = {
   token: string;
   userId: string;
   email: string;
+  name: string;
 };
 
 type MatrixProjects = {
@@ -70,7 +71,7 @@ async function loginAndReadIdentity(args: {
     headers: { Authorization: `Bearer ${token}` },
   });
   expect(res.ok()).toBeTruthy();
-  const profile = (await res.json()) as { id?: string; user_id?: string; email?: string };
+  const profile = (await res.json()) as { id?: string; user_id?: string; email?: string; name?: string };
   const jwt = decodeJwtPayload(token);
   const userId =
     profile.id ??
@@ -80,10 +81,14 @@ async function loginAndReadIdentity(args: {
     profile.email ??
     (typeof jwt.email === 'string' ? jwt.email : undefined) ??
     '';
+  const name =
+    profile.name ??
+    (typeof jwt.name === 'string' ? jwt.name : undefined) ??
+    '';
   if (!userId) {
     throw new Error(`identity_user_id_missing:${args.username}`);
   }
-  return { token, userId, email };
+  return { token, userId, email, name };
 }
 
 async function apiRequest(args: {
@@ -229,6 +234,25 @@ async function assertOnlyProjectMemberGroup(args: {
   expect(adminIds).not.toContain(args.invitedUserId);
 }
 
+async function assertMemberVisibleInMembersPage(args: {
+  page: Page;
+  workspaceId: string;
+  projectId: string;
+  member: Pick<UserIdentity, 'userId' | 'email' | 'name'>;
+}) {
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/members`);
+  await expect(args.page.getByTestId('members__table')).toBeVisible({ timeout: 30_000 });
+  const memberRow = args.page.getByTestId('members__table__row').filter({
+    has: args.page.getByText(args.member.email, { exact: true }),
+  });
+  await expect(memberRow).toHaveCount(1);
+  if (args.member.name) {
+    await expect(memberRow.getByText(args.member.name, { exact: true })).toBeVisible();
+  }
+  await expect(memberRow.getByText(args.member.userId, { exact: true })).toHaveCount(0);
+  await expect(memberRow.getByText(`${args.member.userId}@example.com`, { exact: true })).toHaveCount(0);
+}
+
 async function runProjectMatrix(args: {
   page: Page;
   workspaceId: string;
@@ -270,6 +294,16 @@ async function runProjectMatrix(args: {
     page: args.page,
     workspaceId: args.workspaceId,
     projectId: projects.publicOpen.projectId,
+  });
+
+  await keycloakLoginToWorkspace(args.page, args.workspaceId, KEYCLOAK_INTEGRATION_USER_USERNAME, KEYCLOAK_INTEGRATION_USER_PASSWORD, {
+    ensureProjectCreatorAccess: false,
+  });
+  await assertMemberVisibleInMembersPage({
+    page: args.page,
+    workspaceId: args.workspaceId,
+    projectId: projects.publicOpen.projectId,
+    member: args.guest,
   });
 
   const publicApprovalJoin = await apiRequest({

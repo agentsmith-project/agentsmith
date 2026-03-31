@@ -1,5 +1,6 @@
 import type http from 'node:http';
 import type { AuthenticatedUser } from './auth.js';
+import { resolveKeycloakDirectoryUsersByIds } from './keycloak-user-directory.js';
 import type { NodeApiDeps } from './node-api-deps.js';
 import { writeProjectAuditEvent } from './audit-usage-recorders.js';
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
@@ -25,8 +26,34 @@ import {
   isBuiltInProjectTemplateId,
 } from './project-governance-model.js';
 import { readProjectPermissionContext, readRequestId } from './project-route-handler-utils.js';
+import { getRegisteredWorkspaceConfig } from './workspace-registry.js';
 
 type JsonResponder = (res: http.ServerResponse, statusCode: number, body: unknown) => void;
+
+async function resolveWorkspaceMemberSnapshot(args: {
+  workspaceId: string;
+  userId: string;
+}): Promise<{ user_email?: string; user_name?: string }> {
+  const config = await getRegisteredWorkspaceConfig(args.workspaceId);
+  const idpUrl = config?.login_idp?.url?.trim() ?? '';
+  const idpRealm = config?.login_idp?.realm?.trim() ?? '';
+  if (!idpUrl || !idpRealm) {
+    return {};
+  }
+  try {
+    const [resolved] = await resolveKeycloakDirectoryUsersByIds({
+      url: idpUrl,
+      realm: idpRealm,
+      userIds: [args.userId],
+    });
+    return {
+      user_email: resolved?.email,
+      user_name: resolved?.name ?? resolved?.email,
+    };
+  } catch {
+    return {};
+  }
+}
 
 async function appendMemberChange(args: {
   deps: NodeApiDeps;
@@ -537,6 +564,10 @@ export async function handleProjectMembershipGovernanceRoute(args: {
       await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
         project_id: projectId,
         user_id: userId,
+        ...(await resolveWorkspaceMemberSnapshot({
+          workspaceId,
+          userId,
+        })),
         status: 'active',
         joined_at: new Date().toISOString(),
       });

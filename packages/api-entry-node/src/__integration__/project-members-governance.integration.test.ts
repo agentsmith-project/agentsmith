@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createDefaultNodeApiDeps } from '../index.js';
+import { upsertProjectMembershipRecord } from '../project-member-governance-persistence.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 describe('api-entry-node project members governance routes', () => {
@@ -1417,5 +1418,93 @@ describe('api-entry-node project members governance routes', () => {
       error_code: 'VALIDATION_ERROR',
       message: 'rate_limits_rule_key_invalid',
     });
+  });
+
+  it('shows real member name and email after open join instead of internal user ids', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Open Join Identity Project',
+        visibility: 'public',
+        join_policy: 'open',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const joinRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/join-requests`,
+      'member-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      },
+    );
+    expect(joinRes.status).toBe(201);
+    await expect(joinRes.json()).resolves.toEqual({
+      outcome: 'joined',
+      membership_status: 'active',
+    });
+
+    const membersRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members`,
+      'owner-token',
+    );
+    expect(membersRes.status).toBe(200);
+    const members = (await membersRes.json()) as {
+      items: Array<{ id: string; email: string; name: string }>;
+    };
+    expect(members.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'user_test',
+          email: 'test@example.com',
+          name: 'Test User',
+        }),
+      ]),
+    );
+  });
+
+  it('backfills legacy membership display fields from workspace directory lookup', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Legacy Membership Identity Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    await upsertProjectMembershipRecord(deps.docStore, 'ws_default', project.id, {
+      project_id: project.id,
+      user_id: 'user_alt',
+      status: 'active',
+      joined_at: new Date().toISOString(),
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const membersRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members`,
+      'owner-token',
+    );
+    expect(membersRes.status).toBe(200);
+    const members = (await membersRes.json()) as {
+      items: Array<{ id: string; email: string; name: string }>;
+    };
+    expect(members.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'user_alt',
+          email: 'alt@example.com',
+          name: 'Alt User',
+        }),
+      ]),
+    );
   });
 });

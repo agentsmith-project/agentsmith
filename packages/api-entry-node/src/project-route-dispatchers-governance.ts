@@ -1,6 +1,7 @@
 import { resolveVisibleProjectPermissionsForActor } from './project-authz-engine.js';
 import { handleProjectJoinRequestsRoute } from './project-join-request-routes.js';
 import { handleProjectInviteCreateRoute } from './project-invite-routes.js';
+import { resolveKeycloakDirectoryUsersByIds } from './keycloak-user-directory.js';
 import {
   handleProjectGroupsRoute,
   handleProjectMembershipGovernanceRoute,
@@ -10,6 +11,7 @@ import { handleProjectResourcePolicyRoute } from './project-resource-policy-rout
 import type { ProjectRouteContext } from './project-route-types.js';
 import { listProjectJoinRequests } from './project-join-request-routes.js';
 import { getProjectMembershipMap, listProjectGroups } from './project-member-governance-persistence.js';
+import { getRegisteredWorkspaceConfig } from './workspace-registry.js';
 
 export const RESOURCE_POLICY_ALLOWED_RATE_KEYS: Record<'endpoint' | 'file_library' | 'agent', readonly string[]> = {
   endpoint: ['endpoint.requests_per_minute', 'endpoint.requests_per_5_hours', 'endpoint.requests_per_day'],
@@ -26,6 +28,40 @@ export const RESOURCE_POLICY_ALLOWED_LIMIT_KEYS: Record<'endpoint' | 'file_libra
   file_library: ['file_library.max_total_files', 'file_library.max_file_size_bytes'],
   agent: [],
 };
+
+async function resolveWorkspaceMemberSnapshots(args: {
+  workspaceId: string;
+  userIds: string[];
+}): Promise<Map<string, { email: string; name: string | null }>> {
+  const uniqueIds = Array.from(new Set(args.userIds.map((item) => item.trim()).filter((item) => item.length > 0)));
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+  const config = await getRegisteredWorkspaceConfig(args.workspaceId);
+  const idpUrl = config?.login_idp?.url?.trim() ?? '';
+  const idpRealm = config?.login_idp?.realm?.trim() ?? '';
+  if (!idpUrl || !idpRealm) {
+    return new Map();
+  }
+  try {
+    const items = await resolveKeycloakDirectoryUsersByIds({
+      url: idpUrl,
+      realm: idpRealm,
+      userIds: uniqueIds,
+    });
+    return new Map(
+      items.map((item) => [
+        item.user_id,
+        {
+          email: item.email,
+          name: item.name ?? item.email,
+        },
+      ]),
+    );
+  } catch {
+    return new Map();
+  }
+}
 
 export async function handleProjectGovernanceRoutes(context: ProjectRouteContext): Promise<boolean> {
   const {
@@ -70,16 +106,29 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
     const joinRequestsById = new Map(
       (await listProjectJoinRequests(deps.docStore, workspaceId, projectId)).map((request) => [request.id, request]),
     );
+    const directoryUsersById = await resolveWorkspaceMemberSnapshots({
+      workspaceId,
+      userIds: memberships
+        .map((membership) => membership.user_id)
+        .concat(projectOwnerId ? [projectOwnerId] : []),
+    });
     const items = memberships.map((membership) => {
       const approvedRequest = membership.approved_via_join_request_id
         ? joinRequestsById.get(membership.approved_via_join_request_id)
         : undefined;
+      const directoryUser = directoryUsersById.get(membership.user_id);
       const resolvedEmail = membership.user_id === user.id
         ? user.email
-        : approvedRequest?.user_email || `${membership.user_id}@example.com`;
+        : membership.user_email
+          || approvedRequest?.user_email
+          || directoryUser?.email
+          || '';
       const resolvedName = membership.user_id === user.id
         ? user.name
-        : approvedRequest?.user_name || membership.user_id;
+        : membership.user_name
+          || approvedRequest?.user_name
+          || directoryUser?.name
+          || membership.user_id;
       const groups = allGroups
         .filter((group) => group.member_ids.includes(membership.user_id))
         .map((group) => ({
@@ -103,10 +152,11 @@ export async function handleProjectGovernanceRoutes(context: ProjectRouteContext
     });
     if (!items.some((item) => item.id === (projectOwnerId ?? user.id))) {
       const ownerId = projectOwnerId ?? user.id;
+      const directoryOwner = directoryUsersById.get(ownerId);
       items.unshift({
         id: ownerId,
-        email: ownerId === user.id ? user.email : `${ownerId}@example.com`,
-        name: ownerId === user.id ? user.name : ownerId,
+        email: ownerId === user.id ? user.email : (directoryOwner?.email ?? ''),
+        name: ownerId === user.id ? user.name : (directoryOwner?.name ?? ownerId),
         groups: allGroups
           .filter((group) => group.member_ids.includes(ownerId))
           .map((group) => ({

@@ -177,6 +177,8 @@ export async function handleProjectJoinRequestsRoute(args: {
       await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
         project_id: projectId,
         user_id: user.id,
+        user_email: user.email,
+        user_name: user.name,
         status: 'active',
         joined_at: joinedAt,
       });
@@ -254,6 +256,8 @@ export async function handleProjectJoinRequestsRoute(args: {
     await upsertProjectMembershipRecord(deps.docStore, workspaceId, projectId, {
       project_id: projectId,
       user_id: approved.user_id,
+      user_email: approved.user_email,
+      user_name: approved.user_name,
       status: 'active',
       joined_at: approved.reviewed_at,
       approved_via_join_request_id: approved.id,

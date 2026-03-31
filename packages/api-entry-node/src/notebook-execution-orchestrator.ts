@@ -154,7 +154,7 @@ function deriveNotebookModelWindow(profile: { max_context_tokens?: number } | nu
   }
   return {
     modelContextWindow,
-    modelAutoCompactTokenLimit: Math.max(1, Math.floor(modelContextWindow * 0.95)),
+    modelAutoCompactTokenLimit: Math.max(1, Math.floor(modelContextWindow * 0.9)),
   };
 }
 

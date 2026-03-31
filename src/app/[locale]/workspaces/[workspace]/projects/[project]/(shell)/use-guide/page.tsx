@@ -235,7 +235,7 @@ codex exec --model ${selectedModelName} \\
   -c 'model_providers.agentsmith.env_key="AGENTSMITH_API_KEY"' \\
   -c 'model_providers.agentsmith.wire_api="responses"' \\
   -c 'model_context_window=200000' \\
-  -c 'model_auto_compact_token_limit=176000' \\
+  -c 'model_auto_compact_token_limit=180000' \\
   "Reply exactly: ok"`;
 
   const claudeSample = `CLAUDE_SETTINGS=$(jq -nc \\

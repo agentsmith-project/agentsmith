@@ -153,7 +153,7 @@ export function buildTaskCodexModelCatalog(args: {
         supports_image_detail_original: false,
         context_window: Math.floor(args.modelContextWindow),
         auto_compact_token_limit: Math.floor(args.modelAutoCompactTokenLimit),
-        effective_context_window_percent: 95,
+        effective_context_window_percent: 90,
         experimental_supported_tools: [],
         input_modalities: inputModalities,
         supports_search_tool: args.supportsSearchTool ?? false,

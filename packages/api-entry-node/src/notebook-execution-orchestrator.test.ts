@@ -271,7 +271,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           api_base: 'http://172.19.0.1:20072',
           execution_ticket: expect.stringMatching(/^exec_/),
           model_context_window: 256000,
-          model_auto_compact_token_limit: 243200,
+          model_auto_compact_token_limit: 230400,
           model_catalog: {
             input_modalities: ['text'],
             supports_search_tool: false,
@@ -741,7 +741,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect.objectContaining({
         executionContext: expect.objectContaining({
           model_context_window: 200000,
-          model_auto_compact_token_limit: 190000,
+          model_auto_compact_token_limit: 180000,
           model_catalog: {
             input_modalities: ['text'],
             supports_search_tool: false,

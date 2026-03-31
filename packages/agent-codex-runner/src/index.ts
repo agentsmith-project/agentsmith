@@ -706,7 +706,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     buildTaskCodexModelCatalog({
       model,
       modelContextWindow: modelContextWindow ?? 128000,
-      modelAutoCompactTokenLimit: modelAutoCompactTokenLimit ?? Math.floor((modelContextWindow ?? 128000) * 0.95),
+      modelAutoCompactTokenLimit: modelAutoCompactTokenLimit ?? Math.floor((modelContextWindow ?? 128000) * 0.9),
       inputModalities: modelCatalogInputModalities,
       supportsSearchTool: modelCatalogSupportsSearchTool,
       supportsParallelToolCalls: modelCatalogSupportsParallelToolCalls,

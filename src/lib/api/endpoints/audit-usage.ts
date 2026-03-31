@@ -597,9 +597,13 @@ export class UsageAPI {
   async getLimitsSummary(
     workspaceId: string,
     projectId: string,
+    params?: { end_user_id?: string },
   ): Promise<LimitsOverview> {
+    const searchParams = new URLSearchParams();
+    if (params?.end_user_id) searchParams.set('end_user_id', params.end_user_id);
+    const suffix = searchParams.size > 0 ? `?${searchParams.toString()}` : '';
     const response = await this.client.get<unknown>(
-      `/workspaces/${workspaceId}/projects/${projectId}/limits/summary`,
+      `/workspaces/${workspaceId}/projects/${projectId}/limits/summary${suffix}`,
     );
     return UsageAPI.normalizeLimitsOverview(response);
   }
@@ -610,6 +614,7 @@ export class UsageAPI {
     params: {
       start_time: string;
       end_time: string;
+      end_user_id?: string;
       provider?: string;
       model?: string;
       result?: 'ok' | 'error';
@@ -619,6 +624,7 @@ export class UsageAPI {
     const searchParams = new URLSearchParams();
     searchParams.set('start_time', params.start_time);
     searchParams.set('end_time', params.end_time);
+    if (params.end_user_id) searchParams.set('end_user_id', params.end_user_id);
     if (params.provider) searchParams.set('provider', params.provider);
     if (params.model) searchParams.set('model', params.model);
     if (params.result) searchParams.set('result', params.result);

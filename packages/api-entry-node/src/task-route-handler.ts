@@ -138,6 +138,34 @@ function findTaskForOwner(
   return task;
 }
 
+async function ensureOwnedLibraryObjectInputs(args: {
+  catalogRepo: JsonDocProjectFileLibraryCatalogRepo;
+  workspaceId: string;
+  projectId: string;
+  ownerUserId: string;
+  inputs: ReturnType<typeof readTaskInputRefs>;
+  json: TaskRouteHandlerArgs['json'];
+  res: http.ServerResponse;
+}): Promise<boolean> {
+  for (const inputRef of args.inputs) {
+    if (inputRef.kind !== 'library_object') continue;
+    const library = await args.catalogRepo.getById(
+      args.workspaceId,
+      args.projectId,
+      inputRef.library_id,
+    );
+    if (!library || library.created_by_user_id !== args.ownerUserId) {
+      args.json(args.res, 422, {
+        error_code: 'VALIDATION_ERROR',
+        message: 'library_object_input_not_found',
+        field: 'inputs',
+      });
+      return false;
+    }
+  }
+  return true;
+}
+
 export function resolveTaskWorkspaceMountAccess(input: {
   agentMode: 'external' | 'internal' | null;
   agentConfig?: Record<string, unknown> | null;
@@ -233,7 +261,7 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
     projectId: args.projectId,
     libraryId,
   });
-  if (!library) {
+  if (!library || library.created_by_user_id !== args.task.owner_user_id) {
     return false;
   }
   const objectPath = normalizeFileLibraryPath(relativePath);
@@ -364,6 +392,10 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
       return true;
     }
+    if (workspaceFileLibrary.created_by_user_id !== user.id) {
+      json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
+      return true;
+    }
     if (workspaceFileLibrary.status !== 'ready') {
       json(res, 409, { error_code: 'RESOURCE_CONFLICT', message: 'file_library_not_ready' });
       return true;
@@ -382,6 +414,18 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
 
     const createdAt = nowIso();
+    const initialInputs = readTaskInputRefs(body.initial_inputs);
+    if (!(await ensureOwnedLibraryObjectInputs({
+      catalogRepo,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      ownerUserId: user.id,
+      inputs: initialInputs,
+      json,
+      res,
+    }))) {
+      return true;
+    }
     const task: TaskRecord = {
       id: buildId('task'),
       workspace_id: route.workspaceId,
@@ -393,7 +437,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       workspace_file_library_id: workspaceFileLibrary.id,
       workspace_file_library_name: workspaceFileLibrary.name,
       status: 'active',
-      attached_inputs: readTaskInputRefs(body.initial_inputs),
+      attached_inputs: initialInputs,
       created_at: createdAt,
       updated_at: createdAt,
       last_activity_at: createdAt,
@@ -445,7 +489,7 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
       route.projectId,
       task.workspace_file_library_id,
     );
-    if (!workspaceFileLibrary) {
+    if (!workspaceFileLibrary || workspaceFileLibrary.created_by_user_id !== user.id) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
       return true;
     }
@@ -548,6 +592,17 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
     }
     const body = asObject(await readBody(req));
     const inputs = readTaskInputRefs(body.inputs);
+    if (!(await ensureOwnedLibraryObjectInputs({
+      catalogRepo,
+      workspaceId: route.workspaceId,
+      projectId: route.projectId,
+      ownerUserId: user.id,
+      inputs,
+      json,
+      res,
+    }))) {
+      return true;
+    }
     for (const inputRef of inputs) {
       if (inputRef.kind !== 'artifact') continue;
       const sourceTask = findTaskForOwner(route.workspaceId, route.projectId, inputRef.task_id, user.id);

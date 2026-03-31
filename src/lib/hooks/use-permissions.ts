@@ -114,19 +114,21 @@ export function useCanAccessNotebook(): boolean {
 }
 
 export function useAgentPageCapabilities() {
+  const canUse = useHasPermission('project:agent:use');
   const canManage = useHasPermission('project:agent:manage');
   const canPublic = useHasPermission('project:agent:public');
 
   return useMemo(() => ({
-    canRead: canManage,
+    canRead: canUse || canManage,
     canCreate: canManage,
     canUpdate: canManage,
     canDelete: canManage,
     canIssueKeys: canManage,
     canRevokeKeys: canManage,
+    canUse,
     canManage,
     canPublic,
-  }), [canManage, canPublic]);
+  }), [canManage, canPublic, canUse]);
 }
 
 export function useEndpointPageCapabilities() {
@@ -160,9 +162,8 @@ export function useUsagePageCapabilities() {
 
 export function useFilesPageCapabilities() {
   const canRead = useHasPermission('project:endpoint:use');
-  const canManage = useHasPermission('project:files:update');
-  const canExchangeCredentialsViaDedicatedPermission = useHasPermission('project:file_library:credential_exchange');
-  const canExchangeCredentials = canExchangeCredentialsViaDedicatedPermission || canManage;
+  const canManage = canRead;
+  const canExchangeCredentials = canRead;
 
   return useMemo(() => ({
     canRead,
@@ -183,6 +184,7 @@ export function useMemberPageCapabilities() {
 
 export function useProjectOverviewCapabilities() {
   const canUseProject = useHasPermission('project:endpoint:use');
+  const canUseAgents = useHasPermission('project:agent:use');
   const canManageAgents = useHasPermission('project:agent:manage');
   const canManageGovernance = useHasPermission('project:governance:update');
   const canManageMembership = useHasPermission('project:membership:update');
@@ -191,6 +193,7 @@ export function useProjectOverviewCapabilities() {
 
   return useMemo(() => ({
     canUseProject,
+    canUseAgents,
     canManageAgents,
     canManageGovernance,
     canManageMembership,
@@ -202,6 +205,7 @@ export function useProjectOverviewCapabilities() {
     canManageMembership,
     canReadAudit,
     canReadProjectSettings,
+    canUseAgents,
     canUseProject,
   ]);
 }

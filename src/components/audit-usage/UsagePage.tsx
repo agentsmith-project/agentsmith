@@ -68,10 +68,15 @@ export function UsagePage({
     { enabled: canReadUsage },
   );
 
-  const { data: limitsSummary } = useLimitsSummary(workspaceId, projectId, {
-    enabled: canReadUsage,
-    refetchInterval: 15_000,
-  });
+  const { data: limitsSummary } = useLimitsSummary(
+    workspaceId,
+    projectId,
+    { end_user_id: effectiveEndUserId },
+    {
+      enabled: canReadUsage,
+      refetchInterval: 15_000,
+    },
+  );
   const { endpoints } = useEndpointsData({
     workspaceId,
     projectId,

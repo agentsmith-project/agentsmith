@@ -324,12 +324,13 @@ function mapResourceActionToPermission(resourceType: Exclude<ResourceType, 'proj
       : 'project:governance:update';
   }
   if (resourceType === 'file_library') {
-    return /read|list|download|browse/i.test(action)
-      ? 'project:endpoint:use'
-      : 'project:files:update';
+    return 'project:endpoint:use';
   }
   if (/public|publish|unpublish/i.test(action)) {
     return 'project:agent:public';
+  }
+  if (/read|list|browse|invoke|use/i.test(action)) {
+    return 'project:agent:use';
   }
   return 'project:agent:manage';
 }

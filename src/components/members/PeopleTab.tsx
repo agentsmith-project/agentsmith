@@ -28,7 +28,7 @@ function getMemberAccessProfile(member: { permissions?: string[] }) {
     return 'governance';
   }
   if (
-    permissions.includes('project:files:update')
+    permissions.includes('project:agent:use')
     || permissions.includes('project:agent:manage')
     || permissions.includes('project:agent:public')
   ) {

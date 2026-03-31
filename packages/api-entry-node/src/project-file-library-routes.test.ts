@@ -8,6 +8,8 @@ import {
 } from './file-library-runtime.js';
 import { notebookTasksCollection } from './notebook-task/task-store.js';
 
+const OWNER_USER = { id: 'user_1', email: 'user@example.com', name: 'User One' } as never;
+
 describe('project-file-library-routes', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -34,7 +36,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Shared Docs',
@@ -65,7 +67,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Shared Docs',
@@ -84,7 +86,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json: exchangeJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
@@ -122,7 +124,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Shared Docs',
@@ -141,7 +143,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json: backendJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);
@@ -174,7 +176,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Shared Docs',
@@ -210,7 +212,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Shared Docs',
@@ -251,7 +253,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Workspace Library',
@@ -268,7 +270,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn(),
     })).resolves.toBe(true);
@@ -297,7 +299,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json,
       readBody: vi.fn().mockResolvedValue({
         name: 'Workspace Library',
@@ -332,7 +334,7 @@ describe('project-file-library-routes', () => {
       req: {} as never,
       res,
       deps,
-      user: { user_id: 'user_1', email: 'user@example.com', name: 'User One' } as never,
+      user: OWNER_USER,
       json: deleteJson,
       readBody: vi.fn(),
     })).resolves.toBe(true);

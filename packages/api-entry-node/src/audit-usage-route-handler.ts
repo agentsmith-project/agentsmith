@@ -211,6 +211,7 @@ export async function handleAuditUsageRoute({
     const payload = await getLimitsSummary(deps.docStore, {
       workspaceId: route.workspaceId,
       projectId: route.projectId,
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
       endpoints: endpoints.map((endpoint) => ({
         id: endpoint.id,
         name: endpoint.name ?? endpoint.model ?? endpoint.id,
@@ -228,6 +229,7 @@ export async function handleAuditUsageRoute({
       projectId: route.projectId,
       startTime: range.start.toISOString(),
       endTime: range.end.toISOString(),
+      endUserId: enforceOwnUsageScope(requestUrl.searchParams.get('end_user_id')),
       provider: requestUrl.searchParams.get('provider'),
       model: requestUrl.searchParams.get('model'),
       result: requestUrl.searchParams.get('result') === 'error'

@@ -542,7 +542,7 @@ describe('use-permissions hooks', () => {
   });
 
   describe('page capability hooks', () => {
-    it('useAgentPageCapabilities should fan out project:agent:manage', () => {
+    it('useAgentPageCapabilities should separate agent use from manage', () => {
       mockUseProject.mockReturnValue({
         data: {
           id: 'proj_001',
@@ -553,7 +553,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
-          permissions: ['project:agent:manage', 'project:agent:public'],
+          permissions: ['project:agent:use', 'project:agent:manage', 'project:agent:public'],
         },
         isLoading: false,
       });
@@ -563,6 +563,7 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current.canRead).toBe(true);
+      expect(result.current.canUse).toBe(true);
       expect(result.current.canCreate).toBe(true);
       expect(result.current.canIssueKeys).toBe(true);
       expect(result.current.canPublic).toBe(true);
@@ -619,6 +620,7 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current.canUseProject).toBe(true);
+      expect(result.current.canUseAgents).toBe(false);
       expect(result.current.canManageMembership).toBe(true);
       expect(result.current.canReadAudit).toBe(true);
       expect(result.current.canReadProjectSettings).toBe(true);
@@ -672,7 +674,7 @@ describe('use-permissions hooks', () => {
       expect(result.current.canRead).toBe(true);
     });
 
-    it('useFilesPageCapabilities should merge files management and credential exchange', () => {
+    it('useFilesPageCapabilities should allow every project user to manage their own libraries', () => {
       mockUseProject.mockReturnValue({
         data: {
           id: 'proj_001',
@@ -683,7 +685,7 @@ describe('use-permissions hooks', () => {
           visibility: 'public' as const,
           created_at: '2026-01-01T00:00:00Z',
           updated_at: '2026-01-01T00:00:00Z',
-          permissions: ['project:endpoint:use', 'project:file_library:credential_exchange'],
+          permissions: ['project:endpoint:use'],
         },
         isLoading: false,
       });
@@ -693,7 +695,7 @@ describe('use-permissions hooks', () => {
       });
 
       expect(result.current.canRead).toBe(true);
-      expect(result.current.canManage).toBe(false);
+      expect(result.current.canManage).toBe(true);
       expect(result.current.canExchangeCredentials).toBe(true);
     });
 

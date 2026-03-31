@@ -382,6 +382,67 @@ describe('audit-usage-store usage records summary', () => {
     ]);
   });
 
+  it('filters limits summary and usage records summary by end user id', async () => {
+    const store = new InMemoryJsonDocStore();
+    const workspaceId = 'ws_limits_scope';
+    const projectId = 'proj_limits_scope';
+    const now = new Date().toISOString();
+
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'ep_scope',
+      end_user_id: 'user_a',
+      requests: 2,
+      result: 'ok',
+      request_id: 'req_scope_a',
+      metadata_json: { provider: 'openai', resolved_model: 'model-a', estimated_cost: 0.02 },
+    });
+    await recordUsageFact(store, {
+      timestamp: now,
+      workspace_id: workspaceId,
+      project_id: projectId,
+      resource_type: 'endpoint',
+      resource_id: 'ep_scope',
+      end_user_id: 'user_b',
+      requests: 5,
+      result: 'ok',
+      request_id: 'req_scope_b',
+      metadata_json: { provider: 'openai', resolved_model: 'model-b', estimated_cost: 0.05 },
+    });
+
+    const limitsSummary = await getLimitsSummary(store, {
+      workspaceId,
+      projectId,
+      endUserId: 'user_a',
+      endpoints: [{ id: 'ep_scope', name: 'Scoped Endpoint' }],
+    });
+    const scopedEndpoint = limitsSummary.endpoints.find((item) => item.endpoint_id === 'ep_scope');
+    expect(scopedEndpoint?.limits).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'rate_limit',
+          window: '5h',
+          used: 2,
+        }),
+      ]),
+    );
+
+    const recordsSummary = await getUsageRecordsSummary(store, {
+      workspaceId,
+      projectId,
+      startTime: new Date(Date.now() - 60_000).toISOString(),
+      endTime: new Date(Date.now() + 60_000).toISOString(),
+      endUserId: 'user_a',
+    });
+    expect(recordsSummary.total_requests).toBe(2);
+    expect(recordsSummary.provider_breakdown).toEqual([
+      expect.objectContaining({ provider: 'openai', requests: 2 }),
+    ]);
+  });
+
   it('filters usage facts by request provider, model, and error class', async () => {
     const store = new InMemoryJsonDocStore();
     const workspaceId = 'ws_1';

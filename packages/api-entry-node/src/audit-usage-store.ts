@@ -443,6 +443,7 @@ export async function getLimitsSummary(
   query: {
     workspaceId: string;
     projectId: string;
+    endUserId?: string | null;
     endpoints?: Array<{ id: string; name?: string | null }>;
   },
 ): Promise<LimitsOverview> {
@@ -464,6 +465,7 @@ export async function getLimitsSummary(
     projectId: query.projectId,
     startTime: queryStart,
     endTime: nowIso,
+    endUserId: query.endUserId ?? null,
   });
 
   const byEndpoint = new Map<string, {
@@ -678,6 +680,7 @@ export async function getUsageRecordsSummary(
     projectId: string;
     startTime: string;
     endTime: string;
+    endUserId?: string | null;
     provider?: string | null;
     model?: string | null;
     result?: 'ok' | 'error' | null;
@@ -690,6 +693,7 @@ export async function getUsageRecordsSummary(
     startTime: query.startTime,
     endTime: query.endTime,
     resourceType: 'endpoint',
+    endUserId: query.endUserId ?? null,
     provider: query.provider ?? null,
     model: query.model ?? null,
     result: query.result ?? null,

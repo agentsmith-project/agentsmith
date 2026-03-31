@@ -75,6 +75,18 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     });
   }
 
+  async listByProjectForOwner(
+    workspaceId: string,
+    projectId: string,
+    ownerUserId: string,
+  ): Promise<FileLibraryRecord[]> {
+    return this.docStore.list<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, {
+      workspace_id: workspaceId,
+      project_id: projectId,
+      created_by_user_id: ownerUserId,
+    });
+  }
+
   async getById(
     workspaceId: string,
     projectId: string,
@@ -83,6 +95,19 @@ export class JsonDocProjectFileLibraryCatalogRepo {
     const record = await this.docStore.get<FileLibraryRecord>(FILE_LIBRARY_CATALOG_COLLECTION, libraryId);
     if (!record) return null;
     if (record.workspace_id !== workspaceId || record.project_id !== projectId) {
+      return null;
+    }
+    return record;
+  }
+
+  async getByIdForOwner(
+    workspaceId: string,
+    projectId: string,
+    libraryId: string,
+    ownerUserId: string,
+  ): Promise<FileLibraryRecord | null> {
+    const record = await this.getById(workspaceId, projectId, libraryId);
+    if (!record || record.created_by_user_id !== ownerUserId) {
       return null;
     }
     return record;

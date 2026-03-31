@@ -247,6 +247,10 @@ async function deleteMany(client: MinioClient, bucket: string, keys: string[]): 
   }
 }
 
+function isOwnedFileLibrary(library: { created_by_user_id?: string }, ownerUserId: string): boolean {
+  return typeof library.created_by_user_id === 'string' && library.created_by_user_id === ownerUserId;
+}
+
 export async function handleProjectFileLibraryRoutes(args: {
   routeKind:
     | 'fileLibraries'
@@ -290,7 +294,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
   if (routeKind === 'fileLibraries' && method === 'GET') {
-    json(res, 200, { items: await catalogRepo.listByProject(workspaceId, projectId) });
+    json(res, 200, { items: await catalogRepo.listByProjectForOwner(workspaceId, projectId, user.id) });
     return true;
   }
 
@@ -309,7 +313,7 @@ export async function handleProjectFileLibraryRoutes(args: {
         deps,
         workspaceId,
         projectId,
-        userId: user.user_id,
+        userId: user.id,
         name: parsed.data.name,
         description: parsed.data.description,
       });
@@ -331,7 +335,7 @@ export async function handleProjectFileLibraryRoutes(args: {
   }
 
   const library = await catalogRepo.getById(workspaceId, projectId, libraryId);
-  if (!library) {
+  if (!library || !isOwnedFileLibrary(library, user.id)) {
     json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'file_library_not_found' });
     return true;
   }

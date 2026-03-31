@@ -11,10 +11,10 @@ import {
 
 export const OWNER_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
+  'project:agent:use',
   'project:agent:manage',
   'project:agent:public',
   'project:audit:read',
-  'project:files:update',
   'project:governance:update',
   'project:membership:update',
   'project:admins:update',
@@ -23,16 +23,16 @@ export const OWNER_PROJECT_PERMISSIONS = [
 
 export const PROJECT_ADMIN_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
+  'project:agent:use',
   'project:agent:manage',
   'project:agent:public',
   'project:audit:read',
-  'project:files:update',
   'project:governance:update',
 ] as const;
 
 const OPERATOR_PROJECT_PERMISSIONS = [
   'project:endpoint:use',
-  'project:agent:manage',
+  'project:agent:use',
 ] as const;
 
 export const OWNER_WORKSPACE_PERMISSIONS = [

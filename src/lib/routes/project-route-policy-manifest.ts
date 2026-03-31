@@ -2,7 +2,7 @@ import { createProjectRoutePolicy } from './project-route-policy';
 
 export const PROJECT_ROUTE_POLICY_MANIFEST = {
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/agents/page.tsx': createProjectRoutePolicy({
-    permissions: ['project:agent:manage', 'project:agent:public'],
+    permissions: ['project:agent:use', 'project:agent:manage', 'project:agent:public'],
   }),
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/alerts/page.tsx': createProjectRoutePolicy({
     permissions: ['project:audit:read'],
@@ -36,6 +36,7 @@ export const PROJECT_ROUTE_POLICY_MANIFEST = {
   'src/app/[locale]/workspaces/[workspace]/projects/[project]/(shell)/overview/page.tsx': createProjectRoutePolicy({
     permissions: [
       'project:endpoint:use',
+      'project:agent:use',
       'project:agent:manage',
       'project:governance:update',
       'project:membership:update',

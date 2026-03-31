@@ -15,6 +15,7 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/hooks/use-permissions', () => ({
   useProjectOverviewCapabilities: vi.fn(() => ({
     canUseProject: true,
+    canUseAgents: true,
     canReadAudit: true,
     canManageGovernance: true,
     canManageMembership: true,
@@ -40,6 +41,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
   beforeEach(() => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
+      canUseAgents: true,
       canReadAudit: true,
       canManageGovernance: true,
       canManageMembership: true,
@@ -72,6 +74,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
   it('hides governance links that require project management permissions', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
+      canUseAgents: false,
       canReadAudit: false,
       canManageGovernance: false,
       canManageMembership: false,
@@ -88,6 +91,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
   it('shows governance resource links for governance managers without ownership actions', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
+      canUseAgents: false,
       canReadAudit: false,
       canManageGovernance: true,
       canManageMembership: false,
@@ -109,6 +113,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
   it('shows members link for membership managers without owner-only settings', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
+      canUseAgents: false,
       canReadAudit: false,
       canManageGovernance: false,
       canManageMembership: true,
@@ -130,6 +135,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
   it('shows audit link only for users with audit read permission', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: true,
+      canUseAgents: false,
       canReadAudit: true,
       canManageGovernance: false,
       canManageMembership: false,
@@ -162,6 +168,7 @@ const mockUseResolvedProjectRoute = vi.mocked(useResolvedProjectRoute);
   it('shows permission denied when user lacks project read permission', () => {
     mockUseProjectOverviewCapabilities.mockReturnValue({
       canUseProject: false,
+      canUseAgents: false,
       canReadAudit: false,
       canManageGovernance: false,
       canManageMembership: false,

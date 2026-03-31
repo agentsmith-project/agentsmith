@@ -121,14 +121,15 @@ export function useUsageTimeseries(
 export function useLimitsSummary(
   workspaceId: string,
   projectId: string,
+  params?: { end_user_id?: string },
   options?: { enabled?: boolean; refetchInterval?: number | false },
 ) {
   const usageAPI = new UsageAPI(getApiClient());
   const enabled = (options?.enabled ?? true) && !!workspaceId && !!projectId;
 
   return useQuery({
-    queryKey: queryKeys.usage.limitsSummary(workspaceId, projectId),
-    queryFn: () => usageAPI.getLimitsSummary(workspaceId, projectId),
+    queryKey: queryKeys.usage.limitsSummary(workspaceId, projectId, params),
+    queryFn: () => usageAPI.getLimitsSummary(workspaceId, projectId, params),
     enabled,
     staleTime: 30000,
     refetchInterval: options?.refetchInterval,

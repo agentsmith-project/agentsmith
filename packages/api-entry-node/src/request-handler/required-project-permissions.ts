@@ -11,8 +11,11 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
   }
 
   if (isTaskRoute(route)) {
+    if (route.kind === 'tasks' && method === 'POST') {
+      return ['project:endpoint:use', 'project:agent:use'];
+    }
     if (route.kind === 'taskMessages' && method === 'POST') {
-      return ['project:endpoint:use', 'project:agent:manage'];
+      return ['project:endpoint:use', 'project:agent:use'];
     }
     return ['project:endpoint:use'];
   }
@@ -58,7 +61,11 @@ export function requiredProjectPermissions(route: ProjectsRoute, method: string)
   }
 
   if (isAgentRoute(route)) {
-    if (method === 'GET') return ['project:agent:manage'];
+    if (route.kind === 'agentKeys' || route.kind === 'agentKeyItem') return ['project:agent:manage'];
+    if (route.kind === 'agentDiagnostics' || route.kind === 'agentExecutionConfig' || route.kind === 'agentConnectionInfo') {
+      return ['project:agent:manage'];
+    }
+    if (method === 'GET') return ['project:agent:use'];
     return ['project:agent:manage'];
   }
 

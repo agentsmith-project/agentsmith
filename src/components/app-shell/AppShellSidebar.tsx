@@ -47,6 +47,7 @@ type ProjectMenuItem = {
   // Use '__multi__' for items that require multiple permission checks (handled in filter logic)
   permission:
     | 'project:endpoint:use'
+    | 'project:agent:use'
     | 'project:agent:manage'
     | 'project:audit:read'
     | 'project:governance:update'
@@ -65,7 +66,7 @@ const PROJECT_MENU_ITEMS: ProjectMenuItem[] = [
   { icon: BarChart3, labelKey: 'usage', href: 'usage', permission: 'project:endpoint:use', section: 'use' },
   { icon: BookOpen, labelKey: 'api_access_guide', href: 'use-guide', permission: 'project:endpoint:use', section: 'use' },
   // Develop section
-  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:manage', section: 'develop' },
+  { icon: Bot, labelKey: 'agents', href: 'agents', permission: 'project:agent:use', section: 'develop' },
   // Govern section
   { icon: Server, labelKey: 'endpoints', href: 'endpoints', permission: 'project:endpoint:use', section: 'govern' },
   { icon: SlidersHorizontal, labelKey: 'resource_policy', href: 'resource-policy', permission: 'project:governance:update', section: 'govern' },
@@ -102,7 +103,8 @@ export function AppShellSidebar({
   const [collapsed, setCollapsed] = React.useState(false);
   const {
     canUseProject,
-    canManageAgents: canReadAgents,
+    canUseAgents,
+    canManageAgents,
     canReadAudit,
     canManageGovernance,
     canManageMembership,
@@ -121,7 +123,8 @@ export function AppShellSidebar({
         if (item.permission === 'project:endpoint:use') {
           return canUseProject;
         }
-        if (item.permission === 'project:agent:manage') return canReadAgents;
+        if (item.permission === 'project:agent:use') return canUseAgents || canManageAgents;
+        if (item.permission === 'project:agent:manage') return canManageAgents;
         if (item.permission === 'project:audit:read') return canReadAudit;
         if (item.permission === 'project:governance:update') return canManageGovernance;
         if (item.permission === 'project:membership:update') return canManageMembership;

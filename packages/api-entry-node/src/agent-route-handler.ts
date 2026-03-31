@@ -38,7 +38,7 @@ async function resolveActorPermissions(
     });
     return new Set(perms);
   } catch {
-    return new Set<string>(['project:endpoint:use', 'project:agent:manage']);
+    return new Set<string>(['project:endpoint:use', 'project:agent:use']);
   }
 }
 

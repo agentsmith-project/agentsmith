@@ -50,6 +50,7 @@ vi.mock('@/lib/hooks/use-permissions', () => ({
     canDelete: true,
     canIssueKeys: true,
     canRevokeKeys: true,
+    canUse: true,
     canManage: true,
     canPublic: true,
   })),
@@ -85,6 +86,7 @@ describe('AgentsPage', () => {
       canDelete: true,
       canIssueKeys: true,
       canRevokeKeys: true,
+      canUse: true,
       canManage: true,
       canPublic: true,
     });
@@ -118,6 +120,7 @@ describe('AgentsPage', () => {
       canDelete: true,
       canIssueKeys: true,
       canRevokeKeys: true,
+      canUse: true,
       canManage: true,
       canPublic: true,
     });
@@ -170,6 +173,7 @@ describe('AgentsPage', () => {
       canDelete: true,
       canIssueKeys: true,
       canRevokeKeys: true,
+      canUse: true,
       canManage: true,
       canPublic: true,
     });
@@ -200,6 +204,7 @@ describe('AgentsPage', () => {
       canDelete: false,
       canIssueKeys: false,
       canRevokeKeys: false,
+      canUse: false,
       canManage: false,
       canPublic: false,
     });
@@ -230,6 +235,7 @@ describe('AgentsPage', () => {
       canDelete: true,
       canIssueKeys: true,
       canRevokeKeys: true,
+      canUse: true,
       canManage: true,
       canPublic: true,
     });
@@ -275,6 +281,7 @@ describe('AgentsPage', () => {
       canDelete: true,
       canIssueKeys: true,
       canRevokeKeys: true,
+      canUse: true,
       canManage: true,
       canPublic: true,
     });
@@ -321,6 +328,7 @@ describe('AgentsPage', () => {
       canDelete: true,
       canIssueKeys: true,
       canRevokeKeys: true,
+      canUse: true,
       canManage: true,
       canPublic: true,
     });

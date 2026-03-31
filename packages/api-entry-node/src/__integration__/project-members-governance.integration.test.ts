@@ -353,6 +353,126 @@ describe('api-entry-node project members governance routes', () => {
     expect(projectBody.permissions).toContain('project:endpoint:use');
   });
 
+  it('shows real member name and email after invite acceptance instead of internal user ids', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Invite Display Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const createInvite = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/invites`,
+      'owner-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          email: 'alt@example.com',
+          expires_in_hours: 24,
+        }),
+      },
+    );
+    expect(createInvite.status).toBe(201);
+    const invite = (await createInvite.json()) as { invite_url: string };
+    const token = new URL(invite.invite_url, 'http://localhost').searchParams.get('token');
+    expect(token).toBeTruthy();
+
+    const acceptInvite = await apiFetchWithToken(
+      baseUrl,
+      '/api/v1/join/accept',
+      'alt-token',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token }),
+      },
+    );
+    expect(acceptInvite.status).toBe(200);
+
+    const membersRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members`,
+      'owner-token',
+    );
+    expect(membersRes.status).toBe(200);
+    const members = (await membersRes.json()) as {
+      items: Array<{
+        id: string;
+        email: string;
+        name: string;
+      }>;
+    };
+    expect(members.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'user_alt',
+          email: 'alt@example.com',
+          name: 'Alt User',
+        }),
+      ]),
+    );
+    expect(members.items.some((member) => member.email === 'user_alt@example.com')).toBe(false);
+    expect(members.items.some((member) => member.name === 'user_alt')).toBe(false);
+  });
+
+  it('shows real member name and email after admins directly activate membership', async () => {
+    const deps = createDefaultNodeApiDeps();
+    const project = await deps.createProjectUseCase.execute({
+      workspaceId: 'ws_default',
+      actorId: 'user_owner',
+      input: {
+        name: 'Admin Membership Display Project',
+        visibility: 'private',
+        join_policy: 'approval_required',
+      },
+    });
+    const { baseUrl } = startServerWithDeps(deps);
+
+    const activateMembershipRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/memberships/user_alt`,
+      'owner-token',
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ status: 'active' }),
+      },
+    );
+    expect(activateMembershipRes.status).toBe(204);
+
+    const membersRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/${project.id}/members`,
+      'owner-token',
+    );
+    expect(membersRes.status).toBe(200);
+    const members = (await membersRes.json()) as {
+      items: Array<{
+        id: string;
+        email: string;
+        name: string;
+      }>;
+    };
+    expect(members.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'user_alt',
+          email: 'alt@example.com',
+          name: 'Alt User',
+        }),
+      ]),
+    );
+    expect(members.items.some((member) => member.email === 'user_alt@example.com')).toBe(false);
+    expect(members.items.some((member) => member.name === 'user_alt')).toBe(false);
+  });
+
   it('supports minimal project members governance write endpoints', async () => {
     const deps = createDefaultNodeApiDeps();
     const project = await deps.createProjectUseCase.execute({

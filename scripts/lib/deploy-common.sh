@@ -128,6 +128,11 @@ load_release_env() {
         [[ -z "${line}" || "${line}" == \#* || "${line}" != *=* ]] && continue
         local key="${line%%=*}"
         local value="${line#*=}"
+        if [[ "${value}" =~ ^\'(.*)\'$ ]]; then
+          value="${BASH_REMATCH[1]}"
+        elif [[ "${value}" =~ ^\"(.*)\"$ ]]; then
+          value="${BASH_REMATCH[1]}"
+        fi
         export "${key}=${value}"
       done < "${env_file}"
     fi

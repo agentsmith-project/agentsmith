@@ -1784,12 +1784,14 @@ function rewriteLocalClientStorageBucketUrl(
 export async function waitForMountedWorkspacePath(
   mountPath: string,
   relativePath: string,
-  timeoutMs = 30_000,
+  timeoutMs = 90_000,
 ): Promise<string> {
   const absolutePath = path.join(mountPath, relativePath);
+  const parentPath = path.dirname(absolutePath);
   const startedAt = Date.now();
   for (;;) {
     try {
+      await access(parentPath);
       await access(absolutePath);
       return absolutePath;
     } catch {

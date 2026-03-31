@@ -47,6 +47,7 @@ for check in \
 done
 
 IMAGE_PULL_SECRETS_YAML=""
+JOB_IMAGE_PULL_SECRETS_YAML=""
 if [[ -n "${REGISTRY_USERNAME:-}" || -n "${REGISTRY_PASSWORD:-}" ]]; then
   [[ -n "${REGISTRY_USERNAME:-}" && -n "${REGISTRY_PASSWORD:-}" ]] \
     || die "registry auth requires both REGISTRY_USERNAME and REGISTRY_PASSWORD"
@@ -63,6 +64,11 @@ if [[ -n "${REGISTRY_USERNAME:-}" || -n "${REGISTRY_PASSWORD:-}" ]]; then
   IMAGE_PULL_SECRETS_YAML=$(cat <<'EOF'
       imagePullSecrets:
         - name: agentsmith-registry
+EOF
+)
+  JOB_IMAGE_PULL_SECRETS_YAML=$(cat <<'EOF'
+          imagePullSecrets:
+            - name: agentsmith-registry
 EOF
 )
 fi
@@ -127,7 +133,7 @@ else
 ${NODE_SELECTOR_YAML}
 EOF
 )"
-  JOB_NODE_SELECTOR_YAML="$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); print("\n".join([f"          {k}: {v}" for k,v in data.items()]))' "${SANDBOX_MANAGER_NODE_SELECTOR_JSON}")"
+  JOB_NODE_SELECTOR_YAML="$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); print("\n".join([f"            {k}: {v}" for k,v in data.items()]))' "${SANDBOX_MANAGER_NODE_SELECTOR_JSON}")"
   JOB_NODE_SELECTOR_BLOCK="$(cat <<EOF
           nodeSelector:
 ${JOB_NODE_SELECTOR_YAML}
@@ -145,16 +151,16 @@ EOF
 )"
   JOB_TOLERATIONS_YAML="$(python3 -c 'import json,sys; data=json.loads(sys.argv[1]); lines=[];
 for item in data:
- lines.append(\"          - key: \" + item.get(\"key\",\"\"))
- op=item.get(\"operator\")
- if op: lines.append(\"            operator: \" + op)
- val=item.get(\"value\")
- if val is not None: lines.append(\"            value: \" + str(val))
- eff=item.get(\"effect\")
- if eff: lines.append(\"            effect: \" + eff)
- sec=item.get(\"tolerationSeconds\")
- if sec is not None: lines.append(\"            tolerationSeconds: \" + str(sec))
-print(\"\\n\".join(lines))' "${SANDBOX_MANAGER_TOLERATIONS_JSON}")"
+ lines.append("            - key: " + item.get("key",""))
+ op=item.get("operator")
+ if op: lines.append("              operator: " + op)
+ val=item.get("value")
+ if val is not None: lines.append("              value: " + str(val))
+ eff=item.get("effect")
+ if eff: lines.append("              effect: " + eff)
+ sec=item.get("tolerationSeconds")
+ if sec is not None: lines.append("              tolerationSeconds: " + str(sec))
+print("\n".join(lines))' "${SANDBOX_MANAGER_TOLERATIONS_JSON}")"
   JOB_TOLERATIONS_BLOCK="$(cat <<EOF
           tolerations:
 ${JOB_TOLERATIONS_YAML}
@@ -327,7 +333,7 @@ spec:
       template:
         spec:
           serviceAccountName: agentsmith-manager
-${IMAGE_PULL_SECRETS_YAML}
+${JOB_IMAGE_PULL_SECRETS_YAML}
 ${JOB_NODE_SELECTOR_BLOCK}
 ${JOB_TOLERATIONS_BLOCK}
           restartPolicy: Never

@@ -440,6 +440,28 @@ if [[ "${ENABLE_FULL_AUTO_JUICEFS_DASHBOARD}" == "1" ]]; then
   patch_serviceaccount_pull_secret "${FULL_AUTO_JUICEFS_NAMESPACE}" "juicefs-csi-dashboard-sa"
 fi
 
+if [[ -n "${INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON:-}" ]]; then
+  JUICEFS_NODE_TOLERATIONS_PATCH="$(python3 - "${INTERNAL_AGENT_WORKLOAD_TOLERATIONS_JSON}" <<'PY'
+import json
+import sys
+payload = {
+    "spec": {
+        "template": {
+            "spec": {
+                "tolerations": json.loads(sys.argv[1]),
+            }
+        }
+    }
+}
+print(json.dumps(payload, separators=(",", ":")))
+PY
+)"
+  KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl patch daemonset juicefs-csi-node \
+    -n "${FULL_AUTO_JUICEFS_NAMESPACE}" \
+    --type merge \
+    -p "${JUICEFS_NODE_TOLERATIONS_PATCH}" >/dev/null
+fi
+
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete pod -n "${FULL_AUTO_INGRESS_NAMESPACE}" -l app.kubernetes.io/component=controller --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-create -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null
 KUBECONFIG="${SHARED_ADMIN_KUBECONFIG}" kubectl delete job/ingress-nginx-admission-patch -n "${FULL_AUTO_INGRESS_NAMESPACE}" --ignore-not-found >/dev/null

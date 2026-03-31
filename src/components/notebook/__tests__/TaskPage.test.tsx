@@ -388,6 +388,23 @@ describe('TaskPage', () => {
       expect(screen.getByTestId('conversation-panel')).toBeInTheDocument();
     });
 
+    it('adds an optimistic user message and keeps streaming state after send', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByText('Send Message'));
+
+      expect(latestConversationPanelPropsRef.current.messages).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            role: 'user',
+            content: 'Test message',
+          }),
+        ]),
+      );
+      expect(latestConversationPanelPropsRef.current.streamingMessageId).toBe('new-msg-id');
+    });
+
     it('keeps busy state during non-terminal step success and clears on run terminal', async () => {
       const user = userEvent.setup();
       renderComponent();
@@ -449,6 +466,16 @@ describe('TaskPage', () => {
       await user.click(screen.getByText('Cancel Active Run'));
       expect(mockTaskApiCancelRun).toHaveBeenCalledWith(mockWorkspaceId, mockProjectId, mockTaskId);
       expect(mockToastInfo).toHaveBeenCalled();
+    });
+
+    it('does not clear streaming state immediately during an idle gap after send', async () => {
+      const user = userEvent.setup();
+      renderComponent();
+
+      await user.click(screen.getByText('Send Message'));
+
+      expect(latestConversationPanelPropsRef.current.streamingMessageId).toBe('new-msg-id');
+      expect(screen.getByTestId('conversation-run-active')).toHaveTextContent('true');
     });
 
     it('loads earlier trace page with before_id when requested', async () => {

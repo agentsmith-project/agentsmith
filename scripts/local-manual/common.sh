@@ -222,6 +222,17 @@ stop_matching_processes() {
   xargs -r kill -9 >/dev/null 2>&1 <<< "${pids}" || true
 }
 
+count_matching_processes() {
+  local pattern="$1"
+  local pids
+  pids="$(pgrep -f "${pattern}" || true)"
+  if [[ -z "${pids}" ]]; then
+    echo 0
+    return 0
+  fi
+  printf '%s\n' "${pids}" | awk 'NF { count += 1 } END { print count + 0 }'
+}
+
 maybe_stop_untracked_port() {
   local port="$1"
   if [[ "${LOCAL_MANUAL_ALLOW_UNTRACKED_PORT_CLEANUP}" != "1" ]]; then

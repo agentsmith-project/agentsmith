@@ -13,7 +13,7 @@ import { useTaskSSE } from "@/lib/hooks/use-task-sse";
 import { useErrorHandler } from "@/lib/hooks/use-error-handler";
 import { TaskAPI } from "@/lib/api";
 import { getApiClient } from "@/lib/api";
-import type { Artifact, TaskMessage } from "@/lib/types/task";
+import type { Artifact, Task, TaskMessage } from "@/lib/types/task";
 import { useRouter, useParams } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/lib/query-keys";
@@ -83,6 +83,9 @@ export function TaskPage({
   const [pendingMessages, setPendingMessages] = React.useState<
     PendingMessage[]
   >([]);
+  const [optimisticUserMessages, setOptimisticUserMessages] = React.useState<
+    TaskMessage[]
+  >([]);
   const [_taskUpdateCountForCurrentTurn, setTaskUpdateCountForCurrentTurn] =
     React.useState(0);
   const [realtimeFailureCode, setRealtimeFailureCode] = React.useState<
@@ -136,6 +139,17 @@ export function TaskPage({
   );
   const taskDetailKey = queryKeys.tasks.detail(workspaceId, projectId, taskId);
   const diagnosticsQuery = buildBuildDiagnosticsOpsQuery();
+  const messagesForDisplay = React.useMemo(() => {
+    const combined = [...(messages ?? [])];
+    for (const optimisticMessage of optimisticUserMessages) {
+      if (!combined.some((message) => message.id === optimisticMessage.id)) {
+        combined.push(optimisticMessage);
+      }
+    }
+    return combined.sort((left, right) =>
+      left.created_at.localeCompare(right.created_at),
+    );
+  }, [messages, optimisticUserMessages]);
   // Diagnostics jump to the unified audit surface.
   const notebookDiagnosticsLinks = React.useMemo(
     () => ({
@@ -154,6 +168,26 @@ export function TaskPage({
     setRunClockNow(Date.now());
     setLastRunActionSummary(null);
   }, []);
+
+  React.useEffect(() => {
+    if (!optimisticUserMessages.length || !(messages?.length ?? 0)) return;
+    setOptimisticUserMessages((prev) => {
+      const unmatchedServerMessages = [...(messages ?? [])].filter(
+        (message) => message.role === "user",
+      );
+      return prev.filter((optimisticMessage) => {
+        const optimisticCreatedAt = Date.parse(optimisticMessage.created_at);
+        const matchedIndex = unmatchedServerMessages.findIndex(
+          (message) =>
+            message.content === optimisticMessage.content &&
+            Date.parse(message.created_at) >= optimisticCreatedAt - 10_000,
+        );
+        if (matchedIndex < 0) return true;
+        unmatchedServerMessages.splice(matchedIndex, 1);
+        return false;
+      });
+    });
+  }, [messages, optimisticUserMessages.length]);
 
   const activeTraceMessageId = React.useMemo(() => {
     if (streamingMessageId) return streamingMessageId;
@@ -386,6 +420,15 @@ export function TaskPage({
         return;
       }
       try {
+        const optimisticUserMessage: TaskMessage = {
+          id: `optimistic-user-${crypto.randomUUID()}`,
+          task_id: taskId,
+          role: "user",
+          content,
+          created_at: new Date().toISOString(),
+        };
+        setOptimisticUserMessages((prev) => [...prev, optimisticUserMessage]);
+
         // Clear previous streaming state
         setStreamingMessageId(null);
         setStreamingContent("");
@@ -409,6 +452,25 @@ export function TaskPage({
         // If response indicates streaming, set up streaming state
         // The actual streaming content will come through SSE
         if (response.role === "agent") {
+          queryClient.setQueryData(
+            messagesKey,
+            (old: TaskMessage[] | undefined) => {
+              const next = old ? [...old] : [];
+              if (!next.some((message) => message.id === response.id)) {
+                next.push(response);
+              }
+              return next;
+            },
+          );
+          queryClient.setQueryData(taskDetailKey, (old: Task | undefined) =>
+            old
+              ? {
+                  ...old,
+                  run_state: "running",
+                  last_activity_at: new Date().toISOString(),
+                }
+              : old,
+          );
           setStreamingMessageId(response.id);
           setStreamingContent("");
           setIsAgentTurnRunning(true);
@@ -418,6 +480,9 @@ export function TaskPage({
           setTaskUpdateCountForCurrentTurn(0);
         }
       } catch (err) {
+        setOptimisticUserMessages((prev) =>
+          prev.filter((message) => message.content !== content),
+        );
         setIsAgentTurnRunning(false);
         setRunStartedAt(null);
         setRunClockNow(Date.now());
@@ -462,11 +527,14 @@ export function TaskPage({
     [
       enqueuePendingMessage,
       handleError,
+      messagesKey,
       projectId,
+      queryClient,
       sendMessage,
       tConversation,
       taskAgent?.mode,
       taskAgent?.presence,
+      taskDetailKey,
       taskId,
       workspaceId,
     ],
@@ -515,11 +583,22 @@ export function TaskPage({
     if (task?.run_state !== "idle") return;
     if (sendMessage.isPending || cancelActiveRun.isPending) return;
     if (!isAgentTurnRunning && !streamingMessageId && !streamingContent) return;
-    resetCurrentRunUiState();
+    const graceMs = 5000;
+    const elapsedMs = runStartedAt ? Date.now() - runStartedAt : graceMs;
+    if (elapsedMs >= graceMs) {
+      resetCurrentRunUiState();
+      return;
+    }
+    const timer = window.setTimeout(
+      () => resetCurrentRunUiState(),
+      graceMs - elapsedMs,
+    );
+    return () => window.clearTimeout(timer);
   }, [
     cancelActiveRun.isPending,
     isAgentTurnRunning,
     resetCurrentRunUiState,
+    runStartedAt,
     sendMessage.isPending,
     streamingContent,
     streamingMessageId,
@@ -692,7 +771,7 @@ export function TaskPage({
         handleViewArtifact={handleViewArtifact}
         isDisabled={isDisabled}
         loadMoreTracesForMessage={loadMoreTracesForMessage}
-        messages={messages || []}
+        messages={messagesForDisplay}
         onRunActionClick={(action) => {
           if (!action.traceName || !activeTraceMessageId) return;
           setTraceFocusMessageId(activeTraceMessageId);

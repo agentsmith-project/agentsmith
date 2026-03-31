@@ -148,14 +148,23 @@ async function spawnAndCapture(command: string, args: string[], options?: { cwd?
 }
 
 export async function ensureIntegrationKeycloakUsers(): Promise<void> {
-  const result = await spawnAndCapture(
-    'node_modules/.bin/tsx',
-    ['scripts/integration-keycloak-init.ts'],
-    { env: process.env },
-  );
-  if (result.code !== 0) {
-    throw new Error(`integration_keycloak_init_failed:${result.stderr || result.stdout}`);
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await spawnAndCapture(
+      'node_modules/.bin/tsx',
+      ['scripts/integration-keycloak-init.ts'],
+      { env: process.env },
+    );
+    if (result.code === 0) {
+      return;
+    }
+    lastError = result.stderr || result.stdout;
+    if (!lastError.includes('keycloak_update_realm_failed') || attempt === 2) {
+      throw new Error(`integration_keycloak_init_failed:${lastError}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000 * (attempt + 1)));
   }
+  throw new Error(`integration_keycloak_init_failed:${lastError}`);
 }
 
 function withoutProxyEnv(baseEnv?: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -495,20 +504,34 @@ export async function createProjectInWorkspace(
 ): Promise<{ projectId: string; projectName: string }> {
   const projectName = `${prefix} ${Date.now()}`;
   const token = await readStoredAuthToken(page);
-  const response = await page.request.post(`${API_BASE}/api/v1/workspaces/${workspaceId}/projects`, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'content-type': 'application/json',
-    },
-    data: {
-      workspace_id: workspaceId,
-      name: projectName,
-      visibility: options?.visibility ?? 'private',
-      join_policy: options?.joinPolicy ?? 'approval_required',
-    },
-  });
-  expect(response.ok()).toBeTruthy();
-  const created = (await response.json()) as { id?: string };
+  let response: Awaited<ReturnType<Page['request']['post']>> | null = null;
+  let lastErrorText = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    response = await page.request.post(`${API_BASE}/api/v1/workspaces/${workspaceId}/projects`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'content-type': 'application/json',
+      },
+      data: {
+        workspace_id: workspaceId,
+        name: projectName,
+        visibility: options?.visibility ?? 'private',
+        join_policy: options?.joinPolicy ?? 'approval_required',
+      },
+    });
+    if (response.ok()) {
+      break;
+    }
+    lastErrorText = await response.text();
+    const retryablePermissionMiss = response.status() === 403;
+    const retryableConnectionReset = response.status() === 400 && lastErrorText.includes('read ECONNRESET');
+    if ((!retryablePermissionMiss && !retryableConnectionReset) || attempt === 2) {
+      throw new Error(`create_project_failed:${response.status()}:${lastErrorText}`);
+    }
+    await page.waitForTimeout(1_000 * (attempt + 1));
+  }
+  expect(response?.ok()).toBeTruthy();
+  const created = (await response!.json()) as { id?: string };
   const projectId = created.id?.trim();
   if (!projectId) {
     throw new Error('project_id_not_found_after_create');

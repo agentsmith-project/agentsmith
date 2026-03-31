@@ -55,23 +55,49 @@ async function createInvite(page: import('@playwright/test').Page, workspaceId: 
 
 async function createFileLibrary(page: import('@playwright/test').Page, workspaceId: string, projectId: string, name: string): Promise<string> {
   const token = await readStoredAuthToken(page);
-  const response = await page.request.post(
-    `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/file-libraries`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const response = await page.request.post(
+      `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/file-libraries`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+        data: {
+          name,
+          description: `auto-created ${name}`,
+        },
       },
-      data: {
-        name,
-        description: `auto-created ${name}`,
-      },
-    },
-  );
-  expect(response.ok()).toBeTruthy();
-  const payload = await response.json() as { id?: string };
-  expect(payload.id).toBeTruthy();
-  return payload.id ?? '';
+    );
+    if (response.ok()) {
+      const payload = await response.json() as { id?: string };
+      expect(payload.id).toBeTruthy();
+      return payload.id ?? '';
+    }
+    const errorText = await response.text();
+    const retryableProvisioningFailure = response.status() === 502
+      && errorText.includes('FILE_LIBRARY_PROVISIONING_FAILED')
+      && (errorText.includes('connection reset') || errorText.includes('ECONNRESET'));
+    if (!retryableProvisioningFailure || attempt === 4) {
+      throw new Error(`create_file_library_failed:${response.status()}:${errorText}`);
+    }
+    await page.waitForTimeout(1_000 * (attempt + 1));
+  }
+  throw new Error('create_file_library_retry_exhausted');
+}
+
+async function expectFilesLibraryVisibility(args: {
+  page: import('@playwright/test').Page;
+  workspaceId: string;
+  projectId: string;
+  visibleLibraryName: string;
+  hiddenLibraryName: string;
+}): Promise<void> {
+  await args.page.goto(`/${LOCALE}/workspaces/${args.workspaceId}/projects/${args.projectId}/files`);
+  const visibleLibrary = args.page.locator('[data-testid^="files__library-item--"]').filter({ hasText: args.visibleLibraryName }).first();
+  const hiddenLibrary = args.page.locator('[data-testid^="files__library-item--"]').filter({ hasText: args.hiddenLibraryName }).first();
+  await expect(visibleLibrary).toBeVisible({ timeout: 30_000 });
+  await expect(hiddenLibrary).toHaveCount(0);
 }
 
 test.describe('@lane-real internal notebook task isolation by user', () => {
@@ -103,8 +129,9 @@ test.describe('@lane-real internal notebook task isolation by user', () => {
       idleTimeoutSec: 300,
       maxLifetimeSec: 3600,
     });
-    const ownerFileLibraryId = await createFileLibrary(page, workspaceId, projectId, `Owner Isolation ${Date.now()}`);
-    const memberFileLibraryId = await createFileLibrary(page, workspaceId, projectId, `Member Isolation ${Date.now()}`);
+    const ownerLibraryName = `Owner Isolation ${Date.now()}`;
+    const memberLibraryName = `Member Isolation ${Date.now()}`;
+    const ownerFileLibraryId = await createFileLibrary(page, workspaceId, projectId, ownerLibraryName);
     const invitePath = await createInvite(page, workspaceId, projectId, 'integration-member@example.com');
 
     const memberContext = await browser.newContext();
@@ -120,6 +147,7 @@ test.describe('@lane-real internal notebook task isolation by user', () => {
       await expect(memberPage.getByTestId('join__accept-btn')).toBeVisible({ timeout: 30_000 });
       await memberPage.getByTestId('join__accept-btn').click();
       await memberPage.waitForURL(/\/login\/workspace/, { timeout: 30_000 });
+      const memberFileLibraryId = await createFileLibrary(memberPage, workspaceId, projectId, memberLibraryName);
 
       const ownerTaskId = await createNotebookTaskViaApi({
         page,
@@ -140,6 +168,33 @@ test.describe('@lane-real internal notebook task isolation by user', () => {
 
       const ownerToken = await readStoredAuthToken(page);
       const memberToken = await readStoredAuthToken(memberPage);
+
+      await expectFilesLibraryVisibility({
+        page,
+        workspaceId,
+        projectId,
+        visibleLibraryName: ownerLibraryName,
+        hiddenLibraryName: memberLibraryName,
+      });
+      await expectFilesLibraryVisibility({
+        page: memberPage,
+        workspaceId,
+        projectId,
+        visibleLibraryName: memberLibraryName,
+        hiddenLibraryName: ownerLibraryName,
+      });
+
+      const ownerCannotReadMemberLibrary = await page.request.get(
+        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${memberFileLibraryId}`,
+        { headers: { Authorization: `Bearer ${ownerToken}` } },
+      );
+      expect(ownerCannotReadMemberLibrary.status()).toBe(404);
+
+      const memberCannotReadOwnerLibrary = await memberPage.request.get(
+        `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/file-libraries/${ownerFileLibraryId}`,
+        { headers: { Authorization: `Bearer ${memberToken}` } },
+      );
+      expect(memberCannotReadOwnerLibrary.status()).toBe(404);
 
       const ownerCannotReadMember = await page.request.get(
         `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/tasks/${memberTaskId}`,

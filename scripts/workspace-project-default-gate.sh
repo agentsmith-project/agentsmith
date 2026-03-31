@@ -46,6 +46,7 @@ run_cmd "npx eslint \
   'packages/api-entry-node/src/workspace-registry.ts'"
 run_cmd "npx next typegen ."
 run_cmd "npx tsc --noEmit"
+run_cmd "npm run test:member-isolation:default"
 
 run_cmd "npm run test:run -- \
   'src/lib/system-admin/__tests__/workspace-registry.test.ts' \

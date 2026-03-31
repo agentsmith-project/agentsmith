@@ -91,6 +91,30 @@ export const CURRENT_WORKFLOW_MANIFEST: readonly CurrentWorkflowSection[] = [
         recommended: true,
       },
       {
+        command: 'make local-manual-internal-up',
+        description: 'enable the local internal sandbox extension on top of local-manual',
+        canonical: 'make',
+        makeTarget: 'local-manual-internal-up',
+      },
+      {
+        command: 'make local-manual-internal-status',
+        description: 'inspect the local internal sandbox extension',
+        canonical: 'make',
+        makeTarget: 'local-manual-internal-status',
+      },
+      {
+        command: 'make local-manual-internal-down',
+        description: 'disable the local internal sandbox extension',
+        canonical: 'make',
+        makeTarget: 'local-manual-internal-down',
+      },
+      {
+        command: 'make local-manual-internal-reset',
+        description: 'rebuild the local internal sandbox extension',
+        canonical: 'make',
+        makeTarget: 'local-manual-internal-reset',
+      },
+      {
         command: 'make local-manual-status',
         description: 'show the current real local environment state',
         canonical: 'make',

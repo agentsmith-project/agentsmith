@@ -5,6 +5,8 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="${ENV_FILE:-${ROOT_DIR}/.env.local-manual}"
 SUBSTRATE="${SUBSTRATE:-local-dev}"
 SUBSTRATE_ENV_FILE="${ENV_FILE}"
+LOCAL_MANUAL_ENABLE_INTERNAL="${LOCAL_MANUAL_ENABLE_INTERNAL:-0}"
+LOCAL_MANUAL_INTERNAL_ENV_FILE="${LOCAL_MANUAL_INTERNAL_ENV_FILE:-${ROOT_DIR}/infra/flows/local-manual-internal.env}"
 
 source "${ROOT_DIR}/scripts/lib/backend-real-state.sh"
 source "${ROOT_DIR}/scripts/lib/runtime-config.sh"
@@ -70,8 +72,18 @@ load_local_manual_substrate_env() {
   PROXY_PORT="${PROXY_PORT:-${MBOS_UNIVERSAL_PROXY_BASE_URL##*:}}"
 }
 
+load_local_manual_internal_env() {
+  [[ "${LOCAL_MANUAL_ENABLE_INTERNAL}" == "1" ]] || return 0
+  [[ -f "${LOCAL_MANUAL_INTERNAL_ENV_FILE}" ]] || return 0
+  set -a
+  # shellcheck disable=SC1090
+  source "${LOCAL_MANUAL_INTERNAL_ENV_FILE}"
+  set +a
+}
+
 init_local_manual_env() {
   load_runtime_env_stack "local-manual" "${ENV_FILE}"
+  load_local_manual_internal_env
 
   PORT_API="${PORT_API:-20000}"
   PORT_WEB="${PORT_WEB:-3001}"

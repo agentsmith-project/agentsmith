@@ -141,6 +141,13 @@ make substrate-reseed
 make local-manual-up
 ```
 
+If you need the full local internal notebook / sandbox path, enable it explicitly on top of `local-manual`:
+
+```bash
+make local-manual-internal-up
+make local-manual-internal-status
+```
+
 Switch to a rehearsal flow:
 
 ```bash

@@ -70,6 +70,7 @@ make substrate-reset
 - 日常本地开发
 - 真实后端手测
 - Notebook / external runner 手测
+- 默认只保证 external 路径，不默认开启 internal sandbox
 
 常用命令：
 
@@ -88,6 +89,19 @@ make substrate-up
 make substrate-reseed
 make local-manual-up
 make local-manual-seed-notebook
+```
+
+如果要在本机补 internal notebook / sandbox / JuiceFS 验证，再执行：
+
+```bash
+make local-manual-internal-up
+make local-manual-internal-status
+```
+
+结束 internal 增强模式时：
+
+```bash
+make local-manual-internal-down
 ```
 
 ### 2. `demo-rehearsal`
@@ -180,6 +194,11 @@ make substrate-reset
 
 - 平时开发和页面 / API 手测
   - 用 `local-manual`
+- 要快速验证 external notebook / runner
+  - 继续用默认 `local-manual`
+- 要在本机验证 internal notebook / sandbox / JuiceFS
+  - 先起 `local-manual`
+  - 再执行 `local-manual-internal-up`
 - 要验证 demo 单机发布线
   - 用 `demo-rehearsal`
 - 要验证 cluster 发布线

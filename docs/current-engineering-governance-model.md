@@ -61,6 +61,10 @@ make substrate-down
 make substrate-reset
 make local-manual-up
 make local-manual-seed-notebook
+make local-manual-internal-up
+make local-manual-internal-status
+make local-manual-internal-down
+make local-manual-internal-reset
 make local-manual-status
 make local-manual-down
 make local-manual-reset

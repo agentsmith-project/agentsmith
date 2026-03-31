@@ -171,6 +171,8 @@ make contracts-check-openapi # 检查 OpenAPI 核心覆盖与破坏性变更
 
 收成一条正式链路。
 
+默认 `local-manual` 只保证 external notebook / runner。需要本机完整验证 internal sandbox / JuiceFS / internal notebook 时，再显式开启 internal 增强模式。
+
 ### First-time setup
 
 ```bash
@@ -235,6 +237,27 @@ make local-manual-seed-notebook
 
 ```bash
 make local-manual-status
+```
+
+### Enable local internal sandbox only when needed
+
+```bash
+make local-manual-internal-up
+make local-manual-internal-status
+```
+
+这一步会在现有 `local-manual` 基础上补：
+
+1. 本地 `kind-agentsmith`
+2. `agentsmith-sandbox` namespace
+3. JuiceFS CSI
+4. local sandbox manager / cleaner
+5. internal notebook agent
+
+结束后如果想回到默认 external-only 模式：
+
+```bash
+make local-manual-internal-down
 ```
 
 ### Full reset

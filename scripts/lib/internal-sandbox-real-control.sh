@@ -14,6 +14,29 @@ CLEANER_BIN="${INTERNAL_REAL_DIR}/sandbox-cleaner"
 
 info() { echo "[internal-sandbox-control] $*"; }
 
+launch_detached() {
+  if command -v setsid >/dev/null 2>&1; then
+    setsid "$@" </dev/null &
+  else
+    nohup "$@" </dev/null >/dev/null 2>&1 &
+  fi
+  echo $!
+}
+
+launch_detached_shell() {
+  local log_file="$1"
+  local command="$2"
+  local pid
+  : > "${log_file}"
+  if command -v setsid >/dev/null 2>&1; then
+    setsid bash -lc "${command}" >> "${log_file}" 2>&1 < /dev/null &
+  else
+    nohup bash -lc "${command}" >> "${log_file}" 2>&1 < /dev/null &
+  fi
+  pid="$!"
+  printf '%s\n' "${pid}"
+}
+
 resolve_kubeconfig() {
   if [[ -n "${KUBECONFIG:-}" ]]; then
     printf '%s\n' "${KUBECONFIG}"
@@ -118,23 +141,22 @@ start_manager() {
   if [[ -n "$(port_pids "${SANDBOX_PORT}")" ]]; then
     kill_port_listeners
   fi
-  (
-    cd "${SANDBOX_ROOT}/manager-service" && \
-      env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-      CONFIG_PATH="${CONFIG_PATH}" \
-      SERVICE_KEYS="${SANDBOX_SERVICE_KEY_VALUE}" \
-      JUICEFS_STORAGE_ENDPOINT="${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}" \
-      JUICEFS_STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY}" \
-      JUICEFS_STORAGE_SECRET_KEY="${MINIO_SECRET_KEY}" \
-      STORAGE_ENDPOINT="localhost:19000" \
-      STORAGE_ACCESS_KEY="${MINIO_ACCESS_KEY}" \
-      STORAGE_SECRET_KEY="${MINIO_SECRET_KEY}" \
-      STORAGE_BUCKET="${MINIO_BUCKET}" \
-      STORAGE_USE_SSL="false" \
-      KUBECONFIG="${KUBECONFIG:-}" \
+  launch_detached_shell "${SANDBOX_LOG}" "
+    cd '${SANDBOX_ROOT}/manager-service' && \
+    env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
+      CONFIG_PATH='${CONFIG_PATH}' \
+      SERVICE_KEYS='${SANDBOX_SERVICE_KEY_VALUE}' \
+      JUICEFS_STORAGE_ENDPOINT='${INTERNAL_AGENT_JUICEFS_STORAGE_ENDPOINT_OVERRIDE_VALUE}' \
+      JUICEFS_STORAGE_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
+      JUICEFS_STORAGE_SECRET_KEY='${MINIO_SECRET_KEY}' \
+      STORAGE_ENDPOINT='localhost:19000' \
+      STORAGE_ACCESS_KEY='${MINIO_ACCESS_KEY}' \
+      STORAGE_SECRET_KEY='${MINIO_SECRET_KEY}' \
+      STORAGE_BUCKET='${MINIO_BUCKET}' \
+      STORAGE_USE_SSL='false' \
+      KUBECONFIG='${KUBECONFIG:-}' \
       go run ./cmd/manager
-  ) </dev/null >>"${SANDBOX_LOG}" 2>&1 &
-  echo $! > "${MANAGER_PID_FILE}"
+  " > "${MANAGER_PID_FILE}"
   for _ in $(seq 1 60); do
     if port_ready; then
       info "manager ready"
@@ -184,15 +206,14 @@ start_cleaner() {
   if [[ -n "${kubeconfig_path}" ]]; then
     cleaner_args+=("--kubeconfig=${kubeconfig_path}")
   fi
-  (
+  local cleaner_command
+  cleaner_command="$(printf "%q " env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY "${CLEANER_BIN}" "${cleaner_args[@]}")"
+  launch_detached_shell "${CLEANER_LOG}" "
     while true; do
-      env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
-        "${CLEANER_BIN}" \
-        "${cleaner_args[@]}" || true
-      sleep "${CLEANER_INTERVAL_SECONDS}"
+      ${cleaner_command} || true
+      sleep '${CLEANER_INTERVAL_SECONDS}'
     done
-  ) </dev/null >>"${CLEANER_LOG}" 2>&1 &
-  echo $! > "${CLEANER_PID_FILE}"
+  " > "${CLEANER_PID_FILE}"
   info "started cleaner loop"
 }
 

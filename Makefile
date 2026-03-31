@@ -12,6 +12,7 @@
 	build-reliability-smoke workspace-governance-smoke workspace-overview-smoke \
 	notebook-agent-smoke-full notebook-agent-init-resources notebook-agent-runner \
 	local-manual-up local-manual-down local-manual-status local-manual-reset local-manual-seed-notebook \
+	local-manual-internal-up local-manual-internal-down local-manual-internal-status local-manual-internal-reset local-manual-internal-smoke \
 	demo-rehearsal-up demo-rehearsal-down demo-rehearsal-status demo-rehearsal-reset demo-rehearsal-bootstrap demo-rehearsal-verify demo-rehearsal-report \
 	cluster-rehearsal-up cluster-rehearsal-down cluster-rehearsal-status cluster-rehearsal-reset cluster-rehearsal-bootstrap cluster-rehearsal-verify cluster-rehearsal-report \
 	notebook-agent-no-sandbox-smoke notebook-agent-no-sandbox-assert \
@@ -91,6 +92,10 @@ help-extended:
 	@echo "  make substrate-reset  # clear the managed substrate"
 	@echo "  make local-manual-up  # start the real local manual-test environment"
 	@echo "  make local-manual-seed-notebook  # create notebook demo resources and start the host runner"
+	@echo "  make local-manual-internal-up  # enable the local internal sandbox extension on top of local-manual"
+	@echo "  make local-manual-internal-status  # inspect the local internal sandbox extension"
+	@echo "  make local-manual-internal-down  # disable the local internal sandbox extension"
+	@echo "  make local-manual-internal-reset  # rebuild the local internal sandbox extension"
 	@echo "  make local-manual-status  # show the current real local environment state"
 	@echo "  make local-manual-down  # stop the real local manual-test environment"
 	@echo "  make local-manual-reset  # rebuild the real local manual-test environment"
@@ -847,6 +852,21 @@ local-manual-status:
 local-manual-reset:
 	env -u http_proxy -u https_proxy -u all_proxy -u HTTP_PROXY -u HTTPS_PROXY -u ALL_PROXY -u no_proxy -u NO_PROXY \
 	./scripts/local-manual-down.sh && $(MAKE) substrate-reset SUBSTRATE=local-dev && $(MAKE) local-manual-up && $(MAKE) local-manual-seed-notebook
+
+local-manual-internal-up:
+	./scripts/local-manual-internal-up.sh
+
+local-manual-internal-down:
+	./scripts/local-manual-internal-down.sh
+
+local-manual-internal-status:
+	./scripts/local-manual-internal-status.sh
+
+local-manual-internal-reset:
+	./scripts/local-manual-internal-reset.sh
+
+local-manual-internal-smoke:
+	./scripts/local-manual-internal-smoke.sh
 
 notebook-agent-no-sandbox-smoke:
 	@set -e; \

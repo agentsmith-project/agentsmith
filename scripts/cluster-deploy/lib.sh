@@ -353,6 +353,9 @@ copy_runner_runtime_env_from_current_release() {
   agent_key="$(awk -F= '$1=="MBOS_AGENT_KEY"{print $2}' "${current_runtime}" | tail -n1)"
   [[ -n "${ws_url}" && -n "${agent_key}" ]] \
     || die "upgrade requires a non-empty runner-runtime.env in the current release"
+  if [[ "$(readlink -f "${current_runtime}")" == "$(readlink -f "${target_runtime}")" ]]; then
+    return 0
+  fi
   cp "${current_runtime}" "${target_runtime}"
 }
 

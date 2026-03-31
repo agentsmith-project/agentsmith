@@ -405,6 +405,46 @@ describe('TaskPage', () => {
       expect(latestConversationPanelPropsRef.current.streamingMessageId).toBe('new-msg-id');
     });
 
+    it('still sends when browser crypto.randomUUID is unavailable', async () => {
+      const user = userEvent.setup();
+      const originalCrypto = globalThis.crypto;
+      Object.defineProperty(globalThis, 'crypto', {
+        configurable: true,
+        value: {
+          ...originalCrypto,
+          randomUUID: undefined,
+        },
+      });
+
+      try {
+        renderComponent();
+        await user.click(screen.getByText('Send Message'));
+
+        expect(mockSendMessageMutateAsync).toHaveBeenCalledWith({
+          workspaceId: mockWorkspaceId,
+          projectId: mockProjectId,
+          taskId: mockTaskId,
+          data: {
+            task_id: mockTaskId,
+            content: 'Test message',
+          },
+        });
+        expect(latestConversationPanelPropsRef.current.messages).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              role: 'user',
+              content: 'Test message',
+            }),
+          ]),
+        );
+      } finally {
+        Object.defineProperty(globalThis, 'crypto', {
+          configurable: true,
+          value: originalCrypto,
+        });
+      }
+    });
+
     it('keeps busy state during non-terminal step success and clears on run terminal', async () => {
       const user = userEvent.setup();
       renderComponent();

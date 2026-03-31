@@ -38,6 +38,7 @@ import {
 import { useTaskTraceState } from "@/components/notebook/task-page/useTaskTraceState";
 import { useTaskInputActions } from "@/components/notebook/task-page/useTaskInputActions";
 import { getPublicRuntimeConfig } from "@/lib/public-runtime-config";
+import { makeClientId } from "@/lib/chat/ids";
 
 export interface TaskPageProps {
   workspaceId: string;
@@ -421,7 +422,7 @@ export function TaskPage({
       }
       try {
         const optimisticUserMessage: TaskMessage = {
-          id: `optimistic-user-${crypto.randomUUID()}`,
+          id: makeClientId("optimistic-user"),
           task_id: taskId,
           role: "user",
           content,

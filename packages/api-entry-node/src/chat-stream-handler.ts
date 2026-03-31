@@ -642,6 +642,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
         deps.docStore,
         user.id,
+        { workspaceId: route.workspaceId },
       );
       const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import argparse
+from datetime import datetime, timedelta, timezone
 import json
 import os
-import re
 import sys
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -17,31 +18,33 @@ DEFAULT_ALLOWED_TOOLS = (
 OAUTH_TOKEN_ENDPOINT = "https://open.feishu.cn/open-apis/authen/v2/oauth/token"
 
 
-def load_env_like_text(text: str) -> dict[str, str]:
-    values: dict[str, str] = {}
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        values[key.strip()] = value.strip()
-    return values
+def resolve_explicit_credential_dir(candidate: Path, anchor: Path | None = None) -> Path | None:
+    path = candidate.expanduser()
+    if not path.is_absolute():
+        path = ((anchor or Path.cwd()).resolve() / path).resolve()
+    else:
+        path = path.resolve()
+    if not path.is_dir():
+        return None
+    feishu_subdir = path / "feishu"
+    if feishu_subdir.is_dir():
+        return feishu_subdir
+    return path
 
 
 def find_credential_dir(start: Path | None = None) -> Path:
     configured = os.environ.get("MBOS_TASK_CREDENTIAL_DIR", "").strip()
     if configured:
-        configured_path = Path(configured).expanduser()
-        if not configured_path.is_absolute():
-            configured_path = (start or Path.cwd()).resolve() / configured_path
-        configured_path = configured_path.resolve()
-        if configured_path.is_dir():
-            feishu_subdir = configured_path / "feishu"
-            if feishu_subdir.is_dir():
-                return feishu_subdir
-            return configured_path
+        resolved = resolve_explicit_credential_dir(Path(configured), start)
+        if resolved is not None:
+            return resolved
 
-    current = (start or Path.cwd()).resolve()
+    if start is not None:
+        resolved = resolve_explicit_credential_dir(start)
+        if resolved is not None:
+            return resolved
+
+    current = Path.cwd().resolve()
     for base in [current, *current.parents]:
         root = base / ".codex" / "credential"
         if not root.is_dir():
@@ -50,129 +53,104 @@ def find_credential_dir(start: Path | None = None) -> Path:
         if feishu_subdir.is_dir():
             return feishu_subdir
         return root
-    raise FileNotFoundError(
-        "Could not find .codex/credential in the current directory or its parents."
-    )
+    raise FileNotFoundError("Could not find .codex/credential in the current directory or its parents.")
 
 
-def flatten_json(prefix: str, value):
-    if isinstance(value, dict):
-        for key, inner in value.items():
-            next_prefix = f"{prefix}.{key}" if prefix else str(key)
-            yield from flatten_json(next_prefix, inner)
-    elif isinstance(value, list):
-        for idx, inner in enumerate(value):
-            next_prefix = f"{prefix}[{idx}]"
-            yield from flatten_json(next_prefix, inner)
-    else:
-        yield prefix, value
+def load_connections_document(credential_dir: Path) -> tuple[Path, dict[str, Any]]:
+    path = credential_dir / "connections.json"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Feishu credential file not found at {path}. "
+            "AgentSmith should generate .codex/credential/feishu/connections.json."
+        )
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError("Feishu credential file is invalid: expected top-level object.")
+    if payload.get("provider") != "feishu":
+        raise RuntimeError("Feishu credential file is invalid: provider must be 'feishu'.")
+    connections = payload.get("connections")
+    if not isinstance(connections, list):
+        raise RuntimeError("Feishu credential file is invalid: connections must be a list.")
+    return path, payload
 
 
-def discover_credentials(credential_dir: Path) -> dict:
-    discovered = {
-        "access_token_candidates": [],
-        "refresh_token_candidates": [],
-        "app_id_candidates": [],
-        "app_secret_candidates": [],
-        "token_object_path": None,
-        "token_object_payload": None,
+def normalize_connection(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    connection_id = raw.get("connection_id")
+    status = raw.get("status")
+    fields = raw.get("fields")
+    if not isinstance(connection_id, str) or not connection_id.strip():
+        return None
+    if not isinstance(status, str) or not status.strip():
+        return None
+    if not isinstance(fields, dict):
+        return None
+    normalized_fields: dict[str, str] = {}
+    for key, value in fields.items():
+        if isinstance(key, str) and isinstance(value, str) and value.strip():
+            normalized_fields[key] = value.strip()
+    return {
+        "connection_id": connection_id.strip(),
+        "status": status.strip(),
+        "workspace_id": raw.get("workspace_id") if isinstance(raw.get("workspace_id"), str) else None,
+        "display_name": raw.get("display_name") if isinstance(raw.get("display_name"), str) else None,
+        "fields": normalized_fields,
     }
 
-    plain_kv_pattern = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*[:=]\s*(.+?)\s*$")
 
-    def classify_pair(key: str, value: str) -> None:
-        key_lower = key.lower()
-        value_strip = value.strip().strip("'").strip('"')
-        if not value_strip:
-            return
-
-        if "refresh" in key_lower and "token" in key_lower:
-            discovered["refresh_token_candidates"].append(value_strip)
-            return
-        if ("access" in key_lower and "token" in key_lower) or "uat" in key_lower:
-            discovered["access_token_candidates"].append(value_strip)
-            return
-        if "token" in key_lower:
-            discovered["access_token_candidates"].append(value_strip)
-            return
-        if ("app" in key_lower and "secret" in key_lower) or (
-            "client" in key_lower and "secret" in key_lower
-        ):
-            discovered["app_secret_candidates"].append(value_strip)
-            return
-        if ("app" in key_lower and key_lower.endswith("id")) or (
-            "client" in key_lower and key_lower.endswith("id")
-        ):
-            discovered["app_id_candidates"].append(value_strip)
-
-    for path in sorted(p for p in credential_dir.rglob("*") if p.is_file()):
-        try:
-            text = path.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            continue
-
-        try:
-            parsed = json.loads(text)
-        except json.JSONDecodeError:
-            parsed = None
-
-        if isinstance(parsed, dict):
-            for key, value in flatten_json("", parsed):
-                if isinstance(value, str):
-                    classify_pair(key, value)
-            flat_keys = {k.lower() for k, _ in flatten_json("", parsed)}
-            if discovered["token_object_path"] is None and (
-                "access_token" in flat_keys or "refresh_token" in flat_keys
-            ):
-                discovered["token_object_path"] = path
-                discovered["token_object_payload"] = parsed
-
-        for key, value in load_env_like_text(text).items():
-            classify_pair(key, value)
-
-        for line in text.splitlines():
-            match = plain_kv_pattern.match(line)
-            if not match:
-                continue
-            classify_pair(match.group(1), match.group(2))
-
-    for name in (
-        "access_token_candidates",
-        "refresh_token_candidates",
-        "app_id_candidates",
-        "app_secret_candidates",
-    ):
-        unique = []
-        seen = set()
-        for item in discovered[name]:
-            if item not in seen:
-                unique.append(item)
-                seen.add(item)
-        discovered[name] = unique
-
-    return discovered
+def load_active_connection(credential_dir: Path) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+    path, payload = load_connections_document(credential_dir)
+    normalized = [
+        item
+        for item in (normalize_connection(raw) for raw in payload.get("connections", []))
+        if item is not None
+    ]
+    active = [item for item in normalized if item["status"] == "active"]
+    if not active:
+        raise RuntimeError("No active Feishu connection found in connections.json.")
+    if len(active) > 1:
+        ids = ", ".join(item["connection_id"] for item in active)
+        raise RuntimeError(
+            f"Multiple active Feishu connections found ({ids}). "
+            "AgentSmith runner requires a single active Feishu connection per task."
+        )
+    return path, payload, active[0]
 
 
-def choose_candidate(candidates: list[str], must_include: list[str] | None = None) -> str | None:
-    if not candidates:
+def get_connection_field(connection: dict[str, Any], *keys: str) -> str | None:
+    fields = connection.get("fields", {})
+    if not isinstance(fields, dict):
         return None
-    if not must_include:
-        return candidates[0]
-    for candidate in candidates:
-        lowered = candidate.lower()
-        if all(part in lowered for part in must_include):
-            return candidate
-    return candidates[0]
+    for key in keys:
+        value = fields.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 def get_access_token(credential_dir: Path) -> str:
-    discovered = discover_credentials(credential_dir)
-    token = choose_candidate(discovered["access_token_candidates"])
+    _path, _payload, connection = load_active_connection(credential_dir)
+    token = get_connection_field(connection, "access_token", "uat", "token")
     if token:
         return token
-    raise RuntimeError(
-        "Feishu access token not found under .codex/credential. "
-        "Inspect the files and add a self-describing token field (for example access_token or uat)."
+    raise RuntimeError("Active Feishu connection is missing access_token.")
+
+
+def get_mcp_endpoint(connection: dict[str, Any]) -> str:
+    return (
+        os.environ.get("FEISHU_MCP_ENDPOINT", "").strip()
+        or get_connection_field(connection, "feishu_mcp_endpoint")
+        or ENDPOINT
+    )
+
+
+def get_oauth_token_endpoint(connection: dict[str, Any]) -> str:
+    return (
+        os.environ.get("FEISHU_OAUTH_TOKEN_ENDPOINT", "").strip()
+        or os.environ.get("FEISHU_OAUTH_TOKEN_URL", "").strip()
+        or get_connection_field(connection, "feishu_oauth_token_endpoint")
+        or OAUTH_TOKEN_ENDPOINT
     )
 
 
@@ -187,6 +165,7 @@ def build_headers(credential_dir: Path, allowed_tools: str) -> dict[str, str]:
 
 
 def rpc_call(method: str, params: dict, allowed_tools: str, credential_dir: Path) -> dict:
+    _path, _payload, connection = load_active_connection(credential_dir)
     payload = {
         "jsonrpc": "2.0",
         "id": 1,
@@ -195,7 +174,7 @@ def rpc_call(method: str, params: dict, allowed_tools: str, credential_dir: Path
     }
     data = json.dumps(payload).encode("utf-8")
     req = Request(
-        ENDPOINT,
+        get_mcp_endpoint(connection),
         data=data,
         headers=build_headers(credential_dir, allowed_tools),
         method="POST",
@@ -232,53 +211,63 @@ def parse_json_arg(raw: str | None) -> dict:
     return parsed
 
 
-def save_refreshed_token(credential_dir: Path, discovered: dict, payload: dict) -> Path:
-    target = discovered.get("token_object_path")
-    current = discovered.get("token_object_payload")
-    if isinstance(target, Path) and isinstance(current, dict):
-        merged = dict(current)
-        merged.update(payload)
-        target.write_text(
-            json.dumps(merged, ensure_ascii=False, separators=(",", ":")),
-            encoding="utf-8",
-        )
-        return target
-
-    fallback = credential_dir / "feishu_tokens.generated.json"
-    fallback.write_text(
-        json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
-    )
-    return fallback
+def save_refreshed_token(
+    target: Path,
+    current: dict[str, Any],
+    connection_id: str,
+    refreshed: dict[str, Any],
+) -> Path:
+    connections = current.get("connections")
+    if not isinstance(connections, list):
+        raise RuntimeError("Feishu credential file is invalid: connections must be a list.")
+    updated = False
+    for item in connections:
+        if not isinstance(item, dict) or item.get("connection_id") != connection_id:
+            continue
+        fields = item.get("fields")
+        if not isinstance(fields, dict):
+            fields = {}
+            item["fields"] = fields
+        if isinstance(refreshed.get("access_token"), str) and refreshed["access_token"].strip():
+            fields["access_token"] = refreshed["access_token"].strip()
+        if isinstance(refreshed.get("refresh_token"), str) and refreshed["refresh_token"].strip():
+            fields["refresh_token"] = refreshed["refresh_token"].strip()
+        expires_in = refreshed.get("expires_in")
+        if isinstance(expires_in, int) and expires_in > 0:
+            item["expires_at"] = (
+                datetime.now(timezone.utc) + timedelta(seconds=expires_in)
+            ).isoformat().replace("+00:00", "Z")
+        item["last_refreshed_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        item["status"] = "active"
+        updated = True
+        break
+    if not updated:
+        raise RuntimeError(f"Active Feishu connection {connection_id} not found in connections.json.")
+    target.write_text(json.dumps(current, ensure_ascii=False, indent=2), encoding="utf-8")
+    return target
 
 
 def refresh_token(credential_dir: Path) -> dict:
-    discovered = discover_credentials(credential_dir)
+    target, document, connection = load_active_connection(credential_dir)
 
-    refresh_value = choose_candidate(discovered["refresh_token_candidates"])
-    app_id = choose_candidate(discovered["app_id_candidates"])
-    app_secret = choose_candidate(discovered["app_secret_candidates"])
+    refresh_value = get_connection_field(connection, "refresh_token")
+    app_id = get_connection_field(connection, "app_id", "client_id")
+    app_secret = get_connection_field(connection, "app_secret", "client_secret")
 
     if not refresh_value:
-        raise RuntimeError(
-            "Feishu refresh token not found under .codex/credential. "
-            "Add a self-describing refresh token field and retry."
-        )
+        raise RuntimeError("Active Feishu connection is missing refresh_token.")
     if not app_id or not app_secret:
-        raise RuntimeError(
-            "Feishu app id/secret not found under .codex/credential. "
-            "Add self-describing fields (for example FEISHU_APP_ID and FEISHU_APP_SECRET) and retry."
-        )
+        raise RuntimeError("Active Feishu connection is missing app_id/app_secret.")
 
-    payload = {
+    request_payload = {
         "grant_type": "refresh_token",
         "client_id": app_id,
         "client_secret": app_secret,
         "refresh_token": refresh_value,
     }
-    data = json.dumps(payload).encode("utf-8")
+    data = json.dumps(request_payload).encode("utf-8")
     req = Request(
-        OAUTH_TOKEN_ENDPOINT,
+        get_oauth_token_endpoint(connection),
         data=data,
         headers={"Content-Type": "application/json; charset=utf-8"},
         method="POST",
@@ -298,7 +287,7 @@ def refresh_token(credential_dir: Path) -> dict:
             "Feishu token refresh failed: " + json.dumps(refreshed, ensure_ascii=False)
         )
 
-    saved_path = save_refreshed_token(credential_dir, discovered, refreshed)
+    saved_path = save_refreshed_token(target, document, connection["connection_id"], refreshed)
     output = dict(refreshed)
     output["_saved_path"] = str(saved_path)
     return output

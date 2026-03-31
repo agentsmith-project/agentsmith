@@ -1,5 +1,6 @@
 import type { JsonDocStorePort } from '@mbos/ports';
 import { listUserExternalConnections } from './user-external-connections-store.js';
+import { getWorkspaceFeishuIntegration } from './workspace-feishu-settings-store.js';
 
 export type ExecutionContextFile = {
   relative_path: string;
@@ -13,6 +14,7 @@ type ProviderConnectionSnapshot = {
   note?: string | null;
   kind: string;
   status: string;
+  workspace_id?: string | null;
   scopes?: string[] | null;
   expires_at?: string | null;
   last_refreshed_at?: string | null;
@@ -66,15 +68,17 @@ function buildProviderCredentialFile(args: {
 export async function buildThirdPartyCredentialFiles(
   docStore: JsonDocStorePort,
   userId: string,
-  options?: { taskId?: string },
+  options?: { taskId?: string; workspaceId?: string },
 ): Promise<ExecutionContextFile[]> {
   const connections = await listUserExternalConnections(docStore, userId);
   if (connections.length === 0) {
     return [];
   }
 
+  const effectiveConnections = selectEffectiveConnections(connections, options?.workspaceId);
+
   const grouped = new Map<string, ProviderConnectionSnapshot[]>();
-  for (const connection of connections) {
+  for (const connection of effectiveConnections) {
     const provider = sanitizeProviderName(connection.provider);
     const next: ProviderConnectionSnapshot = {
       connection_id: connection.id,
@@ -82,10 +86,11 @@ export async function buildThirdPartyCredentialFiles(
       note: connection.note ?? null,
       kind: connection.kind,
       status: connection.status,
+      workspace_id: connection.workspace_id ?? null,
       scopes: connection.scopes ?? null,
       expires_at: connection.expires_at ?? null,
       last_refreshed_at: connection.last_refreshed_at ?? null,
-      fields: normalizeFieldMap(connection.fields),
+      fields: await buildConnectionFields(docStore, connection),
     };
     const bucket = grouped.get(provider);
     if (bucket) {
@@ -133,4 +138,73 @@ export async function buildThirdPartyCredentialFiles(
   });
 
   return files.sort((a, b) => a.relative_path.localeCompare(b.relative_path));
+}
+
+function selectEffectiveConnections(
+  connections: Awaited<ReturnType<typeof listUserExternalConnections>>,
+  workspaceId?: string,
+) {
+  if (!workspaceId) {
+    return connections;
+  }
+  const feishuForWorkspace = connections.filter(
+    (connection) => connection.provider === 'feishu' && connection.workspace_id === workspaceId,
+  );
+  return connections.filter((connection) => {
+    if (connection.provider !== 'feishu') {
+      return true;
+    }
+    if (feishuForWorkspace.length > 0) {
+      return connection.workspace_id === workspaceId;
+    }
+    return (connection.workspace_id ?? null) === null;
+  });
+}
+
+async function buildConnectionFields(
+  docStore: JsonDocStorePort,
+  connection: Awaited<ReturnType<typeof listUserExternalConnections>>[number],
+): Promise<Record<string, string>> {
+  const fields = normalizeFieldMap(connection.fields);
+  if (connection.provider !== 'feishu') {
+    return fields;
+  }
+  if (!fields.app_id) {
+    const envAppId = process.env.FEISHU_APP_ID?.trim();
+    if (envAppId) {
+      fields.app_id = envAppId;
+    }
+  }
+  if (!fields.app_secret) {
+    const envAppSecret = process.env.FEISHU_APP_SECRET?.trim();
+    if (envAppSecret) {
+      fields.app_secret = envAppSecret;
+    }
+  }
+  if (!fields.feishu_mcp_endpoint) {
+    const envMcp = process.env.FEISHU_MCP_ENDPOINT?.trim();
+    if (envMcp) {
+      fields.feishu_mcp_endpoint = envMcp;
+    }
+  }
+  if (!fields.feishu_oauth_token_endpoint) {
+    const envTokenEndpoint = process.env.FEISHU_OAUTH_TOKEN_URL?.trim();
+    if (envTokenEndpoint) {
+      fields.feishu_oauth_token_endpoint = envTokenEndpoint;
+    }
+  }
+  if (!connection.workspace_id) {
+    return fields;
+  }
+  const integration = await getWorkspaceFeishuIntegration(docStore, connection.workspace_id);
+  if (!integration) {
+    return fields;
+  }
+  if (!fields.app_id && integration.app_id.trim()) {
+    fields.app_id = integration.app_id.trim();
+  }
+  if (!fields.app_secret && integration.app_secret?.trim()) {
+    fields.app_secret = integration.app_secret.trim();
+  }
+  return fields;
 }

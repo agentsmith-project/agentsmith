@@ -363,7 +363,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     const thirdPartyCredentialFiles = await buildThirdPartyCredentialFiles(
       deps.docStore,
       user.id,
-      { taskId: task.id },
+      { taskId: task.id, workspaceId: task.workspace_id },
     );
     const workspaceLibrary = task.workspace_file_library_id
       ? await new JsonDocProjectFileLibraryCatalogRepo(deps.docStore).getById(

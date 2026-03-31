@@ -26,6 +26,8 @@
   - Demo / single-host release line. Compose + local `kind` sandbox simulation.
 - [Cluster Deploy Operations](./user-guides/cluster-deploy-operations.md)
   - Real-cluster release line. Compose on the target host, sandbox execution on a real Kubernetes cluster.
+- [Cluster Upgrade Operations](./user-guides/cluster-upgrade-operations.md)
+  - Existing production install version-update line. Upgrade app services and namespaced sandbox resources without touching substrate or data.
 - [Cluster Admin Runbook](./user-guides/cluster-admin-runbook.md)
   - Cluster-scope prerequisites for the real-cluster line only.
 - Real visual review artifacts are generated locally under `artifacts/backend-real-visual/<run-id>/`

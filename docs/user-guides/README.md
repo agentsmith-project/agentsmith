@@ -20,6 +20,7 @@
 | [Local Runtime Flows](./local-runtime-flows.md) | The shortest local runbook: one shared substrate, one active flow at a time, and how to switch between `local-manual`, `demo-rehearsal`, and `cluster-rehearsal`. |
 | [Demo Deploy Operations](./demo-deploy-operations.md) | Demo / single-host deployment line: host deployment root, lifecycle commands, address model, and local `kind` sandbox verification flow. |
 | [Cluster Deploy Operations](./cluster-deploy-operations.md) | Real-cluster deployment line: registry-backed bundle release, target-host install flow, manager ingress, and namespace-only automation model. |
+| [Cluster Upgrade Operations](./cluster-upgrade-operations.md) | Existing production install version-update line: upgrade app services and namespaced sandbox resources without touching substrate or data. |
 | [Cluster Admin Runbook](./cluster-admin-runbook.md) | Cluster-scope prerequisites for the real-cluster line only: namespace, JuiceFS CSI, storage class, manager runtime kubeconfig, and ingress preparation. |
 | Real Visual Review Artifacts | Generated locally under `artifacts/backend-real-visual/<run-id>/` by `npm run test:visual:backend-real:review`. |
 | [Identity & Permission Model](./identity-and-permission-model.md) | Current identity model baseline: email for selection, `user_id` for persisted permissions. |

@@ -4,6 +4,12 @@
 
 `cluster-deploy` is the real-cluster release line.
 
+Use this page for the **first install** flow.
+
+For routine version updates of an existing production install, use:
+
+- [Cluster Upgrade Operations](/home/percy/works/mbos-v1/agentsmith/docs/user-guides/cluster-upgrade-operations.md)
+
 Keep this distinction simple:
 
 - `cluster-rehearsal`

@@ -337,6 +337,25 @@ wait_cluster_app() {
   wait_http "${HOST_LOCAL_WEB_BASE_URL}/api/public/workspaces" 240
 }
 
+current_release_root() {
+  [[ -f "${CURRENT_LINK}/VERSION" ]] || return 1
+  readlink -f "${CURRENT_LINK}"
+}
+
+copy_runner_runtime_env_from_current_release() {
+  local current_root current_runtime target_runtime ws_url agent_key
+  current_root="$(current_release_root 2>/dev/null || true)"
+  [[ -n "${current_root}" ]] || die "upgrade requires an existing current release under ${CURRENT_LINK}"
+  current_runtime="${current_root}/env/runner-runtime.env"
+  target_runtime="${RELEASE_ROOT}/env/runner-runtime.env"
+  [[ -f "${current_runtime}" ]] || die "upgrade requires ${current_runtime}"
+  ws_url="$(awk -F= '$1=="MBOS_AGENT_WS_URL"{print $2}' "${current_runtime}" | tail -n1)"
+  agent_key="$(awk -F= '$1=="MBOS_AGENT_KEY"{print $2}' "${current_runtime}" | tail -n1)"
+  [[ -n "${ws_url}" && -n "${agent_key}" ]] \
+    || die "upgrade requires a non-empty runner-runtime.env in the current release"
+  cp "${current_runtime}" "${target_runtime}"
+}
+
 write_admin_ready_template() {
   cat > "${SHARED_ADMIN_READY_ENV}" <<'EOF'
 # Set ADMIN_READY=1 after the cluster administrator completes the handoff package.

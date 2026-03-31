@@ -5,6 +5,14 @@ release_app_services() {
   printf '%s\n' api web external-runner
 }
 
+release_app_upgrade_services() {
+  printf '%s\n' api web external-runner universal-proxy
+}
+
 release_app_up() {
   docker_compose up -d $(release_app_services)
+}
+
+release_app_upgrade_up() {
+  docker_compose up -d $(release_app_upgrade_services)
 }

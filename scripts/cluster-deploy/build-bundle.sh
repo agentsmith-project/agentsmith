@@ -69,6 +69,7 @@ cp "${ROOT_DIR}/infra/integration/keycloak/realm-mbos-dev.json" "${BUNDLE_DIR}/k
 cp "${ROOT_DIR}/infra/deploy/shared/universal-proxy/config.yaml" "${BUNDLE_DIR}/universal-proxy/config.yaml"
 cp "${ROOT_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh"
 cp "${ROOT_DIR}/scripts/cluster-deploy/"*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/"
+cp "${ROOT_DIR}/scripts/cluster-upgrade-smoke.sh" "${BUNDLE_DIR}/scripts/cluster-upgrade-smoke.sh"
 cp "${ROOT_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh"
 cp "${ROOT_DIR}/scripts/lib/docker-buildx-common.sh" "${BUNDLE_DIR}/scripts/lib/docker-buildx-common.sh"
 cp "${ROOT_DIR}/scripts/lib/ensure-juicefs-vendor.sh" "${BUNDLE_DIR}/scripts/lib/ensure-juicefs-vendor.sh"
@@ -92,8 +93,9 @@ cp "${ROOT_DIR}/e2e/integration-release-user-story.spec.ts" "${BUNDLE_DIR}/e2e/i
 cp "${ROOT_DIR}/docs/user-guides/cluster-admin-runbook.md" "${BUNDLE_DIR}/docs/user-guides/cluster-admin-runbook.md"
 cp "${ROOT_DIR}/docs/contracts/cluster-deployment-spec-v1.md" "${BUNDLE_DIR}/docs/contracts/cluster-deployment-spec-v1.md"
 cp "${ROOT_DIR}/docs/user-guides/cluster-deploy-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-deploy-operations.md"
+cp "${ROOT_DIR}/docs/user-guides/cluster-upgrade-operations.md" "${BUNDLE_DIR}/docs/user-guides/cluster-upgrade-operations.md"
 cp "$(PATH="${ORIGINAL_PATH}" type -P kubectl)" "${TOOLS_DIR}/kubectl"
-chmod +x "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
+chmod +x "${BUNDLE_DIR}/scripts/check-preset-external-file-library.sh" "${BUNDLE_DIR}/scripts/cluster-upgrade-smoke.sh" "${BUNDLE_DIR}"/scripts/cluster-deploy/*.sh "${BUNDLE_DIR}/scripts/cluster-deploy/lib.sh" "${BUNDLE_DIR}/scripts/lib/"*.sh "${TOOLS_DIR}/kubectl"
 
 copy_source_tree "${ROOT_DIR}" "${BUNDLE_DIR}/sources/agentsmith"
 copy_source_tree "${SANDBOX_ROOT}/manager-service" "${BUNDLE_DIR}/sources/mbos-sandbox-v1/manager-service"

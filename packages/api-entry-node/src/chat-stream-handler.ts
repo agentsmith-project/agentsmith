@@ -32,6 +32,7 @@ import {
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
 import { INTERNAL_AGENT_KEEPALIVE_INTERVAL_SECONDS } from '@mbos/contracts';
 import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
+import { issueInternalTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 
 interface ChatStreamHandlerArgs {
   route: ChatRoute;
@@ -40,9 +41,25 @@ interface ChatStreamHandlerArgs {
   res: http.ServerResponse;
   deps: NodeApiDeps;
   user: AuthenticatedUser;
+  internalTicket?: ResolvedInternalTicket | null;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   sseWrite: (res: http.ServerResponse, event: string, data: unknown) => void;
+}
+
+function readAgentNotebookEndpointId(agent: { execution_preferences_json?: unknown }): string | null {
+  const executionPreferences = agent.execution_preferences_json;
+  if (!executionPreferences || typeof executionPreferences !== 'object' || Array.isArray(executionPreferences)) {
+    return null;
+  }
+  const notebook = (executionPreferences as Record<string, unknown>).notebook;
+  if (!notebook || typeof notebook !== 'object' || Array.isArray(notebook)) {
+    return null;
+  }
+  const endpointId = (notebook as Record<string, unknown>).endpoint_id;
+  if (typeof endpointId !== 'string') return null;
+  const trimmed = endpointId.trim();
+  return trimmed.length > 0 ? trimmed : null;
 }
 
 const MAX_ATTACHMENTS_PER_MESSAGE = 8;
@@ -610,11 +627,11 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
       internalKeepaliveTimer = undefined;
     };
     try {
-      const rawBearerToken = extractBearerToken(req);
-      if (!rawBearerToken) {
-        throw new AgentStreamRouteError('UNAUTHORIZED', 'user_token_missing');
-      }
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
+      const executionEndpointId = readAgentNotebookEndpointId(agent ?? {});
+      if (!executionEndpointId) {
+        throw new AgentStreamRouteError('VALIDATION_ERROR', 'agent_endpoint_not_configured');
+      }
       if (agent?.mode === 'internal') {
         if (!deps.internalAgentPodManager) {
           throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
@@ -644,6 +661,22 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         user.id,
         { workspaceId: route.workspaceId },
       );
+      const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
+        purpose: 'agent_execution',
+        userId: user.id,
+        prefix: 'exec',
+        workspaceId: route.workspaceId,
+        projectId: route.projectId,
+        payload: {
+          endpoint_id: executionEndpointId,
+          task_id: route.sessionId,
+          session_id: route.sessionId,
+          agent_id: externalAgentId,
+          mode: 'chat',
+        },
+        ttlMs: 8 * 60 * 60 * 1000,
+        maxUses: 500,
+      });
       const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
         workspaceId: route.workspaceId,
         projectId: route.projectId,
@@ -657,7 +690,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           session_id: route.sessionId,
           task_id: route.sessionId,
           username: buildProxyUsername(user),
-          user_bearer_token: rawBearerToken,
+          execution_ticket: issuedExecutionTicket.ticket,
           credential_files: thirdPartyCredentialFiles,
           model: raw.model ?? session.model,
           notebook_mode: false,

@@ -1,6 +1,6 @@
 import type http from 'node:http';
 import type { NodeApiDeps } from './node-api-deps.js';
-import { extractBearerToken, verifyBearerToken } from './auth.js';
+import { extractBearerToken, verifyRequestAuth } from './auth.js';
 import { handleProjectRoute } from './project-route-handler.js';
 import { handleAuditUsageRoute } from './audit-usage-route-handler.js';
 import { handleChatNonStreamRoute } from './chat-non-stream-handler.js';
@@ -26,6 +26,7 @@ import {
   handleTaskRoute,
 } from './task-route-handler.js';
 import { issueSSETicket } from './sse-ticket-store.js';
+import { isAgentExecutionTicket } from './internal-ticket-store.js';
 import { buildUpstreamUrl } from './request-handler/build-upstream-url.js';
 import { handleInternalRoutes } from './request-handler/internal-routes.js';
 import { handleJoinInviteActionRoute } from './project-invite-routes.js';
@@ -91,11 +92,12 @@ export async function handleRequest(
     }
 
   try {
-    const user = await verifyBearerToken(req, { cache: deps.cache, docStore: deps.docStore });
-    if (!user) {
+    const requestAuth = await verifyRequestAuth(req, { cache: deps.cache, docStore: deps.docStore });
+    if (!requestAuth) {
       unauthorized(res);
       return;
     }
+    const { user, internalTicket } = requestAuth;
     if (requestUrl.pathname === '/api/v1/sse-ticket' && method === 'POST') {
       const bearerToken = extractBearerToken(req);
       if (!bearerToken) {
@@ -153,8 +155,18 @@ export async function handleRequest(
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Route not found' });
       return;
     }
-    const rawBearerToken = extractBearerToken(req);
-
+    if (isAgentExecutionTicket(internalTicket)) {
+      const agentExecutionRouteAllowed =
+        (route.kind === 'endpointProxy' && method === 'POST')
+        || (route.kind === 'taskWorkspaceAccess' && method === 'POST');
+      if (!agentExecutionRouteAllowed) {
+        json(res, 403, {
+          error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+          message: 'internal_ticket_purpose_mismatch',
+        });
+        return;
+      }
+    }
     const workspaces = await buildWorkspaceRecords();
     const defaultWorkspace = workspaces[0];
 
@@ -366,6 +378,7 @@ export async function handleRequest(
         res,
         deps,
         user,
+        internalTicket,
         json,
         readBody,
         buildUpstreamUrl,
@@ -400,7 +413,7 @@ export async function handleRequest(
         res,
         deps,
         user,
-        rawBearerToken,
+        internalTicket,
         json,
         readBody,
       });
@@ -430,6 +443,7 @@ export async function handleRequest(
       res,
       deps,
       user,
+      internalTicket,
       json,
       readBody,
       buildUpstreamUrl,

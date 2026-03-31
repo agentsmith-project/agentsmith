@@ -9,6 +9,7 @@ import {
   resolveEndpointTaskRoute,
   type EndpointTaskAction,
 } from './endpoint-protocol-router.js';
+import { isAgentExecutionTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 
 interface AnyRoute {
   kind: string;
@@ -57,6 +58,7 @@ interface EndpointHandlerArgs {
   res: http.ServerResponse;
   deps: NodeApiDeps;
   user: AuthenticatedUser;
+  internalTicket?: ResolvedInternalTicket | null;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
   buildUpstreamUrl: (baseUrl: string, proxyPath: string) => string;
@@ -149,7 +151,7 @@ function isCanonicalProtocolProxyPath(proxyPath: string): boolean {
 }
 
 export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, user, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
+  const { route, method, req, res, deps, user, internalTicket, json, readBody, buildUpstreamUrl, proxyJsonRequest } = args;
   const inferActionFromProxyPath = (proxyPath: string): EndpointTaskAction => {
     const normalized = proxyPath
       .trim()
@@ -225,6 +227,26 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
     if (!endpoint) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'endpoint_not_found' });
       return true;
+    }
+    if (internalTicket) {
+      if (!isAgentExecutionTicket(internalTicket)) {
+        json(res, 403, {
+          error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+          message: 'internal_ticket_purpose_mismatch',
+        });
+        return true;
+      }
+      if (
+        internalTicket.workspace_id !== route.workspaceId
+        || internalTicket.project_id !== route.projectId
+        || internalTicket.payload.endpoint_id !== endpoint.id
+      ) {
+        json(res, 403, {
+          error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
+          message: 'internal_ticket_scope_mismatch',
+        });
+        return true;
+      }
     }
     const requestId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
     const governancePreflight = await enforceEndpointGovernancePreflight({

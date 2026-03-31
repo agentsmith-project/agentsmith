@@ -6,6 +6,8 @@ import {
   type JWTPayload,
 } from 'jose';
 import type { CachePort, JsonDocStorePort } from '@mbos/ports';
+import type { ResolvedInternalTicket } from './internal-ticket-store.js';
+import { resolveInternalTicket } from './internal-ticket-store.js';
 import { resolveSSETicket } from './sse-ticket-store.js';
 import { listPersistedSystemWorkspaces } from './system-workspace-persistence.js';
 import { verifyUserApiKey } from './user-api-key-store.js';
@@ -15,6 +17,12 @@ export interface AuthenticatedUser {
   id: string;
   email: string;
   name: string;
+}
+
+export interface VerifiedRequestAuth {
+  user: AuthenticatedUser;
+  internalTicket: ResolvedInternalTicket | null;
+  tokenType: 'jwt' | 'api_key' | 'sse_ticket' | 'internal_ticket';
 }
 
 interface IssuerConfig {
@@ -216,12 +224,30 @@ function canUseTicketQuery(req: http.IncomingMessage): boolean {
 
 const userInfoCache = new Map<string, { user: AuthenticatedUser; expiresAt: number }>();
 
-export async function verifyBearerToken(
+function toInternalTicketUser(ticket: ResolvedInternalTicket): AuthenticatedUser {
+  return {
+    id: ticket.user_id,
+    email: `${ticket.user_id}@internal-ticket.local`,
+    name: ticket.user_id,
+  };
+}
+
+export async function verifyRequestAuth(
   req: http.IncomingMessage,
   options?: { cache?: CachePort; docStore?: JsonDocStorePort },
-): Promise<AuthenticatedUser | null> {
+): Promise<VerifiedRequestAuth | null> {
   const headerToken = extractBearerToken(req);
   const apiKeyHeaderToken = extractApiKeyHeaderToken(req);
+  const internalTicket = headerToken && options?.cache
+    ? await resolveInternalTicket(options.cache, headerToken)
+    : null;
+  if (internalTicket) {
+    return {
+      user: toInternalTicketUser(internalTicket),
+      internalTicket,
+      tokenType: 'internal_ticket',
+    };
+  }
   const ticketToken = canUseTicketQuery(req) && options?.cache
     ? (await resolveSSETicket(options.cache, extractSSETicket(req) ?? ''))?.bearerToken ?? null
     : null;
@@ -264,7 +290,11 @@ export async function verifyBearerToken(
     if (jwtCandidateConfigs.length === 0) {
       const apiKeyUser = await verifyAsUserApiKey(token);
       if (apiKeyUser) {
-        return apiKeyUser;
+        return {
+          user: apiKeyUser,
+          internalTicket: null,
+          tokenType: 'api_key',
+        };
       }
       continue;
     }
@@ -284,7 +314,11 @@ export async function verifyBearerToken(
     if (!payload) {
       const apiKeyUser = await verifyAsUserApiKey(token);
       if (apiKeyUser) {
-        return apiKeyUser;
+        return {
+          user: apiKeyUser,
+          internalTicket: null,
+          tokenType: 'api_key',
+        };
       }
       continue;
     }
@@ -303,8 +337,20 @@ export async function verifyBearerToken(
         ?? subject,
     };
     userInfoCache.set(token, { user, expiresAt: now + 60_000 });
-    return user;
+    return {
+      user,
+      internalTicket: null,
+      tokenType: token === ticketToken ? 'sse_ticket' : 'jwt',
+    };
   }
 
   return null;
+}
+
+export async function verifyBearerToken(
+  req: http.IncomingMessage,
+  options?: { cache?: CachePort; docStore?: JsonDocStorePort },
+): Promise<AuthenticatedUser | null> {
+  const resolved = await verifyRequestAuth(req, options);
+  return resolved?.user ?? null;
 }

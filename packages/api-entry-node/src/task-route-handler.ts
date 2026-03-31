@@ -54,6 +54,7 @@ import {
   type TaskRecord,
 } from './notebook-task/task-models.js';
 import { createAndProvisionProjectFileLibrary, mapFileLibraryInfraError } from './project-file-library-service.js';
+import { isAgentExecutionTicket, type ResolvedInternalTicket } from './internal-ticket-store.js';
 import {
   buildTaskRealtimeView,
   mapTaskMessagesForExecution,
@@ -103,7 +104,7 @@ interface TaskRouteHandlerArgs {
   res: http.ServerResponse;
   deps: NodeApiDeps;
   user: AuthenticatedUser;
-  rawBearerToken: string | null;
+  internalTicket?: ResolvedInternalTicket | null;
   json: (res: http.ServerResponse, statusCode: number, body: unknown) => void;
   readBody: (req: http.IncomingMessage) => Promise<unknown>;
 }
@@ -296,7 +297,7 @@ async function streamTaskArtifactFromWorkspaceLibrary(args: {
 }
 
 export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boolean> {
-  const { route, method, req, res, deps, user, rawBearerToken, json, readBody } = args;
+  const { route, method, req, res, deps, user, internalTicket, json, readBody } = args;
   const catalogRepo = new JsonDocProjectFileLibraryCatalogRepo(deps.docStore);
   const mountAccessRepo = new JsonDocProjectFileLibraryMountAccessRepo(deps.docStore);
 
@@ -474,11 +475,34 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
   }
 
   if (route.kind === 'taskWorkspaceAccess' && method === 'POST') {
+    if (internalTicket && !isAgentExecutionTicket(internalTicket)) {
+      json(res, 403, {
+        error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+        message: 'internal_ticket_purpose_mismatch',
+      });
+      return true;
+    }
     await loadProjectTasks(deps, route.workspaceId, route.projectId);
-    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, user.id);
+    const effectiveUserId = isAgentExecutionTicket(internalTicket) ? internalTicket.user_id : user.id;
+    const task = findTaskForOwner(route.workspaceId, route.projectId, route.taskId, effectiveUserId);
     if (!task) {
       json(res, 404, { error_code: 'RESOURCE_NOT_FOUND', message: 'task_not_found' });
       return true;
+    }
+    if (isAgentExecutionTicket(internalTicket)) {
+      const payload = internalTicket.payload;
+      if (
+        internalTicket.workspace_id !== route.workspaceId
+        || internalTicket.project_id !== route.projectId
+        || payload.task_id !== route.taskId
+        || internalTicket.user_id !== task.owner_user_id
+      ) {
+        json(res, 403, {
+          error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
+          message: 'internal_ticket_scope_mismatch',
+        });
+        return true;
+      }
     }
     if (!task.workspace_file_library_id) {
       json(res, 409, { error_code: 'TASK_WORKSPACE_NOT_BOUND', message: 'task_workspace_file_library_not_configured' });
@@ -856,7 +880,6 @@ export async function handleTaskRoute(args: TaskRouteHandlerArgs): Promise<boole
         assistantMessage,
         agentId: task.agent_id,
         user,
-        rawBearerToken,
         publicBaseUrl: resolvePublicBaseUrl(req),
         buildRunId: () => runId ?? buildId('run'),
         buildProxyUsername: (u) => sanitizePathPart(u.email || u.name || u.id),

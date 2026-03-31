@@ -2,7 +2,8 @@ import type http from 'node:http';
 import { InMemoryCache } from '@mbos/adapters-private';
 import { createRemoteJWKSet, decodeJwt, jwtVerify } from 'jose';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { extractBearerToken, verifyBearerToken } from './auth.js';
+import { extractBearerToken, verifyBearerToken, verifyRequestAuth } from './auth.js';
+import { issueInternalTicket, resetInternalTicketsForTest } from './internal-ticket-store.js';
 import { issueSSETicket, resetSSETicketsForTest } from './sse-ticket-store.js';
 import { listPersistedSystemWorkspaces } from './system-workspace-persistence.js';
 
@@ -48,8 +49,10 @@ describe('auth', () => {
   });
 
   afterEach(() => {
+    const issued = issuedTickets.splice(0);
     return Promise.all([
-      resetSSETicketsForTest(cache, issuedTickets.splice(0)),
+      resetSSETicketsForTest(cache, issued),
+      resetInternalTicketsForTest(cache, issued),
       Promise.resolve().then(() => {
         vi.restoreAllMocks();
         delete process.env.INTERNAL_KEYCLOAK_BASE_URL;
@@ -94,6 +97,41 @@ describe('auth', () => {
       expect.any(Symbol),
       expect.objectContaining({ issuer }),
     );
+  });
+
+  it('accepts internal execution tickets on bearer routes', async () => {
+    const issued = await issueInternalTicket(cache, {
+      purpose: 'agent_execution',
+      userId: 'user_exec',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      payload: {
+        endpoint_id: 'ep_1',
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+    issuedTickets.push(issued.ticket);
+
+    const auth = await verifyRequestAuth(makeRequest({
+      url: '/api/v1/workspaces/ws_default/projects/proj_1/endpoints/ep_1/proxy/openai/responses',
+      authorization: `Bearer ${issued.ticket}`,
+    }), { cache });
+
+    expect(auth?.tokenType).toBe('internal_ticket');
+    expect(auth?.user).toMatchObject({ id: 'user_exec' });
+    expect(auth?.internalTicket).toMatchObject({
+      purpose: 'agent_execution',
+      workspace_id: 'ws_default',
+      project_id: 'proj_1',
+      payload: expect.objectContaining({
+        endpoint_id: 'ep_1',
+      }),
+    });
+    expect(jwtVerifyMock).not.toHaveBeenCalled();
   });
 
   it('prefers internal keycloak base url over public issuer url for jwks discovery', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { InMemoryJsonDocStore } from '@mbos/adapters-private';
+import { InMemoryCache, InMemoryJsonDocStore } from '@mbos/adapters-private';
 import { upsertProjectResourcePolicy } from './project-resource-policy-store.js';
 import { listAuditEvents } from './audit-usage-store.js';
 import { runNotebookTaskWithExecutionAgent } from './notebook-execution-orchestrator.js';
@@ -20,6 +20,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
 
     const dispatchStreamingRequest = vi.fn();
     const deps = {
+      cache: new InMemoryCache(),
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -86,7 +87,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       assistantMessage,
       agentId: 'agent_1',
       user: { id: 'user_1', name: 'User 1', email: 'user1@example.com' },
-      rawBearerToken: 'token',
       publicBaseUrl: 'http://localhost:20000',
       buildRunId: () => 'run_1',
       buildProxyUsername: () => 'user_1',
@@ -151,6 +151,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       stream: (async function* stream() {})(),
     }));
     const deps = {
+      cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -232,7 +233,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         assistantMessage,
         agentId: 'agent_internal',
         user: { id: 'user_internal', name: 'Internal User', email: 'internal@example.com' },
-        rawBearerToken: 'token',
         publicBaseUrl: 'http://localhost:20072',
         buildRunId: () => 'run_internal',
         buildProxyUsername: () => 'internal_user',
@@ -296,6 +296,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       stream: (async function* stream() {})(),
     }));
     const deps = {
+      cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -370,7 +371,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         assistantMessage,
         agentId: 'agent_external_compose',
         user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
-        rawBearerToken: 'token',
         publicBaseUrl: 'http://localhost:20000',
         buildRunId: () => 'run_external_compose',
         buildProxyUsername: () => 'external_user',
@@ -423,6 +423,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       stream: (async function* stream() {})(),
     }));
     const deps = {
+      cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -496,7 +497,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         assistantMessage,
         agentId: 'agent_external_responses',
         user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
-        rawBearerToken: 'token',
         publicBaseUrl: 'http://localhost:20000',
         buildRunId: () => 'run_external_responses',
         buildProxyUsername: () => 'external_user',
@@ -538,6 +538,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
   it('persists a fallback assistant message when execution fails before any visible output', async () => {
     const docStore = new InMemoryJsonDocStore();
     const deps = {
+      cache: new InMemoryCache(),
       docStore,
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -612,7 +613,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       assistantMessage,
       agentId: 'agent_empty_error',
       user: { id: 'user_empty_error', name: 'Empty Error User', email: 'empty@example.com' },
-      rawBearerToken: 'token',
       publicBaseUrl: 'http://localhost:20000',
       buildRunId: () => 'run_empty_error',
       buildProxyUsername: () => 'empty_error_user',
@@ -644,6 +644,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       stream: (async function* stream() {})(),
     }));
     const deps = {
+      cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -710,7 +711,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       assistantMessage,
       agentId: 'agent_external',
       user: { id: 'user_external', name: 'External User', email: 'external@example.com' },
-      rawBearerToken: 'token',
       publicBaseUrl: 'http://localhost:20000',
       buildRunId: () => 'run_external',
       buildProxyUsername: () => 'external_user',
@@ -750,6 +750,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
     const dispatchStreamingRequest = vi.fn();
     const emitted: Array<{ type: string; data: unknown }> = [];
     const deps = {
+      cache: new InMemoryCache(),
       docStore: new InMemoryJsonDocStore(),
       agentResourceService: {
         getAgent: vi.fn(async () => ({
@@ -815,7 +816,6 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       assistantMessage,
       agentId: 'agent_invalid_window',
       user: { id: 'user_invalid', name: 'Invalid User', email: 'invalid@example.com' },
-      rawBearerToken: 'token',
       publicBaseUrl: 'http://localhost:20000',
       buildRunId: () => 'run_invalid',
       buildProxyUsername: () => 'invalid_user',

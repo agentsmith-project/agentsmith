@@ -1,19 +1,11 @@
-import { randomUUID } from 'node:crypto';
 import type { CachePort } from '@mbos/ports';
-
-type SSETicketRecord = {
-  bearerToken: string;
-  expiresAtMs: number;
-  maxConnections: number;
-  remainingConnections: number;
-};
+import {
+  issueInternalTicket,
+  resetInternalTicketsForTest,
+  resolveInternalTicket,
+} from './internal-ticket-store.js';
 
 const DEFAULT_TTL_MS = 5 * 60 * 1000;
-const TEST_TICKET_NAMESPACE = 'sse:ticket';
-
-function ticketKey(ticket: string): string {
-  return `${TEST_TICKET_NAMESPACE}:${ticket}`;
-}
 
 export async function issueSSETicket(cache: CachePort, args: {
   bearerToken: string;
@@ -26,18 +18,19 @@ export async function issueSSETicket(cache: CachePort, args: {
 }> {
   const ttlMs = Math.max(1, args.ttlMs ?? DEFAULT_TTL_MS);
   const maxConnections = Math.max(1, args.maxConnections ?? 1);
-  const now = Date.now();
-  const ticket = `sse_${randomUUID().replace(/-/g, '')}`;
-  const expiresAtMs = now + ttlMs;
-  await cache.set(ticketKey(ticket), JSON.stringify({
-    bearerToken: args.bearerToken,
-    expiresAtMs,
-    maxConnections,
-    remainingConnections: maxConnections,
-  } satisfies SSETicketRecord), Math.max(1, Math.ceil(ttlMs / 1000)));
+  const issued = await issueInternalTicket(cache, {
+    purpose: 'sse_access',
+    userId: 'sse_ticket',
+    prefix: 'sse',
+    payload: {
+      bearer_token: args.bearerToken,
+    },
+    ttlMs,
+    maxUses: maxConnections,
+  });
   return {
-    ticket,
-    expiresAt: new Date(expiresAtMs).toISOString(),
+    ticket: issued.ticket,
+    expiresAt: issued.expiresAt,
     maxConnections,
   };
 }
@@ -47,35 +40,15 @@ export async function resolveSSETicket(cache: CachePort, ticket: string): Promis
   expiresAt: string;
   maxConnections: number;
 } | null> {
-  if (!ticket.trim()) return null;
-  const raw = await cache.get(ticketKey(ticket));
-  if (!raw) return null;
-  let record: SSETicketRecord | null = null;
-  try {
-    record = JSON.parse(raw) as SSETicketRecord;
-  } catch {
-    await cache.del(ticketKey(ticket));
-    return null;
-  }
+  const record = await resolveInternalTicket(cache, ticket, 'sse_access');
   if (!record) return null;
-  if (record.expiresAtMs <= Date.now()) {
-    await cache.del(ticketKey(ticket));
-    return null;
-  }
-  record.remainingConnections -= 1;
-  if (record.remainingConnections <= 0) {
-    await cache.del(ticketKey(ticket));
-  } else {
-    const remainingMs = Math.max(1, record.expiresAtMs - Date.now());
-    await cache.set(ticketKey(ticket), JSON.stringify(record), Math.max(1, Math.ceil(remainingMs / 1000)));
-  }
   return {
-    bearerToken: record.bearerToken,
-    expiresAt: new Date(record.expiresAtMs).toISOString(),
-    maxConnections: record.maxConnections,
+    bearerToken: record.payload.bearer_token,
+    expiresAt: record.expires_at,
+    maxConnections: record.max_uses,
   };
 }
 
 export async function resetSSETicketsForTest(cache: CachePort, issuedTickets: readonly string[] = []): Promise<void> {
-  await Promise.all(issuedTickets.map((ticket) => cache.del(ticketKey(ticket))));
+  await resetInternalTicketsForTest(cache, issuedTickets);
 }

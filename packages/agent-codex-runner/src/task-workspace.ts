@@ -16,7 +16,7 @@ type FileLibraryWorkspaceExecutionContext = {
   task_id?: string;
   api_base?: string;
   workspace_path?: string;
-  user_bearer_token?: string;
+  execution_ticket?: string;
   workspace_binding_mode?: 'file_library' | 'pre_mounted';
   workspace_file_library_id?: string | null;
   workspace_file_library_name?: string | null;
@@ -268,8 +268,8 @@ export async function fetchTaskWorkspaceAccess(
   const workspaceId = sanitizePathPart(executionContext.workspace_id, '');
   const projectId = sanitizePathPart(executionContext.project_id, '');
   const taskId = sanitizePathPart(executionContext.task_id, '');
-  const userBearerToken = (executionContext.user_bearer_token ?? '').trim();
-  if (!apiBase || !workspaceId || !projectId || !taskId || !userBearerToken) {
+  const executionTicket = (executionContext.execution_ticket ?? '').trim();
+  if (!apiBase || !workspaceId || !projectId || !taskId || !executionTicket) {
     throw new Error('task_workspace_access_context_missing');
   }
 
@@ -280,7 +280,7 @@ export async function fetchTaskWorkspaceAccess(
     {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${userBearerToken}`,
+        Authorization: `Bearer ${executionTicket}`,
       },
     },
   );

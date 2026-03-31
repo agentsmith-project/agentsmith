@@ -16,6 +16,7 @@ import { enforceEndpointGovernancePreflight } from './governance-endpoint-prefli
 import { buildThirdPartyCredentialFiles } from './third-party-credential-files.js';
 import { JsonDocProjectFileLibraryCatalogRepo } from './file-library-persistence.js';
 import { isComposeManagedExternalAgent } from './agent-runner-profile.js';
+import { issueInternalTicket } from './internal-ticket-store.js';
 
 type NotebookTaskRecord = {
   id: string;
@@ -188,7 +189,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
   assistantMessage: NotebookTaskMessageRecord;
   agentId: string;
   user: AuthenticatedUser;
-  rawBearerToken: string | null;
   publicBaseUrl: string;
   buildRunId: () => string;
   buildProxyUsername: (user: AuthenticatedUser) => string;
@@ -215,7 +215,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
     assistantMessage,
     agentId,
     user,
-    rawBearerToken,
     publicBaseUrl,
     buildRunId,
     buildProxyUsername,
@@ -265,10 +264,6 @@ export async function runNotebookTaskWithExecutionAgent(input: {
       throw Object.assign(new Error('task_agent_endpoint_not_configured'), {
         code: 'TASK_AGENT_ENDPOINT_NOT_CONFIGURED',
       });
-    }
-
-    if (!rawBearerToken) {
-      throw Object.assign(new Error('user_token_missing'), { code: 'UNAUTHORIZED' });
     }
 
     const explicitModel = typeof notebookPreferences.model === 'string'
@@ -372,6 +367,22 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         task.workspace_file_library_id,
       )
       : null;
+    const issuedExecutionTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: user.id,
+      prefix: 'exec',
+      workspaceId: task.workspace_id,
+      projectId: task.project_id,
+      payload: {
+        endpoint_id: endpointId,
+        task_id: task.id,
+        session_id: task.id,
+        agent_id: agentId,
+        mode: 'notebook',
+      },
+      ttlMs: 8 * 60 * 60 * 1000,
+      maxUses: 500,
+    });
     const dispatched = await deps.agentExecutionService.dispatchStreamingRequest({
       workspaceId: task.workspace_id,
       projectId: task.project_id,
@@ -387,7 +398,7 @@ export async function runNotebookTaskWithExecutionAgent(input: {
         username: userHandle,
         endpoint_id: endpointId,
         api_base: resolveExecutionApiBase(publicBaseUrl, agent),
-        user_bearer_token: rawBearerToken,
+        execution_ticket: issuedExecutionTicket.ticket,
         wire_api: wireApi,
         model,
         model_context_window: modelContextWindow,

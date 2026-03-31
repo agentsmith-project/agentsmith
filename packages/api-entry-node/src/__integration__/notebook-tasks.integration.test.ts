@@ -11,6 +11,7 @@ import {
 import type { TaskRecord } from '../notebook-task/task-models.js';
 import { getTasks } from '../notebook-task/task-runtime-state.js';
 import { notebookTasksCollection } from '../notebook-task/task-store.js';
+import { issueInternalTicket } from '../internal-ticket-store.js';
 import { apiFetch, apiFetchWithToken, startServer, startServerWithDeps } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -388,6 +389,97 @@ describe('api-entry-node notebook task routes', () => {
       metadata_url: expect.stringContaining('sslmode=disable'),
       recommended_mount_path: expect.any(String),
       created_at: expect.any(String),
+    });
+  });
+
+  it('allows scoped execution tickets for task workspace access and rejects mismatched scope', async () => {
+    const { baseUrl, deps } = startServer();
+    const agent = await deps.agentResourceService.createAgent('ws_default', 'proj_1', {
+      name: 'internal-notebook-agent',
+      mode: 'internal',
+      interaction_mode: 'notebook',
+      status: 'enabled',
+      config: {
+        image: 'runner:v1',
+        _internal_raw_key: 'ask_test',
+      } as never,
+      owner_id: 'user_test',
+      visibility: 'private',
+      execution_preferences_json: {
+        notebook: {
+          endpoint_id: 'ep_external',
+          wire_api: 'responses',
+          model: 'placeholder-model',
+        },
+      },
+    });
+
+    const createTaskRes = await apiFetch(
+      baseUrl,
+      '/api/v1/workspaces/ws_default/projects/proj_1/tasks',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: 'Workspace Access via Execution Ticket',
+          agent_id: agent.id,
+          workspace_mode: 'create_new',
+        }),
+      },
+    );
+    expect(createTaskRes.status).toBe(201);
+    const task = (await createTaskRes.json()) as { id: string; workspace_file_library_id: string };
+    expect(task.workspace_file_library_id).toBeTruthy();
+
+    const goodTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_test',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      payload: {
+        endpoint_id: 'ep_external',
+        task_id: task.id,
+        session_id: task.id,
+        agent_id: agent.id,
+        mode: 'notebook',
+      },
+      maxUses: 5,
+    });
+
+    const goodRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      goodTicket.ticket,
+      { method: 'POST' },
+    );
+    expect(goodRes.status).toBe(200);
+
+    const badScopeTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_test',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      payload: {
+        endpoint_id: 'ep_external',
+        task_id: 'task_other',
+        session_id: 'task_other',
+        agent_id: agent.id,
+        mode: 'notebook',
+      },
+      maxUses: 5,
+    });
+
+    const badScopeRes = await apiFetchWithToken(
+      baseUrl,
+      `/api/v1/workspaces/ws_default/projects/proj_1/tasks/${task.id}/workspace-access`,
+      badScopeTicket.ticket,
+      { method: 'POST' },
+    );
+    expect(badScopeRes.status).toBe(403);
+    await expect(badScopeRes.json()).resolves.toMatchObject({
+      error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
     });
   });
 
@@ -815,7 +907,7 @@ describe('api-entry-node notebook task routes', () => {
       helloProxyBase: string;
       endpointProxyBase: string | null;
       apiBase: string;
-      userToken: string;
+      executionTicket: string;
       notebookMode: boolean | null;
       workspaceBindingMode: string | null;
       workspaceFileLibraryId: string | null;
@@ -842,7 +934,7 @@ describe('api-entry-node notebook task routes', () => {
             };
             execution_context?: {
               api_base?: string;
-              user_bearer_token?: string;
+              execution_ticket?: string;
               notebook_mode?: boolean;
               workspace_binding_mode?: string;
               workspace_file_library_id?: string | null;
@@ -863,7 +955,7 @@ describe('api-entry-node notebook task routes', () => {
           helloProxyBase,
           endpointProxyBase: null,
           apiBase: msg.payload?.execution_context?.api_base ?? '',
-          userToken: msg.payload?.execution_context?.user_bearer_token ?? '',
+          executionTicket: msg.payload?.execution_context?.execution_ticket ?? '',
           notebookMode: typeof msg.payload?.execution_context?.notebook_mode === 'boolean'
             ? msg.payload.execution_context.notebook_mode
             : null,
@@ -1020,7 +1112,7 @@ describe('api-entry-node notebook task routes', () => {
 
     const execution = await executionReceived;
     expect(execution.requestId).toBeTruthy();
-    expect(execution.userToken.length).toBeGreaterThan(20);
+    expect(execution.executionTicket).toMatch(/^exec_/);
     expect(execution.apiBase).toBe(baseUrl);
     expect(execution.notebookMode).toBe(true);
     expect(execution.workspaceBindingMode).toBe('file_library');

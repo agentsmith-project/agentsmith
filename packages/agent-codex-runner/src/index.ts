@@ -39,7 +39,7 @@ type ServerStartPayload = {
     username?: string;
     session_id?: string;
     api_base?: string;
-    user_bearer_token?: string;
+    execution_ticket?: string;
     workspace_path?: string;
     wire_api?: 'chat' | 'responses';
     model?: string;
@@ -727,7 +727,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
       modelContextWindow,
       modelAutoCompactTokenLimit,
       modelCatalogPath,
-      proxyAuthHeaderEnvName: executionContext.user_bearer_token ? proxyAuthHeaderEnvName : undefined,
+      proxyAuthHeaderEnvName: executionContext.execution_ticket ? proxyAuthHeaderEnvName : undefined,
     }),
     'utf-8',
   );
@@ -745,7 +745,7 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
     model_input_modalities: modelCatalogInputModalities,
     model_supports_search_tool: modelCatalogSupportsSearchTool,
     model_supports_parallel_tool_calls: modelCatalogSupportsParallelToolCalls,
-    has_user_bearer_token: Boolean(executionContext.user_bearer_token && executionContext.user_bearer_token.trim()),
+    has_execution_ticket: Boolean(executionContext.execution_ticket && executionContext.execution_ticket.trim()),
     notebook_mode: isNotebookMode,
     resume_session: resumeSession,
     session_id: sessionId || null,
@@ -788,10 +788,10 @@ async function runCodexRequest(requestId: string, payload: ServerStartPayload): 
           MBOS_NOTEBOOK_API_BASE: executionContext.api_base ?? '',
           MBOS_NOTEBOOK_WORKSPACE_ID: executionContext.workspace_id ?? '',
           MBOS_NOTEBOOK_PROJECT_ID: executionContext.project_id ?? '',
-          MBOS_NOTEBOOK_USER_BEARER_TOKEN: executionContext.user_bearer_token ?? '',
+          MBOS_NOTEBOOK_EXECUTION_TICKET: executionContext.execution_ticket ?? '',
         } : {}),
-        ...(executionContext.user_bearer_token ? {
-          [proxyAuthHeaderEnvName]: `Bearer ${executionContext.user_bearer_token}`,
+        ...(executionContext.execution_ticket ? {
+          [proxyAuthHeaderEnvName]: `Bearer ${executionContext.execution_ticket}`,
         } : {}),
       },
       stdio: ['ignore', 'pipe', 'pipe'],

@@ -93,13 +93,33 @@ describe('api-entry-node projects routes', () => {
     const ws = new WebSocket(wsUrl, {
       headers: { Authorization: `Bearer ${keyPayload.key}` },
     });
+    let observedExecutionTicket = '';
+    let observedLegacyBearer = '';
     await new Promise<void>((resolve, reject) => {
-      ws.once('open', () => resolve());
+      ws.once('open', () => {
+        ws.send(JSON.stringify({
+          type: 'agent.ready',
+          payload: { capabilities: { wire_api: 'responses', streaming_completion: true } },
+        }));
+        resolve();
+      });
       ws.once('error', reject);
     });
     ws.on('message', (raw) => {
-      const msg = JSON.parse(raw.toString('utf-8')) as { type?: string; request_id?: string; payload?: { messages?: unknown[] } };
+      const msg = JSON.parse(raw.toString('utf-8')) as {
+        type?: string;
+        request_id?: string;
+        payload?: {
+          messages?: unknown[];
+          execution_context?: {
+            execution_ticket?: string;
+            user_bearer_token?: string;
+          };
+        };
+      };
       if (msg.type !== 'server.request.start' || !msg.request_id) return;
+      observedExecutionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
+      observedLegacyBearer = msg.payload?.execution_context?.user_bearer_token ?? '';
       ws.send(JSON.stringify({
         type: 'agent.response.delta',
         request_id: msg.request_id,
@@ -145,6 +165,8 @@ describe('api-entry-node projects routes', () => {
     expect(text).toContain('event: delta');
     expect(text).toContain('echo:');
     expect(text).toContain('event: done');
+    expect(observedExecutionTicket).toMatch(/^exec_/);
+    expect(observedLegacyBearer).toBe('');
     ws.close();
   });
 

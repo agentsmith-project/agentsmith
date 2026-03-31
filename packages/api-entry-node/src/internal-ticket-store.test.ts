@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InMemoryCache } from '@mbos/adapters-private';
 import {
   issueInternalTicket,
@@ -61,5 +61,46 @@ describe('internal-ticket-store', () => {
     await expect(resolveInternalTicket(cache, issued.ticket, 'agent_execution')).resolves.toMatchObject({
       purpose: 'agent_execution',
     });
+  });
+
+  it('expires tickets after ttl elapses', async () => {
+    vi.useFakeTimers();
+    const issued = await issueInternalTicket(cache, {
+      purpose: 'agent_execution',
+      userId: 'user_1',
+      prefix: 'exec',
+      ttlMs: 10,
+      payload: {
+        endpoint_id: 'ep_1',
+        mode: 'chat',
+      },
+    });
+    issuedTickets.push(issued.ticket);
+
+    vi.advanceTimersByTime(11);
+    await expect(resolveInternalTicket(cache, issued.ticket, 'agent_execution')).resolves.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('consumes tickets until max uses is exhausted', async () => {
+    const issued = await issueInternalTicket(cache, {
+      purpose: 'agent_execution',
+      userId: 'user_1',
+      prefix: 'exec',
+      maxUses: 2,
+      payload: {
+        endpoint_id: 'ep_1',
+        mode: 'chat',
+      },
+    });
+    issuedTickets.push(issued.ticket);
+
+    await expect(resolveInternalTicket(cache, issued.ticket, 'agent_execution')).resolves.toMatchObject({
+      remaining_uses: 1,
+    });
+    await expect(resolveInternalTicket(cache, issued.ticket, 'agent_execution')).resolves.toMatchObject({
+      remaining_uses: 0,
+    });
+    await expect(resolveInternalTicket(cache, issued.ticket, 'agent_execution')).resolves.toBeNull();
   });
 });

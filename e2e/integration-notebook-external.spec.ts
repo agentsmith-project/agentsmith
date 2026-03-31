@@ -1,8 +1,26 @@
+import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
-import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+
+async function issuePasswordGrantToken(page: Page, username: string, password: string): Promise<string> {
+  const keycloakBase = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
+  const response = await page.request.post(`${keycloakBase}/realms/mbos/protocol/openid-connect/token`, {
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    form: {
+      grant_type: 'password',
+      client_id: 'agentsmith',
+      username,
+      password,
+    },
+  });
+  expect(response.ok()).toBeTruthy();
+  const body = (await response.json()) as { access_token?: string };
+  if (!body.access_token) {
+    throw new Error('access_token_missing');
+  }
+  return body.access_token;
+}
 
 async function keycloakLogin(page: Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
@@ -35,39 +53,74 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
   await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
 }
 
-async function ensureProject(page: Page, locale: string): Promise<string> {
-  const cards = page.getByTestId('projects__card');
-  let hasCard = false;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    if (await cards.first().isVisible({ timeout: 5_000 }).catch(() => false)) {
-      hasCard = true;
-      break;
-    }
-  }
-
-  if (hasCard) {
-    await cards.first().click();
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/.+/overview`), { timeout: 30_000 });
-    const match = page.url().match(/\/projects\/([^/]+)\//);
-    if (!match?.[1]) throw new Error('project_id_not_found');
-    return match[1];
-  }
-
+async function createProjectViaApi(
+  page: Page,
+  locale: string,
+  apiBase: string,
+  token: string,
+): Promise<string> {
   const projectName = `it-notebook-${Date.now()}`;
-  const createButton = page.getByTestId('projects__create-btn');
-  if (await createButton.isVisible().catch(() => false)) {
-    await createButton.click();
-  } else {
-    await page.getByRole('button', { name: /New Project|Create|创建|新建项目/i }).first().click();
+  let lastErrorText = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(`${apiBase}/api/v1/workspaces/ws_default/projects`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: projectName,
+        description: 'Notebook external execution ticket backend-real project',
+      }),
+    });
+    if (response.ok) {
+      const project = (await response.json()) as { id?: string };
+      expect(project.id).toBeTruthy();
+      await page.goto(`/${locale}/workspaces/ws_default/projects/${project.id}/overview`);
+      return project.id!;
+    }
+    lastErrorText = await response.text().catch(() => '');
+    const retryableConnectionReset = response.status === 400 && lastErrorText.includes('read ECONNRESET');
+    if (!retryableConnectionReset || attempt === 2) {
+      throw new Error(`create_project_failed:${response.status}:${lastErrorText}`);
+    }
+    await page.waitForTimeout(1_000 * (attempt + 1));
   }
-  await page.locator('#project-name').fill(projectName);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/.+/overview`), { timeout: 30_000 }),
-    page.getByRole('button', { name: /Create|创建/i }).click(),
-  ]);
-  const match = page.url().match(/\/projects\/([^/]+)\//);
-  if (!match?.[1]) throw new Error('project_id_not_found_after_create');
-  return match[1];
+  throw new Error(`create_project_failed:unknown:${lastErrorText}`);
+}
+
+async function postJsonWithBearer<T>(args: {
+  url: string;
+  token: string;
+  body: unknown;
+  errorPrefix: string;
+}): Promise<T> {
+  const response = await fetch(args.url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${args.token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(args.body),
+  });
+  if (!response.ok) {
+    throw new Error(`${args.errorPrefix}:${response.status}:${await response.text().catch(() => '')}`);
+  }
+  return response.json() as Promise<T>;
+}
+
+async function getJsonWithBearer<T>(args: {
+  url: string;
+  token: string;
+  errorPrefix: string;
+}): Promise<T> {
+  const response = await fetch(args.url, {
+    headers: { Authorization: `Bearer ${args.token}` },
+  });
+  if (!response.ok) {
+    throw new Error(`${args.errorPrefix}:${response.status}:${await response.text().catch(() => '')}`);
+  }
+  return response.json() as Promise<T>;
 }
 
 function startMockOpenAIUpstream(): {
@@ -101,11 +154,17 @@ function startMockOpenAIUpstream(): {
     res.end(JSON.stringify({ error: 'not_found' }));
   });
 
-  server.listen(0);
-  const address = server.address() as AddressInfo;
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_notebook_mock_upstream_port:${raw}`);
+  }
+  server.listen(port, '127.0.0.1');
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl: `http://127.0.0.1:${port}/v1`,
     stop: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());
@@ -121,7 +180,7 @@ type ExecutionWsMessage = {
       base_url?: string;
     };
     execution_context?: {
-      user_bearer_token?: string;
+      execution_ticket?: string;
       task_id?: string;
       run_id?: string;
       endpoint_id?: string;
@@ -139,84 +198,86 @@ test.describe('@lane-real integration notebook external execution service', () =
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
     await keycloakLogin(page, locale, username, password);
-    const token = await readStoredAuthToken(page);
-    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
+    const token = await issuePasswordGrantToken(page, username, password);
     await page.goto(`/${locale}/workspaces/ws_default/projects`);
-    const projectId = await ensureProject(page, locale);
+    const projectId = await createProjectViaApi(page, locale, apiBase, token);
     const upstream = startMockOpenAIUpstream();
 
     let ws: WebSocket | null = null;
     try {
-      const createCredentialRes = await page.request.post(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/credentials`,
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          data: { name: `it-proxy-key-${Date.now()}`, type: 'api_key', value: 'sk-it-notebook' },
-        },
-      );
-      expect(createCredentialRes.ok()).toBeTruthy();
-      const credential = (await createCredentialRes.json()) as { id: string };
+      const credential = await postJsonWithBearer<{ id: string }>({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/credentials`,
+        token,
+        body: { name: `it-proxy-key-${Date.now()}`, type: 'api_key', value: 'sk-it-notebook' },
+        errorPrefix: 'create_credential_failed',
+      });
 
-      const createEndpointRes = await page.request.post(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          data: {
-            name: `it-proxy-endpoint-${Date.now()}`,
-            model: 'gpt-5-codex',
-            type: 'openai',
-            mode: 'openai',
-            base_url: upstream.baseUrl,
-            credential_ref: credential.id,
+      const endpoint = await postJsonWithBearer<{ id: string }>({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
+        token,
+        body: {
+          name: `it-proxy-endpoint-${Date.now()}`,
+          model: 'gpt-5-codex',
+          type: 'custom',
+          mode: 'openai',
+          base_url: upstream.baseUrl,
+          credential_ref: credential.id,
+          provider_family: 'custom',
+          model_profile: {
+            max_context_tokens: 128000,
+            max_output_tokens: 8192,
+            supports_file: false,
+            supports_tool_call: true,
+            supports_reasoning: false,
+            price_input_per_1m: 0,
+            price_output_per_1m: 0,
+            cache_read_discount_ratio: 0,
+            cache_write_discount_ratio: 0,
           },
         },
-      );
-      expect(createEndpointRes.ok()).toBeTruthy();
-      const endpoint = (await createEndpointRes.json()) as { id: string };
+        errorPrefix: 'create_endpoint_failed',
+      });
 
-      const createAgentRes = await page.request.post(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/agents`,
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          data: {
-            name: `it-notebook-external-${Date.now()}`,
-            mode: 'external',
-            interaction_mode: 'notebook',
-            execution_preferences: {
-              notebook: {
-                endpoint_id: endpoint.id,
-                wire_api: 'chat',
-                model: 'gpt-5-codex',
-              },
+      const agent = await postJsonWithBearer<{ id: string }>({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/agents`,
+        token,
+        body: {
+          name: `it-notebook-external-${Date.now()}`,
+          mode: 'external',
+          interaction_mode: 'notebook',
+          execution_preferences: {
+            notebook: {
+              endpoint_id: endpoint.id,
+              wire_api: 'chat',
+              model: 'gpt-5-codex',
             },
-            capabilities: { streaming_completion: true, multimodal_completion: false },
           },
+          capabilities: { streaming_completion: true, multimodal_completion: false },
         },
-      );
-      expect(createAgentRes.ok()).toBeTruthy();
-      const agent = (await createAgentRes.json()) as { id: string };
+        errorPrefix: 'create_agent_failed',
+      });
 
-      const createKeyRes = await page.request.post(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/agents/${agent.id}/keys`,
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          data: {},
-        },
-      );
-      expect(createKeyRes.ok()).toBeTruthy();
-      const keyPayload = (await createKeyRes.json()) as { key: string };
+      const keyPayload = await postJsonWithBearer<{ key: string }>({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/agents/${agent.id}/keys`,
+        token,
+        body: {},
+        errorPrefix: 'create_agent_key_failed',
+      });
 
-      const connInfoRes = await page.request.get(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/agents/${agent.id}/connection-info`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
-      expect(connInfoRes.ok()).toBeTruthy();
-      const connInfo = (await connInfoRes.json()) as { ws_url: string };
+      const connInfo = await getJsonWithBearer<{ ws_url: string }>({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/agents/${agent.id}/connection-info`,
+        token,
+        errorPrefix: 'agent_connection_info_failed',
+      });
       const wsUrl = connInfo.ws_url.replace('ws://localhost:20000', apiBase.replace('http://', 'ws://'));
 
+      let resolveHelloSeen: (() => void) | null = null;
+      const helloSeen = new Promise<void>((resolve) => {
+        resolveHelloSeen = resolve;
+      });
       const executionSeen = new Promise<{
         endpointProxyBase: string;
-        userToken: string;
+        executionTicket: string;
         taskId: string;
         runId: string;
       }>((resolve, reject) => {
@@ -227,22 +288,25 @@ test.describe('@lane-real integration notebook external execution service', () =
           const msg = JSON.parse(raw.toString('utf-8')) as ExecutionWsMessage;
           if (msg.type === 'server.hello') {
             helloProxyBase = msg.payload?.resource_proxy?.base_url ?? '';
+            resolveHelloSeen?.();
+            resolveHelloSeen = null;
             return;
           }
           if (msg.type !== 'server.request.start' || !msg.request_id) return;
           const executionContext = msg.payload?.execution_context ?? {};
           const endpointProxyBase = helloProxyBase;
-          const userToken = executionContext.user_bearer_token ?? '';
+          const executionTicket = executionContext.execution_ticket ?? '';
           const taskId = executionContext.task_id ?? '';
           const runId = executionContext.run_id ?? '';
-          resolve({ endpointProxyBase, userToken, taskId, runId });
+          expect('user_bearer_token' in executionContext).toBe(false);
+          resolve({ endpointProxyBase, executionTicket, taskId, runId });
 
           void (async () => {
             try {
               const upstreamViaProxy = await fetch(`${endpointProxyBase}/chat/completions`, {
                 method: 'POST',
                 headers: {
-                  Authorization: `Bearer ${userToken}`,
+                  Authorization: `Bearer ${executionTicket}`,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
@@ -290,33 +354,41 @@ test.describe('@lane-real integration notebook external execution service', () =
           })();
         });
       });
+      await helloSeen;
 
-      const createTaskRes = await page.request.post(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/tasks`,
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          data: { title: `it-notebook-task-${Date.now()}`, agent_id: agent.id },
+      const task = await postJsonWithBearer<{ id: string }>({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/tasks`,
+        token,
+        body: {
+          title: `it-notebook-task-${Date.now()}`,
+          agent_id: agent.id,
+          workspace_mode: 'create_new',
         },
-      );
-      expect(createTaskRes.ok()).toBeTruthy();
-      const task = (await createTaskRes.json()) as { id: string };
+        errorPrefix: 'create_task_failed',
+      });
 
-      const postMessageRes = await page.request.post(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${task.id}/messages`,
-        {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          data: { role: 'user', content: 'run notebook task' },
-        },
-      );
-      expect(postMessageRes.ok()).toBeTruthy();
+      await postJsonWithBearer({
+        url: `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/tasks/${task.id}/messages`,
+        token,
+        body: { role: 'user', content: 'run notebook task' },
+        errorPrefix: 'post_task_message_failed',
+      });
 
       const execution = await executionSeen;
       expect(execution.taskId).toBe(task.id);
       expect(execution.runId.length).toBeGreaterThan(0);
       expect(execution.endpointProxyBase).toBe(
-        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpoint.id}/proxy`,
+        `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpoint.id}/proxy/openai`,
       );
-      expect(execution.userToken.length).toBeGreaterThan(0);
+      expect(execution.executionTicket).toMatch(/^exec_/);
+
+      const meRes = await page.request.get(`${apiBase}/api/v1/me/profile`, {
+        headers: { Authorization: `Bearer ${execution.executionTicket}` },
+      });
+      expect(meRes.status()).toBe(403);
+      await expect(meRes.json()).resolves.toMatchObject({
+        error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+      });
 
       await expect
         .poll(async () => {

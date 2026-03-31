@@ -629,9 +629,6 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
     try {
       const agent = await deps.agentResourceService.getAgent(route.workspaceId, route.projectId, externalAgentId);
       const executionEndpointId = readAgentNotebookEndpointId(agent ?? {});
-      if (!executionEndpointId) {
-        throw new AgentStreamRouteError('VALIDATION_ERROR', 'agent_endpoint_not_configured');
-      }
       if (agent?.mode === 'internal') {
         if (!deps.internalAgentPodManager) {
           throw new AgentStreamRouteError('AGENT_SANDBOX_NOT_CONFIGURED', 'agent_sandbox_not_configured');
@@ -668,7 +665,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
         workspaceId: route.workspaceId,
         projectId: route.projectId,
         payload: {
-          endpoint_id: executionEndpointId,
+          ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
           task_id: route.sessionId,
           session_id: route.sessionId,
           agent_id: externalAgentId,
@@ -691,6 +688,7 @@ export async function handleChatStreamRoute(args: ChatStreamHandlerArgs): Promis
           task_id: route.sessionId,
           username: buildProxyUsername(user),
           execution_ticket: issuedExecutionTicket.ticket,
+          ...(executionEndpointId ? { endpoint_id: executionEndpointId } : {}),
           credential_files: thirdPartyCredentialFiles,
           model: raw.model ?? session.model,
           notebook_mode: false,

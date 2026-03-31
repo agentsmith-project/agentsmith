@@ -1,5 +1,5 @@
 import { afterEach } from 'vitest';
-import type { AddressInfo } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import { createSign, generateKeyPairSync } from 'node:crypto';
 import http, { type Server } from 'node:http';
 import { createDefaultNodeApiDeps, createNodeApiServer } from '../index.js';
@@ -25,6 +25,16 @@ const signingJwk = {
 };
 
 let currentMockIssuer: string | null = null;
+function allocateTestPort(): number {
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_test_port:${raw}`);
+  }
+  return port;
+}
 
 const testUsers = {
   'test-token': {
@@ -205,10 +215,10 @@ export function startMockKeycloakServer(): { server: Server; issuerUrl: string }
     res.statusCode = 404;
     res.end(JSON.stringify({ error: 'not_found' }));
   });
-  server.listen(0);
+  const port = allocateTestPort();
+  server.listen(port, '127.0.0.1');
   servers.push(server);
-  const address = server.address() as AddressInfo;
-  const issuerUrl = `http://127.0.0.1:${address.port}/realms/mbos`;
+  const issuerUrl = `http://127.0.0.1:${port}/realms/mbos`;
   currentMockIssuer = issuerUrl;
   return { server, issuerUrl };
 }
@@ -246,10 +256,10 @@ export function startServer(): { server: Server; baseUrl: string; deps: ReturnTy
     },
   ]);
   const deps = createDefaultNodeApiDeps();
-  const server = createNodeApiServer(0, deps);
+  const port = allocateTestPort();
+  const server = createNodeApiServer(port, deps, undefined, '127.0.0.1');
   servers.push(server);
-  const address = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${address.port}`, deps };
+  return { server, baseUrl: `http://127.0.0.1:${port}`, deps };
 }
 
 export function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApiDeps>): { server: Server; baseUrl: string } {
@@ -284,10 +294,10 @@ export function startServerWithDeps(deps: ReturnType<typeof createDefaultNodeApi
       updated_at: new Date().toISOString(),
     },
   ]);
-  const server = createNodeApiServer(0, deps);
+  const port = allocateTestPort();
+  const server = createNodeApiServer(port, deps, undefined, '127.0.0.1');
   servers.push(server);
-  const address = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${address.port}` };
+  return { server, baseUrl: `http://127.0.0.1:${port}` };
 }
 
 export function apiFetch(baseUrl: string, path: string, init?: RequestInit): Promise<Response> {

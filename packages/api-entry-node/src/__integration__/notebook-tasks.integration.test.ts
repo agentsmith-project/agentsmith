@@ -1,4 +1,4 @@
-import type { AddressInfo } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { WebSocket } from 'ws';
@@ -61,12 +61,18 @@ function startUpstreamServer(): {
       res.end(JSON.stringify({ ok: true, echoed: body }));
     })();
   });
-  server.listen(0);
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_notebook_upstream_port:${raw}`);
+  }
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl: `http://127.0.0.1:${port}/v1`,
     lastBody: () => body,
     lastPath: () => path,
   };
@@ -916,6 +922,7 @@ describe('api-entry-node notebook task routes', () => {
       taskInputsCount: number | null;
       credentialFilesCount: number | null;
       hasCredentialIndexFile: boolean;
+      legacyUserBearerToken: string;
       close: () => void;
     }>((resolve) => {
       let helloProxyBase = '';
@@ -935,6 +942,7 @@ describe('api-entry-node notebook task routes', () => {
             execution_context?: {
               api_base?: string;
               execution_ticket?: string;
+              user_bearer_token?: string;
               notebook_mode?: boolean;
               workspace_binding_mode?: string;
               workspace_file_library_id?: string | null;
@@ -956,6 +964,7 @@ describe('api-entry-node notebook task routes', () => {
           endpointProxyBase: null,
           apiBase: msg.payload?.execution_context?.api_base ?? '',
           executionTicket: msg.payload?.execution_context?.execution_ticket ?? '',
+          legacyUserBearerToken: msg.payload?.execution_context?.user_bearer_token ?? '',
           notebookMode: typeof msg.payload?.execution_context?.notebook_mode === 'boolean'
             ? msg.payload.execution_context.notebook_mode
             : null,
@@ -1113,6 +1122,7 @@ describe('api-entry-node notebook task routes', () => {
     const execution = await executionReceived;
     expect(execution.requestId).toBeTruthy();
     expect(execution.executionTicket).toMatch(/^exec_/);
+    expect(execution.legacyUserBearerToken).toBe('');
     expect(execution.apiBase).toBe(baseUrl);
     expect(execution.notebookMode).toBe(true);
     expect(execution.workspaceBindingMode).toBe('file_library');

@@ -269,6 +269,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect.objectContaining({
         executionContext: expect.objectContaining({
           api_base: 'http://172.19.0.1:20072',
+          execution_ticket: expect.stringMatching(/^exec_/),
           model_context_window: 256000,
           model_auto_compact_token_limit: 243200,
           model_catalog: {
@@ -282,6 +283,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         }),
       }),
     );
+    const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
+    expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
   it('uses compose-internal api base for compose-managed external agents', async () => {
@@ -401,6 +404,7 @@ describe('notebook-execution-orchestrator governance preflight', () => {
       expect.objectContaining({
         executionContext: expect.objectContaining({
           api_base: 'http://api:20000',
+          execution_ticket: expect.stringMatching(/^exec_/),
           model_catalog: {
             input_modalities: ['text', 'image'],
             supports_search_tool: false,
@@ -411,6 +415,8 @@ describe('notebook-execution-orchestrator governance preflight', () => {
         }),
       }),
     );
+    const dispatchArg = dispatchStreamingRequest.mock.calls[0]?.[0] as { executionContext?: Record<string, unknown> } | undefined;
+    expect(dispatchArg?.executionContext).not.toHaveProperty('user_bearer_token');
   });
 
   it('keeps responses wire_api stable for external notebook dispatch regardless of endpoint protocol', async () => {

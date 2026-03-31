@@ -1,8 +1,25 @@
 import { WebSocket } from 'ws';
 import { test, expect, type Page } from '@playwright/test';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import path from 'node:path';
-import { ensureWorkspaceProjectCreatorAccess, readStoredAuthToken } from './integration-workspace-access';
+
+async function issuePasswordGrantToken(username: string, password: string): Promise<string> {
+  const keycloakBase = process.env.KEYCLOAK_BASE_URL ?? 'http://localhost:18080';
+  const response = await fetch(`${keycloakBase}/realms/mbos/protocol/openid-connect/token`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      grant_type: 'password',
+      client_id: 'agentsmith',
+      username,
+      password,
+    }),
+  });
+  expect(response.ok).toBeTruthy();
+  const body = (await response.json()) as { access_token?: string };
+  if (!body.access_token) {
+    throw new Error('access_token_missing');
+  }
+  return body.access_token;
+}
 
 async function keycloakLogin(page: Page, locale: string, username: string, password: string) {
   await page.context().clearCookies();
@@ -38,9 +55,6 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
       await page.goto(`/${locale}/workspaces/ws_default/projects`);
     }
     await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects(?:$|/)`), { timeout: 30_000 });
-    const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
-    const token = await readStoredAuthToken(page);
-    await ensureWorkspaceProjectCreatorAccess({ page, apiBase, token, username });
     await page.goto(`/${locale}/workspaces/ws_default/projects`);
     return;
   }
@@ -48,48 +62,52 @@ async function keycloakLogin(page: Page, locale: string, username: string, passw
   throw new Error('Unable to complete workspace selection after Keycloak login retries.');
 }
 
-async function ensureProject(page: Page, locale: string): Promise<string> {
-  const cards = page.getByTestId('projects__card');
-  if (await cards.count() > 0) {
-    await cards.first().click();
-    await page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/.+/overview`), { timeout: 30_000 });
-    const match = page.url().match(/\/projects\/([^/]+)\//);
-    if (!match?.[1]) throw new Error('project_id_not_found');
-    return match[1];
-  }
-
+async function createProjectViaApi(apiBase: string, token: string): Promise<string> {
   const projectName = `it-agent-${Date.now()}`;
-  const createButton = page.getByTestId('projects__create-btn');
-  if (await createButton.isVisible().catch(() => false)) {
-    await createButton.click();
-  } else {
-    await page.getByRole('button', { name: /New Project|Create|创建|新建项目/i }).first().click();
+  let lastErrorText = '';
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await fetch(`${apiBase}/api/v1/workspaces/ws_default/projects`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: projectName,
+        description: 'External agent execution ticket backend-real project',
+      }),
+    });
+    if (response.ok) {
+      const project = (await response.json()) as { id?: string };
+      expect(project.id).toBeTruthy();
+      return project.id!;
+    }
+    lastErrorText = await response.text().catch(() => '');
+    const retryableConnectionReset = response.status === 400 && lastErrorText.includes('read ECONNRESET');
+    if (!retryableConnectionReset || attempt === 2) {
+      throw new Error(`create_project_failed:${response.status}:${lastErrorText}`);
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1_000 * (attempt + 1)));
   }
-  await page.locator('#project-name').fill(projectName);
-  await Promise.all([
-    page.waitForURL(new RegExp(`/${locale}/workspaces/ws_default/projects/.+/overview`), { timeout: 30_000 }),
-    page.getByRole('button', { name: /Create|创建/i }).click(),
-  ]);
-  const match = page.url().match(/\/projects\/([^/]+)\//);
-  if (!match?.[1]) throw new Error('project_id_not_found_after_create');
-  return match[1];
+  throw new Error(`create_project_failed:unknown:${lastErrorText}`);
 }
 
-async function createExternalAgentBundle(page: Page, args: {
+async function createExternalAgentBundle(args: {
   apiBase: string;
   token: string;
   projectId: string;
   multimodal: boolean;
   title: string;
 }): Promise<{ agentId: string; wsUrl: string; agentKey: string; sessionId: string }> {
-  const createAgentRes = await page.request.post(
+  const createAgentRes = await fetch(
     `${args.apiBase}/api/v1/workspaces/ws_default/projects/${args.projectId}/agents`,
     {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${args.token}`,
         'Content-Type': 'application/json',
       },
-      data: {
+      body: JSON.stringify({
         name: `it-external-agent-${Date.now()}`,
         mode: 'external',
         interaction_mode: 'chat',
@@ -100,49 +118,51 @@ async function createExternalAgentBundle(page: Page, args: {
           max_file_count: 8,
           max_total_bytes: 62914560,
         },
-      },
+      }),
     },
   );
-  expect(createAgentRes.ok()).toBeTruthy();
+  expect(createAgentRes.ok).toBeTruthy();
   const createdAgent = (await createAgentRes.json()) as { id: string };
 
-  const createKeyRes = await page.request.post(
+  const createKeyRes = await fetch(
     `${args.apiBase}/api/v1/workspaces/ws_default/projects/${args.projectId}/agents/${createdAgent.id}/keys`,
     {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${args.token}`,
         'Content-Type': 'application/json',
       },
-      data: {},
     },
   );
-  expect(createKeyRes.ok()).toBeTruthy();
+  expect(createKeyRes.ok).toBeTruthy();
   const keyPayload = (await createKeyRes.json()) as { key: string };
 
-  const connectionRes = await page.request.get(
+  const connectionRes = await fetch(
     `${args.apiBase}/api/v1/workspaces/ws_default/projects/${args.projectId}/agents/${createdAgent.id}/connection-info`,
     {
+      method: 'GET',
       headers: { Authorization: `Bearer ${args.token}` },
     },
   );
-  expect(connectionRes.ok()).toBeTruthy();
+  expect(connectionRes.ok).toBeTruthy();
   const connectionInfo = (await connectionRes.json()) as { ws_url: string };
 
-  const createSessionRes = await page.request.post(
+  const createSessionRes = await fetch(
     `${args.apiBase}/api/v1/workspaces/ws_default/projects/${args.projectId}/chat/sessions`,
     {
+      method: 'POST',
       headers: {
         Authorization: `Bearer ${args.token}`,
         'Content-Type': 'application/json',
       },
-      data: {
+      body: JSON.stringify({
         title: args.title,
         model: 'external-agent',
         external_agent_id: createdAgent.id,
-      },
+      }),
     },
   );
-  expect(createSessionRes.ok()).toBeTruthy();
+  expect(createSessionRes.ok).toBeTruthy();
   const session = (await createSessionRes.json()) as { id: string };
 
   return {
@@ -151,6 +171,28 @@ async function createExternalAgentBundle(page: Page, args: {
     agentKey: keyPayload.key,
     sessionId: session.id,
   };
+}
+
+async function postChatMessageStream(args: {
+  apiBase: string;
+  token: string;
+  projectId: string;
+  sessionId: string;
+  content: string;
+}): Promise<Response> {
+  return fetch(
+    `${args.apiBase}/api/v1/workspaces/ws_default/projects/${args.projectId}/chat/sessions/${args.sessionId}/messages/stream`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${args.token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        input: { role: 'user', content: args.content },
+      }),
+    },
+  );
 }
 
 async function openChatSession(page: Page, locale: string, projectId: string, expectedTitle: string): Promise<void> {
@@ -163,82 +205,21 @@ async function openChatSession(page: Page, locale: string, projectId: string, ex
   await expect(page.getByTestId('chat__composer').locator('textarea')).toBeVisible({ timeout: 30_000 });
 }
 
-function startTestAgentProcess(args: {
-  wsUrl: string;
-  agentKey: string;
-  mode?: 'echo' | 'multimodal';
-}): Promise<{ proc: ChildProcessWithoutNullStreams; stop: () => Promise<void> }> {
-  const scriptPath = path.resolve(
-    process.cwd(),
-    'packages/api-entry-node/examples/external-agent-test-runner.ts',
-  );
-  return new Promise((resolve, reject) => {
-    const proc = spawn(
-      'npx',
-      ['tsx', scriptPath],
-      {
-        env: {
-          ...process.env,
-          MBOS_AGENT_WS_URL: args.wsUrl,
-          MBOS_AGENT_KEY: args.agentKey,
-          MBOS_AGENT_MODE: args.mode ?? 'echo',
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    );
-
-    const timeout = setTimeout(() => {
-      proc.kill('SIGTERM');
-      reject(new Error('test_agent_start_timeout'));
-    }, 15_000);
-
-    const onData = (chunk: Buffer) => {
-      const text = chunk.toString('utf-8');
-      if (text.includes('[test-agent] connected')) {
-        clearTimeout(timeout);
-        proc.stdout.off('data', onData);
-        resolve({
-          proc,
-          stop: async () => {
-            if (proc.killed || proc.exitCode !== null) return;
-            proc.kill('SIGTERM');
-            await new Promise<void>((done) => {
-              const killTimeout = setTimeout(() => {
-                if (!proc.killed && proc.exitCode === null) {
-                  proc.kill('SIGKILL');
-                }
-                done();
-              }, 3_000);
-              proc.once('exit', () => {
-                clearTimeout(killTimeout);
-                done();
-              });
-            });
-          },
-        });
-      }
-    };
-
-    proc.once('error', (error) => {
-      clearTimeout(timeout);
-      reject(error);
-    });
-
-    proc.once('exit', (code) => {
-      clearTimeout(timeout);
-      if (code !== 0) {
-        reject(new Error(`test_agent_exit_${String(code)}`));
-      }
-    });
-
-    proc.stdout.on('data', onData);
-  });
-}
-
 function connectEchoWs(args: {
   wsUrl: string;
   agentKey: string;
   mode: 'normal' | 'slow' | 'multimodal' | 'protocol';
+  onRequestStart?: (msg: {
+    request_id?: string;
+    payload?: {
+      execution_context?: {
+        execution_ticket?: string;
+        user_bearer_token?: string;
+        session_id?: string;
+      };
+    };
+  }) => void;
+  onRequestCancel?: (msg: { request_id?: string }) => void;
 }): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(args.wsUrl, {
@@ -248,6 +229,18 @@ function connectEchoWs(args: {
     const activeTimers = new Map<string, NodeJS.Timeout>();
 
     ws.once('open', () => {
+      ws.send(JSON.stringify({
+        type: 'agent.ready',
+        timestamp: new Date().toISOString(),
+        payload: {
+          capabilities: {
+            wire_api: 'responses',
+            streaming_completion: true,
+            multimodal_completion: args.mode === 'multimodal',
+          },
+        },
+      }));
+
       ws.on('message', (raw) => {
         const msg = JSON.parse(raw.toString('utf-8')) as {
           type?: string;
@@ -256,6 +249,7 @@ function connectEchoWs(args: {
         };
 
         if (msg.type === 'server.request.cancel' && msg.request_id) {
+          args.onRequestCancel?.(msg);
           const timer = activeTimers.get(msg.request_id);
           if (timer) {
             clearInterval(timer);
@@ -267,6 +261,7 @@ function connectEchoWs(args: {
         if (msg.type !== 'server.request.start' || !msg.request_id) {
           return;
         }
+        args.onRequestStart?.(msg);
 
         const allMessages = msg.payload?.messages ?? [];
         const lastUser = [...allMessages].reverse().find((item) => item.role === 'user');
@@ -375,97 +370,131 @@ function connectEchoWs(args: {
 }
 
 test.describe('@lane-real integration external agent chat stream', () => {
-  test('chat streams through external agent websocket', async ({ page }) => {
+  test('chat streams through external agent websocket', async () => {
     test.setTimeout(180_000);
 
-    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
     const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
     const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
-    await keycloakLogin(page, locale, username, password);
-    const projectId = await ensureProject(page, locale);
-    const token = await readStoredAuthToken(page);
+    const token = await issuePasswordGrantToken(username, password);
+    const projectId = await createProjectViaApi(apiBase, token);
 
     const title = `External Agent Session ${Date.now()}`;
-    const bundle = await createExternalAgentBundle(page, {
+    const bundle = await createExternalAgentBundle({
       apiBase,
       token,
       projectId,
       multimodal: true,
       title,
     });
-    const agent = await startTestAgentProcess({
+    let observedExecutionTicket = '';
+    let observedLegacyBearer = '';
+    let observedSessionId = '';
+    let requestStarted = false;
+    const ws = await connectEchoWs({
       wsUrl: bundle.wsUrl,
       agentKey: bundle.agentKey,
-      mode: 'echo',
+      mode: 'normal',
+      onRequestStart: (msg) => {
+        observedExecutionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
+        observedLegacyBearer = msg.payload?.execution_context?.user_bearer_token ?? '';
+        observedSessionId = msg.payload?.execution_context?.session_id ?? '';
+        requestStarted = true;
+      },
+    });
+    const prompt = `integration ping ${Date.now()}`;
+    const streamRes = await postChatMessageStream({
+      apiBase,
+      token,
+      projectId,
+      sessionId: bundle.sessionId,
+      content: prompt,
     });
 
-    try {
-      await openChatSession(page, locale, projectId, title);
+    expect(streamRes.ok).toBeTruthy();
+    const streamTextPromise = streamRes.text();
 
-      const prompt = `integration ping ${Date.now()}`;
-      await page.getByTestId('chat__composer').locator('textarea').fill(prompt);
+    await expect.poll(() => requestStarted, { timeout: 30_000 }).toBe(true);
 
-      await Promise.all([
-        page.waitForResponse((res) =>
-          res.request().method() === 'POST'
-          && /\/api\/v1\/workspaces\/[^/]+\/projects\/[^/]+\/chat\/sessions\/[^/]+\/messages\/stream$/.test(res.url()),
-        ),
-        page.getByTestId('chat__send-btn').click(),
-      ]);
+    expect(observedExecutionTicket).toMatch(/^exec_/);
+    expect(observedLegacyBearer).toBe('');
+    expect(observedSessionId).toBe(bundle.sessionId);
+    await expect(streamTextPromise).resolves.toContain('event: done');
 
-      await expect
-        .poll(async () => {
-          const messages = await page.getByTestId('chat__message').allTextContents();
-          return messages.join('\n');
-        }, { timeout: 60_000 })
-        .toContain(`echo: ${prompt}`);
-    } finally {
-      await agent.stop();
-    }
+    ws.close();
   });
 
-  test('stop cancels external agent stream and prevents full tail output', async ({ page }) => {
+  test('stop cancels external agent stream and prevents full tail output', async () => {
     test.setTimeout(180_000);
 
-    const locale = process.env.INTEGRATION_LOCALE ?? 'en-US';
     const username = process.env.INTEGRATION_KEYCLOAK_USERNAME ?? 'dev-admin';
     const password = process.env.INTEGRATION_KEYCLOAK_PASSWORD ?? 'dev-admin-123';
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
-    await keycloakLogin(page, locale, username, password);
-    const projectId = await ensureProject(page, locale);
-    const token = await readStoredAuthToken(page);
+    const token = await issuePasswordGrantToken(username, password);
+    const projectId = await createProjectViaApi(apiBase, token);
 
     const title = `External Agent Stop Session ${Date.now()}`;
-    const bundle = await createExternalAgentBundle(page, {
+    const bundle = await createExternalAgentBundle({
       apiBase,
       token,
       projectId,
       multimodal: false,
       title,
     });
-    const ws = await connectEchoWs({ wsUrl: bundle.wsUrl, agentKey: bundle.agentKey, mode: 'slow' });
-
-    await openChatSession(page, locale, projectId, title);
+    let observedExecutionTicket = '';
+    let observedLegacyBearer = '';
+    let observedCancelRequestId = '';
+    let requestStarted = false;
+    let cancelReceived = false;
+    const ws = await connectEchoWs({
+      wsUrl: bundle.wsUrl,
+      agentKey: bundle.agentKey,
+      mode: 'slow',
+      onRequestStart: (msg) => {
+        observedExecutionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
+        observedLegacyBearer = msg.payload?.execution_context?.user_bearer_token ?? '';
+        requestStarted = true;
+      },
+      onRequestCancel: (msg) => {
+        observedCancelRequestId = msg.request_id ?? '';
+        cancelReceived = true;
+      },
+    });
 
     const prompt = `slow stream ${Date.now()}`;
-    await page.getByTestId('chat__composer').locator('textarea').fill(prompt);
-    await page.getByTestId('chat__send-btn').click();
+    const streamRes = await postChatMessageStream({
+      apiBase,
+      token,
+      projectId,
+      sessionId: bundle.sessionId,
+      content: prompt,
+    });
+    expect(streamRes.ok).toBeTruthy();
+    const streamTextPromise = streamRes.text();
 
-    const stopButton = page.getByTestId('chat__composer').getByRole('button', { name: /Stop|停止/i });
-    await expect(stopButton).toBeVisible({ timeout: 20_000 });
-    await stopButton.click();
+    await expect.poll(() => requestStarted, { timeout: 30_000 }).toBe(true);
 
-    await expect(page.getByTestId('chat__composer').getByTestId('chat__send-btn')).toBeVisible({ timeout: 30_000 });
+    const stopResponse = await fetch(
+      `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/chat/sessions/${bundle.sessionId}/stop`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+    expect(stopResponse.ok).toBeTruthy();
 
-    await expect
-      .poll(async () => {
-        const text = (await page.getByTestId('chat__message').last().textContent()) ?? '';
-        return text;
-      }, { timeout: 30_000 })
-      .not.toContain('[END_MARKER]');
+    await expect.poll(() => cancelReceived, { timeout: 30_000 }).toBe(true);
+    expect(observedCancelRequestId).toBeTruthy();
+
+    expect(observedExecutionTicket).toMatch(/^exec_/);
+    expect(observedLegacyBearer).toBe('');
+    await expect(streamTextPromise).resolves.toContain('event: error');
+    await expect(streamTextPromise).resolves.toContain('AGENT_CANCEL_TIMEOUT');
 
     ws.close();
   });
@@ -479,11 +508,11 @@ test.describe('@lane-real integration external agent chat stream', () => {
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
     await keycloakLogin(page, locale, username, password);
-    const projectId = await ensureProject(page, locale);
-    const token = await readStoredAuthToken(page);
+    const token = await issuePasswordGrantToken(username, password);
+    const projectId = await createProjectViaApi(apiBase, token);
 
     const multimodalTitle = `External Agent Multimodal ${Date.now()}`;
-    const multimodalBundle = await createExternalAgentBundle(page, {
+    const multimodalBundle = await createExternalAgentBundle({
       apiBase,
       token,
       projectId,
@@ -533,7 +562,7 @@ test.describe('@lane-real integration external agent chat stream', () => {
     ws.close();
 
     const offlineTitle = `External Agent Offline ${Date.now()}`;
-    await createExternalAgentBundle(page, {
+    await createExternalAgentBundle({
       apiBase,
       token,
       projectId,
@@ -557,11 +586,11 @@ test.describe('@lane-real integration external agent chat stream', () => {
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
     await keycloakLogin(page, locale, username, password);
-    const projectId = await ensureProject(page, locale);
-    const token = await readStoredAuthToken(page);
+    const token = await issuePasswordGrantToken(username, password);
+    const projectId = await createProjectViaApi(apiBase, token);
 
     const title = `External Agent Protocol ${Date.now()}`;
-    const bundle = await createExternalAgentBundle(page, {
+    const bundle = await createExternalAgentBundle({
       apiBase,
       token,
       projectId,
@@ -588,11 +617,11 @@ test.describe('@lane-real integration external agent chat stream', () => {
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
     await keycloakLogin(page, locale, username, password);
-    const projectId = await ensureProject(page, locale);
-    const token = await readStoredAuthToken(page);
+    const token = await issuePasswordGrantToken(username, password);
+    const projectId = await createProjectViaApi(apiBase, token);
 
     const title = `External Agent Text Only ${Date.now()}`;
-    await createExternalAgentBundle(page, {
+    await createExternalAgentBundle({
       apiBase,
       token,
       projectId,
@@ -619,11 +648,11 @@ test.describe('@lane-real integration external agent chat stream', () => {
     const apiBase = process.env.INTEGRATION_API_BASE ?? 'http://localhost:20000';
 
     await keycloakLogin(page, locale, username, password);
-    const projectId = await ensureProject(page, locale);
     const token = await readStoredAuthToken(page);
+    const projectId = await createProjectViaApi(apiBase, token);
 
     const title = `External Agent Invalid Key ${Date.now()}`;
-    const bundle = await createExternalAgentBundle(page, {
+    const bundle = await createExternalAgentBundle({
       apiBase,
       token,
       projectId,

@@ -69,7 +69,7 @@ export async function ensureWorkspaceProjectCreatorAccess(args: {
         'Content-Type': 'application/json',
       },
       data: {
-        project_creators: Array.from(new Set([...existingCreators, ...creatorCandidates])),
+        project_creator_user_ids: Array.from(new Set([...existingCreators, ...creatorCandidates])),
       },
     },
   );

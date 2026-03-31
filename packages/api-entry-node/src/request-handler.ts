@@ -98,6 +98,22 @@ export async function handleRequest(
       return;
     }
     const { user, internalTicket } = requestAuth;
+    const route = matchProjectsRoute(req.url ?? '');
+    if (isAgentExecutionTicket(internalTicket)) {
+      const agentExecutionRouteAllowed =
+        route !== null
+        && (
+          (route.kind === 'endpointProxy' && method === 'POST')
+          || (route.kind === 'taskWorkspaceAccess' && method === 'POST')
+        );
+      if (!agentExecutionRouteAllowed) {
+        json(res, 403, {
+          error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+          message: 'internal_ticket_purpose_mismatch',
+        });
+        return;
+      }
+    }
     if (requestUrl.pathname === '/api/v1/sse-ticket' && method === 'POST') {
       const bearerToken = extractBearerToken(req);
       if (!bearerToken) {
@@ -150,22 +166,9 @@ export async function handleRequest(
     })) {
       return;
     }
-    const route = matchProjectsRoute(req.url ?? '');
     if (!route) {
       json(res, 404, { error_code: 'NOT_FOUND', message: 'Route not found' });
       return;
-    }
-    if (isAgentExecutionTicket(internalTicket)) {
-      const agentExecutionRouteAllowed =
-        (route.kind === 'endpointProxy' && method === 'POST')
-        || (route.kind === 'taskWorkspaceAccess' && method === 'POST');
-      if (!agentExecutionRouteAllowed) {
-        json(res, 403, {
-          error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
-          message: 'internal_ticket_purpose_mismatch',
-        });
-        return;
-      }
     }
     const workspaces = await buildWorkspaceRecords();
     const defaultWorkspace = workspaces[0];
@@ -455,6 +458,10 @@ export async function handleRequest(
 
     json(res, 405, { error_code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' });
   } catch (error) {
+    if (process.env.DEBUG_REQUEST_ERRORS === '1') {
+      const message = error instanceof Error ? (error.stack ?? error.message) : String(error);
+      process.stderr.write(`[api-entry-node] request error: ${message}\n`);
+    }
     const mapped = mapRequestError(error);
     if (res.headersSent || res.writableEnded || res.destroyed) {
       return;

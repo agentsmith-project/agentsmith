@@ -279,7 +279,11 @@ export async function verifyRequestAuth(
   for (const token of candidateTokens) {
     const cached = userInfoCache.get(token);
     if (cached && cached.expiresAt > now) {
-      return cached.user;
+      return {
+        user: cached.user,
+        internalTicket: null,
+        tokenType: token === ticketToken ? 'sse_ticket' : 'jwt',
+      };
     }
 
     const issuerClaim = readIssuerClaim(token);

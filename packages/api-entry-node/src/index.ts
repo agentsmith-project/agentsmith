@@ -23,6 +23,7 @@ export function createNodeApiServer(
   port = 3010,
   deps = createDefaultNodeApiDeps(),
   lifecycle?: Pick<ProjectRepoFactoryResult, 'shutdown'>,
+  host?: string,
 ): http.Server {
   void ensureModelCatalogBootstrap(deps.docStore).catch((error: unknown) => {
     const message = error instanceof Error ? error.message : 'unknown_error';
@@ -64,7 +65,7 @@ export function createNodeApiServer(
     });
   }
 
-  server.listen(port);
+  server.listen(port, host);
   return server;
 }
 

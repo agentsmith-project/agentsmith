@@ -1,10 +1,21 @@
-import type { AddressInfo } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
+import { issueInternalTicket } from '../internal-ticket-store.js';
 import { apiFetch, startServer } from './test-support.js';
 import { recordUsageFact } from '../audit-usage-store.js';
 
 const upstreamServers: Server[] = [];
+function allocateMockProxyPort(): number {
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_mock_proxy_port:${raw}`);
+  }
+  return port;
+}
 const originalUniversalProxyBaseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
 
 afterEach(async () => {
@@ -84,17 +95,178 @@ function startUniversalProxyMockServer(): {
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  server.listen(0);
+  const port = allocateMockProxyPort();
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl: `http://127.0.0.1:${port}`,
     configRequests: () => configRequests,
     namespaceRequests: () => namespaceRequests,
   };
 }
 
 describe('api-entry-node endpoint and credential routes', () => {
+  it('accepts scoped execution tickets for endpoint proxy and rejects misuse on other routes', async () => {
+    const universalProxy = startUniversalProxyMockServer();
+    process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
+    const { baseUrl, deps } = startServer();
+    const credential = await deps.endpointResourceService.createCredential('ws_default', 'proj_1', {
+      name: 'exec-scope-key',
+      value: 'sk-exec-scope',
+      type: 'api_key',
+    });
+    const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'exec-scope-endpoint',
+      model: 'scope-model',
+      type: 'openai',
+      base_url: 'https://openai-compatible.provider.example/v1',
+      credential_ref: credential.id,
+      provider_family: 'openai',
+      protocol: 'openai_compatible',
+    });
+    const otherEndpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
+      name: 'other-endpoint',
+      model: 'other-model',
+      type: 'openai',
+      base_url: 'https://openai-compatible.provider.example/v1',
+      credential_ref: credential.id,
+      provider_family: 'openai',
+      protocol: 'openai_compatible',
+    });
+
+    const executionTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_test',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      maxUses: 5,
+      payload: {
+        endpoint_id: endpoint.id,
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+
+    const okRes = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${executionTicket.ticket}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'hello via execution ticket',
+        }),
+      },
+    );
+    expect(okRes.status).toBe(200);
+
+    const wrongEndpointRes = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${otherEndpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${executionTicket.ticket}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'wrong endpoint',
+        }),
+      },
+    );
+    expect(wrongEndpointRes.status).toBe(403);
+    await expect(wrongEndpointRes.json()).resolves.toMatchObject({
+      error_code: 'INTERNAL_TICKET_SCOPE_MISMATCH',
+    });
+
+    const wrongPurposeTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'sse_access',
+      userId: 'user_test',
+      prefix: 'sse',
+      maxUses: 5,
+      payload: {
+        bearer_token: 'jwt-token-123',
+      },
+    });
+    const wrongPurposeRes = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${wrongPurposeTicket.ticket}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'wrong purpose',
+        }),
+      },
+    );
+    expect(wrongPurposeRes.status).toBe(403);
+    await expect(wrongPurposeRes.json()).resolves.toMatchObject({
+      error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+    });
+
+    const meRes = await fetch(`${baseUrl}/api/v1/me/profile`, {
+      headers: {
+        Authorization: `Bearer ${executionTicket.ticket}`,
+      },
+    });
+    expect(meRes.status).toBe(403);
+    await expect(meRes.json()).resolves.toMatchObject({
+      error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+    });
+
+    const sseTicketRes = await fetch(`${baseUrl}/api/v1/sse-ticket`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${executionTicket.ticket}`,
+      },
+    });
+    expect(sseTicketRes.status).toBe(403);
+    await expect(sseTicketRes.json()).resolves.toMatchObject({
+      error_code: 'INTERNAL_TICKET_PURPOSE_MISMATCH',
+    });
+
+    const expiredExecutionTicket = await issueInternalTicket(deps.cache, {
+      purpose: 'agent_execution',
+      userId: 'user_test',
+      workspaceId: 'ws_default',
+      projectId: 'proj_1',
+      prefix: 'exec',
+      ttlMs: 1,
+      payload: {
+        endpoint_id: endpoint.id,
+        task_id: 'task_1',
+        session_id: 'task_1',
+        agent_id: 'agent_1',
+        mode: 'notebook',
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const expiredRes = await fetch(
+      `${baseUrl}/api/v1/workspaces/ws_default/projects/proj_1/endpoints/${endpoint.id}/proxy/openai/responses`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${expiredExecutionTicket.ticket}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'ignored',
+          input: 'expired ticket',
+        }),
+      },
+    );
+    expect(expiredRes.status).toBe(401);
+  });
+
   it('supports credentials and endpoints CRUD plus openai-compatible proxy', async () => {
     const universalProxy = startUniversalProxyMockServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;

@@ -253,6 +253,44 @@ describe('auth', () => {
     );
   });
 
+  it('returns structured auth results for cached jwt tokens', async () => {
+    jwtVerifyMock.mockResolvedValue({
+      payload: {
+        sub: 'user_cached',
+        email: 'cached@example.com',
+        name: 'Cached User',
+      },
+    } as never);
+
+    const request = makeRequest({
+      url: '/api/v1/me/profile',
+      authorization: 'Bearer jwt-token-cached',
+    });
+
+    const first = await verifyRequestAuth(request);
+    const second = await verifyRequestAuth(request);
+
+    expect(first).toMatchObject({
+      tokenType: 'jwt',
+      internalTicket: null,
+      user: {
+        id: 'user_cached',
+        email: 'cached@example.com',
+        name: 'Cached User',
+      },
+    });
+    expect(second).toMatchObject({
+      tokenType: 'jwt',
+      internalTicket: null,
+      user: {
+        id: 'user_cached',
+        email: 'cached@example.com',
+        name: 'Cached User',
+      },
+    });
+    expect(jwtVerifyMock).toHaveBeenCalledTimes(1);
+  });
+
   it('skips workspaces with incomplete login_idp config', async () => {
     listPersistedSystemWorkspacesMock.mockResolvedValue([
       {

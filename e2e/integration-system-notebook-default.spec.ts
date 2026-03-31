@@ -47,7 +47,7 @@ type ExecutionWsMessage = {
       base_url?: string;
     };
     execution_context?: {
-      user_bearer_token?: string;
+      execution_ticket?: string;
       task_id?: string;
       run_id?: string;
     };
@@ -633,12 +633,12 @@ function startExternalNotebookBridge(args: {
     }
 
     void (async () => {
-      const userToken = msg.payload?.execution_context?.user_bearer_token ?? '';
+      const executionTicket = msg.payload?.execution_context?.execution_ticket ?? '';
       try {
         const upstreamResponse = await fetch(`${resourceProxyBase}/chat/completions`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${userToken}`,
+            Authorization: `Bearer ${executionTicket}`,
             'Content-Type': 'application/json',
             'anthropic-version': '2023-06-01',
           },

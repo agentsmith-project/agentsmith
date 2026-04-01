@@ -18,7 +18,11 @@ function endpointSupportsGuideAccess(endpoint: Endpoint): boolean {
     return false;
   }
 
-  if (endpoint.protocol !== 'openai_compatible' && endpoint.protocol !== 'anthropic_compatible') {
+  if (
+    endpoint.upstream_protocol !== 'openai_chat_completions'
+    && endpoint.upstream_protocol !== 'openai_responses'
+    && endpoint.upstream_protocol !== 'anthropic_messages'
+  ) {
     return false;
   }
 

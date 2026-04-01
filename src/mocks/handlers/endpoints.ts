@@ -4,7 +4,7 @@ import { DOC_FIXTURES_ENABLED } from '../doc-fixtures/mode';
 import { docEndpointFixtures } from '../doc-fixtures/workspace-projects';
 import type { Endpoint } from '@/lib/api/types';
 
-const endpoints: Endpoint[] = DOC_FIXTURES_ENABLED ? [...docEndpointFixtures] : [...((p0.endpoints ?? []) as Endpoint[])];
+const endpoints: Endpoint[] = DOC_FIXTURES_ENABLED ? [...docEndpointFixtures] : [...((p0.endpoints ?? []) as unknown as Endpoint[])];
 
 export const endpointHandlers = [
   http.get('/api/v1/workspaces/:ws/projects/:prj/endpoints', () =>
@@ -22,7 +22,7 @@ export const endpointHandlers = [
       project_id: 'proj_001',
       name: (body.name as string) ?? 'New Endpoint',
       description: (body.description as string) ?? '',
-      type: body.type === 'anthropic' || body.type === 'custom' ? body.type : 'openai',
+      type: body.type === 'custom' ? 'custom' : 'catalog',
       model: (body.model as string) ?? '',
       base_url: (body.base_url as string) ?? 'https://api.openai.com/v1',
       credential_ref: (body.credential_ref as string) ?? '',
@@ -37,13 +37,11 @@ export const endpointHandlers = [
         || body.provider_family === 'alibaba'
           ? body.provider_family
           : 'custom',
-      protocol:
-        body.protocol === 'anthropic_compatible'
-        || body.protocol === 'google_gemini'
-        || body.protocol === 'glm_native'
-        || body.protocol === 'dashscope_native'
-          ? body.protocol
-          : 'openai_compatible',
+      upstream_protocol:
+        body.upstream_protocol === 'anthropic_messages'
+        || body.upstream_protocol === 'openai_responses'
+          ? body.upstream_protocol
+          : 'openai_chat_completions',
       meta: (body.meta as Record<string, string>) ?? undefined,
       status: 'active',
       created_at: new Date().toISOString(),

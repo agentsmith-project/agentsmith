@@ -1,10 +1,21 @@
-import type { AddressInfo } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { apiFetch, apiFetchWithToken, startServer } from './test-support.js';
 
 const upstreamServers: Server[] = [];
 const originalUniversalProxyBaseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
+
+function allocateMockPort(): number {
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_mock_port:${raw}`);
+  }
+  return port;
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -124,23 +135,28 @@ function startUniversalProxyMockServer(): {
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  server.listen(0);
+  const port = allocateMockPort();
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl: `http://127.0.0.1:${port}`,
     namespaceRequests: () => namespaceRequests,
   };
 }
 
-async function createProjectEndpoint(baseUrl: string, upstreamBaseUrl: string, protocol: 'openai_compatible' | 'anthropic_compatible', model: string) {
+async function createProjectEndpoint(
+  baseUrl: string,
+  upstreamBaseUrl: string,
+  upstreamProtocol: 'openai_chat_completions' | 'anthropic_messages',
+  model: string,
+) {
   const credentialRes = await apiFetch(
     baseUrl,
     '/api/v1/workspaces/ws_default/projects/proj_1/credentials',
     {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: `cred-${protocol}`, type: 'api_key', value: `sk-${protocol}` }),
+      body: JSON.stringify({ name: `cred-${upstreamProtocol}`, type: 'api_key', value: `sk-${upstreamProtocol}` }),
     },
   );
   expect(credentialRes.status).toBe(201);
@@ -153,13 +169,13 @@ async function createProjectEndpoint(baseUrl: string, upstreamBaseUrl: string, p
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: `endpoint-${protocol}`,
+        name: `endpoint-${upstreamProtocol}`,
         model,
-        type: protocol === 'anthropic_compatible' ? 'anthropic' : 'openai',
+        type: 'catalog',
         base_url: upstreamBaseUrl,
         credential_ref: credential.id,
-        provider_family: protocol === 'anthropic_compatible' ? 'anthropic' : 'openai',
-        protocol,
+        provider_family: upstreamProtocol === 'anthropic_messages' ? 'anthropic' : 'openai',
+        upstream_protocol: upstreamProtocol,
       }),
     },
   );
@@ -207,8 +223,8 @@ describe('user api keys integration', () => {
     const universalProxy = startUniversalProxyMockServer();
     process.env.MBOS_UNIVERSAL_PROXY_BASE_URL = universalProxy.baseUrl;
     const { baseUrl } = startServer();
-    await createProjectEndpoint(baseUrl, 'https://openai-compatible.provider.example/v1', 'openai_compatible', 'placeholder-openai-model');
-    await createProjectEndpoint(baseUrl, 'https://anthropic-compatible.provider.example/v1', 'anthropic_compatible', 'placeholder-anthropic-model');
+    await createProjectEndpoint(baseUrl, 'https://openai-compatible.provider.example/v1', 'openai_chat_completions', 'placeholder-openai-model');
+    await createProjectEndpoint(baseUrl, 'https://anthropic-compatible.provider.example/v1', 'anthropic_messages', 'placeholder-anthropic-model');
 
     const keyRes = await apiFetch(baseUrl, '/api/v1/user/keys', {
       method: 'POST',

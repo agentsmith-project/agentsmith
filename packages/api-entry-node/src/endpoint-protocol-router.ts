@@ -19,24 +19,15 @@ export interface ResolvedEndpointTaskRoute {
 }
 
 export function isCapabilitySupportedByProtocol(
-  protocol: EndpointRecord['protocol'],
+  protocol: EndpointRecord['upstream_protocol'],
   capability: ResolvedEndpointTaskRoute['capability'],
 ): boolean {
-  const effectiveProtocol = protocol ?? 'openai_compatible';
-  if (effectiveProtocol === 'openai_compatible') {
+  const effectiveProtocol = protocol;
+  if (effectiveProtocol === 'openai_chat_completions' || effectiveProtocol === 'openai_responses') {
     return true;
   }
-  if (effectiveProtocol === 'anthropic_compatible') {
+  if (effectiveProtocol === 'anthropic_messages') {
     return capability === 'chat_completion' || capability === 'multimodal_completion';
-  }
-  if (effectiveProtocol === 'google_gemini') {
-    return capability !== 'rerank';
-  }
-  if (effectiveProtocol === 'glm_native') {
-    return capability !== 'rerank';
-  }
-  if (effectiveProtocol === 'dashscope_native') {
-    return capability !== 'rerank';
   }
   return false;
 }
@@ -69,18 +60,14 @@ export function resolveEndpointTaskRoute(
     };
   }
 
-  // Current production default: all supported providers are configured via OpenAI-compatible
-  // endpoints. Keep protocol branch explicit for future native provider adapters.
-  switch (endpoint.protocol) {
-    case 'anthropic_compatible':
+  switch (endpoint.upstream_protocol) {
+    case 'anthropic_messages':
       if (action === 'chat') {
         return { capability: 'chat_completion', proxyPath: 'messages' };
       }
       return base;
-    case 'google_gemini':
-    case 'glm_native':
-    case 'dashscope_native':
-    case 'openai_compatible':
+    case 'openai_responses':
+    case 'openai_chat_completions':
     default:
       return base;
   }

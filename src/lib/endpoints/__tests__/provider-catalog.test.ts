@@ -49,40 +49,55 @@ describe('provider-catalog', () => {
   });
 
   describe('custom protocol options', () => {
-    it('should contain two custom protocol options', () => {
-      expect(CUSTOM_PROTOCOL_OPTIONS).toHaveLength(2);
+    it('should contain three custom protocol options', () => {
+      expect(CUSTOM_PROTOCOL_OPTIONS).toHaveLength(3);
     });
 
-    it('should have openai_compatible as first option', () => {
-      const openaiCompatible = CUSTOM_PROTOCOL_OPTIONS[0];
-      expect(openaiCompatible.protocol).toBe('openai_compatible');
-      expect(openaiCompatible.display_name).toBe('OpenAI Compatible');
-      expect(openaiCompatible.default_base_url).toBe('https://api.openai.com/v1');
-      expect(openaiCompatible.description).toBeDefined();
+    it('should have openai_chat_completions as first option', () => {
+      const openaiChat = CUSTOM_PROTOCOL_OPTIONS[0];
+      expect(openaiChat.protocol).toBe('openai_chat_completions');
+      expect(openaiChat.display_name).toBe('OpenAI Chat Completions');
+      expect(openaiChat.default_base_url).toBe('https://api.openai.com/v1');
+      expect(openaiChat.description).toBeDefined();
     });
 
-    it('should have anthropic_compatible as second option', () => {
-      const anthropicCompatible = CUSTOM_PROTOCOL_OPTIONS[1];
-      expect(anthropicCompatible.protocol).toBe('anthropic_compatible');
-      expect(anthropicCompatible.display_name).toBe('Anthropic Compatible');
-      expect(anthropicCompatible.default_base_url).toBe('https://api.anthropic.com');
-      expect(anthropicCompatible.description).toBeDefined();
+    it('should have openai_responses as second option', () => {
+      const responses = CUSTOM_PROTOCOL_OPTIONS[1];
+      expect(responses.protocol).toBe('openai_responses');
+      expect(responses.display_name).toBe('OpenAI Responses');
+      expect(responses.default_base_url).toBe('https://api.openai.com/v1');
+      expect(responses.description).toBeDefined();
+    });
+
+    it('should have anthropic_messages as third option', () => {
+      const anthropicMessages = CUSTOM_PROTOCOL_OPTIONS[2];
+      expect(anthropicMessages.protocol).toBe('anthropic_messages');
+      expect(anthropicMessages.display_name).toBe('Anthropic Messages');
+      expect(anthropicMessages.default_base_url).toBe('https://api.anthropic.com');
+      expect(anthropicMessages.description).toBeDefined();
     });
   });
 
   describe('getCustomProtocolConfig', () => {
-    it('should return openai_compatible config', () => {
-      const config = getCustomProtocolConfig('openai_compatible');
+    it('should return openai_chat_completions config', () => {
+      const config = getCustomProtocolConfig('openai_chat_completions');
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('openai_compatible');
-      expect(config?.display_name).toBe('OpenAI Compatible');
+      expect(config?.protocol).toBe('openai_chat_completions');
+      expect(config?.display_name).toBe('OpenAI Chat Completions');
     });
 
-    it('should return anthropic_compatible config', () => {
-      const config = getCustomProtocolConfig('anthropic_compatible');
+    it('should return openai_responses config', () => {
+      const config = getCustomProtocolConfig('openai_responses');
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('anthropic_compatible');
-      expect(config?.display_name).toBe('Anthropic Compatible');
+      expect(config?.protocol).toBe('openai_responses');
+      expect(config?.display_name).toBe('OpenAI Responses');
+    });
+
+    it('should return anthropic_messages config', () => {
+      const config = getCustomProtocolConfig('anthropic_messages');
+      expect(config).toBeDefined();
+      expect(config?.protocol).toBe('anthropic_messages');
+      expect(config?.display_name).toBe('Anthropic Messages');
     });
 
     it('should return undefined for invalid protocol', () => {
@@ -95,13 +110,13 @@ describe('provider-catalog', () => {
     it('should return first protocol at index 0', () => {
       const config = getCustomProtocolByIndex(0);
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('openai_compatible');
+      expect(config?.protocol).toBe('openai_chat_completions');
     });
 
     it('should return second protocol at index 1', () => {
       const config = getCustomProtocolByIndex(1);
       expect(config).toBeDefined();
-      expect(config?.protocol).toBe('anthropic_compatible');
+      expect(config?.protocol).toBe('openai_responses');
     });
 
     it('should return undefined for out of range index', () => {

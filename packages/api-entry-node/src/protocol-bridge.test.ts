@@ -70,7 +70,7 @@ describe('protocol bridge', () => {
 
   it('converts anthropic response to openai response by bridge plan', () => {
     const plan = buildProxyBridgePlan({
-      endpointProtocol: 'anthropic_compatible',
+      endpointProtocol: 'anthropic_messages',
       proxyPath: 'chat/completions',
       upstreamUrl: 'https://api.anthropic.com/v1/messages',
       body: {
@@ -117,7 +117,7 @@ describe('protocol bridge', () => {
 
   it('normalizes anthropic upstream url to /v1/messages when missing version segment', () => {
     const plan = buildProxyBridgePlan({
-      endpointProtocol: 'anthropic_compatible',
+      endpointProtocol: 'anthropic_messages',
       proxyPath: 'chat/completions',
       upstreamUrl: 'https://anthropic-compatible.provider.example',
       body: {
@@ -131,7 +131,7 @@ describe('protocol bridge', () => {
 
   it('keeps upstream anthropic sub-path when source and target protocol are both anthropic', () => {
     const plan = buildProxyBridgePlan({
-      endpointProtocol: 'anthropic_compatible',
+      endpointProtocol: 'anthropic_messages',
       proxyPath: 'messages/count_tokens',
       upstreamUrl: 'https://anthropic-compatible.provider.example/v1/messages/count_tokens',
       body: {

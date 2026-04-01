@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import type http from 'node:http';
-import type { EndpointProtocol, EndpointRecord } from './resource-models.js';
+import type { EndpointRecord, EndpointUpstreamProtocol } from './resource-models.js';
 
 type RuntimeUpstreamConfig = {
   name: string;
@@ -61,7 +61,7 @@ function normalizeEndpointApiRoot(endpoint: EndpointRecord): string {
     .replace(/\/responses$/i, '')
     .replace(/\/messages(?:\/count_tokens)?$/i, '');
 
-  if (endpoint.protocol === 'anthropic_compatible' && !/\/v\d+$/i.test(normalized)) {
+  if (endpoint.upstream_protocol === 'anthropic_messages' && !/\/v\d+$/i.test(normalized)) {
     return `${normalized}/v1`;
   }
 
@@ -81,22 +81,22 @@ function routePathForProxyPath(proxyPath: string): string | null {
   return null;
 }
 
-function fixedUpstreamFormat(protocol?: EndpointProtocol): RuntimeUpstreamConfig['fixed_upstream_format'] | undefined {
-  if (protocol === 'anthropic_compatible') return 'anthropic';
-  if (protocol === 'openai_compatible') return 'openai-completion';
-  if (protocol === 'google_gemini') return 'google';
+function fixedUpstreamFormat(protocol: EndpointUpstreamProtocol): RuntimeUpstreamConfig['fixed_upstream_format'] | undefined {
+  if (protocol === 'anthropic_messages') return 'anthropic';
+  if (protocol === 'openai_chat_completions') return 'openai-completion';
+  if (protocol === 'openai_responses') return 'openai-responses';
   return undefined;
 }
 
 function buildRevision(endpoint: EndpointRecord, apiKey: string): string {
   const normalizedApiRoot = normalizeEndpointApiRoot(endpoint);
-  const upstreamFormat = fixedUpstreamFormat(endpoint.protocol) ?? null;
+  const upstreamFormat = fixedUpstreamFormat(endpoint.upstream_protocol) ?? null;
   const fingerprint = createHash('sha256')
     .update(JSON.stringify({
       endpoint_id: endpoint.id,
       base_url: endpoint.base_url,
       normalized_api_root: normalizedApiRoot,
-      protocol: endpoint.protocol ?? null,
+      upstream_protocol: endpoint.upstream_protocol,
       upstream_format: upstreamFormat,
       model: endpoint.model,
       updated_at: endpoint.updated_at,
@@ -131,10 +131,7 @@ export class UniversalProxyService {
   }
 
   supportsEndpoint(endpoint: EndpointRecord): boolean {
-    return endpoint.protocol === 'openai_compatible'
-      || endpoint.protocol === 'anthropic_compatible'
-      || endpoint.protocol === 'google_gemini'
-      || !endpoint.protocol;
+    return fixedUpstreamFormat(endpoint.upstream_protocol) !== undefined;
   }
 
   buildNamespace(workspaceId: string, projectId: string, endpointId: string): string {
@@ -156,7 +153,7 @@ export class UniversalProxyService {
         upstreams: [{
           name: 'primary',
           api_root: normalizeEndpointApiRoot(endpoint),
-          fixed_upstream_format: fixedUpstreamFormat(endpoint.protocol),
+          fixed_upstream_format: fixedUpstreamFormat(endpoint.upstream_protocol),
           fallback_credential_actual: apiKey,
           auth_policy: 'force_server',
           upstream_headers: [],

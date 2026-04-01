@@ -479,12 +479,14 @@ export function openAiChatResponseToAnthropic(
 }
 
 function shouldUseResponsesFallback(sourceProtocol: ProxyWireProtocol, endpointProtocol?: string): boolean {
-  return sourceProtocol === 'openai_responses' && endpointProtocol !== 'anthropic_compatible';
+  return sourceProtocol === 'openai_responses' && endpointProtocol !== 'anthropic_messages';
 }
 
 function targetProtocolFromSource(sourceProtocol: ProxyWireProtocol, endpointProtocol?: string): ProxyWireProtocol {
   if (sourceProtocol === 'unknown') return 'unknown';
-  if (endpointProtocol === 'anthropic_compatible') return 'anthropic';
+  if (endpointProtocol === 'anthropic_messages') return 'anthropic';
+  if (endpointProtocol === 'openai_chat_completions') return 'openai_completion';
+  if (endpointProtocol === 'openai_responses') return 'openai_responses';
   if (sourceProtocol === 'anthropic') return 'openai_completion';
   if (sourceProtocol === 'openai_responses' && shouldUseResponsesFallback(sourceProtocol, endpointProtocol)) {
     return 'openai_completion';

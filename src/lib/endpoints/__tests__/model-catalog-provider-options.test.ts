@@ -20,8 +20,7 @@ function provider(
     provider_id: provider_key,
     api,
     default_base_url: api,
-    protocol: provider_key === 'anthropic' ? 'anthropic_compatible' : 'openai_compatible',
-    compatibility_interface: provider_key === 'anthropic' ? 'anthropic_compatible' : 'openai_compatible',
+    upstream_protocol: provider_key === 'anthropic' ? 'anthropic_messages' : 'openai_chat_completions',
   };
 }
 
@@ -51,7 +50,7 @@ describe('model-catalog-provider-options', () => {
     expect(inferProviderFamily('unknown-provider')).toBe('custom');
   });
 
-  it('builds options with protocol and compatibility interface', () => {
+  it('builds options with upstream protocol', () => {
     const options = buildModelCatalogProviderOptions([
       provider('anthropic', 'Anthropic', 'https://api.anthropic.com'),
       provider('zhipuai', 'Zhipu AI', 'https://open.bigmodel.cn/api/coding/paas/v4'),
@@ -60,14 +59,12 @@ describe('model-catalog-provider-options', () => {
     expect(options[0]).toMatchObject({
       key: 'anthropic',
       family: 'anthropic',
-      protocol: 'anthropic_compatible',
-      compatibility_interface: 'anthropic_compatible',
+      upstream_protocol: 'anthropic_messages',
     });
     expect(options[1]).toMatchObject({
       key: 'zhipuai',
       family: 'glm',
-      protocol: 'openai_compatible',
-      compatibility_interface: 'openai_compatible',
+      upstream_protocol: 'openai_chat_completions',
     });
   });
 

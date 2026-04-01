@@ -155,10 +155,10 @@ export function EndpointBasicsForm({
 
       <div className="space-y-2 order-2">
         <label className="text-sm font-medium text-foreground">
-          {t('create_dialog.compatibility_interface')}
+          {t('create_dialog.upstream_protocol')}
         </label>
         <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
-          {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
+          {resolveEndpointProtocolLabel(t, selectedProvider.upstream_protocol)}
         </div>
       </div>
 

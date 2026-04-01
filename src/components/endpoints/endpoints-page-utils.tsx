@@ -21,7 +21,7 @@ export function buildEndpointsExportPayload(
       model: endpoint.model,
       type: endpoint.type,
       provider_family: endpoint.provider_family,
-      protocol: endpoint.protocol,
+      upstream_protocol: endpoint.upstream_protocol,
       capabilities: endpoint.capabilities,
       models: endpoint.models,
       defaults: endpoint.defaults,

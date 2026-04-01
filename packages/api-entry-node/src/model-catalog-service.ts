@@ -117,11 +117,7 @@ function inferProviderFamily(providerKey: string, providerName: string): string 
 
 function inferProviderProtocol(api?: string, providerKey?: string): string {
   const value = `${providerKey ?? ''} ${api ?? ''}`.toLowerCase();
-  return value.includes('anthropic') ? 'anthropic_compatible' : 'openai_compatible';
-}
-
-function inferCompatibilityInterface(protocol: string): string {
-  return protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible';
+  return value.includes('anthropic') ? 'anthropic_messages' : 'openai_chat_completions';
 }
 
 function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
@@ -146,8 +142,7 @@ function materializeRawPayload(raw: ModelsDevRawPayload): MaterializedCatalog {
       env: provider.env ?? [],
       model_count: Object.keys(providerModels).length,
       default_base_url: provider.api ?? '',
-      protocol,
-      compatibility_interface: inferCompatibilityInterface(protocol),
+      upstream_protocol: protocol as ModelCatalogProviderProjectionRecord['upstream_protocol'],
     });
     for (const [modelKey, model] of Object.entries(providerModels)) {
       const modelId = (model.id ?? modelKey).trim();
@@ -212,8 +207,7 @@ function materializeNormalizedPayload(raw: NormalizedCatalogPayload): Materializ
       env: provider.env ?? [],
       model_count: providerModels.length,
       default_base_url: provider.api ?? '',
-      protocol,
-      compatibility_interface: inferCompatibilityInterface(protocol),
+      upstream_protocol: protocol as ModelCatalogProviderProjectionRecord['upstream_protocol'],
     });
     for (const model of providerModels) {
       const modelId = (model.model_id ?? model.id ?? '').trim();

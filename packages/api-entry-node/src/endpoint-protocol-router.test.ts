@@ -5,17 +5,17 @@ import {
 } from './endpoint-protocol-router.js';
 import type { EndpointRecord } from './resource-models.js';
 
-function buildEndpoint(protocol: EndpointRecord['protocol']): EndpointRecord {
+function buildEndpoint(upstreamProtocol: EndpointRecord['upstream_protocol']): EndpointRecord {
   return {
     id: 'ep_1',
     workspace_id: 'ws_1',
     project_id: 'proj_1',
     name: 'endpoint',
     model: 'gpt-4o-mini',
-    type: 'openai',
+    type: 'catalog',
     base_url: 'https://api.example.com/v1',
     status: 'active',
-    protocol,
+    upstream_protocol: upstreamProtocol,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   };
@@ -23,7 +23,7 @@ function buildEndpoint(protocol: EndpointRecord['protocol']): EndpointRecord {
 
 describe('endpoint protocol router', () => {
   it('resolves openai-compatible paths for core tasks', () => {
-    const endpoint = buildEndpoint('openai_compatible');
+    const endpoint = buildEndpoint('openai_chat_completions');
     expect(resolveEndpointTaskRoute(endpoint, 'rerank')).toEqual({
       capability: 'rerank',
       proxyPath: 'rerank',
@@ -50,14 +50,15 @@ describe('endpoint protocol router', () => {
     expect(isCapabilitySupportedByProtocol('google_gemini', 'rerank')).toBe(false);
     expect(isCapabilitySupportedByProtocol('glm_native', 'rerank')).toBe(false);
     expect(isCapabilitySupportedByProtocol('dashscope_native', 'rerank')).toBe(false);
-    expect(isCapabilitySupportedByProtocol('openai_compatible', 'rerank')).toBe(true);
-    expect(isCapabilitySupportedByProtocol('anthropic_compatible', 'chat_completion')).toBe(true);
-    expect(isCapabilitySupportedByProtocol('anthropic_compatible', 'rerank')).toBe(false);
-    expect(isCapabilitySupportedByProtocol('google_gemini', 'image_generation')).toBe(true);
+    expect(isCapabilitySupportedByProtocol('openai_chat_completions', 'rerank')).toBe(true);
+    expect(isCapabilitySupportedByProtocol('openai_responses', 'rerank')).toBe(true);
+    expect(isCapabilitySupportedByProtocol('anthropic_messages', 'chat_completion')).toBe(true);
+    expect(isCapabilitySupportedByProtocol('anthropic_messages', 'rerank')).toBe(false);
+    expect(isCapabilitySupportedByProtocol('google_gemini', 'image_generation')).toBe(false);
   });
 
   it('routes anthropic compatible chat traffic to messages endpoint', () => {
-    const endpoint = buildEndpoint('anthropic_compatible');
+    const endpoint = buildEndpoint('anthropic_messages');
     expect(resolveEndpointTaskRoute(endpoint, 'chat')).toEqual({
       capability: 'chat_completion',
       proxyPath: 'messages',

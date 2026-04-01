@@ -171,8 +171,9 @@ describe('CustomEndpointWizard', () => {
 
     it('should show protocol selection buttons', () => {
       renderComponent();
-      expect(screen.getByTestId('protocol-openai_compatible')).toBeVisible();
-      expect(screen.getByTestId('protocol-anthropic_compatible')).toBeVisible();
+      expect(screen.getByTestId('protocol-openai_chat_completions')).toBeVisible();
+      expect(screen.getByTestId('protocol-openai_responses')).toBeVisible();
+      expect(screen.getByTestId('protocol-anthropic_messages')).toBeVisible();
     });
   });
 
@@ -191,7 +192,7 @@ describe('CustomEndpointWizard', () => {
 
     it('should allow editing base URL', async () => {
       renderComponent();
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
 
       const baseUrlInput = screen.getByTestId('wizard-base-url-input');
       await user.clear(baseUrlInput);
@@ -290,7 +291,7 @@ describe('CustomEndpointWizard', () => {
       renderComponent();
 
       // Fill step 1
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -308,7 +309,7 @@ describe('CustomEndpointWizard', () => {
       renderComponent();
 
       // Fill step 1
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -335,7 +336,7 @@ describe('CustomEndpointWizard', () => {
       renderComponent();
 
       // Fill step 1
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -363,7 +364,7 @@ describe('CustomEndpointWizard', () => {
 
     it('shows explicit reason when Next is disabled on step 2', async () => {
       renderComponent();
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -379,7 +380,7 @@ describe('CustomEndpointWizard', () => {
 
     it('allows cache write discount ratio greater than 1 on step 2', async () => {
       renderComponent();
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -408,7 +409,7 @@ describe('CustomEndpointWizard', () => {
       renderComponent();
 
       // Step 1
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -533,7 +534,7 @@ describe('CustomEndpointWizard', () => {
       renderComponent();
 
       // Navigate to step 2 and select a capability
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 
@@ -554,7 +555,7 @@ describe('CustomEndpointWizard', () => {
       renderComponent();
 
       // Navigate to step 3
-      await user.click(screen.getByTestId('protocol-openai_compatible'));
+      await user.click(screen.getByTestId('protocol-openai_chat_completions'));
       await user.type(screen.getByTestId('wizard-name-input'), 'Test Endpoint');
       await user.type(screen.getByTestId('wizard-base-url-input'), 'https://api.example.com/v1');
 

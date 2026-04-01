@@ -62,8 +62,13 @@ function getDefaultProtocol(_endpoint: Endpoint | null): ProtocolTab {
 }
 
 function getEndpointStatusTone(endpoint: Endpoint): 'default' | 'secondary' | 'outline' {
-  if (endpoint.protocol === 'anthropic_compatible') return 'outline';
-  if (endpoint.protocol === 'openai_compatible') return 'default';
+  if (endpoint.upstream_protocol === 'anthropic_messages') return 'outline';
+  if (
+    endpoint.upstream_protocol === 'openai_chat_completions'
+    || endpoint.upstream_protocol === 'openai_responses'
+  ) {
+    return 'default';
+  }
   return 'secondary';
 }
 
@@ -408,7 +413,7 @@ claude --bare --settings "$CLAUDE_SETTINGS" -p --model ${selectedModelName} "Rep
                         <div className="rounded-[18px] border border-subtle bg-bg-base/35 p-4">
                           <div className="text-sm font-semibold text-foreground">{selectedEndpoint.name}</div>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            <Badge variant={getEndpointStatusTone(selectedEndpoint)}>{selectedEndpoint.protocol ?? 'custom'}</Badge>
+                            <Badge variant={getEndpointStatusTone(selectedEndpoint)}>{selectedEndpoint.upstream_protocol}</Badge>
                             <Badge variant="secondary">{selectedModelName}</Badge>
                           </div>
                         </div>

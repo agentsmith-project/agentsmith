@@ -190,14 +190,13 @@ export function useEndpointsTableColumns({
         },
       }),
 
-      // Compatibility interface column
-      columnHelper.accessor('protocol', {
-        header: t('table.compatibility_interface') || 'Compatibility',
+      columnHelper.accessor('upstream_protocol', {
+        header: t('table.upstream_protocol') || 'Upstream Protocol',
         cell: (info) => {
           const endpoint = info.row.original;
           return (
             <span className="text-xs font-medium text-tertiary">
-              {resolveEndpointProtocolLabel(t, endpoint.protocol)}
+              {resolveEndpointProtocolLabel(t, endpoint.upstream_protocol)}
             </span>
           );
         },

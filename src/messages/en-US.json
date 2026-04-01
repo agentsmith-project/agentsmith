@@ -935,8 +935,9 @@
       "hide_manual_form_action": "Hide manual form",
       "guided_setup_title": "Guided setup is recommended",
       "guided_setup_description": "Use the guided setup for new model connections. Open the manual form only when you already know the exact provider, model, base URL, and credential mapping.",
-      "wizard_description": "Create custom OpenAI or Anthropic compatible endpoints with validation.",
-      "compatibility_interface": "Compatibility Interface"
+      "wizard_description": "Create custom upstream endpoints with validation.",
+      "compatibility_interface": "Compatibility Interface",
+      "upstream_protocol": "Upstream Protocol"
     },
     "status_active": "Active",
     "status_disabled": "Disabled",
@@ -975,7 +976,8 @@
       "pricing_input": "Input",
       "pricing_output": "Output",
       "admin_status": "Status",
-      "compatibility_interface": "Compatibility"
+      "compatibility_interface": "Compatibility",
+      "upstream_protocol": "Upstream Protocol"
     },
     "status_badge": {
       "healthy": "Healthy",
@@ -1035,13 +1037,17 @@
         "retry": "Retry"
       },
       "protocol_options": {
-        "openai_compatible": {
-          "name": "OpenAI Compatible",
-          "description": "Compatible with OpenAI API format (e.g., Azure, DeepSeek, Together AI)"
+        "openai_chat_completions": {
+          "name": "OpenAI Chat Completions",
+          "description": "Upstreams that speak the OpenAI chat/completions format"
         },
-        "anthropic_compatible": {
-          "name": "Anthropic Compatible",
-          "description": "Compatible with Anthropic Messages API format"
+        "openai_responses": {
+          "name": "OpenAI Responses",
+          "description": "Upstreams that natively expose the OpenAI responses format"
+        },
+        "anthropic_messages": {
+          "name": "Anthropic Messages",
+          "description": "Upstreams that speak the Anthropic Messages format"
         }
       },
       "errors": {
@@ -1098,11 +1104,9 @@
       }
     },
     "protocol_labels": {
-      "openai_compatible": "OpenAI Compatible",
-      "anthropic_compatible": "Anthropic Compatible",
-      "google_gemini": "Google Gemini Native",
-      "glm_native": "GLM Native",
-      "dashscope_native": "DashScope Native"
+      "openai_chat_completions": "OpenAI Chat Completions",
+      "openai_responses": "OpenAI Responses",
+      "anthropic_messages": "Anthropic Messages"
     }
   },
   "audit": {

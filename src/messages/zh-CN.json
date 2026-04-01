@@ -937,8 +937,9 @@
       "hide_manual_form_action": "隐藏手动表单",
       "guided_setup_title": "推荐使用引导式配置",
       "guided_setup_description": "新建模型连接时优先使用引导式配置。只有在你已经明确知道 provider、model、base URL 和 credential 映射时，再打开手动表单。",
-      "wizard_description": "创建自定义 OpenAI 或 Anthropic 兼容端点并进行验证。",
-      "compatibility_interface": "兼容接口"
+      "wizard_description": "创建自定义上游端点并进行验证。",
+      "compatibility_interface": "兼容接口",
+      "upstream_protocol": "上游协议"
     },
     "status_active": "活跃",
     "status_disabled": "已禁用",
@@ -977,7 +978,8 @@
       "pricing_input": "输入",
       "pricing_output": "输出",
       "admin_status": "状态",
-      "compatibility_interface": "兼容接口"
+      "compatibility_interface": "兼容接口",
+      "upstream_protocol": "上游协议"
     },
     "status_badge": {
       "healthy": "健康",
@@ -1037,13 +1039,17 @@
         "retry": "重试"
       },
       "protocol_options": {
-        "openai_compatible": {
-          "name": "OpenAI 兼容",
-          "description": "兼容 OpenAI API 格式（例如 Azure、DeepSeek、Together AI）"
+        "openai_chat_completions": {
+          "name": "OpenAI Chat Completions",
+          "description": "上游直接使用 OpenAI chat/completions 格式"
         },
-        "anthropic_compatible": {
-          "name": "Anthropic 兼容",
-          "description": "兼容 Anthropic Messages API 格式"
+        "openai_responses": {
+          "name": "OpenAI Responses",
+          "description": "上游原生提供 OpenAI responses 格式"
+        },
+        "anthropic_messages": {
+          "name": "Anthropic Messages",
+          "description": "上游直接使用 Anthropic Messages 格式"
         }
       },
       "errors": {
@@ -1100,11 +1106,9 @@
       }
     },
     "protocol_labels": {
-      "openai_compatible": "OpenAI 兼容",
-      "anthropic_compatible": "Anthropic 兼容",
-      "google_gemini": "Google Gemini 原生",
-      "glm_native": "GLM 原生",
-      "dashscope_native": "DashScope 原生"
+      "openai_chat_completions": "OpenAI Chat Completions",
+      "openai_responses": "OpenAI Responses",
+      "anthropic_messages": "Anthropic Messages"
     }
   },
   "audit": {

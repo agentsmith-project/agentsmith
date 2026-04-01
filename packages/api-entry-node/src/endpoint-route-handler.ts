@@ -285,7 +285,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
 
     const resolved = resolveEndpointTaskRoute(endpoint, action, jobId);
     const capability = resolved.capability;
-    if (!isCapabilitySupportedByProtocol(endpoint.protocol, capability)) {
+    if (!isCapabilitySupportedByProtocol(endpoint.upstream_protocol, capability)) {
       json(res, 422, {
         error_code: 'VALIDATION_ERROR',
         message: 'endpoint_capability_not_supported_for_protocol',
@@ -421,7 +421,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
             targetUpstreamProxyPath,
           ),
           apiKey,
-          endpointProtocol: endpoint.protocol,
+          endpointProtocol: endpoint.upstream_protocol,
           proxyPath: legacyProxyPath,
           model: resolvedModel,
           timeoutSeconds: endpoint.limits?.timeout_seconds,
@@ -443,7 +443,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
           ...(typeof estimatedCostPerTokenUsd === 'number' && proxyResult.tokens_total
             ? { cost_usd: Number((proxyResult.tokens_total * estimatedCostPerTokenUsd).toFixed(6)) }
             : {}),
-          endpoint_protocol: endpoint.protocol,
+          endpoint_upstream_protocol: endpoint.upstream_protocol,
           capability,
           model: resolvedModel,
           proxy_path: resolved.proxyPath || proxyPath,
@@ -461,7 +461,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         durationMs: Date.now() - startedAtMs,
         result: 'error',
         metadata: {
-          endpoint_protocol: endpoint.protocol,
+          endpoint_upstream_protocol: endpoint.upstream_protocol,
           capability,
           model: resolvedModel,
           proxy_path: resolved.proxyPath || proxyPath,
@@ -611,7 +611,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
         requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
         resourceType: 'endpoint',
         resourceId: created.id,
-        metadata: { name: created.name, model: created.model, protocol: created.protocol },
+        metadata: { name: created.name, model: created.model, upstream_protocol: created.upstream_protocol },
       });
       json(res, 201, created);
     } catch (error) {
@@ -686,7 +686,7 @@ export async function handleEndpointRoute(args: EndpointHandlerArgs): Promise<bo
       requestId: typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : undefined,
       resourceType: 'endpoint',
       resourceId: updated.id,
-      metadata: { name: updated.name, model: updated.model, protocol: updated.protocol },
+      metadata: { name: updated.name, model: updated.model, upstream_protocol: updated.upstream_protocol },
     });
     json(res, 200, updated);
     return true;

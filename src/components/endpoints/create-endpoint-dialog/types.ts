@@ -1,4 +1,4 @@
-import type { EndpointCapabilityType, EndpointProtocol, EndpointProviderFamily } from '@/lib/api/types';
+import type { EndpointCapabilityType, EndpointProviderFamily, EndpointUpstreamProtocol } from '@/lib/api/types';
 
 export type CapabilityOption = EndpointCapabilityType;
 
@@ -14,7 +14,6 @@ export type CatalogModelOption = {
 };
 
 export type EndpointProviderSelection = {
-  protocol: EndpointProtocol;
+  upstream_protocol: EndpointUpstreamProtocol;
   family: EndpointProviderFamily;
-  compatibility_interface: string;
 };

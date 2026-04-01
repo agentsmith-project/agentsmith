@@ -18,12 +18,12 @@ export function buildEditEndpointPayload(params: {
   priceInputPer1m: string;
   priceOutputPer1m: string;
   provider: string;
-  protocolForSubmit: Endpoint['protocol'];
+  type: Endpoint['type'];
+  upstreamProtocol: Endpoint['upstream_protocol'];
   selectedModel: string;
   selectedProvider: {
     family: Endpoint['provider_family'];
-    protocol: NonNullable<Endpoint['protocol']>;
-    compatibility_interface?: string;
+    upstream_protocol: Endpoint['upstream_protocol'];
     default_base_url?: string;
   };
   status: 'active' | 'disabled';
@@ -32,21 +32,19 @@ export function buildEditEndpointPayload(params: {
   supportsToolCall: boolean;
 }): UpdateEndpointRequest {
   const selectedModel = params.selectedModel.trim();
-  const isEndpointCustom = params.endpoint.type === 'custom' || params.endpoint.provider_family === 'custom';
+  const isEndpointCustom = params.type === 'custom';
 
   return {
     name: params.name.trim(),
     description: params.description.trim() || undefined,
     model: selectedModel,
     base_url: params.baseUrl,
+    type: params.type,
     status: params.status,
     credential_ref: params.credentialRef,
     provider_family: isEndpointCustom ? 'custom' : params.selectedProvider.family,
-    protocol: params.protocolForSubmit,
+    upstream_protocol: params.upstreamProtocol,
     meta: {
-      compatibility_interface: isEndpointCustom
-        ? (params.endpoint.meta?.compatibility_interface ?? params.protocolForSubmit ?? 'openai_compatible')
-        : (params.selectedProvider.compatibility_interface ?? 'openai'),
       catalog_provider_key: params.isCustomProvider ? 'custom' : params.provider,
     },
     capabilities: [{ type: params.capability, enabled: true, default_model_id: selectedModel }],

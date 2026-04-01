@@ -14,7 +14,7 @@ import type {
 
 export const DEFAULT_WIZARD_FORM_STATE: CustomEndpointWizardFormState = {
   name: '',
-  protocol: 'openai_compatible',
+  protocol: 'openai_chat_completions',
   baseUrl: '',
   modelId: '',
   capability: 'chat_completion',
@@ -211,10 +211,7 @@ export function buildCreateEndpointRequest(form: CustomEndpointWizardFormState):
     type: 'custom',
     base_url: form.baseUrl.trim(),
     provider_family: 'custom',
-    protocol: form.protocol,
-    meta: {
-      compatibility_interface: form.protocol,
-    },
+    upstream_protocol: form.protocol,
     credential_ref: form.credentialRef,
     capabilities: [{ type: form.capability, enabled: true, default_model_id: form.modelId.trim() }],
     models: [{ capability: form.capability, model_id: form.modelId.trim(), display_name: form.modelId.trim() }],

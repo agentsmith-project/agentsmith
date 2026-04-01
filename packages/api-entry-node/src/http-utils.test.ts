@@ -771,7 +771,7 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/responses',
       apiKey: 'k',
-      endpointProtocol: 'anthropic_compatible',
+      endpointProtocol: 'anthropic_messages',
       proxyPath: 'responses',
     });
 
@@ -833,7 +833,7 @@ describe('http-utils', () => {
     await proxyJsonRequest(req, res, {
       upstreamUrl: 'http://example.com/v1/messages',
       apiKey: 'k',
-      endpointProtocol: 'openai_compatible',
+      endpointProtocol: 'openai_chat_completions',
       proxyPath: 'messages',
     });
 

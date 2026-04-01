@@ -118,20 +118,20 @@ describe('api-entry-node endpoint and credential routes', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'exec-scope-endpoint',
       model: 'scope-model',
-      type: 'openai',
+      type: 'catalog',
       base_url: 'https://openai-compatible.provider.example/v1',
       credential_ref: credential.id,
       provider_family: 'openai',
-      protocol: 'openai_compatible',
+      upstream_protocol: 'openai_chat_completions',
     });
     const otherEndpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'other-endpoint',
       model: 'other-model',
-      type: 'openai',
+      type: 'catalog',
       base_url: 'https://openai-compatible.provider.example/v1',
       credential_ref: credential.id,
       provider_family: 'openai',
-      protocol: 'openai_compatible',
+      upstream_protocol: 'openai_chat_completions',
     });
 
     const executionTicket = await issueInternalTicket(deps.cache, {
@@ -299,8 +299,8 @@ describe('api-entry-node endpoint and credential routes', () => {
         body: JSON.stringify({
           name: 'deepseek-chat',
           model: 'deepseek-chat',
-          type: 'openai',
-          mode: 'openai',
+          type: 'catalog',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://openai-compatible.provider.example/v1',
           credential_ref: credential.id,
         }),
@@ -548,8 +548,8 @@ describe('api-entry-node endpoint and credential routes', () => {
         body: JSON.stringify({
           name: 'audit-endpoint',
           model: 'deepseek-chat',
-          type: 'openai',
-          mode: 'openai',
+          type: 'catalog',
+          upstream_protocol: 'openai_chat_completions',
           base_url: 'https://api.example.invalid',
           credential_ref: credential.id,
         }),

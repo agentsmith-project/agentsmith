@@ -44,9 +44,10 @@ export function EditEndpointDialog({
   const commonT = useTranslations('common');
   const { handleError } = useApiError();
 
-  const isEndpointCustom = endpoint.type === 'custom' || endpoint.provider_family === 'custom';
+  const isEndpointCustom = endpoint.type === 'custom';
   const [provider, setProvider] = React.useState<string>('openai');
   const [capability, setCapability] = React.useState<CapabilityOption>('chat_completion');
+  const [upstreamProtocol, setUpstreamProtocol] = React.useState(endpoint.upstream_protocol);
   const [name, setName] = React.useState(endpoint.name);
   const [description, setDescription] = React.useState(endpoint.description ?? '');
   const [selectedModel, setSelectedModel] = React.useState(endpoint.model);
@@ -110,6 +111,7 @@ export function EditEndpointDialog({
 
   React.useEffect(() => {
     if (!open) return;
+    setUpstreamProtocol(endpoint.upstream_protocol);
     setName(endpoint.name);
     setDescription(endpoint.description ?? '');
     setSelectedModel(endpoint.model);
@@ -161,7 +163,6 @@ export function EditEndpointDialog({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const protocolForSubmit = isEndpointCustom ? (endpoint.protocol ?? 'openai_compatible') : selectedProvider.protocol;
     const resolvedBaseUrl = isCustomProvider
       ? baseUrl.trim()
       : selectedProvider.default_base_url.trim() || baseUrl.trim();
@@ -184,7 +185,8 @@ export function EditEndpointDialog({
           priceInputPer1m,
           priceOutputPer1m,
           provider,
-          protocolForSubmit,
+          type: isEndpointCustom ? 'custom' : 'catalog',
+          upstreamProtocol: isEndpointCustom ? upstreamProtocol : selectedProvider.upstream_protocol,
           selectedModel,
           selectedProvider,
           status,
@@ -275,6 +277,7 @@ export function EditEndpointDialog({
             supportsReasoning={supportsReasoning}
             supportsToolCall={supportsToolCall}
             t={t}
+            upstreamProtocol={upstreamProtocol}
             onApplyModelProfileDefaults={applyModelProfileDefaults}
             onBaseUrlChange={setBaseUrl}
             onCacheReadDiscountRatioChange={setCacheReadDiscountRatio}
@@ -291,6 +294,7 @@ export function EditEndpointDialog({
             onSelectedModelChange={setSelectedModel}
             onStatusChange={setStatus}
             onSupportsFileChange={setSupportsFile}
+            onUpstreamProtocolChange={setUpstreamProtocol}
             onSupportsReasoningChange={setSupportsReasoning}
             onSupportsToolCallChange={setSupportsToolCall}
           />

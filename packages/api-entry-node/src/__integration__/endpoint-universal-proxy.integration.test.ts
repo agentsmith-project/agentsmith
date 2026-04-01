@@ -1,4 +1,4 @@
-import type { AddressInfo } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiFetch, startServer } from './test-support.js';
@@ -17,6 +17,17 @@ vi.mock('../auth.js', async () => {
 
 const originalUniversalProxyBaseUrl = process.env.MBOS_UNIVERSAL_PROXY_BASE_URL;
 const servers: Server[] = [];
+
+function allocateMockProxyPort(): number {
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_mock_proxy_port:${raw}`);
+  }
+  return port;
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -158,11 +169,11 @@ function startUniversalProxyMockServer(options?: { failConfigPush?: boolean; str
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  server.listen(0);
+  const port = allocateMockProxyPort();
+  server.listen(port, '127.0.0.1');
   servers.push(server);
-  const address = server.address() as AddressInfo;
   return {
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl: `http://127.0.0.1:${port}`,
     namespaceRequests: () => namespaceRequests,
     configRequests: () => configRequests,
   };
@@ -181,11 +192,11 @@ describe('api-entry-node universal proxy integration', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-openai-endpoint',
       model: 'placeholder-model',
-      type: 'openai',
+      type: 'catalog',
       base_url: 'https://openai-compatible.provider.example/chat/completions',
       credential_ref: credential.id,
       provider_family: 'openai',
-      protocol: 'openai_compatible',
+      upstream_protocol: 'openai_chat_completions',
     });
 
     const proxyRes = await apiFetch(
@@ -234,11 +245,11 @@ describe('api-entry-node universal proxy integration', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-anth-endpoint',
       model: 'placeholder-model',
-      type: 'anthropic',
+      type: 'catalog',
       base_url: 'https://anthropic-compatible.provider.example',
       credential_ref: credential.id,
       provider_family: 'anthropic',
-      protocol: 'anthropic_compatible',
+      upstream_protocol: 'anthropic_messages',
     });
 
     const proxyRes = await apiFetch(
@@ -290,11 +301,11 @@ describe('api-entry-node universal proxy integration', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-cross-anth-endpoint',
       model: 'placeholder-model',
-      type: 'anthropic',
+      type: 'catalog',
       base_url: 'https://anthropic-compatible.provider.example',
       credential_ref: credential.id,
       provider_family: 'anthropic',
-      protocol: 'anthropic_compatible',
+      upstream_protocol: 'anthropic_messages',
     });
 
     const proxyRes = await apiFetch(
@@ -337,11 +348,11 @@ describe('api-entry-node universal proxy integration', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-cross-openai-endpoint',
       model: 'placeholder-model',
-      type: 'openai',
+      type: 'catalog',
       base_url: 'https://openai-compatible.provider.example/chat/completions',
       credential_ref: credential.id,
       provider_family: 'openai',
-      protocol: 'openai_compatible',
+      upstream_protocol: 'openai_chat_completions',
     });
 
     const proxyRes = await apiFetch(
@@ -380,11 +391,11 @@ describe('api-entry-node universal proxy integration', () => {
     const endpoint = await deps.endpointResourceService.createEndpoint('ws_default', 'proj_1', {
       name: 'upx-failing-endpoint',
       model: 'placeholder-model',
-      type: 'openai',
+      type: 'catalog',
       base_url: 'https://openai-compatible.provider.example',
       credential_ref: credential.id,
       provider_family: 'openai',
-      protocol: 'openai_compatible',
+      upstream_protocol: 'openai_chat_completions',
     });
 
     const proxyRes = await apiFetch(

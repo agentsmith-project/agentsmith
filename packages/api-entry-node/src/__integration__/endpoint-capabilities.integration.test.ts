@@ -1,9 +1,20 @@
-import type { AddressInfo } from 'node:net';
+import { execFileSync } from 'node:child_process';
 import http, { type Server } from 'node:http';
 import { afterEach, describe, expect, it } from 'vitest';
 import { apiFetch, startServer } from './test-support.js';
 
 const upstreamServers: Server[] = [];
+
+function allocateMockPort(): number {
+  const raw = execFileSync('python3', ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'], {
+    encoding: 'utf8',
+  }).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_mock_port:${raw}`);
+  }
+  return port;
+}
 
 afterEach(async () => {
   await Promise.all(
@@ -41,12 +52,12 @@ function startUpstreamServer(): {
       res.end(JSON.stringify({ ok: true, echoed: body }));
     })();
   });
-  server.listen(0);
+  const port = allocateMockPort();
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl: `http://127.0.0.1:${port}/v1`,
     lastBody: () => body,
     lastPath: () => path,
   };
@@ -187,8 +198,8 @@ describe('api-entry-node endpoint capability routes', () => {
         body: JSON.stringify({
           name: 'chat-only',
           model: 'chat-model',
-          protocol: 'openai_compatible',
-          type: 'openai',
+          upstream_protocol: 'openai_chat_completions',
+          type: 'catalog',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
           capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'chat-model' }],
@@ -220,16 +231,16 @@ describe('api-entry-node endpoint capability routes', () => {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          name: 'google-rerank',
-          model: 'gemini-rerank',
-          protocol: 'google_gemini',
-          provider_family: 'google',
+          name: 'anthropic-rerank',
+          model: 'claude-rerank',
+          upstream_protocol: 'anthropic_messages',
+          provider_family: 'anthropic',
           type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
-          capabilities: [{ type: 'rerank', enabled: true, default_model_id: 'gemini-rerank' }],
-          models: [{ capability: 'rerank', model_id: 'gemini-rerank' }],
-          defaults: { rerank_model_id: 'gemini-rerank' },
+          capabilities: [{ type: 'rerank', enabled: true, default_model_id: 'claude-rerank' }],
+          models: [{ capability: 'rerank', model_id: 'claude-rerank' }],
+          defaults: { rerank_model_id: 'claude-rerank' },
         }),
       },
     );
@@ -279,7 +290,7 @@ describe('api-entry-node endpoint capability routes', () => {
         body: JSON.stringify({
           name: 'media-endpoint',
           model: 'gpt-4o-mini',
-          protocol: 'openai_compatible',
+          upstream_protocol: 'openai_chat_completions',
           type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
@@ -378,17 +389,16 @@ describe('api-entry-node endpoint capability routes', () => {
         body: JSON.stringify({
           name: 'placeholder-model anthropic',
           model: 'duplicate-model',
-          type: 'anthropic',
-          mode: 'openai',
+          type: 'catalog',
           base_url: 'https://anthropic-compatible.provider.example',
           credential_ref: credential.id,
-          protocol: 'anthropic_compatible',
+          upstream_protocol: 'anthropic_messages',
         }),
       },
     );
     expect(firstEndpointRes.status).toBe(201);
-    const firstEndpoint = (await firstEndpointRes.json()) as { id: string; protocol: string };
-    expect(firstEndpoint.protocol).toBe('anthropic_compatible');
+    const firstEndpoint = (await firstEndpointRes.json()) as { id: string; upstream_protocol: string };
+    expect(firstEndpoint.upstream_protocol).toBe('anthropic_messages');
 
     const secondEndpointRes = await apiFetch(
       baseUrl,
@@ -399,17 +409,16 @@ describe('api-entry-node endpoint capability routes', () => {
         body: JSON.stringify({
           name: 'placeholder-model openai',
           model: 'duplicate-model',
-          type: 'openai',
-          mode: 'openai',
+          type: 'catalog',
           base_url: 'https://openai-compatible.provider.example',
           credential_ref: credential.id,
-          protocol: 'openai_compatible',
+          upstream_protocol: 'openai_chat_completions',
         }),
       },
     );
     expect(secondEndpointRes.status).toBe(201);
-    const secondEndpoint = (await secondEndpointRes.json()) as { id: string; protocol: string };
-    expect(secondEndpoint.protocol).toBe('openai_compatible');
+    const secondEndpoint = (await secondEndpointRes.json()) as { id: string; upstream_protocol: string };
+    expect(secondEndpoint.upstream_protocol).toBe('openai_chat_completions');
     expect(secondEndpoint.id).not.toBe(firstEndpoint.id);
 
     const start = new Date(Date.now() - 60 * 60 * 1000).toISOString();

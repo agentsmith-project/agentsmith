@@ -7,7 +7,7 @@
  * @module lib/api/types/endpoints
  */
 
-import type { EndpointCapabilityType } from './index';
+import type { EndpointCapabilityType, EndpointUpstreamProtocol } from './index';
 
 // ============================================================
 // Custom Endpoint Types
@@ -15,10 +15,11 @@ import type { EndpointCapabilityType } from './index';
 
 /**
  * Custom endpoint protocol types.
- * OpenAI-compatible: follows OpenAI API format (chat/completions, etc.)
- * Anthropic-compatible: follows Anthropic Messages API format
+ * OpenAI Chat Completions: follows chat/completions upstreams
+ * OpenAI Responses: follows responses upstreams
+ * Anthropic Messages: follows Anthropic Messages upstreams
  */
-export type CustomEndpointProtocol = 'openai_compatible' | 'anthropic_compatible';
+export type CustomEndpointProtocol = EndpointUpstreamProtocol;
 
 /**
  * Custom endpoint configuration for creating custom provider endpoints.

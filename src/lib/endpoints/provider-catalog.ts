@@ -24,8 +24,7 @@ export interface ProviderCatalogOption {
   display_name: string;
   logo_path?: string;
   family: EndpointProviderFamily;
-  protocol: CreateEndpointRequest['protocol'];
-  compatibility_interface: CustomEndpointProtocol;
+  upstream_protocol: CreateEndpointRequest['upstream_protocol'];
   default_base_url: string;
   models: ProviderModelOption[];
 }
@@ -34,7 +33,7 @@ export interface ProviderCatalogOption {
  * Custom endpoint protocol options for user selection.
  * When user selects "Custom" provider, they must choose a protocol type.
  */
-export type CustomProtocolOption = 'openai_compatible' | 'anthropic_compatible';
+export type CustomProtocolOption = CustomEndpointProtocol;
 
 /**
  * Configuration for custom endpoint protocols.
@@ -50,57 +49,48 @@ const PROVIDER_CONFIG: Record<
   Exclude<ProviderOption, 'custom'>,
   {
     family: EndpointProviderFamily;
-    protocol: CreateEndpointRequest['protocol'];
-    compatibility_interface: CustomEndpointProtocol;
+    upstream_protocol: CreateEndpointRequest['upstream_protocol'];
     default_base_url: string;
   }
 > = {
   openai: {
     family: 'openai',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://api.openai.com/v1',
   },
   anthropic: {
     family: 'anthropic',
-    protocol: 'anthropic_compatible',
-    compatibility_interface: 'anthropic_compatible',
+    upstream_protocol: 'anthropic_messages',
     default_base_url: 'https://api.anthropic.com/v1',
   },
   deepseek: {
     family: 'deepseek',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://api.deepseek.com/v1',
   },
   minimax: {
     family: 'minimax',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://api.minimax.chat/v1',
   },
   kimi: {
     family: 'kimi',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://api.moonshot.cn/v1',
   },
   google: {
     family: 'google',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://generativelanguage.googleapis.com/v1beta/openai',
   },
   glm: {
     family: 'glm',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://open.bigmodel.cn/api/coding/paas/v4',
   },
   alibaba: {
     family: 'alibaba',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai_compatible',
+    upstream_protocol: 'openai_chat_completions',
     default_base_url: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   },
 };
@@ -133,8 +123,7 @@ export const ENDPOINT_PROVIDER_OPTIONS: ProviderCatalogOption[] = DEFAULT_PROVID
     display_name: catalogProvider?.display_name ?? key,
     logo_path: catalogProvider?.logo_path,
     family: config.family,
-    protocol: config.protocol,
-    compatibility_interface: config.compatibility_interface,
+    upstream_protocol: config.upstream_protocol,
     default_base_url: config.default_base_url,
     models: catalogProvider?.models ?? [],
   };
@@ -144,8 +133,7 @@ export const CUSTOM_PROVIDER_OPTION: ProviderCatalogOption = {
   key: 'custom',
   display_name: 'Custom',
   family: 'custom',
-  protocol: 'openai_compatible', // Default, user can override
-  compatibility_interface: 'openai_compatible',
+  upstream_protocol: 'openai_chat_completions',
   default_base_url: '',
   models: [],
 };
@@ -156,16 +144,22 @@ export const CUSTOM_PROVIDER_OPTION: ProviderCatalogOption = {
  */
 export const CUSTOM_PROTOCOL_OPTIONS: CustomProtocolConfig[] = [
   {
-    protocol: 'openai_compatible',
-    display_name: 'OpenAI Compatible',
+    protocol: 'openai_chat_completions',
+    display_name: 'OpenAI Chat Completions',
     default_base_url: 'https://api.openai.com/v1',
-    description: 'Compatible with OpenAI API format (e.g., Azure, DeepSeek, Together AI)',
+    description: 'Upstreams that speak the OpenAI chat/completions format',
   },
   {
-    protocol: 'anthropic_compatible',
-    display_name: 'Anthropic Compatible',
+    protocol: 'openai_responses',
+    display_name: 'OpenAI Responses',
+    default_base_url: 'https://api.openai.com/v1',
+    description: 'Upstreams that natively expose the OpenAI responses format',
+  },
+  {
+    protocol: 'anthropic_messages',
+    display_name: 'Anthropic Messages',
     default_base_url: 'https://api.anthropic.com',
-    description: 'Compatible with Anthropic Messages API format',
+    description: 'Upstreams that speak the Anthropic Messages format',
   },
 ];
 

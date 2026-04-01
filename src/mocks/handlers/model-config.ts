@@ -8,8 +8,7 @@ type CatalogProvider = {
   family: string;
   label: string;
   default_base_url: string;
-  protocol: string;
-  compatibility_interface: string;
+  upstream_protocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
 };
 
 type CatalogModel = {
@@ -30,24 +29,21 @@ const catalogProviders: CatalogProvider[] = [
     family: 'openai',
     label: 'OpenAI',
     default_base_url: 'https://api.openai.com/v1',
-    protocol: 'openai',
-    compatibility_interface: 'openai',
+    upstream_protocol: 'openai_chat_completions',
   },
   {
     provider: 'anthropic',
     family: 'anthropic',
     label: 'Anthropic',
     default_base_url: 'https://api.anthropic.com/v1',
-    protocol: 'anthropic',
-    compatibility_interface: 'anthropic',
+    upstream_protocol: 'anthropic_messages',
   },
   {
     provider: 'deepseek',
     family: 'deepseek',
     label: 'DeepSeek',
     default_base_url: 'https://api.deepseek.com',
-    protocol: 'openai_compatible',
-    compatibility_interface: 'openai',
+    upstream_protocol: 'openai_chat_completions',
   },
 ];
 

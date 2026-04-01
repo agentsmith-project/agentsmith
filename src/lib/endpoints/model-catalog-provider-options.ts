@@ -1,12 +1,11 @@
 import type { ModelCatalogProvider } from '@/lib/api/endpoints/model-config';
-import type { EndpointProtocol, EndpointProviderFamily } from '@/lib/api/types';
+import type { EndpointProviderFamily, EndpointUpstreamProtocol } from '@/lib/api/types';
 
 export interface ModelCatalogProviderOption {
   key: string;
   display_name: string;
   family: EndpointProviderFamily;
-  protocol: EndpointProtocol;
-  compatibility_interface: 'openai_compatible' | 'anthropic_compatible';
+  upstream_protocol: EndpointUpstreamProtocol;
   default_base_url: string;
 }
 
@@ -100,11 +99,11 @@ export function inferProviderFamily(providerKey: string): EndpointProviderFamily
   return 'custom';
 }
 
-export function inferProtocol(provider: { provider_key?: string; api?: string }): EndpointProtocol {
+export function inferProtocol(provider: { provider_key?: string; api?: string }): EndpointUpstreamProtocol {
   const key = normalizeKey(provider.provider_key ?? '');
   const api = normalizeKey(provider.api ?? '');
-  if (key === 'anthropic' || api.includes('anthropic.com')) return 'anthropic_compatible';
-  return 'openai_compatible';
+  if (key === 'anthropic' || api.includes('anthropic.com')) return 'anthropic_messages';
+  return 'openai_chat_completions';
 }
 
 export function sortModelCatalogProviders(
@@ -158,8 +157,7 @@ export function buildModelCatalogProviderOptions(
       family: provider.family && provider.family !== 'custom'
         ? provider.family as EndpointProviderFamily
         : inferProviderFamily(providerKey),
-      protocol,
-      compatibility_interface: protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible',
+      upstream_protocol: protocol,
       default_base_url: api || fallbackProviderBaseUrl(providerKey, providerName),
     };
   });
@@ -169,7 +167,6 @@ export const CUSTOM_MODEL_CATALOG_PROVIDER_OPTION: ModelCatalogProviderOption = 
   key: 'custom',
   display_name: 'Custom',
   family: 'custom',
-  protocol: 'openai_compatible',
-  compatibility_interface: 'openai_compatible',
+  upstream_protocol: 'openai_chat_completions',
   default_base_url: '',
 };

@@ -21,12 +21,12 @@ export interface Endpoint {
   name: string;
   description?: string;
   model: string;
-  type: 'openai' | 'anthropic' | 'custom';
+  type: 'catalog' | 'custom';
   base_url: string;
   status: 'active' | 'disabled';
   credential_ref?: string;
   provider_family?: EndpointProviderFamily;
-  protocol?: EndpointProtocol;
+  upstream_protocol: EndpointUpstreamProtocol;
   capabilities?: EndpointCapability[];
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;
@@ -48,12 +48,10 @@ export type EndpointProviderFamily =
   | 'glm'
   | 'alibaba'
   | 'custom';
-export type EndpointProtocol =
-  | 'openai_compatible'
-  | 'anthropic_compatible'
-  | 'google_gemini'
-  | 'glm_native'
-  | 'dashscope_native';
+export type EndpointUpstreamProtocol =
+  | 'openai_chat_completions'
+  | 'openai_responses'
+  | 'anthropic_messages';
 export type EndpointCapabilityType =
   | 'chat_completion'
   | 'multimodal_completion'

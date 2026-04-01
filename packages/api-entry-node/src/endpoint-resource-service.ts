@@ -12,6 +12,7 @@ import type {
   EndpointModelProfile,
   EndpointRecord,
 } from './resource-models.js';
+import { migrateLegacyEndpointRecord } from './endpoint-migration.js';
 import { resolveWorkspaceScopedCollection } from './workspace-tenant-collections.js';
 
 export class EndpointResourceService {
@@ -88,29 +89,23 @@ export class EndpointResourceService {
     return Object.keys(defaults).length > 0 ? defaults : undefined;
   }
 
-  private inferProtocol(baseUrl: string, fallback: EndpointRecord['protocol']): EndpointRecord['protocol'] {
+  private inferUpstreamProtocol(
+    baseUrl: string,
+    fallback: EndpointRecord['upstream_protocol'] | undefined,
+  ): EndpointRecord['upstream_protocol'] {
     if (fallback) return fallback;
-    if (baseUrl.includes('/anthropic') || /api\\.anthropic\\.com/i.test(baseUrl)) return 'anthropic_compatible';
-    if (baseUrl.includes('generativelanguage.googleapis.com')) return 'google_gemini';
-    if (baseUrl.includes('bigmodel.cn')) return 'glm_native';
-    if (baseUrl.includes('dashscope.aliyuncs.com')) return 'dashscope_native';
-    return 'openai_compatible';
+    if (baseUrl.includes('/responses')) return 'openai_responses';
+    if (baseUrl.includes('/anthropic') || /api\\.anthropic\\.com/i.test(baseUrl)) return 'anthropic_messages';
+    return 'openai_chat_completions';
   }
 
   private inferProviderFamily(
-    protocol: EndpointRecord['protocol'],
+    upstreamProtocol: EndpointRecord['upstream_protocol'],
     fallback: EndpointRecord['provider_family'],
   ): EndpointRecord['provider_family'] {
     if (fallback) return fallback;
-    if (protocol === 'anthropic_compatible') return 'anthropic';
-    if (protocol === 'google_gemini') return 'google';
-    if (protocol === 'glm_native') return 'glm';
-    if (protocol === 'dashscope_native') return 'alibaba';
+    if (upstreamProtocol === 'anthropic_messages') return 'anthropic';
     return 'custom';
-  }
-
-  private inferCompatibilityInterface(protocol: EndpointRecord['protocol']): 'openai_compatible' | 'anthropic_compatible' {
-    return protocol === 'anthropic_compatible' ? 'anthropic_compatible' : 'openai_compatible';
   }
 
   private normalizeModelProfile(
@@ -152,7 +147,7 @@ export class EndpointResourceService {
   }
 
   private defaultModelProfileForEndpoint(input: Partial<EndpointRecord>): EndpointModelProfile | undefined {
-    const isCustom = input.type === 'custom' || input.provider_family === 'custom';
+    const isCustom = input.type === 'custom';
     if (!isCustom) return undefined;
     return {
       max_context_tokens: 128000,
@@ -323,10 +318,11 @@ export class EndpointResourceService {
   }
 
   async listEndpoints(workspaceId: string, projectId: string): Promise<EndpointRecord[]> {
-    return this.docStore.list<EndpointRecord>(this.endpointsCollection(workspaceId), {
+    const endpoints = await this.docStore.list<EndpointRecord>(this.endpointsCollection(workspaceId), {
       workspace_id: workspaceId,
       project_id: projectId,
     });
+    return endpoints.map((endpoint) => migrateLegacyEndpointRecord(endpoint));
   }
 
   async getEndpoint(
@@ -344,7 +340,7 @@ export class EndpointResourceService {
     if (endpoint.workspace_id !== workspaceId || endpoint.project_id !== projectId) {
       return null;
     }
-    return endpoint;
+    return migrateLegacyEndpointRecord(endpoint);
   }
 
   async createEndpoint(
@@ -357,7 +353,10 @@ export class EndpointResourceService {
       throw new Error('endpoint_model_required');
     }
     const now = new Date().toISOString();
-    const protocol = this.inferProtocol(String(input.base_url ?? ''), input.protocol);
+    const upstreamProtocol = this.inferUpstreamProtocol(
+      String(input.base_url ?? ''),
+      input.upstream_protocol,
+    );
     const endpoint: EndpointRecord = {
       id: this.endpointId(),
       workspace_id: workspaceId,
@@ -365,13 +364,13 @@ export class EndpointResourceService {
       name: String(input.name ?? '').trim(),
       description: input.description?.trim() || undefined,
       model: normalized.model,
-      type: (input.type as EndpointRecord['type']) ?? 'openai',
+      type: (input.type as EndpointRecord['type']) ?? 'catalog',
       mode: input.mode,
       base_url: this.normalizeBaseUrl(String(input.base_url ?? '')),
       status: (input.status as EndpointRecord['status']) ?? 'active',
       credential_ref: input.credential_ref?.trim() || undefined,
-      protocol,
-      provider_family: this.inferProviderFamily(protocol, input.provider_family),
+      upstream_protocol: upstreamProtocol,
+      provider_family: this.inferProviderFamily(upstreamProtocol, input.provider_family),
       capabilities: normalized.capabilities,
       models: normalized.models,
       defaults: normalized.defaults,
@@ -384,10 +383,6 @@ export class EndpointResourceService {
       limits: input.limits,
       created_at: now,
       updated_at: now,
-    };
-    endpoint.meta = {
-      ...(endpoint.meta ?? {}),
-      compatibility_interface: this.inferCompatibilityInterface(protocol),
     };
     await this.docStore.upsert(this.endpointsCollection(workspaceId), endpoint.id, endpoint);
     return endpoint;
@@ -410,9 +405,9 @@ export class EndpointResourceService {
       },
       existing.model,
     );
-    const protocol = this.inferProtocol(
+    const upstreamProtocol = this.inferUpstreamProtocol(
       patch.base_url !== undefined ? this.normalizeBaseUrl(String(patch.base_url)) : existing.base_url,
-      patch.protocol ?? existing.protocol,
+      patch.upstream_protocol ?? existing.upstream_protocol,
     );
     const updated: EndpointRecord = {
       ...existing,
@@ -423,8 +418,8 @@ export class EndpointResourceService {
         patch.base_url !== undefined
           ? this.normalizeBaseUrl(String(patch.base_url))
           : existing.base_url,
-      protocol,
-      provider_family: this.inferProviderFamily(protocol, patch.provider_family ?? existing.provider_family),
+      upstream_protocol: upstreamProtocol,
+      provider_family: this.inferProviderFamily(upstreamProtocol, patch.provider_family ?? existing.provider_family),
       capabilities: normalized.capabilities,
       models: normalized.models,
       defaults: normalized.defaults,
@@ -433,10 +428,6 @@ export class EndpointResourceService {
         existing.model_profile ?? this.defaultModelProfileForEndpoint({ ...existing, ...patch }),
       ),
       updated_at: new Date().toISOString(),
-    };
-    updated.meta = {
-      ...(updated.meta ?? {}),
-      compatibility_interface: this.inferCompatibilityInterface(protocol),
     };
     await this.docStore.upsert(this.endpointsCollection(workspaceId), endpointId, updated);
     return updated;
@@ -463,8 +454,8 @@ export class EndpointResourceService {
       type: EndpointRecord['type'];
     }> = [
       { name: 'reranker', capability: 'rerank', item: payload.reranker, type: 'custom' },
-      { name: 'embedding', capability: 'embedding', item: payload.embedding, type: 'openai' },
-      { name: 'completion', capability: 'chat_completion', item: payload.completion, type: 'openai' },
+      { name: 'embedding', capability: 'embedding', item: payload.embedding, type: 'catalog' },
+      { name: 'completion', capability: 'chat_completion', item: payload.completion, type: 'catalog' },
       { name: 'image_generation', capability: 'image_generation', item: payload.image_generation, type: 'custom' },
       { name: 'video_generation', capability: 'video_generation', item: payload.video_generation, type: 'custom' },
     ];
@@ -484,7 +475,7 @@ export class EndpointResourceService {
         base_url: pair.item.api_base,
         credential_ref: credential.id,
         status: 'active',
-        protocol: 'openai_compatible',
+        upstream_protocol: 'openai_chat_completions',
         provider_family: 'custom',
         capabilities: [
           {

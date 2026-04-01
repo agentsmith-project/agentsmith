@@ -9,7 +9,7 @@ import type {
   EndpointCapability,
   EndpointDefaults,
   EndpointModelBinding,
-  EndpointProtocol,
+  EndpointUpstreamProtocol,
   EndpointModelProfile,
   EndpointProviderFamily,
   PaginationParams,
@@ -21,11 +21,11 @@ export interface CreateEndpointRequest {
   name: string;
   description?: string;
   model?: string;
-  type: 'openai' | 'anthropic' | 'custom';
+  type: 'catalog' | 'custom';
   base_url: string;
   credential_ref?: string;
   provider_family?: EndpointProviderFamily;
-  protocol?: EndpointProtocol;
+  upstream_protocol: EndpointUpstreamProtocol;
   capabilities?: EndpointCapability[];
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;
@@ -45,8 +45,9 @@ export interface UpdateEndpointRequest {
   model?: string;
   base_url?: string;
   credential_ref?: string;
+  type?: 'catalog' | 'custom';
   provider_family?: EndpointProviderFamily;
-  protocol?: EndpointProtocol;
+  upstream_protocol?: EndpointUpstreamProtocol;
   capabilities?: EndpointCapability[];
   models?: EndpointModelBinding[];
   defaults?: EndpointDefaults;

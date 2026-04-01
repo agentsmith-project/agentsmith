@@ -8,6 +8,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { CUSTOM_PROTOCOL_OPTIONS } from '@/lib/endpoints/provider-catalog';
 import { resolveEndpointProtocolLabel } from '@/lib/endpoints/protocol-utils';
 
 import type { CapabilityOption, CatalogModelOption, EndpointProviderSelection } from '../create-endpoint-dialog/types';
@@ -40,6 +41,7 @@ interface EditEndpointFormProps {
   supportsReasoning: boolean;
   supportsToolCall: boolean;
   t: (key: string) => string;
+  upstreamProtocol: EndpointProviderSelection['upstream_protocol'];
   onApplyModelProfileDefaults: () => void;
   onBaseUrlChange: (value: string) => void;
   onCacheReadDiscountRatioChange: (value: string) => void;
@@ -56,6 +58,7 @@ interface EditEndpointFormProps {
   onSelectedModelChange: (value: string) => void;
   onStatusChange: (value: 'active' | 'disabled') => void;
   onSupportsFileChange: (value: boolean) => void;
+  onUpstreamProtocolChange: (value: EndpointProviderSelection['upstream_protocol']) => void;
   onSupportsReasoningChange: (value: boolean) => void;
   onSupportsToolCallChange: (value: boolean) => void;
 }
@@ -88,6 +91,7 @@ export function EditEndpointForm({
   supportsReasoning,
   supportsToolCall,
   t,
+  upstreamProtocol,
   onApplyModelProfileDefaults,
   onBaseUrlChange,
   onCacheReadDiscountRatioChange,
@@ -104,6 +108,7 @@ export function EditEndpointForm({
   onSelectedModelChange,
   onStatusChange,
   onSupportsFileChange,
+  onUpstreamProtocolChange,
   onSupportsReasoningChange,
   onSupportsToolCallChange,
 }: EditEndpointFormProps) {
@@ -166,12 +171,39 @@ export function EditEndpointForm({
         </div>
       ) : null}
 
-      <div className="space-y-2">
-        <label className="text-sm font-medium text-foreground">{t('create_dialog.compatibility_interface')}</label>
-        <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
-          {resolveEndpointProtocolLabel(t, selectedProvider.protocol)}
+      {isEndpointCustom ? (
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">{t('create_dialog.upstream_protocol')}</label>
+          <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
+            {CUSTOM_PROTOCOL_OPTIONS.map((option) => (
+              <button
+                key={option.protocol}
+                type="button"
+                onClick={() => onUpstreamProtocolChange(option.protocol)}
+                className={`rounded-md border px-3 py-3 text-left transition-colors ${
+                  upstreamProtocol === option.protocol
+                    ? 'border-accent bg-accent/5'
+                    : 'border-subtle hover:bg-surface-low'
+                }`}
+              >
+                <div className="text-sm font-medium text-foreground">
+                  {resolveEndpointProtocolLabel(t, option.protocol)}
+                </div>
+                {option.description ? (
+                  <div className="mt-1 text-xs text-tertiary">{option.description}</div>
+                ) : null}
+              </button>
+            ))}
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-foreground">{t('create_dialog.upstream_protocol')}</label>
+          <div className="rounded-sm border border-subtle bg-surface-low px-3 py-2 text-sm text-foreground">
+            {resolveEndpointProtocolLabel(t, selectedProvider.upstream_protocol)}
+          </div>
+        </div>
+      )}
 
       {isCustomProvider ? (
         <div className="space-y-2">

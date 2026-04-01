@@ -22,49 +22,55 @@ import type {
 } from '../endpoints';
 
 describe('CustomEndpointProtocol', () => {
-  it('should accept openai_compatible protocol', () => {
-    const protocol: CustomEndpointProtocol = 'openai_compatible';
-    expect(protocol).toBe('openai_compatible');
+  it('should accept openai_chat_completions protocol', () => {
+    const protocol: CustomEndpointProtocol = 'openai_chat_completions';
+    expect(protocol).toBe('openai_chat_completions');
   });
 
-  it('should accept anthropic_compatible protocol', () => {
-    const protocol: CustomEndpointProtocol = 'anthropic_compatible';
-    expect(protocol).toBe('anthropic_compatible');
+  it('should accept openai_responses and anthropic_messages protocol', () => {
+    const responses: CustomEndpointProtocol = 'openai_responses';
+    const anthropic: CustomEndpointProtocol = 'anthropic_messages';
+    expect(responses).toBe('openai_responses');
+    expect(anthropic).toBe('anthropic_messages');
   });
 
-  it('should have exactly two protocol options', () => {
-    const protocols: CustomEndpointProtocol[] = ['openai_compatible', 'anthropic_compatible'];
-    expect(protocols).toHaveLength(2);
+  it('should have exactly three protocol options', () => {
+    const protocols: CustomEndpointProtocol[] = [
+      'openai_chat_completions',
+      'openai_responses',
+      'anthropic_messages',
+    ];
+    expect(protocols).toHaveLength(3);
   });
 });
 
 describe('CustomEndpointConfig', () => {
-  it('should create valid openai_compatible config', () => {
+  it('should create valid openai_chat_completions config', () => {
     const config: CustomEndpointConfig = {
-      protocol: 'openai_compatible',
+      protocol: 'openai_chat_completions',
       baseUrl: 'https://api.openai.com/v1',
       modelName: 'gpt-4o',
       capability: 'chat_completion',
       credentialRef: 'cred-123',
     };
 
-    expect(config.protocol).toBe('openai_compatible');
+    expect(config.protocol).toBe('openai_chat_completions');
     expect(config.baseUrl).toBe('https://api.openai.com/v1');
     expect(config.modelName).toBe('gpt-4o');
     expect(config.capability).toBe('chat_completion');
     expect(config.credentialRef).toBe('cred-123');
   });
 
-  it('should create valid anthropic_compatible config', () => {
+  it('should create valid anthropic_messages config', () => {
     const config: CustomEndpointConfig = {
-      protocol: 'anthropic_compatible',
+      protocol: 'anthropic_messages',
       baseUrl: 'https://api.anthropic.com',
       modelName: 'claude-3-5-sonnet-20241022',
       capability: 'multimodal_completion',
       credentialRef: 'cred-456',
     };
 
-    expect(config.protocol).toBe('anthropic_compatible');
+    expect(config.protocol).toBe('anthropic_messages');
     expect(config.modelName).toBe('claude-3-5-sonnet-20241022');
     expect(config.capability).toBe('multimodal_completion');
   });
@@ -254,23 +260,23 @@ describe('UpdatePricingRequest', () => {
 });
 
 describe('ValidateEndpointRequest', () => {
-  it('should create validation request for openai_compatible', () => {
+  it('should create validation request for openai_chat_completions', () => {
     const request: ValidateEndpointRequest = {
       baseUrl: 'https://api.openai.com/v1',
-      protocol: 'openai_compatible',
+      protocol: 'openai_chat_completions',
       credentialRef: 'cred-123',
       model: 'gpt-4o',
     };
 
-    expect(request.protocol).toBe('openai_compatible');
+    expect(request.protocol).toBe('openai_chat_completions');
     expect(request.baseUrl).toBe('https://api.openai.com/v1');
     expect(request.model).toBe('gpt-4o');
   });
 
   it('should create validation request without optional model', () => {
-    const request: ValidateEndpointRequest = {
+      const request: ValidateEndpointRequest = {
       baseUrl: 'https://api.anthropic.com',
-      protocol: 'anthropic_compatible',
+      protocol: 'anthropic_messages',
       credentialRef: 'cred-456',
     };
 
@@ -311,7 +317,7 @@ describe('Type Safety - No Any Types', () => {
     // This test ensures type safety - if compilation fails,
     // it means the type is properly defined (not 'any')
     const config: CustomEndpointConfig = {
-      protocol: 'openai_compatible',
+      protocol: 'openai_chat_completions',
       baseUrl: 'https://api.example.com/v1',
       modelName: 'test-model',
       capability: 'chat_completion',

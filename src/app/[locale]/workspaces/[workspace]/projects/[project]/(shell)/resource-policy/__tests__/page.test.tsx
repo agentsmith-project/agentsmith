@@ -5,7 +5,7 @@ import { useCanReadProjectPolicy, useCanUpdateProjectPolicy } from '@/lib/hooks/
 import { useResourcePolicy } from '@/lib/hooks/use-members';
 
 const mockSearchParams = new URLSearchParams();
-const mockListEndpoints = vi.fn().mockResolvedValue({ items: [{ id: 'ep_1', project_id: 'prj_1', name: 'OpenAI Main', model: 'gpt-4o', type: 'openai', base_url: 'https://api.openai.com/v1', status: 'active', created_at: '2026-02-01T00:00:00Z', updated_at: '2026-02-01T00:00:00Z' }] });
+const mockListEndpoints = vi.fn().mockResolvedValue({ items: [{ id: 'ep_1', project_id: 'prj_1', name: 'OpenAI Main', model: 'gpt-4o', type: 'catalog', upstream_protocol: 'openai_chat_completions', base_url: 'https://api.openai.com/v1', status: 'active', created_at: '2026-02-01T00:00:00Z', updated_at: '2026-02-01T00:00:00Z' }] });
 const mockGetResourcePolicy = vi.fn().mockResolvedValue({ resource_type: 'endpoint', resource_id: 'ep_1', access_mode: 'allow_all_members', allowed_subjects: [], rate_limits: { rules: [{ key: 'endpoint.requests_per_day', value: 100000, window: 'day' }] } });
 const mockMutateAsync = vi.fn().mockResolvedValue(undefined);
 const STABLE_MEMBERS = [{ id: 'user_123', email: 'user123@example.com', name: 'User 123', role: 'developer', permissions: [], status: 'active', joined_at: '2026-02-01T00:00:00Z' }];

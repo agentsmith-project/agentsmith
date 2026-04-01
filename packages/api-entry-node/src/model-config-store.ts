@@ -318,8 +318,7 @@ export type ModelCatalogProviderProjectionRecord = {
   env?: string[];
   model_count: number;
   default_base_url: string;
-  protocol: string;
-  compatibility_interface: string;
+  upstream_protocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
 };
 
 export type ModelCatalogModelProjectionRecord = {

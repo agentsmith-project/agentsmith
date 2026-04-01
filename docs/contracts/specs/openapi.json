@@ -981,6 +981,70 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites": {
+      "post": {
+        "tags": [
+          "Members"
+        ],
+        "operationId": "post_projectInvites",
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateProjectInviteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Invite created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateProjectInviteResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "422": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests": {
       "get": {
         "tags": [
@@ -1954,6 +2018,46 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/desktop-mount-access": {
+      "parameters": [
+        {
+          "$ref": "#/components/parameters/workspaceId"
+        },
+        {
+          "$ref": "#/components/parameters/projectId"
+        },
+        {
+          "$ref": "#/components/parameters/libraryId"
+        }
+      ],
+      "post": {
+        "tags": [
+          "Files"
+        ],
+        "operationId": "createFileLibraryDesktopMountAccess",
+        "responses": {
+          "200": {
+            "description": "Desktop mount access",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FileLibraryDesktopMountAccessResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
           }
         }
       }
@@ -2959,7 +3063,7 @@
         ],
         "operationId": "post_llmGatewayProxy",
         "summary": "Project-scoped LLM gateway proxy",
-        "description": "Uses one project gateway identity and auth surface, but clients still call the protocol path they expect. Use `/chat/completions` or `/responses` for OpenAI-compatible clients, and `/messages` for Anthropic-compatible clients.",
+        "description": "Uses one project gateway identity and auth surface, with explicit protocol-prefixed paths.\nUse `/openai/chat/completions` or `/openai/responses` for OpenAI-compatible clients, and\n`/anthropic/messages` or `/anthropic/messages/count_tokens` for Anthropic-compatible clients.\n",
         "responses": {
           "200": {
             "description": "OK",
@@ -2988,6 +3092,79 @@
                 "additionalProperties": true
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/user/keys": {
+      "get": {
+        "tags": [
+          "User"
+        ],
+        "operationId": "get_userKeys",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "User"
+        ],
+        "operationId": "post_userKeys",
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "additionalProperties": true
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/user/keys/{keyId}": {
+      "delete": {
+        "tags": [
+          "User"
+        ],
+        "operationId": "delete_userKeyItem",
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
           }
         }
       }
@@ -8612,6 +8789,97 @@
           },
           "expires_in_seconds": {
             "type": "integer"
+          }
+        }
+      },
+      "FileLibraryDesktopMountAccess": {
+        "type": "object",
+        "required": [
+          "filesystem_name",
+          "metadata_url",
+          "deployment_base_url",
+          "default_mount_roots",
+          "windows_requires_drive_letter"
+        ],
+        "properties": {
+          "filesystem_name": {
+            "type": "string"
+          },
+          "metadata_url": {
+            "type": "string"
+          },
+          "storage_bucket_url": {
+            "type": "string"
+          },
+          "deployment_base_url": {
+            "type": "string"
+          },
+          "default_mount_roots": {
+            "type": "object",
+            "required": [
+              "linux",
+              "macos",
+              "windows"
+            ],
+            "properties": {
+              "linux": {
+                "type": "string"
+              },
+              "macos": {
+                "type": "string"
+              },
+              "windows": {
+                "type": "string"
+              }
+            }
+          },
+          "windows_requires_drive_letter": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FileLibraryDesktopMountAccessResponse": {
+        "type": "object",
+        "required": [
+          "desktop_mount_access"
+        ],
+        "properties": {
+          "desktop_mount_access": {
+            "$ref": "#/components/schemas/FileLibraryDesktopMountAccess"
+          }
+        }
+      },
+      "CreateProjectInviteRequest": {
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "properties": {
+          "email": {
+            "type": "string"
+          },
+          "expires_in_hours": {
+            "type": "integer"
+          }
+        }
+      },
+      "CreateProjectInviteResponse": {
+        "type": "object",
+        "required": [
+          "invite_id",
+          "invite_url",
+          "expires_at"
+        ],
+        "properties": {
+          "invite_id": {
+            "type": "string"
+          },
+          "invite_url": {
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },

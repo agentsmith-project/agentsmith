@@ -99,6 +99,10 @@
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/share-link",
     "method": "post"
   },
+  "fileLibraryDesktopMountAccess": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/desktop-mount-access",
+    "method": "post"
+  },
   "audit": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/audit",
     "method": "get"
@@ -130,6 +134,10 @@
   "projectMembers": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/members",
     "method": "get"
+  },
+  "projectInvites": {
+    "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites",
+    "method": "post"
   },
   "projectJoinRequests": {
     "path": "/api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests",

@@ -57,6 +57,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/user/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["get_userKeys"];
+        put?: never;
+        post: operations["post_userKeys"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/user/keys/{keyId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["delete_userKeyItem"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces": {
         parameters: {
             query?: never;
@@ -1276,6 +1308,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/desktop-mount-access": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["createFileLibraryDesktopMountAccess"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/file-libraries/{libraryId}/download": {
         parameters: {
             query?: never;
@@ -1484,6 +1536,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspaces/{workspaceId}/projects/{projectId}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["post_projectInvites"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspaces/{workspaceId}/projects/{projectId}/join-requests": {
         parameters: {
             query?: never;
@@ -1567,9 +1635,9 @@ export interface paths {
         put?: never;
         /**
          * Project-scoped LLM gateway proxy
-         * @description Uses one project gateway identity and auth surface, but clients still call the protocol path
-         *     they expect. Use `/chat/completions` or `/responses` for OpenAI-compatible clients, and
-         *     `/messages` for Anthropic-compatible clients.
+         * @description Uses one project gateway identity and auth surface, with explicit protocol-prefixed paths.
+         *     Use `/openai/chat/completions` or `/openai/responses` for OpenAI-compatible clients, and
+         *     `/anthropic/messages` or `/anthropic/messages/count_tokens` for Anthropic-compatible clients.
          */
         post: operations["post_llmGatewayProxy"];
         delete?: never;
@@ -2645,6 +2713,16 @@ export interface components {
             expires_in_seconds?: number;
             path: string;
         };
+        CreateProjectInviteRequest: {
+            email: string;
+            expires_in_hours?: number;
+        };
+        CreateProjectInviteResponse: {
+            /** Format: date-time */
+            expires_at: string;
+            invite_id: string;
+            invite_url: string;
+        };
         CreateProjectRequest: {
             name: string;
         };
@@ -2714,6 +2792,21 @@ export interface components {
             };
             /** @enum {string} */
             provisioning_status: "creating" | "ready" | "degraded" | "failed" | "deleting";
+        };
+        FileLibraryDesktopMountAccess: {
+            default_mount_roots: {
+                linux: string;
+                macos: string;
+                windows: string;
+            };
+            deployment_base_url: string;
+            filesystem_name: string;
+            metadata_url: string;
+            storage_bucket_url?: string;
+            windows_requires_drive_letter: boolean;
+        };
+        FileLibraryDesktopMountAccessResponse: {
+            desktop_mount_access: components["schemas"]["FileLibraryDesktopMountAccess"];
         };
         FileLibraryEntry: {
             /** @enum {string} */
@@ -3542,6 +3635,77 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ApiError"];
                 };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    get_userKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    post_userKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    [key: string]: unknown;
+                };
+            };
+        };
+        responses: {
+            /** @description Created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+        };
+    };
+    delete_userKeyItem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No Content */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             401: components["responses"]["Unauthorized"];
         };
@@ -5987,6 +6151,33 @@ export interface operations {
             };
         };
     };
+    createFileLibraryDesktopMountAccess: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                libraryId: components["parameters"]["libraryId"];
+                projectId: components["parameters"]["projectId"];
+                workspaceId: components["parameters"]["workspaceId"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Desktop mount access */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FileLibraryDesktopMountAccessResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
     downloadFileLibraryEntry: {
         parameters: {
             query?: never;
@@ -6361,6 +6552,44 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    post_projectInvites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                projectId: string;
+                workspaceId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateProjectInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description Invite created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateProjectInviteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Validation error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiError"];
+                };
+            };
         };
     };
     get_projectJoinRequests: {

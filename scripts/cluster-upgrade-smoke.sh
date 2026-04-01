@@ -45,6 +45,15 @@ for forbidden in bootstrap.sh verify.sh report.sh apply-cluster-prereqs.sh; do
   fi
 done
 
+grep -q 'upgrade-files-verify.sh' "${ROOT_DIR}/docs/user-guides/cluster-upgrade-operations.md" || {
+  echo "[cluster-upgrade-smoke] cluster-upgrade runbook must mention upgrade-files-verify.sh" >&2
+  exit 1
+}
+[[ -f "${ROOT_DIR}/scripts/cluster-deploy/upgrade-files-verify.sh" ]] || {
+  echo "[cluster-upgrade-smoke] missing upgrade-files-verify.sh" >&2
+  exit 1
+}
+
 services="$(bash -lc 'source "'"${ROOT_DIR}"'/scripts/app/deploy-common.sh"; release_app_upgrade_services')"
 printf '%s\n' "${services}" | grep -qx api
 printf '%s\n' "${services}" | grep -qx web

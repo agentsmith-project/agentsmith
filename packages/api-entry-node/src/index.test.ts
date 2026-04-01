@@ -2,9 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import { WebSocket } from 'ws';
 import { createDefaultNodeApiDeps } from './index.js';
 import { sanitizeWorkloadId } from './internal-agent-pod-manager.js';
+import { UniversalProxyService } from './universal-proxy-service.js';
 import {
-  startOpenAICompatibleUpstreamServer,
-  startPassthroughUpstreamServer as startUpstreamServer,
+  startUniversalProxyChatServer,
 } from './__integration__/chat-test-support.js';
 import { apiFetch, startServer, startServerWithDeps } from './__integration__/test-support.js';
 
@@ -171,8 +171,10 @@ describe('api-entry-node projects routes', () => {
   });
 
   it('enforces endpoint requests_per_minute policy for chat stream preflight', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startOpenAICompatibleUpstreamServer();
+    const upstream = startUniversalProxyChatServer();
+    const deps = createDefaultNodeApiDeps();
+    deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
+    const { baseUrl } = startServerWithDeps(deps);
 
     const credentialRes = await apiFetch(
       baseUrl,
@@ -195,10 +197,14 @@ describe('api-entry-node projects routes', () => {
         body: JSON.stringify({
           name: 'chat-rate-endpoint',
           model: 'deepseek-chat',
-          type: 'openai',
-          mode: 'openai',
+          type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'deepseek-chat' }],
+          models: [{ capability: 'chat_completion', model_id: 'deepseek-chat' }],
+          defaults: { chat_model_id: 'deepseek-chat' },
         }),
       },
     );
@@ -762,8 +768,10 @@ describe('api-entry-node projects routes', () => {
 
 
   it('normalizes endpoint base_url when full chat/completions path is provided', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startUpstreamServer();
+    const upstream = startUniversalProxyChatServer();
+    const deps = createDefaultNodeApiDeps();
+    deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -791,11 +799,13 @@ describe('api-entry-node projects routes', () => {
           name: 'glm-chat',
           model: 'placeholder-model',
           type: 'custom',
-          mode: 'openai',
           base_url: `${upstream.baseUrl}/chat/completions`,
           credential_ref: credential.id,
-          provider_family: 'glm',
-          protocol: 'glm_native',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'placeholder-model' }],
+          models: [{ capability: 'chat_completion', model_id: 'placeholder-model' }],
+          defaults: { chat_model_id: 'placeholder-model' },
         }),
       },
     );
@@ -830,7 +840,7 @@ describe('api-entry-node projects routes', () => {
       },
     );
     expect(sendRes.status).toBe(200);
-    expect(upstream.lastPath()).toBe('/v1/chat/completions');
+    expect(upstream.lastPath().endsWith('/openai/v1/chat/completions')).toBe(true);
   });
 
   it('truncates oversized notebook trace details payloads', async () => {
@@ -856,11 +866,16 @@ describe('api-entry-node projects routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'glm-coding',
-          type: 'openai_compatible',
+          type: 'custom',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
           model: 'placeholder-model',
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'placeholder-model' }],
+          models: [{ capability: 'chat_completion', model_id: 'placeholder-model', display_name: 'placeholder-model' }],
+          defaults: { chat_model_id: 'placeholder-model' },
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,
@@ -1011,11 +1026,16 @@ describe('api-entry-node projects routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'glm-coding',
-          type: 'openai_compatible',
+          type: 'custom',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
           model: 'placeholder-model',
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'placeholder-model' }],
+          models: [{ capability: 'chat_completion', model_id: 'placeholder-model', display_name: 'placeholder-model' }],
+          defaults: { chat_model_id: 'placeholder-model' },
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,
@@ -1181,11 +1201,16 @@ describe('api-entry-node projects routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'glm-coding',
-          type: 'openai_compatible',
+          type: 'custom',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',
           model: 'placeholder-model',
+          capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'placeholder-model' }],
+          models: [{ capability: 'chat_completion', model_id: 'placeholder-model', display_name: 'placeholder-model' }],
+          defaults: { chat_model_id: 'placeholder-model' },
           model_profile: {
             max_context_tokens: 204800,
             max_output_tokens: 128000,

@@ -581,6 +581,9 @@ export async function createEndpointViaApi(
     upstreamBaseUrl: string;
     credentialName: string;
     capability?: 'chat_completion' | 'multimodal_completion';
+    endpointType?: 'catalog' | 'custom';
+    providerFamily?: 'openai' | 'anthropic' | 'deepseek' | 'minimax' | 'kimi' | 'google' | 'glm' | 'alibaba' | 'custom';
+    upstreamProtocol?: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
     protocol?: 'openai_compatible' | 'anthropic_compatible';
     modelProfile?: {
       max_context_tokens: number;
@@ -602,9 +605,21 @@ export async function createEndpointViaApi(
     ...(args.modelProfile ?? {}),
   };
   const normalizedBaseUrl = args.upstreamBaseUrl.trim().toLowerCase();
-  const useAnthropicCompat = args.protocol
-    ? args.protocol === 'anthropic_compatible'
-    : normalizedBaseUrl.includes('/anthropic') || normalizedBaseUrl.includes('api.anthropic.com');
+  const upstreamProtocol = args.upstreamProtocol
+    ?? (args.protocol === 'anthropic_compatible'
+      ? 'anthropic_messages'
+      : args.protocol === 'openai_compatible'
+        ? 'openai_chat_completions'
+        : (normalizedBaseUrl.includes('/anthropic') || normalizedBaseUrl.includes('api.anthropic.com')
+          ? 'anthropic_messages'
+          : 'openai_chat_completions'));
+  const endpointType = args.endpointType ?? 'custom';
+  const providerFamily = args.providerFamily
+    ?? (endpointType === 'custom'
+      ? 'custom'
+      : upstreamProtocol === 'anthropic_messages'
+        ? 'anthropic'
+        : 'openai');
   const credentialsRes = await page.request.get(
     `${API_BASE}/api/v1/workspaces/${workspaceId}/projects/${projectId}/credentials`,
     { headers: { Authorization: `Bearer ${token}` } },
@@ -631,15 +646,14 @@ export async function createEndpointViaApi(
       data: {
         name: args.endpointName,
         model: args.endpointModel,
-        type: useAnthropicCompat ? 'anthropic' : 'openai',
+        type: endpointType,
         base_url: args.upstreamBaseUrl,
         credential_ref: credential!.id,
-        provider_family: useAnthropicCompat ? 'anthropic' : 'openai',
-        protocol: useAnthropicCompat ? 'anthropic_compatible' : 'openai_compatible',
+        provider_family: providerFamily,
+        upstream_protocol: upstreamProtocol,
         capabilities: [{ type: capability, enabled: true, default_model_id: args.endpointModel }],
         models: [{ capability, model_id: args.endpointModel, display_name: args.endpointModel }],
         defaults,
-        meta: { compatibility_interface: useAnthropicCompat ? 'anthropic_compatible' : 'openai_compatible' },
         model_profile: {
           max_context_tokens: modelProfile.max_context_tokens,
           max_output_tokens: modelProfile.max_output_tokens,

@@ -457,8 +457,9 @@ describe('notebook-execution-orchestrator governance preflight', () => {
           model: 'placeholder-model',
           credential_ref: 'cred_1',
           name: 'endpoint-anthropic',
-          type: 'anthropic',
-          protocol: 'anthropic_compatible',
+          type: 'catalog',
+          provider_family: 'anthropic',
+          upstream_protocol: 'anthropic_messages',
           base_url: 'https://anthropic.example.com/v1',
           model_profile: {
             max_context_tokens: 128000,

@@ -146,8 +146,8 @@ test.describe('@lane-real integration endpoint capabilities', () => {
             name: 'it-capability-endpoint',
             model: 'deepseek-chat',
             type: 'custom',
-            protocol: 'openai_compatible',
             provider_family: 'custom',
+            upstream_protocol: 'openai_chat_completions',
             base_url: upstream.baseUrl,
             credential_ref: credential.id,
             capabilities: [

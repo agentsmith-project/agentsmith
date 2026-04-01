@@ -98,10 +98,10 @@ async function createEndpointViaApi(
     model: string;
     baseUrl: string;
     credentialRef: string;
-    protocol: 'openai_compatible' | 'anthropic_compatible';
+    upstreamProtocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
   },
 ): Promise<string> {
-  const providerFamily = args.protocol === 'anthropic_compatible' ? 'anthropic' : 'openai';
+  const providerFamily = args.upstreamProtocol === 'anthropic_messages' ? 'anthropic' : 'custom';
   const response = await page.request.post(
     `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
     {
@@ -112,11 +112,11 @@ async function createEndpointViaApi(
       data: {
         name: args.name,
         model: args.model,
-        type: providerFamily,
+        type: 'custom',
         base_url: args.baseUrl,
         credential_ref: args.credentialRef,
         provider_family: providerFamily,
-        protocol: args.protocol,
+        upstream_protocol: args.upstreamProtocol,
         capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: args.model }],
         models: [{ capability: 'chat_completion', model_id: args.model, display_name: args.model }],
         defaults: { chat_model_id: args.model },
@@ -155,6 +155,42 @@ async function startOpenAiChatCompletionsUpstream(replyText: string): Promise<Up
             },
           ],
           usage: { prompt_tokens: 3, completion_tokens: 4, total_tokens: 7 },
+        }),
+      );
+    })();
+  });
+
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const address = server.address() as AddressInfo;
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    stop: () => new Promise<void>((resolve) => server.close(() => resolve())),
+  };
+}
+
+async function startOpenAiResponsesUpstream(replyText: string): Promise<UpstreamServer> {
+  const server = http.createServer((req, res) => {
+    void (async () => {
+      if (req.method !== 'POST' || req.url !== '/v1/responses') {
+        res.statusCode = 404;
+        res.setHeader('content-type', 'application/json');
+        res.end(JSON.stringify({ error: 'not_found' }));
+        return;
+      }
+      res.statusCode = 200;
+      res.setHeader('content-type', 'application/json');
+      res.end(
+        JSON.stringify({
+          id: 'resp_it',
+          object: 'response',
+          output_text: replyText,
+          output: [
+            {
+              type: 'message',
+              role: 'assistant',
+              content: [{ type: 'output_text', text: replyText }],
+            },
+          ],
         }),
       );
     })();
@@ -213,7 +249,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
         model: 'placeholder-model',
         baseUrl: upstream.baseUrl,
         credentialRef: credentialId,
-        protocol: 'openai_compatible',
+        upstreamProtocol: 'openai_chat_completions',
       });
 
       const response = await page.request.post(
@@ -251,7 +287,7 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
         model: 'placeholder-model',
         baseUrl: upstream.baseUrl,
         credentialRef: credentialId,
-        protocol: 'anthropic_compatible',
+        upstreamProtocol: 'anthropic_messages',
       });
 
       const response = await page.request.post(
@@ -274,6 +310,44 @@ test.describe('@lane-real integration universal proxy endpoint routes', () => {
       const body = await response.text();
       expect(response.headers()['content-type']).toContain('text/event-stream');
       expect(body).toContain('dev-universal-anthropic-ok');
+    } finally {
+      await upstream.stop();
+    }
+  });
+
+  test('responses proxy passes through responses-native upstreams in dev environment', async ({ page }) => {
+    test.setTimeout(240_000);
+    const upstream = await startOpenAiResponsesUpstream('dev-universal-responses-native-ok');
+
+    try {
+      const token = await issueDevToken(page);
+      const projectId = await createProjectViaApi(page, token, `it-upx-responses-native-${Date.now()}`);
+      const credentialId = await createCredentialViaApi(page, token, projectId);
+      const endpointId = await createEndpointViaApi(page, token, projectId, {
+        name: `it-upx-responses-native-${Date.now()}`,
+        model: 'placeholder-model',
+        baseUrl: upstream.baseUrl,
+        credentialRef: credentialId,
+        upstreamProtocol: 'openai_responses',
+      });
+
+      const response = await page.request.post(
+        `${API_BASE}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints/${endpointId}/proxy/openai/responses`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          data: {
+            model: 'placeholder-model',
+            input: 'reply with exactly dev-universal-responses-native-ok',
+            max_output_tokens: 64,
+          },
+        },
+      );
+      expect(response.ok()).toBeTruthy();
+      const body = (await response.json()) as unknown;
+      expect(extractResponsesText(body)).toBe('dev-universal-responses-native-ok');
     } finally {
       await upstream.stop();
     }

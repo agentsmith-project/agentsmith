@@ -154,12 +154,12 @@ async function createEndpointViaApi(args: {
   model: string;
   baseUrl: string;
   credentialRef: string;
-  protocol: 'openai_compatible' | 'anthropic_compatible';
+  upstreamProtocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
   modelProfile?: {
     max_context_tokens: number;
   };
 }): Promise<string> {
-  const providerFamily = args.protocol === 'anthropic_compatible' ? 'anthropic' : 'openai';
+  const providerFamily = args.upstreamProtocol === 'anthropic_messages' ? 'anthropic' : 'custom';
   const response = await args.page.request.post(
     `${API_BASE}/api/v1/workspaces/ws_default/projects/${args.projectId}/endpoints`,
     {
@@ -170,11 +170,11 @@ async function createEndpointViaApi(args: {
       data: {
         name: args.name,
         model: args.model,
-        type: providerFamily,
+        type: 'custom',
         base_url: args.baseUrl,
         credential_ref: args.credentialRef,
         provider_family: providerFamily,
-        protocol: args.protocol,
+        upstream_protocol: args.upstreamProtocol,
         capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: args.model }],
         models: [{ capability: 'chat_completion', model_id: args.model, display_name: args.model }],
         defaults: { chat_model_id: args.model },
@@ -564,13 +564,13 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
         kind: 'openai' as const,
         replyToken: `UPX_NOTEBOOK_OPENAI_${Date.now()}`,
         startUpstream: startOpenAiChatCompletionsUpstream,
-        protocol: 'openai_compatible' as const,
+        upstreamProtocol: 'openai_chat_completions' as const,
       },
       {
         kind: 'anthropic' as const,
         replyToken: `UPX_NOTEBOOK_ANTHROPIC_${Date.now()}`,
         startUpstream: startAnthropicStreamingUpstream,
-        protocol: 'anthropic_compatible' as const,
+        upstreamProtocol: 'anthropic_messages' as const,
       },
     ];
 
@@ -591,7 +591,7 @@ test.describe('@lane-real notebook runner protocol blindness via universal proxy
           model: 'placeholder-model',
           baseUrl: upstream.baseUrl,
           credentialRef: credential.id,
-          protocol: scenario.protocol,
+          upstreamProtocol: scenario.upstreamProtocol,
           modelProfile: {
             max_context_tokens: 128000,
           },
@@ -674,14 +674,14 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
     const scenarios = [
       {
         kind: 'openai' as const,
-        protocol: 'openai_compatible' as const,
+        upstreamProtocol: 'openai_chat_completions' as const,
         baseUrl: BACKEND_REAL_OPENAI_BASE_URL,
         model: BACKEND_REAL_OPENAI_MODEL,
         expectedCompactLimit: 121600,
       },
       {
         kind: 'anthropic' as const,
-        protocol: 'anthropic_compatible' as const,
+        upstreamProtocol: 'anthropic_messages' as const,
         baseUrl: BACKEND_REAL_ANTHROPIC_BASE_URL,
         model: BACKEND_REAL_MODEL,
         expectedCompactLimit: 121600,
@@ -703,7 +703,7 @@ test.describe('@lane-real notebook runner real upstream stability via universal 
         model: scenario.model,
         baseUrl: scenario.baseUrl,
         credentialRef: credential.id,
-        protocol: scenario.protocol,
+        upstreamProtocol: scenario.upstreamProtocol,
         modelProfile: {
           max_context_tokens: 128000,
         },

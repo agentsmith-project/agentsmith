@@ -321,12 +321,13 @@ test.describe('Endpoints Page', () => {
 
       // Check title and protocol buttons
       await expect(wizard.getByText(/Create Custom Endpoint|custom_wizard\.title/i)).toBeVisible();
-      await expect(wizard.getByTestId('protocol-openai_compatible')).toBeVisible();
-      await expect(wizard.getByTestId('protocol-anthropic_compatible')).toBeVisible();
+      await expect(wizard.getByTestId('protocol-openai_chat_completions')).toBeVisible();
+      await expect(wizard.getByTestId('protocol-openai_responses')).toBeVisible();
+      await expect(wizard.getByTestId('protocol-anthropic_messages')).toBeVisible();
 
       // Enter name and select protocol
       await wizard.getByTestId('wizard-name-input').fill('E2E Custom OpenAI');
-      await wizard.getByTestId('protocol-openai_compatible').click();
+      await wizard.getByTestId('protocol-openai_chat_completions').click();
       await wizard.getByTestId('wizard-use-default-url').click();
       await expect(wizard.getByTestId('wizard-base-url-input')).toHaveValue(/https:\/\//i);
     });
@@ -442,9 +443,9 @@ test.describe('Endpoints Page', () => {
       await wizard.getByTestId('wizard-create-button').click();
 
       const req = await createRequestPromise;
-      const payload = req.postDataJSON() as { base_url?: string; type?: string; protocol?: string };
+      const payload = req.postDataJSON() as { base_url?: string; type?: string; upstream_protocol?: string };
       expect(payload.type).toBe('custom');
-      expect(payload.protocol).toBe('openai_compatible');
+      expect(payload.upstream_protocol).toBe('openai_chat_completions');
       expect(payload.base_url).toBe('https://openai-compatible.provider.example');
     });
 
@@ -452,7 +453,7 @@ test.describe('Endpoints Page', () => {
       const wizard = await openCustomWizardFromCreateDialog(authedPage);
 
       await wizard.getByTestId('wizard-name-input').fill(`E2E Provider Anthropic ${Date.now()}`);
-      await wizard.getByTestId('protocol-anthropic_compatible').click();
+      await wizard.getByTestId('protocol-anthropic_messages').click();
       await wizard.getByTestId('wizard-base-url-input').fill('https://anthropic-compatible.provider.example');
 
       let nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
@@ -484,6 +485,66 @@ test.describe('Endpoints Page', () => {
 
       const nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
       await expect(nextBtn).toBeDisabled();
+    });
+
+    test('custom endpoint remains in custom edit mode after creation', async ({ authedPage }) => {
+      await ensureCredentialExists(authedPage);
+      const wizard = await openCustomWizardFromCreateDialog(authedPage);
+      const endpointName = `E2E Custom Edit ${Date.now()}`;
+
+      await wizard.getByTestId('wizard-name-input').fill(endpointName);
+      await wizard.getByTestId('protocol-openai_responses').click();
+      await wizard.getByTestId('wizard-base-url-input').fill('https://responses.provider.example/v1');
+      await wizard.getByRole('button', { name: /Next|下一步/i }).click();
+      await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible();
+      await wizard.getByTestId('wizard-model-id-input').fill('responses-model');
+      let nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      if (!(await nextBtn.isEnabled().catch(() => false))) {
+        const credentialPicked = await pickSelectOption(
+          wizard,
+          authedPage,
+          /OpenAI API Key|Anthropic API Key|E2E Credential/i,
+        );
+        expect(credentialPicked).toBe(true);
+        nextBtn = wizard.getByRole('button', { name: /Next|下一步/i });
+      }
+      await nextBtn.click();
+      await expect(wizard.getByTestId('wizard-create-button')).toBeEnabled();
+      await wizard.getByTestId('wizard-create-button').click();
+      await expect(wizard).toBeHidden({ timeout: 10_000 });
+      const createDialog = authedPage.getByTestId('endpoints__create-dialog');
+      if (await createDialog.isVisible().catch(() => false)) {
+        await createDialog.getByRole('button', { name: /close|cancel/i }).first().click();
+        await expect(createDialog).toBeHidden({ timeout: 10_000 });
+      }
+
+      const row = authedPage.getByTestId('endpoints__table__row').filter({ hasText: endpointName }).first();
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      await row.locator('button').first().click();
+
+      const editDialog = authedPage.getByTestId('endpoints__edit-dialog');
+      await expect(editDialog).toBeVisible();
+      await expect(editDialog.getByText('Upstream Protocol')).toBeVisible();
+      await expect(editDialog.locator('#endpoint-base-url')).toBeVisible();
+      await expect(editDialog.locator('#endpoint-model')).toBeVisible();
+      await expect(editDialog.getByRole('button', { name: /OpenAI Responses Upstreams/i })).toBeVisible();
+      await expect(editDialog.getByText('Provider')).not.toBeVisible();
+      await expect(editDialog.getByText('Catalog Models')).not.toBeVisible();
+    });
+
+    test('catalog endpoint stays in catalog edit mode', async ({ authedPage }) => {
+      const row = authedPage.getByTestId('endpoints__table__row').filter({ hasText: 'OpenAI Main' }).first();
+      await expect(row).toBeVisible({ timeout: 10_000 });
+      await row.locator('button').first().click();
+
+      const editDialog = authedPage.getByTestId('endpoints__edit-dialog');
+      await expect(editDialog).toBeVisible();
+      await expect(editDialog.getByText('Provider')).toBeVisible();
+      await expect(editDialog.getByText('Upstream Protocol')).toBeVisible();
+      await expect(editDialog.getByText('Catalog Models')).toBeVisible();
+      await expect(editDialog.locator('#endpoint-base-url')).toHaveCount(0);
+      await expect(editDialog.locator('#endpoint-model')).toHaveCount(0);
+      await expect(editDialog.getByText('OpenAI Chat Completions')).toBeVisible();
     });
   });
 });

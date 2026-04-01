@@ -565,15 +565,14 @@ async function createEndpoint(
       data: {
         name: endpointName,
         model: endpointModel,
-        type: 'openai',
+        type: 'custom',
         base_url: upstreamBaseUrl,
         credential_ref: credential!.id,
-        provider_family: 'openai',
-        protocol: 'openai_compatible',
+        provider_family: 'custom',
+        upstream_protocol: 'openai_chat_completions',
         capabilities: [{ type: capability, enabled: true, default_model_id: endpointModel }],
         models: [{ capability, model_id: endpointModel, display_name: endpointModel }],
         defaults,
-        meta: { compatibility_interface: 'openai_compatible' },
       },
     },
   );

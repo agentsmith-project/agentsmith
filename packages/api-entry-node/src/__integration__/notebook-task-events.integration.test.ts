@@ -111,7 +111,9 @@ describe('api-entry-node notebook task event routes', () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: 'glm-coding',
-          type: 'openai_compatible',
+          type: 'catalog',
+          provider_family: 'glm',
+          upstream_protocol: 'openai_chat_completions',
           status: 'active',
           wire_api: 'responses',
           base_url: 'https://example.com',

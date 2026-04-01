@@ -132,10 +132,10 @@ async function createEndpointViaApi(
     model: string;
     baseUrl: string;
     credentialRef: string;
-    protocol: 'openai_compatible' | 'anthropic_compatible';
+    upstreamProtocol: 'openai_chat_completions' | 'openai_responses' | 'anthropic_messages';
   },
 ): Promise<string> {
-  const providerFamily = args.protocol === 'anthropic_compatible' ? 'anthropic' : 'openai';
+  const providerFamily = args.upstreamProtocol === 'anthropic_messages' ? 'anthropic' : 'custom';
   const response = await page.request.post(
     `${apiBase}/api/v1/workspaces/ws_default/projects/${projectId}/endpoints`,
     {
@@ -143,17 +143,14 @@ async function createEndpointViaApi(
       data: {
         name: args.name,
         model: args.model,
-        type: providerFamily,
+        type: 'custom',
         base_url: args.baseUrl,
         credential_ref: args.credentialRef,
         provider_family: providerFamily,
-        protocol: args.protocol,
+        upstream_protocol: args.upstreamProtocol,
         capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: args.model }],
         models: [{ capability: 'chat_completion', model_id: args.model, display_name: args.model }],
         defaults: { chat_model_id: args.model },
-        meta: {
-          compatibility_interface: args.protocol,
-        },
       },
     },
   );
@@ -296,7 +293,7 @@ test.describe('@lane-real integration chat endpoint protocols', () => {
         model: 'placeholder-model',
         baseUrl: upstream.baseUrl,
         credentialRef: credentialId,
-        protocol: 'openai_compatible',
+        upstreamProtocol: 'openai_chat_completions',
       });
       await ensureChatAndThread(page, locale, projectId);
       await selectEndpoint(page, endpointId);
@@ -324,7 +321,7 @@ test.describe('@lane-real integration chat endpoint protocols', () => {
         model: 'placeholder-model',
         baseUrl: `${upstream.baseUrl}/v1`,
         credentialRef: credentialId,
-        protocol: 'anthropic_compatible',
+        upstreamProtocol: 'anthropic_messages',
       });
       await ensureChatAndThread(page, locale, projectId);
       await selectEndpoint(page, endpointId);

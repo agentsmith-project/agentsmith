@@ -89,7 +89,7 @@ test.describe('@lane-real personal api key endpoint access', () => {
         endpointModel: anthropicModel,
         upstreamBaseUrl: upstream.baseUrl,
         credentialName: endpointCredentialName,
-        protocol: 'anthropic_compatible',
+        upstreamProtocol: 'anthropic_messages',
       });
 
       await page.goto(`/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/use-guide`);

@@ -470,7 +470,7 @@ async function createEndpoint(page: Page, workspaceId: string, projectId: string
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-name-input').fill(endpointName);
-  await wizard.getByTestId('protocol-anthropic_compatible').click();
+  await wizard.getByTestId('protocol-anthropic_messages').click();
   await wizard.getByTestId('wizard-base-url-input').fill(BACKEND_REAL_ANTHROPIC_BASE_URL);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible({ timeout: 30_000 });

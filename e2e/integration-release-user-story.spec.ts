@@ -289,11 +289,11 @@ async function createEndpointViaUi(args: {
   workspaceId: string;
   projectId: string;
   name: string;
-  protocol: 'anthropic_compatible' | 'openai_compatible';
+  upstreamProtocol: 'anthropic_messages' | 'openai_chat_completions' | 'openai_responses';
   baseUrl: string;
   model: string;
 }): Promise<void> {
-  const { page, workspaceId, projectId, name, protocol, baseUrl, model } = args;
+  const { page, workspaceId, projectId, name, upstreamProtocol, baseUrl, model } = args;
   await gotoWithRetry(page, `/${LOCALE}/workspaces/${workspaceId}/projects/${projectId}/endpoints`);
   await expect(page.getByTestId('endpoints__create-btn')).toBeVisible({ timeout: 30_000 });
   await page.getByTestId('endpoints__create-btn').click();
@@ -305,7 +305,7 @@ async function createEndpointViaUi(args: {
   const wizard = page.getByTestId('endpoints__custom-wizard');
   await expect(wizard).toBeVisible({ timeout: 30_000 });
   await wizard.getByTestId('wizard-name-input').fill(name);
-  await wizard.getByTestId(`protocol-${protocol}`).click();
+  await wizard.getByTestId(`protocol-${upstreamProtocol}`).click();
   await wizard.getByTestId('wizard-base-url-input').fill(baseUrl);
   await wizard.getByRole('button', { name: /next|下一步/i }).click();
   await expect(wizard.getByTestId('wizard-model-id-input')).toBeVisible({ timeout: 30_000 });
@@ -665,7 +665,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       workspaceId,
       projectId,
       name: anthropicEndpointName,
-      protocol: 'anthropic_compatible',
+      upstreamProtocol: 'anthropic_messages',
       baseUrl: ANTHROPIC_BASE_URL,
       model: BACKEND_REAL_MODEL,
     });
@@ -674,7 +674,7 @@ test.describe('@lane-real release user story end-to-end', () => {
       workspaceId,
       projectId,
       name: openaiEndpointName,
-      protocol: 'openai_compatible',
+      upstreamProtocol: 'openai_chat_completions',
       baseUrl: OPENAI_BASE_URL,
       model: BACKEND_REAL_MODEL,
     });

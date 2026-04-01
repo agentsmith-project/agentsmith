@@ -1,11 +1,15 @@
 import { describe, expect, it } from 'vitest';
-import { apiFetch, startServer } from './test-support.js';
+import { createDefaultNodeApiDeps } from '../index.js';
+import { UniversalProxyService } from '../universal-proxy-service.js';
+import { apiFetch, startServer, startServerWithDeps } from './test-support.js';
 import { startPassthroughUpstreamServer } from './chat-test-support.js';
 
 describe('api-entry-node chat attachment integrations', () => {
   it('sends image attachments to upstream multimodal chat payload', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startPassthroughUpstreamServer();
+    const upstream = await startPassthroughUpstreamServer();
+    const deps = createDefaultNodeApiDeps();
+    deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -32,12 +36,11 @@ describe('api-entry-node chat attachment integrations', () => {
         body: JSON.stringify({
           name: 'vision-endpoint',
           model: 'gpt-4o',
-          type: 'openai',
-          mode: 'openai',
+          type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
-          provider_family: 'openai',
-          protocol: 'openai_compatible',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           capabilities: [{ type: 'multimodal_completion', enabled: true, default_model_id: 'gpt-4o' }],
           models: [{ capability: 'multimodal_completion', model_id: 'gpt-4o' }],
           defaults: { multimodal_model_id: 'gpt-4o' },
@@ -140,8 +143,10 @@ describe('api-entry-node chat attachment integrations', () => {
   });
 
   it('treats octet-stream webp attachments as image in preview and upstream payload', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startPassthroughUpstreamServer();
+    const upstream = await startPassthroughUpstreamServer();
+    const deps = createDefaultNodeApiDeps();
+    deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -168,12 +173,11 @@ describe('api-entry-node chat attachment integrations', () => {
         body: JSON.stringify({
           name: 'vision-endpoint-infer',
           model: 'gpt-4o',
-          type: 'openai',
-          mode: 'openai',
+          type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
-          provider_family: 'openai',
-          protocol: 'openai_compatible',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           capabilities: [{ type: 'multimodal_completion', enabled: true, default_model_id: 'gpt-4o' }],
           models: [{ capability: 'multimodal_completion', model_id: 'gpt-4o' }],
           defaults: { multimodal_model_id: 'gpt-4o' },
@@ -249,8 +253,10 @@ describe('api-entry-node chat attachment integrations', () => {
   });
 
   it('fails fast when image attachment cannot be converted to data URL', async () => {
-    const { baseUrl } = startServer();
-    const upstream = startPassthroughUpstreamServer();
+    const upstream = await startPassthroughUpstreamServer();
+    const deps = createDefaultNodeApiDeps();
+    deps.universalProxyService = new UniversalProxyService(upstream.baseUrl);
+    const { baseUrl } = startServerWithDeps(deps);
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -277,12 +283,11 @@ describe('api-entry-node chat attachment integrations', () => {
         body: JSON.stringify({
           name: 'vision-endpoint-missing-dataurl',
           model: 'gpt-4o',
-          type: 'openai',
-          mode: 'openai',
+          type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
-          provider_family: 'openai',
-          protocol: 'openai_compatible',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           capabilities: [{ type: 'multimodal_completion', enabled: true, default_model_id: 'gpt-4o' }],
           models: [{ capability: 'multimodal_completion', model_id: 'gpt-4o' }],
           defaults: { multimodal_model_id: 'gpt-4o' },
@@ -373,12 +378,11 @@ describe('api-entry-node chat attachment integrations', () => {
         body: JSON.stringify({
           name: 'chat-inputref-endpoint',
           model: 'gpt-4o-mini',
-          type: 'openai',
-          mode: 'openai',
+          type: 'custom',
           base_url: 'https://api.example.com/v1',
           credential_ref: credential.id,
-          provider_family: 'openai',
-          protocol: 'openai_compatible',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           capabilities: [{ type: 'text_completion', enabled: true, default_model_id: 'gpt-4o-mini' }],
           models: [{ capability: 'text_completion', model_id: 'gpt-4o-mini' }],
           defaults: { text_model_id: 'gpt-4o-mini' },
@@ -459,7 +463,7 @@ describe('api-entry-node chat attachment integrations', () => {
 
   it('rejects attachment stream when endpoint is not multimodal', async () => {
     const { baseUrl } = startServer();
-    const upstream = startPassthroughUpstreamServer();
+    const upstream = await startPassthroughUpstreamServer();
 
     const createCredential = await apiFetch(
       baseUrl,
@@ -486,12 +490,11 @@ describe('api-entry-node chat attachment integrations', () => {
         body: JSON.stringify({
           name: 'chat-only-endpoint',
           model: 'gpt-4o-mini',
-          type: 'openai',
-          mode: 'openai',
+          type: 'custom',
           base_url: upstream.baseUrl,
           credential_ref: credential.id,
-          provider_family: 'openai',
-          protocol: 'openai_compatible',
+          provider_family: 'custom',
+          upstream_protocol: 'openai_chat_completions',
           capabilities: [{ type: 'chat_completion', enabled: true, default_model_id: 'gpt-4o-mini' }],
           models: [{ capability: 'chat_completion', model_id: 'gpt-4o-mini' }],
           defaults: { chat_model_id: 'gpt-4o-mini' },

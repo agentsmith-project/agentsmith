@@ -1,5 +1,6 @@
 import type { AddressInfo } from 'node:net';
 import http, { type IncomingHttpHeaders, type Server } from 'node:http';
+import { execFileSync } from 'node:child_process';
 import { apiFetch } from './test-support.js';
 
 const upstreamServers: Server[] = [];
@@ -8,6 +9,19 @@ type ParsedDefaultSseBlock = {
   id: string | null;
   payload: Record<string, unknown> | null;
 };
+
+function allocateTestPort(): number {
+  const raw = execFileSync(
+    'python3',
+    ['-c', 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()'],
+    { encoding: 'utf8' },
+  ).trim();
+  const port = Number.parseInt(raw, 10);
+  if (!Number.isInteger(port) || port <= 0) {
+    throw new Error(`invalid_test_port:${raw}`);
+  }
+  return port;
+}
 
 export async function cleanupChatUpstreamServers(): Promise<void> {
   await Promise.all(
@@ -64,10 +78,10 @@ export function startOpenAICompatibleUpstreamServer(): {
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  server.listen(0);
+  const port = allocateTestPort();
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+  return { server, baseUrl: `http://127.0.0.1:${port}/v1`, lastBody: () => body };
 }
 
 export function startUniversalProxyChatServer(): {
@@ -147,24 +161,24 @@ export function startUniversalProxyChatServer(): {
       res.end(JSON.stringify({ error: 'not_found' }));
     })();
   });
-  server.listen(0);
+  const port = allocateTestPort();
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}`,
+    baseUrl: `http://127.0.0.1:${port}`,
     lastBody: () => body,
     lastPath: () => path,
     lastHeaders: () => headers,
   };
 }
 
-export function startPassthroughUpstreamServer(): {
+export async function startPassthroughUpstreamServer(): Promise<{
   server: Server;
   baseUrl: string;
   lastBody: () => unknown;
   lastPath: () => string;
-} {
+}> {
   let body: unknown = null;
   let path = '';
   const server = http.createServer((req, res) => {
@@ -181,12 +195,11 @@ export function startPassthroughUpstreamServer(): {
       res.end(JSON.stringify({ ok: true, echoed: body }));
     })();
   });
-  server.listen(0);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
   return {
     server,
-    baseUrl: `http://127.0.0.1:${address.port}/v1`,
+    baseUrl: `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`,
     lastBody: () => body,
     lastPath: () => path,
   };
@@ -233,10 +246,10 @@ export function startSlowOpenAICompatibleUpstreamServer(): {
       }, 1_200);
     })();
   });
-  server.listen(0);
+  const port = allocateTestPort();
+  server.listen(port, '127.0.0.1');
   upstreamServers.push(server);
-  const address = server.address() as AddressInfo;
-  return { server, baseUrl: `http://127.0.0.1:${address.port}/v1`, lastBody: () => body };
+  return { server, baseUrl: `http://127.0.0.1:${port}/v1`, lastBody: () => body };
 }
 
 export function parseDefaultSseBlocks(text: string): ParsedDefaultSseBlock[] {

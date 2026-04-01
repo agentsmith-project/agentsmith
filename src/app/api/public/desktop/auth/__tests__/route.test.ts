@@ -5,6 +5,7 @@ import { GET } from '../route';
 describe('/api/public/desktop/auth', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubEnv('NEXT_PUBLIC_API_BASE', 'http://localhost:20000');
     vi.stubEnv('NEXT_PUBLIC_KEYCLOAK_URL', 'https://login.example.com');
     vi.stubEnv('NEXT_PUBLIC_KEYCLOAK_REALM', 'mbos');
     vi.stubEnv('NEXT_PUBLIC_KEYCLOAK_CLIENT_ID', 'agentsmith-desktop');
@@ -15,6 +16,7 @@ describe('/api/public/desktop/auth', () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       deployment_base_url: 'https://agentsmith.example.com',
+      api_base_url: 'http://localhost:20000/api/v1',
       issuer: 'https://login.example.com/realms/mbos',
       authorization_endpoint: 'https://login.example.com/realms/mbos/protocol/openid-connect/auth',
       token_endpoint: 'https://login.example.com/realms/mbos/protocol/openid-connect/token',

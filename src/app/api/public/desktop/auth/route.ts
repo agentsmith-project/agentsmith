@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { readPublicRuntimeConfigFromEnv } from '@/lib/public-runtime-config';
+import { getPublicApiBaseUrl, readPublicRuntimeConfigFromEnv } from '@/lib/public-runtime-config';
 import { resolveKeycloakRealmBase } from '@/lib/auth/keycloak';
 
 export async function GET(request: Request) {
@@ -17,6 +17,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     deployment_base_url: new URL(request.url).origin,
+    api_base_url: getPublicApiBaseUrl(),
     issuer,
     authorization_endpoint: `${issuer}/protocol/openid-connect/auth`,
     token_endpoint: `${issuer}/protocol/openid-connect/token`,

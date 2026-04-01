@@ -266,14 +266,46 @@ function inferRequestOrigin(req: http.IncomingMessage): string {
   return `${proto}://${host}`;
 }
 
+function normalizeDesktopMetadataUrl(metadataUrl: string): string {
+  try {
+    const parsed = new URL(metadataUrl);
+    const host = process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST?.trim();
+    const port = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT?.trim();
+    if (host) {
+      parsed.hostname = host;
+    }
+    if (port) {
+      parsed.port = port;
+    }
+    return parsed.toString();
+  } catch {
+    return metadataUrl;
+  }
+}
+
+function normalizeDesktopStorageBucketUrl(storageBucketUrl?: string): string | undefined {
+  if (!storageBucketUrl) return storageBucketUrl;
+  const endpoint = process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT?.trim();
+  if (!endpoint) return storageBucketUrl;
+  try {
+    const source = new URL(storageBucketUrl);
+    const target = new URL(endpoint);
+    const bucketPath = source.pathname.replace(/^\/+/, '');
+    target.pathname = `/${bucketPath}`;
+    return target.toString();
+  } catch {
+    return storageBucketUrl;
+  }
+}
+
 function toDesktopMountAccess(
   req: http.IncomingMessage,
   access: FileLibraryMountAccess,
 ): FileLibraryDesktopMountAccess {
   return {
     filesystem_name: access.filesystem_name,
-    metadata_url: access.metadata_url,
-    storage_bucket_url: access.storage_bucket_url,
+    metadata_url: normalizeDesktopMetadataUrl(access.metadata_url),
+    storage_bucket_url: normalizeDesktopStorageBucketUrl(access.storage_bucket_url),
     deployment_base_url: inferRequestOrigin(req),
     default_mount_roots: {
       linux: '~/AgentSmith',

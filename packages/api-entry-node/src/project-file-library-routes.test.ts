@@ -112,69 +112,84 @@ describe('project-file-library-routes', () => {
   });
 
   it('returns desktop mount access without shell commands', async () => {
-    const json = vi.fn();
-    const res = {} as never;
-    const deps = createDeps();
+    const previousPostgresHost = process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST;
+    const previousPostgresPort = process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT;
+    const previousMinioEndpoint = process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT;
+    process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST = '127.0.0.1';
+    process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = '15432';
+    process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT = 'http://127.0.0.1:19000';
 
-    await handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraries',
-      method: 'POST',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      req: {} as never,
-      res,
-      deps,
-      user: OWNER_USER,
-      json,
-      readBody: vi.fn().mockResolvedValue({
-        name: 'Shared Docs',
-      }),
-    });
+    try {
+      const json = vi.fn();
+      const res = {} as never;
+      const deps = createDeps();
 
-    const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
-    const desktopJson = vi.fn();
+      await handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraries',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        req: {} as never,
+        res,
+        deps,
+        user: OWNER_USER,
+        json,
+        readBody: vi.fn().mockResolvedValue({
+          name: 'Shared Docs',
+        }),
+      });
 
-    await expect(handleProjectFileLibraryRoutes({
-      routeKind: 'fileLibraryDesktopMountAccess',
-      method: 'POST',
-      workspaceId: 'ws_default',
-      projectId: 'proj_1',
-      libraryId: createdBody.id,
-      req: {
-        headers: {
-          host: 'mbos.imotion.ai:3001',
-          'x-forwarded-proto': 'https',
+      const createdBody = json.mock.calls.at(-1)?.[2] as { id: string };
+      const desktopJson = vi.fn();
+
+      await expect(handleProjectFileLibraryRoutes({
+        routeKind: 'fileLibraryDesktopMountAccess',
+        method: 'POST',
+        workspaceId: 'ws_default',
+        projectId: 'proj_1',
+        libraryId: createdBody.id,
+        req: {
+          headers: {
+            host: 'mbos.imotion.ai:3001',
+            'x-forwarded-proto': 'https',
+          },
+          socket: {},
+        } as never,
+        res,
+        deps,
+        user: OWNER_USER,
+        json: desktopJson,
+        readBody: vi.fn(),
+      })).resolves.toBe(true);
+
+      const [, statusCode, payload] = desktopJson.mock.calls[0] as [unknown, number, {
+        desktop_mount_access?: {
+          deployment_base_url?: string;
+          default_mount_roots?: Record<string, string>;
+          windows_requires_drive_letter?: boolean;
+          metadata_url?: string;
+          storage_bucket_url?: string;
+          recommended_mount_commands?: unknown;
+        };
+      }];
+      expect(statusCode).toBe(200);
+      expect(payload.desktop_mount_access).toMatchObject({
+        deployment_base_url: 'https://mbos.imotion.ai:3001',
+        default_mount_roots: {
+          linux: '~/AgentSmith',
+          macos: '~/AgentSmith',
+          windows: '%USERPROFILE%\\AgentSmith',
         },
-        socket: {},
-      } as never,
-      res,
-      deps,
-      user: OWNER_USER,
-      json: desktopJson,
-      readBody: vi.fn(),
-    })).resolves.toBe(true);
-
-    const [, statusCode, payload] = desktopJson.mock.calls[0] as [unknown, number, {
-      desktop_mount_access?: {
-        deployment_base_url?: string;
-        default_mount_roots?: Record<string, string>;
-        windows_requires_drive_letter?: boolean;
-        metadata_url?: string;
-        recommended_mount_commands?: unknown;
-      };
-    }];
-    expect(statusCode).toBe(200);
-    expect(payload.desktop_mount_access).toMatchObject({
-      deployment_base_url: 'https://mbos.imotion.ai:3001',
-      default_mount_roots: {
-        linux: '~/AgentSmith',
-        macos: '~/AgentSmith',
-        windows: '%USERPROFILE%\\AgentSmith',
-      },
-      windows_requires_drive_letter: true,
-      metadata_url: expect.stringContaining('postgres://'),
-    });
-    expect(payload.desktop_mount_access?.recommended_mount_commands).toBeUndefined();
+        windows_requires_drive_letter: true,
+        metadata_url: expect.stringContaining('@127.0.0.1:15432/'),
+        storage_bucket_url: expect.stringContaining('http://127.0.0.1:19000/'),
+      });
+      expect(payload.desktop_mount_access?.recommended_mount_commands).toBeUndefined();
+    } finally {
+      process.env.FILE_LIBRARY_CLIENT_POSTGRES_HOST = previousPostgresHost;
+      process.env.FILE_LIBRARY_CLIENT_POSTGRES_PORT = previousPostgresPort;
+      process.env.FILE_LIBRARY_CLIENT_MINIO_ENDPOINT = previousMinioEndpoint;
+    }
   });
 
   it('does not expose metadata credentials from backend details', async () => {
